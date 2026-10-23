@@ -404,7 +404,7 @@ pub enum IndexCommand {
         /// Directory to build index for
         #[arg(default_value = ".")]
         path: String,
-        /// Strategy to use: lightweight, on_demand, per_file, full
+        /// Strategy to use: lightweight, on_demand, full
         #[arg(long, default_value = "lightweight")]
         strategy: String,
     },
@@ -850,8 +850,17 @@ impl CommandExecutor {
                     "building index"
                 );
                 let start = Instant::now();
-                let mut strategy_box = GraphStrategyFactory::create(strategy);
                 let dir = PathBuf::from(path);
+                // The factory is the authority on which names index a
+                // project. A name that is not offered is refused with
+                // the names that are: the command must not report a
+                // successful index over a strategy that indexed nothing.
+                let mut strategy_box =
+                    GraphStrategyFactory::create(strategy).map_err(|e| IndexError::Build {
+                        path: dir.clone(),
+                        strategy: strategy.to_string(),
+                        source: Box::new(e),
+                    })?;
 
                 strategy_box
                     .build_index(&dir)

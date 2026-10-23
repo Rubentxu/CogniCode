@@ -67,7 +67,7 @@ use crate::domain::services::CycleDetector;
 // the contract cannot drift from the struct that produces the bytes.
 use crate::domain::value_objects::{ClientIdentity, SymbolKind};
 use crate::infrastructure::graph::{
-    FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
+    GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
 };
 use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
@@ -3316,8 +3316,25 @@ pub async fn handle_build_lightweight_index(
     // For lightweight strategy, build directly as LightweightStrategy (concrete type)
     // so we can extract the index via into_index() without rebuilding.
     let strategy_name_input = input.strategy.clone();
-    let result = tokio::task::spawn_blocking(move || match strategy_name_input.as_str() {
-        "lightweight" | "" => {
+    // The factory is the authority on which names index a project. A
+    // name that is not offered is refused before any work is done: the
+    // tool that indexes a project must not answer with a strategy that
+    // indexes nothing.
+    let strategy = match strategy_name_input.as_str() {
+        "lightweight" | "" => None,
+        _ => Some(
+            GraphStrategyFactory::create(&strategy_name_input)
+                .map_err(|unknown| HandlerError::InvalidInput(unknown.to_string()))?,
+        ),
+    };
+    let result = tokio::task::spawn_blocking(move || match strategy {
+        Some(mut strategy) => {
+            let build_result = strategy.build_index(&directory);
+            let symbols = strategy.query_symbols("").len();
+            let name = strategy.name().to_string();
+            (build_result, symbols, name, None, directory)
+        }
+        None => {
             let mut s = LightweightStrategy::new();
             let build_result = s.build_index(&directory);
             let symbols = s.query_symbols("").len();
@@ -3329,18 +3346,6 @@ pub async fn handle_build_lightweight_index(
                 index,
                 directory,
             )
-        }
-        _ => {
-            let mut strategy: Box<dyn GraphStrategy> = match strategy_name_input.as_str() {
-                "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
-                "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
-                "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
-                _ => Box::new(LightweightStrategy::new()),
-            };
-            let build_result = strategy.build_index(&directory);
-            let symbols = strategy.query_symbols("").len();
-            let name = strategy.name().to_string();
-            (build_result, symbols, name, None, directory)
         }
     })
     .await
@@ -3639,10 +3644,10 @@ pub async fn handle_merge_graphs(
 
     // The merge is over the requested files, not over the directory they
     // happen to live in, and it reports what it could not read. This used
-    // to be `build_full_graph(file_paths[0].parent())`: the caller's list
-    // was discarded, walk errors were dropped by `filter_map(ok)`, and the
-    // failure path turned an unreadable tree into an empty graph reported
-    // as a clean merge.
+    // to merge the parent directory of the requested files: the caller's
+    // list was discarded, walk errors were dropped by `filter_map(ok)`,
+    // and the failure path turned an unreadable tree into an empty graph
+    // reported as a clean merge.
     let report = PerFileStrategy::new()
         .merge_files_with_report(&file_paths.iter().map(PathBuf::as_path).collect::<Vec<_>>());
     let merged = report.graph;
@@ -4970,8 +4975,8 @@ mod tests {
     // ------------------------------------------------------------------
     // merge_graphs: the merge must be the one that was asked for
     //
-    // The handler used to merge `file_paths[0].parent()` with
-    // `build_full_graph`, which swallows the walk's errors. Three
+    // The handler used to merge the parent directory of the requested
+    // files, which swallows the walk's errors. Three
     // consequences, all fixed here: the requested list was ignored,
     // an unreadable directory became an empty graph reported as a
     // success, and `file_count` counted what was asked for instead of
@@ -6892,11 +6897,10 @@ mod tests {
 
     /// CLI and MCP must execute the **same use
     /// case** for `full` graph building over the canonical
-    /// equivalence corpus. The MCP path goes through
-    /// `AnalysisService::build_project_graph` (via
-    /// `handle_build_graph`); the CLI `graph full` path goes through
-    /// `FullGraphStrategy::build_full_graph`. This test pins the
-    /// contract that both transport paths produce the same symbol
+    /// equivalence corpus. Both transport paths go through
+    /// `AnalysisService::build_project_graph`: the MCP one via
+    /// `handle_build_graph`, the CLI one via the service it holds. This
+    /// test pins the contract that both produce the same symbol
     /// and edge inventory over
     /// `crates/cognicode-core/testdata/equivalence_full_vs_perfile/`.
     ///
@@ -6907,7 +6911,6 @@ mod tests {
     mod prf_cli_04_cli_mcp_equivalence_tests {
         use super::*;
         use crate::domain::aggregates::call_graph::CallGraph;
-        use crate::infrastructure::graph::FullGraphStrategy;
         use std::collections::HashSet;
         use std::path::PathBuf;
 
@@ -6921,7 +6924,11 @@ mod tests {
         }
 
         fn cli_full_graph(p: &PathBuf) -> CallGraph {
-            FullGraphStrategy::new().build_full_graph(p).unwrap()
+            // The whole-project graph the product builds, through the
+            // service that owns it.
+            let service = crate::application::services::analysis_service::AnalysisService::new();
+            service.build_project_graph(p).expect("the graph builds");
+            (*service.get_project_graph()).clone()
         }
 
         async fn mcp_build_graph(p: &PathBuf) -> BuildGraphOutput {

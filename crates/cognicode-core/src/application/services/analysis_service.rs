@@ -786,35 +786,35 @@ impl AnalysisService {
         Ok(final_report)
     }
 
-    /// Builds a call graph for a subgraph limited to specific directories.
+    /// Builds the project graph for the directories in `include_dirs`,
+    /// and publishes what it could not cover.
     ///
-    /// Unlike `build_project_graph`, this method only includes files that are
-    /// under one of the specified `include_dirs`. This is useful for building
-    /// a focused view of the codebase (e.g., only application code, not tests).
-    ///
-    /// This method does NOT modify the cached graph - it returns a separate
-    /// CallGraph instance.
+    /// This route is the whole-project one with a filter over the
+    /// files: it walks with the same inventory, classifies with the
+    /// same classifier, and publishes the same kind of report. Two
+    /// routes of one product that give two different guarantees are one
+    /// defect waiting to be found, so this one says what it covered too.
     ///
     /// # Arguments
-    /// * `project_dir` - The root directory to scan
+    /// * `project_dir` - The project directory to scan
     /// * `include_dirs` - Directories to include (as an allowlist). Files outside
     ///                   these directories are excluded.
     ///
     /// # Returns
-    /// * `AppResult<CallGraph>` - The built call graph for the filtered subgraph
+    /// * `AppResult<BuildReport>` - The graph of the included
+    ///   directories, with the report of what was not covered.
     pub fn build_project_graph_filtered(
         &self,
         project_dir: &Path,
         include_dirs: &[&Path],
-    ) -> AppResult<CallGraph> {
+    ) -> AppResult<crate::infrastructure::graph::per_file_graph::BuildReport> {
         use rayon::prelude::*;
 
         let mut store = PetGraphStore::new();
-        // H4.2: un `HashMap<String, SymbolId>` no distingue dos homónimos —
-        // el segundo `insert` pisa al primero y el `get` devuelve siempre
-        // uno, así que toda llamada se cableaba contra el que sobrevivió por
-        // orden de recorrido. `GlobalSymbolIndex` guarda el multiconjunto y
-        // solo resuelve cuando una regla lo demuestra.
+        // The resolver keeps the multiconset of the homonyms and only
+        // resolves when a rule demonstrates it, so a call is never
+        // wired against whichever homonym the traversal happened to
+        // reach first.
         let mut global_index = GlobalSymbolIndex::new();
 
         // Coverage tracking
@@ -822,57 +822,72 @@ impl AnalysisService {
         let mut cached_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
-        // Use include_dirs as an allowlist - only include files under these directories
-        // No report channel here: this method returns a bare `AppResult`,
-        // so a declined symlink cannot be surfaced. `build_project_graph`
-        // is the one that owes the caller an honest `BuildStatus`.
-        let files: Vec<_> = crate::infrastructure::walk_policy::contained_ignore_walk(project_dir)
-            .hidden(true)
-            .git_ignore(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                // Filter: only include files that are under one of the include_dirs
-                // include_dirs are absolute paths, so compare directly with the file path
-                include_dirs.iter().any(|dir| path.starts_with(dir))
+        // The files are decided by the inventory the whole-project route
+        // uses, so the two routes agree on what a source is, on what is
+        // a gap and on what is a legitimate exclusion. The inventory
+        // also keeps what the walk declined and what it could not do:
+        // both are holes in the coverage, and both travel with the
+        // report.
+        let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
+        let included = |path: &Path| include_dirs.iter().any(|dir| path.starts_with(dir));
+
+        let mut skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
+            Vec::new();
+        for entry in inventory.declined.iter().chain(inventory.errors.iter()) {
+            if included(Path::new(&entry.path)) {
+                skipped.push(entry.clone());
+            }
+        }
+        for gap in inventory.known_gaps() {
+            if included(Path::new(&gap.path)) {
+                skipped.push(gap);
+            }
+        }
+
+        let files: Vec<_> = inventory
+            .files
+            .into_iter()
+            .filter(|file| included(&file.path))
+            .filter(|file| file.language.is_some())
+            .map(|file| {
+                let file_path = file.path.to_string_lossy().into_owned();
+                let mtime = file.mtime_secs();
+                let size = file.size;
+                (file.path, file.language, file_path, mtime, size)
             })
-            .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-            .map(|e| {
-                let path = e.path().to_path_buf();
-                let language = Language::from_extension(path.extension());
-                let file_path = path.to_string_lossy().into_owned();
-                let meta = std::fs::metadata(&path).ok();
-                let mtime = meta
-                    .as_ref()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
-                    })
-                    .unwrap_or(0);
-                // F2.W9: emit size alongside mtime for cache invalidation
-                let size = meta.map(|m| m.len()).unwrap_or(0);
-                (path, language, file_path, mtime, size)
-            })
-            .filter(|(_, lang, _, _, _)| lang.is_some())
             .collect();
 
         let total_files = files.len();
+
+        // The skips are collected from the parallel pass, so they live
+        // behind a lock.
+        let skipped: std::sync::Arc<
+            std::sync::Mutex<Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(skipped));
 
         let results: Vec<_> = files
             .into_par_iter()
             .filter_map(|(path, language, file_path, mtime, size)| {
                 let language = language.unwrap();
+                let path_for_skip = file_path.clone();
+                let skipped = skipped.clone();
 
                 {
-                    // PRF audit H-01: invalidate on mtime OR size OR
-                    // content_hash mismatch. The hash covers the case
-                    // where bytes change while mtime AND size are
-                    // preserved.
-                    let source = std::fs::read_to_string(&path).ok()?;
+                    // A file that cannot be read is a hole in the
+                    // coverage, and it is named in the report. It is
+                    // never counted as if it had been read.
+                    let source = match std::fs::read_to_string(&path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: path_for_skip.clone(),
+                                    reason: crate::infrastructure::graph::per_file_graph::classify_io_error(&e),
+                                },
+                            );
+                            return None;
+                        }
+                    };
                     let content_hash = compute_content_hash(&source);
 
                     let cache = self.file_cache.lock().unwrap();
@@ -895,12 +910,17 @@ impl AnalysisService {
                     drop(cache);
 
                     // A file whose reader fails is excluded from parsed
-                    // coverage and reported via warn!, never silently
-                    // counted as parsed with empty results.
+                    // coverage and reported, never silently counted as
+                    // parsed with empty results.
                     let facts = match read_file_facts(language, &source, &file_path) {
                         Ok(facts) => facts,
                         Err(e) => {
-                            tracing::warn!("reading {} failed: {}", file_path, e);
+                            skipped.lock().unwrap().push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: file_path.clone(),
+                                    reason: crate::infrastructure::graph::per_file_graph::classify_parse_error(&e),
+                                },
+                            );
                             return None;
                         }
                     };
@@ -917,18 +937,23 @@ impl AnalysisService {
             })
             .collect();
 
-        // The order in which the files are folded is the order in which the
-        // index receives their symbols, and the index reports the candidates
-        // of a repeated name in the order it received them. A directory
-        // listing is the machine's order, not the project's, so the files are
-        // folded in path order: what the graph reports must not depend on
-        // where the tree happens to live.
+        // The order in which the files are folded is the order in which
+        // the index receives their symbols, and the index reports the
+        // candidates of a repeated name in the order it received them. A
+        // directory listing is the machine's order, not the project's,
+        // so the files are folded in path order: what the graph reports
+        // must not depend on where the tree happens to live.
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut cache = self.file_cache.lock().unwrap();
-        let mut all_relationships = Vec::new();
+        let mut all_relationships: Vec<(String, String, String)> = Vec::new();
         let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
+            Vec::new();
+        // The references the files state and nobody declared. They are
+        // not relations yet: the project may still be able to tie them
+        // to a declaration in another file.
+        let mut pending_references: Vec<crate::domain::value_objects::PendingReference> =
             Vec::new();
 
         for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
@@ -937,8 +962,6 @@ impl AnalysisService {
             } else {
                 cached_files += 1;
             }
-            // PRF audit H-01: cache entries keyed by (mtime, size,
-            // content_hash).
             cache.insert(
                 file_path.clone(),
                 (mtime, size, content_hash, facts.clone()),
@@ -959,9 +982,15 @@ impl AnalysisService {
             // knew both ends.
             identified_relations.extend(facts.identified.iter().cloned());
 
+            // A reference whose far end is not identified is kept, with
+            // its origin: the project may still be able to tie it to a
+            // declaration in another file, and if it cannot, the
+            // consumer has to hear about it.
+            pending_references.extend(facts.pending.iter().cloned());
+
             for (caller, callee_name) in facts.calls {
-                // El fichero del llamante es lo que permite las reglas
-                // "mismo fichero" y "misma raíz de crate".
+                // The file of the caller is what allows the rules
+                // "same file" and "same crate root".
                 all_relationships.push((
                     caller.fully_qualified_name().to_string(),
                     caller.location().file().to_string(),
@@ -976,6 +1005,19 @@ impl AnalysisService {
             store
                 .add_dependency(&relation.caller, &relation.callee, relation.kind)
                 .ok();
+        }
+
+        // The references the files could not tie to a declaration are
+        // looked up now that every symbol of every file is in the
+        // index: the declaration they name may live in another file of
+        // the project. What the lookup proves becomes a relation; what
+        // it cannot prove stays pending and travels with the report.
+        let pending_resolution = crate::infrastructure::graph::pending::resolve_pending_references(
+            pending_references,
+            &global_index,
+        );
+        for (source_id, target_id, kind) in &pending_resolution.proven {
+            store.add_dependency(source_id, target_id, *kind).ok();
         }
 
         for (caller_fqn, caller_file, callee_name) in all_relationships {
@@ -999,12 +1041,32 @@ impl AnalysisService {
 
         let call_graph = store.to_call_graph();
 
+        // The status carries the two coverages: the files the walk could
+        // not process, and the references it could not tie to a
+        // declaration. "Complete" is only said when both of them are
+        // whole.
+        let skipped_vec = {
+            let guard = skipped.lock().unwrap();
+            guard.clone()
+        };
+        let status = if skipped_vec.is_empty() && pending_resolution.pending.is_empty() {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
+        } else {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped: skipped_vec,
+                pending: pending_resolution.pending,
+            }
+        };
+
         // Update coverage metrics for this subgraph (separate from cached graph)
         let coverage =
             GraphCoverageMetrics::new(total_files, parsed_files, cached_files, unresolved_edges);
         *self.coverage_metrics.lock().unwrap() = Some(coverage);
 
-        Ok(call_graph)
+        Ok(crate::infrastructure::graph::per_file_graph::BuildReport {
+            graph: call_graph,
+            status,
+        })
     }
 
     /// Builds the project graph asynchronously without blocking the tokio runtime.
@@ -1904,8 +1966,20 @@ fn read_file_facts(
         return Ok(facts);
     }
     let parser = TreeSitterParser::with_cache(language)?;
-    let symbols = parser.find_all_symbols_with_path(source, file_path)?;
-    let calls = parser.find_call_relationships(source, file_path)?;
+    // The tree is parsed once and read twice: the symbols and the calls
+    // come out of the very tree the soundness check looks at.
+    let tree = parser.parse_tree(source)?;
+    // A tree with error nodes is a file the reader did not understand.
+    // Publishing what a broken tree happens to hold would be a partial
+    // answer dressed as a whole one, so the file is reported as not
+    // read — the same thing the per-file route does with it.
+    if TreeSitterParser::has_error_nodes(&tree) {
+        return Err(crate::domain::traits::ParseError::InvalidSource(format!(
+            "Syntax errors in {file_path}"
+        )));
+    }
+    let symbols = parser.find_all_symbols_in_tree(&tree, source, file_path)?;
+    let calls = parser.find_call_relationships_in_tree(&tree, source, file_path)?;
     Ok(crate::application::ingest::types::FileFacts {
         symbols,
         identified: Vec::new(),
@@ -2968,9 +3042,10 @@ def d():
         }
 
         let service = AnalysisService::new();
-        let graph = service
+        let report = service
             .build_project_graph_filtered(root, &[root])
             .expect("filtered graph should build");
+        let graph = &report.graph;
 
         let helper_edges = graph
             .all_dependencies()
@@ -3135,12 +3210,12 @@ def b():
         // Build filtered graph for only module_a
         let include_dirs = vec![temp_path.join("module_a")];
         let include_dir_refs: Vec<&Path> = include_dirs.iter().map(|p| p.as_path()).collect();
-        let graph = service
+        let report = service
             .build_project_graph_filtered(temp_path, &include_dir_refs)
             .unwrap();
 
         // The graph should have symbols from module_a
-        let symbols: Vec<_> = graph.symbols().collect();
+        let symbols: Vec<_> = report.graph.symbols().collect();
         assert!(
             !symbols.is_empty(),
             "Filtered graph should have symbols from module_a"
@@ -3174,13 +3249,13 @@ def b():
         // Build filtered graph for a nonexistent directory should return empty graph
         let include_dirs = vec![temp_path.join("nonexistent_dir")];
         let include_dir_refs: Vec<&Path> = include_dirs.iter().map(|p| p.as_path()).collect();
-        let graph = service
+        let report = service
             .build_project_graph_filtered(temp_path, &include_dir_refs)
             .unwrap();
 
         // Should return empty graph (no symbols)
         assert_eq!(
-            graph.symbol_count(),
+            report.graph.symbol_count(),
             0,
             "Filtered graph for nonexistent dir should be empty"
         );
@@ -3216,12 +3291,12 @@ def b():
         // Build filtered graph for module_a and module_b (exclude module_c)
         let include_dirs = vec![temp_path.join("module_a"), temp_path.join("module_b")];
         let include_dir_refs: Vec<&Path> = include_dirs.iter().map(|p| p.as_path()).collect();
-        let graph = service
+        let report = service
             .build_project_graph_filtered(temp_path, &include_dir_refs)
             .unwrap();
 
         // The graph should have symbols from module_a and module_b
-        let symbols: Vec<_> = graph.symbols().collect();
+        let symbols: Vec<_> = report.graph.symbols().collect();
         assert!(
             !symbols.is_empty(),
             "Filtered graph should have symbols from module_a and module_b"

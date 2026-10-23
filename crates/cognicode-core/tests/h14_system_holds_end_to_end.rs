@@ -26,8 +26,8 @@
 //!     search query if the directory was walked (regression
 //!     guard for the WalkFilter::default() dedup).
 //!
-//! The cross-cutting claim: the FullGraphStrategy `&dyn` report
-//! and the AnalysisService typed report are CONSISTENT on the
+//! The cross-cutting claim: the route that walks the whole project
+//! and the route that folds it file by file are CONSISTENT on the
 //! same corpus — they both surface the K0 gap, they both stay
 //! Complete-or-Partial on the same set of files, the .env is
 //! invisible to both, and find_symbol_usages prunes everything
@@ -37,7 +37,6 @@ use cognicode_core::application::services::analysis_service::{AnalysisService, U
 use cognicode_core::infrastructure::graph::per_file_graph::{
     BuildStatus, FileDisposition, SkippedFile,
 };
-use cognicode_core::infrastructure::graph::{FullGraphStrategy, GraphStrategy};
 
 const MARKER_LEGAL: &str = "unique_keep_marker_legal";
 const MARKER_TARGET: &str = "unique_keep_marker_target";
@@ -147,42 +146,43 @@ fn assert_compatible_partial(label: &str, skipped: &[SkippedFile], other_skipped
 }
 
 #[test]
-fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
-    // The cross-cutting claim: the strategy path (H1.2) and the
-    // service path (H1.3) project to the SAME K0 honest gap on
-    // the SAME corpus. If either is silently discarding it, the
-    // H1 system is broken at the seam.
+fn the_two_live_routes_agree_on_the_k0_gap() {
+    // The cross-cutting claim: the route that walks the whole project
+    // and the route that folds it file by file project to the SAME K0
+    // honest gap on the SAME corpus. If either is silently discarding
+    // it, the system is broken at the seam.
     let tmp = tempdir();
     adversarial_corpus(&tmp);
 
-    // Strategy side: &dyn GraphStrategy (the dispatcher shape).
-    let strategy: Box<dyn GraphStrategy> = Box::new(FullGraphStrategy::new());
-    let strategy_report = strategy
-        .build_full_graph_report(&tmp)
-        .expect("strategy build_full_graph_report");
+    // The whole-project route.
+    let whole = AnalysisService::new();
+    whole
+        .build_project_graph(&tmp)
+        .expect("the whole-project route builds");
+    let whole_report = whole
+        .get_last_build_report()
+        .expect("the whole-project route publishes a report");
 
-    // Service side: the typed method (H1.3).
+    // The per-file route.
     let svc = AnalysisService::new();
     let service_report = svc
         .build_graph_per_file_with_report(&tmp)
-        .expect("service build_graph_per_file_with_report");
+        .expect("the per-file route builds");
 
     // The status must agree: both are Partial with the K0 gap.
-    let strategy_skipped = match &strategy_report.status {
+    let whole_skipped = match &whole_report.status {
         BuildStatus::Partial { skipped, .. } => skipped.clone(),
-        BuildStatus::Complete => panic!("strategy side: expected Partial, got Complete"),
+        BuildStatus::Complete => panic!("whole route: expected Partial, got Complete"),
     };
     let service_skipped = match &service_report.status {
         BuildStatus::Partial { skipped, .. } => skipped.clone(),
-        BuildStatus::Complete => panic!("service side: expected Partial, got Complete"),
+        BuildStatus::Complete => panic!("per-file route: expected Partial, got Complete"),
     };
 
     // Both sides name the .kt as a skip (K0 honest gap).
     assert!(
-        strategy_skipped
-            .iter()
-            .any(|s| s.path.ends_with("Other.kt")),
-        "strategy side: K0 gap must surface, got {strategy_skipped:?}"
+        whole_skipped.iter().any(|s| s.path.ends_with("Other.kt")),
+        "whole route: K0 gap must surface, got {whole_skipped:?}"
     );
     assert!(
         service_skipped.iter().any(|s| s.path.ends_with("Other.kt")),
@@ -190,11 +190,11 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
     );
 
     // Both sides project the .kt to UnsupportedRelevant (H1.1 invariant).
-    let s_disp = FileDisposition::from_skipped(kt_skip(&strategy_skipped));
+    let s_disp = FileDisposition::from_skipped(kt_skip(&whole_skipped));
     let svc_disp = FileDisposition::from_skipped(kt_skip(&service_skipped));
     assert!(
         matches!(s_disp, FileDisposition::UnsupportedRelevant { .. }),
-        "strategy: H1.1 invariant broken, got {s_disp:?}"
+        "whole route: H1.1 invariant broken, got {s_disp:?}"
     );
     assert!(
         matches!(svc_disp, FileDisposition::UnsupportedRelevant { .. }),
@@ -203,7 +203,7 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
 
     // Both sides agree: README.md is a legit exclusion, NOT a skip.
     for (label, skipped) in [
-        ("strategy", &strategy_skipped),
+        ("whole route", &whole_skipped),
         ("service", &service_skipped),
     ] {
         assert!(
@@ -214,7 +214,7 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
 
     // Both sides agree: pruned directories never surface as skips.
     for (label, skipped) in [
-        ("strategy", &strategy_skipped),
+        ("whole route", &whole_skipped),
         ("service", &service_skipped),
     ] {
         for pruned in ["target", "node_modules", ".venv", ".env"] {
@@ -311,12 +311,17 @@ fn analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus() {
         "a pure-Rust corpus with a README and a .env must be Complete: the README is legit exclusion, the .env is pruned before the read"
     );
 
-    let strategy: Box<dyn GraphStrategy> = Box::new(FullGraphStrategy::new());
-    let strategy_report = strategy.build_full_graph_report(&tmp).expect("ok");
+    let whole = AnalysisService::new();
+    whole
+        .build_project_graph(&tmp)
+        .expect("the whole-project route builds");
+    let whole_report = whole
+        .get_last_build_report()
+        .expect("the whole-project route publishes a report");
     assert_eq!(
-        strategy_report.status,
+        whole_report.status,
         BuildStatus::Complete,
-        "strategy side must also report Complete for a pure-Rust corpus"
+        "the whole-project route must also report Complete for a pure-Rust corpus"
     );
 }
 

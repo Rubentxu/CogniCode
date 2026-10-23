@@ -106,11 +106,11 @@ fn the_filtered_graph_reports_the_repeated_names_in_path_order() {
     let (_tmp, project) = project_with_repeated_names();
 
     let service = AnalysisService::new();
-    let graph = service
+    let report = service
         .build_project_graph_filtered(&project, &[project.as_path()])
         .expect("the filtered graph builds");
 
-    let files = reported_files(&graph);
+    let files = reported_files(&report.graph);
     assert_eq!(
         files.len(),
         PAIRS * 2,
@@ -133,13 +133,13 @@ fn both_routes_answer_the_same_question_the_same_way() {
         .expect("the whole graph builds");
 
     let filtered = AnalysisService::new();
-    let filtered_graph = filtered
+    let filtered_report = filtered
         .build_project_graph_filtered(&project, &[project.as_path()])
         .expect("the filtered graph builds");
 
     assert_eq!(
         reported_files(&whole.get_project_graph()),
-        reported_files(&filtered_graph),
+        reported_files(&filtered_report.graph),
         "the whole project and the filtered view of it reported the same symbols in two orders"
     );
 }

@@ -154,7 +154,7 @@ fn get_enum_completions(arg_name: &str, current: &str) -> Vec<String> {
         "action" => vec!["rename", "extract", "inline", "move", "change_signature"],
         "format" => vec!["code", "svg"],
         "mode" => vec!["raw", "outline", "symbols", "compressed"],
-        "strategy" => vec!["lightweight", "on_demand", "per_file", "full"],
+        "strategy" => vec!["lightweight", "on_demand", "full"],
         "subgraph_direction" => vec!["in", "out", "both"],
         _ => vec![],
     };

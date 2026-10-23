@@ -200,7 +200,13 @@ pub fn call_graph_from(facts: &FileFacts) -> CallGraph {
         graph.add_symbol(symbol.clone());
     }
     for relation in &facts.identified {
-        let _ = graph.add_dependency(&relation.caller, &relation.callee, relation.kind);
+        // The reader tied both ends, and both ends are symbols of the
+        // file the reader read.
+        let attached = graph.add_dependency(&relation.caller, &relation.callee, relation.kind);
+        debug_assert!(
+            attached.is_ok(),
+            "the file graph holds both ends of the relation: {attached:?}"
+        );
     }
     graph
 }

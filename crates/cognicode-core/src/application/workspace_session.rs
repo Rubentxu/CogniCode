@@ -1166,12 +1166,12 @@ impl WorkspaceSession {
         let include_dir_refs: Vec<&Path> = include_dirs.iter().map(|p| p.as_path()).collect();
 
         // Build the filtered subgraph
-        let subgraph = self
+        let report = self
             .analysis
             .build_project_graph_filtered(&self.workspace_root, &include_dir_refs)
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
 
-        Ok(Arc::new(subgraph))
+        Ok(Arc::new(report.graph))
     }
 
     /// Build a lightweight symbol index (idempotent)
