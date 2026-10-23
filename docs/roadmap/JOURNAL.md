@@ -24747,3 +24747,100 @@ runtime, que es otra unidad. Y la build `multimodal` —la capa que nombra
 documentos e issues— no la ejecuta ningún pipeline, así que el cambio de la
 proyección genérica se verificó con una compilación y una corrida con esas
 features, no con el gate.
+
+
+## 2026-10-23 — El lector deja de disimular: un fallo es un fallo y una declaración sabe dónde está
+
+**Las tres mentiras, medidas.** El producto tenía tres formas de decir una
+falsedad sobre un fichero, y las tres se midieron antes de tocarlas.
+
+*El fallo disfrazado de ausencia.* El lector de un lenguaje contestaba lo
+mismo a tres hechos distintos: que declaraba algo, que no aplicaba a aquel
+fichero, y que fallaba. Y el fallo real del lector no era ni siquiera el que
+el código anunciaba: la extracción sólo marca error cuando el árbol no se
+puede construir, nunca cuando el lector del lenguaje revienta. El
+`catch_unwind` se tragaba el pánico y devolvía el resultado genérico, que no
+tiene declaraciones —y un fichero sin declaraciones es exactamente lo que
+deja un fichero que no declara nada—. El consumidor caía al lector genérico
+y publicaba su respuesta como si el fichero hubiera dicho simplemente nada.
+
+*La posición inventada.* Las declaraciones se construían con
+`Location::new(fichero, 0, 0)`. El producto cuenta las líneas desde uno, así
+que lo que se publicaba era `0 + 1`: la línea 1 de cualquier fichero.
+Medido sobre el corpus: el bucket y la política de `main.tf` se publicaban
+los dos en la línea 1, cuando el bucket está en la línea 1 y la política en
+la 5.
+
+*El fichero roto publicado a medias.* El lector genérico rechaza un fichero
+con un error de sintaxis. El lector de Terraform no: lo leía, declaraba lo
+que encontraba y lo publicaba, y el producto anunciaba cobertura completa.
+Medido: con una llave de más, el grafo contenía
+`aws_s3_bucket.broken_bucket` y `aws_s3_bucket_policy.broken_policy`, y el
+informe no mencionaba el fichero.
+
+**Qué cambia.** El desenlace del lector está tipado, en tres respuestas que ya
+no se confunden:
+
+| Respuesta | Qué dice | Qué hace el consumidor |
+|---|---|---|
+| `Handled` | el lector declaró algo | usa los hechos |
+| `NotApplicable` | el lenguaje no tiene lector, o el lector no tenía nada que decir de este fichero | contesta el lector genérico |
+| `Failed` | el lector no pudo leer el fichero, y la causa dice por qué | el fichero queda sin leer, y se dice por qué |
+
+Y la posición: el lector guarda la línea y la columna donde escribe la cosa —
+Terraform ahora las guarda, Ansible ya guardaba la línea— y el grafo las
+publica. Una declaración sin posición sigue llevando cero, que significa "en
+ninguna parte en concreto" y no "en la primera línea del fichero".
+
+**Dónde caía.** Los tres consumidores que preguntaban al lector:
+
+| Consumidor | Antes | Ahora |
+|---|---|---|
+| Lectura de un fichero (servicio de análisis) | sin respuesta → lector genérico | con fallo → error con la causa, y el fichero se omite con motivo |
+| Grafo por fichero | sin respuesta → lector genérico | con fallo → el fichero se omite y el informe lo nombra |
+| Índice global de símbolos | sin respuesta → el fichero no entra | igual, y el motivo lo registra el grafo del mismo fichero |
+
+**La evidencia.** Tres contratos nuevos y dos pruebas unitarias, todas
+verdes: `the_specialized_reader_says_what_happened` —las tres respuestas, con
+la causa del fallo—, `the_declaration_knows_where_it_is` —la línea real de una
+declaración de Terraform y de una de Ansible—, y
+`the_broken_file_is_not_published` —un fichero que el lector no pudo leer
+entero no entra en el grafo y el informe lo nombra—. Y en el núcleo, dos
+pruebas que comprueban que un lector que revienta deja el fichero sin leer y
+con su causa, en los dos caminos que lo consumen.
+
+**El discriminante, medido en las tres direcciones.** Revirtiendo el
+tratamiento del fallo —que vuelve a degradarse a "no aplica"— el contrato del
+lector se puso rojo, con el motivo exacto:
+
+> a reader that fell over is not a file that declares nothing: NotApplicable
+
+Revirtiendo la posición —vuelve a inventarse— los tres contratos de posición
+se pusieron rojos, y el producto volvió a publicar todas las declaraciones en
+la primera línea:
+
+> assertion `left == right` failed: the policy is written on the fifth line of the file
+>   left: 1
+>  right: 5
+
+Revirtiendo el rechazo del fichero roto —el lector vuelve a publicarlo a
+medias— el contrato del fichero roto se puso rojo:
+
+> a file the reader could not read whole published the declarations it could not read: ["aws_s3_bucket_policy.broken_policy", "aws_s3_bucket.app_bucket", "aws_s3_bucket_policy.app_policy", "aws_s3_bucket.broken_bucket"]
+
+Con cada mutación revertida, los contratos volvieron a verde.
+
+**La medida.** Producción: **+460 / -55** (neto +405). Contratos: **+263 /
+-4**. Corpus: **+12**, dos ficheros más: un Terraform roto y un YAML que no es
+playbook. El gate rápido dio `rc=0` y clippy sin avisos.
+
+**Lo que queda fuera.** El rechazo del fichero roto usa la misma regla que el
+camino genérico —un nodo de error en el árbol—, y esa regla no ve todo lo que
+está roto: una llave sin cerrar en HCL se recupera como un token ausente, no
+como un error, así que un fichero con esa forma rota se sigue publicando. Es
+lo que dice el parser, no una decisión de este cierre. Y las dos cosas que la
+auditoría señaló al lado de esta, que son otra costura: la inserción de una
+relación que no se puede resolver se pierde sin registrar —los `debug_assert!`
+son la prueba de que se pierde, y en una compilación de producción no se
+ejecutan—, y la ausencia de un informe de construcción se convierte en
+cobertura completa.

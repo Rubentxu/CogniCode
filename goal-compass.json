@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C26",
-      "title": "El fallo del lector especializado no se degrada a resultado generico",
-      "unit": "H24",
-      "objective": "Que un lector especializado que entre en panico no se degrade en silencio a un resultado generico aparentemente valido, sino que el fallo se conserve como diagnostico tipado.",
-      "whyNow": "MEDIDO en la auditoria del 2026-10-21: `catch_unwind` devuelve el resultado generico cuando el handler especializado falla. El proceso sigue vivo, pero un fallo del analisis de Terraform o de Ansible se convierte en una respuesta aparentemente valida, que es la forma que toma la mentira cuando el motor calla.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/ingest/extractor.rs"
-      ],
-      "doneWhen": [
-        "un handler especializado que falla produce un diagnostico tipado y no un resultado generico",
-        "el consumidor puede distinguir 'no lo se' de 'no hay nada'",
-        "el fallo queda registrado con su causa"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 80,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C15",
       "title": "El vigilante y su estado dicen la misma verdad que el registro",
       "unit": "H24",

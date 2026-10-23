@@ -18,6 +18,22 @@ use cognicode_graph_algos::algorithms::Statement;
 
 use tree_sitter::{Node, Parser};
 
+/// What happened to the reader of the language.
+///
+/// The outcome of the reader is a fact of its own, apart from the result it
+/// produces. A reader that fell over and a reader that had nothing to say
+/// leave the same result behind —one without declarations— and a consumer
+/// that cannot tell them apart reads a failure as a file that says nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandlerOutcome {
+    /// The language has no reader of its own.
+    Absent,
+    /// The reader ran and finished.
+    Ran,
+    /// The reader fell over; the cause says why.
+    Failed(String),
+}
+
 /// Extract structural information from a source file using a `LanguageConfig`.
 ///
 /// Walks the tree-sitter AST, collecting:
@@ -34,26 +50,54 @@ pub fn extract_file(
     source: &str,
     content_hash: &str,
 ) -> ExtractionResult {
+    extract_file_with_outcome(config, path, source, content_hash).0
+}
+
+/// Extract structural information from a source file, and say what happened
+/// to the reader of the language.
+///
+/// The result is the same one [`extract_file`] returns. The difference is
+/// the second half: whether the language had a reader, whether it ran, and
+/// whether it fell over. A reader that falls over leaves the generic result
+/// behind —the file without declarations— and a consumer that only sees the
+/// result cannot tell that failure apart from a file that declares nothing.
+/// The outcome is what tells them apart.
+pub fn extract_file_with_outcome(
+    config: &LanguageConfig,
+    path: &Path,
+    source: &str,
+    content_hash: &str,
+) -> (ExtractionResult, HandlerOutcome) {
     let mut parser = Parser::new();
     let ts_lang = (config.ts_language)();
     if let Err(err) = parser.set_language(&ts_lang) {
-        return ExtractionResult::failed(
-            path.to_path_buf(),
-            content_hash.to_string(),
-            format!(
+        return (
+            ExtractionResult::failed(
+                path.to_path_buf(),
+                content_hash.to_string(),
+                format!(
+                    "tree-sitter language init failed for {:?}: {err}",
+                    config.language
+                ),
+            ),
+            HandlerOutcome::Failed(format!(
                 "tree-sitter language init failed for {:?}: {err}",
                 config.language
-            ),
+            )),
         );
     }
 
     let tree = match parser.parse(source.as_bytes(), None) {
         Some(t) => t,
         None => {
-            return ExtractionResult::failed(
-                path.to_path_buf(),
-                content_hash.to_string(),
-                "tree-sitter returned None (parse failure)".to_string(),
+            let cause = "tree-sitter returned None (parse failure)".to_string();
+            return (
+                ExtractionResult::failed(
+                    path.to_path_buf(),
+                    content_hash.to_string(),
+                    cause.clone(),
+                ),
+                HandlerOutcome::Failed(cause),
             );
         }
     };
@@ -253,18 +297,40 @@ pub fn extract_file(
     // ── Semantic handler post-parse pass ──────────────────────────────
     // If a semantic handler is configured (e.g., Ansible, Terraform),
     // run it to enrich the result with domain-specific nodes and edges.
-    if let Some(handler) = config.semantic_handler {
-        let source_path_str = path.to_string_lossy();
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handler(&source_path_str, content_hash, source, &result)
-        }))
-        .unwrap_or_else(|_| {
-            // semantic_handler panicked — return the original result
-            // (a handler that fails does not cost the file its reading)
-            result.clone()
-        })
+    let Some(handler) = config.semantic_handler else {
+        return (result, HandlerOutcome::Absent);
+    };
+    let source_path_str = path.to_string_lossy();
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        handler(&source_path_str, content_hash, source, &result)
+    })) {
+        Ok(enriched) => (enriched, HandlerOutcome::Ran),
+        Err(fell_over) => {
+            // The reader fell over. The file keeps the reading the generic
+            // pass gave it —a reader that fails does not cost the file its
+            // reading— but the failure is not swallowed: it is reported,
+            // and a consumer that sees it knows that what the file does not
+            // declare is not the same as what the file cannot declare.
+            let cause = cause_of(fell_over);
+            let mut degraded = result.clone();
+            degraded.error = Some(cause.clone());
+            (degraded, HandlerOutcome::Failed(cause))
+        }
+    }
+}
+
+/// What a reader said when it fell over.
+///
+/// The message a panic carries is the only thing that says why, and a
+/// reader that fell over without saying anything still has to be told
+/// apart from a reader that had nothing to say.
+fn cause_of(fell_over: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = fell_over.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = fell_over.downcast_ref::<String>() {
+        message.clone()
     } else {
-        result
+        "the reader of this language fell over".to_string()
     }
 }
 

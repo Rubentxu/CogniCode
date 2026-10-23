@@ -11,6 +11,7 @@
 //! The law this file pins: the name the product publishes is the name the
 //! symbol carries.
 
+use cognicode_core::application::ingest::types::SemanticOutcome;
 use cognicode_core::application::services::graph_insights::GraphInsightsService;
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::value_objects::Language;
@@ -31,8 +32,10 @@ fn corpus() -> std::path::PathBuf {
 /// The graph the product builds out of one file of the corpus.
 fn graph_of(language: Language, file: &str) -> CallGraph {
     let source = std::fs::read_to_string(corpus().join(file)).expect("the corpus file is readable");
-    let facts = semantic_facts(language, &source, file)
-        .unwrap_or_else(|| panic!("the reader must declare things in {file}"));
+    let facts = match semantic_facts(language, &source, file) {
+        SemanticOutcome::Handled(facts) => facts,
+        other => panic!("the reader must declare things in {file}: {other:?}"),
+    };
     call_graph_from(&facts)
 }
 
