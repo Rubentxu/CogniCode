@@ -695,10 +695,16 @@ mod tests {
         // production build does not have. Both the import and the exception
         // are gone, and the blanket allow went with the import it was
         // hiding — the module now compiles warning-free without it.
+        // 33 -> 41. The eight new entries are not new debt: five of them
+        // are drifts that were already in the code and that the guard
+        // could not see, because it only read `use` statements and these
+        // are written inline where they are used. The other three are the
+        // test-only imports that the unit tests of the analytics services
+        // carry, now that those tests compose the real projection.
         assert_eq!(
             list.len(),
-            33,
-            "expected exactly 33 entries; if you removed/added a drift \
+            41,
+            "expected exactly 41 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
