@@ -5,6 +5,7 @@
 - [ ] **Feedback rápido:** pruebas afectadas ejecutadas y resultado registrado; `test-fast.sh` no equivale a full.
 - [ ] **Gate obligatorio:** `test-full.sh` PASS previo a PR/tag; `merge-gate.pipeline.kts` e `integration.pipeline.kts` vía entorno autorizado con SHA anotado.
 - [ ] **Git remoto:** PR mergeado, `origin/main` apunta a SHA efectivamente integrado; Conventional Commits, clean tree.
+- [ ] **Cabecera de fusión:** el título de la PR es el mensaje del commit que la fusión crea —la forja le añade la referencia—; el juez la rechaza antes del gate si no la admite, y se corrige el título, nunca la historia ya publicada.
 - [ ] **RC:** artifacts construidos y certificados en `release-candidate.pipeline.kts`; no recompilar en `release.pipeline.kts`.
 - [ ] **Publicación:** release remota, tag y assets reales instalables; comparar nombres completos del inventario con lo publicado, SHA256 contra bytes descargados.
 - [ ] **Consumo:** CLI y MCP binarios descargados operativos; SDK/Guard compilado o status externo `BLOCKED_EXTERNAL` claro.

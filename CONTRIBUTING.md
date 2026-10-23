@@ -157,6 +157,23 @@ enforced:
 Every change to `main` goes through a pull request with a green
 `merge-gate` check. Direct pushes to `main` are not accepted.
 
+The title of the pull request is the message of the commit the merge
+creates: the forge adds the pull request's number to it and writes the
+result. That header is judged by the policy of the house before the gate
+starts. A squash merge is made by the forge, so its commit never passes
+through the hooks that judge the commits this machine makes, and a header the
+policy refuses would only be discovered afterwards — when the merge is public
+and the history cannot be rewritten. `scripts/ci/check-merge-subject.sh`
+asks that policy, through `git-control`, the same engine that judges every
+other commit, and the publisher of the gate consults it before it spends its
+minutes.
+
+So the title of a pull request is a commit message: it has to be a
+Conventional Commit, it has to leave room for the reference the forge adds,
+and it does not carry that reference itself. The merge does not carry a
+subject of its own — the header is the one the forge composes out of the
+title, and the check judges exactly that string.
+
 ## Reporting bugs
 
 Use the bug report template. The most useful bugs include:
