@@ -127,6 +127,16 @@ Y otra que encontró la ontología, que es de la misma familia:
     La regla de `build-volume.sh` no es burocracia: es la que convierte una
     muerte por cuota en un motivo que dice la causa y la salida.
 
+12. **Un guard que compara dos listas escritas a mano no vigila la
+    verdad, vigila que las dos se parezcan.** La lista de lenguajes que
+    el producto declara y la lista de un documento se comparaban entre
+    sí, y por eso el guard daba verde mientras las dos mentían: el
+    registro —lo único que decide qué puede leer el producto— no estaba
+    en la comparación. La regla que sale de ahí es general: un guard
+    tiene que medir contra **la autoridad**, no contra otra copia. Y
+    cuando la autoridad ya existe y es viva, lo correcto es derivar de
+    ella y dejar de mantener la copia.
+
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
 
@@ -134,9 +144,17 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**C30 está cerrado.** La lista de lenguajes que el producto declara sale
+del registro de parsers, y el documento de la matriz ya no declara lista
+propia. Antes esa lista la escribía a mano y se había separado de la
+verdad en las dos direcciones: anunciaba tres extensiones como si fueran
+lenguajes —`jsx`, `tsx`, `luau`— y callaba doce que el producto sí lee.
+Un guard que comparaba dos listas escritas a mano daba verde sobre esa
+mentira; ahora mide la derivación contra el catálogo publicado.
 
 **C6, C31, C5, C21, C8, C7, C32, C14 y C19 están cerrados.** El lazo de feedback ejecutaba la
 biblioteca del crate y nunca el test de integración que se acababa de

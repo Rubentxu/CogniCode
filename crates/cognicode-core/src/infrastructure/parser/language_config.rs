@@ -98,6 +98,25 @@ impl LanguageConfig {
     pub fn all() -> &'static [LanguageConfig] {
         ALL_LANGUAGES
     }
+
+    /// The languages this registry can read, spelled the way the product
+    /// publishes them.
+    ///
+    /// This is the authority for "what does the product read". A language
+    /// is here because a grammar is wired to it and its config is in the
+    /// registry, and a language that is not here cannot be read, whatever
+    /// any other list says.
+    ///
+    /// The spelling is the language's own `id()`, not an extension: `jsx`
+    /// is how a JavaScript file is written and `luau` is how a Lua file is
+    /// written, but neither is a language the product reads. A consumer
+    /// matching by name looks for a language, and a list of extensions
+    /// cannot answer that question.
+    pub fn language_ids() -> Vec<&'static str> {
+        let mut ids: Vec<&'static str> = ALL_LANGUAGES.iter().map(|c| c.language.id()).collect();
+        ids.sort_unstable();
+        ids
+    }
 }
 
 // ============================================================================

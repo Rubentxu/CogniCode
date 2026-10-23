@@ -443,7 +443,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     Queda el error del recorrido, que se cuenta aparte de la exclusión
 >     legítima; el vigilante, que todavía nombra un conjunto de ficheros
 >     propio; y la cobertura en caché, que no es la cobertura: un fichero
->     recuperado de la caché no cuenta como analizado.
+>     recuperado de la caché no cuenta como analizado. Cerrado además: la
+>     lista de lenguajes que el producto declara sale del registro de parsers,
+>     y el documento de la matriz ya no declara lista propia.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
