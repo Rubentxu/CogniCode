@@ -11,7 +11,10 @@ pub struct SymbolDto {
     pub id: String,
     /// Name of the symbol
     pub name: String,
-    /// Kind of symbol
+    /// Kind of symbol, under the name the domain gives it: `function`,
+    /// `class`, `declaration`. The domain owns that name, and a consumer
+    /// that wants a kind reads it from the domain and not from a table
+    /// of its own.
     pub kind: String,
     /// File path
     pub file_path: String,

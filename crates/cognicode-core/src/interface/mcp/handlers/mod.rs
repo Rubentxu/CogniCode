@@ -1690,23 +1690,16 @@ pub async fn handle_get_file_symbols(
 
 /// Converts a SymbolDto to SymbolInfo (MCP schema type)
 fn symbol_dto_to_symbol_info(dto: SymbolDto) -> SymbolInfo {
-    let kind = match dto.kind.to_lowercase().as_str() {
-        "function" => McpSymbolKind::Function,
-        "class" => McpSymbolKind::Class,
-        "struct" => McpSymbolKind::Struct,
-        "enum" => McpSymbolKind::Enum,
-        "trait" => McpSymbolKind::Trait,
-        "method" => McpSymbolKind::Method,
-        "field" => McpSymbolKind::Field,
-        "variable" => McpSymbolKind::Variable,
-        "constant" => McpSymbolKind::Constant,
-        "constructor" => McpSymbolKind::Constructor,
-        "interface" => McpSymbolKind::Interface,
-        "type" => McpSymbolKind::TypeAlias,
-        "parameter" => McpSymbolKind::Parameter,
-        "module" => McpSymbolKind::Module,
-        _ => McpSymbolKind::Variable,
-    };
+    // The DTO carries the kind under the name the domain gives it. The
+    // domain knows that name, so the domain is what reads it, and the
+    // wire takes the kind from the one place that maps one vocabulary
+    // onto the other.
+    let kind: McpSymbolKind = dto
+        .kind
+        .to_lowercase()
+        .parse::<SymbolKind>()
+        .unwrap_or(SymbolKind::Unknown)
+        .into();
 
     SymbolInfo {
         name: dto.name,
@@ -2549,16 +2542,7 @@ pub async fn handle_get_entry_points(
         if let Some(symbol) = graph.get_symbol(&symbol_id) {
             entry_points.push(SymbolInfo {
                 name: symbol.name().to_string(),
-                kind: match symbol.kind() {
-                    crate::domain::value_objects::SymbolKind::Function => McpSymbolKind::Function,
-                    crate::domain::value_objects::SymbolKind::Class => McpSymbolKind::Class,
-                    crate::domain::value_objects::SymbolKind::Struct => McpSymbolKind::Struct,
-                    crate::domain::value_objects::SymbolKind::Enum => McpSymbolKind::Enum,
-                    crate::domain::value_objects::SymbolKind::Trait => McpSymbolKind::Trait,
-                    crate::domain::value_objects::SymbolKind::Method => McpSymbolKind::Method,
-                    crate::domain::value_objects::SymbolKind::Module => McpSymbolKind::Module,
-                    _ => McpSymbolKind::Variable,
-                },
+                kind: (*symbol.kind()).into(),
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
                     line: symbol.location().line(),
@@ -2616,16 +2600,7 @@ pub async fn handle_get_leaf_functions(
         if let Some(symbol) = graph.get_symbol(&symbol_id) {
             leaf_functions.push(SymbolInfo {
                 name: symbol.name().to_string(),
-                kind: match symbol.kind() {
-                    crate::domain::value_objects::SymbolKind::Function => McpSymbolKind::Function,
-                    crate::domain::value_objects::SymbolKind::Class => McpSymbolKind::Class,
-                    crate::domain::value_objects::SymbolKind::Struct => McpSymbolKind::Struct,
-                    crate::domain::value_objects::SymbolKind::Enum => McpSymbolKind::Enum,
-                    crate::domain::value_objects::SymbolKind::Trait => McpSymbolKind::Trait,
-                    crate::domain::value_objects::SymbolKind::Method => McpSymbolKind::Method,
-                    crate::domain::value_objects::SymbolKind::Module => McpSymbolKind::Module,
-                    _ => McpSymbolKind::Variable,
-                },
+                kind: (*symbol.kind()).into(),
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
                     line: symbol.location().line(),
@@ -3112,22 +3087,12 @@ pub async fn handle_get_all_symbols(
         .into_iter()
         .map(|s| SymbolInfo {
             name: s.name,
-            kind: match s.kind.as_str() {
-                "function" => McpSymbolKind::Function,
-                "method" => McpSymbolKind::Method,
-                "class" => McpSymbolKind::Class,
-                "struct" => McpSymbolKind::Struct,
-                "enum" => McpSymbolKind::Enum,
-                "trait" => McpSymbolKind::Trait,
-                "field" => McpSymbolKind::Field,
-                "variable" => McpSymbolKind::Variable,
-                "constant" => McpSymbolKind::Constant,
-                "module" => McpSymbolKind::Module,
-                "interface" | "type" => McpSymbolKind::Interface,
-                "constructor" => McpSymbolKind::Constructor,
-                "parameter" => McpSymbolKind::Parameter,
-                _ => McpSymbolKind::Variable,
-            },
+            kind: s
+                .kind
+                .to_lowercase()
+                .parse::<SymbolKind>()
+                .unwrap_or(SymbolKind::Unknown)
+                .into(),
             location: SourceLocation {
                 file: s.file_path,
                 line: s.line,

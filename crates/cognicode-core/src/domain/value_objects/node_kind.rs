@@ -9,12 +9,18 @@
 //! `System` are C4-model architectural node kinds added by the
 //! `c4-architecture-nodes` change.
 //!
+//! `Declaration` is the kind of a thing a file declares and that is not
+//! a symbol of programming: a Terraform resource, an Ansible play. Its
+//! reader knows what it is, and the graph says so instead of dressing it
+//! up as a function.
+//!
 //! Decision, Doc, and Evidence are available in the default (no-feature) build
 //! to support the knowledge-layer read path. Issue, Component, Container, System,
 //! and Route remain behind `multimodal` (write-extraction gates).
 //!
 //! ```text
 //! NodeKind = Symbol(SymbolKind)
+//!          | Declaration  (default build — infrastructure declarations)
 //!          | Decision     (default build — knowledge read)
 //!          | Doc          (default build — knowledge read)
 //!          | Evidence     (default build — knowledge read)
@@ -53,6 +59,9 @@ pub enum NodeKindParseError {
 pub enum NodeKind {
     /// A code symbol — wraps the legacy 22-variant `SymbolKind`.
     Symbol(SymbolKind),
+    /// A declaration of infrastructure — a block whose own reader named what
+    /// it declares. A resource is not a function, and the graph says so.
+    Declaration,
     /// A documented decision (ADR / RFC). Available in the default build.
     Decision,
     /// A documentation node (markdown, MDX, plain text). Available in the default build.
@@ -100,6 +109,7 @@ impl FromStr for NodeKind {
         }
         // Unit variants
         match s {
+            "declaration" => Ok(NodeKind::Declaration),
             "decision" => Ok(NodeKind::Decision),
             "doc" => Ok(NodeKind::Doc),
             "evidence" => Ok(NodeKind::Evidence),
@@ -120,6 +130,21 @@ impl FromStr for NodeKind {
 }
 
 impl NodeKind {
+    /// The node kind of a symbol of the given kind.
+    ///
+    /// A symbol of programming is a `Symbol`, and a declaration is a
+    /// `Declaration`. The distinction is not decoration: `SymbolKind` is
+    /// the taxonomy of what a program is made of, and a declaration is
+    /// not one of those things however much its shape resembles a
+    /// function. Building the kind through this one function keeps the
+    /// distinction in a single place instead of in every caller.
+    pub fn of_symbol(kind: SymbolKind) -> Self {
+        match kind {
+            SymbolKind::Declaration => NodeKind::Declaration,
+            other => NodeKind::Symbol(other),
+        }
+    }
+
     /// Returns a stable identifier for this kind.
     /// Used for JSON serialization, DB persistence, and frontend style
     /// class mapping.
@@ -130,6 +155,7 @@ impl NodeKind {
     pub fn as_str(&self) -> String {
         match self {
             NodeKind::Symbol(inner) => format!("symbol.{}", inner),
+            NodeKind::Declaration => "declaration".to_string(),
             NodeKind::Decision => "decision".to_string(),
             NodeKind::Doc => "doc".to_string(),
             #[cfg(feature = "multimodal")]
@@ -146,9 +172,12 @@ impl NodeKind {
         }
     }
 
-    /// Returns `true` if this kind is a multimodal (non-code) node.
+    /// Returns `true` if this kind is not a symbol of programming.
+    ///
     /// Decision, Doc, and Evidence are available in the default build but
-    /// are still semantically "multimodal" kinds (not code symbols).
+    /// are still semantically "multimodal" kinds (not code symbols). A
+    /// declaration is not a code symbol either: it is a thing a file
+    /// declares, and the graph reads it as such.
     pub fn is_multimodal(&self) -> bool {
         !matches!(self, NodeKind::Symbol(_))
     }

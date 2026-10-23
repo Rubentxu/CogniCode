@@ -17,7 +17,7 @@
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::domain::aggregates::{GraphNode, NodeId};
 use crate::domain::value_objects::pending_reference::readings;
-use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance, SymbolKind};
+use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance};
 use tree_sitter::Node;
 
 /// A recognised HCL block, with everything needed to emit it and to resolve
@@ -26,7 +26,6 @@ struct Block<'a> {
     /// Domain identity: `aws_s3_bucket.app_bucket`, `var.region`,
     /// `module.vpc`. It is both the label of the node and the suffix of its id.
     identity: String,
-    kind: SymbolKind,
     iac_type: Option<String>,
     iac_kind: &'static str,
     node: Node<'a>,
@@ -72,7 +71,7 @@ pub fn interpret_terraform(
 
     for block in &blocks {
         let id = tf_id(source_path, &block.identity);
-        let mut builder = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(block.kind))
+        let mut builder = GraphNode::builder(NodeId::new(&id), NodeKind::Declaration)
             .label(&block.identity)
             .source_path(std::path::PathBuf::from(source_path))
             .property(
@@ -387,37 +386,12 @@ fn classify<'a>(node: Node<'a>, source: &[u8]) -> Option<Block<'a>> {
     let need = |n: usize| args.len() >= n;
     let at = |i: usize| args[i].clone();
 
-    let (identity, kind, iac_type, iac_kind) = match keyword {
-        "resource" if need(2) => (
-            format!("{}.{}", at(0), at(1)),
-            SymbolKind::Function,
-            Some(at(0)),
-            "resource",
-        ),
-        "data" if need(2) => (
-            format!("data.{}.{}", at(0), at(1)),
-            SymbolKind::Variable,
-            Some(at(0)),
-            "data",
-        ),
-        "variable" if need(1) => (
-            format!("var.{}", at(0)),
-            SymbolKind::Variable,
-            None,
-            "variable",
-        ),
-        "module" if need(1) => (
-            format!("module.{}", at(0)),
-            SymbolKind::Module,
-            None,
-            "module",
-        ),
-        "output" if need(1) => (
-            format!("output.{}", at(0)),
-            SymbolKind::Property,
-            None,
-            "output",
-        ),
+    let (identity, iac_type, iac_kind) = match keyword {
+        "resource" if need(2) => (format!("{}.{}", at(0), at(1)), Some(at(0)), "resource"),
+        "data" if need(2) => (format!("data.{}.{}", at(0), at(1)), Some(at(0)), "data"),
+        "variable" if need(1) => (format!("var.{}", at(0)), None, "variable"),
+        "module" if need(1) => (format!("module.{}", at(0)), None, "module"),
+        "output" if need(1) => (format!("output.{}", at(0)), None, "output"),
         // A `terraform { ... }` or `provider "aws" { ... }` block is structure
         // of the configuration, not a resource. No node is invented for them,
         // and their traversals have nobody to be attributed to.
@@ -426,7 +400,6 @@ fn classify<'a>(node: Node<'a>, source: &[u8]) -> Option<Block<'a>> {
 
     Some(Block {
         identity,
-        kind,
         iac_type,
         iac_kind,
         node,
@@ -436,6 +409,7 @@ fn classify<'a>(node: Node<'a>, source: &[u8]) -> Option<Block<'a>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::value_objects::SymbolKind;
 
     fn refs(source: &str) -> Vec<(String, String)> {
         let result = extract_file_for_test(source);

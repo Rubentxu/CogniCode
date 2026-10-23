@@ -200,6 +200,50 @@ impl From<McpSymbolKind> for SymbolKind {
             McpSymbolKind::Interface => SymbolKind::Interface,
             McpSymbolKind::TypeAlias => SymbolKind::TypeAlias,
             McpSymbolKind::Parameter => SymbolKind::Parameter,
+            McpSymbolKind::Declaration => SymbolKind::Declaration,
+        }
+    }
+}
+
+/// The kind the transport publishes for a symbol of the domain.
+///
+/// The taxonomy of the domain and the vocabulary of the wire are two
+/// vocabularies, and this is the one place that says how one becomes
+/// the other. Every consumer that publishes a kind goes through here, so
+/// the same kind is never published under two names.
+///
+/// The wire names the kinds a program is made of, plus the declaration:
+/// a resource of infrastructure is published as a declaration and never
+/// as a function. A kind the wire does not name — a property, an import,
+/// a file — is published as a variable, which is what the transport has
+/// always said about it: the wire does not know that kind, and it does
+/// not invent a name for it.
+impl From<SymbolKind> for McpSymbolKind {
+    fn from(kind: SymbolKind) -> Self {
+        match kind {
+            SymbolKind::Module => McpSymbolKind::Module,
+            SymbolKind::Class => McpSymbolKind::Class,
+            SymbolKind::Struct => McpSymbolKind::Struct,
+            SymbolKind::Enum => McpSymbolKind::Enum,
+            SymbolKind::Trait => McpSymbolKind::Trait,
+            SymbolKind::Function => McpSymbolKind::Function,
+            SymbolKind::Method => McpSymbolKind::Method,
+            SymbolKind::Field => McpSymbolKind::Field,
+            SymbolKind::Variable => McpSymbolKind::Variable,
+            SymbolKind::Constant => McpSymbolKind::Constant,
+            SymbolKind::Constructor => McpSymbolKind::Constructor,
+            SymbolKind::Interface => McpSymbolKind::Interface,
+            SymbolKind::TypeAlias => McpSymbolKind::TypeAlias,
+            SymbolKind::Parameter => McpSymbolKind::Parameter,
+            SymbolKind::Declaration => McpSymbolKind::Declaration,
+            SymbolKind::Property
+            | SymbolKind::Import
+            | SymbolKind::EnumVariant
+            | SymbolKind::Generic
+            | SymbolKind::File
+            | SymbolKind::Namespace
+            | SymbolKind::Package
+            | SymbolKind::Unknown => McpSymbolKind::Variable,
         }
     }
 }

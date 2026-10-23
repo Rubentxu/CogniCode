@@ -1325,7 +1325,7 @@ impl WorkspaceSession {
                     sym.location().column()
                 ),
                 name: sym.name().to_string(),
-                kind: format!("{:?}", sym.kind()),
+                kind: sym.kind().to_string(),
                 file_path: sym.location().file().to_string(),
                 line: sym.location().line(),
                 column: sym.location().column(),

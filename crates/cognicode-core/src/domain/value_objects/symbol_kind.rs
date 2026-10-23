@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-/// Represents the kind of a code symbol (function, class, variable, etc.).
+/// Represents the kind of a symbol the graph tracks: the kind of a code
+/// symbol (function, class, variable, etc.), or `Declaration` for a block
+/// whose own reader named what it declares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SymbolKind {
     /// Function definition
@@ -49,6 +51,9 @@ pub enum SymbolKind {
     Namespace,
     /// Package
     Package,
+    /// A declaration of infrastructure. A Terraform resource is not a
+    /// function, and neither is an Ansible play a module of programming.
+    Declaration,
     /// Unknown or other
     Unknown,
 }
@@ -99,6 +104,7 @@ impl SymbolKind {
             SymbolKind::File => "file",
             SymbolKind::Namespace => "namespace",
             SymbolKind::Package => "package",
+            SymbolKind::Declaration => "declaration",
             SymbolKind::Unknown => "unknown",
         }
     }
@@ -179,6 +185,7 @@ impl FromStr for SymbolKind {
             "file" => Ok(SymbolKind::File),
             "namespace" => Ok(SymbolKind::Namespace),
             "package" => Ok(SymbolKind::Package),
+            "declaration" => Ok(SymbolKind::Declaration),
             "unknown" => Ok(SymbolKind::Unknown),
             other => Err(ParseSymbolKindError::Unknown(other.to_string())),
         }

@@ -22,7 +22,7 @@ use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::value_objects::{
-    Declaration, DependencyType, Location, NodeKind, PendingClass, PendingReference,
+    Declaration, DependencyType, Location, NodeKind, PendingClass, PendingReference, SymbolKind,
 };
 use crate::infrastructure::graph::per_file_graph::content_hash_64;
 use crate::infrastructure::parser::Language;
@@ -55,10 +55,16 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
     let mut symbols: Vec<Symbol> = Vec::new();
 
     for node in &extracted.nodes {
-        // A graph models symbols. A node kind that is not a symbol has
-        // nowhere to go, and no place is invented for it.
-        let NodeKind::Symbol(kind) = &node.kind else {
-            continue;
+        // The graph carries what the file declares. A symbol of
+        // programming is carried as a symbol; a declaration is carried as
+        // a declaration, because that is what it is and the tools that
+        // ask about infrastructure ask the graph, not the file. A node
+        // kind that is neither has nowhere to go, and no place is
+        // invented for it.
+        let kind = match &node.kind {
+            NodeKind::Symbol(kind) => *kind,
+            NodeKind::Declaration => SymbolKind::Declaration,
+            _ => continue,
         };
         // The node of the file itself is not a declaration. The readers
         // identify it by the source path, and the generic path does not
@@ -76,7 +82,7 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         if by_reader_id.contains_key(&reader_id) {
             continue;
         }
-        let mut symbol = Symbol::new(&node.label, *kind, Location::new(file_path, 0, 0));
+        let mut symbol = Symbol::new(&node.label, kind, Location::new(file_path, 0, 0));
         // The identity of a declaration is the one its reader gave it.
         // The graph identifies a symbol by its qualified name, and the one
         // that builds it is the generic one — file and symbol. Letting the

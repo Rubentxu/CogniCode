@@ -193,7 +193,7 @@ impl ToolHandler for GraphSearchHandler {
                 "node_kinds": {
                     "type": "array",
                     "items": { "type": "string" },
-                    "description": "Optional filter — one or more of: symbol, decision, doc, issue, evidence, component, container, system."
+                    "description": "Optional filter — one or more of: symbol, declaration, decision, doc, issue, evidence, component, container, system."
                 },
                 "cursor": {
                     "type": "string",
@@ -278,6 +278,7 @@ impl ToolHandler for GraphSearchHandler {
                         debug_assert_eq!(wildcard.len(), SYMBOL_WILDCARD_COUNT);
                         parsed_kinds.extend(wildcard);
                     }
+                    "declaration" => parsed_kinds.push(NodeKind::Declaration),
                     "decision" => parsed_kinds.push(NodeKind::Decision),
                     "doc" => parsed_kinds.push(NodeKind::Doc),
                     "issue" => parsed_kinds.push(NodeKind::Issue),

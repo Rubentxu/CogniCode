@@ -454,7 +454,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md`. La
 >     categoría del extractor genérico no contradice la semántica del
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
->     Cerrado el extractor genérico; queda el campo que el consumidor lee.
+>     Cerrado: el extractor genérico y el campo que el consumidor lee.
 >   - **El dominio no construye su adaptador**: el puerto de proyección
 >     instancia la implementación de infraestructura. La frontera está
 >     invertida, y el arreglo no necesita un framework nuevo.
