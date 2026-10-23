@@ -8,26 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C30",
-      "title": "Las capacidades se derivan del registro de lenguajes, no de una lista propia",
-      "unit": "H24",
-      "objective": "Que el contrato de capacidades no declare un conjunto de lenguajes propio: que se derive del registro de parsers, con la precision que cada lenguaje demuestra, y que Kotlin siga declarado no soportado hasta que su parser este conectado.",
-      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `ALL_TREE_SITTER_LANGS` (capabilities.rs:38) declara 21 entradas y se repite en al menos ocho sitios del mismo fichero, mientras `language_config.rs` tiene configuraciones para Bash, Groovy, Elixir, Haskell, PowerShell, Fortran y JSON. El catalogo declarado y el registro de parsers no describen el mismo conjunto, asi que las declaraciones no derivan de una sola autoridad. Es el bloque B4 del informe. El candidato mas cercano (C19, la ontologia de Bash/R/JSON) toca el extractor generico, no el catalogo de capacidades.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/capabilities.rs",
-        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
-      ],
-      "doneWhen": [
-        "el catalogo de capacidades no tiene lista propia de lenguajes: se deriva del registro de `LanguageConfig`",
-        "el conjunto declarado coincide con el registro en los dos sentidos, y un test lo compara",
-        "Kotlin sigue declarado no soportado hasta que su parser este conectado y demostrado"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "source": "roadmap",
-      "priority": 120
-    },
-    {
       "candidateId": "C9",
       "title": "El puerto de dominio deja de construir el adaptador",
       "unit": "H24",
