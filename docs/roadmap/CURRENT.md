@@ -5,9 +5,8 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `d4c8c35cc719c05fb503a91cf8ab6cfbc21a8f6b` (cabeza de
-> la rama de la unidad que lee la identidad en un solo sitio), rama
-> `feature/one-identity-grammar`.
+> **Snapshot**: 2026-10-23, sobre `887d506bdb39125ea7a16529c69d114233fc95f1` (el
+> `main` ya fusionado de la unidad que lee la identidad en un solo sitio).
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
