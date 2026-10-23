@@ -5,9 +5,8 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `2677e4d0c8417305c050fdcda5310b5bf7bc5556` (cabeza de
-> la rama de la unidad que cierra la segunda puerta al grafo del proyecto),
-> rama `feature/one-door-to-the-project-graph`.
+> **Snapshot**: 2026-10-23, sobre `d192701b79fb15ac007489247d3c766fc3925ebc` (`origin/main` al
+> cerrar este ciclo), rama `main`.
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
