@@ -157,6 +157,11 @@ WITHOUT_LANE = {
 # lid on it.
 EXCLUDED = {
     "sandbox/fixtures/": "example projects the sandbox exercises, not tests of this repository",
+    "sandbox/repos/": (
+        "gitignored checkouts of the third-party projects that the release "
+        "lane clones to exercise the product against them; their test suites "
+        "belong to those projects and are not surfaces of this repository"
+    ),
 }
 
 # The findings are collected here and `main()` turns them into an exit
@@ -353,6 +358,20 @@ def test_a_surface_in_an_undeclared_tree_is_reported() -> None:
     assert missing, (
         "FAIL: a surface in an undeclared tree was not reported. The rule is "
         "not looking at what it says it looks at."
+    )
+
+
+def test_a_checkout_of_a_third_party_project_is_not_a_surface() -> None:
+    """Control: the checkouts the release lane clones are not ours.
+
+    The lane leaves the projects it exercises under `sandbox/repos/`, and
+    their test suites come with them. A rule that counted those as surfaces
+    of this repository would report work that nobody here owns, and would
+    turn every gate that runs after a release into a red one.
+    """
+    assert is_excluded(Path("sandbox/repos/click/tests/test_basic.py")), (
+        "FAIL: a checkout of a third-party project is being counted as a "
+        "test surface of this repository."
     )
 
 
