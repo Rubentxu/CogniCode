@@ -24610,3 +24610,86 @@ tomó.
 **Lo que no cambia.** La afirmación de fondo sigue siendo la misma: el
 cambio quitó más código del que añadió, y lo que se fueron fueron dos
 puertas con sus contratos y sus pruebas. Sólo cambia el número.
+
+
+## 2026-10-23 — La identidad de una cosa se lee en un solo sitio
+
+**La mentira, medida.** El producto publicaba un trozo de la identidad de una
+cosa como si fuera su nombre. Para un símbolo pasaba por casualidad: el nombre
+está en el medio de la identidad, y un `split(':').nth(1)` acierta. Para una
+declaración que un lector de infraestructura nombra —un recurso de Terraform,
+un play de Ansible— el trozo que sobrevivía era el **fichero** donde la cosa
+vive. El producto llegaba a publicar esto:
+
+> "main.tf" es el símbolo del que más depende el proyecto (score: 0.649).
+
+**Dónde caía.** Seis sitios tocaban la identidad a mano, y cada uno contestaba
+una cosa distinta:
+
+| Sitio | Qué hacía | Qué contestaba |
+|---|---|---|
+| Rutas calientes publicadas (MCP) | `split(':').nth(1)` | el fichero, para una declaración |
+| Preguntas sugeridas | `split(':').nth(1)` | el fichero, para una declaración |
+| Vista de continuidad | segundo segmento desde la derecha | el fichero, para una declaración |
+| Proyección genérica | descartaba el hecho | el fichero desaparecía del grafo |
+| Proyección genérica | fichero vacío, la identidad entera y línea 1 | posición inventada |
+| Índice de nombres del grafo de llamadas | `if let Some(...)` | la declaración no entraba, y con ella sus relaciones por nombre |
+
+**El número de gramáticas no era el que se decía.** La auditoría atribuía al
+producto "siete gramáticas de identidad". Medido: siete sólo cuadra si además
+se cuentan los destinos de relación, que no son identidades de nada. Las
+identidades que el grafo nombra son **cinco**: el símbolo
+(`fichero:nombre:línea`), la declaración de Terraform
+(`tf:fichero:dirección`), la declaración de Ansible
+(`ansible:fichero:tipo:nombre`), el documento (`tipo:base#slug`) y el issue
+(`issue:tracker/repo#número`). Las tres primeras las nombra el camino del
+producto; las dos últimas las nombra la capa multimodal, y no llegan al camino
+de hechos, que hoy sólo ingiere Rust.
+
+**Qué cambia.** El dominio declara la gramática de la identidad y la lee en un
+solo sitio (`domain/evidence_kernel/identity.rs`): un símbolo, una declaración
+de Terraform y una declaración de Ansible. Una identidad que el producto
+escribe se lee y dice su nombre y su fichero; la que no encaja se dice que no
+encaja —no se inventa un fichero ni una línea—. Y los publicadores toman el
+nombre del símbolo que lo lleva, en vez de trocear su identidad.
+
+**Lo que no cambia.** La identidad de una declaración no cambia de bytes: el
+recurso sigue siendo `tf:main.tf:aws_s3_bucket.app_bucket`. Cambia que ahora
+hay un sitio donde se lee, y que quien la lee ya no responde con el fichero.
+
+**La evidencia.** Tres contratos nuevos, todos verdes:
+`the_identity_the_product_writes_is_the_one_it_reads` —la propiedad: toda
+identidad que el producto escribe la entiende el lector, y las identidades no
+están escritas a mano: las producen los lectores del producto sobre un corpus,
+así que la propiedad no puede pasar sobre una forma que el producto dejó de
+escribir—, `the_product_publishes_the_name_a_symbol_carries` —lo que el
+producto publica— y `the_fact_path_does_not_invent_the_place_of_a_declaration`
+—el camino de hechos: una declaración conserva su nombre y su llamada
+resuelve—.
+
+**El discriminante, medido en las dos direcciones.** Revirtiendo el lector —que
+se queda con la gramática del símbolo solo— los contratos de identidad y de
+hechos se pusieron rojos, con el motivo exacto:
+
+> the product writes the identity "tf:main.tf:aws_s3_bucket.app_bucket" and the reader does not read it back
+
+Revirtiendo los publicadores —vuelven a trocear la identidad— los contratos de
+nombres publicados se pusieron rojos, y el producto volvió a decir la mentira
+en voz alta:
+
+> the published hot paths must name the thing, got ["main.tf"]
+
+Con cada mutación revertida, los contratos volvieron a verde.
+
+**La medida.** Producción: **+241 / -83** (neto +158, de los cuales 154 son
+el módulo nuevo con sus pruebas; el resto del cambio de producción es
++87/-83). Contratos: **+348**. Corpus: **+19**. El gate rápido dio `rc=0` con
+la suite del núcleo en 2375 pruebas y clippy sin avisos.
+
+**Lo que queda fuera.** El campo `symbol_id` de las rutas calientes sigue
+llamándose así y ahora lleva un nombre: renombrarlo cambia el esquema
+publicado de una herramienta experimental y exige regenerar el catálogo a
+partir de una captura real del runtime, que es otra unidad. Y la build
+`multimodal` —la capa que nombra documentos e issues— no la ejecuta ningún
+pipeline, así que el cambio de la proyección genérica se verificó con una
+compilación y una corrida con esas features, no con el gate.

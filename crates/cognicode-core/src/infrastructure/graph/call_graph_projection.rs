@@ -72,7 +72,9 @@ use crate::domain::ports::call_graph_projection::{
 use crate::domain::value_objects::DependencyType;
 
 #[cfg(feature = "evidence-kernel")]
-use crate::domain::evidence_kernel::{SymbolFqn, SymbolKindDetail};
+use crate::domain::evidence_kernel::SymbolKindDetail;
+#[cfg(feature = "evidence-kernel")]
+use crate::domain::evidence_kernel::identity::Identity;
 
 /// Edge weight stored on the projection: `(dependency_type, sanitized_confidence)`.
 ///
@@ -690,9 +692,9 @@ impl CallGraphProjection {
         // BTreeSet provides the deterministic lexicographic tie-break.
         let mut name_index: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for fqn in identity.values() {
-            if let Some((_, name, _)) = parse_fqn(fqn) {
+            if let Some(parsed) = Identity::parse(fqn) {
                 name_index
-                    .entry(name.to_lowercase())
+                    .entry(parsed.name().to_lowercase())
                     .or_default()
                     .insert(fqn.clone());
             }
@@ -764,37 +766,32 @@ impl CallGraphProjection {
     }
 }
 
-/// Parses an identity string `"{file}:{name}:{line}"` into
-/// `(file, name, line)` through the centralized [`SymbolFqn`] grammar
-/// (E38.1 CP-1 — the one parser for the identity grammar).
-///
-/// The split runs from the RIGHT so a name (or file path) containing `:`
-/// still reconstructs byte-identically. Returns `None` when the trailing
-/// segment is not a line number or fewer than two separators exist. The
-/// parsed line is preserved AS ENCODED (base is producer-defined:
-/// fact-side 1-based / legacy-side 0-based).
-#[cfg(feature = "evidence-kernel")]
-pub(crate) fn parse_fqn(fqn: &str) -> Option<(String, String, u32)> {
-    SymbolFqn::parse(fqn).map(|parsed| {
-        (
-            parsed.file().to_string(),
-            parsed.name().to_string(),
-            parsed.line(),
-        )
-    })
-}
-
 /// Reconstructs a [`Symbol`] whose computed FQN is byte-identical to the
-/// identity string (design D4). Falls back to an FQN override only for
-/// identity strings that do not fit the `"{file}:{name}:{line}"` shape.
+/// identity string. A symbol keeps its own file and line. A declaration
+/// keeps its file and has no line: the line is where it was found, not what
+/// it is, and zero is the convention the legacy path already uses for the
+/// declarations a reader names.
 #[cfg(feature = "evidence-kernel")]
 fn reconstruct_symbol(fqn: &str, kind: crate::domain::value_objects::SymbolKind) -> Symbol {
-    match parse_fqn(fqn) {
-        Some((file, name, line)) => Symbol::new(
-            name,
+    match Identity::parse(fqn) {
+        Some(Identity::Symbol(parsed)) => Symbol::new(
+            parsed.name().to_string(),
             kind,
-            crate::domain::value_objects::Location::new(file, line, 1),
+            crate::domain::value_objects::Location::new(
+                parsed.file().to_string(),
+                parsed.line(),
+                1,
+            ),
         ),
+        Some(Identity::Declaration { file, name, .. }) => {
+            let mut symbol = Symbol::new(
+                name,
+                kind,
+                crate::domain::value_objects::Location::new(file, 0, 0),
+            );
+            symbol.set_fqn_override(fqn);
+            symbol
+        }
         None => {
             let mut symbol = Symbol::new(
                 fqn,

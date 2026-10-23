@@ -1,0 +1,9 @@
+- name: Configure infrastructure
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install the package
+      package:
+        name: nginx
+        state: present

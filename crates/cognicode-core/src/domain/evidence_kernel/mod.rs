@@ -54,6 +54,12 @@ pub mod continuity;
 pub mod evidence;
 #[cfg(feature = "evidence-kernel")]
 pub mod fact;
+// The identity vocabulary and the one reader for it. Like the symbol
+// grammar, it is deliberately NOT gated: the identities it reads are written
+// by the always-compiled legacy path, the fact path and the infrastructure
+// readers alike, and gating it would force every consumer to carry its own
+// copy of the grammar.
+pub mod identity;
 #[cfg(feature = "evidence-kernel")]
 pub mod ids;
 #[cfg(feature = "evidence-kernel")]
