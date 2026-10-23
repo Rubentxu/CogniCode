@@ -24693,3 +24693,57 @@ partir de una captura real del runtime, que es otra unidad. Y la build
 `multimodal` —la capa que nombra documentos e issues— no la ejecuta ningún
 pipeline, así que el cambio de la proyección genérica se verificó con una
 compilación y una corrida con esas features, no con el gate.
+
+
+## 2026-10-23 — El cierre verificado: la identidad de una cosa llega a `main` con su recibo
+
+**El resultado.** La unidad de la identidad está cerrada y en remoto. `main` está
+en `887d506b`, el squash de la PR #448, y el gate de fusión corrió sobre la
+cabeza exacta de esa rama —`5e14457a`— y publicó `merge-gate=success` con su
+propio código de salida 0.
+
+**Lo que queda, para quien lo lea después.** Una identidad tiene un solo lugar
+donde se lee. El dominio declara las gramáticas que el producto escribe —el
+símbolo, la declaración de Terraform, la declaración de Ansible— y las lee en
+un solo sitio; una identidad que no encaja se dice que no encaja, en vez de
+inventarle un fichero y una línea. Y el nombre lo da el dueño: donde el
+producto tiene al símbolo, se lo pregunta al símbolo; donde sólo tiene la
+cadena, usa el lector del dominio. Ningún consumidor trocea una identidad a
+mano.
+
+**Lo que la fusión no cambia.** Los bytes de la identidad. El recurso sigue
+siendo `tf:main.tf:aws_s3_bucket.app_bucket`, y el play sigue siendo
+`ansible:site.yml:play:...`. Lo que cambia es quién la lee y qué responde:
+antes, el producto publicaba el trozo que sobrevivía al troceo, y para una
+declaración de infraestructura ese trozo era el fichero donde la cosa vive.
+Ahora publica el nombre de la cosa.
+
+**La cabecera se juzgó antes de gastar el gate.** El juez admitir
+`fix(core): el producto nombra las cosas, no un trozo de su identidad (#448)`.
+
+**Lo que esta corrida midió.** El modo rápido: `rc=0`, suite del núcleo, 2375
+pruebas, clippy `-D warnings` limpio y el baseline en verde. El gate completo
+local sobre el árbol commiteado: fmt, clippy con `-D warnings`, **225 suites y
+6543 pruebas sin un solo rojo** —215 suites y 6535 pruebas en la etapa del
+workspace, 10 suites y 8 pruebas en la de doc-tests, con 20 crates
+documentados—, los 47 contratos de CI más los de `scripts/product`, y el
+baseline, con cero rojo. El gate de fusión sobre la cabeza exacta: publicado
+`merge-gate=success`, con su propio código de salida 0.
+
+**El discriminante, medido en las dos direcciones.** Revirtiendo el lector —que
+se queda con la gramática del símbolo solo— los contratos de identidad y de
+hechos se pusieron rojos, con el motivo exacto: *the product writes the
+identity "tf:main.tf:aws_s3_bucket.app_bucket" and the reader does not read it
+back*. Revirtiendo los publicadores —vuelven a trocear la identidad— el
+contrato de nombres publicados se puso rojo, y el producto volvió a decir la
+mentira en voz alta: *the published hot paths must name the thing, got
+["main.tf"]*. Con cada mutación revertida, los contratos volvieron a verde.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El campo
+`symbol_id` de las rutas calientes sigue llamándose así y ahora lleva un
+nombre: renombrarlo cambia el esquema publicado de una herramienta
+experimental y exige regenerar el catálogo a partir de una captura real del
+runtime, que es otra unidad. Y la build `multimodal` —la capa que nombra
+documentos e issues— no la ejecuta ningún pipeline, así que el cambio de la
+proyección genérica se verificó con una compilación y una corrida con esas
+features, no con el gate.
