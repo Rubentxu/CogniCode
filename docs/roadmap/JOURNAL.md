@@ -24138,3 +24138,74 @@ lista cerrada de clases tiene que añadirlo. La convergencia de los tres
 vocabularios de clase —dominio, DTO canónico y wire— sigue siendo deuda
 declarada: 23 clases en el dominio, el DTO canónico replicando el dominio, 15
 publicadas en el wire. Queda anotado, no resuelto.
+
+## 2026-10-23 — Las capacidades derivan del registro: la lista que no decía la verdad
+
+**Qué es esto.** El producto declara qué lenguajes analiza. Esa declaración
+vivía en una lista escrita a mano, en `interface/mcp/capabilities.rs`, con
+veintiún nombres. El registro de parsers —el sitio donde un lenguaje se
+liga a su gramática compilada— tenía treinta. Y el catálogo publicado del
+producto, que se genera desde el registro, también treinta.
+
+**Lo que mentía, medido en los dos sentidos.** La lista anunciaba tres
+nombres que no son lenguajes: `jsx` y `tsx` son extensiones de JavaScript
+y TypeScript, y `luau` es una extensión de Lua. Un consumidor que
+empareja por nombre buscaba un lenguaje que el producto nunca ha oído. Y
+callaba doce que el producto sí lee, con gramática compilada y config en
+el registro: `bash`, `elixir`, `erlang`, `fortran`, `groovy`, `haskell`,
+`json`, `julia`, `powershell`, `r`, `systemverilog` y `verilog`.
+
+**Por qué nadie lo vio.** El guard que existía comparaba la lista del
+código con la lista de un documento. Dos listas escritas para coincidir
+coinciden mientras nadie edita una de las dos, y el registro —la única
+cosa que decide qué puede leer el producto— no estaba en ninguna. El
+guard daba verde sobre una mentira.
+
+**Lo que se hizo.** La lista se **deriva** del registro:
+`LanguageConfig::language_ids()` devuelve el `id()` de cada lenguaje
+registrado, y las capacidades lo consumen. La grafía es la del dominio,
+porque `Language::id()` ya es "la grafía que el producto publica": la
+clave de la matriz de soporte y el nombre que una tool anuncia cuando
+dice qué lee. Añadir un lenguaje al registro lo añade a la declaración y
+al catálogo publicado, sin un solo paso manual.
+
+**El documento deja de declarar lista.** `CAPABILITIES-MATRIX.md` ya no
+enumera los lenguajes: dice cuál es la autoridad y la apunta. Y el lint
+que lo vigilaba cambió de misión: ya no sincroniza dos listas escritas a
+mano, sino que mide la derivación contra el catálogo publicado y falla
+si el documento vuelve a declarar una lista propia.
+
+**La demostración, que es la parte que da valor.** Escribir el contrato
+no basta: un contrato que nunca se ha visto rojo no mide nada. Se
+escribieron tres pruebas y fallaron las tres. Después se revirtió **solo**
+la derivación —se puso de vuelta la lista manual, sin tocar nada más— y
+las tres volvieron a fallar con el mismo mensaje: `["jsx", "luau",
+"tsx"]` no son lenguajes, y los doce que faltaban seguían faltando. Con
+la derivación puesta, las tres pasan. El contrato detecta exactamente el
+defecto que dice detectar.
+
+**El lint también se vio rojo.** Se comprobó que sigue siendo
+discriminante: reintroduciendo una lista en el documento, sale con código
+1; restaurando el documento, vuelve a decir que está en orden. Un guard
+que solo sabe decir «todo bien» no es un guard.
+
+**Lo que este cierre no dice.** La tabla de capacidades por tool sigue
+sin consumidor en producción: el campo `langs` no lo lee nadie fuera de
+su propio módulo, y el catálogo de tools que se publica no declara
+lenguajes. La lista que se ha derivado es, hoy, la declaración correcta
+de una superficie que todavía no está expuesta. Publicarla —o retirarla—
+es otra unidad, y esta no la resuelve. Y `LSP_SUPPORTED_LANGS` sigue
+siendo una lista escrita a mano: es un conjunto distinto y legítimo —los
+lenguajes con servidor LSP—, pero todavía es una segunda fuente de
+verdad, y sigue abierta.
+
+**Lo que el ROADMAP tuvo que ceder.** El bloque de unidades abiertas de
+la sección 11 tiene un techo de ochenta líneas de cita, y esta nota con
+el cierre de la lista lo reventaron. La solución no fue recorte de prosa:
+la auditoría del 2026-10-20, la del 2026-10-21 y la serie de cortes son
+historia, y el propio bloque ya decía que no es historia. Salieron de la
+cita y quedaron en el cuerpo de la sección, con su encabezado. El bloque
+queda en cincuenta y nueve líneas guardando lo que es: las unidades
+abiertas, la autoridad de cada una, los candidatos y la regla de corte de
+release. El guard de atribución se volvió a ver rojo después del cambio:
+atribuir un ADR a la unidad que no declara, y cae con el motivo exacto.

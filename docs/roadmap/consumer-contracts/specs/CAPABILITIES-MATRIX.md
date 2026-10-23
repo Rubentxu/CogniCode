@@ -20,17 +20,24 @@ el operador).
 
 ## Lenguajes con parser tree-sitter
 
-Lista oficial inferida de `crates/cognicode-core/src/interface/mcp/capabilities.rs::ALL_TREE_SITTER_LANGS`
-(21 lenguajes). Sincronizada con `Language::from_extension` y
-`tree_sitter_parser.rs::from_extension`:
+Este documento **no declara la lista**. La lista se deriva del registro
+de parsers —`LanguageConfig::all()`, que es lo que liga un lenguaje a su
+gramática compilada— y se publica en `product/languages.json`, que la
+genera `scripts/product/generate_support_matrix.py` desde el mismo
+registro.
 
-```
-Python, Rust, JavaScript, TypeScript, JSX, TSX, Go, Java,
-C, Cpp, CSharp, Hcl (Terraform), Yaml, Ruby, Php, Swift,
-Scala, Lua, Luau, Zig, Dart (todos via tree-sitter)
-```
+Enumerarla aquí era una tercera fuente de verdad. Cuando lo estaba, las
+tres se separaron: la lista de este documento y la constante del crate
+coincidían entre sí —por eso el lint de drift daba verde— y ambas
+mentían frente al registro. La lista anunciaba `jsx`, `tsx` y `luau`,
+que son extensiones de JavaScript, TypeScript y Lua y no lenguajes que
+el producto lea; y callaba doce que sí lee, con gramática compilada y
+config en el registro.
 
-Cualquier archivo con extensión distinta a la lista cae en
+Un consumidor que necesite la lista la lee del catálogo publicado, que
+es la misma que genera el producto y la que acompaña al binario.
+
+Cualquier archivo con extensión no reconocida por el registro cae en
 **unsupported** (U15, `SkipReason::UnsupportedExtension`, §96). Las
 extensiones `kt`/`kts` son una excepción tipada: a partir de K0 (línea
 Kotlin, veredicto `2026-10-17-k0-honest-coverage.md`) viven en
@@ -106,15 +113,22 @@ Cada entrada de `skipped` lleva `reason` con uno de:
 `build_all_tools()` y exige que toda tool estable declare capacidades con
 precisión no vacía. Una tool nueva que olvide declararlas rompe el test.
 
+`c30_capabilities_declare_the_languages_the_registry_reads`, en
+`crates/cognicode-core/tests/`: exige que los lenguajes que las
+capacidades anuncien sean los que el registro lee, en los dos sentidos,
+y que ningún nombre anunciado sea una extensión en vez de un lenguaje.
+
 ## Cómo actualizar esta matriz
 
 1. Modificar `cognicode_meta(...)` en `rmcp_adapter.rs` para incluir el
    nuevo parámetro `capabilities: ToolCapabilities` (estructura con
    `langs: &[&'static str]`, `precision: &'static str`).
-2. Actualizar a mano la lista de la sección de lenguajes de este
-   documento. `sandbox/scripts/capabilities_drift_lint.py --strict` falla
-   si la lista no coincide con `ALL_TREE_SITTER_LANGS`; no hay
-   generador, y la lista son 21 entradas.
+2. **No hay nada que actualizar a mano.** Un lenguaje nuevo entra
+   añadiendo su config al registro de parsers, y de ahí sale solo: la
+   lista de las capacidades se deriva, y el catálogo publicado se genera.
+   `sandbox/scripts/capabilities_drift_lint.py --strict` falla si el
+   documento vuelve a declarar una lista propia, o si la derivación no
+   coincide con el catálogo publicado.
 3. El test de arriba pinea que el cambio no rompa backward-compat
    (tool con capabilities vacías debe empezar a devolver `Some(non_empty)`).
 4. La tabla por categoría no se actualiza: no tiene recuento.

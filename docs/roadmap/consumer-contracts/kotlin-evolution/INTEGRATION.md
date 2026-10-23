@@ -93,7 +93,7 @@ K0.1 o K1:
 | 4 | `Complete` solo relativo a alcance explícito; no inferir de `Vec<SkippedFile>::is_empty()` si se filtró el universo antes | **Abierto** | El actual `BuildStatus::Complete` sigue siendo ingenuo. Defecto que K0.1 cierra con la taxonomía del punto 3. |
 | 5 | `SkippedUnchanged` incremental ≠ `SkippedUnsupported`; hashes/identidad y `PRF-ANA-03` | **Abierto** | Sin cambios; preservado por status quo. |
 | 6 | Diagnóstico CLI/MCP vía DTO existente con conteos y rutas omitidas | **Abierto** | Sin cambios; queda como K0.1. |
-| 7 | `product/languages.json` por contrato; Kotlin `unsupported/not_advertised` | **Cerrado** | `ALL_TREE_SITTER_LANGS` ya no incluye `kotlin`; el Lint `--strict` pinea el constant contra `CAPABILITIES-MATRIX.md`. |
+| 7 | `product/languages.json` por contrato; Kotlin `unsupported/not_advertised` | **Cerrado** | Kotlin no está en la lista de lenguajes que el producto lee; la lista se deriva del registro de parsers, así que un parser no cableado no puede anunciarse. |
 
 **Cierre de K0 (el commit)**: criterios 2, 3 (parcial) y 7. El gate
 `merge-gate` lo acepta si el lint de capabilities pasa (veredicto

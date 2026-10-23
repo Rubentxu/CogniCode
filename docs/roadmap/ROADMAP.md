@@ -443,7 +443,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     Queda el error del recorrido, que se cuenta aparte de la exclusión
 >     legítima; el vigilante, que todavía nombra un conjunto de ficheros
 >     propio; y la cobertura en caché, que no es la cobertura: un fichero
->     recuperado de la caché no cuenta como analizado.
+>     recuperado de la caché no cuenta como analizado. Cerrado además: la
+>     lista de lenguajes que el producto declara sale del registro de parsers,
+>     y el documento de la matriz ya no declara lista propia.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -463,33 +465,34 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   cierre— viven en la backlog de la misión (`goal-compass.json`).
 >
 >   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
->   poda documental están en el Journal con su SHA y su recuento de suite:
->   este bloque es estado, no historia.
->
->   **La auditoría del 2026-10-20** abrió H23 y H24, con informe y plan en
->   el Journal de esa fecha. De lo que H24 anotaba ya están resueltas cuatro
->   cosas —el manifiesto deriva del registro de lenguajes, la CLI y el MCP
->   responden sobre el mismo grafo, la consulta de infraestructura publica
->   el nombre del dominio, y la referencia sin resolver se publica con su
->   origen y su motivo—.
->
->   **La auditoría del 2026-10-21** —dos lecturas el mismo día, la segunda
->   sobre el remoto `0fca088a`— confirma el orden de los bloques y no lo
->   reordena. Casi todo lo que encontró ya tiene dueño: el inventario
->   incremental que se come los errores y reconstruye el grafo entero es
->   `C11`; los constructores que no comparten motor, `C16` y `C23`; el
->   vocabulario por lenguaje, `C19`; y el coste de validación, `C6`, `C5` y
->   `C7`, cerrados junto con `C21` y `C8`. La auditoría del 2026-10-21 abrió
->   **C31** y **C32**, y los dos están cerrados con su recibo en el Journal:
->   la autoridad de una herramienta ya no se deriva del catálogo del proyecto
->   analizado, y el gate comprueba el volumen antes de compilar.
->
->   `C14` cerró con `v0.101.27`; `v0.101.28` publicó el orden del grafo y
->   la lane reparada; `v0.101.29` publicó las tres unidades nuevas de B1;
->   `v0.101.30` publicó la ontología, y con ella cierra la unidad.
+>   poda documental están en el Journal: este bloque es estado, no historia.
 >
 >   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag anotado. Una PR fusionada no es una release.
+
+**Historial de la unidad.** Lo que sigue es historia, no estado: cada
+auditoría y cada corte tienen su recibo en el `JOURNAL`. El bloque de arriba
+es la agenda viva.
+
+**La auditoría del 2026-10-20** abrió H23 y H24, con informe y plan en el
+Journal de esa fecha. De lo que H24 anotaba ya están resueltas cuatro cosas
+—el manifiesto deriva del registro de lenguajes, la CLI y el MCP responden
+sobre el mismo grafo, la consulta de infraestructura publica el nombre del
+dominio, y la referencia sin resolver se publica con su origen y su motivo—.
+
+**La auditoría del 2026-10-21** —dos lecturas el mismo día, la segunda sobre
+el remoto `0fca088a`— confirma el orden de los bloques y no lo reordena. Casi
+todo lo que encontró ya tiene dueño: el inventario incremental que se come los
+errores y reconstruye el grafo entero es `C11`; los constructores que no
+comparten motor, `C16` y `C23`; el vocabulario por lenguaje, `C19`; y el coste
+de validación, `C6`, `C5` y `C7`, cerrados junto con `C21` y `C8`. Abrió
+además **C31** y **C32**, y los dos están cerrados con su recibo en el
+Journal: la autoridad de una herramienta ya no se deriva del catálogo del
+proyecto analizado, y el gate comprueba el volumen antes de compilar.
+
+`C14` cerró con `v0.101.27`; `v0.101.28` publicó el orden del grafo y la lane
+reparada; `v0.101.29` publicó las tres unidades nuevas de B1; `v0.101.30`
+publicó la ontología, y con ella cierra la unidad.
 
 <!-- consumer-contracts:end -->
 

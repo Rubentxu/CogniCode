@@ -12,6 +12,8 @@
 //! `list_tool_capabilities()` es la **única autoridad** para resolver
 //! "qué hace esta tool" en una consulta externa de capacidades.
 
+use crate::infrastructure::parser::language_config::LanguageConfig;
+
 /// Capacidades declaradas por una tool MCP.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolCapabilities {
@@ -23,41 +25,29 @@ pub struct ToolCapabilities {
     pub precision: &'static str,
 }
 
-/// Lenguajes con parser tree-sitter realmente cableado (21 entradas).
-/// Autoridades de sincronía: el registro
-/// `crate::domain::value_objects::language::Language::from_extension`
-/// (qué extensiones existen como lenguaje) y
-/// `crate::infrastructure::parser::language_config::LanguageConfig`
-/// (qué lenguajes tienen gramática y mapeo de símbolos), más las
-/// dependencias `tree-sitter-*` de `Cargo.toml`.
+/// Lenguajes con parser tree-sitter realmente cableado.
 ///
-/// K0 (2026-10-17): `kotlin` se retiró de esta lista — se anunciaba sin
-/// gramática cableada ni entrada en el registro (CapabilityAdvertised ≠
-/// CapabilityVerified). La línea Kotlin (K1) lo re-añade junto con la
-/// gramática y el registro reales.
-pub const ALL_TREE_SITTER_LANGS: &[&str] = &[
-    "python",
-    "rust",
-    "javascript",
-    "typescript",
-    "jsx",
-    "tsx",
-    "go",
-    "java",
-    "c",
-    "cpp",
-    "csharp",
-    "hcl",
-    "yaml",
-    "ruby",
-    "php",
-    "swift",
-    "scala",
-    "lua",
-    "luau",
-    "zig",
-    "dart",
-];
+/// La lista se **deriva** del registro de parsers, que es la autoridad:
+/// un lenguaje está aquí porque tiene gramática compilada y su config en
+/// el registro. Escribirla a mano era una segunda fuente de verdad, y las
+/// dos se separaron: la lista anunciaba tres nombres que no son
+/// lenguajes —`jsx` y `tsx` son extensiones de JavaScript y TypeScript,
+/// `luau` es una extensión de Lua— y callaba doce que el producto sí
+/// lee, con gramática compilada y config en el registro.
+///
+/// Se deriva con `LanguageConfig::language_ids()`, que devuelve el `id()`
+/// de cada lenguaje registrado. El `id()` es la grafía que el producto
+/// publica —la clave de la matriz de soporte—, y por eso vive en el
+/// dominio: la identidad de un lenguaje es parte de lo que un lenguaje
+/// es, y una segunda grafía en otro sitio es un segundo lenguaje.
+///
+/// Kotlin entra en esta lista cuando su gramática esté cableada en el
+/// registro. No antes: un lenguaje que se anuncia y no se puede leer es
+/// una promesa que el producto no puede cumplir.
+pub fn tree_sitter_langs() -> &'static [&'static str] {
+    static LANGS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    LANGS.get_or_init(LanguageConfig::language_ids).as_slice()
+}
 
 /// Lenguajes con provider LSP nativo
 /// (`LspIntelligenceProvider::language_from_file` en
@@ -101,7 +91,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         | "graph_search_idf"
         | "get_per_file_graph"
         | "find_usages" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
 
@@ -109,7 +99,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // Graph checkpoint / export — AST call graph → serialización
         // ----------------------------------------------------------------
         "graph_checkpoint" | "export_mermaid" | "export_callflow" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
 
@@ -123,7 +113,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         | "graph_insights"
         | "graph_suggest_questions"
         | "composite_impact_query" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
 
@@ -146,7 +136,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         "get_file_symbols" | "search_content" | "get_symbol_code" | "get_imports"
         | "get_entry_points" | "get_leaf_functions" | "get_members" | "get_complexity" => {
             ToolCapabilities {
-                langs: ALL_TREE_SITTER_LANGS,
+                langs: tree_sitter_langs(),
                 precision: "AST",
             }
         }
@@ -161,7 +151,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         | "review_pr"
         | "interproc_summary"
         | "query_symbol_index" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "heuristic",
         },
 
@@ -175,7 +165,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         | "detect_long_parameter_lists"
         | "get_hot_paths"
         | "get_graph_stats" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
 
@@ -183,11 +173,11 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // Refactor — AST rename
         // ----------------------------------------------------------------
         "safe_refactor" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
         "safe_refactor_preview" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "AST",
         },
 
@@ -196,7 +186,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         "codebase_map" | "project_overview" | "project_insights" | "iac_query" | "solid_audit"
         | "slice_backward" | "slice_forward" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "compuesto",
         },
 
@@ -220,7 +210,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // Contract (composite sobre AST)
         // ----------------------------------------------------------------
         "generate_contract" | "validate_contract" | "retrieve_and_verify" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "compuesto",
         },
 
@@ -228,7 +218,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // Security/dataflow (composite AST)
         // ----------------------------------------------------------------
         "taint_flow" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
+            langs: tree_sitter_langs(),
             precision: "compuesto",
         },
 
