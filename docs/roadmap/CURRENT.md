@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `0b096482fd941e213896136e47e323ccac82db59` (`origin/main` al
+> **Snapshot**: 2026-10-23, sobre `2641ae8411df957413a9c15fdf65ef3240312748` (`origin/main` al
 > cerrar este ciclo), rama `main`.
 > Versión del workspace: `0.101.29`. Última release publicada: `v0.101.29`
 > (2026-10-22, 8 assets).
@@ -80,6 +80,17 @@ Y tres que encontró la propia lane de publicación, al publicar de verdad:
    prueba de consumidor descargaba los assets segundos después de sustituirlos;
    GitHub da id nuevo a cada asset re-subido, y el id que pedía la descarga
    ya no existía.
+
+Y una que encontró el propio squash de este ciclo:
+
+9. **La cabecera de una fusión la compone la forja, y no pasa por los hooks.**
+   El squash crea un commit cuyo mensaje es el título del pull request más la
+   referencia del pull request, y ese commit lo crea el servidor: nunca pasa
+   por los hooks que juzgan los commits que hace esta máquina. La política lo
+   veía por primera vez cuando el clon intentaba seguir a `main`, y lo que
+   quedaba era un commit que **ningún** clon podía atravesar con un `git
+   pull`. Ahora el título se juzga antes de la fusión, y el publicador del
+   gate consulta el juez antes de gastar sus minutos.
 
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
