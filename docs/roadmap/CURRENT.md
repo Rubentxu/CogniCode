@@ -5,9 +5,8 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `d8d0a134d27d2f1f82282ad1b7ae3ca6857bda7a` (cabeza de
-> la rama de la unidad que cierra el puerto de proyección), rama
-> `feat/c9-projection-seam`.
+> **Snapshot**: 2026-10-23, sobre `6da10d558ce238beff2b6aed9b7903e38e183f4e` (`origin/main` al cerrar este
+> ciclo), rama `main`.
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
