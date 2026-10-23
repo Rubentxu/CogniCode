@@ -24399,3 +24399,136 @@ recorrido y el informe de construcción detrás de un puerto. Y el resto de la
 auditoría sigue en la cola: un solo constructor de grafo, la identidad y su
 prueba metamórfica, el vigilante coherente, la simplificación medida, la
 caché incremental, Kotlin sin JVM y las relaciones Kotlin–Java.
+
+## 2026-10-23 — El grafo del proyecto deja de tener una segunda puerta
+
+**Qué es esto.** El grafo de un proyecto se construía en dos sitios. Uno es
+el del servicio, que es el que usa el producto: camina el árbol, lee cada
+fuente, y publica el informe de lo que no pudo cubrir. El otro estaba en las
+estrategias, y era una puerta que nadie usaba pero que seguía abierta.
+
+La puerta tenía cuatro hojas, y las cuatro mentían de una manera distinta:
+
+- El método por defecto del trait declaraba `Complete` sobre un grafo que
+  no había medido. Una estrategia que no mide la cobertura no puede decir
+  que la midió; puede decir que no la midió.
+- Dos implementaciones devolvían un grafo **vacío** —sin un solo símbolo—
+  y ese grafo vacío salía anunciado como `Complete`: "analicé el proyecto
+  entero y no encontré nada".
+- Otras dos se comían los errores del recorrido con `filter_map(|e| e.ok())`,
+  de modo que una relación demostrada podía desaparecer sin incidencia de
+  cobertura.
+- El subgrafo por fichero de dos de ellas fabricaba un símbolo `Unknown` en
+  la ubicación `"unknown"`, con cero relaciones, ignorando la profundidad y
+  la dirección que le pedían.
+
+**Lo que mentía, medido.** La puerta del índice era la más visible, porque
+está en la superficie que el producto publica. El MCP ofrecía una estrategia
+de índice llamada `per_file` y esa estrategia **no indexaba nada**: su
+`build_index` devolvía éxito sin abrir un solo fichero y su consulta de
+símbolos contestaba una lista vacía. El rojo se ve en la propia respuesta del
+producto:
+
+```text
+BuildIndexOutput { success: true, strategy: "PerFileStrategy",
+                    symbols_indexed: 0, locations_indexed: 0,
+                    message: "Index built successfully using PerFileStrategy strategy in 0ms" }
+```
+
+Un cliente que preguntaba por el índice de un proyecto recibía "tu proyecto
+no declara ningún símbolo", con un mensaje de éxito y **0 ms**. El nombre
+estaba en la lista de valores aceptados por la herramienta y en el
+completado del MCP, así que no había forma de saber que la respuesta era
+ficticia.
+
+**La segunda mentira, y era más grave.** La ruta que camina el proyecto
+completo **declaraba `Complete` sobre un proyecto con un fichero de sintaxis
+rota**, mientras la ruta por fichero declaraba `Partial` y nombraba el
+fichero. Dos rutas del mismo producto, dos garantías distintas, sobre el
+mismo árbol: el consumidor no tenía forma de saber cuál era la buena. La
+causa era de una línea: la ruta por fichero examina el árbol antes de
+publicar sus símbolos, y la ruta completa no lo hacía. El árbol con nodos de
+error se aceptaba como si se hubiera entendido.
+
+**Por qué nadie lo vio.** Cada puerta tenía sus propios tests, y cada
+conjunto de tests pasaba. Un test que fija el comportamiento de una puerta
+queda verde aunque la otra diga otra cosa — el mismo hueco que ya se había
+tapado para la clasificación de ficheros, y que se volvió a abrir por
+debajo. Aquí la prueba que faltaba era la que **compara dos puertas entre
+sí**.
+
+**Lo que se hizo, en cuatro piezas que van juntas.**
+
+*Una puerta.* El trait de estrategias queda con lo que todas pueden cumplir
+sin mentir: indexar el proyecto y consultar sus símbolos. El grafo del
+proyecto se construye en el servicio, y sólo ahí. Las cuatro hojas de la
+puerta secundaria se retiraron, con sus doscientas líneas y sus pruebas.
+
+*Las capacidades, con su dueño.* El grafo de un fichero y la jerarquía
+alrededor de un símbolo pasan a métodos inherentes de los tipos que los
+cumplen de verdad: `build_local_graph` en la estrategia por fichero,
+`build_subgraph` en la que construye el grafo bajo demanda. Las
+implementaciones que fabricaban un resultado desaparecieron, porque una
+capacidad que se puede cumplir de dos maneras —bien o con un símbolo
+inventado— no es una capacidad.
+
+*El índice deja de ofrecer lo que no indexa.* La estrategia por fichero dejó
+de ser una estrategia de índice: nunca indexó nada. La fábrica ya no la
+ofrece, el MCP ya no la anuncia, y pedirla por su nombre es un **error que
+dice qué nombres sí funcionan**, no un cero inventado. Un nombre que no
+existe no se responde con otra cosa: se responde que no existe.
+
+*Las rutas dicen lo que no pudieron leer.* El lector examina el árbol antes
+de publicar sus símbolos, y el árbol se analiza **una** vez y se lee **dos**
+veces —los símbolos y las llamadas salen del mismo árbol que el examen
+mira—, así que el cuidado no cuesta un parseo: sale más barato que antes.
+La ruta filtrada dejó de caminar el proyecto por su cuenta: usa el mismo
+inventario, el mismo clasificador y el mismo tipo de informe que la ruta
+completa, y publica lo que no cubrió.
+
+**La medición que cambió un punto del código.** La auditoría señalaba que
+`add_dependency` se ignoraba con `.ok()` y con `let _ =`, y que una relación
+demonstrada podía desaparecer en silencio. Eso se midió: se sustitó el error por un pánico
+en los cuatro puntos y se corrió la suite entera del
+núcleo. **Ninguno de los cuatro llegó a dispararse.** La razón es
+estructural: los dos extremos de cada relación salen de las mismas fuentes
+que el grafo que la sostiene, así que la relación siempre es adjuntable. En
+vez de dejar el error sin mirar, los cuatro puntos **afirman el invariante**:
+la suite lo comprueba en cada corrida, y el código dice lo que supone.
+
+**La demostración, que es la parte que da valor.** El rojo primero: con el
+índice rechazando la estrategia que no indexa, la prueba del índice falló
+con el mensaje del producto arriba; con el lector examinando el árbol, las
+pruebas de las rutas fallaron porque el informe salía `Complete`. Después el
+discriminante: se revirtieron **sólo** las dos correcciones —la fábrica
+volvió a su valor por defecto y el lector dejó de examinar el árbol— y
+**cinco contratos se pusieron rojos**; revertida la mutación, los cinco
+volvieron a verde. Los guardias contra el vacío permanecieron en verde en
+las dos direcciones: un contrato que sólo sabe decir "no" no prueba nada.
+
+**Lo que este cierre no dice.** La estrategia por fichero ya no es una
+estrategia de índice, pero su grafo por fichero sigue siendo una segunda
+forma de construir un grafo de proyecto —la que fusiona una lista explícita
+de ficheros—, y esa diferencia de semántica con la ruta completa sigue
+documentada en su propio contrato. Y el `Complete` que se pronunciaba sin
+medir ya no existe como valor por defecto de una capacidad que no se
+puede cumplir, pero el tipo del informe sigue siendo de dos estados: un
+"no medido" explícito sigue sin tener sitio, porque hoy ninguna capacidad
+lo necesita.
+
+**Lo que cambia para un consumidor.** El índice declara menos estrategias y
+rechaza un nombre que no indexa, en vez de responder con un cero ficticio.
+El grafo y sus rutas dicen ahora lo que no pudieron leer, y el estado del
+informe cambia de `Complete` a `Partial` en un proyecto con una fuente
+rota: es la respuesta correcta, y hasta ahora no la daba nadie. El resto de
+las respuestas no cambia.
+
+**Lo que esta corrida midió.** La medición de las relaciones
+tragadas salió con un número: **cero** de los cuatro puntos llegó a
+dispararse en toda la suite del núcleo. El discriminante salió con **cinco** contratos
+en rojo al revertir sólo las dos correcciones, y de nuevo en verde al revertir la mutación.
+La suite del núcleo corrió 222 suites y 6532 pruebas sin un solo fallo de pruebas,
+más los doc-tests de 20 crates. El ratchet de comentarios contó 165 líneas
+heredadas y **0 nuevas**. El código neto del cambio es de **-1548 líneas**: se fueron dos
+puertas, sus contratos y sus pruebas, y en su lugar quedan un contrato por
+ley y otro que compara dos rutas entre sí.
