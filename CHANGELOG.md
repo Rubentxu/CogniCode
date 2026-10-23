@@ -10,6 +10,47 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.30] — 2026-10-23
+
+**Un recurso de infraestructura dejó de publicarse como una función.** El
+grafo leía un bloque `resource` de Terraform como un símbolo de programación
+y lo nombraba `function`; un play de Ansible salía como `module`. El
+consumidor del transporte recibía, literalmente, la cadena `"function"` para
+un bucket de S3: el proyecto publicaba una función donde tenía una
+infraestructura. Ahora el campo que el consumidor lee distingue un símbolo
+de programación de una declaración de infraestructura, y dice cuál es: una
+declaración se publica como `"declaration"`, con el tipo que le da el
+fichero.
+
+**El lector ya no tiene que fingir una clase.** Los lectores de Terraform y
+Ansible dejan de decidir qué clase de programación es un bloque —no es
+ninguna—, y su firma deja de llevar ese parámetro. La capa semántica lleva
+la declaración al grafo como lo que es, con su tipo y su subtipo, y el
+puente de hechos sigue afirmando que el fichero define aquello, con la
+clase que de verdad tiene: un hecho que desaparece no es una cobertura que
+se corrige, es un hecho que se pierde en silencio.
+
+**La ontología, en un solo sitio.** El campo que el consumidor lee lo
+traducían cuatro tablas distintas, y cada una se equivocaba a su manera: una
+mapeaba `"type"` a un alias de tipo y otra a una interfaz, y las dos
+publicaban una constante, un constructor, un parámetro y una interfaz como
+`"variable"`. Ahora hay una sola conversión canónica, en las dos
+direcciones, y los cuatro consumidores la usan. Un alias de tipo se publica
+como `type_alias`, y `constant`, `constructor`, `parameter` e `interface` se
+publican con su propio nombre.
+
+**Lo que un consumidor tiene que saber.** El valor `"declaration"` es nuevo
+en el campo `kind` del transporte. El explorador acepta `"declaration"` en
+el filtro de clases de nodo, y una declaración **no** sale del comodín
+`"symbol"`: una declaración no es un símbolo de programación. Un consumidor
+que filtraba por `"symbol"` para encontrar infraestructura filtra ahora por
+`"declaration"`.
+
+**Cómo se sabe que esto no es un cambio de nombre.** El contrato que lo
+fija se ha visto fallar: revirtiendo sólo los dos lectores, el consumidor
+vuelve a leer `"function"` para un bucket y `"symbol.module"` para un play.
+Un contrato que no se ha visto rojo no mide nada.
+
 ## [v0.101.29] — 2026-10-22
 
 **Tres correcciones que tienen la misma forma: el producto decía una cosa y

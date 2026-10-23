@@ -23944,3 +23944,68 @@ Con el experimento, no con una afirmación: revirtiendo sólo los dos
 lectores, el contrato de esta unidad falla en cinco de sus seis pruebas
 con `left: "symbol.function"`, `left: "symbol.module"` y `left:
 String("function")`.
+
+## 2026-10-23 — El corte v0.101.30: la ontología, llevada al artefacto
+
+**Qué es este corte.** La unidad de declaraciones está fusionada en `main`
+(`1e0bf663`, por squash de la PR #436): un recurso de Terraform y un play de
+Ansible ya no se publican como una función y como un módulo, y el campo que
+el consumidor lee dice qué son. Este corte lleva esa unidad al artefacto que
+un consumidor instala.
+
+**Por qué hace falta un corte.** Una corrección que vive en el repositorio y
+no en el binario publicado es una corrección que nadie tiene. Y esta no es
+una corrección cualquiera: cambia el formato publicado del grafo. Un corte
+que lo publicara en dos trozos —el extractor genérico en la v0.101.29, las
+declaraciones en el siguiente— obligaría a los consumidores a atravesar dos
+formatos del mismo campo. Va todo junto, en un corte.
+
+**Lo que se ejecutó, y lo que no.**
+
+- `bash scripts/test-full.sh`: **rc=0** sobre el árbol del corte (fmt, clippy,
+  suite del workspace, doc-tests, contratos y baseline).
+- `merge-gate`: **success**, publicado para `bf71f7ba`, la cabeza exacta de
+  la PR #436, que quedó `MERGEABLE`/`CLEAN` y se fusionó como `1e0bf663`.
+- El contrato de assurance: **OK**, con el pin nuevo ya declarado.
+- **No ejecutado todavía**: el gate de candidato sobre el clon limpio del tag
+  y la lane de publicación. Se ejecutan sobre el commit ya fusionado, y su
+  veredicto va en su propio recibo.
+
+**Un rojo que no era del código.** El primer `test-full.sh` sobre el árbol del
+corte salió en rojo en el contrato de coherencia de release, con un error que
+parecía del producto: `tag v0.101.30 must equal v0.101.29`. No lo era. El
+directorio de compilación compartido de esta máquina guarda los binarios
+release de la versión anterior, y la herramienta de release lleva la versión
+compilada dentro —`CARGO_PKG_VERSION`—, así que seguía preguntando por la
+versión que ya no era. Reconstruidos los binarios release, el contrato pasa
+sin tocar una línea de código.
+
+El segundo rojo de la misma clase vino del otro contrato de coherencia, y
+merece su propia frase: compara la versión del árbol de trabajo con la de
+`HEAD`, así que un corte sin commitear es un corte que no puede pasar su
+propio gate. No es un defecto del contrato —comparar el árbol con lo que hay
+publicado es exactamente lo que debe hacer—; es una consecuencia de que el
+gate se corra sobre un árbol sucio. El orden correcto es el que dice el
+`AGENTS.md`: commit, y gate sobre el árbol limpio.
+
+**El golden, y por qué encogió.** El envelope de assurance se regeneró sobre
+el árbol con la versión nueva —953.565 bytes frente a los 990.842 del pin
+anterior— y un envelope que encoge merece explicación, no una nota al pie.
+La medición la da: el nombre del directorio de este checkout aparece **6145
+veces** dentro del envelope, y `cog-rel-v010129` —el checkout donde se
+generó el pin anterior— es siete letras más largo que `CogniCode`. De los
+37.277 bytes de diferencia, **36.870 son la ruta** y 407 son el contenido.
+La forma es la misma: 1024 entidades, 1024 hechos y 4 gaps, con las
+colecciones truncadas en la cota de 1024 del consumidor.
+
+El envelope lleva rutas absolutas por diseño —el contrato del producer exige
+que `--workspace .` y `--workspace /abs/path` produzcan los mismos bytes—,
+así que el mismo árbol en otro directorio da otros bytes. Este pin describe
+este árbol en este directorio, y el pin anterior pesaba más no porque el
+árbol hubiera engordado, sino porque estaba generado en un directorio con un
+nombre más largo. Quien lea la diferencia de tamaño sin esta medición puede
+creer que el corte quitó cosas del árbol, y no quitó ninguna.
+
+**Lo que este cierre no dice.** El gate de candidato puede encontrar algo, y
+entonces este corte no se publica: un tag publicado no se mueve, y un tag
+que no llegó a publicarse no se arrastra hacia delante.
