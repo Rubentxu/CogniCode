@@ -5,8 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `887d506bdb39125ea7a16529c69d114233fc95f1` (el
-> `main` ya fusionado de la unidad que lee la identidad en un solo sitio).
+> **Snapshot**: 2026-10-23, sobre `3800644f12bf57eb0e5da1523166d5f02b293b12` (la
+> cabeza de la rama de la unidad que hace que el lector diga lo que pasó y
+> dónde está cada declaración).
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -163,6 +164,21 @@ el árbol se analiza una vez y se lee dos veces, el cuidado sale más barato
 que antes. La ruta filtrada usa el mismo inventario y el mismo informe que
 la completa. La demostración está hecha: revirtiendo sólo las dos
 correcciones, cinco contratos se pusieron rojos.
+
+**C26 está cerrado.** El lector de un lenguaje contestaba lo mismo a tres
+hechos distintos: que declaraba algo, que no aplicaba a aquel fichero, y que
+fallaba — y el fallo real, que es un lector que revienta, se lo tragaba el
+`catch_unwind` y acababa pareciendo un fichero que no declara nada. La
+posición tampoco era real: las declaraciones se construían con
+`Location::new(fichero, 0, 0)`, así que el producto publicaba la línea 1 de
+cualquier fichero. Y un fichero con un error de sintaxis lo publicaba el
+lector de Terraform mientras el lector genérico lo rechazaba: los dos
+caminos no podían estar en desacuerdo sobre lo que es un fichero roto. Ahora
+el desenlace está tipado —declaró, no aplica, o falló con su causa—, el
+consumidor que recibe un fallo lo dice en vez de caer al lector genérico, y la
+declaración se publica donde está escrita. La demostración está hecha:
+revirtiendo el tratamiento del fallo, la posición o el rechazo del fichero
+roto, los contratos correspondientes se pusieron rojos.
 
 **C10 está cerrado.** El producto publicaba un trozo de la identidad de una
 cosa como si fuera su nombre. Para un símbolo pasaba por casualidad —el nombre
