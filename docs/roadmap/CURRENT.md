@@ -5,14 +5,14 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `1e0bf663c52f49326d8113a71b012c620b4dd9d2` (`origin/main` al
-> abrir este ciclo), rama `release/v0.101.30`.
-> Versión del workspace: `0.101.30`. Última release publicada: `v0.101.29`
-> (2026-10-22, 8 assets).
+> **Snapshot**: 2026-10-23, sobre `18ad4f2fe8f4adb0903c42352e07b9e71a896c41` (`origin/main` al
+> cerrar este ciclo), rama `main`.
+> Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
+> (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: la última publicada es la v0.101.29
+## Release: la última publicada es la v0.101.30
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -23,7 +23,7 @@
 | `v0.101.27` | publicada (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
 | `v0.101.28` | publicada (2026-10-22, 8 assets) | lleva el orden del grafo filtrado y la lane de publicación reparada |
 | `v0.101.29` | **publicada** (2026-10-22, 8 assets) | lleva las tres unidades nuevas del bloque B1 |
-| `v0.101.30` | corte preparado, sin publicar todavía | lleva la ontología: el campo que el consumidor lee |
+| `v0.101.30` | **publicada** (2026-10-23, 8 assets) | lleva la ontología: el campo que el consumidor lee |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
@@ -31,18 +31,17 @@ y la lane de publicación, que tuvo que arreglar tres checks que no podían
 pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
 corte que lleva el filtro de recorrido arreglado.
 
-**`v0.101.29` es la vigente**, y no movió `v0.101.28`: un tag publicado no
-se mueve. Lleva las tres unidades nuevas del bloque B1: el instalador que
-ya no termina el proceso cuando la descarga se rompe, la señal de material
-Rust que mira donde mira el grafo, y el grafo vacío que ya no se presenta
-como un análisis completo.
+**`v0.101.30` es la vigente**, y no movió `v0.101.29`: un tag publicado no
+se mueve. Lleva la última de la ontología: un recurso de Terraform y un
+play de Ansible dejan de publicarse como una función y como un módulo, y el
+campo que el consumidor lee dice qué son. La prueba no se hizo sobre el
+árbol del repositorio: se bajaron los assets publicados, sus siete sumas
+coincidieron con los bytes descargados, y el servidor MCP publicado
+respondió **19 declaraciones y 0 funciones** a un directorio con un `main.tf`.
 
-**`v0.101.30` está preparado y todavía no se ha publicado.** El workspace ya
-declara `0.101.30`, el tag y el gate de candidato aún no existen, y hasta que
-existan esta tabla y este párrafo no lo dan por publicada. Lleva la última
-de la ontología: un recurso de Terraform y un play de Ansible dejan de
-publicarse como una función y como un módulo, y el campo que el consumidor
-lee dice qué son.
+**`v0.101.29` sigue publicada** y no se movió: el instalador que no
+termina el proceso, la señal de material Rust que mira donde mira el grafo y
+el grafo vacío que ya no se presenta como un análisis completo.
 
 ## La regla que este ciclo destapó
 
@@ -112,6 +111,21 @@ Y otra que encontró la ontología, que es de la misma familia:
     tuvo con la autoridad de mentira del juez de la cabecera, aplicado al
     otro lado: no basta con que el contrato pase, hay que haberlo visto
     fallar.
+
+11. **Un gate que no empieza no es un gate en rojo.** El `merge-gate` de
+    este ciclo se negó a arrancar con el código 2 y un motivo que sí dice
+    algo: el volumen de compilación no tenía sitio. El volumen por defecto
+    —compartido con los demás checkouts de la máquina— estaba al 99%, y la
+    regla que lo vigila pide 30 GiB antes de empezar. La salida ya estaba
+    escrita y no es liberar cachés ajenas: `PREFLIGHT_WORK_DIR` mueve el
+    trabajo a un volumen con sitio, y este repositorio vive en otro
+    volumen con espacio de sobra. Dos cosas se midieron para no elegir a
+    ciegas: un fichero de 2 GiB escrito y borrado **no devolvió** el
+    espacio, lo que distingue «no se libera» de «otro proceso lo está
+    tomando»; y la papelera del sistema acumulaba casi 400 GiB de caché de
+    build ya descartada de este proyecto, regenerable por construcción.
+    La regla de `build-volume.sh` no es burocracia: es la que convierte una
+    muerte por cuota en un motivo que dice la causa y la salida.
 
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
