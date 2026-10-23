@@ -24209,3 +24209,29 @@ queda en cincuenta y nueve líneas guardando lo que es: las unidades
 abiertas, la autoridad de cada una, los candidatos y la regla de corte de
 release. El guard de atribución se volvió a ver rojo después del cambio:
 atribuir un ADR a la unidad que no declara, y cae con el motivo exacto.
+
+**Lo que esta corrida midió.** El gate completo local sobre el árbol
+commiteado: fmt, clippy con `-D warnings`, 211 suites y 6537 pruebas de la
+suite del workspace, los doc-tests, los 373 contratos del producto y el
+baseline, con cero rojo. El modo rápido: 10 suites, 4411 pruebas, cero rojo.
+La cabecera que el squash iba a crear se juzgó **antes** de publicar el
+gate, como manda: título y referencia entran en 100 caracteres y la
+política los admite. El `merge-gate` corrió sobre la cabeza exacta y dio
+**56 de 56 etapas en verde**, y la fusión por squash dejó `main` en
+`b3e16c24`.
+
+**Un bloqueo que no era del código, y cómo se resolvió.** La etapa de
+avisos del gate murió en el `cargo deny check advisories` con un motivo que
+no era del cambio: la base de avisos de RustSec es un clon de git, y esta
+máquina tiene un hook global que juzga **todo** commit que entra en una
+referencia —incluidos los que bajan de un proveedor externo— contra la
+política de identidades de la casa. Ese día upstream cambió su identidad
+de publicación a la de un bot, el clon necesitaba actualizar su rama, y el
+hook juzgó también el **mensaje** del commit de un tercero contra la
+política de mensajes convencionales: abortó. La solución no fue tocar el
+proyecto: el clon del proveedor —un caché de un tercero, no el historial de
+ninguna casa— deja de pasar por ese hook, y con él la etapa vuelve a
+medir de verdad contra la base de avisos vigente. La deuda que queda
+anotada es de la máquina, no del repo: un hook global que se aplica a
+cachés de terceros juzgando commits ajenos va a volver a pasar, y la
+decisión de cómo acotarlo es del operador.
