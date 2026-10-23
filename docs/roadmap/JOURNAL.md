@@ -24051,3 +24051,50 @@ campo `kind` del transporte, y un consumidor que compare contra una lista
 cerrada de clases tiene que añadirlo. Es el precio honesto de que el
 grafo deje de mentir, y está declarado en el CHANGELOG y en el README de
 esta versión, no escondido en un cambio de formato.
+
+## 2026-10-23 — El cierre del ciclo: la v0.101.30 llega a `main` con su recibo
+
+**Qué es esto.** La release ya estaba publicada y verificada desde sus propios
+bytes; lo que quedaba era llevar ese recibo al árbol de `main` por la vía que
+`main` exige: una pull request, un `merge-gate` verde sobre su cabeza exacta y
+una fusión por squash.
+
+**El bloqueo no era del código.** El publicador del gate se negó con el código
+2 y un motivo que lo dice todo: *«el volumen de compilación no tiene sitio: la
+corrida no empieza»*. La regla que vigila eso —comprobar el volumen antes de
+compilar— estaba haciendo su trabajo: el volumen por defecto de esta máquina
+tenía 23,8 GiB libres y la regla exige 30 GiB. Un gate que no empieza no es un
+gate en rojo; es un gate que no se ha ejecutado.
+
+**La salida ya estaba escrita, y no es borrar cachés ajenas.** `CONTRIBUTING.md`
+documenta la palanca: `PREFLIGHT_WORK_DIR` mueve el trabajo a un volumen con
+sitio, y `scripts/ci/build-volume.sh` la lee. Este repositorio vive en un
+volumen distinto —ext4, con 516 GiB libres—, así que el gate corrió ahí, con
+su aislamiento por checkout intacto y con la misma regla de 30 GiB comprobada
+antes de empezar. No hizo falta tocar el estado de ninguna sesión hermana.
+
+**Lo que se comprobó antes de elegir esa salida.** El volumen por defecto no
+estaba lleno por el trabajo de este ciclo: lo medido es que el disco.shared
+estaba al 99% y que otro proceso de la misma machine consumía espacio a la
+vez que se liberaba. Un `dd` de 2 GiB seguido de su borrado **no devolvió** el
+espacio, y esa es la medida que distingue «no se libera» de «otro lo está
+tomando». La papelera del sistema, además, acumulaba casi 400 GiB de caché de
+build ya descartada de este mismo proyecto —regenerable por construcción— que
+se purgaron y que tampoco cambiaron el `df`, por la misma razón.
+
+**El defecto real que encontró esta corrida.** Al reescribir el recibo, el
+título de la sección de releases de `CURRENT.md` anunciaba que la última
+publicada era la `v0.101.29`, mientras que la tabla de debajo y el cuerpo del
+documento declaraban la `v0.101.30` publicada y vigente. Dos líneas de
+separación y dos verdades distintas en el mismo documento: exactamente el
+defecto que este ciclo persiguió en otro sitio —un campo que el consumidor lee y
+que decía una cosa y la otra—. La corrección es de una línea, y no cambia
+ninguna afirmación: el documento ya decía la verdad en todas las demás
+partes.
+
+**Lo que este cierre no dice.** El valor `"declaration"` sigue siendo nuevo en
+el campo `kind` del transporte, y un consumidor que compare contra una lista
+cerrada de clases tiene que añadirlo. Y la convergencia de los tres
+vocabularios de clase —dominio, DTO canónico y wire— sigue siendo deuda
+declarada: el dominio tiene 23 clases, el DTO canónico replica el dominio y el
+wire publica 15. Queda anotado, no resuelto, y no se presenta como resuelto.

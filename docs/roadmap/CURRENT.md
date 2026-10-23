@@ -12,7 +12,7 @@
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: la última publicada es la v0.101.29
+## Release: la última publicada es la v0.101.30
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -111,6 +111,21 @@ Y otra que encontró la ontología, que es de la misma familia:
     tuvo con la autoridad de mentira del juez de la cabecera, aplicado al
     otro lado: no basta con que el contrato pase, hay que haberlo visto
     fallar.
+
+11. **Un gate que no empieza no es un gate en rojo.** El `merge-gate` de
+    este ciclo se negó a arrancar con el código 2 y un motivo que sí dice
+    algo: el volumen de compilación no tenía sitio. El volumen por defecto
+    —compartido con los demás checkouts de la máquina— estaba al 99%, y la
+    regla que lo vigila pide 30 GiB antes de empezar. La salida ya estaba
+    escrita y no es liberar cachés ajenas: `PREFLIGHT_WORK_DIR` mueve el
+    trabajo a un volumen con sitio, y este repositorio vive en otro
+    volumen con espacio de sobra. Dos cosas se midieron para no elegir a
+    ciegas: un fichero de 2 GiB escrito y borrado **no devolvió** el
+    espacio, lo que distingue «no se libera» de «otro proceso lo está
+    tomando»; y la papelera del sistema acumulaba casi 400 GiB de caché de
+    build ya descartada de este proyecto, regenerable por construcción.
+    La regla de `build-volume.sh` no es burocracia: es la que convierte una
+    muerte por cuota en un motivo que dice la causa y la salida.
 
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
