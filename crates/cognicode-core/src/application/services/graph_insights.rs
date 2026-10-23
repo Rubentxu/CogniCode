@@ -185,15 +185,15 @@ impl GraphInsightsService {
         }
         if !god_nodes_top.is_empty() {
             let top_god = &god_nodes_top[0];
+            // The name is the one the symbol carries: a piece of its identity
+            // would name a different thing.
+            let name = graph
+                .get_symbol(&top_god.0)
+                .map(|symbol| symbol.name().to_string())
+                .unwrap_or_else(|| top_god.0.as_str().to_string());
             suggested_questions.push(format!(
                 "'{}' is the most depended-upon symbol (score: {:.3}). Is it doing too much?",
-                top_god
-                    .0
-                    .as_str()
-                    .split(':')
-                    .nth(1)
-                    .unwrap_or(top_god.0.as_str()),
-                top_god.1
+                name, top_god.1
             ));
         }
         if !surprising_connections.is_empty() {

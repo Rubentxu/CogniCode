@@ -51,7 +51,7 @@ use crate::domain::value_objects::{
 };
 
 use super::call_graph_projection::resolve_callee_identity;
-use crate::domain::evidence_kernel::symbol_fqn::SymbolFqn;
+use crate::domain::evidence_kernel::identity::Identity;
 use crate::domain::evidence_kernel::symbol_kind_detail::SymbolKindDetail;
 
 /// One deduplicated relational edge before GraphNode construction:
@@ -139,12 +139,12 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
         let FactValue::Text(fqn) = &fact.object else {
             continue;
         };
-        let Some(parsed) = SymbolFqn::parse(fqn) else {
+        let Some(child) = Identity::parse(fqn) else {
             continue;
         };
         identity
             .entry(fact.subject.get())
-            .or_insert_with(|| parsed.file().to_string());
+            .or_insert_with(|| child.file().to_string());
     }
 
     // ── Nodes ──────────────────────────────────────────────────────────
@@ -154,15 +154,12 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
     for (entity, id_string) in &identity {
         if defines_subjects.contains(entity) {
             let kind = kinds.get(entity).copied().unwrap_or(SymbolKind::Unknown);
-            let (file, name, _) = SymbolFqn::parse(id_string)
-                .map(|parsed| {
-                    (
-                        parsed.file().to_string(),
-                        parsed.name().to_string(),
-                        parsed.line(),
-                    )
-                })
-                .unwrap_or((String::new(), id_string.clone(), 1));
+            let (file, name) = match Identity::parse(id_string) {
+                Some(parsed) => (parsed.file().to_string(), parsed.name().to_string()),
+                // An identity in no known grammar: the name is what the
+                // identity says and the file is unknown. Nothing is invented.
+                None => (String::new(), id_string.clone()),
+            };
             symbol_names
                 .entry(name.to_lowercase())
                 .or_default()

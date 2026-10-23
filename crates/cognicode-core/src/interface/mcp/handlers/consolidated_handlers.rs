@@ -427,7 +427,7 @@ pub async fn handle_codebase_map(
 
 // ── project_insights ─────────────────────────────────────────────────────────
 
-use crate::application::services::graph_insights::GraphInsightsService;
+use crate::application::services::graph_insights::{GraphInsightsService, InsightsReport};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct ProjectInsightsInput {}
@@ -489,21 +489,7 @@ pub async fn handle_project_insights(
     let dead = graph.find_dead_code().len();
 
     // Map god_nodes to hot_paths (top 10 by score)
-    let hot_paths: Vec<HotPath> = report
-        .god_nodes
-        .iter()
-        .take(10)
-        .map(|(sid, score)| HotPath {
-            // SymbolId format: "module:symbol_name", extract just the name
-            symbol_id: sid
-                .as_str()
-                .split(':')
-                .nth(1)
-                .unwrap_or(sid.as_str())
-                .to_string(),
-            score: *score,
-        })
-        .collect();
+    let hot_paths = hot_paths(&graph, &report);
 
     // Map community overview
     let communities = CommunityOverviewDto {
@@ -539,6 +525,27 @@ pub async fn handle_project_insights(
         cycles,
         summary,
     })
+}
+
+/// The published hot paths of a graph: the score of each hot symbol and the
+/// name the symbol carries.
+///
+/// The name comes from the symbol itself. A piece of its identity would be a
+/// different thing: for a declaration an infrastructure reader named, that
+/// piece is the file the thing lives in.
+pub fn hot_paths(graph: &CallGraph, report: &InsightsReport) -> Vec<HotPath> {
+    report
+        .god_nodes
+        .iter()
+        .take(10)
+        .map(|(sid, score)| HotPath {
+            symbol_id: graph
+                .get_symbol(sid)
+                .map(|symbol| symbol.name().to_string())
+                .unwrap_or_else(|| sid.as_str().to_string()),
+            score: *score,
+        })
+        .collect()
 }
 
 // ── review_pr ────────────────────────────────────────────────────────────────

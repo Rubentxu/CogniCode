@@ -20,8 +20,8 @@
 use std::collections::BTreeMap;
 
 use crate::domain::evidence_kernel::fact::{Fact, FactValue};
+use crate::domain::evidence_kernel::identity::Identity;
 use crate::domain::evidence_kernel::ids::{EntityId, SnapshotId};
-use crate::domain::evidence_kernel::symbol_fqn::SymbolFqn;
 use crate::domain::evidence_kernel::symbol_kind_detail::SymbolKindDetail;
 
 /// The definition predicate of the canonical `core:*` vocabulary
@@ -45,9 +45,9 @@ pub struct EntityFacts {
     /// `provenance.detail` `kind=<K>` (serde name of `SymbolKind`).
     /// Empty string when the fact carries no parsable kind detail.
     pub kind: String,
-    /// The symbol name — the second-to-last `:`-separated segment of the
-    /// FQN (extractor grammar `{file}:{name}:{line}`). Falls back to the
-    /// whole FQN for shorter identity strings.
+    /// The name of the thing, as the identity carries it: a symbol names
+    /// itself in the middle of its identity, and a declaration an
+    /// infrastructure reader named carries its own name.
     pub name: String,
     /// Callee names from the subject's `core:calls` objects, sorted WITH
     /// duplicates kept (a multiset: call multiplicity is signal).
@@ -116,22 +116,16 @@ fn kind_from_detail(detail: Option<&str>) -> String {
         .unwrap_or_default()
 }
 
-/// Derives the symbol name from a recovered FQN (v1 heuristic, design D3):
-/// the identity grammar is `"{file}:{name}:{line}"` (e37 D3, centralized in
-/// [`SymbolFqn`] as of E38.1), so the name comes from the typed parser.
-/// Identity strings that do not fit the grammar (foreign fact producers —
-/// fewer than three segments or a non-numeric tail) keep the previous
-/// fallback: the second-to-last `:`-separated segment, or the whole string
-/// when fewer than three segments exist.
+/// Derives the symbol name from a recovered identity.
+///
+/// The identity vocabulary is read in one place: a symbol names itself
+/// `"{file}:{name}:{line}"`, and an infrastructure reader names a
+/// declaration with its own grammar. An identity in no known grammar keeps
+/// the whole string, which says what it says without inventing a name.
 fn symbol_name_from_fqn(fqn: &str) -> String {
-    if let Some(parsed) = SymbolFqn::parse(fqn) {
-        return parsed.name().to_string();
-    }
-    let segments: Vec<&str> = fqn.split(':').collect();
-    if segments.len() >= 3 {
-        segments[segments.len() - 2].to_string()
-    } else {
-        fqn.to_string()
+    match Identity::parse(fqn) {
+        Some(identity) => identity.name().to_string(),
+        None => fqn.to_string(),
     }
 }
 
