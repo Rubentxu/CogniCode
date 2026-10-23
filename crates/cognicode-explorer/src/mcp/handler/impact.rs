@@ -20,6 +20,7 @@ use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::adapters::project;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
@@ -138,7 +139,8 @@ impl ToolHandler for ImpactRadiusHandler {
 
         let max_depth = args.max_depth.unwrap_or(DEFAULT_IMPACT_RADIUS_DEPTH);
         let svc = ImpactAnalysisService::new();
-        let ids = svc.impact_radius(g, &SymbolId::new(root), max_depth);
+        let projection = project(g);
+        let ids = svc.impact_radius(projection.as_ref(), &SymbolId::new(root), max_depth);
         let strings: Vec<String> = ids.iter().map(|s| s.as_str().to_string()).collect();
         ok_envelope(TOOL_IMPACT_RADIUS, &strings)
     }
@@ -201,7 +203,8 @@ impl ToolHandler for ImpactForwardRadiusHandler {
 
         let max_depth = args.max_depth.unwrap_or(DEFAULT_IMPACT_RADIUS_DEPTH);
         let svc = ImpactAnalysisService::new();
-        let ids = svc.forward_radius(g, &SymbolId::new(root), max_depth);
+        let projection = project(g);
+        let ids = svc.forward_radius(projection.as_ref(), &SymbolId::new(root), max_depth);
         let strings: Vec<String> = ids.iter().map(|s| s.as_str().to_string()).collect();
         ok_envelope(TOOL_IMPACT_FORWARD_RADIUS, &strings)
     }
@@ -274,7 +277,12 @@ impl ToolHandler for ImpactHasPathHandler {
         };
 
         let svc = ImpactAnalysisService::new();
-        let has_path = svc.has_path(g, &SymbolId::new(from.clone()), &SymbolId::new(to.clone()));
+        let projection = project(g);
+        let has_path = svc.has_path(
+            projection.as_ref(),
+            &SymbolId::new(from.clone()),
+            &SymbolId::new(to.clone()),
+        );
         let result = serde_json::json!({
             "from": from,
             "to": to,
@@ -351,7 +359,12 @@ impl ToolHandler for ImpactShortestPathHandler {
         };
 
         let svc = ImpactAnalysisService::new();
-        let result = svc.shortest_path(g, &SymbolId::new(from), &SymbolId::new(to));
+        let projection = project(g);
+        let result = svc.shortest_path(
+            projection.as_ref(),
+            &SymbolId::new(from),
+            &SymbolId::new(to),
+        );
         ok_envelope(TOOL_IMPACT_SHORTEST_PATH, &result)
     }
 }
@@ -383,7 +396,8 @@ impl ToolHandler for ImpactDetectCyclesHandler {
         };
 
         let svc = ImpactAnalysisService::new();
-        let sccs = svc.detect_cycles(g);
+        let projection = project(g);
+        let sccs = svc.detect_cycles(projection.as_ref());
         let dtos: Vec<SccDto> = sccs.into_iter().map(SccDto::from_scc).collect();
         ok_envelope(TOOL_IMPACT_DETECT_CYCLES, &dtos)
     }
@@ -441,7 +455,8 @@ impl ToolHandler for ImpactComponentHandler {
         };
 
         let svc = ImpactAnalysisService::new();
-        let component = svc.containing_component(g, &SymbolId::new(id));
+        let projection = project(g);
+        let component = svc.containing_component(projection.as_ref(), &SymbolId::new(id));
         let as_strings: Option<Vec<String>> =
             component.map(|members| members.iter().map(|s| s.as_str().to_string()).collect());
         ok_envelope(TOOL_IMPACT_COMPONENT, &as_strings)

@@ -16,6 +16,7 @@ use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::adapters::project;
 use crate::dto::LensResult;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
@@ -533,7 +534,8 @@ impl ToolHandler for HotspotsHandler {
         // the ranking). This complements `graph_god_nodes` (which is
         // subgraph-scoped) by being graph-wide and rank-N.
         use cognicode_core::application::services::graph_analytics::GraphAnalyticsService;
-        let scores = GraphAnalyticsService::page_rank(g, 0.85_f64, 100);
+        let projection = project(g);
+        let scores = GraphAnalyticsService::page_rank(projection.as_ref(), 0.85_f64, 100);
 
         // Resolve the anchor to a real graph symbol when possible —
         // SymbolIds stored in the graph are FQNs like `file:name:line`,

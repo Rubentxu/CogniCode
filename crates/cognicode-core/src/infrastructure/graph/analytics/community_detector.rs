@@ -296,7 +296,8 @@ impl CommunityDetector {
         use crate::application::services::graph_analytics::GraphAnalyticsService;
 
         let projection = CallGraphProjection::from_call_graph(graph);
-        let all_scores: HashMap<SymbolId, f64> = GraphAnalyticsService::page_rank(graph, 0.85, 100);
+        let all_scores: HashMap<SymbolId, f64> =
+            GraphAnalyticsService::page_rank(&projection, 0.85, 100);
 
         // Convert to usize-based for the algorithm.
         let usize_communities: Vec<Vec<usize>> = communities
@@ -377,7 +378,8 @@ impl CommunityDetector {
 
         // PageRank scores.
         use crate::application::services::graph_analytics::GraphAnalyticsService;
-        let all_scores: HashMap<SymbolId, f64> = GraphAnalyticsService::page_rank(graph, 0.85, 100);
+        let all_scores: HashMap<SymbolId, f64> =
+            GraphAnalyticsService::page_rank(&projection, 0.85, 100);
         let mut usize_scores: std::collections::HashMap<usize, f64> =
             std::collections::HashMap::with_capacity(all_scores.len());
         for (sid, &score) in &all_scores {

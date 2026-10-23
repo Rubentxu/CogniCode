@@ -909,8 +909,12 @@ async fn call_tool_handler(
                     let graph = ctx.analysis_service().get_project_graph();
                     let symbols = graph.symbol_count() as u64;
                     let edges = graph.edge_count() as u64;
+                    let projection = crate::infrastructure::graph::project_call_graph(&graph);
                     let health_score =
-                    crate::application::services::graph_insights::GraphInsightsService::analyze(&graph)
+                    crate::application::services::graph_insights::GraphInsightsService::analyze(
+                        &graph,
+                        projection.as_ref(),
+                    )
                         .health_score;
                     if let Some(m) = &metrics {
                         m.record_graph_stats(symbols, edges, health_score);

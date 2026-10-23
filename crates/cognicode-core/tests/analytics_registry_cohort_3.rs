@@ -12,6 +12,7 @@ use cognicode_core::domain::analytics::{
     personalized_pagerank_descriptor::PersonalizedPageRankDescriptor,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::infrastructure::graph::PetgraphProjectionFactory;
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
@@ -356,7 +357,11 @@ fn modularity_descriptor_supported_modes() {
 
 #[test]
 fn registry_admits_all_three_cohort3_algorithms() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
 
     let r1 = registry.admit(Box::new(PersonalizedPageRankDescriptor));
     assert!(
@@ -374,7 +379,11 @@ fn registry_admits_all_three_cohort3_algorithms() {
 
 #[test]
 fn registry_detects_all_three_cohort3_algorithms() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(PersonalizedPageRankDescriptor))
         .unwrap();
@@ -392,7 +401,11 @@ fn registry_detects_all_three_cohort3_algorithms() {
 
 #[test]
 fn registry_get_returns_cohort3_descriptors() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(PersonalizedPageRankDescriptor))
         .unwrap();
@@ -418,7 +431,11 @@ fn registry_get_returns_cohort3_descriptors() {
 
 #[test]
 fn registry_rejects_duplicate_cohort3_admission() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(PersonalizedPageRankDescriptor))
         .unwrap();

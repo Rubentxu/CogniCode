@@ -10,10 +10,10 @@
 //!
 //! ## Construction
 //!
-//! Construction stays in the infrastructure adapter. The object-safe
-//! factory [`project_call_graph`] bridges the domain surface: consumers
-//! call it and receive an `Arc<dyn CallGraphProjectionPort>` without
-//! importing `crate::infrastructure::*`.
+//! Construction stays in the infrastructure adapter, and this port only
+//! declares the contract that adapter has to satisfy:
+//! [`CallGraphProjectionFactory`]. Whoever composes the application
+//! injects the factory; the domain never names the adapter.
 //!
 //! ## Symbol indexing
 //!
@@ -96,16 +96,19 @@ pub struct ExplanationView {
     pub total_cost: f64,
 }
 
-/// Build a read-side projection from an existing [`CallGraph`].
+/// The factory that builds a projection from a [`CallGraph`].
 ///
-/// Object-safe factory: the petgraph-backed construction logic lives in
-/// the infrastructure adapter (`CallGraphProjection::from_call_graph`);
-/// this free function bridges the domain surface so analytics descriptors
-/// and services can construct a projection without importing
-/// `crate::infrastructure::*`. It returns an `Arc` trait object because a
-/// no-receiver static method on the trait would break `dyn` compatibility.
-pub fn project_call_graph(cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
-    Arc::new(crate::infrastructure::graph::CallGraphProjection::from_call_graph(cg))
+/// This is the contract the adapter implements: the port declares the
+/// factory, the adapter satisfies it, and the composition root that
+/// wires the application injects it. The domain never constructs the
+/// adapter itself — a domain that builds its own adapter depends on
+/// the layer below it, whatever the type system says.
+///
+/// The factory returns an `Arc` trait object because a no-receiver
+/// static method on the trait would break `dyn` compatibility.
+pub trait CallGraphProjectionFactory: Send + Sync {
+    /// Build a read-side projection over `cg`.
+    fn project(&self, cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort>;
 }
 
 /// Read-side algorithmic projection over the canonical [`CallGraph`] aggregate.
@@ -115,8 +118,8 @@ pub fn project_call_graph(cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
 /// at construction time and answer algorithmic queries from that
 /// snapshot without mutating the underlying domain aggregate.
 ///
-/// Construction is provided by the module-level [`project_call_graph`]
-/// factory (object-safe), not by a trait method.
+/// Construction is provided by the injected
+/// [`CallGraphProjectionFactory`], not by a trait method.
 pub trait CallGraphProjectionPort: Send + Sync {
     /// Number of nodes in the projection.
     fn node_count(&self) -> usize;

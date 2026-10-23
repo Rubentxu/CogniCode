@@ -55,7 +55,9 @@ pub use crate::domain::ports::call_graph_projection::{
     CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
     SubgraphEdge, SubgraphView,
 };
-pub use call_graph_projection::CallGraphProjection;
+pub use call_graph_projection::{
+    CallGraphProjection, PetgraphProjectionFactory, project_call_graph,
+};
 pub use checkpoint::{CheckpointId, VersionedGraphCache};
 #[cfg(all(feature = "evidence-kernel", feature = "multimodal"))]
 pub use generic_graph_projection::FactGenericGraphProjection;

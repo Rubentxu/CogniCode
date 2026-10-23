@@ -25,6 +25,7 @@ use rmcp::model::CallToolResult;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::adapters::project;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
@@ -286,7 +287,8 @@ impl ToolHandler for GraphPagerankHandler {
         }
 
         let sub_cg = build_subgraph_callgraph(g, &view);
-        let scores = GraphAnalyticsService::page_rank(&sub_cg, alpha, max_iter);
+        let projection = project(&sub_cg);
+        let scores = GraphAnalyticsService::page_rank(projection.as_ref(), alpha, max_iter);
         let scores_str: std::collections::HashMap<String, f64> = scores
             .into_iter()
             .map(|(k, v)| (k.as_str().to_string(), v))
@@ -387,7 +389,8 @@ impl ToolHandler for GraphGodNodesHandler {
         }
 
         let sub_cg = build_subgraph_callgraph(g, &view);
-        let god = GraphAnalyticsService::god_nodes(&sub_cg, percentile);
+        let projection = project(&sub_cg);
+        let god = GraphAnalyticsService::god_nodes(projection.as_ref(), percentile);
         let nodes: Vec<_> = god
             .into_iter()
             .map(|(sid, score)| {
@@ -812,7 +815,8 @@ impl ToolHandler for GraphTransitiveReductionHandler {
         }
 
         let sub_cg = build_subgraph_callgraph(g, &view);
-        let reduced = GraphAnalyticsService::transitive_reduction(&sub_cg);
+        let projection = project(&sub_cg);
+        let reduced = GraphAnalyticsService::transitive_reduction(projection.as_ref());
 
         let edges: Vec<_> = reduced
             .into_iter()
@@ -909,7 +913,8 @@ impl ToolHandler for GraphFeedbackArcSetHandler {
         }
 
         let sub_cg = build_subgraph_callgraph(g, &view);
-        let fas = GraphAnalyticsService::feedback_arc_set(&sub_cg);
+        let projection = project(&sub_cg);
+        let fas = GraphAnalyticsService::feedback_arc_set(projection.as_ref());
 
         let edges: Vec<_> = fas
             .into_iter()
@@ -1035,8 +1040,9 @@ impl ToolHandler for GraphAllSimplePathsHandler {
         // `from`/`to` are passed by reference so we can echo them
         // back in the W6 metadata payload below (W6 added in e91.W6
         // closure commit).
+        let projection = project(&sub_cg);
         let paths = GraphAnalyticsService::all_simple_paths(
-            &sub_cg,
+            projection.as_ref(),
             &SymbolId::new(&from),
             &SymbolId::new(&to),
             max_hops,

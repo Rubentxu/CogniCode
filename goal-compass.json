@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C9",
-      "title": "El puerto de dominio deja de construir el adaptador",
-      "unit": "H24",
-      "objective": "Que el puerto de dominio deje de construir un adaptador de infraestructura.",
-      "whyNow": "`domain/ports/call_graph_projection.rs:108` instancia `crate::infrastructure::graph::CallGraphProjection` dentro del dominio, contra la propia regla `architecture.domain_no_infrastructure`. El comentario del fichero justifica la funcion diciendo que evita importar infraestructura, y la linea de al lado la importa.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/architecture/canonical_constraints.rs"
-      ],
-      "doneWhen": [
-        "el contrato de arquitectura no lista ninguna violacion de `domain_no_infrastructure`",
-        "el puerto declara la fabrica que el adaptador implementa, en vez de llamar al adaptador",
-        "el arbol hexagonal sigue compilando sin que el dominio dependa de infraestructura"
-      ],
-      "scope": "H24",
-      "risk": "high",
-      "priority": 110,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C16",
       "title": "La estrategia de grafo completo deja de ser una segunda puerta al grafo",
       "unit": "H24",

@@ -6,12 +6,13 @@ use std::sync::Arc;
 
 use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
 use cognicode_core::domain::analytics::{
-    AdmissionError, AlgorithmDescriptor, AlgorithmId, AnalyticsError, RunLineage, RunLineageFilter,
-    RunLineageStore, Uuid, articulation_descriptor::ArticulationPointsDescriptor,
+    AdmissionError, AlgorithmDescriptor, AlgorithmExecute, AlgorithmId, AnalyticsError, RunLineage,
+    RunLineageFilter, RunLineageStore, Uuid, articulation_descriptor::ArticulationPointsDescriptor,
     bridges_descriptor::BridgesDescriptor, dominators_descriptor::DominatorsDescriptor,
     kcore_descriptor::KCoreDescriptor,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::infrastructure::graph::PetgraphProjectionFactory;
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
@@ -88,6 +89,18 @@ fn dominators_descriptor_rejects_non_string_root_symbol() {
     let d = DominatorsDescriptor;
     let params = serde_json::json!({ "root_symbol": 123 });
     assert!(d.params().validate(&params).is_err());
+}
+
+#[tokio::test]
+async fn dominators_descriptor_rejects_unknown_root_symbol() {
+    let d = DominatorsDescriptor;
+    let params = serde_json::json!({ "root_symbol": "NonExistentSymbol" });
+    let graph = cognicode_core::domain::aggregates::CallGraph::new();
+    let projection = cognicode_core::infrastructure::graph::project_call_graph(&graph);
+    let limits = PlanLimits::default();
+
+    let result = d.execute(&params, &limits, projection.as_ref()).await;
+    assert!(matches!(result, Err(AnalyticsError::InvalidParameter(_))));
 }
 
 #[test]
@@ -309,7 +322,11 @@ fn kcore_descriptor_has_conformance_fixtures() {
 
 #[test]
 fn registry_admits_all_cohort_2_algorithms() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     assert!(registry.admit(Box::new(DominatorsDescriptor)).is_ok());
     assert!(
         registry
@@ -322,7 +339,11 @@ fn registry_admits_all_cohort_2_algorithms() {
 
 #[test]
 fn registry_returns_admitted_cohort_2_descriptors() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(DominatorsDescriptor)).unwrap();
     registry
         .admit(Box::new(ArticulationPointsDescriptor))
@@ -342,7 +363,11 @@ fn registry_returns_admitted_cohort_2_descriptors() {
 
 #[test]
 fn registry_is_admitted_cohort_2_check() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(DominatorsDescriptor)).unwrap();
 
     let dominators_id = cognicode_core::domain::analytics::AlgorithmId::from_static("dominators");
@@ -354,7 +379,11 @@ fn registry_is_admitted_cohort_2_check() {
 
 #[test]
 fn registry_get_returns_cohort_2_descriptor() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(KCoreDescriptor)).unwrap();
 
     let kcore_id = cognicode_core::domain::analytics::AlgorithmId::from_static("k_core");
@@ -365,7 +394,11 @@ fn registry_get_returns_cohort_2_descriptor() {
 
 #[test]
 fn registry_rejects_duplicate_cohort_2_same_version() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     assert!(
         registry
             .admit(Box::new(ArticulationPointsDescriptor))

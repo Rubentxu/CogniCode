@@ -434,3 +434,137 @@ fn cr06_synthetic_drift_application_to_bin_is_still_detected() {
         "application_no_interface must keep detecting application→bin drift; got 0"
     );
 }
+
+/// A dependency written *inline*, where it is used, is still a dependency.
+///
+/// The shape in this fixture is the one the domain used to carry: a port
+/// that reached for the infrastructure adapter where the projection was
+/// needed, without naming it in a `use` line. A gate that only reads
+/// imports calls that clean, so the gate has to read the path itself.
+#[test]
+fn cr06_synthetic_drift_domain_reaches_infrastructure_inline_is_detected() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.domain_no_infrastructure")
+        .expect("CR-06: domain_no_infrastructure must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/domain/example.rs".into(),
+            module_path: Some("domain::example".into()),
+            source: concat!(
+                "pub fn project(graph: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {\n",
+                "    Arc::new(crate::infrastructure::graph::CallGraphProjection::from_call_graph(graph))\n",
+                "}\n",
+            )
+            .into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "domain_no_infrastructure must detect a domain reaching infrastructure inline; got 0"
+    );
+    let v = &report.violations[0];
+    assert_eq!(
+        v.constraint_id.as_str(),
+        "architecture.domain_no_infrastructure"
+    );
+    assert_eq!(v.from_layer, LayerId::Domain);
+    assert_eq!(
+        v.line, 2,
+        "the violation must point at the line that names the path"
+    );
+}
+
+/// The same rule holds one layer up: an application module that reaches
+/// for infrastructure inline is drifting, whether it names the path in a
+/// `use` line or where it uses it.
+#[test]
+fn cr06_synthetic_drift_application_reaches_infrastructure_inline_is_detected() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.application_no_infrastructure")
+        .expect("CR-06: application_no_infrastructure must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/application/example.rs".into(),
+            module_path: Some("application::example".into()),
+            source: "pub fn walk(root: &Path) {\n    let _ = crate::infrastructure::walk_policy::contained_ignore_walk(root);\n}\n"
+                .into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "application_no_infrastructure must detect an application reaching infrastructure inline; got 0"
+    );
+    let v = &report.violations[0];
+    assert_eq!(
+        v.constraint_id.as_str(),
+        "architecture.application_no_infrastructure"
+    );
+    assert_eq!(v.from_layer, LayerId::Application);
+}
+
+/// A path written in a string is not a dependency.
+///
+/// The rule above has to be able to tell a path that is *used* from a
+/// path that is merely *mentioned* — in a message, in a doc comment, in
+/// a fixture. Without that, every string that quotes an import would be
+/// a drift, and the inventory would fill up with noise.
+#[test]
+fn cr06_a_path_quoted_in_a_string_is_not_a_dependency() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.domain_no_infrastructure")
+        .expect("CR-06: domain_no_infrastructure must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/domain/example.rs".into(),
+            module_path: Some("domain::example".into()),
+            source: concat!(
+                "pub const EXAMPLE: &str = \"use crate::infrastructure::db::Pool;\";\n",
+                "// crate::infrastructure::graph::CallGraphProjection\n",
+            )
+            .into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert!(
+        report.violations.is_empty(),
+        "a path quoted in a string or a comment is not a dependency; got {:?}",
+        report.violations
+    );
+}

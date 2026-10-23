@@ -39,5 +39,10 @@ pub use constraint::{
     ConstraintAdmissionDisposition, ConstraintCandidate, ConstraintError, ForbiddenDependencyRule,
     LayerDependencyRule, LayerId, NamespaceBoundaryRule, TemporaryException,
 };
+pub use use_parser::{DependencyPath, DependencyPathError, parse_dependency_paths};
+// The previous names are kept so existing consumers keep compiling.
+// They are aliases, not separate types: the parser reports inline
+// paths too, which is why the old names no longer describe it.
+#[allow(deprecated)]
 pub use use_parser::{UseStatement, UseStatementError, parse_use_lines};
 pub use violation::{ArchitectureViolation, ViolationId};

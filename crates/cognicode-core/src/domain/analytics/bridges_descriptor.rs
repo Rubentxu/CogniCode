@@ -13,7 +13,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -154,10 +154,9 @@ impl AlgorithmExecute for BridgesDescriptor {
     async fn execute(
         &self,
         _params: &serde_json::Value,
-        graph: &CallGraph,
         limits: &PlanLimits,
+        projection: &dyn CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let undirected = projection.build_undirected_neighbors();
         let n = projection.node_count();
 

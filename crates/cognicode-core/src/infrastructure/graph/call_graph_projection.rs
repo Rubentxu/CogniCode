@@ -53,6 +53,7 @@
 //! `Direction::Outgoing`).
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
 
 use petgraph::Direction;
 use petgraph::algo::{astar, has_path_connecting, tarjan_scc, toposort};
@@ -65,8 +66,8 @@ use cognicode_graph_algos::GraphBuilder;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::ports::call_graph_projection::{
-    CallGraphProjectionPort, ExplanationHop, ExplanationView, SubgraphDirection, SubgraphEdge,
-    SubgraphView,
+    CallGraphProjectionFactory, CallGraphProjectionPort, ExplanationHop, ExplanationView,
+    SubgraphDirection, SubgraphEdge, SubgraphView,
 };
 use crate::domain::value_objects::DependencyType;
 
@@ -917,6 +918,30 @@ impl GraphBuilder for CallGraphProjection {
         }
         out_neighbors
     }
+}
+
+/// The factory that builds the petgraph-backed projection.
+///
+/// It satisfies the domain's [`CallGraphProjectionFactory`] contract: the
+/// port declares the factory, this adapter implements it, and the
+/// composition root injects it where the analytics registry is built.
+/// The construction lives here because construction *is* the adapter.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PetgraphProjectionFactory;
+
+impl CallGraphProjectionFactory for PetgraphProjectionFactory {
+    fn project(&self, cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+        Arc::new(CallGraphProjection::from_call_graph(cg))
+    }
+}
+
+/// Build a read-side projection from an existing [`CallGraph`].
+///
+/// The free factory lives in the infrastructure module on purpose:
+/// building the adapter is the adapter's business, and a free function
+/// in the domain would be a second way to reach across the seam.
+pub fn project_call_graph(cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+    PetgraphProjectionFactory.project(cg)
 }
 
 impl CallGraphProjectionPort for CallGraphProjection {

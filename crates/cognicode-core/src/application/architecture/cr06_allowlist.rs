@@ -194,6 +194,27 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         ex(
             "application_no_infrastructure",
+            "application/services/impact_analysis.rs",
+            "infrastructure::graph::project_call_graph",
+            "team:st-03",
+            "cfg(test)-only: the unit tests compare the service against the real projection, so they compose the real adapter by design. The path is the adapter alone, so a production import of anything else under the graph module still fails the gate. The real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/graph_analytics.rs",
+            "infrastructure::graph::project_call_graph",
+            "team:st-03",
+            "cfg(test)-only: the unit tests run the algorithms over the real projection, so they compose the real adapter by design. The path is the adapter alone, so a production import of anything else under the graph module still fails the gate. The real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/graph_insights.rs",
+            "infrastructure::graph::project_call_graph",
+            "team:st-03",
+            "cfg(test)-only: the unit tests run the insights over the real projection, so they compose the real adapter by design. The path is the adapter alone, so a production import of anything else under the graph module still fails the gate. The real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+        ),
+        ex(
+            "application_no_infrastructure",
             "application/services/relation_candidates.rs",
             "infrastructure::graph::analytics::community_detector::",
             "team:st-03",
@@ -335,6 +356,56 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-04",
             "ST-04: LSP module behind a port (CompositeProvider).",
         ),
+        // ====================================================================
+        // application_no_infrastructure — dependencies written INLINE
+        // ====================================================================
+        //
+        // These drifts existed all along and the evaluator could not see
+        // them: it read `use` statements only, and a dependency written
+        // inline (`crate::infrastructure::walk_policy::is_real_file(..)`) is
+        // just as binding as one written in an import. The parser now
+        // reads both spellings, so this inventory is complete instead of
+        // partial.
+        //
+        // The remediation does not change: the ST program moves them
+        // behind ports. What changes is that the guard can now see them,
+        // so a new dependency of the same shape fails the build instead
+        // of waiting to be discovered by a human.
+        ex(
+            "application_no_infrastructure",
+            "application/consumer_analysis.rs",
+            "infrastructure::walk_policy::",
+            "team:st-02",
+            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::walk_policy::",
+            "team:st-02",
+            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analyze.rs",
+            "infrastructure::graph::per_file_graph::",
+            "team:st-03",
+            "The graph report types (`BuildStatus`, `SkippedFile`, `SkipReason`) live in the infrastructure module. ST-03 splits the analysis service and moves those types behind the port the service consumes.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/refactor_service.rs",
+            "infrastructure::walk_policy::",
+            "team:st-02",
+            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/workspace_session.rs",
+            "infrastructure::walk_policy::",
+            "team:st-02",
+            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
+        ),
         // application_no_interface — 1 entry here, re-measured 2026-10-01.
         //
         // These drifts existed all along: `LayerId` did not model
@@ -397,6 +468,17 @@ fn ex(
 ///
 /// Returns `(lineno, trimmed_line, is_test_only)` for each hit.
 ///
+/// A dependency can be named in two spellings, and both count as a
+/// production import when they are outside a test scope:
+///
+/// - a `use` statement — `use crate::infrastructure::parser::Language;`
+/// - an inline path — `crate::infrastructure::parser::Language::new(..)`
+///
+/// The architectural guard reports both spellings, so this classification
+/// has to read both: a drift the guard calls production cannot be filed as
+/// test-only here. Comment lines are not hits; a path written in prose is
+/// not a dependency.
+///
 /// A `#[cfg(test)]` attribute is only test-gating the *item it annotates*,
 /// not the rest of the file, so the scope is the brace-balanced span that
 /// follows the attribute. Concretely:
@@ -436,7 +518,7 @@ fn classify_imports<'a>(source: &'a str, needle: &str) -> Vec<(usize, &'a str, b
             continue;
         }
 
-        if trimmed.starts_with("use ") && trimmed.contains(needle) {
+        if trimmed.contains(needle) && !trimmed.starts_with("//") {
             hits.push((lineno, trimmed, test_scopes.iter().any(|d| *d < depth)));
         }
 
@@ -613,10 +695,16 @@ mod tests {
         // production build does not have. Both the import and the exception
         // are gone, and the blanket allow went with the import it was
         // hiding — the module now compiles warning-free without it.
+        // 33 -> 41. The eight new entries are not new debt: five of them
+        // are drifts that were already in the code and that the guard
+        // could not see, because it only read `use` statements and these
+        // are written inline where they are used. The other three are the
+        // test-only imports that the unit tests of the analytics services
+        // carry, now that those tests compose the real projection.
         assert_eq!(
             list.len(),
-            33,
-            "expected exactly 33 entries; if you removed/added a drift \
+            41,
+            "expected exactly 41 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
@@ -845,6 +933,18 @@ mod tests {
             // but this contract cannot find it in the inventory" — which is
             // the drift it exists to report, caught on the commit that made it.
             ("application/workspace_session.rs", "interface::"),
+            (
+                "application/services/impact_analysis.rs",
+                "infrastructure::graph::project_call_graph",
+            ),
+            (
+                "application/services/graph_analytics.rs",
+                "infrastructure::graph::project_call_graph",
+            ),
+            (
+                "application/services/graph_insights.rs",
+                "infrastructure::graph::project_call_graph",
+            ),
         ];
 
         let cargo_manifest =

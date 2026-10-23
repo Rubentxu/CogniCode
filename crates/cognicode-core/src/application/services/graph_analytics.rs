@@ -44,7 +44,9 @@ use crate::domain::analytics::{
     AnalyticsMode, DeterminismKind, RunLineage, RunLineageFilter, RunLineageStore, RunStatus,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::{
+    CallGraphProjectionFactory, CallGraphProjectionPort,
+};
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
 use cognicode_graph_algos::{self, GraphBuilder};
 
@@ -86,11 +88,10 @@ impl GraphAnalyticsService {
     /// 0.6 and infeasible for graphs with more than a few thousand
     /// nodes (~20 days for 29K symbols × 100 iterations).
     pub fn page_rank(
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         alpha: f64,
         max_iterations: usize,
     ) -> HashMap<SymbolId, f64> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, out_degree) = projection.build_adjacency();
         let n = projection.node_count();
         let raw_scores =
@@ -118,12 +119,11 @@ impl GraphAnalyticsService {
     /// - No path within `max_hops` -> empty vec.
     /// - `from == to` -> no path is emitted.
     pub fn all_simple_paths(
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         from: &SymbolId,
         to: &SymbolId,
         max_hops: usize,
     ) -> Vec<Vec<SymbolId>> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let _n = projection.node_count();
 
@@ -162,8 +162,7 @@ impl GraphAnalyticsService {
     /// inside a component follow the graph-algos Tarjan implementation
     /// (post-order on the DFS tree, alphabetic sort within each SCC).
     /// Self-loops surface as singleton components.
-    pub fn condensation(graph: &CallGraph) -> Vec<Vec<SymbolId>> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn condensation(projection: &dyn CallGraphProjectionPort) -> Vec<Vec<SymbolId>> {
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
         let raw = cognicode_graph_algos::condensation(&out_neighbors, n);
@@ -193,13 +192,15 @@ impl GraphAnalyticsService {
     /// Returns an empty vec for an empty graph. The percentile
     /// selection uses an off-by-one-tolerant clamp so values at the
     /// upper end (`percentile == 1.0`) include the single top score.
-    pub fn god_nodes(graph: &CallGraph, percentile: f64) -> Vec<(SymbolId, f64)> {
-        let scores = Self::page_rank(graph, 0.85, 100);
+    pub fn god_nodes(
+        projection: &dyn CallGraphProjectionPort,
+        percentile: f64,
+    ) -> Vec<(SymbolId, f64)> {
+        let scores = Self::page_rank(projection, 0.85, 100);
         if scores.is_empty() {
             return Vec::new();
         }
         // Map SymbolId -> usize (positional) for the new API, then back.
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let mut usize_scores: HashMap<usize, f64> = HashMap::with_capacity(scores.len());
         for (sid, score) in &scores {
             if let Some(ni) = projection.symbol_index().get(sid) {
@@ -227,8 +228,9 @@ impl GraphAnalyticsService {
     /// `A -> C` when `A -> B` and `B -> C` exist) are dropped.
     /// For cyclic graphs, all edges are returned (identity reduction)
     /// since no edge is implied by a strictly longer simple path.
-    pub fn transitive_reduction(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn transitive_reduction(
+        projection: &dyn CallGraphProjectionPort,
+    ) -> Vec<(SymbolId, SymbolId)> {
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -259,8 +261,7 @@ impl GraphAnalyticsService {
     /// Useful for resolving circular dependencies: the reported edges
     /// are the cheapest candidates to break first (per the
     /// Eades-Lin-Smyth heuristic). Returns an empty vec for a DAG.
-    pub fn feedback_arc_set(graph: &CallGraph) -> Vec<(SymbolId, SymbolId)> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn feedback_arc_set(projection: &dyn CallGraphProjectionPort) -> Vec<(SymbolId, SymbolId)> {
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -310,18 +311,27 @@ pub struct AlgorithmRegistry {
     descriptors: HashMap<AlgorithmId, Box<dyn AlgorithmExecute>>,
     lineage: Arc<dyn RunLineageStore>,
     boundary_guard: Option<Arc<dyn AnalyticsBoundaryGuard>>,
+    /// Builds the read-side projection the algorithms run over.
+    ///
+    /// The registry asks the injected factory for a projection instead
+    /// of building the adapter: the adapter is infrastructure, and the
+    /// layer that orchestrates the run does not get to name it.
+    projection_factory: Arc<dyn CallGraphProjectionFactory>,
 }
 
 impl AlgorithmRegistry {
-    /// Create a new registry with the given lineage store and optional boundary guard.
+    /// Create a new registry with the given lineage store, optional
+    /// boundary guard and projection factory.
     pub fn new(
         lineage: Arc<dyn RunLineageStore>,
         boundary_guard: Option<Arc<dyn AnalyticsBoundaryGuard>>,
+        projection_factory: Arc<dyn CallGraphProjectionFactory>,
     ) -> Self {
         Self {
             descriptors: HashMap::new(),
             lineage,
             boundary_guard,
+            projection_factory,
         }
     }
 
@@ -694,9 +704,14 @@ impl AlgorithmRegistry {
             .await
             .map_err(|e| AnalyticsError::Internal(format!("lineage insert: {e}")))?;
 
-        // Step 5: Dispatch to algorithm's execute() method
+        // Step 5: Dispatch to algorithm's execute() method.
+        //
+        // The projection is built here, once per run, with the injected
+        // factory: the algorithm receives it instead of building its own
+        // adapter.
+        let projection = self.projection_factory.project(&request.graph);
         let exec_result = descriptor
-            .execute(&request.params, &request.graph, &effective_limits)
+            .execute(&request.params, &effective_limits, projection.as_ref())
             .await;
 
         // Step 6: Update lineage record with result and extract output
@@ -753,9 +768,20 @@ impl AlgorithmRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use crate::domain::aggregates::Symbol;
     use crate::domain::services::ExtractionContext;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+
+    /// The read-side projection the algorithms read from.
+    ///
+    /// The service works over a projection rather than over the graph, and
+    /// these tests run the algorithms over the real thing, so the numbers
+    /// they assert are the numbers the product produces.
+    fn projection_of(graph: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+        crate::infrastructure::graph::project_call_graph(graph)
+    }
 
     fn sym(name: &str) -> Symbol {
         Symbol::new(name, SymbolKind::Function, Location::new("test.rs", 1, 1))
@@ -785,7 +811,8 @@ mod tests {
     #[test]
     fn page_rank_empty_graph_returns_empty_map() {
         let g = CallGraph::new();
-        let scores = GraphAnalyticsService::page_rank(&g, 0.85, 100);
+        let projection = projection_of(&g);
+        let scores = GraphAnalyticsService::page_rank(projection.as_ref(), 0.85, 100);
         assert!(scores.is_empty());
     }
 
@@ -796,7 +823,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "A", "C");
         });
-        let scores = GraphAnalyticsService::page_rank(&g, 0.85, 100);
+        let projection = projection_of(&g);
+        let scores = GraphAnalyticsService::page_rank(projection.as_ref(), 0.85, 100);
         // A is depended-upon by both B and C (incoming edges from
         // its children in the call graph mean... actually in our
         // model the edge `A -> B` means A calls B, so A is the
@@ -815,7 +843,13 @@ mod tests {
         let g = build_graph(|g| {
             add_edge(g, "A", "B");
         });
-        let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("missing"), 5);
+        let projection = projection_of(&g);
+        let paths = GraphAnalyticsService::all_simple_paths(
+            projection.as_ref(),
+            &id("A"),
+            &id("missing"),
+            5,
+        );
         assert!(paths.is_empty());
     }
 
@@ -830,7 +864,9 @@ mod tests {
             add_edge(g, "C", "D");
             add_edge(g, "A", "D");
         });
-        let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 5);
+        let projection = projection_of(&g);
+        let paths =
+            GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 5);
         assert_eq!(paths.len(), 3);
     }
 
@@ -845,9 +881,12 @@ mod tests {
             add_edge(g, "B", "C");
             add_edge(g, "C", "D");
         });
-        let paths_long = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 5);
+        let projection = projection_of(&g);
+        let paths_long =
+            GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 5);
         assert_eq!(paths_long.len(), 1);
-        let paths_short = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 0);
+        let paths_short =
+            GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 0);
         assert!(paths_short.is_empty());
     }
 
@@ -857,7 +896,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "B", "C");
         });
-        let comps = GraphAnalyticsService::condensation(&g);
+        let projection = projection_of(&g);
+        let comps = GraphAnalyticsService::condensation(projection.as_ref());
         assert_eq!(comps.len(), 3);
         for c in &comps {
             assert_eq!(c.len(), 1);
@@ -871,7 +911,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "B", "A");
         });
-        let comps = GraphAnalyticsService::condensation(&g);
+        let projection = projection_of(&g);
+        let comps = GraphAnalyticsService::condensation(projection.as_ref());
         let total: usize = comps.iter().map(|c| c.len()).sum();
         assert_eq!(total, 2);
         let big: Vec<_> = comps.iter().filter(|c| c.len() == 2).collect();
@@ -881,7 +922,8 @@ mod tests {
     #[test]
     fn god_nodes_empty_graph_returns_empty_vec() {
         let g = CallGraph::new();
-        let god = GraphAnalyticsService::god_nodes(&g, 0.95);
+        let projection = projection_of(&g);
+        let god = GraphAnalyticsService::god_nodes(projection.as_ref(), 0.95);
         assert!(god.is_empty());
     }
 
@@ -890,7 +932,8 @@ mod tests {
         let g = build_graph(|g| {
             g.add_symbol(sym("only"));
         });
-        let god = GraphAnalyticsService::god_nodes(&g, 0.5);
+        let projection = projection_of(&g);
+        let god = GraphAnalyticsService::god_nodes(projection.as_ref(), 0.5);
         // percentile clamp guarantees at least the top-1 survives
         // (the threshold index is min(len-1, len*p) = 0 for len=1).
         assert_eq!(god.len(), 1);
@@ -915,7 +958,8 @@ mod tests {
             add_edge(g, "a9", "core");
             add_edge(g, "a10", "core");
         });
-        let god = GraphAnalyticsService::god_nodes(&g, 0.5);
+        let projection = projection_of(&g);
+        let god = GraphAnalyticsService::god_nodes(projection.as_ref(), 0.5);
         assert!(!god.is_empty());
         // core should be in the god nodes set (it's called by every other symbol)
         let core_score: Option<f64> = god
@@ -945,7 +989,8 @@ mod tests {
             add_edge(g, "A", "C");
             add_edge(g, "B", "C");
         });
-        let reduced = GraphAnalyticsService::transitive_reduction(&g);
+        let projection = projection_of(&g);
+        let reduced = GraphAnalyticsService::transitive_reduction(projection.as_ref());
         // A->B and B->C survive; A->C is dropped.
         assert!(reduced.contains(&(id("A"), id("B"))));
         assert!(reduced.contains(&(id("B"), id("C"))));
@@ -963,7 +1008,8 @@ mod tests {
             add_edge(g, "B", "D");
             add_edge(g, "C", "D");
         });
-        let reduced = GraphAnalyticsService::transitive_reduction(&g);
+        let projection = projection_of(&g);
+        let reduced = GraphAnalyticsService::transitive_reduction(projection.as_ref());
         assert_eq!(reduced.len(), 4);
     }
 
@@ -975,7 +1021,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "B", "A");
         });
-        let reduced = GraphAnalyticsService::transitive_reduction(&g);
+        let projection = projection_of(&g);
+        let reduced = GraphAnalyticsService::transitive_reduction(projection.as_ref());
         assert_eq!(reduced.len(), 2);
     }
 
@@ -985,7 +1032,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "B", "C");
         });
-        let fas = GraphAnalyticsService::feedback_arc_set(&g);
+        let projection = projection_of(&g);
+        let fas = GraphAnalyticsService::feedback_arc_set(projection.as_ref());
         assert!(fas.is_empty());
     }
 
@@ -996,7 +1044,8 @@ mod tests {
             add_edge(g, "A", "B");
             add_edge(g, "B", "A");
         });
-        let fas = GraphAnalyticsService::feedback_arc_set(&g);
+        let projection = projection_of(&g);
+        let fas = GraphAnalyticsService::feedback_arc_set(projection.as_ref());
         assert!(!fas.is_empty());
         // Both endpoints must come from the cycle.
         for (s, d) in &fas {
@@ -1013,7 +1062,8 @@ mod tests {
             add_edge(g, "B", "C");
             add_edge(g, "C", "A");
         });
-        let fas = GraphAnalyticsService::feedback_arc_set(&g);
+        let projection = projection_of(&g);
+        let fas = GraphAnalyticsService::feedback_arc_set(projection.as_ref());
         assert!(!fas.is_empty());
     }
 
@@ -1130,13 +1180,19 @@ mod tests {
 /// # Arguments
 ///
 /// - `lineage` — lineage store for run tracking
+/// - `projection_factory` — builds the read-side projection the
+///   algorithms run over. The composition root injects the adapter's
+///   factory here; this module never names the adapter.
 ///
 /// # Returns
 ///
 /// A new `AlgorithmRegistry` with all 11 algorithms admitted.
-pub fn default_analytics_registry(lineage: Arc<dyn RunLineageStore>) -> AlgorithmRegistry {
+pub fn default_analytics_registry(
+    lineage: Arc<dyn RunLineageStore>,
+    projection_factory: Arc<dyn CallGraphProjectionFactory>,
+) -> AlgorithmRegistry {
     let guard = Arc::new(DefaultAnalyticsBoundaryGuard::new());
-    let mut registry = AlgorithmRegistry::new(lineage, Some(guard));
+    let mut registry = AlgorithmRegistry::new(lineage, Some(guard), projection_factory);
 
     // Cohort 1 algorithms
     registry

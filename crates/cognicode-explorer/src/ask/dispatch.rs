@@ -17,6 +17,7 @@ use cognicode_core::application::services::impact_analysis::ImpactAnalysisServic
 use cognicode_core::domain::aggregates::{CallGraph, SymbolId};
 use serde_json::{Value, json};
 
+use crate::adapters::project;
 use crate::ask::ClassifiedQuestion;
 use crate::ask::entity;
 use crate::ask::followups::generate_follow_ups;
@@ -164,8 +165,9 @@ async fn path_between(
         .as_ref()
         .ok_or_else(|| "graph_unavailable".to_string())?;
     let svc = ImpactAnalysisService::new();
+    let projection = project(g);
     let path = svc.shortest_path(
-        g,
+        projection.as_ref(),
         &SymbolId::new(src_id.clone()),
         &SymbolId::new(dst_id.clone()),
     );
@@ -176,7 +178,7 @@ async fn path_between(
     };
     let explain = svc
         .explain_path(
-            g,
+            projection.as_ref(),
             &SymbolId::new(src_id.clone()),
             &SymbolId::new(dst_id.clone()),
         )
@@ -216,7 +218,8 @@ async fn forward_reach(
         .as_ref()
         .ok_or_else(|| "graph_unavailable".to_string())?;
     let svc = ImpactAnalysisService::new();
-    let edges = svc.forward_radius(g, &SymbolId::new(resolved.clone()), 2);
+    let projection = project(g);
+    let edges = svc.forward_radius(projection.as_ref(), &SymbolId::new(resolved.clone()), 2);
     let edge_strs: Vec<String> = edges.iter().map(|s| s.as_str().to_string()).collect();
     Ok((
         json!({ "root": resolved, "edges": edge_strs }),
@@ -245,7 +248,8 @@ async fn backward_reach(
         .as_ref()
         .ok_or_else(|| "graph_unavailable".to_string())?;
     let svc = ImpactAnalysisService::new();
-    let edges = svc.impact_radius(g, &SymbolId::new(resolved.clone()), 2);
+    let projection = project(g);
+    let edges = svc.impact_radius(projection.as_ref(), &SymbolId::new(resolved.clone()), 2);
     let edge_strs: Vec<String> = edges.iter().map(|s| s.as_str().to_string()).collect();
     Ok((
         json!({ "root": resolved, "edges": edge_strs }),
@@ -289,9 +293,10 @@ async fn architecture(graph: &Option<Arc<CallGraph>>) -> Result<(Value, Value), 
         .as_ref()
         .ok_or_else(|| "graph_unavailable".to_string())?;
     let svc = ImpactAnalysisService::new();
-    let sccs = svc.detect_cycles(g);
+    let projection = project(g);
+    let sccs = svc.detect_cycles(projection.as_ref());
     let cycles: Vec<SccDto> = sccs.into_iter().map(SccDto::from_scc).collect();
-    let clusters = svc.cluster_components(g, "scc");
+    let clusters = svc.cluster_components(projection.as_ref(), "scc");
     Ok((json!({ "cycles": cycles }), json!({ "clusters": clusters })))
 }
 
@@ -303,7 +308,8 @@ async fn workspace_overview(
     let workspace_meta = workspace.current_workspace().map_err(|e| e.to_string())?;
     let clusters = if let Some(g) = graph.as_ref() {
         let svc = ImpactAnalysisService::new();
-        Some(svc.cluster_components(g, "scc"))
+        let projection = project(g);
+        Some(svc.cluster_components(projection.as_ref(), "scc"))
     } else {
         None
     };
@@ -342,7 +348,8 @@ async fn component_cluster(
         .as_ref()
         .ok_or_else(|| "graph_unavailable".to_string())?;
     let svc = ImpactAnalysisService::new();
-    let component = svc.containing_component(g, &SymbolId::new(resolved.clone()));
+    let projection = project(g);
+    let component = svc.containing_component(projection.as_ref(), &SymbolId::new(resolved.clone()));
     match component {
         Some(members) => {
             let id = members.first().map(|m| m.as_str().to_string());

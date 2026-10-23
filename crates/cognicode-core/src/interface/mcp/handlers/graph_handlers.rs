@@ -13,7 +13,11 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::doc_overindented_list_items)]
 
+use std::sync::Arc;
+
 use super::*;
+
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 
 // ============================================================================
 // The graph the analytics handlers work on
@@ -35,6 +39,21 @@ fn analytics_graph(ctx: &HandlerContext) -> Result<CallGraph, HandlerError> {
         })
 }
 
+/// The graph the analytics handlers work on, plus the read-side
+/// projection the algorithms run over.
+///
+/// The projection is built by the adapter that owns the graph
+/// representation. The handler does not know how a projection is
+/// represented: it asks for one and hands it to the application service
+/// that knows how to analyse it.
+fn analytics_graph_with_projection(
+    ctx: &HandlerContext,
+) -> Result<(CallGraph, Arc<dyn CallGraphProjectionPort>), HandlerError> {
+    let graph = analytics_graph(ctx)?;
+    let projection = crate::infrastructure::graph::project_call_graph(&graph);
+    Ok((graph, projection))
+}
+
 // ============================================================================
 // Phase 4b: Graph Analytics Handlers (PageRank, paths, condensation, god nodes)
 // ============================================================================
@@ -49,10 +68,10 @@ pub async fn handle_graph_pagerank(
     ctx: &HandlerContext,
     input: GraphPageRankInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
+    let (_graph, projection) = analytics_graph_with_projection(ctx)?;
     let mut scores =
         crate::application::services::graph_analytics::GraphAnalyticsService::page_rank(
-            &graph,
+            projection.as_ref(),
             input.alpha,
             input.max_iterations as usize,
         );
@@ -83,7 +102,7 @@ pub async fn handle_graph_all_paths(
     ctx: &HandlerContext,
     input: GraphAllPathsInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
+    let (graph, projection) = analytics_graph_with_projection(ctx)?;
     // Substring, case-insensitive lookup with tiered matching:
     // Tier 1: exact symbol name, Tier 2: exact FQN, Tier 3: substring.
     let find_id = |needle: &str| -> Option<crate::domain::aggregates::SymbolId> {
@@ -116,7 +135,7 @@ pub async fn handle_graph_all_paths(
     match (find_id(&input.from_symbol), find_id(&input.to_symbol)) {
         (Some(from), Some(to)) => {
             let paths = crate::application::services::graph_analytics::GraphAnalyticsService::all_simple_paths(
-                    &graph,
+                    projection.as_ref(),
                     &from,
                     &to,
                     input.max_hops as usize,
@@ -155,9 +174,10 @@ pub async fn handle_graph_condensed(
     ctx: &HandlerContext,
     _input: GraphCondensedInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
-    let comps =
-        crate::application::services::graph_analytics::GraphAnalyticsService::condensation(&graph);
+    let (_graph, projection) = analytics_graph_with_projection(ctx)?;
+    let comps = crate::application::services::graph_analytics::GraphAnalyticsService::condensation(
+        projection.as_ref(),
+    );
     let rendered: Vec<Vec<String>> = comps
         .into_iter()
         .map(|c| c.into_iter().map(|id| id.as_str().to_string()).collect())
@@ -183,9 +203,9 @@ pub async fn handle_graph_god_nodes(
     ctx: &HandlerContext,
     input: GraphGodNodesInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
+    let (_graph, projection) = analytics_graph_with_projection(ctx)?;
     let mut god = crate::application::services::graph_analytics::GraphAnalyticsService::god_nodes(
-        &graph,
+        projection.as_ref(),
         input.percentile,
     );
     let rendered: Vec<(String, f64)> = god
@@ -210,10 +230,10 @@ pub async fn handle_graph_reduced(
     ctx: &HandlerContext,
     _input: GraphReducedInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
+    let (graph, projection) = analytics_graph_with_projection(ctx)?;
     let reduced =
         crate::application::services::graph_analytics::GraphAnalyticsService::transitive_reduction(
-            &graph,
+            projection.as_ref(),
         );
     let rendered: Vec<(String, String)> = reduced
         .into_iter()
@@ -238,10 +258,10 @@ pub async fn handle_graph_feedback_arcs(
     ctx: &HandlerContext,
     _input: GraphFeedbackArcsInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
+    let (_graph, projection) = analytics_graph_with_projection(ctx)?;
     let fas =
         crate::application::services::graph_analytics::GraphAnalyticsService::feedback_arc_set(
-            &graph,
+            projection.as_ref(),
         );
     let rendered: Vec<(String, String)> = fas
         .into_iter()
@@ -452,9 +472,11 @@ pub async fn handle_graph_insights(
     ctx: &HandlerContext,
     _input: GraphInsightsInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
-    let report =
-        crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+    let (graph, projection) = analytics_graph_with_projection(ctx)?;
+    let report = crate::application::services::graph_insights::GraphInsightsService::analyze(
+        &graph,
+        projection.as_ref(),
+    );
     let payload = serde_json::json!({
         "summary": {
             "total_symbols": report.summary.total_symbols,
@@ -510,9 +532,11 @@ pub async fn handle_graph_suggest_questions(
     ctx: &HandlerContext,
     _input: GraphSuggestQuestionsInput,
 ) -> HandlerResult<serde_json::Value> {
-    let graph = analytics_graph(ctx)?;
-    let report =
-        crate::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+    let (graph, projection) = analytics_graph_with_projection(ctx)?;
+    let report = crate::application::services::graph_insights::GraphInsightsService::analyze(
+        &graph,
+        projection.as_ref(),
+    );
     let payload = serde_json::json!({
         "question_count": report.suggested_questions.len(),
         "questions": report.suggested_questions,

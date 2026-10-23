@@ -13,7 +13,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -170,8 +170,8 @@ impl AlgorithmExecute for DominatorsDescriptor {
     async fn execute(
         &self,
         params: &serde_json::Value,
-        graph: &CallGraph,
         limits: &PlanLimits,
+        projection: &dyn CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params.as_object().ok_or_else(|| {
             AnalyticsError::Internal("Dominators params must be a JSON object".into())
@@ -184,7 +184,6 @@ impl AlgorithmExecute for DominatorsDescriptor {
                 AnalyticsError::Internal("missing required param: root_symbol".into())
             })?;
 
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
 
@@ -222,57 +221,5 @@ impl AlgorithmExecute for DominatorsDescriptor {
             immediate_dominators,
             depths,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dominators_descriptor_has_correct_identity() {
-        let d = DominatorsDescriptor;
-        let id = d.identity();
-        assert_eq!(id.id.as_str(), "dominators");
-        assert_eq!(id.version.as_str(), "1.0.0");
-        assert_eq!(id.maturity, Maturity::Stable);
-        assert_eq!(id.cohort, 2);
-    }
-
-    #[test]
-    fn dominators_descriptor_params_accepted() {
-        let d = DominatorsDescriptor;
-        let params = serde_json::json!({ "root_symbol": "main" });
-        assert!(d.params().validate(&params).is_ok());
-    }
-
-    #[test]
-    fn dominators_descriptor_rejects_missing_params() {
-        let d = DominatorsDescriptor;
-        let params = serde_json::json!({});
-        assert!(d.params().validate(&params).is_err());
-    }
-
-    #[test]
-    fn dominators_descriptor_is_directed() {
-        let d = DominatorsDescriptor;
-        assert!(d.directed());
-        assert!(!d.weighted());
-        assert!(!d.heterogeneous());
-    }
-
-    #[tokio::test]
-    async fn dominators_descriptor_rejects_unknown_root_symbol() {
-        use crate::domain::aggregates::CallGraph;
-        use crate::domain::plan::limits::PlanLimits;
-
-        let d = DominatorsDescriptor;
-        // Use a symbol name that does not exist in the graph
-        let params = serde_json::json!({ "root_symbol": "NonExistentSymbol" });
-        let graph = CallGraph::new();
-        let limits = PlanLimits::default();
-
-        let result = d.execute(&params, &graph, &limits).await;
-        assert!(matches!(result, Err(AnalyticsError::InvalidParameter(_))));
     }
 }

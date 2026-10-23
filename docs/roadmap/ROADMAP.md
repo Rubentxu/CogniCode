@@ -457,9 +457,10 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     categoría del extractor genérico no contradice la semántica del
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
 >     Cerrado: el extractor genérico y el campo que el consumidor lee.
->   - **El dominio no construye su adaptador**: el puerto de proyección
->     instancia la implementación de infraestructura. La frontera está
->     invertida, y el arreglo no necesita un framework nuevo.
+>   - **El dominio no construye su adaptador** — cerrado. El puerto declara
+>     la fábrica, la infraestructura la implementa y la raíz de composición
+>     la inyecta; el guard arquitectónico ve la dependencia escrita donde se
+>     usa, no solo la importada. El arreglo no necesitó un framework nuevo.
 >
 >   Los candidatos de las dos unidades —con su evidencia y su criterio de
 >   cierre— viven en la backlog de la misión (`goal-compass.json`).

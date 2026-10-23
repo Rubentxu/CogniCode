@@ -11,6 +11,7 @@ use cognicode_core::domain::analytics::{
     wcc_descriptor::WccDescriptor,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::infrastructure::graph::PetgraphProjectionFactory;
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
@@ -247,7 +248,11 @@ fn wcc_descriptor_has_conformance_fixtures() {
 
 #[test]
 fn registry_admits_pagerank_scc_wcc() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     assert!(registry.admit(Box::new(PageRankDescriptor)).is_ok());
     assert!(registry.admit(Box::new(SccDescriptor)).is_ok());
     assert!(registry.admit(Box::new(WccDescriptor)).is_ok());
@@ -255,7 +260,11 @@ fn registry_admits_pagerank_scc_wcc() {
 
 #[test]
 fn registry_returns_admitted_descriptors() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
     registry.admit(Box::new(SccDescriptor)).unwrap();
     registry.admit(Box::new(WccDescriptor)).unwrap();
@@ -271,7 +280,11 @@ fn registry_returns_admitted_descriptors() {
 
 #[test]
 fn registry_is_admitted_check() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
 
     let pagerank_id = cognicode_core::domain::analytics::AlgorithmId::from_static("pagerank");
@@ -283,7 +296,11 @@ fn registry_is_admitted_check() {
 
 #[test]
 fn registry_get_returns_descriptor() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry.admit(Box::new(PageRankDescriptor)).unwrap();
 
     let pagerank_id = cognicode_core::domain::analytics::AlgorithmId::from_static("pagerank");
@@ -294,7 +311,11 @@ fn registry_get_returns_descriptor() {
 
 #[test]
 fn registry_rejects_duplicate_same_version() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     assert!(registry.admit(Box::new(PageRankDescriptor)).is_ok());
     let result = registry.admit(Box::new(PageRankDescriptor));
     assert!(matches!(result, Err(AdmissionError::AlreadyAdmitted(_, _))));
