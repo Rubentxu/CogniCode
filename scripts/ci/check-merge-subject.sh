@@ -4,11 +4,13 @@
 # WHAT IT JUDGES
 # ---------------
 # A squash merge creates exactly one commit, and its header is the title of
-# the pull request, verbatim. That commit is created by the forge, on the
-# forge's side, so it never passes through the hooks this machine runs on
-# the commits it makes itself. The house policy therefore sees that header
-# for the first time afterwards, when the machine tries to reference the new
-# commit and the policy refuses the reference.
+# the pull request followed by the pull request's number: the forge composes
+# it that way when the merge does not carry a subject of its own. That
+# commit is created by the forge, on the forge's side, so it never passes
+# through the hooks this machine runs on the commits it makes itself. The
+# house policy therefore sees that header for the first time afterwards, when
+# the machine tries to reference the new commit and the policy refuses the
+# reference.
 #
 # By then the merge is public, the branch does not accept a rewritten
 # history, and the repository carries a commit that its own policy will not
@@ -24,11 +26,15 @@
 #
 # WHAT IT ADDS TO THE POLICY
 # --------------------------
-# One rule that belongs to this repository and not to the policy: the header
-# of a squash merge closes the pull request it comes from, and says so, the
-# way every other commit in this history does. A title without it would be
-# admitted by the policy and would land a commit that does not say where it
-# came from.
+# Two rules that belong to this repository and not to the policy:
+#
+#   - the title of a pull request does not carry a pull request reference.
+#     The forge adds it, and a title that already carries one would land a
+#     header with the reference twice;
+#   - the header that lands is the title plus that reference, so the title
+#     has to leave room for it. A title that fits the limit on its own can
+#     still produce a header that does not fit, and the title alone is not
+#     what the house has to carry.
 #
 # WHAT IT DOES NOT DO
 # -------------------
@@ -44,9 +50,10 @@
 #      forge, or no such pull request to read
 #
 # Usage:
-#   bash scripts/ci/check-merge-subject.sh --title "<header>"
 #   bash scripts/ci/check-merge-subject.sh --pr <number> [--repo <owner/name>]
 #   bash scripts/ci/check-merge-subject.sh --sha <sha> [--repo <owner/name>]
+#   bash scripts/ci/check-merge-subject.sh --pr <number> --title "<title>"
+#   bash scripts/ci/check-merge-subject.sh --header "<header>"
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -60,9 +67,9 @@ AUTHORITY="git-control"
 usage() {
     cat <<'USAGE'
 Usage:
-  check-merge-subject.sh --title "<header>"
-  check-merge-subject.sh --pr <number> [--repo <owner/name>]
+  check-merge-subject.sh --pr <number> [--title "<title>"] [--repo <owner/name>]
   check-merge-subject.sh --sha <sha> [--repo <owner/name>]
+  check-merge-subject.sh --header "<header>"
 
 Judges the header a squash merge would create, using the policy of the house.
 Exit codes: 0 admitted, 1 refused, 2 could not be judged.
@@ -76,20 +83,24 @@ die() {
 
 mode=""
 header=""
+title=""
 pull_request=""
 repo=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --title)
-            [ "$#" -ge 2 ] || die "--title needs the header to judge."
-            mode="title"; header="$2"; shift 2;;
         --pr)
             [ "$#" -ge 2 ] || die "--pr needs the number of the pull request."
             mode="pull-request"; pull_request="$2"; shift 2;;
         --sha)
             [ "$#" -ge 2 ] || die "--sha needs the commit."
             mode="commit"; header="$2"; shift 2;;
+        --title)
+            [ "$#" -ge 2 ] || die "--title needs the title of the pull request."
+            title="$2"; shift 2;;
+        --header)
+            [ "$#" -ge 2 ] || die "--header needs the header to judge."
+            mode="header"; header="$2"; shift 2;;
         --repo)
             [ "$#" -ge 2 ] || die "--repo needs owner/name."
             repo="$2"; shift 2;;
@@ -103,10 +114,14 @@ done
 
 if [ -z "$mode" ]; then
     usage >&2
-    die "one of --title, --pr or --sha is required."
+    die "one of --pr, --sha or --header is required."
 fi
 
-if [ "$mode" != "title" ]; then
+if [ "$mode" = "header" ]; then
+    if [ -n "$title" ] || [ -n "$pull_request" ]; then
+        die "--header judges a header as it is; the title of a pull request is judged with --pr."
+    fi
+else
     if [ -z "$repo" ]; then
         origin="$(git remote get-url origin 2>/dev/null || true)"
         repo="$(printf '%s' "$origin" | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
@@ -114,27 +129,44 @@ if [ "$mode" != "title" ]; then
             die "cannot work out owner/name from the origin remote ($origin). Pass --repo."
         fi
     fi
+
     command -v gh >/dev/null 2>&1 \
         || die "the \`gh\` CLI is not on PATH, so the title of the pull request cannot be read."
 
-    if [ "$mode" = "pull-request" ]; then
-        answer="$(gh api "repos/$repo/pulls/$pull_request" --jq '"\(.number)\t\(.title)"')" \
-            || die "cannot read the pull request $pull_request in $repo."
-    else
+    if [ "$mode" = "commit" ]; then
         answer="$(gh api "repos/$repo/commits/$header/pulls" --jq '.[0] | "\(.number)\t\(.title)"')" \
             || die "cannot read the pull requests of $header in $repo."
+        if [ -z "$answer" ]; then
+            echo "==> no pull request holds this commit: there is no squash header to judge"
+            exit 0
+        fi
+        pull_request="${answer%%$'\t'*}"
+        title="${answer#*$'\t'}"
+    elif [ -z "$title" ]; then
+        answer="$(gh api "repos/$repo/pulls/$pull_request" --jq '"\(.number)\t\(.title)"')" \
+            || die "cannot read the pull request $pull_request in $repo."
+        if [ -z "$answer" ]; then
+            die "the pull request $pull_request in $repo came back without a title; there is nothing to judge."
+        fi
+        title="${answer#*$'\t'}"
     fi
 
-    if [ -z "$answer" ]; then
-        echo "==> no pull request holds this commit: there is no squash header to judge"
-        exit 0
+    if [ -z "$title" ]; then
+        die "the title of the pull request is empty; there is nothing to judge."
     fi
-    pull_request="${answer%%$'\t'*}"
-    header="${answer#*$'\t'}"
-fi
 
-if [ -z "$header" ]; then
-    die "the title of the pull request came back empty; there is nothing to judge."
+    # The title does not carry the reference: the forge adds it, and a title
+    # that already carries one would land a header with it twice.
+    case "$title" in
+        *" (#"[0-9]*")")
+            echo "ERROR: the title already carries a pull request reference." >&2
+            echo "       The forge adds it to the header, so the header would carry it" >&2
+            echo "       twice. The title of a pull request does not carry it." >&2
+            echo "       title: $title" >&2
+            exit 1;;
+    esac
+
+    header="$title (#$pull_request)"
 fi
 
 command -v "$AUTHORITY" >/dev/null 2>&1 \
@@ -149,19 +181,6 @@ verdict=0
 if [ "$verdict" -ne 0 ]; then
     echo "==> the header is refused: the merge would create a commit this house cannot carry" >&2
     exit 1
-fi
-
-if [ -n "$pull_request" ]; then
-    case "$header" in
-        *" (#$pull_request)")
-            ;;
-        *)
-            echo "ERROR: the header does not close the pull request it belongs to." >&2
-            echo "       A squash merge takes the title verbatim, so the title has to end" >&2
-            echo "       with ' (#$pull_request)'." >&2
-            echo "       header: $header" >&2
-            exit 1;;
-    esac
 fi
 
 echo "==> the header is admitted"

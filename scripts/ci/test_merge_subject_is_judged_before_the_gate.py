@@ -4,12 +4,14 @@
 The gap
 -------
 
-A squash merge creates exactly one commit, and its header is the pull
-request's title, verbatim. That commit is created by the forge, on the
-forge's side, so it never passes through the hooks this machine runs on the
-commits it makes itself. The house policy therefore gets its first look at
-that header only afterwards, when the machine tries to reference the new
-commit and the policy refuses the reference.
+A squash merge creates exactly one commit, and its header is the title of
+the pull request followed by the pull request's number: that is how the forge
+composes it when the merge does not carry a subject of its own. The commit
+is created by the forge, on the forge's side, so it never passes through the
+hooks this machine runs on the commits it makes itself. The house policy
+therefore gets its first look at that header only afterwards, when the
+machine tries to reference the new commit and the policy refuses the
+reference.
 
 At that point the merge is public, the branch is protected against rewriting
 its history, and the repository carries a commit that its own policy will
@@ -18,8 +20,9 @@ after the fact, and paid for in a history that cannot be repaired.
 
 So the header is judged before the merge, by the authority that judges every
 other commit. This contract pins that the judgement happens, that it happens
-*before* the expensive part, and that it is the house policy doing the
-judging rather than a number copied into this repository.
+*before* the expensive part, that it judges the header the merge would
+really create, and that the house policy does the judging rather than a
+number copied into this repository.
 
 What is pinned here, and why each one:
 
@@ -27,10 +30,12 @@ What is pinned here, and why each one:
 - The check asks the house policy instead of measuring on its own. A copy of
   the limit would be a second truth, and the two would drift until one of
   them admitted exactly what the other forbids.
-- The header that gets judged is the pull request's title, because that is
-  the header the merge would create.
-- A title that does not close the pull request it belongs to is refused,
-  even when the policy admits it.
+- The judged header is the title plus the pull request reference, which is
+  what the forge composes. A title that fits the limit on its own can still
+  produce a header that does not fit, and the title alone is not what the
+  house has to carry.
+- A title that already carries a reference is refused: the forge adds one,
+  and the header would carry it twice.
 - The publisher of the merge gate consults the check before it starts the
   gate: a gate that proves something already known to be wrong costs the
   minutes it spends proving it.
@@ -97,8 +102,8 @@ def forge_that_answers_with(title: str) -> str:
     """
     return (
         "#!/usr/bin/env bash\n"
-        "case \" $* \" in\n"
-        f'  *" --method POST "*) exit 0;;\n'
+        'case "$*" in\n'
+        '  *" --method POST "*) exit 0;;\n'
         "esac\n"
         f'printf "7\\t{title}\\n"\n'
     )
@@ -109,7 +114,11 @@ def forge_that_answers_with_nothing() -> str:
     return "#!/usr/bin/env bash\nexit 0\n"
 
 
-def run(script: Path, arguments: list[str], bindir: Path | None = None) -> subprocess.CompletedProcess[str]:
+def run(
+    script: Path,
+    arguments: list[str],
+    bindir: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
     if bindir is not None:
         environment["PATH"] = f"{bindir}:{environment['PATH']}"
@@ -149,7 +158,7 @@ def test_a_header_the_policy_refuses_is_refused() -> None:
 
         proc = run(
             CHECK,
-            ["--title", "fix(ci): una cabecera que la casa no admite (#7)"],
+            ["--header", "fix(ci): una cabecera que la casa no admite (#7)"],
             bindir,
         )
         check(
@@ -164,11 +173,11 @@ def test_the_check_judges_with_the_policy_and_not_with_a_number_of_its_own() -> 
     """The mutation: the limit is not written in this repository.
 
     The policy engine is replaced by a stand-in that admits everything. If the
-    check measured the header on its own, a very long title would still be
+    check measured the header on its own, a very long header would still be
     refused, and the copy of the limit would be the truth instead of the
     policy.
     """
-    long_title = "fix(core): " + ("una cabecera interminable " * 8) + "(#7)"
+    long_header = "fix(core): " + ("una cabecera interminable " * 8) + "(#7)"
 
     with tempfile.TemporaryDirectory() as tmp:
         bindir = Path(tmp) / "bin"
@@ -176,10 +185,10 @@ def test_the_check_judges_with_the_policy_and_not_with_a_number_of_its_own() -> 
         record = Path(tmp) / "judged.txt"
         write_fake(bindir, "git-control", authority_that_allows(record))
 
-        proc = run(CHECK, ["--title", long_title], bindir)
+        proc = run(CHECK, ["--header", long_header], bindir)
         check(
             proc.returncode == 0,
-            f"the check refused a header of {len(long_title)} characters that "
+            f"the check refused a header of {len(long_header)} characters that "
             f"the policy admitted (exit {proc.returncode}). The check is "
             f"measuring the header with a limit of its own instead of asking "
             f"the policy, and that copy of the limit is a second truth.",
@@ -192,7 +201,7 @@ def test_the_check_judges_with_the_policy_and_not_with_a_number_of_its_own() -> 
         if record.is_file():
             judged = record.read_text(encoding="utf-8")
             check(
-                long_title in judged,
+                long_header in judged,
                 f"the policy was asked about something else:\n"
                 f"    {judged.strip()[:300]}",
             )
@@ -203,7 +212,7 @@ def test_the_check_judges_with_the_policy_and_not_with_a_number_of_its_own() -> 
         record = Path(tmp) / "judged.txt"
         write_fake(bindir, "git-control", authority_that_refuses(record))
 
-        proc = run(CHECK, ["--title", "fix(core): corto (#7)"], bindir)
+        proc = run(CHECK, ["--header", "fix(core): corto (#7)"], bindir)
         check(
             proc.returncode != 0,
             f"the check admitted a header the policy refused (exit "
@@ -212,9 +221,15 @@ def test_the_check_judges_with_the_policy_and_not_with_a_number_of_its_own() -> 
         )
 
 
-def test_the_header_judged_is_the_title_of_the_pull_request() -> None:
-    """The header a squash merge creates is the title, verbatim."""
-    title = "fix(core): el grafo distingue la declaracion del simbolo (#7)"
+def test_the_judged_header_is_the_title_and_the_pull_request_reference() -> None:
+    """The header the merge creates is the title plus the reference.
+
+    The forge composes the header that way when the merge does not carry a
+    subject of its own, and it is the whole string that has to fit the limit
+    of the house: a title that fits on its own can still produce a header
+    that does not fit.
+    """
+    title = "fix(core): el grafo distingue la declaracion del simbolo"
     with tempfile.TemporaryDirectory() as tmp:
         bindir = Path(tmp) / "bin"
         bindir.mkdir()
@@ -225,38 +240,33 @@ def test_the_header_judged_is_the_title_of_the_pull_request() -> None:
         proc = run(CHECK, ["--pr", "7", "--repo", "owner/name"], bindir)
         check(
             proc.returncode == 0,
-            f"the check refused a title the policy admits (exit "
+            f"the check refused a header the policy admits (exit "
             f"{proc.returncode}): {proc.stderr.strip()[:300]}",
         )
         if record.is_file():
             judged = record.read_text(encoding="utf-8")
             check(
-                title in judged,
-                f"the policy was not asked about the title of the pull "
-                f"request:\n    {judged.strip()[:300]}",
+                f"{title} (#7)" in judged,
+                f"the policy was not asked about the header the merge would "
+                f"create:\n    {judged.strip()[:300]}",
             )
 
 
-def test_a_title_has_to_close_the_pull_request_it_belongs_to() -> None:
-    """The rule that belongs to this repository and not to the policy.
-
-    Every commit in this history says which pull request it closes. A title
-    without that would be admitted by the policy and would land a commit that
-    does not say where it came from.
-    """
+def test_a_title_that_already_carries_a_reference_is_refused() -> None:
+    """The forge adds the reference; a title that carries one doubles it."""
     with tempfile.TemporaryDirectory() as tmp:
         bindir = Path(tmp) / "bin"
         bindir.mkdir()
         record = Path(tmp) / "judged.txt"
         write_fake(bindir, "git-control", authority_that_allows(record))
-        write_fake(bindir, "gh", forge_that_answers_with("fix(core): sin numero"))
+        write_fake(bindir, "gh", forge_that_answers_with("fix(core): sin numero (#7)"))
 
         proc = run(CHECK, ["--pr", "7", "--repo", "owner/name"], bindir)
         check(
             proc.returncode != 0,
-            f"the check admitted a title that does not close the pull request "
-            f"it belongs to (exit {proc.returncode}). The commit it would "
-            f"create would not say where it came from.",
+            f"the check admitted a title that already carries a pull request "
+            f"reference (exit {proc.returncode}). The forge adds that "
+            f"reference, so the header would carry it twice.",
         )
 
 
@@ -272,7 +282,7 @@ def test_the_check_fails_closed_when_it_cannot_judge() -> None:
         # that it cannot ask anybody.
         environment["PATH"] = "/usr/bin:/bin"
         proc = subprocess.run(
-            ["bash", str(CHECK), "--title", "fix(core): algo (#7)"],
+            ["bash", str(CHECK), "--header", "fix(core): algo (#7)"],
             capture_output=True,
             text=True,
             env=environment,
@@ -319,14 +329,14 @@ def test_the_gate_does_not_start_when_the_header_is_refused() -> None:
             'case "$*" in\n'
             f'  *"--method POST"*) printf "%s\\n" "$*" > {posted};;\n'
             "esac\n"
-            'printf "7\\tfix(ci): una cabecera que la casa no admite (#7)\\n"\n',
+            'printf "7\\tfix(ci): una cabecera que la casa no admite\\n"\n',
         )
 
         proc = run(PUBLISHER, ["HEAD", "owner/name"], bindir)
         check(
             proc.returncode != 0,
             f"the publisher reported success (exit {proc.returncode}) for a "
-            f"pull request whose title the policy refuses.",
+            f"pull request whose header the policy refuses.",
         )
         check(
             not started.exists(),
