@@ -24098,3 +24098,43 @@ cerrada de clases tiene que añadirlo. Y la convergencia de los tres
 vocabularios de clase —dominio, DTO canónico y wire— sigue siendo deuda
 declarada: el dominio tiene 23 clases, el DTO canónico replica el dominio y el
 wire publica 15. Queda anotado, no resuelto, y no se presenta como resuelto.
+
+## 2026-10-23 — El cierre verificado: la v0.101.30 llega a `main` con su recibo
+
+**Qué es esto.** La release ya estaba publicada; lo que quedaba era llevar su
+recibo al árbol de `main` por la única vía que `main` acepta —una pull request
+con un `merge-gate` verde sobre su cabeza exacta y una fusión por squash— y
+que el puntero del snapshot quedara diciendo la verdad al terminar.
+
+**Lo que se ejecutó, y lo que no.**
+
+- `merge-gate`: **success**, con sus **56 etapas en verde** y ninguna rota,
+  publicado para `fd14bb12`, la cabeza exacta de la PR #438, que quedó
+  `MERGEABLE`/`CLEAN` y se fusionó como `e843fd53`.
+- La cabecera que compuso la forja —el título de la pull request más su
+  número— pasó el juez de la casa antes de la fusión, y se comprobó otra vez
+  sobre el commit ya publicado.
+- Verificación desde los bytes publicados: los **siete** checksums del
+  `SHA256SUMS` descargado coinciden con los bytes, y el servidor MCP
+  **publicado** respondió **19 símbolos, 19 `declaration`, 0 `function`** a un
+  directorio con un solo `main.tf`.
+- Contratos de puntero: ratchet de versión, atribución de la autoridad,
+  estándar de comentarios y marcadores de conflicto, todos **OK**.
+- **No ejecutado en esta corrida**: `scripts/test-full.sh`. No hace falta
+  como gate de esta PR —el `merge-gate` es el gate que `main` exige, y corre
+  la batería completa, los contratos y el baseline—, pero el recibo lo dice
+  en vez de darlo por hecho.
+
+**El coste de mover el sitio de la compilación.** El gate tardó unos quince
+minutos en el volumen con sitio, contra una regla que pide 30 GiB libres
+antes de empezar. La palanca es `PREFLIGHT_WORK_DIR`, y no es un parche:
+apunta a otro volumen del mismo disco donde vive el repositorio, de modo que
+la compilación y el árbol están en el mismo sitio y el aislamiento por
+checkout sigue intacto.
+
+**Lo que este cierre no dice.** El valor `"declaration"` sigue siendo nuevo
+en el campo `kind` del transporte, y un consumidor que compare contra una
+lista cerrada de clases tiene que añadirlo. La convergencia de los tres
+vocabularios de clase —dominio, DTO canónico y wire— sigue siendo deuda
+declarada: 23 clases en el dominio, el DTO canónico replicando el dominio, 15
+publicadas en el wire. Queda anotado, no resuelto.
