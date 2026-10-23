@@ -5,8 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `b3e16c24c71238bcda325bfa90278eae61a3f8e6` (`origin/main` al
-> cerrar este ciclo), rama `main`.
+> **Snapshot**: 2026-10-23, sobre `d8d0a134d27d2f1f82282ad1b7ae3ca6857bda7a` (cabeza de
+> la rama de la unidad que cierra el puerto de proyección), rama
+> `feat/c9-projection-seam`.
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -144,9 +145,19 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**C9 está cerrado.** El dominio construía su propio adaptador: el puerto de
+proyección montaba la implementación concreta de infraestructura en una
+función libre. La costura se invirtió —el puerto declara la fábrica, la
+infraestructura la implementa, la raíz de composición la inyecta y los
+algoritmos la reciben hecha— y el guard arquitectónico aprendió a ver la
+dependencia escrita donde se usa, no solo la importada. Ese era el agujero:
+el guard daba verde sobre el defecto que dice impedir, porque solo leía
+sentencias `use`. La demostración está hecha: reintroducir la construcción en
+el dominio volvió a poner el guard en rojo con el motivo exacto.
 
 **C30 está cerrado.** La lista de lenguajes que el producto declara sale
 del registro de parsers, y el documento de la matriz ya no declara lista
@@ -174,7 +185,7 @@ instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 12 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 10 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.

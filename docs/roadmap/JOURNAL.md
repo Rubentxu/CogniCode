@@ -24235,3 +24235,126 @@ medir de verdad contra la base de avisos vigente. La deuda que queda
 anotada es de la máquina, no del repo: un hook global que se aplica a
 cachés de terceros juzgando commits ajenos va a volver a pasar, y la
 decisión de cómo acotarlo es del operador.
+
+## 2026-10-23 — La proyección la construye quien la compone: el dominio deja de montar su adaptador
+
+**Qué es esto.** El dominio tenía su propio adaptador de infraestructura. El
+puerto de proyección —que vive en `domain/ports/`— exponía una función libre
+que construía la implementación concreta:
+
+```rust
+pub fn project_call_graph(cg: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+    Arc::new(crate::infrastructure::graph::CallGraphProjection::from_call_graph(cg))
+}
+```
+
+Una línea. Y decidía lo que decide la raíz de composición: **qué
+implementación se ejecuta**. La frontera hexagonal estaba invertida, y el
+sistema de tipos no lo impedía: `crate::infrastructure::…` es una ruta legal
+en cualquier punto del crate. Un dominio que construye su propio adaptador
+depende de la capa de abajo, diga lo que diga el diagrama.
+
+**Lo que mentía, medido.** La función estaba en el puerto que el propio
+producto publica como frontera, y el guard arquitectónico —que existe para
+que esa frontera no se cruce— daba **verde sobre ella**. Se comprobó la
+lectura en las dos direcciones: el guard, y lo que el guard mira.
+
+**Por qué nadie lo vio.** Porque los dos leían lo mismo, y lo que leían no
+era lo que cruzaba. El evaluador leía **sentencias `use`**. El defecto estaba
+escrito **en línea**, donde se usa: `crate::infrastructure::graph::…` en
+plena expresión, sin una línea `use` que lo delatara. Un guard que solo lee
+imports protege el límite que declara contra la mitad de las formas de
+cruzarlo — y la mitad que se cuela es la que se cuela.
+
+Por debajo había un segundo motivo, del mismo género: el ratchet que cuenta
+la deuda de producción clasificaba cada entrada mirando una sentencia `use`,
+así que una dependencia escrita en línea no era deuda para nadie. Las dos
+medidas decían lo mismo y nadie lo decía.
+
+**Lo que se hizo, en dos mitades que van juntas.** La costura y el guard.
+
+*La costura.* El puerto declara el contrato de la fábrica; la infraestructura
+lo implementa; la raíz de composición lo inyecta; los algoritmos reciben la
+proyección ya construida. La función libre se queda en infraestructura, que
+es donde vive la construcción, y el puerto ya no la nombra. El registro de
+algoritmos recibe la fábrica por inyección, igual que recibe el almacén de
+linaje, y construye **una** proyección por ejecución.
+
+De paso, el algoritmo dejó de recibir el grafo. `execute` llevaba un
+`&CallGraph` que **ninguno** de los once descriptores usaba: con la
+proyección en la mano, el grafo es ruido. La firma quedó
+`execute(params, limits, projection)`, y el parámetro muerto desapareció con
+ella.
+
+*El guard.* El evaluador aprendió a leer las dos grafías de una dependencia:
+la sentencia `use` y la ruta escrita donde se usa. Y aprendió a ser ciego a
+lo que no es código: una ruta citada dentro de una cadena literal o de un
+comentario es un dato, no una dependencia. Sin eso, cada fixture que citase
+un import llenaría el inventario de ruido.
+
+**El ratchet dejó de medir otra cosa.** La clasificación de producción
+pasó a mirar la ruta completa, en las dos grafías, igual que el guard. Eso
+corrigió un falso positivo que llevaba tiempo: la entrada
+`application/intelligence_log/recorder.rs :: infrastructure::intelligence_log::`
+se contaba como deuda de producción porque la palabra `intelligence_log`
+aparece dentro de `domain::intelligence_log`. Su único uso real estaba
+dentro de `mod tests`. La deuda de producción real en la base eran **23**
+entradas, no 24.
+
+Y la escape hatch dejó de ser un número. Era `APPROVED_PRODUCTION_GROWTH = 0`
+—un contador que cualquier pull request posterior podía gastar sin decir en
+qué lo gastaba— y ahora es una **lista de pares con nombre**: cada deuda
+declarada se autoriza por su nombre exacto y nada más. Las cinco que este
+ciclo declara son derivas que ya estaban en el código y que el guard no
+podía ver; la lista dice cuáles son y no abre techo para las siguientes.
+
+**El defecto que salió por el camino.** El escaner quitaba los comentarios
+antes que las cadenas literales. Un `//` dentro de una cadena cortaba la
+línea, dejaba la cadena sin cerrar y desincronizaba el escáner **para todo
+el archivo de ahí en adelante**. El orden se invirtió y se escribió la
+prueba de regresión.
+
+**La demostración, que es la parte que da valor.** Primero el rojo: con el
+guard ya capaz de ver, la prueba de auto-hospedaje falló con **exactamente
+una** deriva —`domain/ports/call_graph_projection.rs` →
+`infrastructure::graph::CallGraphProjection::from_call_graph`— donde antes
+daba verde sobre el mismo defecto. Después el discriminante: se reintrodujo
+**solo** la construcción en el dominio, sin tocar nada más, y el guard volvió
+a rojo con ese mismo motivo; revertida la mutación, volvió a verde.
+
+Quedan tres contratos permanentes: el dominio que llega a infraestructura
+en línea se detecta, la aplicación que llega a infraestructura en línea se
+detecta, y una ruta citada en una cadena **no** es una dependencia. El
+tercero importa tanto como los otros: un guard que ve de más no es un guard,
+es una alarma.
+
+**Lo que este cierre no dice.** El puerto sigue exponiendo
+`petgraph::NodeIndex` en `symbol_index()`. El adaptador lo usa en treinta
+sitios y hay un contrato aprobado que lo fija. Sustituirlo es un cambio en el
+adaptador de grafo, no en la costura, y queda declarado, no hecho.
+
+ Tampoco lo dice esto: cinco derivas de la capa de aplicación se hicieron
+visibles por primera vez —la política de recorrido y los tipos del informe de
+construcción, alcanzados en línea—. No son deuda nueva: son deuda que el
+guard no veía. Ahora están inventariadas, con dueño y fecha, y las tienen
+que cerrar los trabajos que ponen esas dos cosas detrás de un puerto.
+
+Y el `CommunityDetector` sigue viviendo en infraestructura con la capa de
+aplicación nombrándolo. Eso ya estaba inventariado antes de este ciclo, y
+este ciclo no lo ha tocado.
+
+**Lo que cambia para un consumidor.** Nada en las respuestas: los mismos
+números, las mismas rutas, los mismos errores. Lo que cambia es de dónde
+sale la proyección. Para quien use la biblioteca, el nombre nuevo es
+`DependencyPath` y `parse_dependency_paths`; los antiguos siguen ahí, con
+deprecación, porque el módulo es público y publicado. Para quien compone
+registros de algoritmos, hay un parámetro más: la fábrica.
+
+**Lo que esta corrida midió.** El modo rápido: el selector eligió la suite
+del core, 2390 pruebas de biblioteca y 9 del contrato de arquitectura, con
+clippy `-D warnings` limpio. El gate completo local sobre el árbol
+commiteado: fmt, clippy con `-D warnings`, **221 suites y 6552 pruebas**, los
+doc-tests de 20 crates, los **373 contratos** del producto y el baseline, con
+cero rojo. El ratchet: de 23 entradas de producción en la base a 28 en la
+rama, las cinco nuevas nombradas una a una. Y el estándar de comentarios: ni
+una línea de comentario nueva con referencias.
