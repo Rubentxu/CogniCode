@@ -25002,3 +25002,70 @@ lo que no son; nadie les ha pedido que no lo hagan, y el recorte del vigilante
 no depende de ello. Y `Language::Json` sigue en el registro como lenguaje
 mientras la clasificación lo trata como configuración: una incoherencia
 anterior a este trabajo, que aquí sólo se documenta.
+
+## 2026-10-24 — El cierre verificado: el producto observa un conjunto de ficheros
+
+**El resultado.** La unidad está cerrada y en remoto. `main` está en
+`34c2b75030a62c0735408a7cad6e0be6be45d959`, el squash de la PR #452, y el gate
+de fusión corrió sobre la cabeza exacta de esa rama —`16953e24`— y publicó
+`merge-gate=success` con su propio código de salida 0.
+
+**Lo que queda, para quien lo lea después.** El producto decide en un solo
+sitio qué ficheros mira. Un fichero entra en la observación cuando el producto
+puede decir qué es y cuando vive donde el producto mira: fuera de los
+directorios de compilación, cachés y dependencias, y fuera de lo que el
+repositorio declara excluido. El inventario y el vigilante aplican esa misma
+decisión, así que no pueden separarse: lo que uno recorre, el otro lo vigila.
+
+**Lo que cambia para quien lo consume.** El vigilante deja de vigilar lo que
+no es del proyecto. En este repositorio pasaban de **248.757 ficheros** a
+**2.870**, que son exactamente los que el inventario recorre y que el producto
+puede nombrar. Un `npm install` deja de ser un lote de cambios que reconstruye
+el grafo entero. Y el endpoint que anuncia el vigilante publica ahora la lista
+del núcleo —60 extensiones, más los directorios donde no se entra— en vez de
+una lista propia que no describía lo que el servidor vigilaba.
+
+**Lo que la fusión no cambia.** Los bytes del esquema publicado, los nombres
+de las herramientas, y el significado de los ficheros observados: un fichero
+que el producto leía antes y sigue leyendo. Lo que cambia es la lista de
+extensiones que el endpoint anuncia, y que ahora es la verdad.
+
+**La cabecera se juzgó antes de gastar el gate.** El juez admitido
+`fix(core): una regla para los ficheros que el producto observa (#452)`.
+
+**Lo que esta corrida midió.** El modo rápido: `rc=0`, 2392 pruebas, clippy
+`-D warnings` limpio. El gate completo local sobre el árbol commiteado: fmt,
+clippy con `-D warnings`, **231 suites y 6518 pruebas sin un solo rojo** —221
+suites y 6510 pruebas en la etapa del workspace, 10 suites y 8 pruebas en la
+de doc-tests—, los 373 contratos de CI y el baseline, con cero rojo. El gate de
+fusión sobre la cabeza exacta: 56 etapas, publicado `merge-gate=success`, con
+su propio código de salida 0.
+
+**El discriminante, medido en las cuatro direcciones.** Revirtiendo la regla
+de los directorios ruidosos, el contrato que la protege se puso rojo:
+
+> the product does not read `node_modules/left-pad/index.js`, and the watcher looks at it anyway
+
+Revirtiendo la regla de lo que el repositorio excluye, el suyo:
+
+> the repository excludes `excluded/secret.rs`, and the watcher looks at it anyway
+
+Revirtiendo la derivación de la clasificación respecto al registro, dos:
+
+> the registry reads a language whose extension is `hs`, and the watcher does not look at it
+> the endpoint names a different set of extensions than the product observes
+
+Con cada mutación revertida, los contratos volvieron a verde.
+
+**Lo que el arnés ganó.** Los cuatro tests del módulo compartido de las
+pruebas del servidor lo ejecutaban doce binarios de prueba: doce veces cada
+uno. Ahora tienen un fichero propio y se ejecutan una. Medido contando las
+líneas de la corrida: **44 ejecuciones redundantes menos**. Y el cliente HTTP,
+que estaba escrito dos veces, es ahora uno.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El vigilante sigue
+reconstruyendo el grafo entero por cada lote de cambios: eso es la caché
+incremental, no esta regla. El inventario sigue recorriendo ficheros que el
+producto no puede nombrar, y `Language::Json` sigue en el registro como
+lenguaje mientras la clasificación lo trata como configuración: una
+incoherencia anterior a este trabajo, que aquí sólo se documenta.
