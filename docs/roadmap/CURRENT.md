@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `44dcb159395f40f5b28365d33524388f2fb95fc5` (el
-> `main` ya fusionado de la unidad que hace que el lector diga lo que pasó y
-> dónde está cada declaración).
+> **Snapshot**: 2026-10-23, sobre `8b7eb1511b77523652e0efdeca3cc6d1eb80fe24` (la
+> cabeza de la rama de la unidad que hace que el producto observe un conjunto
+> de ficheros, y lo diga).
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -145,7 +145,7 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
@@ -179,6 +179,23 @@ consumidor que recibe un fallo lo dice en vez de caer al lector genérico, y la
 declaración se publica donde está escrita. La demostración está hecha:
 revirtiendo el tratamiento del fallo, la posición o el rechazo del fichero
 roto, los contratos correspondientes se pusieron rojos.
+
+**C15 está cerrado.** El producto llevaba cuatro listas distintas de
+extensiones y cada una contestaba a una pregunta distinta: el vigilante miraba
+la extensión y nada más, el inventario clasificaba con una tabla propia y el
+endpoint publicaba una lista que no describía lo que el servidor vigilaba. Lo
+que el vigilante vigilaba no era el proyecto: en este repositorio miraba
+**248.757 ficheros** frente a los **3.122** que recorre el inventario, y cada
+instalación de dependencias era un lote de cambios que reconstruía el grafo
+entero. Ahora hay una regla, en un sitio: el producto observa un fichero
+cuando puede decir qué es y cuando vive donde el producto mira. La
+clasificación sale del registro de lenguajes, el inventario y el vigilante
+aplican las mismas reglas —los directorios ruidosos y lo que el repositorio
+excluye—, y el endpoint publica la lista del núcleo en vez de la suya. El
+vigilante vigila ahora **2.870 ficheros**, exactamente los que el inventario
+recorre y que el producto puede nombrar, y el endpoint anuncia 60 extensiones
+en vez de 21. La demostración está hecha: revirtiendo cada mitad de la regla
+por separado, los contratos correspondientes se pusieron rojos.
 
 **C10 está cerrado.** El producto publicaba un trozo de la identidad de una
 cosa como si fuera su nombre. Para un símbolo pasaba por casualidad —el nombre

@@ -24906,3 +24906,99 @@ esta unidad, que son otra costura: la relación que no se puede resolver se
 pierde sin registrar —en una compilación de producción los `debug_assert!` no
 se ejecutan—, y la ausencia de un informe de construcción se convierte en
 cobertura completa.
+
+## 2026-10-23 — El producto observa un conjunto de ficheros, y lo dice
+
+**La mentira, medida.** El producto llevaba cuatro listas distintas de
+extensiones, y cada una contestaba a una pregunta diferente:
+
+| Sitio | Qué tenía | Cuántas |
+|---|---|---|
+| El vigilante (`watcher.rs`) | una lista privada de extensiones | 33 |
+| El endpoint `/watch` (`server.rs`) | una lista pública de extensiones | 21 |
+| El inventario (`scan.rs`) | su propia tabla de extensiones | 53 |
+| El registro de lenguajes (`language.rs`) | la autoridad de lo que el producto lee | 53 |
+
+Doce extensiones las vigilaba el vigilante y el endpoint no las anunciaba.
+Veinticinco que el producto lee las ignoraba el vigilante. Cinco las vigilaba
+el vigilante y el registro no las declaraba. Y el endpoint respondía `200` con
+su lista de 21, que no describía lo que el servidor vigilaba de verdad: un
+`200` con una respuesta creíble y falsa.
+
+**Dónde caía.** La causa no era el número: era que cada lista decidía por su
+cuenta. La del vigilante miraba la extensión y nada más, así que no preguntaba
+ni qué era el fichero ni dónde estaba. La del inventario clasificaba con una
+tabla propia, gemela de la del registro, que podía desviarse sin que nadie lo
+notase. Y la del endpoint era una tercera respuesta a la misma pregunta.
+
+Medido sobre este repositorio: el vigilante miraba **248.757 ficheros** y el
+inventario del producto recorre **3.122**. El vigilante no miraba los ficheros
+del proyecto: miraba los ficheros de `node_modules`, de `target/`, de
+`sandbox/repos/` y de todo lo que el repositorio declara excluido. Cada
+`npm install` en un proyecto con dependencias era un lote de cambios que
+disparaba la reconstrucción completa del grafo.
+
+**Qué cambia.** Una regla, en un sitio. El producto observa un fichero cuando
+puede decir qué es y cuando vive donde el producto mira:
+
+1. **Qué es.** La clasificación sale del registro de lenguajes, que es la
+   única lista que dice qué lee el producto. Un fichero que ningún lenguaje
+   reclama es un fichero que el producto no lee.
+2. **Dónde está.** El producto no entra en los directorios que declara ruidosos
+   —salida de compilación, cachés, dependencias— y respeta lo que el propio
+   repositorio excluye.
+
+Las dos mitades las decide el mismo código que usa el inventario y el
+vigilante, así que no pueden separarse: el inventario recorre con un
+constructor de reglas y el vigilante consulta el mismo. Y el endpoint deja de
+llevar su lista: publica la del núcleo, más los directorios donde el
+vigilante no entra, para que la respuesta sea exacta en las dos dimensiones.
+
+**Lo que esta corrida midió.** Sobre el árbol real de este repositorio:
+
+| Medida | Antes | Después |
+|---|---|---|
+| Ficheros que vigila el vigilante | 248.757 | **2.870** |
+| Ficheros que recorre el inventario | 3.122 | 3.122 |
+| Ficheros del inventario que el producto puede nombrar | 2.870 | 2.870 |
+| Extensiones que anuncia `/watch` | 21 | **60** |
+
+El vigilante vigila ahora exactamente los ficheros que el inventario recorre y
+que el producto puede nombrar: 2.870 de 2.870, medido sobre el árbol, no sólo
+en un escenario de laboratorio. Se dejan de vigilar 245.887 ficheros que no
+tenían nada que ver con el proyecto.
+
+**El discriminante, medido en las cuatro direcciones.** Cada mitad de la regla
+se rompió por separado, y cada contrato que la protege se puso rojo:
+
+| Mutación | Contrato que se puso rojo |
+|---|---|
+| Sin la regla de los directorios ruidosos | «el vigilante no entra donde el producto no lee» |
+| Sin la regla de lo que el repositorio excluye | «el vigilante respeta lo que el repositorio excluye» |
+| Una clasificación que no sigue al registro | «el producto lee los lenguajes que el registro nombra» y «las extensiones anunciadas son las que el producto lee» |
+| El endpoint con su propia lista | «el endpoint nombra los ficheros que el producto observa» y «el endpoint nombra todos los lenguajes del registro» |
+
+Con cada mutación revertida, los contratos volvieron a verde.
+
+**Lo que esta corrida midió, otra vez.** El modo rápido: `rc=0`, 2392 pruebas,
+clippy `-D warnings` limpio. El gate completo local sobre el árbol commiteado:
+fmt, clippy con `-D warnings`, **231 suites y 6518 pruebas sin un solo rojo** —
+221 suites y 6510 pruebas en la etapa del workspace, 10 suites y 8 pruebas en
+la de doc-tests—, los contratos de CI y el baseline, con cero rojo.
+
+**El arnés, que también estaba en la factura.** El módulo compartido de las
+pruebas del servidor lo incluyen doce binarios de prueba, y dentro llevaba sus
+propias cuatro pruebas: se ejecutaban doce veces cada una y decían doce veces
+lo mismo. Ahora tienen un fichero propio y se ejecutan una: **44 ejecuciones
+redundantes menos**, medido contando las líneas de la corrida. Y el cliente
+HTTP, que estaba escrito dos veces —una en el contrato de `/metrics` y otra en
+el nuevo contrato del vigilante— es ahora uno, en el módulo compartido.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El vigilante sigue
+reconstruyendo el grafo entero por cada lote de cambios: eso es trabajo de la
+caché incremental, no de esta regla. El inventario sigue recorriendo ficheros
+que el producto no puede nombrar —una imagen, un binario— y los clasifica como
+lo que no son; nadie les ha pedido que no lo hagan, y el recorte del vigilante
+no depende de ello. Y `Language::Json` sigue en el registro como lenguaje
+mientras la clasificación lo trata como configuración: una incoherencia
+anterior a este trabajo, que aquí sólo se documenta.

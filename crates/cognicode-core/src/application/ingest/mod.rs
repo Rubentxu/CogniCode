@@ -1,5 +1,5 @@
 //! Ingest pipeline — Scan → Extract → Resolve → Cluster →
-//! Analyze → Report (ADR-017).
+//! Analyze → Report.
 //!
 //! The PG-bound stages (pg_upsert_stage, service run_scan, and the
 //! `IngestController` job orchestrator) were removed with the full
@@ -10,6 +10,7 @@ pub mod analyzer;
 pub mod edge_diff;
 pub mod extract_stage;
 pub mod extractor;
+pub mod observation;
 pub mod refresh;
 pub mod scan;
 pub mod types;
@@ -29,8 +30,12 @@ pub use controller::{StaticWorkspaceResolver, WorkspaceResolver, workspace_id_fo
 pub mod controller;
 pub use extract_stage::{extract_all, extract_streaming};
 pub use extractor::extract_file;
+pub use observation::Observation;
 pub use refresh::{RefreshStats, refresh_from_pg};
-pub use scan::{ScanEntry, classify_file, hash_file, scan_for_changes, walk_files};
+pub use scan::{
+    ScanEntry, classify_file, hash_file, noise_directories, observed_extensions, scan_for_changes,
+    walk_files,
+};
 pub use types::{
     ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,
     ScanManifestEntry, ScanProgress, ScanResult, ScanStage, TargetRef, TypeRef, TypeRefContext,
