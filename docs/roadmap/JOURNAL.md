@@ -24532,3 +24532,52 @@ más los doc-tests de 20 crates. El ratchet de comentarios contó 165 líneas
 heredadas y **0 nuevas**. El código neto del cambio es de **-1548 líneas**: se fueron dos
 puertas, sus contratos y sus pruebas, y en su lugar quedan un contrato por
 ley y otro que compara dos rutas entre sí.
+
+
+## 2026-10-23 — El cierre verificado: el grafo del proyecto llega a `main` con su recibo
+
+**El resultado.** La unidad de la puerta única está cerrada y en remoto.
+`main` está en `d192701b`, el squash de la PR #445, y el gate de fusión
+corrió sobre la cabeza exacta de esa rama —`68a937d8`— y publicó
+`merge-gate=success` con su propio código de salida 0.
+
+**Lo que queda, para quien lo lea después.** El grafo de un proyecto se
+construye en un solo sitio: el servicio que publica el informe de
+cobertura. Las estrategias ya no son una segunda puerta; son estrategias
+de índice, que es lo único que todas pueden cumplir sin mentir. El
+índice rechaza por su nombre una estrategia que no indexa, y dice qué
+nombres sí funcionan. El lector examina el árbol antes de publicar sus
+símbolos, y como el árbol se analiza una vez y se lee dos veces, el
+cuidado no cuesta un parseo: sale más barato que antes. La ruta filtrada
+usa el mismo inventario y el mismo informe que la ruta completa. La
+demostración del ciclo está en el recibo anterior: revirtiendo sólo las
+dos correcciones, cinco contratos se pusieron rojos.
+
+**Lo que la fusión no cambia.** Las mismas rutas y los mismos errores. Lo
+que cambia es qué contestan cuando no pueden: el índice ya no devuelve
+un cero ficticio, y el grafo ya no declara `Complete` sobre un proyecto
+del que no pudo leer una parte. El estado del informe cambia de
+`Complete` a `Partial` en un proyecto con una fuente rota: es la
+respuesta correcta, y hasta ahora no la daba nadie.
+
+**La cabecera se juzgó antes de gastar el gate.** El juez admitió
+`refactor(core): el grafo del proyecto tiene una sola puerta (#445)`.
+
+**Lo que esta corrida midió.** El modo rápido: `rc=0`, suite del núcleo,
+2391 pruebas, clippy `-D warnings` limpio y el baseline en verde. El
+gate completo local sobre el árbol commiteado: fmt, clippy con
+`-D warnings`, **222 suites y 6532 pruebas**, los doc-tests de 20 crates,
+los contratos del producto y el baseline, con cero rojo. La medición de
+las relaciones tragadas: **cero** de los cuatro puntos llegó a dispararse.
+El discriminante: **cinco** contratos en rojo al revertir sólo las dos
+correcciones.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El tipo del
+informe sigue siendo de dos estados: un "no medido" explícito no tiene
+sitio, porque hoy ninguna capacidad lo necesita. La estrategia por
+fichero conserva su propio camino para fusionar una lista explícita de
+ficheros, y su diferencia de semántica con la ruta completa sigue
+documentada en su contrato. Y el resto de la auditoría sigue en la cola:
+la identidad y su prueba metamórfica, el vigilante coherente, la
+simplificación medida, la caché incremental, Kotlin sin JVM y las
+relaciones Kotlin–Java.
