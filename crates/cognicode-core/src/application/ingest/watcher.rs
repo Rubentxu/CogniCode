@@ -1,4 +1,4 @@
-//! File watcher — auto-scan on file changes (ADR-022, Sprint 4).
+//! File watcher — auto-scan on file changes.
 //!
 //! Uses the `notify` crate to watch the workspace root for file
 //! changes. Changed files are queued to the ingest pipeline's scan
@@ -7,7 +7,7 @@
 //! Features:
 //! - Recursive watch (all subdirectories)
 //! - Debounced: coalesces rapid changes within 500ms
-//! - Filters: only code/config/document files trigger scans
+//! - Filters: only the files the product reads trigger scans
 //! - Background task: runs on tokio without blocking
 //! - Clean shutdown via `stop()` method
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
@@ -18,6 +18,8 @@ use std::time::Duration;
 
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, oneshot};
+
+use crate::application::ingest::observation::Observation;
 
 /// Handle to a running file watcher. Dropping this stops the watcher.
 pub struct WatcherHandle {
@@ -58,6 +60,9 @@ pub fn start_watcher(root: PathBuf) -> (WatcherHandle, mpsc::UnboundedReceiver<V
     let (tx, rx) = mpsc::unbounded_channel();
     let (stop_tx, stop_rx) = oneshot::channel();
     let workspace = root.clone();
+    // The watcher and the inventory look at the same files, so the watcher
+    // asks the same rule instead of carrying a list of its own.
+    let observation = Observation::of(&root);
 
     std::thread::spawn(move || {
         let tx = tx.clone();
@@ -75,7 +80,7 @@ pub fn start_watcher(root: PathBuf) -> (WatcherHandle, mpsc::UnboundedReceiver<V
                             let paths: Vec<PathBuf> = event
                                 .paths
                                 .into_iter()
-                                .filter(|p| is_watchable(p))
+                                .filter(|path| observation.observes(path))
                                 .collect();
                             if !paths.is_empty() {
                                 let _ = tx.send(paths);
@@ -151,64 +156,28 @@ pub async fn debounce_changes(
     out_rx
 }
 
-/// Check if a file path is one we should watch (code/config files).
-fn is_watchable(path: &std::path::Path) -> bool {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    matches!(
-        ext,
-        "rs" | "py"
-            | "pyw"
-            | "ts"
-            | "tsx"
-            | "js"
-            | "jsx"
-            | "mjs"
-            | "cjs"
-            | "go"
-            | "java"
-            | "c"
-            | "h"
-            | "cpp"
-            | "cc"
-            | "cxx"
-            | "hpp"
-            | "hxx"
-            | "cs"
-            | "tf"
-            | "tfvars"
-            | "hcl"
-            | "yml"
-            | "yaml"
-            | "rb"
-            | "php"
-            | "swift"
-            | "md"
-            | "mdx"
-            | "txt"
-            | "rst"
-            | "json"
-            | "toml"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ingest::observation::Observation;
 
-    #[test]
-    fn test_is_watchable_code_files() {
-        assert!(is_watchable(PathBuf::from("src/main.rs").as_path()));
-        assert!(is_watchable(PathBuf::from("app.py").as_path()));
-        assert!(is_watchable(PathBuf::from("index.ts").as_path()));
-        assert!(is_watchable(PathBuf::from("main.tf").as_path()));
-        assert!(is_watchable(PathBuf::from("site.yml").as_path()));
+    /// A workspace with one source file and one file the product cannot read.
+    fn workspace() -> tempfile::TempDir {
+        let directory = tempfile::TempDir::new().expect("the workspace is creatable");
+        std::fs::write(directory.path().join("main.rs"), "fn main() {}")
+            .expect("the source file is writable");
+        std::fs::write(directory.path().join("image.png"), "not really a png")
+            .expect("the image is writable");
+        directory
     }
 
     #[test]
-    fn test_is_watchable_ignores_non_code() {
-        assert!(!is_watchable(PathBuf::from("image.png").as_path()));
-        assert!(!is_watchable(PathBuf::from("binary.exe").as_path()));
-        assert!(!is_watchable(PathBuf::from("data.bin").as_path()));
+    fn the_watcher_watches_the_files_the_product_reads() {
+        let workspace = workspace();
+        let observation = Observation::of(workspace.path());
+
+        assert!(observation.observes(&workspace.path().join("main.rs")));
+        assert!(!observation.observes(&workspace.path().join("image.png")));
     }
 
     #[tokio::test]

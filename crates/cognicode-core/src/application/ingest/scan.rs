@@ -1,5 +1,5 @@
 //! Scan stage — walk the filesystem, hash files, compare against the
-//! `scan_manifest` for incremental change detection (ADR-017).
+//! `scan_manifest` for incremental change detection.
 //!
 //! Three-step flow:
 //! 1. Walk: `ignore::WalkBuilder` + `WalkFilter` to find source files
@@ -9,6 +9,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::UNIX_EPOCH;
 
 use ignore::WalkBuilder;
@@ -16,12 +17,32 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::application::ingest::types::{ChangeKind, FileChange, FileType};
+use crate::domain::value_objects::Language;
 
 /// Walk a directory, returning all source files (code, documents, config).
 /// Uses `ignore` crate for `.gitignore` awareness, with a WalkFilter-like
 /// approach to skip noise directories.
 pub fn walk_files(root: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = WalkBuilder::new(root)
+    let mut files: Vec<PathBuf> = workspace_rules(root)
+        .build()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+        .map(|e| e.into_path())
+        .collect();
+    files.sort();
+    files
+}
+
+/// The rules that decide where the product looks inside a workspace.
+///
+/// The inventory walks with them and the watcher watches with them, so both
+/// agree on the same places. The rules are declared once because a second
+/// declaration is a second answer: the walk would skip a directory the watch
+/// reports, or the other way round, and the difference would only show up as
+/// a rebuild nobody asked for.
+pub(crate) fn workspace_rules(root: &Path) -> WalkBuilder {
+    let mut builder = WalkBuilder::new(root);
+    builder
         .hidden(false) // don't skip dotfiles
         .git_ignore(true) // respect .gitignore
         .git_global(true) // respect global .gitignore
@@ -36,14 +57,8 @@ pub fn walk_files(root: &Path) -> Vec<PathBuf> {
                 }
             }
             true
-        })
-        .build()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-        .map(|e| e.into_path())
-        .collect();
-    files.sort();
-    files
+        });
+    builder
 }
 
 /// Compute the SHA256 content hash of a file, returned as a lowercase hex
@@ -67,53 +82,62 @@ pub fn hash_files_parallel(paths: &[PathBuf]) -> Vec<(PathBuf, Option<String>)> 
         .collect()
 }
 
+/// The extensions that make a file a document.
+const DOCUMENT_EXTENSIONS: &[&str] = &["md", "mdx", "qmd", "txt", "rst"];
+
+/// The extensions that make a file a configuration.
+const CONFIG_EXTENSIONS: &[&str] = &["json", "yaml", "yml", "toml", "ini"];
+
 /// Classify a file by its extension into a `FileType` and optional
 /// `LanguageConfig` (for code files).
+///
+/// The language comes from the registry of languages the product can read,
+/// which is the only list that says so. An extension no language claims is
+/// an extension the product does not read, whatever any other list says.
 pub fn classify_file(path: &Path) -> (FileType, Option<&'static str>) {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = match ext.to_lowercase().as_str() {
-        "rs" => Some("rust"),
-        "py" | "pyw" => Some("python"),
-        "ts" | "tsx" => Some("typescript"),
-        "js" | "jsx" | "mjs" | "cjs" => Some("javascript"),
-        "go" => Some("go"),
-        "java" => Some("java"),
-        "c" | "h" => Some("c"),
-        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Some("cpp"),
-        "cs" => Some("csharp"),
-        "tf" | "tfvars" | "hcl" => Some("hcl"),
-        "yml" | "yaml" => Some("yaml"),
-        "rb" => Some("ruby"),
-        "php" => Some("php"),
-        "swift" => Some("swift"),
-        "scala" => Some("scala"),
-        "lua" | "luau" => Some("lua"),
-        "zig" => Some("zig"),
-        "dart" => Some("dart"),
-        "groovy" | "gradle" => Some("groovy"),
-        "ex" | "exs" => Some("elixir"),
-        "erl" | "hrl" => Some("erlang"),
-        "hs" => Some("haskell"),
-        "jl" => Some("julia"),
-        "sh" | "bash" => Some("bash"),
-        "r" | "R" => Some("r"),
-        "ps1" | "psm1" => Some("powershell"),
-        // NOTE: json is classified as FileType::Config (not Code), so no lang tag.
-        // The lang field is used for tree-sitter parsing; JSON uses tree-sitter-json
-        // but is not parsed as code for graph extraction purposes.
-        "json" => None,
-        "f" | "f90" | "f95" | "f03" | "f08" => Some("fortran"),
-        "v" => Some("verilog"),
-        "sv" => Some("systemverilog"),
-        _ => None,
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    // A JSON file is a configuration and not a source of declarations: the
+    // registry can parse it, but nothing in the graph comes from it.
+    let language = Language::from_extension(path.extension())
+        .filter(|language| *language != Language::Json)
+        .map(|language| language.id());
+    let file_type = if DOCUMENT_EXTENSIONS.contains(&extension.as_str()) {
+        FileType::Document
+    } else if CONFIG_EXTENSIONS.contains(&extension.as_str()) {
+        FileType::Config
+    } else if language.is_some() {
+        FileType::Code
+    } else {
+        FileType::Other
     };
-    let file_type = match ext.to_lowercase().as_str() {
-        "md" | "mdx" | "qmd" | "txt" | "rst" => FileType::Document,
-        "json" | "yaml" | "yml" | "toml" | "ini" => FileType::Config,
-        _ if lang.is_some() => FileType::Code,
-        _ => FileType::Other,
-    };
-    (file_type, lang)
+    (file_type, language)
+}
+
+/// The extensions of the files the product observes.
+///
+/// Every consumer that has to name them reads this: the watcher watches
+/// them, and the endpoint that announces the watcher publishes them. A
+/// second list would be a second answer to the same question, and the two
+/// would drift apart without anybody noticing.
+pub fn observed_extensions() -> &'static [&'static str] {
+    static EXTENSIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    EXTENSIONS
+        .get_or_init(|| {
+            let mut extensions: Vec<&'static str> = Language::all_languages()
+                .iter()
+                .flat_map(|language| language.extensions().iter().copied())
+                .chain(DOCUMENT_EXTENSIONS.iter().copied())
+                .chain(CONFIG_EXTENSIONS.iter().copied())
+                .collect();
+            extensions.sort_unstable();
+            extensions.dedup();
+            extensions
+        })
+        .as_slice()
 }
 
 /// Scan a directory, returning `FileChange`s for files that have changed
@@ -243,34 +267,46 @@ pub struct ScanEntry {
     pub mtime: f64,
 }
 
-/// Noise directories to skip during the walk.
-fn is_noise_dir(name: &str) -> bool {
-    matches!(
-        name,
-        "node_modules"
-            | "target"
-            | "dist"
-            | "build"
-            | ".git"
-            | ".svn"
-            | ".hg"
-            | "__pycache__"
-            | ".pytest_cache"
-            | ".mypy_cache"
-            | ".ruff_cache"
-            | "venv"
-            | ".venv"
-            | "env"
-            | ".env"
-            | "coverage"
-            | ".next"
-            | ".nuxt"
-            | ".svelte-kit"
-            | ".terraform"
-            | "graphify-out"
-            | "cognicode-out"
-            | ".cognicode"
-    )
+/// The directories the product does not look into.
+///
+/// What lives in them is not the project the product describes: build
+/// output, caches, dependencies and version control. The names are
+/// published so that whoever asks where the watcher looks is told the
+/// same thing the watcher decides.
+const NOISE_DIRECTORIES: &[&str] = &[
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".git",
+    ".svn",
+    ".hg",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "venv",
+    ".venv",
+    "env",
+    ".env",
+    "coverage",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".terraform",
+    "graphify-out",
+    "cognicode-out",
+    ".cognicode",
+];
+
+/// The directories the product does not look into.
+pub fn noise_directories() -> &'static [&'static str] {
+    NOISE_DIRECTORIES
+}
+
+/// Whether a directory is one the product does not look into.
+pub fn is_noise_dir(name: &str) -> bool {
+    NOISE_DIRECTORIES.contains(&name)
 }
 
 // ============================================================================

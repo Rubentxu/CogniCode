@@ -91,7 +91,9 @@ async fn metrics_handler(
 
 /// Handler for `/watch` — file watcher status.
 ///
-/// Returns JSON with watcher state, workspace path, and uptime.
+/// Returns JSON with watcher state, workspace path, and the files the
+/// watcher looks at. The extensions come from the core, so this endpoint
+/// names what the watcher really watches instead of a list of its own.
 /// Always 200 OK (watcher is optional — not a readiness requirement).
 async fn watch_handler(
     State((ctx, _registry)): State<(Arc<HandlerContext>, Arc<Registry>)>,
@@ -101,7 +103,8 @@ async fn watch_handler(
         "status": "active",
         "workspace": workspace,
         "debounce_ms": 500,
-        "watched_extensions": ["rs","py","ts","tsx","js","jsx","go","java","c","h","cpp","cs","tf","yml","yaml","rb","php","swift","md","json","toml"],
+        "watched_extensions": cognicode_core::application::ingest::observed_extensions(),
+        "ignored_directories": cognicode_core::application::ingest::noise_directories(),
     }))
 }
 

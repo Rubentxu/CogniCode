@@ -1,8 +1,8 @@
-//! CR-07: the `/metrics` exposure contract must survive the OTel 0.27 -> 0.29.1 migration.
+//! The `/metrics` exposure contract must survive the OTel 0.27 -> 0.29.1 migration.
 //!
 //! ## Why this test exists
 //!
-//! CR-07 was deferred with the reason, quoted verbatim in
+//! The OTel advisory migration was deferred with a reason, quoted verbatim in
 //! `docs/debts/DEBT-SEC-001-advisory-ignores.md`:
 //!
 //! > Romper `/metrics` en producción sería peor que el advisory.
@@ -13,12 +13,12 @@
 //! `/metrics` still worked afterwards. The whole deferral rested on an
 //! unverified prediction.
 //!
-//! Measured 2026-10-01 before touching any manifest: **no test in the
-//! repository exercised `/metrics` at all.** The endpoint had zero coverage,
-//! and the exposition format it returns is a public contract — orchestrator
-//! scrape configs match on the literal content-type, and a silent change
-//! from `text/plain; version=0.0.4` to protobuf exposition breaks every
-//! scraper without failing a single build.
+//! Measured before touching any manifest: **no test in the repository
+//! exercised `/metrics` at all.** The endpoint had zero coverage, and the
+//! exposition format it returns is a public contract — orchestrator scrape
+//! configs match on the literal content-type, and a silent change from
+//! `text/plain; version=0.0.4` to protobuf exposition breaks every scraper
+//! without failing a single build.
 //!
 //! So this test is written BEFORE the migration and asserts the contract
 //! that must not change:
@@ -30,7 +30,7 @@
 //! 4. The OTel SDK's own `target_info` is present, which proves the exporter
 //!    is genuinely registered and rendering — a `/metrics` that returns 200
 //!    with nothing in it is the failure mode a status-code assertion misses.
-//! 5. `telemetry_sdk_version` reports the migrated SDK. This is the anti->
+//! 5. `telemetry_sdk_version` reports the migrated SDK. This is the anti-
 //!    vacuity guard: it makes the test fail if the migration is reverted or
 //!    if the exposition is being served by a stale artifact.
 //!
@@ -38,95 +38,16 @@
 //! rather than asserted against the source, because the source is the thing
 //! being changed.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
+mod common;
+
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Minimal `text/plain; version=0.0.4` scrape over raw HTTP.
-///
-/// No HTTP client dependency: the crate has no `reqwest`/`ureq` in
-/// `[dev-dependencies]`, and a one-shot GET against a local socket is not
-/// worth one. Reading the status line and headers off the socket is what lets
-/// this assert the *wire* content-type rather than a re-derivation of it.
-///
-/// Fallible on purpose (MEDIDO 2026-10-19): la espera de arranque reintenta
-/// el scrape entero. Antes el sondeo de disponibilidad abria una conexion y
-/// la soltaba sin enviar nada, y el scrape abria una segunda; con el
-/// servidor lo bastante cargado, esa conexion abandonada a media lectura se
-/// cruzaba con la segunda y el read de la linea de estado caia en
-/// `ConnectionReset`. El sintoma era un fallo intermitente que solo
-/// aparecia bajo `test-full`, jamas en aislamiento: la forma clasica de un
-/// defectoOwned por el propio test.
-fn scrape(addr: std::net::SocketAddr) -> Result<Scrape, String> {
-    let mut stream =
-        std::net::TcpStream::connect(addr).map_err(|e| format!("connect to /metrics: {e}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(15)))
-        .map_err(|e| format!("read timeout: {e}"))?;
-    stream
-        .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .map_err(|e| format!("send GET: {e}"))?;
+use common::{HttpResponse, free_port, http_get};
 
-    let mut reader = BufReader::new(stream);
-    let mut status_line = String::new();
-    reader
-        .read_line(&mut status_line)
-        .map_err(|e| format!("read status line: {e}"))?;
-    if status_line.trim().is_empty() {
-        // Conexion aceptada y cerrada sin una sola linea: el servidor
-        // acepto y luego solto. Es un fallo de transporte, no una
-        // respuesta, asi que el reintento es el tratamiento correcto.
-        return Err("server accepted the connection and closed it without a status line".into());
-    }
-
-    let mut headers = Vec::new();
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            break;
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            break;
-        }
-        if let Some((k, v)) = line.split_once(':') {
-            headers.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
-        }
-    }
-
-    let mut body = String::new();
-    reader
-        .read_to_string(&mut body)
-        .map_err(|e| format!("read body: {e}"))?;
-
-    Ok(Scrape {
-        status_line,
-        headers,
-        body,
-    })
-}
-
-fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    headers
-        .iter()
-        .find(|(k, _)| k == name)
-        .map(|(_, v)| v.as_str())
-}
-
-/// A port the OS says is free. Binding it and releasing it before the
-/// server starts is not atomic, but the server is started immediately
-/// after and this is the only way to keep the test parallel-safe without
-/// pinning a port that a concurrent CI runner would collide with.
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .expect("bind ephemeral port")
-        .local_addr()
-        .expect("local addr")
-        .port()
-}
-
+/// The server binary under test.
 fn server_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cognicode-mcp-server"))
 }
@@ -138,10 +59,12 @@ fn fixture_ws() -> PathBuf {
 /// Wait until `/metrics` answers, or fail with the server's stderr — which is
 /// where a panicking `server_main` puts the reason.
 ///
-/// El sondeo ES el scrape: un intento por conexion, nunca una conexion de
-/// prueba mas un scrape aparte. Ver la nota de `scrape` sobre por que eso
-/// importa (MEDIDO 2026-10-19: `ConnectionReset` bajo `test-full`).
-fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> Scrape {
+/// The probe IS the scrape: one attempt per connection, never a connection
+/// of trial plus a scrape apart. The read of the status line fails with a
+/// reset when the server is loaded and the two connections cross, and the
+/// symptom is an intermittent failure that only appears under the whole
+/// suite and never in isolation: the shape of a defect owned by the test.
+fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> HttpResponse {
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut last_err = String::new();
     while Instant::now() < deadline {
@@ -152,11 +75,11 @@ fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> Scrape {
             }
             panic!("cognicode-mcp-server exited early with {status}\nstderr:\n{err}");
         }
-        match scrape(addr) {
-            Ok(scrape) => return scrape,
-            // Fallos de transporte mientras el servidor arranca son el caso
-            // normal. Una vez llega una linea de estado, `scrape` devuelve y
-            // las aserciones mandan: aqui no se reintenta nada.
+        match http_get(addr, "/metrics", None) {
+            Ok(response) => return response,
+            // Failures of transport while the server starts are the normal
+            // case. Once a status line arrives, the response is returned and
+            // the assertions decide: nothing is retried here.
             Err(e) => last_err = e,
         }
         std::thread::sleep(Duration::from_millis(250));
@@ -168,56 +91,49 @@ fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> Scrape {
     panic!("/metrics never became reachable: {last_err}\nstderr:\n{err}");
 }
 
-struct Scrape {
-    status_line: String,
-    headers: Vec<(String, String)>,
-    body: String,
-}
+/// The response, with the server that answered it.
+fn fetch() -> (HttpResponse, Child) {
+    let port = free_port();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
 
-impl Scrape {
-    fn fetch() -> (Self, Child) {
-        let port = free_port();
-        let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
+    let mut child = Command::new(server_binary())
+        .arg("--cwd")
+        .arg(fixture_ws())
+        .arg("--listen")
+        .arg(addr.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn cognicode-mcp-server");
 
-        let mut child = Command::new(server_binary())
-            .arg("--cwd")
-            .arg(fixture_ws())
-            .arg("--listen")
-            .arg(addr.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn cognicode-mcp-server");
-
-        (wait_for_scrape(addr, &mut child), child)
-    }
+    (wait_for_scrape(addr, &mut child), child)
 }
 
 #[test]
 fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (response, mut child) = fetch();
     let _ = child.kill();
     let _ = child.wait();
 
     assert!(
-        scrape.status_line.contains("200"),
+        response.status_line.contains("200"),
         "/metrics must answer 200, got `{}`",
-        scrape.status_line.trim()
+        response.status_line.trim()
     );
 
     assert_eq!(
-        header(&scrape.headers, "content-type"),
+        response.header("content-type"),
         Some("text/plain; version=0.0.4"),
         "/metrics changed its content-type. This literal is a public contract: orchestrator \
          scrape configs match on it. A migration that silently switched to protobuf exposition \
          would break every scraper while still returning 200, which is why this asserts the \
          wire value instead of the constant in source. headers: {:?}",
-        scrape.headers
+        response.headers
     );
 
     assert!(
-        !scrape.body.trim().is_empty(),
+        !response.body.trim().is_empty(),
         "/metrics returned 200 with an empty body"
     );
 
@@ -225,42 +141,42 @@ fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
     // would pass on an error string, which is the exact failure the
     // status code cannot see.
     assert!(
-        scrape.body.contains("# HELP") && scrape.body.contains("# TYPE"),
+        response.body.contains("# HELP") && response.body.contains("# TYPE"),
         "/metrics body is not a Prometheus exposition (no # HELP / # TYPE lines):\n{}",
-        scrape.body
+        response.body
     );
 }
 
 #[test]
 fn the_exporter_is_actually_registered_and_rendering() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (response, mut child) = fetch();
     let _ = child.kill();
     let _ = child.wait();
 
     // `target_info` is emitted by the OTel SDK's own Prometheus exporter.
     // Its presence is what distinguishes "exporter registered and rendering"
     // from "handler answers 200 with an empty registry" — the latter is a
-    // 200 that no test in this repository detected, measured 2026-10-01.
+    // 200 that no test in this repository detected.
     assert!(
-        scrape.body.contains("target_info"),
+        response.body.contains("target_info"),
         "/metrics has no target_info, so the OTel Prometheus exporter is not registered against \
          the shared Registry. Body:\n{}",
-        scrape.body
+        response.body
     );
     assert!(
-        scrape.body.contains("telemetry_sdk_language=\"rust\""),
+        response.body.contains("telemetry_sdk_language=\"rust\""),
         "target_info is missing the rust SDK label, so it did not come from the OTel exporter:\n{}",
-        scrape.body
+        response.body
     );
 }
 
 #[test]
 fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (response, mut child) = fetch();
     let _ = child.kill();
     let _ = child.wait();
 
-    let version = scrape
+    let version = response
         .body
         .split("telemetry_sdk_version=\"")
         .nth(1)
@@ -269,7 +185,7 @@ fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
             panic!(
                 "could not read telemetry_sdk_version from /metrics; the label the migration \
                  is supposed to move is absent:\n{}",
-                scrape.body
+                response.body
             )
         });
 
@@ -281,9 +197,9 @@ fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
 
     assert!(
         (major, minor) >= (0, 29),
-        "/metrics still reports telemetry_sdk_version={version}. CR-07 migrates OTel 0.27 -> \
-         0.29.1 because only 0.29.1 declares `prometheus ^0.14`, which is what pulls \
-         `protobuf ^3.7.2` and resolves RUSTSEC-2024-0437. 0.28.0 and 0.29.0 both keep \
+        "/metrics still reports telemetry_sdk_version={version}. The advisory migration goes \
+         OTel 0.27 -> 0.29.1 because only 0.29.1 declares `prometheus ^0.14`, which is what \
+         pulls `protobuf ^3.7.2` and resolves RUSTSEC-2024-0437. 0.28.0 and 0.29.0 both keep \
          protobuf on 2.x, so a build reporting 0.28 or 0.29.0 would still be vulnerable while \
          looking migrated."
     );
