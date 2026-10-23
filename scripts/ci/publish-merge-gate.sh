@@ -92,6 +92,21 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 resolved="$(git rev-parse "$sha")"
+
+# The header a squash merge creates is the title of the pull request, and the
+# forge creates that commit on its own side: it never passes through the hooks
+# this machine runs on the commits it makes. So the title is judged here,
+# before the gate spends its minutes proving something that is already wrong.
+# A gate that goes green next to a header the policy refuses is the state
+# this check exists to prevent, and a refusal here costs seconds instead of
+# the minutes the gate would have cost.
+subject_rc=0
+bash "$REPO_ROOT/scripts/ci/check-merge-subject.sh" --sha "$resolved" --repo "$repo" || subject_rc=$?
+if [ "$subject_rc" -ne 0 ]; then
+    echo "==> the header of this merge is not admitted; the gate did not run and nothing was published" >&2
+    exit "$subject_rc"
+fi
+
 echo "==> running the merge authority for $resolved"
 echo "    database: $PIPELINE_DB"
 mkdir -p "$(dirname "$PIPELINE_DB")"

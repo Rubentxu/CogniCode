@@ -157,6 +157,18 @@ enforced:
 Every change to `main` goes through a pull request with a green
 `merge-gate` check. Direct pushes to `main` are not accepted.
 
+The title of the pull request is the header of the commit the merge creates,
+verbatim, and that header is judged by the policy of the house before the
+gate starts. A squash merge is made by the forge, so its commit never passes
+through the hooks that judge the commits this machine makes, and a header the
+policy refuses would only be discovered afterwards — when the merge is
+public and the history cannot be rewritten. `scripts/ci/check-merge-subject.sh`
+asks that policy, through `git-control`, the same engine that judges every
+other commit, and the publisher of the gate consults it before it spends its
+minutes. The title of a pull request is therefore a commit message: it has to
+be a Conventional Commit, it has to fit the limit the policy sets, and it has
+to close the pull request it belongs to.
+
 ## Reporting bugs
 
 Use the bug report template. The most useful bugs include:
