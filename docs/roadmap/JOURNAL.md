@@ -24844,3 +24844,65 @@ relación que no se puede resolver se pierde sin registrar —los `debug_assert!
 son la prueba de que se pierde, y en una compilación de producción no se
 ejecutan—, y la ausencia de un informe de construcción se convierte en
 cobertura completa.
+
+
+## 2026-10-23 — El cierre verificado: el lector llega a `main` con su recibo
+
+**El resultado.** La unidad del lector está cerrada y en remoto. `main` está en
+`44dcb159395f40f5b28365d33524388f2fb95fc5`, el squash de la PR #450, y el gate de fusión corrió sobre la
+cabeza exacta de esa rama —`64a7cfca`— y publicó `merge-gate=success` con su
+propio código de salida 0.
+
+**Lo que queda, para quien lo lea después.** El lector de un lenguaje dice
+qué ha pasado, y lo dice de tres maneras que no se confunden: declaró algo, no
+aplica a aquel fichero, o no pudo leerlo —con la causa—. Un consumidor que
+recibe un fallo no cae al lector genérico: dice que el fichero no se leyó, y
+la cobertura lo nombra. Y una declaración sabe dónde está: el lector guarda la
+línea y la columna donde escribe la cosa, y el grafo las publica.
+
+**Lo que la fusión no cambia.** Los bytes de la identidad, ni el nombre de las
+cosas, ni el esquema publicado de las herramientas. Lo que cambia es lo que el
+producto dice cuando le preguntan: el nombre de la cosa, su lugar, y la verdad
+sobre el fichero que no pudo leer.
+
+**La cabecera se juzgó antes de gastar el gate.** El juez admitir
+`fix(core): el lector no disimula un fallo ni inventa la posicion (#450)`.
+
+**Lo que esta corrida midió.** El modo rápido: `rc=0`, clippy `-D warnings`
+limpio y la suite del núcleo en verde. El gate completo local sobre el árbol
+commiteado: fmt, clippy con `-D warnings`, **228 suites y 6553 pruebas sin un
+solo rojo** —218 suites y 6545 pruebas en la etapa del workspace, 10 suites y
+8 pruebas en la de doc-tests—, los 47 contratos de CI más los de
+`scripts/product`, y el baseline, con cero rojo. El gate de fusión sobre la
+cabeza exacta: publicado `merge-gate=success`, con su propio código de salida
+0.
+
+**El discriminante, medido en las tres direcciones.** Revirtiendo el
+tratamiento del fallo —que vuelve a degradarse a "no aplica"— el contrato del
+lector se puso rojo:
+
+> a reader that fell over is not a file that declares nothing: NotApplicable
+
+Revirtiendo la posición —vuelve a inventarse— los tres contratos de posición
+se pusieron rojos, y el producto volvió a publicar todas las declaraciones en
+la primera línea de su fichero:
+
+> assertion `left == right` failed: the policy is written on the fifth line of the file
+>   left: 1
+>  right: 5
+
+Revirtiendo el rechazo del fichero roto —el lector vuelve a publicarlo a
+medias— el contrato del fichero roto se puso rojo:
+
+> a file the reader could not read whole published the declarations it could not read: ["aws_s3_bucket_policy.broken_policy", "aws_s3_bucket.app_bucket", "aws_s3_bucket_policy.app_policy", "aws_s3_bucket.broken_bucket"]
+
+Con cada mutación revertida, los contratos volvieron a verde.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El rechazo del
+fichero roto usa la misma regla que el camino genérico, y esa regla no ve todo
+lo que está roto: una llave sin cerrar en HCL se recupera como un token
+ausente, no como un error. Y las dos cosas que la auditoría dejó al lado de
+esta unidad, que son otra costura: la relación que no se puede resolver se
+pierde sin registrar —en una compilación de producción los `debug_assert!` no
+se ejecutan—, y la ausencia de un informe de construcción se convierte en
+cobertura completa.
