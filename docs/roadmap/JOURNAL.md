@@ -23632,3 +23632,16 @@ exacta de la rama.
 vive en el dominio, el extractor genérico no publica categorías que no puede
 sostener, la matriz declara por lenguaje lo que el lector genérico no puede
 afirmar, y un contrato comprueba que lo declarado existe en la gramática.
+
+**Lo que el gate vio y lo que no vio.** El gate de fusión corrió sobre
+`254c5b4b` —la cabeza exacta de la rama— y publicó `merge-gate=success` con
+su veredicto, en 20 minutos y 32 segundos. La PR se fusionó por squash como
+`0b096482`, y `main` ya lleva el cambio.
+
+Antes de ese gate hubo uno en rojo, y su causa no fue el código: la primera
+corrida del gate de la release anterior se cruzó con una suite del workspace
+que compilaba en paralelo, y los contratos se quedaron sin recursos. La
+corrida en limpio, sin nada más construyendo, salió verde. Merece la pena
+decirlo porque el primer veredicto en rojo se publicó igual: el veredicto
+que se publica es el que el gate dio, y un gate que corre con la máquina
+ocupada mide la máquina, no el árbol.
