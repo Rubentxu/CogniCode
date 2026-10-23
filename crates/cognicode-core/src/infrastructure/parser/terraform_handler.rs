@@ -48,6 +48,16 @@ pub fn interpret_terraform(
     let Some(tree) = parse(source) else {
         return result.clone();
     };
+    // A file the reader could not read whole does not declare anything the
+    // product can rely on. The generic reader refuses those files too, and
+    // a file that one path publishes and the other refuses is the same
+    // contradiction the two paths had about who reads a file. The file is
+    // reported with the reason, so it stays visible as a hole.
+    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(&tree) {
+        let mut broken = result.clone();
+        broken.error = Some(format!("Syntax errors in {source_path}"));
+        return broken;
+    }
     let blocks = terraform_blocks(tree.root_node(), source.as_bytes());
     if blocks.is_empty() {
         return result.clone();
@@ -71,9 +81,15 @@ pub fn interpret_terraform(
 
     for block in &blocks {
         let id = tf_id(source_path, &block.identity);
+        // Where the block is. The reader is the one that knows, and the
+        // graph is where the tools that ask about the declaration look.
+        let line = line_of(block.node);
+        let column = column_of(block.node);
         let mut builder = GraphNode::builder(NodeId::new(&id), NodeKind::Declaration)
             .label(&block.identity)
             .source_path(std::path::PathBuf::from(source_path))
+            .property("line".to_string(), line.to_string())
+            .property("column".to_string(), column.to_string())
             .property(
                 Declaration::KIND_PROPERTY.to_string(),
                 block.iac_kind.to_string(),
@@ -83,7 +99,6 @@ pub fn interpret_terraform(
         }
         nodes.push(builder.build());
 
-        let line = line_of(block.node);
         edges.push(ExtractionEdge {
             source: file_node_id.as_str().to_string(),
             target_ref: TargetRef::Resolved(id.clone()),
@@ -356,6 +371,15 @@ fn node_text(node: Node, source: &[u8]) -> String {
 
 fn line_of(node: Node) -> u32 {
     (node.start_position().row + 1) as u32
+}
+
+/// The column a block starts at, counted from one.
+///
+/// The line and the column are counted the way the rest of the product
+/// counts them, so that a declaration and a symbol of programming can be
+/// compared without either of them needing to know where it came from.
+fn column_of(node: Node) -> u32 {
+    (node.start_position().column + 1) as u32
 }
 
 // ── Clasificación de cabeceras ────────────────────────────────────────────

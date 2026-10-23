@@ -4,9 +4,12 @@
 //! for modular graph construction and merging. This is useful when you need
 //! to analyze individual files and then combine them into larger graphs.
 
+use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::{DependencyType, PendingReference, WalkDecision};
-use crate::infrastructure::graph::semantic_layer::{call_graph_from, semantic_facts};
+use crate::infrastructure::graph::semantic_layer::{
+    call_graph_from, semantic_facts, semantic_facts_of,
+};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -652,12 +655,17 @@ impl PerFileGraphCache {
             .semantic_handler
             .is_some()
             {
-                if let Some(facts) = semantic_facts(language, &source, &path_str) {
+                if let SemanticOutcome::Handled(facts) =
+                    semantic_facts(language, &source, &path_str)
+                {
                     for symbol in facts.symbols {
                         let sid = SymbolId::new(symbol.fully_qualified_name());
                         idx.insert(sid, path.to_path_buf(), symbol.name());
                     }
                 }
+                // A file whose reader fell over is not in the index, and
+                // the reason it is missing is the one the same file's own
+                // graph records: the file was not read.
                 continue;
             }
             let parser = match TreeSitterParser::new(language) {
@@ -714,8 +722,6 @@ impl PerFileGraphCache {
         file_path: &str,
         global_index: Option<&GlobalSymbolIndex>,
     ) -> std::io::Result<BuildFileResult> {
-        let source = std::fs::read_to_string(file_path)?;
-
         let language =
             Language::from_extension(Path::new(file_path).extension()).ok_or_else(|| {
                 std::io::Error::new(
@@ -723,14 +729,46 @@ impl PerFileGraphCache {
                     format!("Unsupported file type: {}", file_path),
                 )
             })?;
+        let config =
+            crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
+        self.build_file_graph_reading(file_path, global_index, config)
+    }
+
+    /// Builds the graph of one file, read by the reader it is handed.
+    ///
+    /// The reader is a parameter because the reader is what decides what the
+    /// file means, and a caller that holds one must be able to hand it over.
+    fn build_file_graph_reading(
+        &self,
+        file_path: &str,
+        global_index: Option<&GlobalSymbolIndex>,
+        config: &crate::infrastructure::parser::language_config::LanguageConfig,
+    ) -> std::io::Result<BuildFileResult> {
+        let source = std::fs::read_to_string(file_path)?;
+        let language = config.language;
 
         // The semantic layer leads when the language declares one. Its
         // edges stay inside the file, so `cross_file_edges` is empty by
         // construction and the global index stays out of it. The references
         // it could not tie travel with the file: the merge may still be able
         // to tie them to a declaration in another of the merged files.
-        if let Some(facts) = semantic_facts(language, &source, file_path) {
-            return Ok((call_graph_from(&facts), Vec::new(), facts.pending));
+        match semantic_facts_of(config, &source, file_path) {
+            SemanticOutcome::Handled(facts) => {
+                return Ok((call_graph_from(&facts), Vec::new(), facts.pending));
+            }
+            // The reader does not apply to this file: the generic reader
+            // answers it.
+            SemanticOutcome::NotApplicable => {}
+            // The reader fell over. The file was not read, and the reason
+            // why is the reader's own: a file that was not read is a hole
+            // in the coverage, and the report says so instead of publishing
+            // whatever the generic reader made of it.
+            SemanticOutcome::Failed(cause) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{file_path}: {cause}"),
+                ));
+            }
         }
 
         let parser =
@@ -1723,6 +1761,66 @@ mod tests {
 }
 
 #[cfg(test)]
+mod reader_failure_tests {
+    //! Un lector que revienta deja el fichero sin leer.
+    //!
+    //! El consumidor no cae al lector generico: un fichero cuyo lector
+    //! revanto no se leyo, y decirlo es lo que mantiene el hueco visible
+    //! en la cobertura en vez de publicar medio fichero.
+
+    use super::PerFileGraphCache;
+    use crate::application::ingest::types::ExtractionResult;
+    use crate::infrastructure::parser::Language;
+    use crate::infrastructure::parser::language_config::{HCL_CONFIG, LanguageConfig};
+
+    /// Un lector que no puede leer.
+    fn a_reader_that_falls_over(
+        _source_path: &str,
+        _source_hash: &str,
+        _source: &str,
+        _result: &ExtractionResult,
+    ) -> ExtractionResult {
+        panic!("this reader cannot read what it was handed");
+    }
+
+    /// El fallo llega con su causa, y el fichero no entra al grafo.
+    #[test]
+    fn a_reader_that_falls_over_leaves_the_file_unread() {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        let file = directory.path().join("main.tf");
+        std::fs::write(&file, "resource \"aws_s3_bucket\" \"b\" {}\n")
+            .expect("the file is written");
+
+        let config = LanguageConfig {
+            language: Language::Hcl,
+            ts_language: HCL_CONFIG.ts_language,
+            type_ref_walker: HCL_CONFIG.type_ref_walker,
+            semantic_handler: Some(a_reader_that_falls_over),
+        };
+
+        let cache = PerFileGraphCache::new();
+        let outcome = cache.build_file_graph_reading(
+            file.to_str().expect("a path that is text"),
+            None,
+            &config,
+        );
+
+        match outcome {
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .contains("this reader cannot read what it was handed"),
+                "the failure carries the reason the reader gave: {error}"
+            ),
+            Ok((graph, _, _)) => panic!(
+                "a file whose reader fell over was published with {} symbols",
+                graph.symbol_count()
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
 mod semantic_seam_tests {
     //! El seam se atribuye un fichero SOLO si produjo un símbolo.
     //!
@@ -1744,7 +1842,10 @@ mod semantic_seam_tests {
         // camino genérico sigue teniendo la última palabra.
         let plain = "version: 3\nservices:\n  web:\n    image: nginx\n";
         assert!(
-            semantic_facts(Language::Yaml, plain, "/tmp/plain.yml").is_none(),
+            matches!(
+                semantic_facts(Language::Yaml, plain, "/tmp/plain.yml"),
+                SemanticOutcome::NotApplicable
+            ),
             "un handler que no interpretaba nada no puede reclamar el fichero; \
              devolver un grafo vacío haría que la capa semántica se atribuyera \
              un fichero que no miró"
@@ -1757,8 +1858,10 @@ mod semantic_seam_tests {
     fn a_playbook_is_claimed_by_the_semantic_layer() {
         let playbook =
             "- hosts: all\n  tasks:\n    - name: install\n      apt:\n        name: nginx\n";
-        let facts = semantic_facts(Language::Yaml, playbook, "/tmp/playbook.yml")
-            .expect("un playbook declara un play, y el seam tiene algo que decir");
+        let facts = match semantic_facts(Language::Yaml, playbook, "/tmp/playbook.yml") {
+            SemanticOutcome::Handled(facts) => facts,
+            _ => panic!("un playbook declara un play, y el seam tiene algo que decir"),
+        };
         assert!(
             !facts.symbols.is_empty(),
             "el playbook se atribuye al seam, y con él van sus símbolos"
@@ -1768,7 +1871,10 @@ mod semantic_seam_tests {
     #[test]
     fn a_language_without_a_handler_is_never_routed_here() {
         assert!(
-            semantic_facts(Language::Rust, "pub fn a() {}\n", "/tmp/lib.rs").is_none(),
+            matches!(
+                semantic_facts(Language::Rust, "pub fn a() {}\n", "/tmp/lib.rs"),
+                SemanticOutcome::NotApplicable
+            ),
             "sin handler no hay seam: la función debe retirarse antes de \
              construir nada"
         );

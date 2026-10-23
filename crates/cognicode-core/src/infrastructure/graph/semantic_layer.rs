@@ -12,12 +12,17 @@
 //! the product asked about names the graph had never heard of. This module
 //! is the single place that asks the domain reader, so both paths answer
 //! the same thing.
+//!
+//! And the answer says what happened. A reader that ran, a reader that does
+//! not apply to this file, and a reader that fell over are three different
+//! facts, and a consumer that cannot tell them apart reads a failure as a
+//! file that declares nothing. The outcome is what tells them apart.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::application::ingest::extractor::extract_file;
-use crate::application::ingest::types::{FileFacts, FileRelation, TargetRef};
+use crate::application::ingest::extractor::{HandlerOutcome, extract_file_with_outcome};
+use crate::application::ingest::types::{FileFacts, FileRelation, SemanticOutcome, TargetRef};
 use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
@@ -30,22 +35,56 @@ use crate::infrastructure::parser::language_config::LanguageConfig;
 
 /// What the domain reader makes of one file.
 ///
-/// `None` when the language has no reader of its own, when the reader
-/// failed, or when the reader had nothing to say about this file. The
-/// last case matters: a file that declares nothing is not a file the
-/// domain reader claims. Answering `None` there lets the generic reader
-/// take over, instead of leaving the file without symbols.
-pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Option<FileFacts> {
-    let config = LanguageConfig::for_language(language);
-    config.semantic_handler?;
-    let extracted = extract_file(
+/// The reader of the language is the authority for that language, and this
+/// is where it is asked. The answer carries what happened: the reader
+/// declared something, the reader does not apply to this file, or the reader
+/// fell over and the cause says why.
+///
+/// The last case is the one that used to be lost. A reader that fell over
+/// left a file without declarations behind, which is what a file that
+/// declares nothing also leaves behind, and the consumer fell back to the
+/// generic reader as if the file had simply said nothing. Now the failure
+/// is told apart from the absence, and the consumer can say it.
+pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> SemanticOutcome {
+    semantic_facts_of(LanguageConfig::for_language(language), source, file_path)
+}
+
+/// What the given reader makes of one file.
+///
+/// The reader is a parameter because a reader is what decides what a file
+/// means, and a caller that holds one —the registry, or a test that needs a
+/// reader that fails— must be able to hand it over.
+pub fn semantic_facts_of(
+    config: &LanguageConfig,
+    source: &str,
+    file_path: &str,
+) -> SemanticOutcome {
+    // A language without a reader of its own is answered by the generic
+    // reader, and asking the tree before answering costs a parse that
+    // nobody reads.
+    if config.semantic_handler.is_none() {
+        return SemanticOutcome::NotApplicable;
+    }
+    let (extracted, outcome) = extract_file_with_outcome(
         config,
         Path::new(file_path),
         source,
         &format!("{:016x}", content_hash_64(source.as_bytes())),
     );
-    if extracted.error.is_some() {
-        return None;
+    match outcome {
+        // The language has no reader of its own: the generic reader is the
+        // one that answers, and this file is not a fact about it.
+        HandlerOutcome::Absent => return SemanticOutcome::NotApplicable,
+        // The reader fell over. The file is not read, and the reason why is
+        // the reader's own.
+        HandlerOutcome::Failed(cause) => return SemanticOutcome::Failed(cause),
+        HandlerOutcome::Ran => {}
+    }
+    // The reading itself did not come through: the tree was never built, or
+    // the reader said the file is broken. Either way the file was not read,
+    // and that is not the same as a file with nothing to declare.
+    if let Some(cause) = extracted.error.as_deref() {
+        return SemanticOutcome::Failed(cause.to_string());
     }
 
     // The reader's own identifier for a declaration and the identifier the
@@ -82,7 +121,9 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         if by_reader_id.contains_key(&reader_id) {
             continue;
         }
-        let mut symbol = Symbol::new(&node.label, kind, Location::new(file_path, 0, 0));
+        // The declaration knows where it is: the reader put it there, and
+        // the graph is where the tools that ask about it look.
+        let mut symbol = Symbol::new(&node.label, kind, location_of(node, file_path));
         // The identity of a declaration is the one its reader gave it.
         // The graph identifies a symbol by its qualified name, and the one
         // that builds it is the generic one — file and symbol. Letting the
@@ -105,7 +146,7 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
     // generic reader takes over in that case, and the file keeps its
     // symbols.
     if symbols.is_empty() {
-        return None;
+        return SemanticOutcome::NotApplicable;
     }
 
     let mut identified: Vec<FileRelation> = Vec::new();
@@ -165,12 +206,34 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         }
     }
 
-    Some(FileFacts {
+    SemanticOutcome::Handled(FileFacts {
         symbols,
         identified,
         calls: Vec::new(),
         pending,
     })
+}
+
+/// Where the reader says the declaration is.
+///
+/// The reader counts the lines from one, the way the rest of the product
+/// counts them, and the graph counts them from zero. A declaration that
+/// carries no position carries the position nobody gave it: zero, which
+/// says "nowhere in particular" instead of pointing at the first line of
+/// the file.
+fn location_of(node: &GraphNode, file_path: &str) -> Location {
+    let properties = node.properties.as_object();
+    let line = properties
+        .and_then(|properties| properties.get("line"))
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(0);
+    let column = properties
+        .and_then(|properties| properties.get("column"))
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(0);
+    Location::new(file_path, line.saturating_sub(1), column.saturating_sub(1))
 }
 
 /// The declaration a reader made, when it made one.

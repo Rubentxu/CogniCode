@@ -29,6 +29,7 @@ mod fixtures;
 
 use cognicode_core::application::ingest::extractor::extract_file;
 use cognicode_core::application::ingest::types::ExtractionResult;
+use cognicode_core::application::ingest::types::SemanticOutcome;
 use cognicode_core::domain::value_objects::{Declaration, Language, SymbolKind};
 use cognicode_core::infrastructure::graph::semantic_layer::semantic_facts;
 use cognicode_core::infrastructure::parser::language_config::{HCL_CONFIG, YAML_CONFIG};
@@ -266,8 +267,10 @@ fn the_generic_walker_has_nothing_to_say_about_a_configuration() {
 /// carries, both of them.
 #[test]
 fn the_graph_carries_a_declaration_as_a_declaration() {
-    let facts = semantic_facts(Language::Hcl, TERRAFORM, "main.tf")
-        .expect("the reader of this language says something about it");
+    let facts = match semantic_facts(Language::Hcl, TERRAFORM, "main.tf") {
+        SemanticOutcome::Handled(facts) => facts,
+        _ => panic!("the reader of this language says something about it"),
+    };
 
     for (label, kind, resource_type) in TERRAFORM_DECLARATIONS {
         let symbol = facts

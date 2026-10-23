@@ -153,6 +153,16 @@ pub fn interpret_ansible(
     let Some(tree) = parse(source) else {
         return result.clone();
     };
+    // A file the reader could not read whole does not declare anything the
+    // product can rely on. The generic reader refuses those files too, and
+    // a file that one path publishes and the other refuses is the same
+    // contradiction the two paths had about who reads a file. The file is
+    // reported with the reason, so it stays visible as a hole.
+    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(&tree) {
+        let mut broken = result.clone();
+        broken.error = Some(format!("Syntax errors in {source_path}"));
+        return broken;
+    }
     let items = top_level_items(tree.root_node());
     if items.is_empty() {
         return result.clone();
@@ -232,7 +242,13 @@ impl<'a> World<'a> {
         let ordinal = self.plays;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "play");
-        let id = self.declaration("play", &identity.slug, &identity.label, mapping.line());
+        let id = self.declaration(
+            "play",
+            &identity.slug,
+            &identity.label,
+            mapping.line(),
+            mapping.column(),
+        );
         self.edge(
             container,
             DependencyType::Contains,
@@ -282,7 +298,13 @@ impl<'a> World<'a> {
         let ordinal = self.tasks;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "task");
-        let id = self.declaration("task", &identity.slug, &identity.label, mapping.line());
+        let id = self.declaration(
+            "task",
+            &identity.slug,
+            &identity.label,
+            mapping.line(),
+            mapping.column(),
+        );
         self.edge(
             container,
             DependencyType::Contains,
@@ -322,7 +344,13 @@ impl<'a> World<'a> {
         let ordinal = self.handlers;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "handler");
-        let id = self.declaration("handler", &identity.slug, &identity.label, mapping.line());
+        let id = self.declaration(
+            "handler",
+            &identity.slug,
+            &identity.label,
+            mapping.line(),
+            mapping.column(),
+        );
         self.edge(
             container,
             DependencyType::Contains,
@@ -369,13 +397,21 @@ impl<'a> World<'a> {
     /// says what kind of thing this is, and the node says the same thing
     /// to the graph, so that whoever asks about the declaration hears the
     /// reader's own name and not the name of the type that holds it.
-    fn declaration(&mut self, kind: &str, slug: &str, label: &str, line: u32) -> String {
+    fn declaration(
+        &mut self,
+        kind: &str,
+        slug: &str,
+        label: &str,
+        line: u32,
+        column: u32,
+    ) -> String {
         let id = self.id(kind, slug);
         self.nodes.push(
             GraphNode::builder(NodeId::new(&id), NodeKind::Declaration)
                 .label(label.to_string())
                 .source_path(std::path::PathBuf::from(self.source_path))
                 .property("line".to_string(), line.to_string())
+                .property("column".to_string(), column.to_string())
                 .property(Declaration::KIND_PROPERTY.to_string(), kind.to_string())
                 .build(),
         );
@@ -618,6 +654,16 @@ impl<'a> Mapping<'a> {
 
     fn line(&self) -> u32 {
         (self.node.start_position().row + 1) as u32
+    }
+
+    /// The column the mapping starts at, counted from one.
+    ///
+    /// The line and the column are counted the way the rest of the product
+    /// counts them, so that a declaration and a symbol of programming can
+    /// be compared without either of them needing to know where it came
+    /// from.
+    fn column(&self) -> u32 {
+        (self.node.start_position().column + 1) as u32
     }
 }
 

@@ -210,6 +210,29 @@ pub struct FileRelation {
     pub kind: DependencyType,
 }
 
+/// What the reader of a language says about one file.
+///
+/// Three answers, and they are not the same thing. The reader declared
+/// something: this is what the file says. The reader does not apply: the
+/// language has no reader of its own, or its reader had nothing to say about
+/// this file, and the generic reader is the one that answers. The reader
+/// failed: it could not read the file, and the cause says why.
+///
+/// A failure is not an absence. A consumer that receives `Failed` does not
+/// fall back to the generic reader: it says so, and the file stays unread.
+/// The two are told apart because a file whose reader fell over and a file
+/// that declares nothing look the same from the outside, and only one of
+/// them is a fact about the file.
+#[derive(Debug, Clone)]
+pub enum SemanticOutcome {
+    /// The reader declared something: these are the facts of the file.
+    Handled(FileFacts),
+    /// The reader does not apply to this file.
+    NotApplicable,
+    /// The reader could not read the file; the cause says why.
+    Failed(String),
+}
+
 // ============================================================================
 // Scan manifest entry (scan_manifest table mirror)
 // ============================================================================
