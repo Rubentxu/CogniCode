@@ -789,3 +789,99 @@ async fn e2_w2_control_plane_router_404_for_non_cp_routes() {
     let _ = server.await;
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ============================================================================
+// e30.w1 — la identidad de lo que la lectura leyó.
+//
+// La consola de Studio compara el código que hay ahora con el que el
+// producto miro la ultima vez; para eso, el producto tiene que publicar
+// la identidad de lo que leyo. La identidad cubre exactamente los
+// ficheros que el evaluador recogio en su recorrido: es identidad por
+// construccion, no una segunda lectura.
+// ============================================================================
+
+#[tokio::test]
+async fn e30_w1_source_basis_estable_para_las_mismas_fuentes() {
+    let dir = temp_source_root("e30w1-stable");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (_, first) = control_plane_request(
+        state,
+        "/control-plane/workspaces/stable/architecture",
+    )
+    .await;
+    let basis = &first["source_basis"];
+    assert_eq!(basis["status"], "computed", "basis: {basis}");
+    let digest = basis["digest"].as_str().expect("la identidad viaja");
+    assert!(digest.starts_with("sha256:"), "digest: {digest}");
+    let files = basis["files"].as_u64().expect("cuenta de ficheros");
+    assert!(files >= 1, "el arbol de prueba trae ficheros: {basis}");
+
+    // La misma lectura, otra vez: la identidad no cambia.
+    let state = ControlPlaneState::canonical(dir.clone());
+    let (_, second) = control_plane_request(
+        state,
+        "/control-plane/workspaces/stable/architecture",
+    )
+    .await;
+    assert_eq!(second["source_basis"]["digest"], first["source_basis"]["digest"]);
+
+    // El codigo cambio: la identidad ya no es la misma.
+    let src = dir.join("src/domain/service.rs");
+    std::fs::write(&src, "use crate::infrastructure::db::Pool;\npub struct T;\n").unwrap();
+    let state = ControlPlaneState::canonical(dir.clone());
+    let (_, third) = control_plane_request(
+        state,
+        "/control-plane/workspaces/stable/architecture",
+    )
+    .await;
+    assert_ne!(
+        third["source_basis"]["digest"], first["source_basis"]["digest"],
+        "cambiar una fuente cambia la identidad"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn e30_w1_arbol_vacio_publica_basis_sin_identidad() {
+    // Sin ficheros leidos no hay identidad que publicar: un digest del
+    // conjunto vacio se pareceria a "no hay nada" y a "no lo se", y son
+    // hechos distintos. El estado lo dice, el digest no viaja.
+    let dir = empty_source_root("e30w1-empty");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (_, body) = control_plane_request(
+        state,
+        "/control-plane/workspaces/empty/architecture",
+    )
+    .await;
+
+    let basis = &body["source_basis"];
+    assert_eq!(basis["status"], "empty", "basis: {basis}");
+    assert!(basis["digest"].is_null(), "sin ficheros no hay digest: {basis}");
+    assert_eq!(basis["files"], 0);
+    assert!(basis["reason"].is_string());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn e30_w1_la_ruta_legacy_publica_la_misma_identidad() {
+    // Las dos rutas del CP1 publican el mismo campo: el contrato no
+    // depende de que binario lo sirva.
+    let dir = temp_source_root("e30w1-legacy");
+    let state = base_ws("ws-1").with_control_query(
+        Some(Arc::new(ControlQueryService::new(admitted_registry(
+            "arch.no_infra_in_domain",
+        )))),
+        dir.clone(),
+    );
+    let (status, body) = get(state, "/control-plane/workspaces/ws-1/architecture").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let basis = &body["source_basis"];
+    assert_eq!(basis["status"], "computed", "basis: {basis}");
+    assert!(basis["digest"].is_string(), "basis: {basis}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

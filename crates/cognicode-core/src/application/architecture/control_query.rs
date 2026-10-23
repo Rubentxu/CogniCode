@@ -18,6 +18,7 @@
 
 use crate::application::architecture::ArchitectureRegistry;
 use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
+use sha2::{Digest, Sha256};
 use crate::domain::architecture::{ArchitectureConstraint, ArchitectureConstraintKind};
 
 /// Overall status of a read projection. The discriminator that keeps
@@ -300,6 +301,71 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
         }
     }
     ArchitectureSource { files }
+}
+
+/// La identidad de lo que una lectura leyó.
+///
+/// Cubre exactamente los ficheros que el recorrido recogió —ni uno más
+/// ni uno menos—, así que es identidad por construcción: quien la
+/// compara sabe qué fuentes sostienen el veredicto, y un fichero que
+/// cambia después de la lectura cambia la identidad. Sin ficheros no
+/// hay identidad que publicar: el digest del conjunto vacío se
+/// parecería a «no hay nada» y a «no lo sé», y son hechos distintos.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SourceBasis {
+    /// Cuántos ficheros de fuentes leyó el recorrido.
+    pub files: u64,
+    /// La identidad del contenido leído: esquema canónico (rutas
+    /// relativas ordenadas, largo prefijado) resumido con SHA-256.
+    /// Ausente cuando no se leyó nada.
+    pub digest: Option<String>,
+    /// `computed` cuando hay identidad; `empty` cuando la lectura no
+    /// recogió nada, con su motivo.
+    pub status: &'static str,
+    /// Por qué no hay identidad, cuando no la hay.
+    pub reason: Option<&'static str>,
+}
+
+/// La identidad de un [`ArchitectureSource`]: lo que se leyó, no lo que
+/// hay en el disco ahora.
+pub fn source_basis_of(source: &ArchitectureSource) -> SourceBasis {
+    let mut files: Vec<(&str, &str)> = source
+        .files
+        .iter()
+        .map(|f| (f.file_path.as_str(), f.source.as_str()))
+        .collect();
+    // El recorrido sigue el sistema de ficheros, que no garantiza un
+    // orden. Sin ordenar, el mismo código daría identidades distintas.
+    files.sort_unstable();
+
+    if files.is_empty() {
+        return SourceBasis {
+            files: 0,
+            digest: None,
+            status: "empty",
+            reason: Some("la lectura no recogió ningún fichero de fuentes"),
+        };
+    }
+
+    let mut hasher = Sha256::new();
+    for (path, content) in &files {
+        hasher.update((path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        hasher.update((content.len() as u64).to_le_bytes());
+        hasher.update(content.as_bytes());
+    }
+    let bytes = hasher.finalize();
+    let digest = bytes[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join("");
+    SourceBasis {
+        files: files.len() as u64,
+        digest: Some(format!("sha256:{digest}")),
+        status: "computed",
+        reason: None,
+    }
 }
 
 #[cfg(test)]
