@@ -19,6 +19,8 @@
 
 pub mod graph;
 pub mod investigation;
+#[cfg(test)]
+pub(crate) mod mocks;
 pub mod moldql;
 pub mod persistence;
 pub mod search;

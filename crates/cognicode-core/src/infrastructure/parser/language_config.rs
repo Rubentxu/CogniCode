@@ -54,10 +54,16 @@ pub struct LanguageConfig {
 /// label. A handler that can only see what the other pass decided to keep
 /// is not the authority of the language — it is a reader of the other's
 /// judgement.
+///
+/// `tree` is the tree the generic pass already built from that same text.
+/// A handler that reads it reads the file the generic pass read, so the two
+/// readings cannot disagree about the file, and the file is parsed once
+/// instead of once per reader.
 pub type SemanticHandlerFn = fn(
     source_path: &str,
     source_hash: &str,
     source: &str,
+    tree: &tree_sitter::Tree,
     result: &crate::application::ingest::types::ExtractionResult,
 ) -> crate::application::ingest::types::ExtractionResult;
 

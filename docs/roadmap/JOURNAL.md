@@ -25311,3 +25311,97 @@ hay tag `v0.101.31` ni artefactos `v0.101.31` en `release/`. Publicarla
 exige su propio gate de candidato, y su propio tag, y eso es un corte
 distinto de este. El README nombra el corte en curso, que es lo que el
 contrato de convergencia admite mientras el tag no existe.
+
+## 2026-10-24 — Un fichero, un árbol
+
+**La unidad.** El bloque de ontología y arquitectura simplificadas tenía
+abierto el trabajo de que un fichero se leyera una sola vez. El lector de
+un lenguaje —Ansible, Terraform— parseaba el fichero por su cuenta para
+tener un árbol propio, y el índice del grafo lo parseaba dos veces: una
+para saber si el fichero estaba sano y otra para leer sus símbolos. El
+trabajo era repetido y las dos lecturas del mismo texto podían divergir.
+
+**Lo que se midió antes de tocar nada.** 400 ficheros reales del propio
+repositorio, 5,6 MB. Un árbol cuesta 3,207 s y dos árboles cuestan 6,397 s:
+el segundo árbol cuesta el **99,4%** del primero, 3,189 s de trabajo puro
+en cada construcción del índice. El coste justificaba el cambio, y por
+eso se hizo.
+
+**La corrección.** Hay un solo sitio donde se construyen árboles. El lector
+de un lenguaje recibe el árbol que ya se había construido y su parser
+propio desaparece; el índice lee sus símbolos del árbol que ya tenía, con
+la función que ya existía para eso. En el código de producción no queda
+ningún sitio donde se construya un árbol fuera de ese módulo: los tres
+sitios que quedaban están en pruebas.
+
+**La puerta que lo fija.** Dos pruebas permanentes: una para el camino de
+la lectura —un fichero con lector de lenguaje y uno sin él, un árbol cada
+uno— y otra para el del índice —un árbol por fichero, los dos por el mismo
+camino—. El número de árboles se cuenta por hilo, que es como el producto
+lee los ficheros en paralelo.
+
+**El discriminante, medido sobre el producto.** Al devolver el doble
+parseo, la primera prueba vio **2** árboles donde quería 1, y la segunda
+vio **3** donde quería 2. Restaurado el cambio, las dos volvieron a verde.
+
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6346** pruebas del workspace con **0** fallos, los
+doc-tests, los 47 contratos de CI más `scripts/product/*.py`, y el
+baseline.
+
+**El alcance.** Ningún modelo de dominio cambia. El contrato publicado de
+la lectura no cambia. Los identificadores que el producto escribe no
+cambian: la prueba que compara lo que se escribe con lo que se leyó sigue
+verde, y ahora sin tener que aplicar el lector a mano encima de lo que el
+extractor ya devolvió.
+
+---
+
+## 2026-10-24 — Un fallo se dice como un fallo
+
+**La unidad.** El bloque de grafo fiable y MCP seguro tiene entre sus
+cláusulas que un fallo de MCP llegue como fallo al cliente. La herramienta
+de preguntas en lenguaje natural no lo cumplía: cuando no podía
+responder, respondía con la bandera de éxito. El cliente leía un fallo
+como una respuesta, y un cliente que aprende a leer un fallo como una
+respuesta lee todos los fallos como respuestas.
+
+**Lo que se encontró al medir.** El transporte de la superficie MCP ya
+sabía distinguir: `CallToolResult::error` lleva la bandera de fallo y el
+resto de herramientas lo usan. La ruta que no lo cumplía era la del
+enrutador de preguntas, y lo que adivinaba el fallo era un número —la
+confianza de la clasificación valiendo cero— que significa otra cosa.
+
+**La corrección.** El enrutador dice ahora, con un tipo y no con un
+número, si la pregunta quedó contestada. El transporte lleva esa verdad en
+su bandera, y la carga útil de un fallo conserva el motivo y lo que sí se
+podía preguntar en su lugar, con el mismo código de error que ya usa el
+resto de la superficie. El servicio de sesión, que decidía si una pregunta
+entra en el historial leyendo esa misma confianza, pregunta al desenlace.
+
+**La puerta que lo fija.** Una prueba nueva en la herramienta —el fallo
+llega como fallo— y dos pruebas del enrutador que ya existían, reforzadas
+para que afirmen lo que su nombre dice: la del grafo ausente dice además
+que el desenlace es un fallo, y la de la pregunta que no necesita grafo
+dice además que la pregunta se contestó. Una respuesta buena no se marca
+como fallo, y una pregunta sin graph no se queda sin contestar.
+
+**El discriminante, medido sobre el producto.** Al devolver el transporte
+al comportamiento viejo, la prueba de la herramienta se puso roja
+exactamente en la bandera: `Some(false)` donde quería `Some(true)`, con la
+carga útil diciendo `graph_unavailable` debajo. Restaurado, volvió a verde.
+
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6346** pruebas del workspace con **0** fallos, los
+doc-tests, los 47 contratos de CI más `scripts/product/*.py`, y el
+baseline.
+
+**El trabajo de harness que la unidad arrastraba.** Los dobles de prueba
+de las tres fachadas vivían dentro del módulo de pruebas del enrutador.
+Se mudaron a un módulo compartido, para que una prueba que necesite un
+contexto los encuentre en vez de escribir los suyos: un doble escrito dos
+veces es un doble que se desincroniza sin que nadie lo note. Y ahora
+responden: antes sólo sabían negarse, y una prueba que necesitaba un
+servicio que contesta no lo tenía. Por eso la prueba de la pregunta que no
+necesita grafo afirmaba menos de lo que decía: comprobaba que la pregunta
+no se quedó atascada por falta de grafo, y no que se contestara.

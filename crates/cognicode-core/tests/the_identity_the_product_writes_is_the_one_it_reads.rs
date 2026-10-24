@@ -82,11 +82,9 @@ fn corpus() -> std::path::PathBuf {
 fn written_identities(language: Language, file: &str) -> Vec<String> {
     let source = std::fs::read_to_string(corpus().join(file)).expect("the corpus file is readable");
     let config = LanguageConfig::for_language(language);
-    let extracted = extract_file(config, std::path::Path::new(file), &source, "content-hash");
-    let enriched = match config.semantic_handler {
-        Some(handler) => handler(file, "content-hash", &source, &extracted),
-        None => extracted,
-    };
+    // The reading already went through the reader of the language, so the
+    // identities here are the ones the product writes.
+    let enriched = extract_file(config, std::path::Path::new(file), &source, "content-hash");
     enriched
         .nodes
         .iter()

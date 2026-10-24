@@ -125,8 +125,7 @@ impl TreeSitterParser {
     /// Parses source code and returns a tree-sitter tree
     pub fn parse_tree(&self, source: &str) -> ParseResult<tree_sitter::Tree> {
         let mut parser = self.parser.lock();
-        parser
-            .parse(source, None)
+        crate::infrastructure::parser::tree::parse_with(&mut parser, source)
             .ok_or_else(|| ParseError::ParseFailed("Failed to parse source".to_string()))
     }
 }

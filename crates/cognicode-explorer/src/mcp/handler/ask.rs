@@ -15,7 +15,9 @@ use serde_json::Value;
 
 use crate::ask::AskRouter;
 use crate::mcp::context::McpContext;
-use crate::mcp::envelope::{err_envelope, ok_envelope_with_provenance};
+use crate::mcp::envelope::{
+    err_envelope, err_envelope_with_provenance, ok_envelope_with_provenance,
+};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{McpResultEnvelope, ProvenanceMetadata, TOOL_ASK};
 
@@ -117,7 +119,7 @@ impl ToolHandler for AskHandler {
             }
         };
 
-        let env = crate::ask::dispatch::dispatch_ask(
+        let outcome = crate::ask::dispatch::dispatch_ask(
             classified, search, workspace, view, &ctx.graph, None,
         )
         .await;
@@ -128,7 +130,14 @@ impl ToolHandler for AskHandler {
         // match this tool's identity.
         let provenance =
             ProvenanceMetadata::new(0.0, Some("ask-router".into())).unwrap_or_default();
-        let payload = serde_json::to_value(&env).unwrap_or(serde_json::Value::Null);
+        let payload = serde_json::to_value(outcome.envelope()).unwrap_or(serde_json::Value::Null);
+        // A question that could not be answered travels as a failure. The
+        // payload says what happened and what else could be asked; the flag
+        // says the tool did not answer, and a client that reads only the
+        // flag would otherwise read a failure as an answer.
+        if outcome.is_failure() {
+            return err_envelope_with_provenance(TOOL_ASK, &payload, provenance);
+        }
         ok_envelope_with_provenance(TOOL_ASK, &payload, provenance)
     }
 }
@@ -140,4 +149,40 @@ impl ToolHandler for AskHandler {
 /// Register the ask-family handler into the registry.
 pub fn register_ask_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(AskHandler);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::facades::mocks::build_mocks;
+    use serde_json::json;
+
+    /// A question that could not be answered travels as a failure.
+    ///
+    /// The tool answers with the envelope of the router and with a flag, and
+    /// the flag is what a client reads to know the tool did not answer. A
+    /// failure that says it succeeded teaches the client to read a failure as
+    /// an answer, and a client that learned that reads every later failure
+    /// as an answer too.
+    #[tokio::test]
+    async fn a_question_that_cannot_be_answered_travels_as_a_failure() {
+        let (search, view, workspace) = build_mocks();
+        let context = McpContext::builder()
+            .with_search(Arc::new(search))
+            .with_view(Arc::new(view))
+            .with_workspace(Arc::new(workspace))
+            .build();
+
+        // A question about the call graph, asked of a context that has no
+        // call graph: the router cannot answer it.
+        let result = AskHandler
+            .handle(&context, json!({ "question": "path between `a` and `b`" }))
+            .await;
+
+        assert_eq!(
+            result.is_error,
+            Some(true),
+            "a question that could not be answered travels as a failure: {result:?}"
+        );
+    }
 }

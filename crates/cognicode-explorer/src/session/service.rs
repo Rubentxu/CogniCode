@@ -245,7 +245,7 @@ impl BrainSessionService {
         };
 
         let classified = crate::ask::AskRouter::classify(&enriched);
-        let env = crate::ask::dispatch::dispatch_ask(
+        let outcome = crate::ask::dispatch::dispatch_ask(
             classified,
             self.search.as_ref(),
             self.workspace.as_ref(),
@@ -255,14 +255,11 @@ impl BrainSessionService {
         )
         .await;
 
-        // If the inner envelope is an error, do NOT append history.
-        let is_error = env
-            .provenance
-            .as_ref()
-            .and_then(|p| p.confidence)
-            .map(|c| c == 0.0)
-            .unwrap_or(false);
-        if !is_error {
+        // A question that went unanswered is not a question that was
+        // answered badly, so it does not belong in the history. The router
+        // says so; the confidence of a classification does not.
+        if !outcome.is_failure() {
+            let env = outcome.envelope();
             let answer_summary = env
                 .payload
                 .get("primary_result")
@@ -287,7 +284,7 @@ impl BrainSessionService {
                 ts: chrono::Utc::now(),
             });
         }
-        env
+        outcome.into_envelope()
     }
 }
 

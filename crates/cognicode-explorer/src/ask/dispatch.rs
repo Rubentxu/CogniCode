@@ -26,6 +26,43 @@ use crate::facades::{SearchService, ViewService, WorkspaceService};
 use crate::mcp::{FollowUp, McpResultEnvelope, ProvenanceMetadata};
 use crate::session::service::BrainSessionService;
 
+/// What the ask router has to say.
+///
+/// The envelope says what the router found; this says whether it found
+/// anything at all. A consumer that has to read a number —the confidence of
+/// the classification— to find out whether the question was answered is
+/// reading a number that means something else, and a question that could not
+/// be answered has to say so in the one way a consumer cannot miss.
+#[derive(Debug, Clone)]
+pub enum AskOutcome {
+    /// The question was answered.
+    Answered(McpResultEnvelope<Value>),
+    /// The question could not be answered. The envelope says why, and what
+    /// else could be asked instead.
+    Failed(McpResultEnvelope<Value>),
+}
+
+impl AskOutcome {
+    /// The envelope of this outcome, whatever it is.
+    pub fn envelope(&self) -> &McpResultEnvelope<Value> {
+        match self {
+            AskOutcome::Answered(envelope) | AskOutcome::Failed(envelope) => envelope,
+        }
+    }
+
+    /// The envelope of this outcome, consumed.
+    pub fn into_envelope(self) -> McpResultEnvelope<Value> {
+        match self {
+            AskOutcome::Answered(envelope) | AskOutcome::Failed(envelope) => envelope,
+        }
+    }
+
+    /// Whether the question went unanswered.
+    pub fn is_failure(&self) -> bool {
+        matches!(self, AskOutcome::Failed(_))
+    }
+}
+
 /// Dispatch a classified question. Pure async — no shared state,
 /// no I/O outside of the service methods it calls.
 ///
@@ -48,7 +85,7 @@ pub async fn dispatch_ask(
     view: &dyn ViewService,
     graph: &Option<Arc<CallGraph>>,
     _session: Option<&BrainSessionService>,
-) -> McpResultEnvelope<Value> {
+) -> AskOutcome {
     // 1. Resolve entities via spotter (if any backtick tokens are
     //    present in the question).
     let (entities, entity_follow_ups) =
@@ -74,7 +111,7 @@ pub async fn dispatch_ask(
     {
         Ok(t) => t,
         Err(message) => {
-            return error_envelope(&classified, message, entity_follow_ups);
+            return error_envelope(&classified, "dispatch_failed", message, entity_follow_ups);
         }
     };
 
@@ -99,14 +136,14 @@ pub async fn dispatch_ask(
     });
     let provenance = ProvenanceMetadata::new(classified.confidence, Some("ask-router".into()))
         .unwrap_or_default();
-    McpResultEnvelope {
+    AskOutcome::Answered(McpResultEnvelope {
         tool_name: "cognicode_ask".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         provenance: Some(provenance),
         payload,
         suggested_follow_ups: follow_ups,
-    }
+    })
 }
 
 // ----- category dispatch --------------------------------------------------
@@ -406,7 +443,7 @@ async fn generic_description(
 fn graph_unavailable_envelope(
     classified: ClassifiedQuestion,
     extra_follow_ups: Vec<FollowUp>,
-) -> McpResultEnvelope<Value> {
+) -> AskOutcome {
     // Spec: "list the available (non-graph) alternatives". Patterns
     // 4 and 8 are the non-graph ones.
     let alternatives: Vec<&'static str> = PATTERNS
@@ -419,23 +456,27 @@ fn graph_unavailable_envelope(
          Available (non-graph) patterns: {}",
         alternatives.join(", ")
     );
-    error_envelope(&classified, message, extra_follow_ups)
+    error_envelope(&classified, "graph_unavailable", message, extra_follow_ups)
 }
 
 fn error_envelope(
     _classified: &ClassifiedQuestion,
+    code: &str,
     message: String,
     extra_follow_ups: Vec<FollowUp>,
-) -> McpResultEnvelope<Value> {
+) -> AskOutcome {
     let provenance = ProvenanceMetadata::new(0.0, Some("ask-router".into())).unwrap_or_default();
-    McpResultEnvelope {
+    AskOutcome::Failed(McpResultEnvelope {
         tool_name: "cognicode_ask".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
         provenance: Some(provenance),
-        payload: json!({ "error": message }),
+        payload: json!({
+            "error_code": code,
+            "error": message,
+        }),
         suggested_follow_ups: extra_follow_ups,
-    }
+    })
 }
 
 fn pattern_label(cat: QuestionCategory) -> &'static str {
@@ -471,116 +512,12 @@ impl GraphRequired for QuestionCategory {
 mod tests {
     use super::*;
     use crate::ask::AskRouter;
-    use crate::dto::{
-        InspectableObjectSummary, LensResult, OpenWorkspaceRequest, SpotterResult,
-        ViewDescriptorDto, WorkspaceSummary,
-    };
-    use async_trait::async_trait;
+    use crate::facades::mocks::build_mocks;
 
     // Helper — let the tests be tight. Build a question that maps to
     // each category and assert we get the right envelope shape back.
     async fn run_classify(question: &str) -> ClassifiedQuestion {
         AskRouter::classify(question)
-    }
-
-    // --- Mock facades -------------------------------------------------------
-
-    #[derive(Clone)]
-    struct MockSearchService;
-    #[async_trait]
-    impl SearchService for MockSearchService {
-        async fn spotter_search(
-            &self,
-            _query: &str,
-            _kind: Option<&str>,
-        ) -> crate::ExplorerResult<Vec<SpotterResult>> {
-            Ok(vec![])
-        }
-        async fn spotter_search_with_viewspecs(
-            &self,
-            _query: &str,
-            _kind: Option<&str>,
-            _workspace_id: Option<&str>,
-        ) -> crate::ExplorerResult<Vec<crate::dto::SpotterSearchResult>> {
-            Ok(vec![])
-        }
-        async fn inspect_object(
-            &self,
-            _object_id: &str,
-        ) -> crate::ExplorerResult<InspectableObjectSummary> {
-            Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
-        }
-    }
-
-    #[derive(Clone)]
-    struct MockViewService;
-    #[async_trait]
-    impl ViewService for MockViewService {
-        async fn available_views(
-            &self,
-            _object_id: &str,
-        ) -> crate::ExplorerResult<Vec<ViewDescriptorDto>> {
-            Ok(vec![])
-        }
-        async fn contextual_view(
-            &self,
-            _object_id: &str,
-            _view_id: &str,
-        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
-            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
-        }
-        async fn build_contextual_graph(
-            &self,
-            _focus_id: &str,
-            _level: &str,
-            _depth: u8,
-            _max_nodes: usize,
-        ) -> crate::ExplorerResult<crate::dto::ContextualGraphResponse> {
-            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
-        }
-        async fn available_lenses(
-            &self,
-            _object_id: &str,
-        ) -> crate::ExplorerResult<Vec<crate::dto::LensDescriptor>> {
-            Ok(vec![])
-        }
-        async fn apply_lens(
-            &self,
-            _object_id: &str,
-            _lens_id: &str,
-        ) -> crate::ExplorerResult<LensResult> {
-            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
-        }
-        async fn execute_view_spec(
-            &self,
-            _spec: &crate::dto::ViewSpec,
-            _object_id: &str,
-        ) -> crate::ExplorerResult<crate::dto::ContextualView> {
-            Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
-        }
-    }
-
-    #[derive(Clone)]
-    struct MockWorkspaceService;
-    #[async_trait]
-    impl WorkspaceService for MockWorkspaceService {
-        async fn open_workspace(
-            &self,
-            _request: OpenWorkspaceRequest,
-        ) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound(
-                "mock".into(),
-            ))
-        }
-        fn current_workspace(&self) -> crate::ExplorerResult<WorkspaceSummary> {
-            Err(crate::error::ExplorerError::WorkspaceNotFound(
-                "mock".into(),
-            ))
-        }
-    }
-
-    fn build_mocks() -> (MockSearchService, MockViewService, MockWorkspaceService) {
-        (MockSearchService, MockViewService, MockWorkspaceService)
     }
 
     #[tokio::test]
@@ -638,9 +575,9 @@ mod tests {
         // remain available (4 and 8 per the spec).
         let (search, view, workspace) = build_mocks();
         let classified = run_classify("path between `a` and `b`").await;
-        let env = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
+        let outcome = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
         // No graph → graph_unavailable envelope, alternatives 4 and 8.
-        let body = serde_json::to_string(&env).unwrap();
+        let body = serde_json::to_string(outcome.envelope()).unwrap();
         assert!(
             body.contains("graph_unavailable"),
             "expected graph_unavailable, got: {body}"
@@ -648,6 +585,13 @@ mod tests {
         assert!(
             body.contains("code_quality") && body.contains("generic_description"),
             "expected alternatives 4 + 8 in: {body}"
+        );
+        // The envelope says what happened; the outcome says whether the
+        // question was answered. A consumer that has to read the envelope
+        // to find out is reading a document instead of a verdict.
+        assert!(
+            outcome.is_failure(),
+            "a question that could not be answered is a failure, not an answer"
         );
     }
 
@@ -657,13 +601,19 @@ mod tests {
         // graph is None.
         let (search, view, workspace) = build_mocks();
         let classified = run_classify("any smells in `parse_config`?").await;
-        let env = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
+        let outcome = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
         // No graph_unavailable should appear — pattern 4 doesn't need
         // the graph.
-        let body = serde_json::to_string(&env).unwrap();
+        let body = serde_json::to_string(outcome.envelope()).unwrap();
         assert!(
             !body.contains("graph_unavailable"),
             "non-graph pattern must not gate on graph, got: {body}"
+        );
+        // And the question was answered, not merely not gated: a pattern
+        // that does not need the graph has to answer without one.
+        assert!(
+            !outcome.is_failure(),
+            "a question that was answered is not a failure: {body}"
         );
     }
 }

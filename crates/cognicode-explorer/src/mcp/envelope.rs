@@ -99,6 +99,32 @@ pub fn err_envelope(tool_name: &str, code: &str, message: &str) -> CallToolResul
     CallToolResult::error(vec![Content::text(pretty)])
 }
 
+/// Build a `CallToolResult::error` carrying the canonical result envelope
+/// with provenance metadata.
+///
+/// The payload is the one the tool produced and it is not touched here; what
+/// changes is the flag, and the flag is what a client reads to know the tool
+/// did not answer. A result that carries a failure and says it succeeded
+/// teaches the client to read a failure as an answer.
+pub fn err_envelope_with_provenance<T: Serialize>(
+    tool_name: &str,
+    payload: &T,
+    provenance: ProvenanceMetadata,
+) -> CallToolResult {
+    let provenance_json = serde_json::to_value(provenance).unwrap_or(serde_json::Value::Null);
+    let envelope = serde_json::json!({
+        "tool_name": tool_name,
+        "version": env!("CARGO_PKG_VERSION"),
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "provenance": provenance_json,
+        "payload": payload,
+        "suggested_follow_ups": serde_json::Value::Array(Vec::new()),
+    });
+    let pretty = serde_json::to_string_pretty(&envelope)
+        .unwrap_or_else(|e| format!("failed to serialize envelope: {e}"));
+    CallToolResult::error(vec![Content::text(pretty)])
+}
+
 // ============================================================================
 // Regression tests — lock the wire-level JSON shape
 // ============================================================================

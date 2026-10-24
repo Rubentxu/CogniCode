@@ -3,14 +3,14 @@
   "wu": "B6.W5",
   "title": "Certificación de distribución — CP2, CP4, CP5",
   "generated_at_utc": "2026-10-24",
-  "head_sha": "520000cfef57d228bd3fe021f7a383bf77403356",
-  "head_short_sha": "520000cf",
+  "head_sha": "2868e8d2a3dac587b60e04613b9d75d54960218b",
+  "head_short_sha": "2868e8d2",
   "cp5_workspace_version": "0.101.31",
   "platform_checked": "linux-x86-64 (Fedora 44, this clone)",
-  "scope_note": "BLOQUE 5 — sexta certificación contra el árbol de v0.101.31. Cada entrada se volvió a ejecutar sobre este SHA y lo que sigue es lo observado, no lo esperado. El delta respecto a la certificación anterior (2026-10-17, e1636fb2 / 0.101.30) es el corte que hace que la lectura del control plane declare la identidad de lo que leyó: la respuesta gana el campo `source_basis`, con los ficheros leídos, un resumen de su contenido y el estado de esa identidad, y ese resumen se calcula sobre la ruta relativa a la raíz leída para que el mismo código tenga la misma identidad donde esté el árbol. Las cuatro superficies (Cargo.toml, SECURITY.md, README.md, CHANGELOG.md) re-bumpeadas a 0.101.31, binarios release rebuild (cognicode, cognicode-mcp, cogh) a 0.101.31, producer envelope sincronizado. TIER1_PLATFORMS sigue restringido a LinuxX86_64. Per PRF-DIST-05 ninguna plataforma se declara certificada sin build nativo, UAT real y artefacto publicado. CP6 sigue fuera de alcance.",
+  "scope_note": "BLOQUE 5 — séptima certificación contra el árbol de v0.101.31. Cada entrada se volvió a ejecutar sobre este SHA y lo que sigue es lo observado, no lo esperado. El delta respecto a la certificación anterior (2026-10-24, 520000cf) es el de este tramo: un fichero se lee en un solo árbol —el lector de un lenguaje recibe el árbol que ya se había construido, y el índice lee sus símbolos del árbol que ya tenía—, y un fallo del enrutador de preguntas se dice como un fallo, con un tipo y no con un número, llegando al cliente en la bandera de la respuesta. Ninguna de las dos cosas toca el camino de la distribución, y por eso ninguna entrada de esta certificación cambia de veredicto: lo que se re-mide aquí es que el árbol que se firma es el mismo árbol sobre el que se certificación antes. Las cuatro superficies (Cargo.toml, SECURITY.md, README.md, CHANGELOG.md) siguen en 0.101.31, binarios release rebuild a 0.101.31. TIER1_PLATFORMS sigue restringido a LinuxX86_64. Per PRF-DIST-05 ninguna plataforma se declara certificada sin build nativo, UAT real y artefacto publicado. CP6 sigue fuera de alcance.",
   "operator_signature": "Regenerada por el agente a petición explícita del operador (2026-10-24), durante el corte de v0.101.31, con las puertas humanas aprobadas por el operador para este ciclo. La decisión de certificar y la firma siguen siendo del operador: el agente ejecutó los comandos y transcribió sus exit codes observados; no juzgó ninguno. ANTERIOR: 2026-10-17, head e1636fb2, workspace 0.101.30.",
   "evidence": {
-    "head_sha_observed": "520000cfef57d228bd3fe021f7a383bf77403356",
+    "head_sha_observed": "2868e8d2a3dac587b60e04613b9d75d54960218b",
     "head_sha_command": "git rev-parse HEAD",
     "head_sha_exit_code": 0,
     "tag_at_head": "v0.101.30",
@@ -27,8 +27,8 @@
       "command": "jq '[.tools[] | select(has(\"install_instructions\"))] | length' product/tools.json",
       "exit_code": 0,
       "evidence_path": "product/tools.json",
-      "result": "0 tools carry an `install_instructions` field, against 80 published. The catalog still advertises no per-tool install paths. PRF-DIST-05 forbids announcing install paths without a real UAT, so the claim stays an honest NOT_RUN rather than a PASS.",
-      "reason": "The field is absent from every tool in `product/tools.json` at HEAD = 520000cf. Re-measured on this tree rather than carried over: the previous cert said the same thing without saying it had been re-measured. Nothing to resolve to a published artefact until the field exists."
+      "result": "0 tools carry an `install_instructions` field, against 78 published. The catalog still advertises no per-tool install paths. PRF-DIST-05 forbids announcing install paths without a real UAT, so the claim stays an honest NOT_RUN rather than a PASS.",
+      "reason": "The field is absent from every tool in `product/tools.json` at HEAD = 2868e8d2. Re-measured on this tree rather than carried over: the previous cert said the same thing without saying it had been re-measured. Nothing to resolve to a published artefact until the field exists."
     },
     {
       "id": "CP2-02",
@@ -48,7 +48,7 @@
       "exit_code": 0,
       "evidence_path": "scripts/ci/release-install-smoke.sh",
       "result": "the smoke script exists at the documented path with mode 644. Invokable via `bash`, which is the same convention the lane uses and the same one `cargo test` uses for `*.sh` fixtures; the release lane never invokes it directly.",
-      "reason": "Closes on 'the script that runs the install UAT is on disk at the path the lane expects', measured at HEAD = 520000cf rather than asserted from the previous run. The missing executable bit is deliberate and unchanged."
+      "reason": "Closes on 'the script that runs the install UAT is on disk at the path the lane expects', measured at HEAD = 2868e8d2 rather than asserted from the previous run. The missing executable bit is deliberate and unchanged."
     },
     {
       "id": "CP2-04",
@@ -58,7 +58,7 @@
       "exit_code": 0,
       "evidence_path": "product/platforms.json",
       "result": "exactly one certified platform: `linux-x86-64`. `linux-aarch64` is `experimental`, `linux-x86-64-musl` is `experimental`, and macos-arm64 / macos-x86-64 / windows-x86-64 are `unsupported`. The catalogue no longer claims anything the contract forbids.",
-      "reason": "Re-run at HEAD = 520000cf, exit 0 observed. The lane's own declaration and the certified catalogue agree: the release lane declares only `LinuxX86_64`, and the catalogue calls every other platform `experimental` or `unsupported`."
+      "reason": "Re-run at HEAD = 2868e8d2, exit 0 observed. The lane's own declaration and the certified catalogue agree: the release lane declares only `LinuxX86_64`, and the catalogue calls every other platform `experimental` or `unsupported`."
     },
     {
       "id": "CP4-01",
@@ -68,7 +68,7 @@
       "exit_code": 0,
       "evidence_path": "scripts/ci/attest-provenance.sh",
       "result": "the attestation script parses its arguments, dispatches to the help path and exits 0 with the documented ADR excerpt. That path exercises the whole argument parser, the `set -uo pipefail` policy, the missing-key guard and the help dispatch.",
-      "reason": "Re-run at HEAD = 520000cf; exit 0 observed. The public chunks a consumer can invoke are all non-destructive from this path."
+      "reason": "Re-run at HEAD = 2868e8d2; exit 0 observed. The public chunks a consumer can invoke are all non-destructive from this path."
     },
     {
       "id": "CP4-02",
@@ -88,7 +88,7 @@
       "exit_code": 0,
       "evidence_path": "/usr/bin/cosign",
       "result": "cosign resolves to `/usr/bin/cosign` on this clone. The presence of the binary is what the contract pins; its provenance is not the subject of this entry.",
-      "reason": "Re-run at HEAD = 520000cf; exit 0 observed."
+      "reason": "Re-run at HEAD = 2868e8d2; exit 0 observed."
     },
     {
       "id": "CP5-01",
@@ -97,8 +97,8 @@
       "command": "bash scripts/ci/release-tag-coherence.sh --from-version 0.101.31 520000cfef57d228bd3fe021f7a383bf77403356",
       "exit_code": 0,
       "evidence_path": "scripts/ci/release-tag-coherence.sh",
-      "result": "validate-mode printed `validate-mode  expected.version=0.101.31  sha=520000cfef57 | workspace.version=0.101.31 | OK: validate-mode expected.version 0.101.31 ↔ workspace.version 0.101.31`. The script reads `Cargo.toml` from the blob at SHA 520000cf without checking it out, parses `[workspace.package].version`, and confirms it matches the expected version.",
-      "reason": "Re-run at HEAD = 520000cf; exit 0 observed. The `expected version` here is 0.101.31 (the workspace version at this SHA); the cert is the thing `cp5_workspace_version_consistent` exists to keep honest."
+      "result": "validate-mode printed `validate-mode  expected.version=0.101.31  sha=2868e8d2 | workspace.version=0.101.31 | OK: validate-mode expected.version 0.101.31 ↔ workspace.version 0.101.31`. The script reads `Cargo.toml` from the blob at SHA 2868e8d2a3dac587b60e04613b9d75d54960218b without checking it out, parses `[workspace.package].version`, and confirms it matches the expected version.",
+      "reason": "Re-run at HEAD = 2868e8d2; exit 0 observed. The `expected version` here is 0.101.31 (the workspace version at this SHA); the cert is the thing `cp5_workspace_version_consistent` exists to keep honest."
     },
     {
       "id": "CP5-02",
