@@ -822,11 +822,18 @@ async fn la_identidad_de_la_lectura_es_estable_y_cambia_con_el_codigo() {
     let state = ControlPlaneState::canonical(dir.clone());
     let (_, second) =
         control_plane_request(state, "/control-plane/workspaces/stable/architecture").await;
-    assert_eq!(second["source_basis"]["digest"], first["source_basis"]["digest"]);
+    assert_eq!(
+        second["source_basis"]["digest"],
+        first["source_basis"]["digest"]
+    );
 
     // El codigo cambio: la identidad ya no es la misma.
     let src = dir.join("src/domain/service.rs");
-    std::fs::write(&src, "use crate::infrastructure::db::Pool;\npub struct T;\n").unwrap();
+    std::fs::write(
+        &src,
+        "use crate::infrastructure::db::Pool;\npub struct T;\n",
+    )
+    .unwrap();
     let state = ControlPlaneState::canonical(dir.clone());
     let (_, third) =
         control_plane_request(state, "/control-plane/workspaces/stable/architecture").await;
@@ -851,7 +858,10 @@ async fn un_arbol_vacio_publica_el_estado_y_no_un_resumen() {
 
     let basis = &body["source_basis"];
     assert_eq!(basis["status"], "empty", "basis: {basis}");
-    assert!(basis["digest"].is_null(), "sin ficheros no hay resumen: {basis}");
+    assert!(
+        basis["digest"].is_null(),
+        "sin ficheros no hay resumen: {basis}"
+    );
     assert_eq!(basis["files"], 0);
     assert!(basis["reason"].is_string());
 
@@ -873,9 +883,11 @@ async fn las_dos_rutas_publican_la_misma_identidad() {
     let (status, full_body) = get(full, "/control-plane/workspaces/ws-1/architecture").await;
     assert_eq!(status, axum::http::StatusCode::OK);
 
-    let (_, minimal_body) =
-        control_plane_request(ControlPlaneState::canonical(dir.clone()), "/control-plane/workspaces/ws-1/architecture")
-            .await;
+    let (_, minimal_body) = control_plane_request(
+        ControlPlaneState::canonical(dir.clone()),
+        "/control-plane/workspaces/ws-1/architecture",
+    )
+    .await;
 
     assert_eq!(full_body["source_basis"]["status"], "computed");
     assert_eq!(

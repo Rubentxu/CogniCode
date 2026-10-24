@@ -18,8 +18,8 @@
 
 use crate::application::architecture::ArchitectureRegistry;
 use crate::application::architecture::evaluator::{ArchitectureSource, SourceFile};
-use sha2::{Digest, Sha256};
 use crate::domain::architecture::{ArchitectureConstraint, ArchitectureConstraintKind};
+use sha2::{Digest, Sha256};
 
 /// Overall status of a read projection. The discriminator that keeps
 /// the semantics fail-closed.
@@ -564,8 +564,7 @@ mod tests {
         for root in [&a, &b] {
             let dir = root.path().join("src/domain");
             std::fs::create_dir_all(&dir).expect("mkdir");
-            std::fs::write(dir.join("service.rs"), "use std::io;\npub struct T;\n")
-                .expect("write");
+            std::fs::write(dir.join("service.rs"), "use std::io;\npub struct T;\n").expect("write");
         }
         (a, b)
     }
