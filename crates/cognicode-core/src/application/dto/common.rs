@@ -69,12 +69,34 @@ pub struct SyntaxIssue {
     pub severity: String,
 }
 
+/// What the validation of an edit actually did.
+///
+/// A file that no parser could check is not a file that was validated. The
+/// three states say which of the two happened, so a consumer never has to
+/// infer it from a field that means something else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum EditVerification {
+    /// A parser ran on the resulting content and found it valid.
+    Verified,
+    /// The content was not checked: the language has no parser, the parser
+    /// could not be created, or there was no new content to check.
+    #[default]
+    Unverified,
+    /// A parser ran on the resulting content and found it invalid.
+    Rejected,
+}
+
 /// Validation result for edit operations.
 /// Used by both MCP protocol and internal DTOs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EditValidation {
+    /// True only when the content was really verified.
     pub passed: bool,
+    /// What the validation actually did.
+    #[serde(default)]
+    pub verification: EditVerification,
     #[serde(default)]
     pub syntax_issues: Vec<SyntaxIssue>,
 }

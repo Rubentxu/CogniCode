@@ -19,8 +19,8 @@
 )]
 
 use crate::application::dto::{
-    ContentMatch, EditFileRequest, EditFileResult, EditValidation, FileEntry, FileMetadata,
-    ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
+    ContentMatch, EditFileRequest, EditFileResult, EditValidation, EditVerification, FileEntry,
+    FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
     RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
     VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
@@ -36,7 +36,21 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
+
+/// Gives every temporary file its own name.
+///
+/// The name used to be the target path plus the process identifier, so two
+/// writes to the same path inside one process shared one temporary file:
+/// they wrote into it at the same time and the survivor was whichever
+/// rename landed last. The counter makes the name unique per write, which
+/// is what "atomic" means when two writers meet.
+fn unique_temp_path(target: &str) -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{target}.tmp.{}.{n}", std::process::id())
+}
 
 /// Continuation token for chunked file reading
 #[derive(Serialize, Deserialize)]
@@ -268,46 +282,35 @@ impl FileOperationsService {
     fn validate_path(&self, path: &str) -> AppResult<String> {
         let requested = Path::new(path);
 
-        // Delegate security validation to the PathPolicy port
-        self.path_policy
-            .validate_path(requested)
-            .map_err(|e| match e {
-                PathPolicyError::PathTraversalAttempt { path } => {
-                    AppError::InvalidParameter(format!("Path traversal attempt detected: {}", path))
-                }
-                PathPolicyError::PathNotAccessible { path } => {
-                    AppError::InvalidParameter(format!("Path not accessible: {}", path))
-                }
-                PathPolicyError::PathOutsideWorkspace => {
-                    AppError::InvalidParameter("Path outside workspace".to_string())
-                }
-                PathPolicyError::PathTooDeep { depth, max } => AppError::InvalidParameter(format!(
-                    "Path too deep: {} components (max: {})",
-                    depth, max
-                )),
-                PathPolicyError::InvalidPathCharacters { path } => {
-                    AppError::InvalidParameter(format!("Invalid characters in path: {}", path))
-                }
-                PathPolicyError::SymlinkDetected { path } => {
-                    AppError::InvalidParameter(format!("Symlink detected in path: {}", path))
-                }
-            })?;
-
-        // Resolve to absolute path for return value
+        // Resolve to absolute path for the canonical phase.
         let root = Path::new(&self.workspace_root);
-        let absolute_path = if requested.is_absolute() {
+        let resolved = if requested.is_absolute() {
             requested.to_path_buf()
         } else {
             root.join(requested)
         };
 
+        self.validate_resolved_path(&resolved)
+    }
+
+    /// The canonical phase of the judgment: the path is there, or its parent
+    /// is, and it resolves inside the workspace once symlinks are followed.
+    ///
+    /// The path arrives already resolved. This is the phase that runs once
+    /// the directories exist, so it can answer with the canonical form.
+    fn validate_resolved_path(&self, resolved: &Path) -> AppResult<String> {
+        // Delegate security validation to the PathPolicy port
+        self.path_policy
+            .validate_path(resolved)
+            .map_err(Self::policy_error)?;
+
         // Canonicalize to get the real path
-        let canonical = if absolute_path.exists() {
-            std::fs::canonicalize(&absolute_path)
-        } else if let Some(parent) = absolute_path.parent() {
+        let canonical = if resolved.exists() {
+            std::fs::canonicalize(resolved)
+        } else if let Some(parent) = resolved.parent() {
             parent
                 .canonicalize()
-                .map(|p| p.join(absolute_path.file_name().unwrap_or_default()))
+                .map(|p| p.join(resolved.file_name().unwrap_or_default()))
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -317,6 +320,31 @@ impl FileOperationsService {
         .map_err(|e| AppError::InvalidParameter(format!("Failed to resolve path: {}", e)))?;
 
         Ok(canonical.to_string_lossy().to_string())
+    }
+
+    /// The port's error, in the vocabulary this service reports.
+    fn policy_error(error: PathPolicyError) -> AppError {
+        match error {
+            PathPolicyError::PathTraversalAttempt { path } => {
+                AppError::InvalidParameter(format!("Path traversal attempt detected: {}", path))
+            }
+            PathPolicyError::PathNotAccessible { path } => {
+                AppError::InvalidParameter(format!("Path not accessible: {}", path))
+            }
+            PathPolicyError::PathOutsideWorkspace => {
+                AppError::InvalidParameter("Path outside workspace".to_string())
+            }
+            PathPolicyError::PathTooDeep { depth, max } => AppError::InvalidParameter(format!(
+                "Path too deep: {} components (max: {})",
+                depth, max
+            )),
+            PathPolicyError::InvalidPathCharacters { path } => {
+                AppError::InvalidParameter(format!("Invalid characters in path: {}", path))
+            }
+            PathPolicyError::SymlinkDetected { path } => {
+                AppError::InvalidParameter(format!("Symlink detected in path: {}", path))
+            }
+        }
     }
 
     /// Reads a file from disk with optional line range and mode
@@ -1093,33 +1121,25 @@ impl FileOperationsService {
     /// Uses a temporary file and rename to ensure atomic writes.
     /// If create_dirs is true, creates parent directories if they don't exist.
     pub fn write_file(&self, input: WriteFileRequest) -> AppResult<WriteFileResult> {
-        // For new files with create_dirs=true, create parent directories BEFORE validation
-        // This is necessary because validate_path checks parent exists for new files
-        let path_for_validation = if input.create_dirs.unwrap_or(false) {
-            let requested = Path::new(&input.path);
-            let absolute_path = if requested.is_absolute() {
-                requested.to_path_buf()
-            } else {
-                std::env::current_dir()
-                    .map(|cwd| cwd.join(requested))
-                    .map_err(|e| {
-                        AppError::InvalidParameter(format!("Failed to resolve path: {}", e))
-                    })?
-            };
+        // The path is judged before anything is created. The judgment is
+        // the one that can be made when the directories are not there yet,
+        // and the directories are only created once the policy has said
+        // yes — so a request that is refused leaves nothing behind.
+        let resolved = self
+            .path_policy
+            .resolve_for_creation(Path::new(&input.path))
+            .map_err(Self::policy_error)?;
 
-            if let Some(parent) = absolute_path.parent()
-                && !parent.exists()
-            {
-                fs::create_dir_all(parent).map_err(|e| {
-                    AppError::InvalidParameter(format!("Failed to create directories: {}", e))
-                })?;
-            }
-            input.path.clone()
-        } else {
-            input.path.clone()
-        };
+        if input.create_dirs.unwrap_or(false)
+            && let Some(parent) = resolved.parent()
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to create directories: {}", e))
+            })?;
+        }
 
-        let validated_path = self.validate_path(&path_for_validation)?;
+        let validated_path = self.validate_resolved_path(&resolved)?;
 
         // FW-5: Enforce size limit (10MB default)
         const DEFAULT_MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
@@ -1133,7 +1153,7 @@ impl FileOperationsService {
         let bytes_written = input.content.len() as u64;
 
         // Atomic write: write to temp file then rename
-        let temp_path = format!("{}.tmp.{}", validated_path, std::process::id());
+        let temp_path = unique_temp_path(&validated_path);
 
         // Write content to temp file
         {
@@ -1177,6 +1197,7 @@ impl FileOperationsService {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
+                        verification: EditVerification::Unverified,
                         syntax_issues: vec![],
                     },
                     preview: Some(format!(
@@ -1192,6 +1213,7 @@ impl FileOperationsService {
                     applied: false,
                     validation: EditValidation {
                         passed: false,
+                        verification: EditVerification::Unverified,
                         syntax_issues: vec![],
                     },
                     preview: Some(format!(
@@ -1219,38 +1241,41 @@ impl FileOperationsService {
             return Ok(EditFileResult {
                 applied: false,
                 validation: EditValidation {
-                    passed: true,
+                    passed: false,
+                    verification: EditVerification::Unverified,
                     syntax_issues: vec![],
                 },
                 preview: Some("No changes made".to_string()),
                 bytes_changed: 0,
-                reason: None,
+                reason: Some("no_change".to_string()),
             });
         }
 
         // Validate syntax using tree-sitter if possible
         let lang = Self::detect_language(&validated_path);
-        let validation = if let Some(lang_key) = lang {
+        let verification = if let Some(lang_key) = lang {
             match self.syntax.parses_cleanly(&lang_key, &new_content) {
-                Ok(report) => EditValidation {
-                    passed: report.clean,
-                    syntax_issues: vec![],
-                },
-                Err(_) => EditValidation {
-                    passed: true, // Can't create parser, skip validation
-                    syntax_issues: vec![],
-                },
+                Ok(report) if report.clean => EditVerification::Verified,
+                Ok(_) => EditVerification::Rejected,
+                // No parser could be created: the content was not checked.
+                Err(_) => EditVerification::Unverified,
             }
         } else {
-            EditValidation {
-                passed: true, // Unknown language, skip validation
-                syntax_issues: vec![],
-            }
+            // No parser for this language: the content was not checked.
+            EditVerification::Unverified
+        };
+        let validation = EditValidation {
+            passed: verification == EditVerification::Verified,
+            verification,
+            syntax_issues: vec![],
         };
 
-        if validation.passed {
+        // The content is written unless a parser rejected it. Not being able
+        // to check it is not a reason to refuse the edit — it is a reason to
+        // say that it was not checked.
+        let written = if validation.verification != EditVerification::Rejected {
             // Write the modified content atomically
-            let temp_path = format!("{}.tmp.{}", validated_path, std::process::id());
+            let temp_path = unique_temp_path(&validated_path);
 
             {
                 let mut file = File::create(&temp_path).map_err(|e| {
@@ -1266,21 +1291,24 @@ impl FileOperationsService {
                 let _ = fs::remove_file(&temp_path);
                 AppError::InvalidParameter(format!("Failed to write file atomically: {}", e))
             })?;
-        }
+            true
+        } else {
+            false
+        };
 
-        // bytes_changed is only meaningful when validation passed and file was actually written
-        let bytes_changed = if validation.passed {
+        // bytes_changed is only meaningful when the file was actually written
+        let bytes_changed = if written {
             (new_content.len() as i64 - original_content.len() as i64).unsigned_abs()
         } else {
             0
         };
 
         // Determine if edit was applied and set rejection reason if syntax was rejected
-        let applied = validation.passed && new_content != original_content;
-        let reason = if validation.passed {
-            None
-        } else {
+        let applied = written && new_content != original_content;
+        let reason = if validation.verification == EditVerification::Rejected {
             Some("syntax_rejected".to_string())
+        } else {
+            None
         };
 
         Ok(EditFileResult {
