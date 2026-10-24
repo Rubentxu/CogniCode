@@ -469,6 +469,12 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     rechaza en una sola, y el orden de los resultados no lo fija la
 >     asíncrona. La forma, en
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>   - **Una etapa que no puede hacer caer la puerta dice qué observa** — abierto.
+>     Diez etapas se ejecutan sin poder bloquear, y ninguna declara qué valen:
+>     su motivo cita un `ci.yml` que ya no está en el repositorio. Y la que
+>     se llama instalación en HOME limpio sólo planifica: `cogh install` es un
+>     dry-run. La forma, en
+>     `docs/adr/ADR-057-the-stages-say-what-they-observe.md`.
 >
 >   Los candidatos de las dos unidades —con su evidencia y su criterio de
 >   cierre— viven en la backlog de la misión (`goal-compass.json`).

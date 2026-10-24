@@ -8,6 +8,29 @@
   "driver": "plugin",
   "backlog": [
     {
+      "candidateId": "C37",
+      "title": "Una etapa que no bloquea dice que observa",
+      "unit": "H27",
+      "objective": "Que cada etapa que no puede hacer caer la puerta declare que observa y por que se queda asi, y que una etapa llamada install instale de verdad.",
+      "whyNow": "MEDIDO 2026-10-24: diez etapas se ejecutan y no pueden hacer caer la puerta -siete en `integration.pipeline.kts` y tres en `certification.pipeline.kts`-, y ningun contrato las declara: la palabra ADVISORY solo aparece en un probe y en un guard de aislamiento de build. El motivo heredado que las justifica cita un `ci.yml` que ya no esta en el repositorio -la casa migro de GitHub Actions a PipelineK- y solo quedan checkouts de terceros en `sandbox/repos/`, que el house excluye porque no son superficies suyas. ADEMAS: `cogh install --profile core` es un dry-run, asi que la etapa `cogh-clean-home-install` comprueba que el planificador sabe donde instalaria, sin instalar nada; con `--apply` funciona sin red, con doctor PASS y sha256, y deja el binario real en el HOME limpio. La clase UAT que ADR-D1-006 retiro -distribucion desde bytes release- solo tiene hoy un script de shell en la lane de release y una etapa que planifica.",
+      "evidenceRefs": [
+        "integration.pipeline.kts",
+        "certification.pipeline.kts",
+        "scripts/ci/test_every_test_surface_has_a_lane.py",
+        "scripts/ci/test_pipeline_stage_bodies.py",
+        "docs/adr/ADR-057-the-stages-say-what-they-observe.md"
+      ],
+      "doneWhen": [
+        "cada etapa que no puede hacer caer la puerta esta declarada con que observa, por que se queda asi y cuantas hay, y el recuento se comprueba",
+        "ninguna declaracion cita un fichero que no este en el arbol",
+        "la etapa de HOME limpio instala de verdad, y el contrato comprueba que dice apply"
+      ],
+      "scope": "H27",
+      "risk": "medium",
+      "priority": 50,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",
