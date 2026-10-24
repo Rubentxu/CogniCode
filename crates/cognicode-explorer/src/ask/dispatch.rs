@@ -586,43 +586,12 @@ mod tests {
             body.contains("code_quality") && body.contains("generic_description"),
             "expected alternatives 4 + 8 in: {body}"
         );
-    }
-
-    /// A question that could not be answered says so.
-    ///
-    /// The router says it in the outcome and not in a number: a consumer
-    /// that reads the confidence of the classification to find out whether
-    /// the question was answered is reading a number that means something
-    /// else.
-    #[tokio::test]
-    async fn a_question_that_cannot_be_answered_says_so() {
-        let (search, view, workspace) = build_mocks();
-        let classified = run_classify("path between `a` and `b`").await;
-        let outcome = dispatch_ask(classified, &search, &workspace, &view, &None, None).await;
-
+        // The envelope says what happened; the outcome says whether the
+        // question was answered. A consumer that has to read the envelope
+        // to find out is reading a document instead of a verdict.
         assert!(
             outcome.is_failure(),
             "a question that could not be answered is a failure, not an answer"
-        );
-        let body = serde_json::to_string(outcome.envelope()).unwrap();
-        assert!(
-            body.contains("graph_unavailable"),
-            "expected graph_unavailable, got: {body}"
-        );
-    }
-
-    /// A question that was answered says so, too.
-    #[tokio::test]
-    async fn a_question_that_was_answered_says_so() {
-        let (search, view, workspace) = build_mocks();
-        let classified = run_classify("path between `a` and `b`").await;
-        // With a graph to answer from, the router answers.
-        let graph = Some(std::sync::Arc::new(CallGraph::new()));
-        let outcome = dispatch_ask(classified, &search, &workspace, &view, &graph, None).await;
-
-        assert!(
-            !outcome.is_failure(),
-            "a question that was answered is not a failure"
         );
     }
 
@@ -639,6 +608,12 @@ mod tests {
         assert!(
             !body.contains("graph_unavailable"),
             "non-graph pattern must not gate on graph, got: {body}"
+        );
+        // And the question was answered, not merely not gated: a pattern
+        // that does not need the graph has to answer without one.
+        assert!(
+            !outcome.is_failure(),
+            "a question that was answered is not a failure: {body}"
         );
     }
 }

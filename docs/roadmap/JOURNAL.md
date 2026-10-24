@@ -25374,9 +25374,12 @@ podía preguntar en su lugar, con el mismo código de error que ya usa el
 resto de la superficie. El servicio de sesión, que decidía si una pregunta
 entra en el historial leyendo esa misma confianza, pregunta al desenlace.
 
-**La puerta que lo fija.** Tres pruebas: el enrutador dice que no pudo
-contestar, el enrutador dice que sí pudo —para que una respuesta buena no
-se marque como fallo—, y la herramienta entrega el fallo como fallo.
+**La puerta que lo fija.** Una prueba nueva en la herramienta —el fallo
+llega como fallo— y dos pruebas del enrutador que ya existían, reforzadas
+para que afirmen lo que su nombre dice: la del grafo ausente dice además
+que el desenlace es un fallo, y la de la pregunta que no necesita grafo
+dice además que la pregunta se contestó. Una respuesta buena no se marca
+como fallo, y una pregunta sin graph no se queda sin contestar.
 
 **El discriminante, medido sobre el producto.** Al devolver el transporte
 al comportamiento viejo, la prueba de la herramienta se puso roja
@@ -25387,4 +25390,8 @@ carga útil diciendo `graph_unavailable` debajo. Restaurado, volvió a verde.
 de las tres fachadas vivían dentro del módulo de pruebas del enrutador.
 Se mudaron a un módulo compartido, para que una prueba que necesite un
 contexto los encuentre en vez de escribir los suyos: un doble escrito dos
-veces es un doble que se desincroniza sin que nadie lo note.
+veces es un doble que se desincroniza sin que nadie lo note. Y ahora
+responden: antes sólo sabían negarse, y una prueba que necesitaba un
+servicio que contesta no lo tenía. Por eso la prueba de la pregunta que no
+necesita grafo afirmaba menos de lo que decía: comprobaba que la pregunta
+no se quedó atascada por falta de grafo, y no que se contestara.

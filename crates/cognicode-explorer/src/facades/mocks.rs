@@ -9,8 +9,8 @@
 use async_trait::async_trait;
 
 use crate::dto::{
-    InspectableObjectSummary, LensResult, OpenWorkspaceRequest, SpotterResult, ViewDescriptorDto,
-    WorkspaceSummary,
+    InspectableObjectSummary, InspectableObjectType, LensResult, OpenWorkspaceRequest,
+    SpotterResult, ViewDescriptorDto, WorkspaceSummary,
 };
 use crate::facades::{SearchService, ViewService, WorkspaceService};
 
@@ -40,13 +40,23 @@ impl SearchService for MockSearchService {
 
     async fn inspect_object(
         &self,
-        _object_id: &str,
+        object_id: &str,
     ) -> crate::ExplorerResult<InspectableObjectSummary> {
-        Err(crate::error::ExplorerError::ObjectNotFound("mock".into()))
+        // The object exists and has a name. A test that needs a service that
+        // answers finds one here, and a test that needs a service that
+        // refuses finds the other one.
+        Ok(InspectableObjectSummary {
+            id: object_id.to_string(),
+            object_type: InspectableObjectType::Symbol,
+            label: object_id.to_string(),
+            subtitle: String::new(),
+            properties: Vec::new(),
+            available_views: Vec::new(),
+        })
     }
 }
 
-/// A view service that has no views to offer and refuses to build one.
+/// A view service that answers with a view of nothing.
 #[derive(Clone)]
 pub struct MockViewService;
 
@@ -61,10 +71,17 @@ impl ViewService for MockViewService {
 
     async fn contextual_view(
         &self,
-        _object_id: &str,
-        _view_id: &str,
+        object_id: &str,
+        view_id: &str,
     ) -> crate::ExplorerResult<crate::dto::ContextualView> {
-        Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
+        // A view that answers and has nothing in it, which is what a view of
+        // nothing looks like.
+        Ok(crate::dto::ContextualView {
+            object_id: object_id.to_string(),
+            view_id: view_id.to_string(),
+            title: view_id.to_string(),
+            ..Default::default()
+        })
     }
 
     async fn build_contextual_graph(
