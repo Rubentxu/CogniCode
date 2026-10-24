@@ -25344,6 +25344,11 @@ lee los ficheros en paralelo.
 parseo, la primera prueba vio **2** árboles donde quería 1, y la segunda
 vio **3** donde quería 2. Restaurado el cambio, las dos volvieron a verde.
 
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6346** pruebas del workspace con **0** fallos, los
+doc-tests, los 47 contratos de CI más `scripts/product/*.py`, y el
+baseline.
+
 **El alcance.** Ningún modelo de dominio cambia. El contrato publicado de
 la lectura no cambia. Los identificadores que el producto escribe no
 cambian: la prueba que compara lo que se escribe con lo que se leyó sigue
@@ -25385,6 +25390,11 @@ como fallo, y una pregunta sin graph no se queda sin contestar.
 al comportamiento viejo, la prueba de la herramienta se puso roja
 exactamente en la bandera: `Some(false)` donde quería `Some(true)`, con la
 carga útil diciendo `graph_unavailable` debajo. Restaurado, volvió a verde.
+
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6346** pruebas del workspace con **0** fallos, los
+doc-tests, los 47 contratos de CI más `scripts/product/*.py`, y el
+baseline.
 
 **El trabajo de harness que la unidad arrastraba.** Los dobles de prueba
 de las tres fachadas vivían dentro del módulo de pruebas del enrutador.
