@@ -8,6 +8,29 @@
   "driver": "plugin",
   "backlog": [
     {
+      "candidateId": "C36",
+      "title": "Un lote se escribe entero o no se escribe",
+      "unit": "H26",
+      "objective": "Que el puerto `RouteStore` no pueda heredar un lote que escribe a medias, y que la capacidad de ingesta OpenAPI no se ofrezca cuando no hay un almacen detras.",
+      "whyNow": "MEDIDO: `RouteStore::save_many` promete «all-or-nothing» y su implementacion por defecto escribe fila a fila, sin transaccion; y las dos herramientas OpenAPI se registraban sin mirar el cableado, asi que el servidor anunciaba dos herramientas que no podian hacer nada. No hay ningun `impl RouteStore` en el arbol, y el build `multimodal` que las compila no lo ejerce ninguna puerta.",
+      "evidenceRefs": [
+        "crates/cognicode-explorer/src/ports/route_store.rs",
+        "crates/cognicode-explorer/src/mcp/handler/ingest_openapi.rs",
+        "crates/cognicode-runtime/src/lib.rs",
+        "docs/adr/ADR-055-the-batch-is-all-or-nothing.md"
+      ],
+      "doneWhen": [
+        "el lote heredado falla cerrado: no escribe nada y dice que necesita una implementacion transaccional",
+        "sin store cableado, el servidor no ofrece `ingest_openapi` ni `trace_route`",
+        "con store cableado, las herramientas se ofrecen y funcionan",
+        "el build multimodal lo ejerce una puerta"
+      ],
+      "scope": "H26",
+      "risk": "medium",
+      "priority": 50,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",

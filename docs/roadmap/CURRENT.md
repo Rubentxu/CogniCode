@@ -151,6 +151,7 @@ código o de la máquina.
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+| **H26** (`C36`) | una capacidad que no está conectada no se ofrece; un lote se escribe entero o no se escribe | `docs/adr/ADR-055-the-batch-is-all-or-nothing.md` |
 
 **El grafo deja de tener una segunda manera de responder está cerrada.** Una
 instantánea de un grafo dice cómo lucía una vez; no puede decir que el grafo
