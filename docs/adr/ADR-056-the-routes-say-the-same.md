@@ -40,30 +40,32 @@ anotó como «los constructores que no comparten motor» y le dio los candidatos
 
 ### Las divergencias, medidas
 
-1. **El denominador de la cobertura no es el mismo.** `GraphCoverageMetrics` declara
-   que su denominador son «los ficheros de los que se construyó el grafo» y que «un
-   fichero sin lenguaje reconocido nunca fue candidato, así que no cuenta»
-   (`application/dto/analysis.rs:147-149`). La vía filtrada (`:851`) y la asíncrona
-   (`:1182`) filtran por lenguaje. La completa calcula `total_files` **antes** de
-   filtrar (`:246`, frente al filtro de `:302`), de modo que cuenta también el
-   `Cargo.toml` y el `README.md`. Sobre un repo Rust normal, las tres rutas publican
-   la misma cobertura con denominadores distintos, y `coverage_percent` sale distinto
-   en cada una.
+**MEDIDO, y hay una afirmación que no se sostiene: el denominador de la
+cobertura.** `GraphCoverageMetrics` declara que su denominador son «los ficheros de
+los que se construyó el grafo» y que «un fichero sin lenguaje reconocido nunca fue
+candidato, así que no cuenta» (`application/dto/analysis.rs:147-149`), y las tres
+rutas lo cumplen: la completa cuenta `files_with_lang` (`:594`), la filtrada filtra
+por lenguaje antes de contar (`:851`), y la asíncrona también. Medido sobre un
+corpus con un manifiesto y un readme, las tres publican la misma cobertura. Esta
+unidad no lo arregla porque no estaba roto: **lo fija**, porque nada lo fijaba.
 
-2. **Un symlink declinado es un hueco en dos rutas y silencio en la tercera.** El
+Las divergencias que sí existen:
+
+1. **Un symlink declinado es un hueco en dos rutas y silencio en la tercera.** El
    inventario publica lo declined, porque un symlink que no se sigue es una parte del
-   árbol que el grafo no describe (`source_files.rs:199-206`). La vía asíncrona filtra
-   los symlinks en silencio (`:1150`) y puede publicar `Complete` sobre un árbol que
+   árbol que el grafo no describe (`source_files.rs:199-206`). La vía asíncrona
+   filtra los symlinks en silencio (`:1150`) y publica `Complete` sobre un árbol que
    no cubría.
 
-3. **Un directorio que no existe se rechaza en una sola ruta.** La completa lo
-   rechaza (`:186-191`); la asíncrona no, y devuelve un grafo vacío.
+2. **Un directorio que no existe se rechaza en una sola ruta.** La completa lo
+   rechaza (`:186-191`); la filtrada y la asíncrona no, y contestan con un grafo
+   vacío y `Complete`.
 
-4. **El orden de los resultados no lo fija la asíncrona.** La completa ordena (`:434`)
-   y la filtrada (`:947`); la asíncrona no, así que el índice global de símbolos hereda
-   el orden del recorrido en lugar de un orden declarado.
+3. **El orden de los resultados no lo fija la asíncrona.** La completa ordena
+   (`:434`) y la filtrada (`:947`); la asíncrona no, así que el índice global de
+   símbolos hereda el orden del recorrido en lugar de un orden declarado.
 
-5. **El criterio de cierre del informe no lo verifica ningún test.** El contrato
+4. **El criterio de cierre del informe no lo verifica ningún test.** El contrato
    `h16_walk_classification_coherence.rs` compara el *reporte* de las tres rutas —y es
    la forma correcta de comparar— pero su corpus no tiene symlinks, y ningún test
    compara aristas ni métricas de cobertura entre rutas. Lo que se compara entre
@@ -71,20 +73,20 @@ anotó como «los constructores que no comparten motor» y le dio los candidatos
 
 ## Decisión
 
-1. **El denominador de la cobertura cuenta los ficheros de los que se construyó el
-   grafo**, en las tres rutas. La vía completa deja de contar ficheros que el grafo
-   nunca consideró.
+1. **La ruta asíncrona deja de caminar por su cuenta.** Usa el inventario que ya
+   usan las otras dos, y con él decide el conjunto de ficheros, lo declined, los
+   errores y los huecos: un solo sitio decide qué es una fuente.
 
-2. **La vía asíncrona deja de caminar por su cuenta.** Usa el inventario que ya usan
-   las otras dos, y con él decide el conjunto de ficheros, lo declined, los errores y
-   los huecos: un solo sitio decide qué es una fuente.
+2. **Un directorio que no existe se rechaza en las tres rutas**, con el mismo motivo.
 
-3. **Un directorio que no existe se rechaza en las tres rutas**, con el mismo motivo.
+3. **El plegado se hace en orden de ruta, en las tres.** El índice de nombres
+   repetidos guarda los candidatos en el orden en que los recibe, así que el orden
+   del recorrido es parte de la respuesta.
 
 4. **La equivalencia es un contrato, no una prosa.** Un test compara, sobre el mismo
-   corpus, las relaciones, la cobertura y los huecos de las tres rutas. La forma es
-   la del contrato `h16`: un corpus, una aserción que nombra la diferencia, y la
-   dirección peligrosa fijada por el nombre del check.
+   corpus, las relaciones, la cobertura, los huecos y el orden de las tres rutas. La
+   forma es la del contrato `h16`: un corpus, una aserción que nombra la diferencia, y
+   la dirección peligrosa fijada por el nombre del check.
 
 ## Alternativas consideradas
 
@@ -109,19 +111,17 @@ ven. Su archivo declinado no lo cuenta nadie.
 **Positivas.**
 
 - Las tres rutas contestan lo mismo sobre el mismo árbol, y el contrato lo dice.
-- La cobertura deja de depender de qué ruta la construyó: el porcentaje que publica
-  el MCP es el mismo que el que ve la CLI.
 - Un symlink que el recorrido no sigue es un hueco declarado en las tres rutas, no un
   silencio en una.
+- Un directorio que no existe se rechaza en las tres, con el mismo motivo.
 - La ruta asíncrona deja de mantener su propio recorrido: una regla de recorrido
   menos que pueda derivar de la otra.
+- La cobertura no cambia, porque las tres ya contaban lo mismo. Lo que cambia es que
+  ahora un test lo dice, y que el hueco de un symlink ya no desaparece.
 
 **Negativas.**
 
-- La cobertura de la vía completa baja en los repositorios con ficheros que no son
-  fuente (un `Cargo.toml`, un `README.md`). Ese número era demasiado alto: el
-  denominador incluía ficheros que el grafo nunca miró.
-- La vía asíncrona cambia de origen de ficheros. Es un cambio real en un camino que
+- La ruta asíncrona cambia de origen de ficheros. Es un cambio real en un camino que
   la producción usa desde el MCP, y por eso lleva su propio contrato.
 
 **Lo que esta unidad NO hace.**

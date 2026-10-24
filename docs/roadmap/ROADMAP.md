@@ -464,10 +464,11 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     usa, no solo la importada. El arreglo no necesitó un framework nuevo.
 >   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
 >     abierto. La vía completa, la filtrada y la asíncrona son de producción y
->     contestan distinto sobre el mismo árbol: el denominador de la cobertura
->     no coincide, un symlink declinado es hueco en dos rutas y silencio en la
->     tercera, y un directorio que no existe se rechaza en una sola. La
->     forma, en `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
+>     dos rutas y silencio en la tercera, un directorio que no existe se
+>     rechaza en una sola, y el orden de los resultados no lo fija la
+>     asíncrona. La forma, en
+>     `docs/adr/ADR-056-the-routes-say-the-same.md`.
 >
 >   Los candidatos de las dos unidades —con su evidencia y su criterio de
 >   cierre— viven en la backlog de la misión (`goal-compass.json`).
