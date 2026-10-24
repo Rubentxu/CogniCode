@@ -213,9 +213,9 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
 /// `architecture.domain_no_application`,
 /// `architecture.evidence_kernel_no_presentation`).
 ///
-/// This is the E2.W1 CP1 first-consumer wiring helper: it turns the
-/// previously-empty production registry into a real one with three
-/// promoted constraints admitted by `human:cognicode-architecture-wg`.
+/// This is the wiring helper for the first consumer of this boundary:
+/// it turns the previously-empty production registry into a real one with
+/// the canonical constraints admitted by a promoted admitter.
 ///
 /// ## Why this lives here
 ///
@@ -265,8 +265,84 @@ pub fn wire_canonical_control_query() -> ControlQueryService {
 /// which is what `LayerId::from_module_path` resolves against. Files
 /// that cannot be read are skipped; the query fail-closed status
 /// handles reduced coverage.
+#[deprecated(
+    since = "0.101.31",
+    note = "usa read_from_source_root: la identidad de lo que se leyó viaja con la lectura"
+)]
 pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
-    let mut files = Vec::new();
+    read_from_source_root(root).source
+}
+
+/// Una lectura de fuentes: lo que el recorrido recogió y la identidad de
+/// lo que recogió.
+///
+/// Las dos cosas salen de la misma pasada, así que la identidad no puede
+/// describir un conjunto de ficheros distinto del que se va a examinar.
+pub struct SourceRead {
+    /// Las fuentes que el recorrido recogió. El evaluador examina
+    /// exactamente estas.
+    pub source: ArchitectureSource,
+    /// La identidad de esas fuentes.
+    pub basis: SourceBasis,
+}
+
+/// El estado de la identidad de una lectura.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceBasisStatus {
+    /// La lectura recogió ficheros: hay identidad.
+    Computed,
+    /// La lectura no recogió ningún fichero: no hay identidad.
+    Empty,
+}
+
+/// La identidad de lo que una lectura leyó.
+///
+/// Cubre exactamente los ficheros que el recorrido recogió —ni uno más
+/// ni uno menos—, así que es identidad por construcción: quien la
+/// compara sabe qué fuentes sostienen el veredicto, y un fichero que
+/// cambia después de la lectura cambia la identidad.
+///
+/// La identidad se calcula sobre la ruta **relativa a la raíz leída**, no
+/// sobre la ruta absoluta: el mismo código tiene la misma identidad donde
+/// esté el árbol. Sin esa propiedad, un consumidor en otra máquina no
+/// podría preguntar «¿esto es el análisis del código que hay aquí?».
+///
+/// Sin ficheros leídos no hay identidad que publicar: el resumen del
+/// conjunto vacío se parecería a «no hay nada» y a «no lo sé», y son
+/// hechos distintos.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SourceBasis {
+    /// Cuántos ficheros de fuentes leyó el recorrido.
+    pub files: u64,
+    /// La identidad del contenido leído: forma canónica —rutas relativas
+    /// ordenadas, longitud prefijada— resumida con SHA-256 y truncada a
+    /// 128 bits. Ausente cuando no se leyó nada.
+    pub digest: Option<String>,
+    /// Si hay identidad, y por qué no la hay cuando no la hay.
+    pub status: SourceBasisStatus,
+    /// El motivo de la ausencia, cuando la ausencia es el estado.
+    pub reason: Option<&'static str>,
+}
+
+/// Lee el árbol de fuentes de una raíz y calcula, en la misma pasada, la
+/// identidad de lo que leyó.
+///
+/// El `module_path` de cada fichero sale de su ruta relativa a la raíz
+/// (`src/domain/service.rs` -> `domain::service`), que es lo que
+/// `LayerId::from_module_path` resuelve. Los ficheros que no se pueden
+/// leer se saltan; el estado de la consulta se encarga de la cobertura
+/// que falta.
+///
+/// La identidad se calcula sobre el mismo conjunto que el evaluador va a
+/// examinar y sobre la ruta **relativa** de cada fichero, de modo que el
+/// mismo código tiene la misma identidad donde esté el árbol.
+pub fn read_from_source_root(root: &std::path::Path) -> SourceRead {
+    let mut files: Vec<SourceFile> = Vec::new();
+    // La identidad ordena por ruta relativa, así que se guarda en qué
+    // orden cae cada fichero en vez de copiar su contenido: el contenido
+    // ya está en `files` y no hace falta tenerlo dos veces.
+    let mut order: Vec<(String, usize)> = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -292,6 +368,7 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
                     .map(|c| c.as_os_str().to_string_lossy().to_string())
                     .filter(|seg| seg != "mod" && seg != "lib" && seg != "main" && seg != "src")
                     .collect();
+                order.push((relative_to(root, &path), files.len()));
                 files.push(SourceFile {
                     file_path: path.display().to_string(),
                     module_path: (!segments.is_empty()).then(|| segments.join("::")),
@@ -300,57 +377,48 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
             }
         }
     }
-    ArchitectureSource { files }
-}
-
-/// La identidad de lo que una lectura leyó.
-///
-/// Cubre exactamente los ficheros que el recorrido recogió —ni uno más
-/// ni uno menos—, así que es identidad por construcción: quien la
-/// compara sabe qué fuentes sostienen el veredicto, y un fichero que
-/// cambia después de la lectura cambia la identidad. Sin ficheros no
-/// hay identidad que publicar: el digest del conjunto vacío se
-/// parecería a «no hay nada» y a «no lo sé», y son hechos distintos.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct SourceBasis {
-    /// Cuántos ficheros de fuentes leyó el recorrido.
-    pub files: u64,
-    /// La identidad del contenido leído: esquema canónico (rutas
-    /// relativas ordenadas, largo prefijado) resumido con SHA-256.
-    /// Ausente cuando no se leyó nada.
-    pub digest: Option<String>,
-    /// `computed` cuando hay identidad; `empty` cuando la lectura no
-    /// recogió nada, con su motivo.
-    pub status: &'static str,
-    /// Por qué no hay identidad, cuando no la hay.
-    pub reason: Option<&'static str>,
-}
-
-/// La identidad de un [`ArchitectureSource`]: lo que se leyó, no lo que
-/// hay en el disco ahora.
-pub fn source_basis_of(source: &ArchitectureSource) -> SourceBasis {
-    let mut files: Vec<(&str, &str)> = source
-        .files
-        .iter()
-        .map(|f| (f.file_path.as_str(), f.source.as_str()))
-        .collect();
     // El recorrido sigue el sistema de ficheros, que no garantiza un
     // orden. Sin ordenar, el mismo código daría identidades distintas.
-    files.sort_unstable();
+    order.sort_unstable();
+    let basis = source_basis_of(&files, &order);
+    SourceRead {
+        source: ArchitectureSource { files },
+        basis,
+    }
+}
 
+/// La ruta de un fichero relativa a la raíz leída, con `/` como
+/// separador para que la misma forma valga en cualquier sistema.
+fn relative_to(root: &std::path::Path, path: &std::path::Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// La identidad de un conjunto de fuentes ya ordenadas por su ruta
+/// relativa.
+///
+/// `order` empareja cada ruta relativa con el índice del fichero dentro
+/// de `files`; viene ordenado porque el orden es parte de la forma
+/// canónica, no un detalle de la implementación.
+fn source_basis_of(files: &[SourceFile], order: &[(String, usize)]) -> SourceBasis {
     if files.is_empty() {
         return SourceBasis {
             files: 0,
             digest: None,
-            status: "empty",
+            status: SourceBasisStatus::Empty,
             reason: Some("la lectura no recogió ningún fichero de fuentes"),
         };
     }
 
     let mut hasher = Sha256::new();
-    for (path, content) in &files {
-        hasher.update((path.len() as u64).to_le_bytes());
-        hasher.update(path.as_bytes());
+    for (relative, index) in order {
+        let content = &files[*index].source;
+        hasher.update((relative.len() as u64).to_le_bytes());
+        hasher.update(relative.as_bytes());
         hasher.update((content.len() as u64).to_le_bytes());
         hasher.update(content.as_bytes());
     }
@@ -363,7 +431,7 @@ pub fn source_basis_of(source: &ArchitectureSource) -> SourceBasis {
     SourceBasis {
         files: files.len() as u64,
         digest: Some(format!("sha256:{digest}")),
-        status: "computed",
+        status: SourceBasisStatus::Computed,
         reason: None,
     }
 }
@@ -426,7 +494,7 @@ mod tests {
 
     #[test]
     fn no_admitted_constraints_is_incomplete_not_clean() {
-        // C4 fail-closed: empty admission set must never read as
+        // Fail-closed: an empty admission set must never read as
         // "zero violations => compliant".
         let svc = ControlQueryService::new(ArchitectureRegistry::new());
         let model = svc.query_architecture("ws-1", Some("snap-1"), &source_with("use std::io;"));
@@ -437,7 +505,7 @@ mod tests {
 
     #[test]
     fn admitted_and_clean_source_evaluates_with_zero_violations() {
-        // C2: admitted constraint + clean source => Evaluated, [].
+        // An admitted constraint over a clean source evaluates with no violations.
         let svc = service_with(layer_candidate("architecture.cp.domain_no_infra"));
         let model = svc.query_architecture("ws-1", None, &source_with("use std::collections;"));
         assert_eq!(model.status, EvaluationStatus::Evaluated);
@@ -450,7 +518,7 @@ mod tests {
 
     #[test]
     fn violation_is_projected_with_reference_not_truth() {
-        // C3: real violation => projected reference with coordinates.
+        // A real violation is projected as a reference with its coordinates.
         let svc = service_with(layer_candidate("architecture.cp.domain_no_infra"));
         let model = svc.query_architecture(
             "ws-1",
@@ -470,7 +538,8 @@ mod tests {
 
     #[test]
     fn parse_failure_is_incomplete_even_with_partial_violations() {
-        // C4: evaluator error on any constraint => Incomplete, never [].
+        // An evaluator error on any constraint leaves the read incomplete,
+        // never clean.
         let svc = service_with(layer_candidate("architecture.cp.bad_id_surface"));
         let model = svc.query_architecture("ws-1", None, &empty_source());
         assert_eq!(model.status, EvaluationStatus::Incomplete);
@@ -479,12 +548,57 @@ mod tests {
 
     #[test]
     fn service_is_read_only_no_admission_leak() {
-        // C1/C5: the query boundary exposes no way to admit. Runtime
-        // pin: a query must not change the admission set.
+        // The query boundary exposes no way to admit. Runtime pin: a query
+        // must not change the admission set.
         let svc = service_with(layer_candidate("architecture.cp.readonly"));
         let before = svc.registry().admission.admitted().len();
         let _ = svc.query_architecture("ws", None, &source_with("use std::fmt;"));
         let after = svc.registry().admission.admitted().len();
         assert_eq!(before, after);
+    }
+
+    /// Un árbol con el mismo código, en dos sitios distintos.
+    fn same_code_in_two_places() -> (tempfile::TempDir, tempfile::TempDir) {
+        let a = tempfile::TempDir::new().expect("tempdir");
+        let b = tempfile::TempDir::new().expect("tempdir");
+        for root in [&a, &b] {
+            let dir = root.path().join("src/domain");
+            std::fs::create_dir_all(&dir).expect("mkdir");
+            std::fs::write(dir.join("service.rs"), "use std::io;\npub struct T;\n")
+                .expect("write");
+        }
+        (a, b)
+    }
+
+    #[test]
+    fn la_identidad_no_depende_de_donde_vive_el_arbol() {
+        // Un consumidor que compara el código que hay ahora con el que
+        // el producto miró la última vez necesita que el mismo código
+        // tenga la misma identidad donde esté el árbol: si la identidad
+        // dependiera de la ruta absoluta, dos máquinas compararían dos
+        // identidades distintas para el mismo código, y la comparación
+        // no compararía nada.
+        let (a, b) = same_code_in_two_places();
+
+        let read_a = read_from_source_root(a.path());
+        let read_b = read_from_source_root(b.path());
+
+        assert_eq!(
+            read_a.basis.status,
+            SourceBasisStatus::Computed,
+            "basis a: {:?}",
+            read_a.basis
+        );
+        assert_eq!(
+            read_b.basis.status,
+            SourceBasisStatus::Computed,
+            "basis b: {:?}",
+            read_b.basis
+        );
+        assert_eq!(read_a.basis.files, 1, "el árbol de prueba trae un fichero");
+        assert_eq!(
+            read_a.basis.digest, read_b.basis.digest,
+            "el mismo código tiene que tener la misma identidad donde esté el árbol"
+        );
     }
 }
