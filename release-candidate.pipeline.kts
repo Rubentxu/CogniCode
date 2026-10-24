@@ -306,6 +306,22 @@ pipeline {
                     # un subcomando que el arbol si tiene. Cargo compara
                     # mtimes, y las fuentes de este checkout son mas antiguas
                     # que un binario que otro checkout construyo despues.
+                    #
+                    # MEDIDO: la guarda que se le pide ahi no era
+                    # suficiente. Barria TODOS los `.rs` de `crates/`, y eso
+                    # da un falso positivo en la direccion contraria: un
+                    # fichero que no entra en `cognicode-release` —`ide.rs`—
+                    # hacia fallar la stage con un binario perfectamente
+                    # fresco. Y una lista de fuentes escrita a mano tampoco
+                    # vale: MEDIDO, este binario lo construyen 415 ficheros
+                    # repartidos en cuatro crates, 368 de ellos en
+                    # `cognicode-core`. Una lista de los cuatro ficheros del
+                    # CLI habria sido verde en falso.
+                    #
+                    # Por eso la guarda lee el dep-info que escribe rustc junto
+                    # al binario, que es la respuesta de cargo y nombra tambien
+                    # el arbol desde el que se construyo. La pregunta "¿este
+                    # binario es de este arbol?" tiene respuesta directa.
                     bash scripts/ci/check-built-binary.sh \
                         "$(scripts/ci/target-dir.sh)/release/cognicode-release" .
                 """.trimIndent())
