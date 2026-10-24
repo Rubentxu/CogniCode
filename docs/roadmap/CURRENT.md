@@ -5,10 +5,11 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `34c2b75030a62c0735408a7cad6e0be6be45d959` (el
-> `main` ya fusionado de la unidad que hace que el producto observe un conjunto
-> de ficheros, y lo diga).
-> Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
+> **Snapshot**: 2026-10-24, sobre `cc290f8dd4bbdd92d6afc55adba80ac51677999d` (la
+> rama que hace que la lectura declare la identidad de lo que leyó, y que esa
+> identidad sea del código y no del sitio donde está el código),
+> rama `feature/cp1-source-basis`.
+> Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
@@ -164,6 +165,25 @@ el árbol se analiza una vez y se lee dos veces, el cuidado sale más barato
 que antes. La ruta filtrada usa el mismo inventario y el mismo informe que
 la completa. La demostración está hecha: revirtiendo sólo las dos
 correcciones, cinco contratos se pusieron rojos.
+
+**La lectura declara la identidad de lo que leyó está cerrada.** El control
+plane respondía con el veredicto, las reglas y las violaciones, pero no
+decía **sobre qué código** se emitieron: el producto publicaba el veredicto
+sin publicar las fuentes que lo sostienen, y un consumidor no tenía con qué
+comparar. La primera versión de esa identidad tenía un defecto que la
+invalidaba entera —el resumen se calculaba sobre la ruta **absoluta**, así
+que el mismo código leído en dos sitios daba dos identidades distintas, y
+la identidad era del sitio y no del código—. Ahora la identidad se calcula
+en la **misma pasada** que recorre el árbol, sobre el mismo conjunto de
+ficheros que el evaluador examina, y sobre la ruta **relativa** a la raíz
+leída: el mismo código tiene la misma identidad donde esté el árbol. El
+estado es un tipo cerrado —hay identidad o no la hay— y cuando no la hay el
+resumen no viaja, porque el resumen del conjunto vacío se parecería a «no
+hay nada» y a «no lo sé». Las dos rutas publican el mismo campo con la misma
+identidad, y la forma canónica está escrita en
+`docs/roadmap/consumer-contracts/specs/SPEC-CU-010-CONTROL-PLANE-READ.md`.
+La demostración está hecha: el contrato de portabilidad se vio fallar antes
+de la corrección y otra vez al revertir sólo la elección de la ruta.
 
 **C26 está cerrado.** El lector de un lenguaje contestaba lo mismo a tres
 hechos distintos: que declaraba algo, que no aplicaba a aquel fichero, y que
