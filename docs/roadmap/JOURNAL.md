@@ -26120,3 +26120,156 @@ cuando se pueden probar).
 este recibo como último commit. El `push`, la apertura de la PR y la fusión los
 autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub
 exige antes de dejar fusionar.
+
+
+## 2026-10-24 — H28 / C38: lo que se rechaza no deja rastro, y las ediciones se aplican al original
+
+**La unidad.** La primera de las seis acciones que recomienda la reauditoría del
+2026-10-24 —«corregir los efectos secundarios que quedan en `write_file` y las
+ediciones múltiples»—, medida contra el árbol antes de abrir nada. La forma la decide
+`docs/adr/ADR-058-what-is-refused-leaves-no-trace.md`, que pasa de ACEPTADO a EJECUTADO
+con lo que se ejecutó escrito dentro.
+
+**Lo que la reauditoría dice, y lo que el árbol muestra.** Dos defectos residuales sobre
+las operaciones de fichero, y ninguno es el defecto principal que el ciclo H25 ya
+cerró: la ruta se juzga antes de que se cree nada, y una ruta relativa se resuelve
+contra el workspace que el contexto declara.
+
+1. **El control de tamaño llega tarde.** `write_file` crea el árbol de directorios
+   (`:1133-1140`) y *después* comprueba que el contenido no pase de 10 MB
+   (`:1144-1151`). El límite es el único control que depende sólo de la petición y no
+   del disco, así que es exactamente el que no puede llegar después del efecto: una
+   escritura de más de 10 MB con `create_dirs` deja el árbol en el disco y después se
+   rechaza.
+2. **Las ediciones se comprueban sobre un texto y se aplican sobre otro.** La
+   comprobación (`:1193-1194`) busca cada `old_string` en el contenido **original**; la
+   aplicación (`:1230-1237`) es secuencial, `new_content.replace(...)` sobre el
+   resultado de la edición anterior. Medido sobre el árbol de la unidad:
+
+   | Contenido original | Ediciones | Resultado actual | Lo que dice el contrato |
+   |---|---|---|---|
+   | `A B` | `A→B`, `B→C` | `C C` | `B C` |
+   | `abc` | `ab→X`, `bc→Y` | `Xc` — la segunda edición desaparece en silencio | las dos, o ninguna |
+
+   El segundo caso es el peor: la segunda edición ya no encuentra su coincidencia
+   porque la primera se la llevó, `replace` no cambia nada, y la respuesta dice
+   `applied: true` sin motivo. Una petición se declara aplicada cuando la mitad de lo
+   que pedía no se hizo. Y `replace` sustituye **todas** las ocurrencias del texto
+   acumulado, así que la garantía que el servicio publica —«Each edit must match
+   exactly one occurrence» (`:1183-1184`)— no se cumplía.
+
+**El RED, medido antes del arreglo.** `crates/cognicode-core/tests/h28_refused_writes_leave_nothing_and_edits_are_simultaneous.rs`
+— seis checks, tres discriminantes y tres guardas —, escritos contra la API que había.
+El fallo fue en los tres discriminantes, y por lo que se suponía:
+
+```
+running 6 tests
+test an_edit_with_several_matches_still_says_multiple_matches ... ok
+test an_edit_without_a_match_still_says_no_match ... ok
+test two_edits_are_applied_to_the_original_content ... FAILED
+test overlapping_edits_are_refused_instead_of_losing_one ... FAILED
+test a_write_refused_for_being_too_big_leaves_no_directory ... FAILED
+
+  left: "C C"
+ right: "B C"
+  an ambiguous request is not applied: the two edits cover the same region
+  a refused write left a directory tree behind: "/tmp/.tmpilPDG1/deep"
+```
+
+Las tres guardas —una sola edición se aplica, `no_match` sigue siendo `no_match`,
+`multiple_matches` sigue siendo `multiple_matches`— pasaban antes y después: son las
+que dicen que el arreglo no rompe lo que ya funcionaba.
+
+**Lo que cambió, exactamente.**
+
+- El límite de tamaño se comprueba **antes de cualquier efecto**: la política de rutas
+  juzga primero —su error es el que informa de un intento de salir del workspace—, el
+  tamaño va justo después, y `create_dir_all` ocurre cuando las dos peticiones han
+  dicho que sí. Una escritura rechazada por su tamaño no deja directorios.
+- Las ediciones se aplican **a la vez sobre el contenido original**: las posiciones se
+  calculan sobre el original, los cambios se aplican desde el final —para que las
+  posiciones anteriores sigan valiendo— y dos ediciones que se solapan se rechazan
+  porque la petición es ambigua. Dos ediciones idénticas son la misma edición, y
+  cuentan una. La regla que el servicio ya publica pasa a ser lo que el código hace.
+- Un motivo nuevo en el conjunto documentado: `overlapping_edits`. Es una extensión
+  compatible —el campo `reason` es una cadena, y el valor por defecto de un consumidor
+  para un motivo que no conoce es «no aplicado», que es el lado seguro— y el esquema
+  MCP queda documentado con el valor nuevo.
+- `bytes_changed` **no cambia**. El esquema publicado documenta su significado
+  («absolute difference») y además alimenta la métrica `record_bytes_written`;
+  renombrarlo o redefinirlo es un cambio de contrato, no un bug, y no está entre las
+  acciones recomendadas de la reauditoría. Queda medido y fuera de esta unidad.
+
+**Un hueco que esta unidad destapó, y que era de otro sitio.** La puerta completa
+se puso en rojo en una suite que no tiene nada que ver con las operaciones de
+fichero: `docs_extractor_corpus_regression`. El motivo literal:
+
+```
+end byte index 4096 is not a char boundary; it is inside '—' (bytes 4095..4098 of string)
+```
+
+La causa está en `detect_adr`
+(`crates/cognicode-core/src/infrastructure/extraction/docs_extractor.rs:570`): la
+cabeza del documento se corta en un **número de bytes**, y un número de bytes no
+es un número de caracteres. Si el byte 4096 cae dentro de un carácter de varios
+bytes, el corte parte el carácter y cortar ahí es un panic. El documento no está
+mal formado: el corte está mal hecho.
+
+Y lo disparó este mismo ciclo, sin querer: el `—` del ADR-058 cae exactamente en
+los bytes 4095..4098. MEDIDO sobre los 280 ficheros `.md` del árbol: **uno** tenía
+el byte 4096 dentro de un carácter de varios bytes, y era el ADR recién escrito.
+Es decir: el defecto llevaba tiempo esperando un documento que lo alcanzara, y el
+primer documento que lo alcanzó fue el que esta unidad escribió.
+
+El segundo sitio del mismo defecto estaba en el mismo crate y se vio al revisar
+los cortes por byte: `TextEdit`'s `Display`
+(`crates/cognicode-core/src/domain/aggregates/refactor.rs:319`) corta el texto de
+reemplazo en el byte 20, con la misma cuenta equivocada. Su RED, medido con la
+corrección puesta y el arreglo quitado:
+
+```
+---- domain::aggregates::refactor::tests::test_text_edit_display_survives_a_multibyte_character_at_the_cut ----
+panicked at crates/cognicode-core/src/domain/aggregates/refactor.rs:319:48
+```
+
+La corrección es la misma en los dos sitios: el corte tiene que caer en una
+frontera de carácter (`floor_char_boundary`), y cada sitio lleva su test, que
+falla antes y pasa después. Un `Display` que hace panic es peor que un `Display`
+que trunca; y un lector de documentación que hace panic al leer un fichero
+perfectamente bien formado es lo mismo.
+
+Y el contrato de comentarios hizo su trabajo en la mitad: el comentario del test
+nuevo citaba el identificador de la decisión que el propio test usaba como
+marcador, y el contrato lo puso en rojo con el motivo literal —«the offending
+comment lines grew by 1»—. Es exactamente lo que dice: un comentario explica lo
+que hace el código; no cita la tarea, la decisión, la PR ni la fecha.
+
+**El gate de la unidad.** `bash scripts/test-fast.sh` → `rc=0`. `bash
+scripts/test-full.sh` → `rc=0`: formato, clippy con `-D warnings`, la suite del
+workspace entera (**6.376 pruebas, 0 fallos**, 34 ignoradas), los doctests, la
+prueba de Explorer con la feature `multimodal`, los 48 contratos de CI y de
+producto (**391 checks**) y el baseline de fallos conocidos. Los tres contratos
+que miran este árbol —el de comentarios (`scripts/ci/test_comment_standard.py`),
+el de coherencia de unidades abiertas
+(`scripts/ci/test_roadmap_open_units_coherence.py`) y el ratchet de versión
+(`scripts/ci/test_roadmap_version_ratchet.py`)— dan `rc=0` sobre el árbol final.
+Y el T6 (`scripts/ci/check_regression_test.sh`) reconoce el test que acompaña a
+la corrección.
+
+**El estado de la unidad.** `C38` está **cerrada**: las tres decisiones del ADR-058
+están implementadas y el test que las mide es discriminante en las dos direcciones.
+La cola de la misión queda con `C23` (las tres rutas que construyen el grafo —falta
+partir el fichero de 4.369 líneas—), `C11` (`SnapshotKey` e incrementalidad honesta),
+`C12` (navegación Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java sólo cuando se
+pueden probar).
+
+**H28 cycle 1 closed.** H28 acceptance: PASS (6/6 comprobaciones de caracterización
+—3/3 discriminantes en rojo antes del arreglo y 6/6 en verde después—, dos
+correcciones colaterales con su propio RED medido, gate rápido rc=0, gate
+completo rc=0).
+
+**Lo que queda para el operador.** La rama
+`feature/what-is-refused-leaves-no-trace` sigue local y **sin subir**, con este recibo
+como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
+operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
+fusionar.

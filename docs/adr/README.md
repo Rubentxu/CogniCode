@@ -52,7 +52,8 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-054](./ADR-054-file-operations-effect-order.md) | El efecto viene después de la promesa, y una validación que no ocurrió lo dice | ACCEPTED | 2026-10-24 |
 | [ADR-055](./ADR-055-the-batch-is-all-or-nothing.md) | Un lote se escribe entero o no se escribe, y una capacidad que no está conectada no se ofrece | EXECUTED | 2026-10-24 |
 | [ADR-056](./ADR-056-the-routes-say-the-same.md) | Las tres rutas que construyen el grafo tienen que decir lo mismo | EXECUTED | 2026-10-24 |
-| [ADR-057](./ADR-057-the-stages-say-what-they-observe.md) | Una etapa que no puede hacer caer la puerta tiene que decir qué observó | ACCEPTED | 2026-10-24 |
+| [ADR-057](./ADR-057-the-stages-say-what-they-observe.md) | Una etapa que no puede hacer caer la puerta tiene que decir qué observó | EXECUTED | 2026-10-24 |
+| [ADR-058](./ADR-058-what-is-refused-leaves-no-trace.md) | Lo que se rechaza no deja rastro, y las ediciones se aplican al original | EXECUTED | 2026-10-24 |
 
 ## Format
 

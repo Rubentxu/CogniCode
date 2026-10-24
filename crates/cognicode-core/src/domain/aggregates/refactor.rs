@@ -316,7 +316,12 @@ impl fmt::Display for TextEdit {
             self.range,
             self.original_length(),
             if self.new_text.len() > 20 {
-                format!("{}...", &self.new_text[..20])
+                // A byte count is not a character count. The cut has to land
+                // on a character boundary: slicing in the middle of a
+                // character is a panic, and a display that panics is worse
+                // than a display that truncates.
+                let cut = self.new_text.floor_char_boundary(20);
+                format!("{}...", &self.new_text[..cut])
             } else {
                 self.new_text.clone()
             }
@@ -482,6 +487,31 @@ mod tests {
     fn test_text_edit_insert() {
         let edit = TextEdit::insert(Location::new("test.rs", 1, 5), "hello");
         assert!(edit.new_text == "hello");
+    }
+
+    /// A character that straddles the truncation must not make the
+    /// formatting panic.
+    ///
+    /// The replacement text is cut at a fixed byte count, and a byte count
+    /// is not a character count: cutting in the middle of a multi-byte
+    /// character is a panic, and a display that panics is worse than a
+    /// display that truncates.
+    #[test]
+    fn test_text_edit_display_survives_a_multibyte_character_at_the_cut() {
+        let range = SourceRange::new(
+            Location::new("test.rs", 1, 5),
+            Location::new("test.rs", 1, 10),
+        );
+        // Nine accented letters are 18 bytes and the euro sign is 3, so it
+        // occupies bytes 18..21 and the cut at 20 lands inside it.
+        let edit = TextEdit::new(range, format!("{}€x", "á".repeat(9)));
+
+        let shown = format!("{}", edit);
+        assert!(
+            shown.contains("..."),
+            "the text is truncated instead of panicking: {}",
+            shown
+        );
     }
 
     #[test]
