@@ -468,14 +468,26 @@ impl ToolHandler for IssuesIngestHandler {
 // ============================================================================
 
 #[cfg(feature = "multimodal")]
-/// Register all multimodal ingest handlers into the registry.
-/// Includes the 3 existing handlers (docs, graph_search, issues) plus
-/// the 2 OpenAPI handlers from cycle e15.5.
+/// Register the multimodal ingest handlers that do not depend on a route
+/// store: the docs, graph search and issues ingestion.
+///
+/// The 2 OpenAPI handlers are **not** registered here: they need a
+/// `RouteStore` behind them, and a capability that cannot work is not
+/// offered. See [`register_openapi_ingest_handlers`].
 pub fn register_ingest_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     registry.register(DocsIngestHandler);
     registry.register(GraphSearchHandler);
     registry.register(IssuesIngestHandler);
-    // Cycle e15.5 — OpenAPI / gRPC / GraphQL / tRPC ingestion
+}
+
+/// Register the OpenAPI route ingestion handlers (cycle e15.5).
+///
+/// The caller decides **when** they are registered: only when a
+/// `RouteStore` is wired. Without one, every call would answer "feature
+/// disabled", and a tool that cannot do its job does not belong in the
+/// list a client reads before calling it. See ADR-055.
+#[cfg(feature = "multimodal")]
+pub fn register_openapi_ingest_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     super::ingest_openapi::handlers::register_handlers(registry);
 }
 

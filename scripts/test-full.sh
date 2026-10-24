@@ -48,6 +48,18 @@ run_step "clippy -D warnings"    bash -c "cargo clippy --workspace --all-targets
 run_step "test --workspace"      bash -c "cargo test --workspace"
 run_step "test --workspace --doc" bash -c "cargo test --workspace --doc"
 
+# H26 (ADR-055). El build `multimodal` del explorer no lo ejercia ninguna
+# puerta: `cargo test --workspace` compila con las features por defecto, asi
+# que los tests que viven detras de `#[cfg(feature = "multimodal")]` no se
+# ejecutan. El arreglo del puerto `RouteStore` y de la oferta de la capacidad
+# OpenAPI esta en ese build, asi que sin este paso el arreglo no lo vigilaria
+# nadie.
+#
+# El test del puerto (build por defecto) ya lo corre el paso 3 de arriba; este
+# cubre la otra mitad, la que solo existe con la feature puesta. La misma
+# garantia vive como stage `explorer-route-capability` en `merge-gate`.
+run_step "test explorer (multimodal)" bash -c "cargo test -p cognicode-explorer --features multimodal --test h26_openapi_tool_is_offered_only_when_wired --quiet"
+
 # MEDIDO 2026-10-18. Este paso no estaba aqui, y su ausencia hacia que un
 # `test-full` VERDE no significara "esto se puede mergear". El gate de
 # merge corre `scripts/ci/run-all-contracts.sh`; `test-full.sh` no. Medido en

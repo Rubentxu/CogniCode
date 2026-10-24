@@ -43,7 +43,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::ExplorerResult;
+use crate::error::{ExplorerError, ExplorerResult};
 
 /// A single API route, as emitted by an ingestion handler.
 ///
@@ -140,30 +140,26 @@ pub trait RouteStore: Send + Sync {
     /// in a single transaction. All-or-nothing: if any row fails, the
     /// whole batch is rolled back.
     ///
-    /// Default impl loops over individual calls without a transaction
-    /// (atomicity is the caller's responsibility). Implementations
-    /// are encouraged to override with a real `BEGIN/COMMIT` block.
+    /// The default implementation **refuses**: it does not meet the
+    /// contract, so it does not write anything and it says what is
+    /// missing. Writing the rows one at a time —which is what a
+    /// sequential implementation does— leaves the store with the rows
+    /// written before the failing one, and a batch that promises
+    /// all-or-nothing while writing half of it is a contract that
+    /// lies.
+    ///
+    /// An implementation that can guarantee the batch overrides this
+    /// method with a real transaction (or with staging that is
+    /// committed only once every row could be written).
     async fn save_many(
         &self,
-        routes: &[ApiRoute],
-        edges: &[ApiRouteEdge],
+        _routes: &[ApiRoute],
+        _edges: &[ApiRouteEdge],
     ) -> ExplorerResult<BatchStats> {
-        let mut stats = BatchStats::default();
-        for route in routes {
-            if self.upsert_route(route).await? {
-                stats.routes_created += 1;
-            } else {
-                stats.routes_updated += 1;
-            }
-        }
-        for edge in edges {
-            if self.save_edge(edge).await? {
-                stats.edges_created += 1;
-            } else {
-                stats.edges_updated += 1;
-            }
-        }
-        Ok(stats)
+        Err(ExplorerError::NotImplemented(
+            "save_many requires a transactional implementation: \
+             this store did not provide one, so the batch was not written",
+        ))
     }
 
     /// Look up a route by `(method, path)` — used by
