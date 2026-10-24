@@ -25213,7 +25213,7 @@ la segunda la pagan todos.
 
 **Lo que se midió, después.** El mismo check aparece **1** vez. Las nueve
 afirmaciones se ejecutan una vez en vez de veintiún: **180 ejecuciones
-redundantes menos**, y el módulo compartido baja de 1.015 a 789 líneas
+redundantes menos**, y el módulo compartido baja de 1.015 a 788 líneas
 —las 226 de los checks se fueron con ellos.
 
 **Lo que no se cambió.** Ni una línea de lo que los checks verifican: los
