@@ -25069,3 +25069,85 @@ incremental, no esta regla. El inventario sigue recorriendo ficheros que el
 producto no puede nombrar, y `Language::Json` sigue en el registro como
 lenguaje mientras la clasificación lo trata como configuración: una
 incoherencia anterior a este trabajo, que aquí sólo se documenta.
+
+## 2026-10-24 — La lectura declara la identidad de lo que leyó
+
+**La mentira, medida.** El control plane respondía con el veredicto, las
+reglas y las violaciones, pero no decía **sobre qué código** se había
+emitido. Un consumidor que quiere saber si lo que tiene delante es lo
+que se analizó no tenía con qué comparar: el producto publicaba el
+veredicto sin publicar las fuentes que lo sostienen.
+
+**Lo que faltaba, en concreto.** La lectura ya sabía enumerar los
+ficheros que recorría. Lo que no sabía era decir **qué** leyó de una
+forma que otro pudiera comprobar. La primera versión de esa idea —un
+resumen del conjunto de ficheros leídos— tenía un defecto que la
+invalidaba entera: el resumen se calculaba sobre la ruta **absoluta** de
+cada fichero. El mismo código, leído en dos sitios distintos, daba dos
+identidades distintas, y eso se midió antes de arreglar nada:
+
+```
+left:  Some("sha256:a1e3cebef5d5c9d8a8830b701b7d1ccf")
+right: Some("sha256:2a90719362775a301507d0462214ab42")
+```
+
+Un consumidor en otra máquina —o el mismo consumidor en otro checkout—
+no podía comparar nada: comparaba identidades de sitios distintos. La
+identidad tenía que ser del **código**, no del **sitio donde está el
+código**.
+
+**Lo que se hizo.** La identidad se calcula en la **misma pasada** que
+recorre el árbol, sobre el mismo conjunto de ficheros que el evaluador
+va a examinar: no hay una segunda lectura que pueda discrepar de la
+primera. Y se calcula sobre la ruta **relativa a la raíz leída**, con
+separador `/`, ordenada y con la longitud de cada piece prefijada, para
+que el mismo código tenga la misma identidad donde esté el árbol. La
+forma canónica está escrita, con su ejemplo, en
+`docs/roadmap/consumer-contracts/specs/SPEC-CU-010-CONTROL-PLANE-READ.md`.
+
+**El estado de la identidad es un tipo, no una palabra.** «Hay
+identidad» y «no hay identidad» son hechos distintos, y el resumen del
+conjunto vacío se parecería a «no hay nada» y a «no lo sé». Así que el
+estado es un tipo cerrado con dos casos, y cuando no hay identidad el
+resumen no viaja: el consumidor lee que no lo sé, no un resumen vacío.
+
+**Las dos rutas publican lo mismo.** La ruta completa y la mínima leen el
+mismo árbol y publican el mismo campo con la misma identidad: el
+contrato no depende de qué binario lo sirva. La prueba compara las dos
+sobre el mismo árbol, en vez de afirmar que el campo existe.
+
+**La demostración, que es la parte que da valor.** El rojo primero: sin
+la corrección, el contrato de portabilidad falla con el mensaje exacto
+—«el mismo código tiene que tener la misma identidad donde esté el
+árbol»—. Después el discriminante: se revirtió **sólo** la elección de
+la ruta —volviendo a la ruta absoluta— y el contrato se puso rojo con
+ese mismo motivo; revertida la mutación, volvió a verde. Un contrato
+que no puede fallar no mide nada, y este se ha visto fallar en las dos
+direcciones.
+
+**Lo que cambia para quien lo consume.** La respuesta del control plane
+gana un campo, `source_basis`, con la identidad de lo que se leyó: los
+ficheros leídos, el resumen de su contenido y el estado de esa
+identidad. Todo lo demás —el veredicto, las reglas, las violaciones, las
+coordenadas— no cambia. La función pública que devolvía sólo las
+fuentes queda deprecada y en su lugar hay una que devuelve las fuentes
+**y** su identidad, porque una identidad sin las fuentes no se puede
+usar. El cambio viaja en la versión `0.101.31` del workspace.
+
+**Lo que este cierre no dice.** La identidad dice **qué** código se leyó,
+no si ese código sigue siendo el que hay: decidir eso es de otro
+contrato, y esta unidad no lo toma. Las violaciones siguen llevando la
+ruta como la llevaba el recorrido: la identidad y la ruta de una
+violación son dos cosas, y aquí no se mezclan. Y la identidad se calcula
+sobre el conjunto de ficheros que el recorrido **puede** leer: un fichero
+que no se pudo leer no está en la identidad, igual que tampoco está en el
+veredicto.
+
+**Lo que esta corrida midió.** El modo rápido: `rc=0`, con la suite del
+núcleo y las trece pruebas del contrato del control plane en verde, y
+clippy con `-D warnings` limpio. El discriminante, medido como se
+describe arriba. Y el estándar de comentarios: los ficheros que esta
+unidad toca no llevan ni una referencia a una tarea, a una decisión o a
+una fecha en sus comentarios —antes quedaban seis en el núcleo y doce
+en el contrato—, porque un comentario que cita un identificador
+envejece cuando el identificador deja de existir.

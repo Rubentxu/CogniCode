@@ -1,8 +1,9 @@
-//! CP1.0 WU4 — `GET /control-plane/workspaces/:workspace_id/architecture`.
+//! `GET /control-plane/workspaces/:workspace_id/architecture`.
 //!
-//! Fail-closed HTTP contract tests (C1–C5 semantics carried from
-//! `ControlQueryService`). Mocks mirror `e28_3_runtime_wiring.rs`.
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+//! Fail-closed HTTP contract tests for the control plane boundary: the
+//! semantics live in `ControlQueryService`, and these tests pin them over
+//! real HTTP.
+// Pre-existing lint debt is allowed in this file.
 #![allow(deprecated, unused_imports, dead_code)]
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -430,7 +431,7 @@ impl CloneState for ApiState {
     }
 }
 
-/// C1 — no ControlQueryService wired → fail-closed incomplete, never clean.
+/// No query boundary wired → fail-closed incomplete, never clean.
 #[tokio::test]
 async fn c1_not_wired_reads_incomplete_never_clean() {
     let (status, body) = get(
@@ -444,7 +445,7 @@ async fn c1_not_wired_reads_incomplete_never_clean() {
     assert_eq!(body["violations"], serde_json::json!([]));
 }
 
-/// C2 — wired but empty admitted set → incomplete, NOT a clean verdict.
+/// Wired but with an empty admitted set → incomplete, not a clean verdict.
 #[tokio::test]
 async fn c2_empty_admission_reads_incomplete() {
     let state = base_ws("ws-1").with_control_query(
@@ -459,7 +460,7 @@ async fn c2_empty_admission_reads_incomplete() {
     assert_eq!(body["constraints"], serde_json::json!([]));
 }
 
-/// C3 — real evaluation over the workspace source root → evaluated.
+/// A real evaluation over the workspace source root → evaluated.
 #[tokio::test]
 async fn c3_real_evaluation_is_evaluated() {
     let dir = temp_source_root("c3");
@@ -475,7 +476,7 @@ async fn c3_real_evaluation_is_evaluated() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// C4 — the violation is projected with references and coordinates,
+/// The violation is projected with references with its coordinates,
 /// never a copy of canonical truth.
 #[tokio::test]
 async fn c4_violation_projected_with_reference_not_truth() {
@@ -501,7 +502,7 @@ async fn c4_violation_projected_with_reference_not_truth() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// C5 — repeated queries: the endpoint never grows the admission set and
+/// Repeated queries: the endpoint never grows the admission set and
 /// never persists anything; the query path is stateless and read-only.
 #[tokio::test]
 async fn c5_endpoint_path_is_read_only() {
@@ -563,7 +564,7 @@ async fn c6_path_traversal_in_workspace_id_is_echoed_not_resolved() {
     );
 }
 
-/// E2.W1 — CP1 first consumer: the **production** wiring helper
+/// The **production** wiring helper
 /// `wire_canonical_control_query` must produce a `ControlQueryService`
 /// whose endpoint response is `evaluated` with the three canonical
 /// CogniCode architecture constraints, even when the source tree is
@@ -571,7 +572,7 @@ async fn c6_path_traversal_in_workspace_id_is_echoed_not_resolved() {
 ///
 /// This pins the production code path (not a hand-built fixture) and
 /// proves that `wire_canonical_control_query` is a drop-in for the
-/// mock registries used in C1–C6.
+/// mock registries used in the other cases.
 #[tokio::test]
 async fn c7_real_wiring_uses_canonical_constraints() {
     use cognicode_core::application::architecture::control_query::wire_canonical_control_query;
@@ -620,7 +621,7 @@ async fn c7_real_wiring_uses_canonical_constraints() {
 
     // The synthetic-drift source root is the inverse case: it
     // produces exactly one violation against the first canonical
-    // constraint. Together with C3/C4 this proves the production
+    // constraint. Together with the two cases above this proves the production
     // wiring is functionally equivalent to the hand-built fixtures.
     let dir2 = temp_source_root("c7");
     let cq2 = wire_canonical_control_query();
@@ -646,12 +647,12 @@ async fn c7_real_wiring_uses_canonical_constraints() {
 }
 
 // ============================================================================
-// E2.W2 — `control_plane_router` boots and serves real HTTP requests
+// The control-plane router boots and serves real HTTP requests
 // ============================================================================
 //
-// The previous CP1 tests use `axum::Router::oneshot`, which exercises
-// the router without binding a port. E2.W2 promotes that to a real
-// TCP listener bound to port 0 (OS-assigned), sends an HTTP request,
+// The other tests use `axum::Router::oneshot`, which exercises the
+// router without binding a port. These bind a real TCP listener to
+// port 0 (OS-assigned), send an HTTP request,
 // and asserts on the response status and body. This is the closest
 // we can get to running `cognicode-control-plane` from inside a test
 // without spawning a child process.
@@ -725,7 +726,7 @@ async fn e2_w2_control_plane_router_detects_synthetic_drift() {
     // Source root with a `domain::*` module that imports
     // `infrastructure::*` → one violation against
     // `architecture.domain_no_infrastructure`. Same synthetic drift
-    // as `temp_source_root` (used by C4), but exercised over a real
+    // as `temp_source_root`, but exercised over a real
     // TCP listener rather than `oneshot`.
     let dir = temp_source_root("e2w2-drift");
     let state = ControlPlaneState::canonical(dir.clone());
@@ -787,5 +788,112 @@ async fn e2_w2_control_plane_router_404_for_non_cp_routes() {
 
     server.abort();
     let _ = server.await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ============================================================================
+// La identidad de lo que la lectura leyó.
+//
+// Un consumidor que compara el código que hay ahora con el que el
+// producto miró la última vez necesita que el producto diga qué fuentes
+// sostienen el veredicto. La identidad cubre exactamente los ficheros
+// que el evaluador recogió en su recorrido: es identidad por construcción,
+// no una segunda lectura.
+//
+// La identidad se calcula sobre la ruta relativa a la raíz leída, así que
+// el mismo código tiene la misma identidad donde esté el árbol.
+// ============================================================================
+
+#[tokio::test]
+async fn la_identidad_de_la_lectura_es_estable_y_cambia_con_el_codigo() {
+    let dir = temp_source_root("basis-stable");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (_, first) =
+        control_plane_request(state, "/control-plane/workspaces/stable/architecture").await;
+    let basis = &first["source_basis"];
+    assert_eq!(basis["status"], "computed", "basis: {basis}");
+    let digest = basis["digest"].as_str().expect("la identidad viaja");
+    assert!(digest.starts_with("sha256:"), "digest: {digest}");
+    let files = basis["files"].as_u64().expect("cuenta de ficheros");
+    assert!(files >= 1, "el arbol de prueba trae ficheros: {basis}");
+
+    // La misma lectura, otra vez: la identidad no cambia.
+    let state = ControlPlaneState::canonical(dir.clone());
+    let (_, second) =
+        control_plane_request(state, "/control-plane/workspaces/stable/architecture").await;
+    assert_eq!(
+        second["source_basis"]["digest"],
+        first["source_basis"]["digest"]
+    );
+
+    // El codigo cambio: la identidad ya no es la misma.
+    let src = dir.join("src/domain/service.rs");
+    std::fs::write(
+        &src,
+        "use crate::infrastructure::db::Pool;\npub struct T;\n",
+    )
+    .unwrap();
+    let state = ControlPlaneState::canonical(dir.clone());
+    let (_, third) =
+        control_plane_request(state, "/control-plane/workspaces/stable/architecture").await;
+    assert_ne!(
+        third["source_basis"]["digest"], first["source_basis"]["digest"],
+        "cambiar una fuente cambia la identidad"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn un_arbol_vacio_publica_el_estado_y_no_un_resumen() {
+    // Sin ficheros leidos no hay identidad que publicar: un resumen del
+    // conjunto vacio se pareceria a "no hay nada" y a "no lo se", y son
+    // hechos distintos. El estado lo dice, el resumen no viaja.
+    let dir = empty_source_root("basis-empty");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (_, body) =
+        control_plane_request(state, "/control-plane/workspaces/empty/architecture").await;
+
+    let basis = &body["source_basis"];
+    assert_eq!(basis["status"], "empty", "basis: {basis}");
+    assert!(
+        basis["digest"].is_null(),
+        "sin ficheros no hay resumen: {basis}"
+    );
+    assert_eq!(basis["files"], 0);
+    assert!(basis["reason"].is_string());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn las_dos_rutas_publican_la_misma_identidad() {
+    // Las dos rutas del control plane leen el mismo árbol y publican el
+    // mismo campo: el contrato no depende de que binario lo sirva.
+    let dir = temp_source_root("basis-both-routes");
+
+    let full = base_ws("ws-1").with_control_query(
+        Some(Arc::new(ControlQueryService::new(admitted_registry(
+            "arch.no_infra_in_domain",
+        )))),
+        dir.clone(),
+    );
+    let (status, full_body) = get(full, "/control-plane/workspaces/ws-1/architecture").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+
+    let (_, minimal_body) = control_plane_request(
+        ControlPlaneState::canonical(dir.clone()),
+        "/control-plane/workspaces/ws-1/architecture",
+    )
+    .await;
+
+    assert_eq!(full_body["source_basis"]["status"], "computed");
+    assert_eq!(
+        full_body["source_basis"]["digest"], minimal_body["source_basis"]["digest"],
+        "las dos rutas leen el mismo árbol: la identidad es la misma"
+    );
+
     let _ = std::fs::remove_dir_all(&dir);
 }

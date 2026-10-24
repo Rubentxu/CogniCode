@@ -10,6 +10,33 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.31] — 2026-10-24
+
+**La lectura del control plane dice sobre qué código se emitió.** La
+respuesta traía el veredicto, las reglas y las violaciones, pero no las
+fuentes que los sostienen: un consumidor que quería saber si lo que tenía
+delante era lo que se había analizado no tenía con qué comparar. Ahora la
+respuesta trae `source_basis`: los ficheros leídos, un resumen de su
+contenido y el estado de ese resumen.
+
+**El resumen es del código, no del sitio donde está el código.** Se calcula
+sobre la ruta relativa a la raíz leída, así que el mismo código tiene la
+misma identidad donde esté el árbol. La primera versión de esta idea
+sumaba la ruta absoluta, y con ella dos máquinas comparaban dos
+identidades distintas para el mismo código —una identidad del sitio, no del
+código—, que es exactamente el caso para el que el consumidor la pedía.
+
+**Sin ficheros leídos no hay identidad, y se dice.** El estado es un tipo
+cerrado con dos casos, y cuando la lectura no recogió nada el resumen no
+viaja: el resumen del conjunto vacío se parecería a «no hay nada» y a «no
+lo sé», y son hechos distintos.
+
+**Las dos rutas publican lo mismo.** La ruta completa y la mínima leen el
+mismo árbol y publican el mismo campo con la misma identidad, así que el
+contrato no depende de qué binario lo sirva. La forma canónica del resumen
+está escrita, con su ejemplo, en
+`docs/roadmap/consumer-contracts/specs/SPEC-CU-010-CONTROL-PLANE-READ.md`.
+
 ## [v0.101.30] — 2026-10-23
 
 **Un recurso de infraestructura dejó de publicarse como una función.** El

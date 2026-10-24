@@ -1276,8 +1276,8 @@ async fn control_plane_architecture(
         }));
     };
 
-    let source = control_query::source_from_source_root(&state.control_source_root);
-    let model = cq.query_architecture(&workspace_id, snapshot_ref.as_deref(), &source);
+    let read = control_query::read_from_source_root(&state.control_source_root);
+    let model = cq.query_architecture(&workspace_id, snapshot_ref.as_deref(), &read.source);
     let status = match model.status {
         control_query::EvaluationStatus::Evaluated => "evaluated",
         control_query::EvaluationStatus::Incomplete => "incomplete",
@@ -1286,6 +1286,7 @@ async fn control_plane_architecture(
         "workspace_ref": model.workspace_ref,
         "snapshot_ref": model.snapshot_ref,
         "status": status,
+        "source_basis": read.basis,
         "constraints": model.constraints,
         "violations": model.violations,
         "statements_examined": model.statements_examined,
@@ -1354,10 +1355,10 @@ pub async fn control_plane_architecture_minimal(
 ) -> Json<serde_json::Value> {
     use cognicode_core::application::architecture::control_query;
 
-    let source = control_query::source_from_source_root(&state.control_source_root);
+    let read = control_query::read_from_source_root(&state.control_source_root);
     let model = state
         .control_query
-        .query_architecture(&workspace_id, None, &source);
+        .query_architecture(&workspace_id, None, &read.source);
     let status = match model.status {
         control_query::EvaluationStatus::Evaluated => "evaluated",
         control_query::EvaluationStatus::Incomplete => "incomplete",
@@ -1366,6 +1367,7 @@ pub async fn control_plane_architecture_minimal(
         "workspace_ref": model.workspace_ref,
         "snapshot_ref": model.snapshot_ref,
         "status": status,
+        "source_basis": read.basis,
         "constraints": model.constraints,
         "violations": model.violations,
         "statements_examined": model.statements_examined,
