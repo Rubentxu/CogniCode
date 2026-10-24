@@ -2,10 +2,11 @@
 //! una validación que no ocurrió lo dice.
 //!
 //! Estos checks son de caracterización: **miden el defecto antes de que
-//! exista el arreglo**, y por eso están escritos contra la API que hay
-//! hoy, no contra la que tendrá después. Si el arreglo cambia la forma de
-//! la respuesta, este fichero se queda atrás a propósito: el discriminante
-//! lo pone el contrato nuevo, no un test que se adaptó solo.
+//! exista el arreglo**, y por eso los cinco primeros están escritos contra la
+//! API que había, no contra la que hay después. Si el arreglo cambia la forma
+//! de la respuesta, esos cinco se quedan atrás a propósito: el discriminante
+//! lo pone el contrato nuevo, no un test que se adaptó solo. Los que van
+//! después sí fijan el contrato nuevo.
 //!
 //! Lo que miden:
 //!
@@ -30,7 +31,7 @@
 
 use std::path::PathBuf;
 
-use cognicode_core::application::dto::FileEdit;
+use cognicode_core::application::dto::{EditVerification, FileEdit};
 use cognicode_core::interface::mcp::file_ops_handlers::{handle_edit_file, handle_write_file};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::schemas::{EditFileInput, WriteFileInput};
@@ -158,6 +159,49 @@ async fn an_edit_that_could_not_be_verified_does_not_report_a_passed_validation(
         !output.validation.passed,
         "a validation that did not happen must not be reported as a passed validation"
     );
+    assert_eq!(
+        output.validation.verification,
+        EditVerification::Unverified,
+        "the response says that the content was not checked"
+    );
+}
+
+/// Una validación que sí ocurrió lo dice.
+///
+/// El otro lado del mismo contrato: cuando hay parser y el contenido está
+/// bien, la respuesta lo afirma. Un estado que sólo sabe decir «no lo sé»
+/// tampoco vale.
+#[tokio::test]
+async fn a_verified_edit_says_it_was_verified() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let ctx = ctx_for(workspace.path());
+
+    let file = workspace.path().join("good.rs");
+    std::fs::write(&file, "fn test() {}\n").expect("the file is written");
+
+    let output = handle_edit_file(
+        &ctx,
+        EditFileInput {
+            path: file.to_string_lossy().into_owned(),
+            edits: vec![FileEdit {
+                old_string: "fn test() {}".to_string(),
+                new_string: "fn test() { }".to_string(),
+            }],
+        },
+    )
+    .await
+    .expect("the edit is answered");
+
+    assert!(output.applied, "the edit is applied");
+    assert_eq!(
+        output.validation.verification,
+        EditVerification::Verified,
+        "the response says that the content was checked"
+    );
+    assert!(
+        output.validation.passed,
+        "a content that was really verified is a passed validation"
+    );
 }
 
 /// Un fichero roto se rechaza: el caso que ya funcionaba, y que no puede
@@ -191,6 +235,11 @@ async fn a_broken_file_is_rejected() {
     assert!(
         !output.validation.passed,
         "a rejected content is not a passed validation"
+    );
+    assert_eq!(
+        output.validation.verification,
+        EditVerification::Rejected,
+        "the response says that a parser rejected the content"
     );
 }
 

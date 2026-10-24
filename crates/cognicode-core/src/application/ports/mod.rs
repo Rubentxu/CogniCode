@@ -16,7 +16,7 @@
 
 use crate::application::error::{AppError, AppResult};
 use crate::domain::aggregates::symbol::Symbol;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Application-owned error for path-policy rejections.
 ///
@@ -40,6 +40,22 @@ pub enum PathPolicyError {
 /// depth rules.
 pub trait PathPolicy: Send + Sync {
     fn validate_path(&self, path: &Path) -> Result<(), PathPolicyError>;
+
+    /// The same question asked before the directories exist.
+    ///
+    /// `validate_path` needs the path to be there — or its parent to be there
+    /// — to resolve it. That is the right question for a path that is going
+    /// to be read, and the wrong one for a path whose directories are about
+    /// to be created: the caller cannot ask it without creating first, and
+    /// creating first is the effect this port exists to prevent.
+    ///
+    /// So the question is asked in two phases. This one answers it without
+    /// touching the filesystem: it resolves the path against the workspace
+    /// and says whether the result stays inside it even if the directories
+    /// leading to it are missing. It returns the resolved path, which is the
+    /// one the caller has to create and write — the same one, not a second
+    /// resolution of the same request.
+    fn resolve_for_creation(&self, path: &Path) -> Result<PathBuf, PathPolicyError>;
 }
 
 /// Result of a parse-cleanliness probe.

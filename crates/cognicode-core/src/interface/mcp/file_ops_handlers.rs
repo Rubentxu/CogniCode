@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::application::dto::EditVerification;
 use crate::application::error::AppError;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::{ToolError, get_global_metrics, instrument_tool};
@@ -185,7 +186,7 @@ pub async fn handle_edit_file(
     match result {
         Ok(output) => {
             let mcp_output: EditFileOutput = output.into();
-            if !mcp_output.validation.passed {
+            if mcp_output.validation.verification == EditVerification::Rejected {
                 metrics.record_edit_rejected("syntax_error");
             }
             if mcp_output.applied {

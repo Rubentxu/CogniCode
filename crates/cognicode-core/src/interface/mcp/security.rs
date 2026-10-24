@@ -342,27 +342,7 @@ impl InputValidator {
         }
 
         // Parse the path and resolve relative paths against workspace.
-        let resolved = if path.is_absolute() {
-            path.to_path_buf()
-        } else if !self.allowed_paths.is_empty() {
-            // Resolve relative paths against workspace dirs
-            let mut resolved = path.to_path_buf();
-            let mut found = false;
-            for ws in &self.allowed_paths {
-                let candidate = ws.join(path);
-                if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
-                    resolved = candidate;
-                    found = true;
-                    break;
-                }
-            }
-            if !found && let Some(first_ws) = self.allowed_paths.first() {
-                resolved = first_ws.join(path);
-            }
-            resolved
-        } else {
-            path.to_path_buf()
-        };
+        let resolved = self.resolve_against_allowed(path);
 
         // Check path depth
         let component_count = resolved.components().count();
@@ -437,6 +417,98 @@ impl InputValidator {
         }
 
         Ok(())
+    }
+
+    /// Resolves a path against the workspace roots.
+    ///
+    /// One resolution, shared by both phases of the judgment. A path that is
+    /// absolute is taken as it is; a relative one is taken against the first
+    /// workspace whose candidate already exists, and against the first
+    /// workspace when none of them does.
+    fn resolve_against_allowed(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() || self.allowed_paths.is_empty() {
+            return path.to_path_buf();
+        }
+        for ws in &self.allowed_paths {
+            let candidate = ws.join(path);
+            if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
+                return candidate;
+            }
+        }
+        self.allowed_paths[0].join(path)
+    }
+
+    /// Resolves the path against the workspace and says whether it stays
+    /// inside it even when the directories leading to it do not exist yet.
+    ///
+    /// The difference with `validate_path` is only in the last step: the
+    /// boundary is judged on the deepest ancestor that is already there. The
+    /// ancestors that exist can hide an escape — a symlink pointing out of
+    /// the workspace is one — and the ones that do not exist cannot, because
+    /// a name stays in the directory it is written in. So the ancestors that
+    /// exist are resolved and checked, and the missing ones are only names.
+    ///
+    /// The returned path is the one the caller has to create and write. It
+    /// is not a second answer to the same question: it is the path this
+    /// judgment was made about.
+    pub fn resolve_for_creation(&self, path: &Path) -> Result<PathBuf, SecurityError> {
+        let path_str = path.to_string_lossy();
+
+        // The same lexical rules, in the same order as `validate_path`.
+        if self.contains_path_traversal(&path_str) {
+            warn!("Path traversal attempt detected: {}", path_str);
+            return Err(SecurityError::PathTraversalAttempt {
+                path: path_str.to_string(),
+            });
+        }
+        if path_str.contains('\0') {
+            return Err(SecurityError::InvalidPathCharacters {
+                path: path_str.to_string(),
+            });
+        }
+
+        let resolved = self.resolve_against_allowed(path);
+
+        let component_count = resolved.components().count();
+        if component_count > MAX_PATH_COMPONENTS {
+            return Err(SecurityError::PathTooDeep {
+                depth: component_count,
+                max: MAX_PATH_COMPONENTS,
+            });
+        }
+
+        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
+            && metadata.file_type().is_symlink()
+        {
+            warn!("Symlink detected in path: {}", path_str);
+            return Err(SecurityError::SymlinkDetected {
+                path: path_str.to_string(),
+            });
+        }
+
+        if !self.allowed_paths.is_empty() {
+            let existing = deepest_existing_ancestor(&resolved);
+            // A symlink is an ancestor too: `canonicalize` resolves it, so
+            // the boundary is judged on where it really points.
+            let canonical =
+                std::fs::canonicalize(&existing).map_err(|_| SecurityError::PathNotAccessible {
+                    path: path_str.to_string(),
+                })?;
+            let is_allowed = self
+                .allowed_paths
+                .iter()
+                .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
+            if !is_allowed {
+                debug!(
+                    "Path {} is not within allowed workspace: {:?}",
+                    canonical.display(),
+                    self.allowed_paths
+                );
+                return Err(SecurityError::PathOutsideWorkspace);
+            }
+        }
+
+        Ok(resolved)
     }
 
     /// Validates file content size
@@ -1002,33 +1074,68 @@ impl RateLimiter {
 // build, not a style nit.
 // ---------------------------------------------------------------------------
 
+/// The deepest ancestor of `path` that is already there.
+///
+/// The components above it are names that do not exist yet. They cannot
+/// hide an escape — a name stays in the directory it is written in — so the
+/// ancestor is the whole answer to "where would this land".
+///
+/// A symlink counts as being there, even a broken one: resolving it is how
+/// the boundary check finds out where it points, and a broken one cannot be
+/// resolved, which refuses the path instead of guessing.
+fn deepest_existing_ancestor(path: &Path) -> PathBuf {
+    let mut current = path.to_path_buf();
+    while std::fs::symlink_metadata(&current).is_err() && current.pop() {}
+    current
+}
+
+/// The path policy's error, with the error type changed owner.
+fn path_policy_error(error: SecurityError) -> PathPolicyError {
+    match error {
+        SecurityError::PathTraversalAttempt { path } => {
+            PathPolicyError::PathTraversalAttempt { path }
+        }
+        SecurityError::PathNotAccessible { path } => PathPolicyError::PathNotAccessible { path },
+        SecurityError::PathOutsideWorkspace => PathPolicyError::PathOutsideWorkspace,
+        SecurityError::PathTooDeep { depth, max } => PathPolicyError::PathTooDeep { depth, max },
+        SecurityError::InvalidPathCharacters { path } => {
+            PathPolicyError::InvalidPathCharacters { path }
+        }
+        SecurityError::SymlinkDetected { path } => PathPolicyError::SymlinkDetected { path },
+        // Non-path policies (size/query/rate) are other validators'
+        // concerns; the path policy port never produces them.
+        SecurityError::FileTooLarge { size, max } => PathPolicyError::InvalidPathCharacters {
+            path: format!("rejected by policy: file too large ({size} > {max})"),
+        },
+        SecurityError::QueryTooLong { length, max } => PathPolicyError::InvalidPathCharacters {
+            path: format!("rejected by policy: query too long ({length} > {max})"),
+        },
+        SecurityError::TooManyResults { count, max } => PathPolicyError::InvalidPathCharacters {
+            path: format!("rejected by policy: too many results ({count} > {max})"),
+        },
+        SecurityError::RateLimitExceeded => PathPolicyError::InvalidPathCharacters {
+            path: "rejected by policy: rate limit exceeded".to_string(),
+        },
+        SecurityError::InvalidClientId => PathPolicyError::InvalidPathCharacters {
+            path: "rejected by policy: invalid client identification".to_string(),
+        },
+        SecurityError::InvalidInput { reason } => PathPolicyError::InvalidPathCharacters {
+            path: format!("rejected by policy: {reason}"),
+        },
+    }
+}
+
 impl PathPolicy for InputValidator {
     fn validate_path(&self, path: &Path) -> Result<(), PathPolicyError> {
         // Same rules, same order — only the error type changes owner.
-        match InputValidator::validate_path(self, path) {
-            Ok(()) => Ok(()),
-            Err(SecurityError::PathTraversalAttempt { path }) => {
-                Err(PathPolicyError::PathTraversalAttempt { path })
-            }
-            Err(SecurityError::PathNotAccessible { path }) => {
-                Err(PathPolicyError::PathNotAccessible { path })
-            }
-            Err(SecurityError::PathOutsideWorkspace) => Err(PathPolicyError::PathOutsideWorkspace),
-            Err(SecurityError::PathTooDeep { depth, max }) => {
-                Err(PathPolicyError::PathTooDeep { depth, max })
-            }
-            Err(SecurityError::InvalidPathCharacters { path }) => {
-                Err(PathPolicyError::InvalidPathCharacters { path })
-            }
-            Err(SecurityError::SymlinkDetected { path }) => {
-                Err(PathPolicyError::SymlinkDetected { path })
-            }
-            // Non-path policies (size/query/rate) are other validators'
-            // concerns; the path policy port never produces them.
-            Err(other) => Err(PathPolicyError::InvalidPathCharacters {
-                path: format!("rejected by policy: {other}"),
-            }),
-        }
+        InputValidator::validate_path(self, path).map_err(path_policy_error)
+    }
+
+    fn resolve_for_creation(&self, path: &Path) -> Result<PathBuf, PathPolicyError> {
+        // Same rules, same order — and the boundary judged on the ancestor
+        // that is already there, because the directories that are missing
+        // cannot be created until this question is answered.
+        InputValidator::resolve_for_creation(self, path).map_err(path_policy_error)
     }
 }
 
