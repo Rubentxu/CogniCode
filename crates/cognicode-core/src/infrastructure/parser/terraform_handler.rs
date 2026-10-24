@@ -1,7 +1,7 @@
 //! Terraform semantic handler: HCL blocks become infrastructure identities,
 //! and the traversals inside their bodies become reference edges.
 //!
-//! ## Why this handler parses the file itself
+//! ## Why this handler reads the body itself
 //!
 //! A generic extraction pass reduces every HCL block to a *label*, and a
 //! label is only its header: `resource "aws_s3_bucket" "app_bucket"`. The
@@ -9,10 +9,16 @@
 //! is gone before the domain layer sees it, so a handler that reads labels
 //! can never find the relations the file actually states.
 //!
-//! Reading the file here keeps the domain layer the authority for its own
+//! Reading the body here keeps the domain layer the authority for its own
 //! language: it decides what a block is and what refers to what, and the
 //! generic pass stays what it is —the path taken by the languages that have
 //! no domain layer of their own.
+//!
+//! ## Why it reads the tree it is handed
+//!
+//! The tree is the one the generic pass built from that same text. Building
+//! another would cost a parse to learn what the first one already holds, and
+//! two trees of the same text are two answers that can drift apart.
 
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::domain::aggregates::{GraphNode, NodeId};
@@ -40,20 +46,15 @@ pub fn interpret_terraform(
     source_path: &str,
     source_hash: &str,
     source: &str,
+    tree: &tree_sitter::Tree,
     result: &ExtractionResult,
 ) -> ExtractionResult {
-    // The tree lives here and not in a helper that returns it: the nodes read
-    // while resolving traversals point into it, and a `Node` that outlives its
-    // `Tree` is a pointer to nothing.
-    let Some(tree) = parse(source) else {
-        return result.clone();
-    };
     // A file the reader could not read whole does not declare anything the
     // product can rely on. The generic reader refuses those files too, and
     // a file that one path publishes and the other refuses is the same
     // contradiction the two paths had about who reads a file. The file is
     // reported with the reason, so it stays visible as a hole.
-    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(&tree) {
+    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(tree) {
         let mut broken = result.clone();
         broken.error = Some(format!("Syntax errors in {source_path}"));
         return broken;
@@ -143,14 +144,6 @@ fn terraform_blocks<'a>(root: Node<'a>, source: &[u8]) -> Vec<Block<'a>> {
         .into_iter()
         .filter_map(|node| classify(node, source))
         .collect()
-}
-
-fn parse(source: &str) -> Option<tree_sitter::Tree> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&tree_sitter_hcl::LANGUAGE.into())
-        .ok()?;
-    parser.parse(source, None)
 }
 
 /// `config_file > body > block`. A complete walk would also yield the nested
@@ -458,6 +451,12 @@ mod tests {
         out
     }
 
+    /// The tree of a source, built the way the product builds it.
+    fn tree_for(source: &str) -> tree_sitter::Tree {
+        crate::infrastructure::parser::tree::build_tree(&tree_sitter_hcl::LANGUAGE.into(), source)
+            .expect("the grammar is bound and the source parses")
+    }
+
     fn extract_file_for_test(source: &str) -> ExtractionResult {
         let bare = ExtractionResult::ok(
             std::path::PathBuf::from("main.tf"),
@@ -469,7 +468,7 @@ mod tests {
             ],
             vec![],
         );
-        interpret_terraform("main.tf", "hash", source, &bare)
+        interpret_terraform("main.tf", "hash", source, &tree_for(source), &bare)
     }
 
     #[test]
@@ -535,12 +534,8 @@ mod tests {
             ],
             vec![],
         );
-        let result = interpret_terraform(
-            "main.hcl",
-            "hash",
-            "job \"x\" {\n  group \"y\" {}\n}\n",
-            &bare,
-        );
+        let source = "job \"x\" {\n  group \"y\" {}\n}\n";
+        let result = interpret_terraform("main.hcl", "hash", source, &tree_for(source), &bare);
         assert_eq!(result.nodes.len(), 1, "solo el nodo de fichero, como entró");
         assert!(result.edges.is_empty());
     }

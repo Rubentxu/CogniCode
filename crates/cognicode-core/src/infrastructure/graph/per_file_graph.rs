@@ -680,7 +680,10 @@ impl PerFileGraphCache {
             if TreeSitterParser::has_error_nodes(&tree) {
                 continue;
             }
-            let symbols = match parser.find_all_symbols_with_path(&source, &path_str) {
+            // The tree is already built, and the symbols are read from it:
+            // asking the parser to parse the file again would cost a second
+            // tree to learn what the first one already holds.
+            let symbols = match parser.find_all_symbols_in_tree(&tree, &source, &path_str) {
                 Ok(s) => s,
                 Err(_) => continue,
             };
@@ -1778,6 +1781,7 @@ mod reader_failure_tests {
         _source_path: &str,
         _source_hash: &str,
         _source: &str,
+        _tree: &tree_sitter::Tree,
         _result: &ExtractionResult,
     ) -> ExtractionResult {
         panic!("this reader cannot read what it was handed");
@@ -1981,6 +1985,47 @@ mod global_index_tests {
         assert_ne!(
             ambiguous, absent,
             "a known-but-unprovable name must not read like a missing one"
+        );
+    }
+}
+
+#[cfg(test)]
+mod one_tree_per_file_tests {
+    //! The index reads every file once.
+
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Every file the index reads costs one tree, no matter which reader
+    /// reads it.
+    ///
+    /// The index used to parse each file twice: once to know whether the
+    /// file was sound, and once more to learn its symbols. The second parse
+    /// paid for an answer the first tree already held.
+    #[test]
+    fn the_index_reads_each_file_once() {
+        let directory = tempfile::tempdir().expect("a temporary directory");
+        let rust = directory.path().join("main.rs");
+        std::fs::write(&rust, "fn main() {}\n").expect("the file is written");
+        let terraform = directory.path().join("main.tf");
+        std::fs::write(&terraform, "resource \"aws_s3_bucket\" \"b\" {}\n")
+            .expect("the file is written");
+
+        let paths: Vec<PathBuf> = vec![rust, terraform];
+        let refs: Vec<&Path> = paths.iter().map(Path::new).collect();
+
+        crate::infrastructure::parser::tree::reset_trees_built_here();
+        let cache = PerFileGraphCache::new();
+        let index = cache.build_global_index(&refs);
+
+        assert!(
+            !index.is_empty(),
+            "the index holds the symbols of the files it read"
+        );
+        assert_eq!(
+            crate::infrastructure::parser::tree::trees_built_here(),
+            paths.len(),
+            "each file is read into one tree, no matter which reader reads it"
         );
     }
 }

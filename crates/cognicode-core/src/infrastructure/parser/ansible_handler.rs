@@ -1,7 +1,7 @@
 //! Ansible semantic handler: a playbook is a structure, and the structure
 //! comes from the tree.
 //!
-//! ## Why this handler parses the file itself
+//! ## Why this handler reads the file itself
 //!
 //! A generic extraction pass reduces a YAML file to the node of the file
 //! itself, so a handler that reads labels never sees a play: the word
@@ -15,6 +15,12 @@
 //! language: it decides what a play is, what a task calls, and what it
 //! pulls in. The generic pass stays what it is —the path taken by the
 //! languages that have no domain layer of their own.
+//!
+//! ## Why it reads the tree it is handed
+//!
+//! The tree is the one the generic pass built from that same text. Building
+//! another would cost a parse to learn what the first one already holds, and
+//! two trees of the same text are two answers that can drift apart.
 //!
 //! ## What the file states, and what it does not
 //!
@@ -148,17 +154,15 @@ pub fn interpret_ansible(
     source_path: &str,
     source_hash: &str,
     source: &str,
+    tree: &tree_sitter::Tree,
     result: &ExtractionResult,
 ) -> ExtractionResult {
-    let Some(tree) = parse(source) else {
-        return result.clone();
-    };
     // A file the reader could not read whole does not declare anything the
     // product can rely on. The generic reader refuses those files too, and
     // a file that one path publishes and the other refuses is the same
     // contradiction the two paths had about who reads a file. The file is
     // reported with the reason, so it stays visible as a hole.
-    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(&tree) {
+    if crate::infrastructure::parser::TreeSitterParser::has_error_nodes(tree) {
         let mut broken = result.clone();
         broken.error = Some(format!("Syntax errors in {source_path}"));
         return broken;
@@ -737,12 +741,4 @@ fn scalar(node: Node, source: &[u8]) -> String {
         }
     }
     trimmed.to_string()
-}
-
-fn parse(source: &str) -> Option<tree_sitter::Tree> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&tree_sitter_yaml::LANGUAGE.into())
-        .ok()?;
-    parser.parse(source, None)
 }

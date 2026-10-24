@@ -4337,6 +4337,7 @@ mod reader_failure_tests {
         _source_path: &str,
         _source_hash: &str,
         _source: &str,
+        _tree: &tree_sitter::Tree,
         _result: &ExtractionResult,
     ) -> ExtractionResult {
         panic!("this reader cannot read what it was handed");

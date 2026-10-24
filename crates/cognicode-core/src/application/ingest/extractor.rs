@@ -87,7 +87,7 @@ pub fn extract_file_with_outcome(
         );
     }
 
-    let tree = match parser.parse(source.as_bytes(), None) {
+    let tree = match crate::infrastructure::parser::tree::parse_with(&mut parser, source) {
         Some(t) => t,
         None => {
             let cause = "tree-sitter returned None (parse failure)".to_string();
@@ -302,7 +302,7 @@ pub fn extract_file_with_outcome(
     };
     let source_path_str = path.to_string_lossy();
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        handler(&source_path_str, content_hash, source, &result)
+        handler(&source_path_str, content_hash, source, &tree, &result)
     })) {
         Ok(enriched) => (enriched, HandlerOutcome::Ran),
         Err(fell_over) => {
@@ -1198,6 +1198,49 @@ static MY_STATIC: u32 = 0;
             stmts.iter().any(|s| s.kind == "let_declaration"),
             "expected let_declaration from the ok function, got {:?}",
             stmts
+        );
+    }
+
+    /// A file is read into one tree.
+    ///
+    /// The reader of a language used to parse the file a second time to get a
+    /// tree of its own, so a file with a reader cost two trees where one was
+    /// enough, and two trees of the same text are two answers that can drift
+    /// apart. The number of trees is what tells the two situations apart.
+    #[test]
+    fn a_file_is_read_into_one_tree() {
+        use crate::infrastructure::parser::language_config::{HCL_CONFIG, RUST_CONFIG};
+
+        // A language with a reader of its own: the reader reads the tree the
+        // generic pass built, so the file is parsed once.
+        crate::infrastructure::parser::tree::reset_trees_built_here();
+        let terraform = extract_file(
+            &HCL_CONFIG,
+            std::path::Path::new("main.tf"),
+            "resource \"aws_s3_bucket\" \"b\" {}\n",
+            "hash",
+        );
+        assert!(terraform.is_ok(), "the file was read: {terraform:?}");
+        assert_eq!(
+            crate::infrastructure::parser::tree::trees_built_here(),
+            1,
+            "a file with a reader of its own is read once, not once per reader"
+        );
+
+        // A language without a reader of its own: the generic pass is the
+        // only one that reads the file, so it is also read once.
+        crate::infrastructure::parser::tree::reset_trees_built_here();
+        let rust = extract_file(
+            &RUST_CONFIG,
+            std::path::Path::new("main.rs"),
+            "fn main() {}\n",
+            "hash",
+        );
+        assert!(rust.is_ok(), "the file was read: {rust:?}");
+        assert_eq!(
+            crate::infrastructure::parser::tree::trees_built_here(),
+            1,
+            "a file without a reader of its own is read once"
         );
     }
 }
