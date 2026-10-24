@@ -25274,3 +25274,40 @@ primitiva y el otro fija el comportamiento.
 **La cola.** `C27` sale de la cola de la misión: un candidato cerrado que
 sigue en la cola es trabajo que otro agente puede volver a empezar. Quedan
 `C22`, `C23`, `C11`, `C12` y `C13`.
+
+## 2026-10-24 — El cierre verificado: el grafo y el harness llegan a `main`
+
+Las dos unidades de este tramo están cerradas y están en `main`.
+
+**El commit.** `2ac87c02c2117003062145ce9ef5aa97697fc342`, por PR #455,
+squash. La rama era `feature/the-shared-helpers-answer-once`, sobre
+`6cfe42f9` (el commit de la unidad de la identidad de lo que leyó).
+
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6343** pruebas del workspace con **0** fallos, los
+doc-tests, los 47 contratos de CI más `scripts/product/*.py`, y el
+baseline.
+
+**La autoridad del merge.** `merge-gate` → **success**, publicado para
+`955edcf62b7bd4bd9a36494918a402f8836c8d50` con el código de salida del
+propio gate, que fue 0. La cabecera que el squash iba a crear la juzgó la
+política antes de gastar un minuto: `test: el grafo deja de tener una
+segunda manera de responder (#455)`, admitida.
+
+**Lo que mide la puerta, medido.** El escenario del grafo se vio fallar
+sobre el producto: anulada la huella de la caché, el contrato se puso rojo
+diciendo que la identidad renombrada ya no se publicaba. Y los nueve
+checks que estaban dentro del módulo compartido pasaban de aparecer 21
+veces en el log del gate completo a aparecer 1.
+
+**Lo que queda vivo.** La cola de la misión: `C22` (el árbol sintáctico
+se parsea una vez), `C23` (el servicio de análisis deja de ser un módulo
+de 4.100 líneas), `C11` (el SnapshotKey), `C12` y `C13` (Kotlin).
+
+**Lo que este tramo deja sin hacer, y por qué.** La versión `0.101.31` está
+preparada —cuatro superficies, tres manifiestos, la certificación vuelta a
+medir y los binarios release reconstruidos— pero **no está publicada**: no
+hay tag `v0.101.31` ni artefactos `v0.101.31` en `release/`. Publicarla
+exige su propio gate de candidato, y su propio tag, y eso es un corte
+distinto de este. El README nombra el corte en curso, que es lo que el
+contrato de convergencia admite mientras el tag no existe.
