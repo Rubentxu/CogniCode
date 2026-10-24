@@ -469,13 +469,6 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     rechaza en una sola, y el orden de los resultados no lo fija la
 >     asíncrona. La forma, en
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
->   - **Lo que se rechaza no deja rastro, y las ediciones se aplican al original** —
->     abierto. El límite de tamaño de `write_file` se comprueba después de crear los
->     directorios, así que una escritura rechazada deja el árbol en el disco. Y las
->     ediciones se comprueban sobre el contenido original pero se aplican sobre el
->     resultado de la anterior: sobre `A B`, `A→B` y `B→C` producen `C C`, y una
->     edición que pierde su coincidencia desaparece en silencio. La forma, en
->     `docs/adr/ADR-058-what-is-refused-leaves-no-trace.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).

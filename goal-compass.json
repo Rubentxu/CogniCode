@@ -8,31 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C38",
-      "title": "Lo que se rechaza no deja rastro, y las ediciones se aplican al original",
-      "unit": "H28",
-      "objective": "Que una escritura rechazada no deje nada en el disco, y que varias ediciones en una llamada se apliquen sobre el contenido original en vez de sobre el resultado de la anterior.",
-      "whyNow": "MEDIDO 2026-10-24 sobre c70438b2: el limite de 10 MB de write_file se comprueba despues de create_dir_all, asi que una escritura de mas de 10 MB con create_dirs deja el arbol de directorios en el disco y despues se rechaza. El limite es el unico control que depende solo de la peticion y no del disco: validate_resolved_path canonicaliza un padre que todavia no existe, y la politica de rutas ya se juzgo antes con las mismas reglas. MEDIDO: las ediciones se comprueban sobre el contenido original pero se aplican en cadena sobre el resultado de la anterior. Sobre 'A B', A->B y B->C producen 'C C' y no 'B C'; sobre 'abc', 'ab'->X y 'bc'->Y producen 'Xc' y la segunda edicion desaparece en silencio con applied=true y sin motivo. El servicio publica que cada edicion encuentra exactamente una ocurrencia, y replace sustituye todas las ocurrencias del texto acumulado. MEDIDO Y FUERA DE ALCANCE: bytes_changed esta publicado en el esquema MCP como 'absolute difference' y alimenta la metrica record_bytes_written; renombrarlo o redefinirlo es un cambio de contrato, no un bug, y no esta entre las acciones recomendadas de la reauditoria.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/services/file_operations.rs",
-        "crates/cognicode-core/src/interface/mcp/security.rs",
-        "crates/cognicode-core/src/interface/mcp/schemas.rs",
-        "crates/cognicode-core/tests/h25_file_operations_effect_order.rs",
-        "docs/adr/ADR-058-what-is-refused-leaves-no-trace.md"
-      ],
-      "doneWhen": [
-        "una escritura rechazada por su tamano no deja el arbol de directorios que pidio",
-        "dos ediciones se aplican sobre el contenido original, y el resultado no depende del orden en que se mandaron",
-        "dos ediciones que se solapan se rechazan con un motivo, en vez de que se pierda la segunda en silencio",
-        "una sola edicion se comporta como antes, y los motivos no_match y multiple_matches siguen siendo los mismos",
-        "la suite sigue verde"
-      ],
-      "scope": "H28",
-      "risk": "medium",
-      "priority": 60,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",

@@ -148,10 +148,25 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **H28** (`C38`) | lo que se rechaza no deja rastro; las ediciones se aplican al original | `docs/adr/ADR-058-what-is-refused-leaves-no-trace.md` |
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
+cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de
+`write_file` se comprobaba después de crear el árbol de directorios, así que una
+escritura rechazada dejaba en el disco lo que había pedido: el límite es el único
+control que depende sólo de la petición, así que es el único que no puede llegar
+después del efecto. Y las ediciones se comprobaban sobre el contenido original pero
+se aplicaban sobre el resultado de la anterior: sobre `A B`, `A→B` y `B→C`
+producian `C C`, y sobre `abc`, `ab→X` y `bc→Y` la segunda edición desaparecía en
+silencio con `applied: true` y sin motivo — una petición declarada aplicada cuando
+la mitad de lo que pedía no se hizo. Ahora el tamaño se comprueba antes de crear
+nada, y las ediciones se aplican a la vez sobre el original: las posiciones se
+calculan sobre el original, los cambios se aplican desde el final, y dos ediciones
+que se solapan se rechazan con el motivo `overlapping_edits` en vez de perder la
+segunda en silencio. La garantía que el servicio ya publicaba —cada edición
+encuentra exactamente una ocurrencia— pasa a ser lo que el código hace.
 
 **Una etapa que no puede hacer caer la puerta dice qué observa, y la que dice
 que instala instala.** Trece etapas se ejecutaban sin poder bloquear, y
@@ -300,7 +315,7 @@ instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 9 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 8 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.
@@ -312,6 +327,12 @@ herramienta de solo lectura conseguía que el modo de solo lectura la
 aceptase. La autoridad de una herramienta es del producto, y el producto no
 es el proyecto que se analiza. Detrás de él vinieron **C5**, **C21**, **C8**
 y **C7**, también cerrados.
+
+**C38 está cerrado.** Lo que se rechaza no deja rastro: una escritura
+rechazada por su tamaño ya no deja el árbol de directorios que pidió, y las
+ediciones múltiples se aplican sobre el contenido original en vez de sobre el
+resultado de la anterior. El motivo del solapamiento se dice en la respuesta,
+en vez de perder media edición en silencio.
 
 **C25, C20, C24, C18, C28 y C29 están cerrados.** C17 salió en la PR #404.
 C2, C3 y C4 salieron en las PR #400, #401 y #402.

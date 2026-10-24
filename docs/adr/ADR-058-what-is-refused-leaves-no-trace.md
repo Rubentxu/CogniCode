@@ -1,6 +1,6 @@
 # ADR-058 — Lo que se rechaza no deja rastro, y las ediciones se aplican al original
 
-**Estado**: ACEPTADO (decidido el 2026-10-24; pendiente de ejecución)
+**Estado**: EJECUTADO (decidido el 2026-10-24; ejecutado el 2026-10-24)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H28 · las operaciones sobre ficheros (`crates/cognicode-core/src/application/services/file_operations.rs`), candidato `C38` de la cola de la misión
@@ -158,6 +158,52 @@ contrato, no de bug, y la métrica que lo consume cambiaría de nombre también.
 - No reescribe el esquema MCP más allá del motivo nuevo y del texto que ya dice
   «absolute difference».
 - No toca la semántica de `write_file` más allá del orden del control de tamaño.
+
+## Ejecución
+
+**MEDIDO 2026-10-24**, sobre la rama `feature/what-is-refused-leaves-no-trace` —la
+unidad `H28`, el candidato `C38` de la cola de la misión.
+
+**El RED, antes del arreglo.**
+`crates/cognicode-core/tests/h28_refused_writes_leave_nothing_and_edits_are_simultaneous.rs`
+—seis checks: tres discriminantes y tres guardas—, escritos contra la API que había.
+Fallaron los tres discriminantes, y por lo que se suponía:
+
+```
+running 6 tests
+test an_edit_with_several_matches_still_says_multiple_matches ... ok
+test an_edit_without_a_match_still_says_no_match ... ok
+test two_edits_are_applied_to_the_original_content ... FAILED
+test overlapping_edits_are_refused_instead_of_losing_one ... FAILED
+test a_write_refused_for_being_too_big_leaves_no_directory ... FAILED
+
+  left: "C C"
+ right: "B C"
+  an ambiguous request is not applied: the two edits cover the same region
+  a refused write left a directory tree behind: "/tmp/.tmpilPDG1/deep"
+```
+
+Las tres guardas pasaron antes y después: una sola edición se aplica, y los motivos
+`no_match` y `multiple_matches` siguen siendo los mismos.
+
+**El GREEN, después del arreglo.** Los seis checks en verde.
+
+**Lo que cambió, exactamente.**
+
+- El límite de tamaño se comprueba **antes** de `create_dir_all`, y la política de
+  rutas sigue juzgando antes que él: su error es el que informa de un intento de
+  salir del workspace.
+- Las ediciones se localizan sobre el contenido original, se ordenan por posición,
+  se rechazan las que se solapan —con el motivo `overlapping_edits`— y se aplican
+  desde el final, para que las posiciones anteriores sigan valiendo.
+- Dos ediciones idénticas son la misma edición y cuentan una.
+- El esquema MCP documenta el motivo nuevo en el conjunto de valores de `reason`.
+- `bytes_changed` no se toca, como manda la decisión 3.
+
+**Lo que este ADR NO midió, y sigue sin medir.** El campo `bytes_changed` sigue
+midiendo la diferencia absoluta de longitudes, no los bytes modificados. Queda
+fuera de esta unidad a propósito: es un cambio de contrato, y la casa no redefine
+un contrato publicado para tapar un nombre flojo.
 
 ## Referencias
 
