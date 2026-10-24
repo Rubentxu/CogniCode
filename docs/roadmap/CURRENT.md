@@ -5,10 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `cc290f8dd4bbdd92d6afc55adba80ac51677999d` (la
-> rama que hace que la lectura declare la identidad de lo que leyó, y que esa
-> identidad sea del código y no del sitio donde está el código),
-> rama `feature/cp1-source-basis`.
+> **Snapshot**: 2026-10-24, sobre `6cfe42f91be91acbef1323d9b9a524ce8596dabf` (el
+> `main` ya fusionado que hace que la lectura declare la identidad de lo que
+> leyó, y que esa identidad sea del código y no del sitio donde está el
+> código), más la rama `feature/the-shared-helpers-answer-once`, que le
+> añade el escenario que pregunta al grafo qué se movió y qué se quedó, y
+> saca del módulo compartido los checks que se ejecutaban veintiún veces.
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
