@@ -12,18 +12,22 @@
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",
       "objective": "Que la construccion del grafo, la cache, la resolucion y las metricas dejen de vivir en un mismo archivo, sin cambiar los contratos publicos.",
-      "whyNow": "MEDIDO: el archivo tiene 4.100 lineas y cuatro responsabilidades. La auditoria del 2026-10-20 lo senala como senal de duplicacion, junto con la segunda puerta al grafo.",
+      "whyNow": "MEDIDO 2026-10-24: el archivo tiene 4.369 lineas y cinco constructores vivos, no tres: la via completa, la filtrada, la asincrona, la per-file y la lightweight. Las tres que construyen el grafo del proyecto son de produccion: la CLI, `workspace_session.rs:1171` y el handler MCP `aix_handlers.rs:1979`. El lector de arbol ya esta unificado, pero el inventario centralizado solo llega a dos de las tres, y resolucion, cache y reporte estan triplicados: 111 lineas identicas entre la completa y la filtrada, 80 comunes a las tres. MEDIDAS: el denominador de la cobertura no coincide entre rutas (la completa cuenta ficheros que el grafo nunca considero), un symlink declinado es hueco en dos rutas y silencio en la asincrona, un directorio inexistente se rechaza en una sola, y el orden de los resultados no lo fija la asincrona. El criterio de cierre que propone la auditoria externa -un mismo corpus produce relaciones y cobertura equivalentes por las tres vias- no lo verifica ningun test: lo que se compara entre vias es la lista de ficheros omitidos, nunca lo que el grafo dice.",
       "evidenceRefs": [
-        "crates/cognicode-core/src/application/services/analysis_service.rs"
+        "crates/cognicode-core/src/application/services/analysis_service.rs",
+        "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
+        "crates/cognicode-core/src/application/dto/analysis.rs",
+        "docs/adr/ADR-056-the-routes-say-the-same.md"
       ],
       "doneWhen": [
+        "las tres rutas que construyen el grafo publican la misma cobertura, las mismas relaciones y los mismos huecos sobre el mismo corpus, y un test lo verifica",
         "el archivo se parte por responsabilidad, y cada parte tiene su nombre",
         "los contratos publicos del servicio no cambian",
         "la suite sigue verde"
       ],
       "scope": "H24",
       "risk": "high",
-      "priority": 40,
+      "priority": 50,
       "source": "roadmap"
     },
     {
