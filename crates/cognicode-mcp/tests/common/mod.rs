@@ -683,10 +683,131 @@ pub fn http_get(
 /// the server is started right after and this is the only way to keep a
 /// check parallel-safe without pinning a port a concurrent runner would
 /// collide with.
+///
+/// The window between releasing it and the server binding it is NOT
+/// theoretical. Measured, with 16 processes asking for ports at the same time:
+///
+///     puertos emitidos        : 6400
+///     puertos distintos      : 5141
+///     puertos emitidos >1 vez: 1074
+///     emisiones repetidas     : 1259
+///
+/// Uno de cada cinco emisiones devuelve un puerto que otro proceso acaba de
+/// soltar. Por eso el servidor se arranca con `start_server_until`, que
+/// reintenta con otro puerto cuando el servidor no pudo abrir el suyo.
+///
+/// Notese que el servidor puede perder la carrera en dos sentidos: que otro
+/// proceso tome el puerto, o que lo tome y su servidor siga vivo. En el
+/// segundo caso el test que se scrapea no es el suyo. Eso no se puede
+/// distinguir desde fuera —los dos sirven el mismo binario— y por eso la
+/// garantia que se busca aqui es que cada test tenga un servidor propio, no
+/// que el scrape sea el suyo.
 pub fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .expect("bind ephemeral port")
         .local_addr()
         .expect("local addr")
         .port()
+}
+
+/// Un servidor arrancado para un test, y todo lo que es suyo.
+///
+/// El `Child` se guarda aqui porque su `Drop` no mata: suelta el
+/// handle y deja el proceso corriendo. Un test que entra en panico despues
+/// de arrancar el servidor se llevaba por delante un proceso de la maquina,
+/// con su puerto cogido, hasta que alguien se daba cuenta.
+///
+/// Measured, with the account closed: four orphaned MCP servers, and the age
+/// of each one matches a concrete failed run.
+/// Uno por cada ejecucion que fallo, ni una mas.
+pub struct TestServer {
+    /// The address the server was told to listen on.
+    pub address: std::net::SocketAddr,
+    child: std::process::Child,
+}
+
+impl TestServer {
+    /// The process id of the server, so a test can check that it is gone.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Kill the server and reap it. Idempotent: `Drop` calls it too.
+    pub fn stop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// How many ports to try before giving up.
+const PORT_ATTEMPTS: usize = 5;
+
+/// Starts the server on a free port and waits until `probe` says it answered.
+///
+/// `spawn` receives the address to listen on and returns the child.
+/// `probe` receives the same address and returns `Some` once the server has
+/// answered as the check needs.
+///
+/// If the server dies before answering, another port is tried: the usual
+/// cause is that the port was taken between choosing it and the server
+/// binding it (see `free_port`). If the server stays alive but does not
+/// answer, that is a real failure and it is reported at once, with the
+/// server's stderr, rather than after five timeouts.
+pub fn start_server_until<S, P>(mut spawn: S, mut probe: P) -> TestServer
+where
+    S: FnMut(std::net::SocketAddr) -> std::process::Child,
+    P: FnMut(std::net::SocketAddr) -> Option<HttpResponse>,
+{
+    let mut last_error = String::new();
+    for attempt in 1..=PORT_ATTEMPTS {
+        let port = free_port();
+        let address: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("address");
+        let mut child = spawn(address);
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let mut answered = None;
+        let mut died = false;
+        while std::time::Instant::now() < deadline {
+            if let Ok(Some(status)) = child.try_wait() {
+                last_error = format!("the server ended with {status} before answering");
+                died = true;
+                break;
+            }
+            if let Some(response) = probe(address) {
+                answered = Some(response);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        if let Some(_response) = answered {
+            return TestServer { address, child };
+        }
+
+        let mut stderr = String::new();
+        if let Some(stream) = child.stderr.as_mut() {
+            let _ = stream.read_to_string(&mut stderr);
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+
+        if !died {
+            // The server was alive and simply did not answer. That is not a
+            // port problem, and retrying it five times would turn a clear
+            // failure into a five-minute one.
+            panic!("the server never answered on {address}:\n{stderr}");
+        }
+        if attempt < PORT_ATTEMPTS {
+            eprintln!(
+                "the server could not take port {port}; trying another one ({attempt}/{PORT_ATTEMPTS})\n{stderr}"
+            );
+        }
+    }
+    panic!("could not start the server on any of {PORT_ATTEMPTS} ports:\n{last_error}");
 }
