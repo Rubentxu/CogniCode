@@ -48,6 +48,8 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-049](./ADR-049-executable-architecture-knowledge.md) | Architecture knowledge as versioned executable constraints | EXECUTED | 2026-09-12 |
 | [ADR-050](./ADR-050-code-authorship-without-authority.md) | Code authorship without authority for AI and packs | EXECUTED | 2026-09-12 |
 | [ADR-051](./ADR-051-historical-heldout-promotion.md) | Historical replay and held-out promotion | EXECUTED | 2026-09-12 (executed 2026-09-17, e83) |
+| [ADR-053](./ADR-053-cp1-license-publication.md) | CP1 licence publication | ACCEPTED | 2026-10-21 |
+| [ADR-054](./ADR-054-file-operations-effect-order.md) | El efecto viene después de la promesa, y una validación que no ocurrió lo dice | ACCEPTED | 2026-10-24 |
 
 ## Format
 

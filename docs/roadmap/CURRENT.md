@@ -148,6 +148,7 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
+| **H25** (`C33`) | operaciones sobre archivos: el efecto después de la promesa, y una validación que no ocurrió lo dice | `docs/adr/ADR-054-file-operations-effect-order.md` |
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
