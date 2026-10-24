@@ -25151,3 +25151,79 @@ unidad toca no llevan ni una referencia a una tarea, a una decisión o a
 una fecha en sus comentarios —antes quedaban seis en el núcleo y doce
 en el contrato—, porque un comentario que cita un identificador
 envejece cuando el identificador deja de existir.
+
+## 2026-10-24 — El cierre verificado: la identidad de lo que leyó llega a `main`
+
+La unidad está cerrada y está en `main`.
+
+**El commit.** `6cfe42f91be91acbef1323d9b9a524ce8596dabf`, por PR #454,
+squash. La rama era `feature/cp1-source-basis`, sobre `origin/main` en
+`0a97c241`.
+
+**El gate.** `bash scripts/test-full.sh` → **rc=0**: formato, clippy con
+`-D warnings`, **6522** pruebas del workspace con **0** fallos, los
+doc-tests, los **47** contratos de CI más `scripts/product/*.py`, y el
+baseline de fallos conocidos.
+
+**La autoridad del merge.** `merge-gate` → **success**, publicado para
+`675c61a72692e65dac2d0fbb86cc2e9d4f69dea1` con el código de salida del
+propio gate, que fue 0. La pipeline lo juzgó entera —las stages de
+contratos, la coherencia de supply chain, las licencias, el toolchain del
+analizador, la matriz de compatibilidad y el presupuesto de regresión— y
+terminó con `Pipeline finished with SUCCESS`. La cabecera que el squash
+iba a crear la juzgó la política antes de gastar un minuto del gate:
+`feat(control-plane): la lectura declara la identidad de lo que leyó
+(#454)`, admitida.
+
+**Lo que el cierre costó y lo que compró.** Compró una respuesta que dice
+sobre qué código se emitió: el campo `source_basis`, con los ficheros
+leídos, un resumen de su contenido y el estado de ese resumen. El resumen
+es del código y no del sitio donde está el código, así que dos máquinas
+comparan el mismo árbol y dicen lo mismo. Cuesta: la deprecación de la
+función que devolvía sólo las fuentes, el contrato nuevo, y la cascada
+de la versión —seis artefactos derivados y una certificación vuelta a
+medir— que la versión no podia dejar suelta.
+
+**Lo que sigue vivo.** La cola del roadmap no ha cambiado: `C27` (una
+prueba metamórfica del grafo en vez de cuatro instantáneas), `C22` (el
+árbol sintáctico se parsea una vez), `C23` (el servicio de análisis deja
+de ser un módulo de 4.100 líneas), `C11` (el SnapshotKey), `C12` y `C13`
+(Kotlin).
+
+## 2026-10-24 — Los helpers del crate ya no son nueve checks en veintiún binarios
+
+**Lo que se midió, antes.** El módulo que comparten los binarios de test
+de la CLI llevaba dentro sus propios checks: nueve. Como el módulo lo
+compilan veintiún binarios de test —uno por fichero de `tests/`— cada
+binario los compilaba y cada binario los ejecutaba. Nueve checks,
+veintiún veces cada uno: **189 ejecuciones** para nueve afirmaciones.
+Medido sobre el log del gate completo: el check
+`binary_path_cogh_resolves_to_filename` aparecía **21** veces.
+
+**Por qué importa y no es solo tiempo.** Un check que corre en veintiún
+sitios no son veintiún checks: es un check con veintiún copias de su
+coste, y cuando se pone rojo el informe dice que se rompieron veintiún
+cosas cuando solo se rompió una. El que lee el informe busca veintiún
+fallos donde hay uno, y el que lo lee entre ruido aprende a no mirar.
+
+**Lo que se hizo.** Los nueve checks viven ahora en un fichero propio, y
+el módulo que todos comparten vuelve a ser lo que era: un módulo de
+helpers. Un helper que además es un test son dos cosas en un sitio, y
+la segunda la pagan todos.
+
+**Lo que se midió, después.** El mismo check aparece **1** vez. Las nueve
+afirmaciones se ejecutan una vez en vez de veintiún: **180 ejecuciones
+redundantes menos**, y el módulo compartido baja de 1.015 a 789 líneas
+—las 226 de los checks se fueron con ellos.
+
+**Lo que no se cambió.** Ni una línea de lo que los checks verifican: los
+nueve siguen verificando lo mismo, con los mismos mensajes y la misma
+razón detrás de cada uno. Cambió dónde viven y cuántas veces corren, no
+qué dicen. Y el módulo compartido sigue siendo el mismo módulo: quien
+lo usa no ve nada distinto, salvo que ya no arrastra los checks.
+
+**El estándar de comentarios, aplicado.** Los comentarios que viajan con
+los checks citaban una fecha de medición y el nombre de otro check. Se
+reescribieron sin ellos: un comentario que cita un identificador
+envejece cuando el identificador deja de existir, y el que se queda es
+el que explica por qué el check existe.
