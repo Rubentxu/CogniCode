@@ -524,7 +524,6 @@ impl ExplorerMcpHandler {
         // The OpenAPI route ingestion needs a route store behind it. Without
         // one it can only answer "feature disabled", so the capability is
         // not offered: a tool a client sees is a tool the client can use.
-        // See ADR-055.
         #[cfg(feature = "multimodal")]
         if ctx.route_store.is_some() {
             crate::mcp::handler::register_openapi_ingest_handlers(&mut registry);

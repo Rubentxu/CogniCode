@@ -509,7 +509,7 @@ impl Runtime {
             // There is no route store adapter in the tree, so the OpenAPI
             // route ingestion is not offered by the server at all: a tool
             // that can only answer "feature disabled" does not belong in the
-            // list a client reads before calling it. See ADR-055.
+            // list a client reads before calling it.
             route_store: None,
             analytics_registry: self.analytics_registry,
             analytics_lineage_store: self.analytics_lineage_store,

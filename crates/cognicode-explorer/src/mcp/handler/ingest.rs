@@ -480,12 +480,12 @@ pub fn register_ingest_handlers(registry: &mut crate::mcp::handler::ToolHandlerR
     registry.register(IssuesIngestHandler);
 }
 
-/// Register the OpenAPI route ingestion handlers (cycle e15.5).
+/// Register the OpenAPI route ingestion handlers.
 ///
 /// The caller decides **when** they are registered: only when a
 /// `RouteStore` is wired. Without one, every call would answer "feature
 /// disabled", and a tool that cannot do its job does not belong in the
-/// list a client reads before calling it. See ADR-055.
+/// list a client reads before calling it.
 #[cfg(feature = "multimodal")]
 pub fn register_openapi_ingest_handlers(registry: &mut crate::mcp::handler::ToolHandlerRegistry) {
     super::ingest_openapi::handlers::register_handlers(registry);

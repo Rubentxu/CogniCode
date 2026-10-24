@@ -548,9 +548,9 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
             }
 
-            // H26 (ADR-055). El puerto `RouteStore` y la oferta de la
-            // capacidad OpenAPI viven en el explorer, y el build
-            // `multimodal` no lo ejercia ninguna puerta: `cargo test
+            // El puerto `RouteStore` y la oferta de la capacidad OpenAPI
+            // viven en el explorer, y el build `multimodal` no lo ejercia
+            // ninguna puerta: `cargo test
             // --workspace` compila con las features por defecto, asi que
             // los tests que viven detras de `#[cfg(feature = "multimodal")]`
             // no se ejecutan. Sin esta stage, el arreglo del puerto y de la

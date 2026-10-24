@@ -1,5 +1,5 @@
 #![cfg(feature = "multimodal")]
-//! H26 — Una capacidad que no está conectada no se ofrece.
+//! Una capacidad que no está conectada no se ofrece.
 //!
 //! Las dos herramientas de ingesta de OpenAPI (`ingest_openapi` y
 //! `trace_route`) se registraban **sin condición**: el registro miraba la

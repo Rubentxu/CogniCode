@@ -1,4 +1,4 @@
-//! H26 — Un lote se escribe entero o no se escribe.
+//! Un lote se escribe entero o no se escribe.
 //!
 //! `RouteStore::save_many` promete en su documentación un lote «all-or-nothing»:
 //! *«if any row fails, the whole batch is rolled back»*. Su implementación por
