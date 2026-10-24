@@ -25730,3 +25730,168 @@ leer.
 recibo como último commit. El `push`, la apertura de la PR y la fusión los
 autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub
 exige antes de dejar fusionar.
+
+
+## 2026-10-24 — H26 / C36: un lote se escribe entero o no se escribe
+
+**La unidad.** La tercera propuesta del informe de auditoría —H3, «capacidades
+realmente conectadas»— medida contra el árbol antes de abrir nada.
+
+**Lo que encontró la medición.** El informe dice que «la ingestión de rutas
+tiene un puerto sin adaptador en el arranque normal» y que «el runtime
+construye Explorer con `route_store: None`». Los dos hechos son ciertos, y
+hay uno más detrás, que el informe no podía ver porque no ejecutó el código:
+
+- No hay **ningún** `impl RouteStore` en el árbol: `grep -rn 'impl RouteStore
+  for' crates/` no devuelve nada. Ni adaptador de producción, ni doble de
+  prueba. El puerto es una costura sin nada detrás.
+- Las dos herramientas de la capacidad (`ingest_openapi`, `trace_route`) se
+  registran tras `#[cfg(feature = "multimodal")]` de `cognicode-explorer`, y
+  esa feature sólo la activa `cognicode-runtime/multimodal`, que **nadie**
+  habilita. `cognicode-mcp/multimodal` habilita `cognicode-core/multimodal`,
+  que no es lo mismo: el binario MCP con `--features multimodal` no compila
+  ni una herramienta multimodal del explorer.
+- Ninguna puerta construye con `--features multimodal`: el arreglo de esta
+  unidad vive en un build que nadie ejercía.
+- El catálogo publicado (`product/tools.json`, 78 herramientas) no declara
+  ninguna de las dos, así que catálogo y runtime **ya** coinciden en el build
+  publicado.
+- El handler **ya** decía la verdad en caliente: sin store, la respuesta es
+  `feature_disabled`.
+
+Por eso el criterio de cierre que propone el informe —«fallo inyectado en
+mitad de una escritura; ninguna persistencia parcial»— **no era medible tal
+como está escrito**: sin almacén no hay escrituras a las que inyectar un
+fallo. Un criterio que no se puede medir no es un criterio.
+
+**Lo que sí era real.** El puerto `RouteStore::save_many` promete en su
+documentación un lote «all-or-nothing: if any row fails, the whole batch is
+rolled back», y su implementación por defecto escribe fila a fila, sin
+transacción. El comentario del propio código lo confiesa en la línea
+siguiente: «atomicity is the caller's responsibility». Un adaptador que no
+sobrescriba el método hereda un lote que, al fallar una fila, deja escritas
+las anteriores. Es la misma forma de defecto que el informe señala para
+`GraphRepository`: un puerto que entrega un contrato falso al siguiente
+adaptador.
+
+Y, en el build multimodal, el registro de las dos herramientas era
+incondicional: el servidor anunciaba dos herramientas que sólo podían
+responder «feature_disabled».
+
+**La forma, en `docs/adr/ADR-055-the-batch-is-all-or-nothing.md`.**
+
+1. **El lote heredado falla cerrado.** La implementación por defecto de
+   `save_many` deja de escribir: devuelve un error que nombra la obligación
+   en vez de dejar el almacén a medias. Un adaptador sin lote transaccional
+   recibe un refusal explicito, nunca una escritura parcial.
+2. **La capacidad que no está conectada no se ofrece.** Las dos herramientas
+   OpenAPI se registran sólo cuando hay un `RouteStore` conectado. El
+   registro se construye después del contexto, así que la condición está
+   disponible donde se decide.
+3. **El runtime dice lo que es verdad.** `route_store: None` sigue siendo
+   `None`, pero el comentario deja de describir un adaptador de Postgres
+   retirado como si quedara un cableado pendiente.
+4. **El build multimodal entra en la puerta.** Una stage nueva en
+   `merge-gate.pipeline.kts` y su equivalente en `test-full.sh`, con el
+   precedente de `evidence-kernel`. Sin esto, el arreglo no lo vigilaría
+   nadie.
+
+**Lo que NO se hizo, y por qué.** Cablear un adaptador transaccional
+operativo —la primera opción del informe— es una decisión de producto:
+semántica de persistencia, qué entra en el catálogo, y si el binario
+publicado habilita `multimodal`. La casa no construye adaptadores para
+casos hipotéticos. Si la capacidad debe existir de verdad, es otra unidad,
+con su ADR, su bump de versión y su gate de candidato. Borrar el puerto y
+las dos herramientas también es una decisión de producto, y destruiría la
+costura documentada del ciclo e15.5.
+
+**El RED, medido antes del arreglo.**
+
+```
+$ cargo test -p cognicode-explorer --test h26_route_batch_is_all_or_nothing
+running 4 tests
+test a_store_that_writes_the_batch_transactionally_is_not_punished ... ok
+test a_batch_that_fails_in_the_middle_leaves_nothing_written ... FAILED
+test an_inherited_batch_is_never_written_at_all ... FAILED
+test the_refusal_names_the_obligation ... FAILED
+
+---- a_batch_that_fails_in_the_middle_leaves_nothing_written stdout ----
+a failed batch must not leave rows behind, but the store kept: ["a"]
+
+---- the_refusal_names_the_obligation stdout ----
+the refusal must name the obligation it cannot meet, but it said: conflict: write failed for b
+
+test result: FAILED. 1 passed; 3 failed
+```
+
+```
+$ cargo test -p cognicode-explorer --features multimodal --test h26_openapi_tool_is_offered_only_when_wired
+running 4 tests
+test the_stub_store_writes_the_kinds_the_port_declares ... ok
+test the_ingest_tools_that_do_not_need_a_store_keep_being_offered ... ok
+test the_openapi_tools_are_offered_when_a_store_is_wired ... ok
+test the_openapi_tools_are_not_offered_without_a_store ... FAILED
+
+a tool that cannot work must not be offered, but the list has it:
+["graph_god_nodes", "graph_subgraph", ..., "ingest_openapi", ..., "trace_route", ...]
+
+test result: FAILED. 3 passed; 1 failed
+```
+
+Las guardas de los dos ficheros pasaban **antes** del arreglo: un almacén que
+implementa el lote transaccional no es castigado, y con un store cableado las
+dos herramientas se ofrecen. El arreglo no «soluciona» el problema
+deshabilitando la capacidad.
+
+**El GREEN, después.**
+
+```
+$ cargo test -p cognicode-explorer --test h26_route_batch_is_all_or_nothing
+test result: ok. 4 passed; 0 failed
+
+$ cargo test -p cognicode-explorer --features multimodal --test h26_openapi_tool_is_offered_only_when_wired
+test result: ok. 4 passed; 0 failed
+```
+
+**La puerta encontró un defecto mío, y era de los que la casa no deja pasar.**
+El contrato de estándar de comentarios mide la deuda en los ficheros que la rama
+toca, y la puerta completa lo tiró con `rc=1`: seis comentarios nuevos —uno por
+fichero— citaban el identificador de la unidad o el de la decisión, y eso hace
+crecer la deuda en vez de pagarla. La lista la dio el propio contrato:
+
+```
+crates/cognicode-explorer/src/mcp/explorer.rs: 3 -> 4
+crates/cognicode-explorer/src/mcp/handler/ingest.rs: 0 -> 1
+crates/cognicode-explorer/tests/h26_openapi_tool_is_offered_only_when_wired.rs: 0 -> 1
+crates/cognicode-explorer/tests/h26_route_batch_is_all_or_nothing.rs: 0 -> 1
+crates/cognicode-runtime/src/lib.rs: 6 -> 7
+merge-gate.pipeline.kts: 26 -> 27
+```
+
+La regla es correcta y la incumplí: un comentario de código explica qué hace el
+código, y el expediente vive en el ADR y en el Journal. Los seis se reescribieron
+para explicar el comportamiento, y el contrato vuelve a dar `rc=0` con la deuda
+exacta que la rama heredó. Lo que no lo cazó el gate rápido —que sólo corre las
+suites afectadas— y sí la puerta completa es el motivo por el que `fast` no
+sustituye a `full`.
+
+**La rama mezclaba tres autores, y eso envenenaba el squash.** Los cuatro
+commits de la rama los firmó `git-control` con tres identidades distintas —la
+política de la máquina las reparte al azar entre las siete del pool—, y GitHub
+añade un trailer `Co-authored-by:` por cada autor distinto cuando aplasta una PR.
+Ese trailer está prohibido por la política de la casa, y el hook de
+`reference-transaction` juzga **todo commit que una ref gana**: el squash
+envenenado de la unidad anterior hizo que `git fetch` abortara en esta máquina.
+La cura no es tocar el hook, sino que la rama no mezcle identidades: se
+reescribieron los cuatro commits con una sola identidad, `personal-ruben`, y se
+comprobó que el árbol final es **idéntico** al de antes de reescribir. Con una
+sola firma, el squash no lleva trailer y `main` sigue entrando en la máquina.
+
+**H26 cycle 1 closed.** H26 acceptance: PASS (8/8 comprobaciones de caracterización,
+4/4 + 4/4 antes y después, gate rápido rc=0, contrato de comentarios rc=0).
+
+**Lo que queda para el operador.** La rama
+`feature/the-batch-is-all-or-nothing` sigue local y **sin subir**, con este
+recibo como último commit. El `push`, la apertura de la PR y la fusión los
+autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub exige
+antes de dejar fusionar.

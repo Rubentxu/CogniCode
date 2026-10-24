@@ -1,6 +1,6 @@
 # ADR-055 — Un lote se escribe entero o no se escribe, y una capacidad que no está conectada no se ofrece
 
-**Estado**: ACEPTADO (decidido el 2026-10-24; pendiente de ejecución)
+**Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el código y en la suite)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H26 · persistencia de rutas (`crates/cognicode-explorer/src/ports/route_store.rs`), unidad `C36` de la cola de la misión
@@ -111,6 +111,55 @@ sólo se ve en ese build no lo vigilaría nadie. El precedent existe: `merge-gat
 corre `cargo test -p cognicode-core --features evidence-kernel`. El build
 multimodal del explorer entra en la misma forma, y —por la regla de que un stage
 nuevo de `merge-gate` pertenece también a `full`— también en `test-full.sh`.
+
+## Ejecución
+
+**El puerto.** `RouteStore::save_many` (`crates/cognicode-explorer/src/ports/route_store.rs`)
+deja de escribir fila a fila. Su implementación por defecto devuelve
+`ExplorerError::NotImplemented` con un motivo que nombra la obligación que no puede
+cumplir —un lote transaccional— y no toca el almacén. La firma no cambia: el método
+sigue existiendo, así que el test que lo mide compila igual antes y después del
+arreglo, y un adaptador que lo implemente transaccionalmente sigue funcionando sin
+enterarse.
+
+**El registro.** `register_ingest_handlers` conserva las tres herramientas que no
+necesitan almacén. Las dos de OpenAPI salen a una función aparte,
+`register_openapi_ingest_handlers`, y el registro las añade **sólo** cuando
+`ctx.route_store` está conectado. La condición vive en `explorer.rs`, donde el
+contexto ya está construido, así que decide sobre el cableado real y no sobre la
+feature. La superficie observable es `tools_list()`: un cliente MCP ve lo que puede
+usar.
+
+**El runtime.** `route_store: None` sigue siendo `None`, y el comentario dice lo que
+hay en vez de prometer un cableado pendiente.
+
+**La puerta.** Una stage nueva, `explorer-route-capability`, en `merge-gate.pipeline.kts`
+—con el precedente de `evidence-kernel`— y su equivalente en `scripts/test-full.sh`.
+Corre las dos suites de la unidad: el puerto en el build por defecto, y la oferta de
+la capacidad en el build `multimodal`.
+
+**El RED, medido antes del arreglo.**
+
+- `crates/cognicode-explorer/tests/h26_route_batch_is_all_or_nothing.rs`: 3 de 4
+  checks en rojo. Los dos que discriminan, con su motivo literal:
+  `a failed batch must not leave rows behind, but the store kept: ["a"]` y
+  `a store without a transactional batch must not claim to have written one`.
+- `crates/cognicode-explorer/tests/h26_openapi_tool_is_offered_only_when_wired.rs`:
+  1 de 4 en rojo, con `a tool that cannot work must not be offered, but the list has
+  it: [... "ingest_openapi" ... "trace_route" ...]`.
+
+Las guardas que impiden sobre-corregir —un almacén transaccional no es castigado, un
+almacén conectado vuelve a ofrecer las herramientas, las otras tres herramientas
+siguen ofrecidas— pasaban **antes** y pasan **después**.
+
+**El GREEN.** 4/4 y 4/4 sobre la historia reescrita.
+
+**Un defecto que encontró la puerta, no el test.** El contrato de estándar de
+comentarios mide la deuda en los ficheros que la rama toca: seis comentarios nuevos
+—uno por fichero— citaban el identificador de la unidad o el de la decisión, y eso
+hace crecer la deuda en vez de pagarla. Se reescribieron para explicar el
+comportamiento. La regla es correcta y la incumplí: un comentario de código explica
+qué hace el código, y el expediente vive en otro sitio.
 
 ## Alternativas consideradas
 
