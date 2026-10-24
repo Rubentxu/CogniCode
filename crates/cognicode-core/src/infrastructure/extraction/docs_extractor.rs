@@ -567,7 +567,12 @@ fn detect_adr(text: &str) -> bool {
     // scanning: ADR files with frontmatter push their `# ADR-NNNN`
     // heading past the 10-line window, so scanning the raw head misses
     // them (docs_extractor_corpus_regression, PRF follow-up).
-    let head = &text[..text.len().min(4096)];
+    // The head is cut at a byte count, and a byte count is not a character
+    // count. The cut has to land on a character boundary: slicing a string
+    // in the middle of a character is a panic, and the document that caused
+    // it is perfectly well formed.
+    let cut = text.len().min(4096);
+    let head = &text[..text.floor_char_boundary(cut)];
     let mut lines = head.lines().peekable();
     if lines.peek().map(|l| l.trim() == "---").unwrap_or(false) {
         lines.next();
@@ -1521,6 +1526,29 @@ mod tests {
         assert!(!detect_adr(
             "---\ntitle: not an adr at all\nbody keeps going\n"
         ));
+    }
+
+    /// A character that straddles the 4 KiB mark must not make the reader
+    /// panic.
+    ///
+    /// The head of the document is cut at a fixed byte count, and a byte
+    /// count is not a character count: a document whose 4096th byte falls
+    /// inside a multi-byte character —an em dash, a quotation mark— was cut
+    /// in the middle of that character, and slicing a string there is a
+    /// panic. The document is not malformed; the cut was.
+    #[test]
+    fn detect_adr_survives_a_multibyte_character_at_the_cut() {
+        // The em dash occupies bytes 4095..4098, so the cut at 4096 lands
+        // inside it. The heading marker is 11 bytes, and 11 + 4084 = 4095.
+        let mut text = String::from("# ADR-0042 ");
+        text.push_str(&"a".repeat(4084));
+        text.push('—');
+        text.push_str(&"a".repeat(100));
+
+        assert!(
+            detect_adr(&text),
+            "the heading is still detected when a character straddles the cut"
+        );
     }
 
     /// Files with no headings fall back to a single `Doc` node
