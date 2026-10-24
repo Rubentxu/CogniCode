@@ -810,6 +810,20 @@ impl AnalysisService {
     ) -> AppResult<crate::infrastructure::graph::per_file_graph::BuildReport> {
         use rayon::prelude::*;
 
+        // A root that does not exist is not a project with zero files: it
+        // is a project that was never there. Without this, the walk yields
+        // nothing, the graph comes out empty and the route answers `Ok`
+        // with a `Complete` status — a claim of completeness about a
+        // tree nobody walked. The whole-project route says so, and two
+        // routes answering the same question differently is the defect
+        // this file exists to prevent.
+        if !project_dir.exists() {
+            return Err(AppError::InvalidParameter(format!(
+                "Directory does not exist: {}",
+                project_dir.display()
+            )));
+        }
+
         let mut store = PetGraphStore::new();
         // The resolver keeps the multiconset of the homonyms and only
         // resolves when a rule demonstrates it, so a call is never
@@ -1081,6 +1095,17 @@ impl AnalysisService {
     /// # Returns
     /// * `AppResult<()>` - Success or error
     pub async fn build_project_graph_async(&self, dir: &Path) -> AppResult<()> {
+        // A root that does not exist is not a project with zero files: it
+        // is a project that was never there. The whole-project route says
+        // so, and two routes answering the same question differently is
+        // the defect this file exists to prevent.
+        if !dir.exists() {
+            return Err(AppError::InvalidParameter(format!(
+                "Directory does not exist: {}",
+                dir.display()
+            )));
+        }
+
         let graph_cache = self.graph_cache.clone();
         let file_cache = self.file_cache.clone();
         let dir_path = dir.to_path_buf();
@@ -1117,91 +1142,43 @@ impl AnalysisService {
 
                 use rayon::prelude::*;
 
-                let walk_filter = crate::domain::value_objects::WalkFilter::default();
+                // The files the graph is built from are decided in one
+                // place, so the three routes that build the graph decide
+                // the same thing. This route used to walk on its own, and
+                // that had two consequences: a symlink the walk declined
+                // disappeared in silence —and a route that says `Complete`
+                // over a tree it does not describe is the direction that
+                // costs the most— and the rules of the walk had a second
+                // copy that could drift from the one the inventory owns.
+                let inventory = crate::infrastructure::graph::source_files::inventory(&dir_path);
 
-                // MEDIDO 2026-10-21 (C20): el recorrido de esta ruta
-                // descartaba sus errores con `filter_map(|e| e.ok())`.
-                // Un directorio que el proceso no puede leer
-                // desaparecía del árbol sin dejar rastro, y la ruta
-                // publicaba `Complete` sobre un árbol que no había
-                // recorrido entero. El error del recorrido no es un
-                // fichero que dejamos fuera: es un hueco, y viaja con
-                // el reporte como cualquier otro.
-                let mut walk_errors: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
-                    Vec::new();
-                let walked: Vec<_> =
-                    crate::infrastructure::walk_policy::contained_ignore_walk(&dir_path)
-                        .hidden(true)
-                        .git_ignore(true)
-                        .git_exclude(true)
-                        .build()
-                        .filter_map(|entry| match entry {
-                            Ok(entry) => Some(entry),
-                            Err(err) => {
-                                walk_errors.push(
-                                    crate::infrastructure::graph::per_file_graph::ignore_walk_error(
-                                        &err,
-                                    ),
-                                );
-                                None
-                            }
-                        })
-                        .filter(|e| !walk_filter.matches_any_component(e.path(), &dir_path))
-                        .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-                        .map(|e| {
-                            let path = e.path().to_path_buf();
-                            let language = Language::from_extension(path.extension());
-                            let file_path = path.to_string_lossy().into_owned();
-                            let mtime = std::fs::metadata(&path)
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .map(|t| {
-                                    t.duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs()
-                                })
-                                .unwrap_or(0);
-                            // F2.W9: emit size alongside mtime for cache invalidation
-                            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                            (path, language, file_path, mtime, size)
-                        })
-                        .collect();
-
-                // MEDIDO 2026-10-19. Este camino filtraba por
-                // `lang.is_some()` y NO registraba nada de lo que
-                // descartaba: la ruta no publicaba `BuildReport`, asi que
-                // un consumidor que llamara despues leia el reporte del
-                // build anterior. Ahora clasifica con la misma funcion que
-                // las otras dos rutas, y solo `KnownUnsupportedGap` cuenta
-                // como hueco; un README o un lockfile son decision, no
-                // carencia.
+                // What the walk DECLINED (a symlink it refused to follow)
+                // and what the walk could not DO (a directory it could not
+                // read, an entry it could not measure) are holes in the
+                // coverage, and they travel with the report. The gap of a
+                // language nobody supports yet is a hole too, and the
+                // inventory already knows which files are one.
                 let mut k0_skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
                     Vec::new();
-                let mut files: Vec<_> = Vec::new();
-                for (path, language, file_path, mtime, size) in walked {
-                    if language.is_some() {
-                        files.push((path, language, file_path, mtime, size));
-                        continue;
-                    }
-                    let ext = path.extension().and_then(|e| e.to_str());
-                    match classify_walk_extension(ext) {
-                        WalkClassification::KnownUnsupportedGap => {
-                            k0_skipped.push(
-                                crate::infrastructure::graph::per_file_graph::SkippedFile {
-                                    path: file_path,
-                                    reason:
-                                        crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
-                                            ext.unwrap_or_default().to_string(),
-                                        ),
-                                },
-                            );
-                        }
-                        // `Analyze` ya no puede llegar aqui (sin lenguaje no
-                        // hay parser que lo analyze) y `LegitExclusion` es
-                        // una decision, no una carencia: no se registra.
-                        WalkClassification::Analyze | WalkClassification::LegitExclusion => {}
-                    }
-                }
+                k0_skipped.extend(inventory.declined.iter().cloned());
+                k0_skipped.extend(inventory.errors.iter().cloned());
+                k0_skipped.extend(inventory.known_gaps());
+
+                // The denominator of the coverage is the files the graph
+                // was built from: a file no language claims was never a
+                // candidate. A README or a lockfile is a decision, not a
+                // lack.
+                let files: Vec<_> = inventory
+                    .files
+                    .into_iter()
+                    .filter(|file| file.language.is_some())
+                    .map(|file| {
+                        let file_path = file.path.to_string_lossy().into_owned();
+                        let mtime = file.mtime_secs();
+                        let size = file.size;
+                        (file.path, file.language, file_path, mtime, size)
+                    })
+                    .collect();
 
                 let total_files = files.len();
 
@@ -1286,6 +1263,14 @@ impl AnalysisService {
                         }
                     })
                     .collect();
+
+                // The fold order must not depend on the order the machine
+                // listed the files in: the index of repeated names keeps
+                // the candidates in the order it received them, so another
+                // order is another answer. The other two routes fold in
+                // `file_path` order, and this one now does the same.
+                let mut results = results;
+                results.sort_by(|a, b| a.0.cmp(&b.0));
 
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
@@ -1406,8 +1391,8 @@ impl AnalysisService {
                 // And so does what the walk could not do at all: a
                 // directory it could not read is a hole in the coverage,
                 // and a hole that nobody counts is not a hole — it is a
-                // claim of completeness that nothing backs.
-                k0_skipped.extend(walk_errors);
+                // claim of completeness that nothing backs. The inventory
+                // already published them with the declined ones.
 
                 Ok((coverage, call_graph, k0_skipped, pending_resolution.pending))
             })
