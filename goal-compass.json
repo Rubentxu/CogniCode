@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C27",
-      "title": "Una prueba metamorfica del grafo en vez de cuatro instantaneas",
-      "unit": "H24",
-      "objective": "Que un unico escenario compruebe a la vez la identidad, la cache, la cobertura y las relaciones: renombrar un recurso y cambiar una dependencia, y comparar que cambio y que permanecio igual.",
-      "whyNow": "HUECO MEDIDO: hoy cada obligacion tiene su propia instantanea estatica, y ninguna comprueba que el grafo cambie solo donde debe. La propuesta de la auditoria del 2026-10-21 lo cubre con un solo escenario, que detecta el caso que las instantaneas no ven: un grafo que responde lo mismo de todo.",
-      "evidenceRefs": [
-        "crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs"
-      ],
-      "doneWhen": [
-        "el escenario renombra un recurso y modifica una dependencia, y dice que cambio y que permanecio igual",
-        "el cambio de identidad invalida la cache del fichero y solo del fichero",
-        "el test falla si el grafo responde igual ante un cambio real"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 60,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C22",
       "title": "El arbol sintactico se parsea una vez",
       "unit": "H24",

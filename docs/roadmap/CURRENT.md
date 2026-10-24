@@ -5,10 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `cc290f8dd4bbdd92d6afc55adba80ac51677999d` (la
-> rama que hace que la lectura declare la identidad de lo que leyó, y que esa
-> identidad sea del código y no del sitio donde está el código),
-> rama `feature/cp1-source-basis`.
+> **Snapshot**: 2026-10-24, sobre `6cfe42f91be91acbef1323d9b9a524ce8596dabf` (el
+> `main` ya fusionado que hace que la lectura declare la identidad de lo que
+> leyó, y que esa identidad sea del código y no del sitio donde está el
+> código), más la rama `feature/the-shared-helpers-answer-once`, que le
+> añade el escenario que pregunta al grafo qué se movió y qué se quedó, y
+> saca del módulo compartido los checks que se ejecutaban veintiún veces.
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -146,9 +148,24 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**El grafo deja de tener una segunda manera de responder está cerrada.** Una
+instantánea de un grafo dice cómo lucía una vez; no puede decir que el grafo
+*siga* al código, porque un grafo que conteste lo mismo antes y después de un
+renombrado pasa todas las instantáneas tomadas antes y falla todas las
+tomadas después. Ahora hay un solo escenario que cambia el código y hace dos
+preguntas a la vez: qué se movió —la identidad renombrada ya no se publica, la
+nueva sí, y la relación sigue al nombre nuevo— y qué se quedó —cada otra
+identidad y cada otra relación donde estaba—. Y la caché de ficheros olvidó
+el fichero que cambió, y sólo ese: se relee uno y se reutilizan los otros
+dos. La identidad se compara por nombre y fichero **relativo**, porque lo que
+se compara es el código y no dónde está el código. La demostración está
+hecha: anulada la huella de la caché, el contrato se puso rojo diciendo que
+la identidad renombrada ya no se publicaba, es decir, que el grafo
+respondía lo mismo de todo.
 
 **C16 está cerrado.** El grafo del proyecto tenía una segunda puerta, en las
 estrategias, que nadie usaba pero que seguía abierta: sus constructores se
