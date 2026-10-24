@@ -25681,3 +25681,52 @@ fuente de verdad duplicada que este repo no admite, así que esta unidad pasa
 a **`C35`**, que estaba libre. Los mensajes de commit que dicen `C33`
 quedan como historia: el Journal es el registro y aquí queda la corrección,
 con su motivo y su fecha.
+
+## 2026-10-24 — La puerta completa, en verde: el veredicto que faltaba
+
+**El comando, tal y como se ejecutó, y su veredicto.**
+
+```
+CARGO_TARGET_DIR=/var/home/rubentxu/cognicode-tmp/iso-287812fbef51/target
+COGNICODE_RELEASE_BIN_DIR=/var/home/rubentxu/cognicode-tmp/iso-287812fbef51/target/release
+TMPDIR=/dev/shm/cognicode-gate-tmp
+PREFLIGHT_WORK_DIR=/var/home/rubentxu/cognicode-tmp
+bash scripts/test-full.sh
+→ rc=0
+```
+
+Cada etapa, con su número:
+
+| Etapa | Veredicto |
+|---|---|
+| `fmt --check` | OK |
+| `clippy -D warnings` | OK |
+| `test --workspace` | **6353 pasaron, 0 fallaron** (234 binarios de prueba) |
+| `test --workspace --doc` | OK |
+| contrato (47 contratos de CI y los scripts de producto) | OK |
+| `known_failures` (core/lib) | OK — el baseline no declara fallos conocidos |
+
+Los siete checks de `h25_file_operations_effect_order.rs` pasan dentro de esa
+corrida, y los tres de `prf_f6_w1_release_coherence` también.
+
+**El rojo anterior era de la máquina, y su motivo estaba escrito.** La primera
+corrida aislada terminó con `rc=1` y **sólo tres fallos**, los tres de
+`cognicode-cli --test prf_f6_w1_release_coherence`, que abortan con
+`release_dir: … does not exist`. No era el código: el harness resuelve el
+directorio de release, y con el target-dir redirigido ese directorio no
+existía. La palanca sancionada por el propio harness es
+`COGNICODE_RELEASE_BIN_DIR`, y lo que faltaba era la materia prima: los
+binarios de release **de esta rama**. Compilados en un target-dir aislado,
+`cargo build --release -p cognicode-cli --bins -p cognicode-mcp -p cognicode`
+tardó **7m 24s** y dejó `cogh`, `cognicode`, `cognicode-mcp`,
+`cognicode-mcp-server` y `cognicode-release` en su directorio `release`.
+
+El arreglo, como los anteriores, no toca el producto: mueve el trabajo a
+sitios donde tiene sitio y le dice al harness dónde está lo que tiene que
+leer.
+
+**Lo que queda para el operador.** La rama
+`feature/the-effect-after-the-promise` sigue local y **sin subir**, con este
+recibo como último commit. El `push`, la apertura de la PR y la fusión los
+autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub
+exige antes de dejar fusionar.
