@@ -521,6 +521,13 @@ impl ExplorerMcpHandler {
         crate::mcp::handler::register_graph_analyze_handlers(&mut registry);
         crate::mcp::handler::register_impact_handlers(&mut registry);
         crate::mcp::handler::register_ingest_handlers(&mut registry);
+        // The OpenAPI route ingestion needs a route store behind it. Without
+        // one it can only answer "feature disabled", so the capability is
+        // not offered: a tool a client sees is a tool the client can use.
+        #[cfg(feature = "multimodal")]
+        if ctx.route_store.is_some() {
+            crate::mcp::handler::register_openapi_ingest_handlers(&mut registry);
+        }
         crate::mcp::handler::register_internal_mcp_handlers(&mut registry);
         crate::mcp::handler::register_lens_mcp_handlers(&mut registry);
         crate::mcp::handler::register_named_views_handlers(&mut registry);

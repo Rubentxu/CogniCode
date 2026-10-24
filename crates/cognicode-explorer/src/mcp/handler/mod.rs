@@ -165,6 +165,8 @@ pub use graph::register_graph_handlers;
 pub use graph_analyze::register_graph_analyze_handlers;
 pub use impact::register_impact_handlers;
 pub use ingest::register_ingest_handlers;
+#[cfg(feature = "multimodal")]
+pub use ingest::register_openapi_ingest_handlers;
 pub use internal_mcp::register_internal_mcp_handlers;
 pub use lens_mcp::register_lens_mcp_handlers;
 pub use named_views::register_named_views_handlers;

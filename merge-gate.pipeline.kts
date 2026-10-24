@@ -548,6 +548,29 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
             }
 
+            // El puerto `RouteStore` y la oferta de la capacidad OpenAPI
+            // viven en el explorer, y el build `multimodal` no lo ejercia
+            // ninguna puerta: `cargo test
+            // --workspace` compila con las features por defecto, asi que
+            // los tests que viven detras de `#[cfg(feature = "multimodal")]`
+            // no se ejecutan. Sin esta stage, el arreglo del puerto y de la
+            // oferta no lo vigilaria nadie.
+            //
+            // El precedente es la stage de `evidence-kernel` de mas arriba,
+            // que tambien construye con una feature activada. La garantia
+            // se mide en los dos builds: el puerto vive en el de por
+            // defecto, y la oferta de la capacidad en el multimodal.
+            stage("explorer-route-capability") {
+                sh(
+                    """
+                    set -eo pipefail
+                    $cd || exit 1
+                    cargo test -p cognicode-explorer --test h26_route_batch_is_all_or_nothing --quiet
+                    cargo test -p cognicode-explorer --features multimodal --test h26_openapi_tool_is_offered_only_when_wired --quiet
+                    """
+                )
+            }
+
             // PR-SEC reachability: every release-artifact path the pipeline
             // downloads is a path some earlier stage produced. Runs here as
             // well as in pr-ci.yml because the Kotlin pipeline is the one that
