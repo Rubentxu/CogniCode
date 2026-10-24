@@ -25227,3 +25227,50 @@ los checks citaban una fecha de medición y el nombre de otro check. Se
 reescribieron sin ellos: un comentario que cita un identificador
 envejece cuando el identificador deja de existir, y el que se queda es
 el que explica por qué el check existe.
+
+## 2026-10-24 — El grafo deja de tener una segunda manera de responder
+
+**La instantánea y la pregunta.** Una instantánea de un grafo dice cómo
+lucía una vez. No puede decir que el grafo *siga* al código: un grafo que
+contestara lo mismo antes y después de un renombrado pasaría todas las
+instantáneas tomadas antes del renombrado y fallaría todas las tomadas
+después. Las dos serían ciertas sobre su momento y ciegas al cambio. Y
+un grafo que responde lo mismo de todo es indistinguible de un grafo que
+no lee.
+
+**Lo que hay ahora.** Un solo escenario que cambia el código y hace dos
+preguntas a la vez. Qué se movió: la identidad del símbolo renombrado ya
+no se publica y la nueva sí, y la relación que apuntaba al nombre viejo
+apunta al nuevo. Qué se quedó: cada otra identidad y cada otra relación
+está donde estaba, y el recuento de símbolos no cambia —un renombrado no
+añade ni quita símbolos—. Y la caché de ficheros olvidó el fichero que
+cambió, y sólo ese: se relee uno y se reutilizan los otros dos.
+
+**Por qué una identidad y no una ruta.** La identidad de un símbolo se
+compara por su nombre y por el fichero **relativo** donde vive. La ruta
+absoluta cambiaría con el directorio, y lo que este contrato compara es
+el código, no dónde está el código —la misma lección que la identidad de
+la lectura del control plane, que también es del código y no del sitio—.
+
+**La demostración, que es la parte que da valor.** El discriminante se
+midió sobre el producto, no sobre el test: se anuló la huella de la
+caché —dejando de mirar el mtime, el tamaño y el hash del contenido— y
+el contrato se puso rojo con el motivo exacto:
+
+```
+la identidad renombrada ya no se publica:
+{("helper", "src/alpha.rs"), ("total", "src/beta.rs"), ("value", "src/beta.rs")}
+```
+
+El grafo seguía contestando con la identidad vieja: el grafo respondía lo
+mismo de todo. Restituida la huella, el contrato volvió a verde.
+
+**Lo que este contrato no sustituye.** La identidad de contenido con
+mtime y tamaño iguales ya tenía su propio contrato, en la capa de la
+caché de ficheros; éste habla de la otra capa —la que el producto
+recorre— y no repite su mecanismo. Los dos se quedan: uno fija la
+primitiva y el otro fija el comportamiento.
+
+**La cola.** `C27` sale de la cola de la misión: un candidato cerrado que
+sigue en la cola es trabajo que otro agente puede volver a empezar. Quedan
+`C22`, `C23`, `C11`, `C12` y `C13`.
