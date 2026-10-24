@@ -148,6 +148,7 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
+| **H28** (`C38`) | lo que se rechaza no deja rastro; las ediciones se aplican al original | `docs/adr/ADR-058-what-is-refused-leaves-no-trace.md` |
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
