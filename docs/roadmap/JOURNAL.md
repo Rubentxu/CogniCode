@@ -25405,3 +25405,187 @@ responden: antes sólo sabían negarse, y una prueba que necesitaba un
 servicio que contesta no lo tenía. Por eso la prueba de la pregunta que no
 necesita grafo afirmaba menos de lo que decía: comprobaba que la pregunta
 no se quedó atascada por falta de grafo, y no que se contestara.
+
+---
+
+## 2026-10-24 — El tramo llega a `main`, y el rojo que no era del código
+
+**El commit.** `43ec88f693524442390d29596fd25ba9649e9fb5`, por PR #457,
+squash. La rama era `feature/one-read-one-truth`, cinco commits sobre
+`439401af`: el árbol único (`26bf174a`), el fallo que se dice como un fallo
+(`2868e8d2`), los dobles que también saben responder (`f0a9471d`) y los dos
+recibos (`572d9490`, `e22eb1c9`).
+
+**El gate local.** `bash scripts/test-full.sh` → **rc=0** sobre el mismo SHA:
+formato, clippy con `-D warnings`, **6346** pruebas del workspace con **0**
+fallos, los doc-tests, los 47 contratos de CI y el baseline.
+
+**El gate remoto, la primera vez, en rojo.** `merge-gate` → **failure** en la
+etapa `core-unrestricted-evidence-kernel`, con esta línea en el log:
+
+```
+slow_tool_call_is_bounded_and_does_not_wedge_the_transport
+crates/cognicode-core/tests/b6_w1_mcp_robustness.rs:785
+slow search_content must be answered within 60s   (el binario en 144,47 s)
+```
+
+**Lo que se midió antes de tocar nada, porque un rojo de gate se lee
+primero.** El test es el único de toda la suite con un techo de reloj: todo lo
+demás corre en 0,00–3,67 s. En aislamiento, sobre el mismo binario, el mismo
+test pasa: **4,85 s**, y tres corridas seguidas dieron 5,35 / 5,39 / 4,86 s. El
+camino de código tampoco lo toca el tramo: `search_content` es un barrido de
+texto con gitignore, y el tramo cambió la construcción de árboles, el índice
+del grafo y el enrutador de preguntas. Los otros nueve checks del mismo
+binario, contra el mismo servidor, pasaron en 0,01 s cada uno. Y las etapas del
+gate corren **en serie** — verificado en la línea de tiempo de la corrida —,
+así que no hubo contención interna.
+
+**La máquina, en ese minuto.** Tres procesos `java` al 99% de CPU (la propia
+suite E2E de PipelineK, que corre en otro workspace de la misma máquina),
+zram al 100%, 2,8 GiB de RAM libre, y el `kioworker` de KDE vaciando 13 GB y
+8.514 ficheros en el mismo btrfs al que apuntaba `TMPDIR`. El corpus del test
+—25.000 ficheros, unos 110 MB— tardaba **0,77 s** en tmpfs y **1,58 s** en
+btrfs con la máquina tranquila; en la corrida fallida fueron ~84 s inferidos
+(144,47 s menos los 60 s de la espera). Cuarenta veces más.
+
+**El arreglo no fue de código: fue dónde viven los temporales.**
+`PREFLIGHT_WORK_DIR` (el volumen de compilación) sobre disco y `TMPDIR`
+(los temporales de las pruebas) sobre `/dev/shm`, que es RAM. Es la precedencia
+que `scripts/ci/build-volume.sh` ya documenta, con el build y los temporales
+en sitios distintos a propósito. Con esa separación, la etapa que había
+tardado más de 60 s **pasó en 38 s**.
+
+**El veredicto.** Las 56 etapas en verde, código de salida 0, y
+`merge-gate=success` publicado para `e22eb1c98916f0d216e9f3e96e9810f0da7c46ae`
+con el código de salida del propio gate. La cabecera que el squash iba a crear
+la juzgó la política antes de gastar un minuto:
+`feat(core): un fichero se lee en un árbol y un fallo se dice como un fallo
+(#457)`, admitida. La PR #457 quedó **fusionada** en `main`.
+
+**Lo que este cierre no dice.** El rojo anterior no era una regresión y no
+decía nada del código: lo que dice es que un gate corrido con el disco
+saturado por otro proceso no puede ser leído como un veredicto sobre el
+árbol. El arreglo de por sí —un temporal único por escritura— no está hecho:
+ningún test lo cubre todavía.
+
+---
+
+## 2026-10-24 — Una auditoría externa, leída contra el árbol
+
+**La entrada.** Una auditoría técnica externa del 2026-10-24, hecha desde
+GitHub y sin compilar el workspace. ocho hallazgos, priorizados de P0 a P2, y
+un plan de seis hitos. Se leyó **contra el árbol**, no contra el informe: seis
+de los ocho se confirman en el código, uno ya estaba resuelto y uno estaba
+equivocado en el motivo.
+
+**Lo que se confirma, con el sitio exacto.**
+
+- **P0.** `write_file` (`crates/cognicode-core/src/application/services/file_operations.rs:1095-1146`)
+  crea los directorios padre **antes** de `validate_path`, y resuelve la ruta
+  relativa contra `std::env::current_dir()` mientras la validación la resuelve
+  contra `workspace_root`. Son dos sitios distintos para la misma ruta, y el
+  efecto ocurre antes de que nadie haya dicho que sí.
+- **P1.** `edit_file` (`file_operations.rs:1239-1248`) devuelve
+  `validation.passed = true` cuando el parser no se pudo crear o el lenguaje
+  es desconocido: la respuesta afirma una validación que no ocurrió.
+- **P1.** `RouteStore::save_many` (`crates/cognicode-explorer/src/ports/route_store.rs:141-149`)
+  promete «all-or-nothing… rolled back» y su implementación por defecto no
+  tiene transacción; y el runtime construye el Explorer con
+  `route_store: None` (`crates/cognicode-runtime/src/lib.rs:509`).
+- **P2.** `build_project_graph_async` (`analysis_service.rs:1083`) conserva su
+  propio recorrido, mientras la ruta síncrona (`:220`) y la filtrada (`:831`)
+  usan el inventario centralizado `source_files::inventory`.
+- **P2.** `GraphRepository::find_nodes_by_kind_paginated`
+  (`domain/ports/graph_repository.rs:131-155`) ignora `limit` y `cursor` en su
+  implementación por defecto, y `GraphQueryPort::callers` omite
+  silenciosamente las relaciones que no puede resolver.
+
+**Lo que el informe se equivocó, y por qué importa.** Marcó como error de
+cobertura que `SkipReason::Other` y `SkipReason::Symlink` se proyecten sobre
+`FileDisposition::ExcludedByPolicy`. `Other` es una decisión **deliberada y
+documentada** —«el defecto honesto: no declaramos un hueco que no sabemos
+nombrar»—, y `Symlink` es un salto de política del recorrido, no un error de
+lectura. El defecto real es otro: el comentario inmediatamente anterior al
+mapeo de `Symlink` afirma *«un symlink no es una exclusión de política»* y la
+línea siguiente lo mapea a `ExcludedByPolicy`, cuyo contrato dice **«nunca
+afecta al `BuildStatus`»**. El código contradice su propio comentario, y un
+symlink sí es un hueco de cobertura. Merece una unidad propia, con su ADR
+—cambiar el número de variantes de un contrato vivo lo exige—, y no cabe en
+esta.
+
+**Lo que ya estaba resuelto.** El P1 de las preguntas MCP es exactamente lo
+que el PR #457 acaba de llevar a `main`.
+
+**Lo que la auditoría acertó donde el roadmap se equivocaba.** El informe
+cita `docs/adr/ADR-D1-006-uat-retirement.md` y dice que retiró 28 targets y 68
+pruebas. El fichero **existe**, y su texto dice exactamente eso: «28 targets
+`*_uat.rs` en tres crates, 68 tests y 4.804 líneas». Pero la nota 2 del
+`ROADMAP.md` afirma que PR #399 lo retiró del árbol. `git log -- <ruta>`
+devuelve un único commit y el fichero está en el árbol: la nota está
+obsoleta. Se corrige en otra unidad; aquí queda dicho.
+
+**La reconciliación con la agenda viva.** De los seis hitos del informe, dos ya
+están cerrados por el roadmap (H5 y H6 son el bloque B2, cerrado con C32, C6,
+C5, C7, C21 y C8 —y un bloque cerrado no se reabre—), uno es `C23`, que ya
+está en la cola, y tres son trabajo nuevo.
+
+**La unidad que abre esta entrada.** La primera intervención del informe es
+la seguridad y la honestidad de las operaciones sobre ficheros. No estaba en la
+cola, así que se abre como `C33`, con la unidad `H25` y con la forma de la
+respuesta decidida por escrito, porque toca seguridad y ROADMAP §4 lo exige:
+
+- **`docs/adr/ADR-054-file-operations-effect-order.md`** — el efecto viene
+  después de la promesa, y una validación que no ocurrió lo dice. Una
+  resolución, una autoridad; el efecto después de la política; tres estados
+  (`verified`, `unverified`, `rejected`) con `passed` cierto **sólo** cuando
+  hubo verificación; y un temporal por escritura en vez de uno por proceso.
+- **`goal-compass.json`** — `C33` entra en la cola con prioridad 50, la
+  primera: `C33`, `C23`, `C11`, `C12`, `C13`.
+
+**El discriminante, medido sobre el producto.** El fichero
+`crates/cognicode-core/tests/h25_file_operations_effect_order.rs` mide el
+defecto **antes** de que exista el arreglo, escrito contra la API de hoy. El
+resultado: **5 de 6 fallan**, y el que pasa es el guard de lo que no debe
+romperse.
+
+```
+a_rejected_write_leaves_no_directory_outside_the_workspace ... FAILED
+  a refused write left a directory tree outside the workspace: "/tmp/.tmpCx9PCX/deep"
+a_relative_write_creates_the_tree_inside_the_workspace ... FAILED
+  a relative path is resolved against the workspace that the context declares
+an_edit_that_could_not_be_verified_does_not_report_a_passed_validation ... FAILED
+  a validation that did not happen must not be reported as a passed validation
+an_edit_that_changes_nothing_says_why ... FAILED
+  left: None  right: Some("no_change")
+a_write_is_not_blocked_by_what_another_write_left_behind ... FAILED
+  a write is not refused because of what a previous write left at a predictable name
+a_broken_file_is_rejected ... ok
+```
+
+**La rama y sus commits.** `feature/the-effect-after-the-promise`, sobre
+`43ec88f6` (el cierre del tramo, ya en `main`):
+
+- `db083077` — el ADR, el candidato en la cola y el puntero de las unidades
+  abiertas.
+- `d3ebb214` — los cinco checks de caracterización y su guard.
+- `eb445074` — este recibo.
+
+**El gate de la unidad, en rojo como debe estar.** `bash scripts/test-fast.sh`
+con la suite `core` acotada al fichero nuevo → **rc=1**, con exactamente los
+cinco checks de caracterización en rojo y ningún otro fallo en lo que llegó a
+correr. La suite entera del core se midió aparte, con `--no-fail-fast`, para
+saber si lo demás seguía en pie: **3103 pruebas pasaron y 5 fallaron**, y las
+cinco son las de este fichero.
+
+**El estado de la unidad.** `C33` está **abierta**, no cerrada. El arreglo no
+está escrito: lo que hay es la decisión, el contrato y la puerta en rojo.
+Cerrarla exige el arreglo mínimo, el discriminante verde, el gate completo y
+su recibo.
+
+**Lo que queda vivo.** La cola de la misión, en orden: `C33` (esta),
+`C23` (el servicio de análisis deja de ser un módulo de 4.100 líneas),
+`C11` (el `SnapshotKey`), `C12` (Kotlin) y `C13` (Kotlin↔Java). Y quedan tres
+hallazgos del informe con dueño y sin abrir: el `RouteStore` sin adaptador y
+sin transacción, la paginación por defecto que ignora `limit` y `cursor`, y el
+`Symlink` que se proyecta sobre una categoría que nunca afecta al
+`BuildStatus`.
