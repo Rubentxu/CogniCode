@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.30`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.31`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.30`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.31`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -437,24 +437,21 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.30` — cut from this tree as `v0.101.30`.
+- **Current release:** `v0.101.31` — cut from this tree as `v0.101.31`.
   The release published from that tag is the one an unpinned `install.sh`
   serves. The previous published release is
-  [`v0.101.29`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.29);
+  [`v0.101.30`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.30);
   `v0.101.24`, `v0.101.25` and `v0.101.26` carry tags but never reached
   publication, and a tag that was never published does not move.
-  v0.101.30 carries the last of the ontology: the field the consumer reads
-  now tells a symbol of programming apart from a declaration of
-  infrastructure, and it says which one it is. A Terraform resource used
-  to be published as a function and an Ansible play as a module, so a
-  consumer reading the answer was told the project had a function where it
-  had a bucket. The declaration is now a class of its own, it travels
-  through the graph with the type the file gives it, and the transport
-  publishes it as `declaration`. The vocabulary that names those kinds
-  also stops being derived in four different places: one conversion
-  decides, in both directions, and every consumer reads that one.
-- **Binaries report:** `0.101.30` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.30`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.30).
+  v0.101.31 carries the identity of what the control plane read: the
+  answer says which sources the verdict rests on, and it says it with a
+  summary that belongs to the code and not to the directory the code
+  happens to sit in. Two machines reading the same tree now agree on the
+  identity of that tree, which is what lets a consumer ask whether the
+  analysis it is holding is the analysis of the code it has in front of
+  it.
+- **Binaries report:** `0.101.31` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.31`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.31).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` and
   `v0.101.26` exist and were never published. Each
