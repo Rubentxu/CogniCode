@@ -25895,3 +25895,80 @@ sola firma, el squash no lleva trailer y `main` sigue entrando en la máquina.
 recibo como último commit. El `push`, la apertura de la PR y la fusión los
 autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub exige
 antes de dejar fusionar.
+
+
+## 2026-10-24 — Las tres rutas que construyen el grafo: la equivalencia, medida y fijada
+
+**La unidad.** La cuarta propuesta del informe de auditoría —H4, «un único motor de
+grafos»— medida contra el árbol antes de abrir nada. En el repo esta unidad ya
+tenía dueño: la auditoría interna del 2026-10-21 la anotó como «los constructores
+que no comparten motor» y le dio los candidatos `C16` y `C23`; `C16` está cerrado y
+`C23` es el que sigue vivo en la cola. La forma la decide
+`docs/adr/ADR-056-the-routes-say-the-same.md`, que pasa de ACEPTADO a EJECUTADO con
+lo que se ejecutó escrito dentro.
+
+**Lo que el informe dice, y lo que el árbol muestra.** Hay **cinco** constructores
+vivos, no tres: la vía completa (`analysis_service.rs:171`), la filtrada (`:806`), la
+asíncrona (`:1083`), la de fichero a fichero (`:687`) y la ligera (`:632`). Las tres
+primeras construyen el grafo del proyecto y las tres son **de producción**: la CLI,
+`workspace_session.rs:1171` y el handler MCP `aix_handlers.rs:1979`. El lector de
+árbol ya está unificado —las tres llaman a `read_file_facts`—, pero el inventario
+centralizado sólo llega a dos de las tres, y resolución, caché y reporte están
+triplicados: 111 líneas idénticas entre la completa y la filtrada, 80 comunes a las
+tres.
+
+**El RED, medido antes del arreglo.** Siete checks contra las tres vías, con un
+corpus que lleva a propósito lo que las separa: ficheros que el grafo no analiza (un
+manifiesto, un readme) y un symlink que el recorrido declina. Cuatro discriminan y
+tres guardan. En rojo, con su motivo literal:
+
+- `the filtered route built a graph over a directory that does not exist: Ok(BuildReport { graph: CallGraph { symbols: {}, … }, status: Complete })` — la vía completa ya lo rechazaba; la filtrada y la asíncrona no.
+- `the route async declined a symlink and reported Complete: the graph does not describe what is behind the link, and a coverage that says otherwise is a claim nothing backs` — el inventario publica lo declined; la asíncrona filtraba los symlinks en silencio.
+- `the route async reported the symbols in the order the machine listed the files in, not the order their paths say: ["…/d2.rs", "…/d2/x.rs", "…/d1.rs", "…/d1/x.rs", "…/d0.rs", "…/d0/x.rs"]` — la completa y la filtrada ordenan; la asíncrona no.
+
+En verde antes del arreglo: las tres publican la misma cobertura, las mismas
+relaciones sobre un corpus sin ambigüedad, y el grafo sigue siendo un grafo. Esos
+tres son las guardas: impiden que la equalización se convierta en un grafo vacío.
+
+**La medición corrigió al ADR, y eso también es un resultado.** El ADR afirmaba que
+el denominador de la cobertura divergía entre rutas. **Es falso**, y el test lo
+desmontó en la primera ejecución: la vía completa cuenta `files_with_lang` (`:594`),
+la filtrada filtra por lenguaje antes de contar (`:851`), y la asíncrona también.
+Las tres contaban lo mismo. El ADR lo dice ahora con esas palabras —«MEDIDO, y hay
+una afirmación que no se sostiene»— y la cola de la misión también. Una afirmación
+en prosa que nadie midió es una hipótesis, y la casa la trata como una hipótesis
+hasta que el árbol la confirma o la desmiente.
+
+**Lo que se ejecutó.**
+
+- La vía asíncrona deja de caminar por su cuenta: usa el inventario que ya usan las
+  otras dos, y con él decide el conjunto de ficheros, lo declined, los errores y los
+  huecos. Un symlink que el recorrido declina es ahora un hueco declarado en las tres
+  rutas, no un silencio en una.
+- Un directorio que no existe se rechaza en las tres, con el mismo motivo.
+- El plegado se hace en orden de ruta en las tres. El índice de nombres repetidos
+  guarda los candidatos en el orden en que los recibe, así que el orden del recorrido
+  era parte de la respuesta.
+- La equivalencia queda como contrato: `crates/cognicode-core/tests/h24_the_routes_say_the_same.rs`.
+
+**Las puertas.** El gate rápido en `rc=0`; la suite del core entera en 3.116
+pruebas y 0 fallos; la puerta completa en `rc=0` (fmt, clippy `-D warnings`, suite
+del workspace, doctests, los 47 contratos de CI y el baseline de `known_failures`).
+
+**Lo que esta unidad NO cierra.** `C23` sigue abierto por su primer criterio de
+cierre —«el archivo se parte por responsabilidad»—: el motor común no está extraído.
+Lo que esta unidad deja es la red que hace segura la extracción: la equivalencia
+está verificada por un test, y a partir de ahora la extracción puede hacerse sin
+congelar una divergencia con otro nombre. La casa no construye un motor común a
+partir de tres copias que no coinciden.
+
+**El primer ciclo de la unidad H24 está cerrado.** La equivalencia entre las tres
+rutas queda verificada por un contrato: 7/7 comprobaciones de caracterización, 4/4
+discriminantes y 3/3 guardas, suite del core en 3.116 y 0 fallos, gate rápido rc=0,
+puerta completa rc=0. La unidad **sigue viva**: lo que se cerró es su primer
+ciclo, y laDeclaration de cierre es por ciclo, no por unidad.
+
+**Lo que queda para el operador.** La rama `feature/the-routes-say-the-same` sigue
+local y **sin subir**, con este recibo como último commit. El `push`, la apertura de
+la PR y la fusión los autoriza el operador; el `merge-gate` sobre la PR es la puerta
+que GitHub exige antes de dejar fusionar.

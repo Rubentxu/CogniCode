@@ -1,6 +1,6 @@
 # ADR-056 — Las tres rutas que construyen el grafo tienen que decir lo mismo
 
-**Estado**: ACEPTADO (decidido el 2026-10-24; pendiente de ejecución)
+**Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el código y en la suite)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H24 · construcción del grafo del proyecto (`crates/cognicode-core/src/application/services/analysis_service.rs`), candidato `C23` de la cola de la misión
@@ -129,6 +129,56 @@ ven. Su archivo declinado no lo cuenta nadie.
 - No extrae el motor común. `C23` sigue abierto por su primer criterio de cierre.
 - No toca las otras dos vías (`per_file` y `lightweight`): construyen otros grafos y
   tienen su propio contrato (`h16`). Su cobertura, además, la publica otra.
+
+## Ejecución
+
+**El recorrido.** `build_project_graph_async` ya no camina por su cuenta. Usa
+`SourceInventory::inventory`, el mismo inventario que usan la vía completa y la
+filtrada, y con él decide el conjunto de ficheros, lo declined, los errores y los
+huecos. Un symlink que el recorrido declina es ahora un hueco declarado en el
+reporte, no un silencio: la ruta podía publicar `Complete` sobre un árbol que no
+describía, y `Complete` es la dirección cara.
+
+**El directorio que no existe.** La vía filtrada y la asíncrona lo rechazan ahora,
+con el mismo motivo y el mismo tipo de error que la vía completa. Antes contestaban
+con un grafo vacío y `Complete`.
+
+**El orden.** La ruta asíncrona pliega los resultados en orden de ruta, como las
+otras dos. El índice de nombres repetidos guarda los candidatos en el orden en que
+los recibe, así que el orden del recorrido era parte de la respuesta.
+
+**El contrato.** `crates/cognicode-core/tests/h24_the_routes_say_the_same.rs`
+compara, sobre el mismo corpus, la cobertura, las relaciones, la resolución de un
+nombre repetido, el orden de lo reportado, los huecos y la respuesta ante un
+directorio inexistente. Siete checks: cuatro discriminantes y tres guardas.
+
+**El RED, medido antes del arreglo.** Tres de los cuatro discriminantes fellaron,
+con su motivo literal:
+
+- `the filtered route built a graph over a directory that does not exist: Ok(…)` —
+  la vía completa ya lo rechazaba; la filtrada y la asíncrona no.
+- `the route async declined a symlink and reported Complete: the graph does not
+  describe what is behind the link, and a coverage that says otherwise is a claim
+  nothing backs`.
+- `the route async reported the symbols in the order the machine listed the files
+  in, not the order their paths say: ["…/d2.rs", "…/d2/x.rs", "…/d1.rs", …]`.
+
+Los otros tres checks —la cobertura, las relaciones y que el grafo siga siendo un
+grafo— pasaban **antes** y pasan **después**: son las guardas que impiden que la
+equalización se convierta en un grafo vacío.
+
+**Lo que la medición corrigió.** Este ADR afirmaba, al escribirse, que el
+denominador de la cobertura divergía entre rutas. El test lo desmintió en la
+primera ejecución: las tres contaban `files_with_lang`, y ya coincidían. El ADR lo
+dice ahora con esas palabras. Una afirmación en prosa que nadie midió es una
+hipótesis, y la casa la trata como una hipótesis hasta que el árbol la confirma o
+la desmiente.
+
+**El GREEN.** 7/7. La suite del core entera: 3.116 pruebas y 0 fallos.
+
+**Lo que queda abierto.** El motor común no está extraído: `C23` sigue vivo por su
+primer criterio de cierre. Lo que esta ejecución deja es la red que hace segura la
+extracción.
 
 ## Referencias
 
