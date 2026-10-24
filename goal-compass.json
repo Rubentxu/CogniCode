@@ -8,30 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C33",
-      "title": "Una operacion sobre archivos no produce efectos fuera del workspace",
-      "unit": "H25",
-      "objective": "Que `write_file` resuelva la ruta una sola vez contra el workspace, valide antes de crear nada, y no deje directorios fuera del root; y que `edit_file` distinga una validacion que ocurrio de una que no ocurrio.",
-      "whyNow": "MEDIDO: `file_operations.rs:1095-1146` llama a `create_dir_all` ANTES de `validate_path`, y resuelve la ruta relativa contra `std::env::current_dir()` mientras la validacion la resuelve contra `workspace_root`: el mkdir y la validacion no miran el mismo sitio, y una peticion rechazada deja el arbol de directorios ya creado. `file_operations.rs:1239-1248` devuelve `validation.passed = true` cuando el parser no se pudo crear o el lenguaje es desconocido: la respuesta afirma una validacion que no ocurrio. La auditoria externa del 2026-10-24 los marca como P0 y P1; ninguno estaba en la cola viva. La decision de forma esta en `docs/adr/ADR-054-file-operations-effect-order.md`.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/services/file_operations.rs",
-        "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs",
-        "docs/adr/ADR-054-file-operations-effect-order.md"
-      ],
-      "doneWhen": [
-        "una peticion rechazada no crea ningun directorio, ni dentro ni fuera del workspace",
-        "la ruta se resuelve una sola vez y contra el workspace, y el mismo camino se usa para validar, crear y escribir",
-        "la validacion de una edicion distingue verified, unverified y rejected, y `passed` solo es cierto cuando hubo verificacion",
-        "el sandbox y las pruebas de consumidor de `edit_file` se vuelven a medir contra la forma nueva",
-        "dos escrituras concurrentes al mismo path no colisionan en el fichero temporal",
-        "ningun modelo de dominio cambia y el resto de la superficie MCP no cambia"
-      ],
-      "scope": "H25",
-      "risk": "high",
-      "priority": 50,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",

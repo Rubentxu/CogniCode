@@ -25589,3 +25589,86 @@ hallazgos del informe con dueño y sin abrir: el `RouteStore` sin adaptador y
 sin transacción, la paginación por defecto que ignora `limit` y `cursor`, y el
 `Symlink` que se proyecta sobre una categoría que nunca afecta al
 `BuildStatus`.
+
+---
+
+## 2026-10-24 — El efecto viene después de la promesa: cerrada la unidad de las operaciones sobre archivos
+
+**El commit.** `ada6c4ac`, en la rama `feature/the-effect-after-the-promise`,
+sobre `5cdbaeea` (la apertura de la unidad). La forma la decidió
+`docs/adr/ADR-054-file-operations-effect-order.md`, que pasa de ACEPTADO a
+EJECUTADO con lo que se ejecutó escrito dentro.
+
+**El rojo que se midió, y el verde que vino después.** Los cinco checks de
+caracterización del fichero `h25_file_operations_effect_order.rs` fallaban
+antes del arreglo, con el motivo exacto en el mensaje:
+
+```
+a refused write left a directory tree outside the workspace: "/tmp/.tmpCx9PCX/deep"
+a relative path is resolved against the workspace that the context declares
+a validation that did not happen must not be reported as a passed validation
+  left: None  right: Some("no_change")
+a write is not refused because of what a previous write left at a predictable name
+```
+
+Después del arreglo, los **siete** del fichero pasan: los cinco de
+caracterización y dos más que fijan el contrato nuevo —que una validación
+que sí ocurrió lo diga, y que un contenido rechazado lo diga como
+rechazado—.
+
+**La suite del core, entera.** `cargo test -p cognicode-core --no-fail-fast`
+→ **3109 pasaron, 0 fallaron**. Antes del arreglo eran 3103 y 5.
+
+**Las pruebas de consumidor del contrato publicado.**
+`cargo test -p cognicode --test file_ops_integration_tests` → **46 pasaron, 0
+fallaron**. Son las cinco aserciones que leen `validation.passed` en el
+contrato que los consumidores de fuera ya usan, y siguen verdes con el
+significado nuevo.
+
+**El gate rápido.** `bash scripts/test-fast.sh --paths crates/cognicode-core`
+→ **rc=0**: clippy con `-D warnings` limpio, baseline saltado porque
+`known_failures.yaml` no declara fallos conocidos, y 2441 pruebas del
+workspace con 0 fallos.
+
+**Lo que cambió, exactamente.**
+
+- El puerto `PathPolicy` gana `resolve_for_creation`, **obligatorio**: sin
+  implementación por defecto, porque un puerto con respuesta silenciosa es
+  lo que este trabajo vino a quitar. `InputValidator` lo implementa con las
+  mismas reglas y en el mismo orden que `validate_path`, y sólo cambia el
+  último paso: el límite del workspace se juzga sobre el ancestro más
+  profundo que ya existe, porque los directorios que faltan no pueden
+  esconder una fuga y los que existen sí. Devuelve la ruta resuelta, que es
+  la que se crea y la que se escribe.
+- `write_file` pregunta primero, crea después, y sólo sobre la ruta que el
+  puerto resolvió. La resolución se extrajo a un solo sitio, que las dos
+  fases comparten: la ruta ya no se resuelve dos veces, ni contra dos
+  sitios distintos.
+- `EditValidation` lleva su estado: `verified`, `unverified`, `rejected`.
+  `passed` es cierto **sólo** cuando hay `verified`. La escritura se decide
+  con el estado, no con `passed`: se escribe salvo que un parser haya
+  rechazado el contenido. **El fichero que se escribe no cambia**; lo que
+  cambia es lo que la respuesta afirma.
+- `reason` gana `no_change`, y su documentación nombra los cuatro valores.
+- El temporal lleva un discriminante por escritura: el PID y un contador.
+
+**Dos correcciones sobre el camino, y las dos importan.** La primera: el
+ADR afirmaba que el sandbox leía `validation.passed` para clasificar sus
+escenarios. **Es falso** — el `validation` del sandbox es su propio
+`ValidationResult`, el de su pipeline de validación, no el de la
+herramienta—, y se comprobó antes de aplicar la decisión. La segunda: el
+criterio de cierre del candidato hablaba de medir el sandbox contra la
+forma nueva; se corrigió al cerrarlo, porque no hay nada que medir ahí.
+
+**Lo que sigue abierto, con dueño.** La cola de la misión vuelve a su
+orden: `C23` (el servicio de análisis deja de ser un módulo de 4.100
+líneas), `C11` (el `SnapshotKey`), `C12` (Kotlin) y `C13` (Kotlin↔Java). Y
+tres hallazgos de la auditoría externa con dueño y sin abrir: el
+`RouteStore` sin adaptador y sin transacción, la paginación por defecto que
+ignora `limit` y `cursor`, y el `Symlink` que se proyecta sobre una
+categoría que nunca afecta al `BuildStatus`.
+
+**El cierre del ciclo queda para el operador.** La rama
+`feature/the-effect-after-the-promise` está local y **sin subir**: el
+`push` y la fusión los autoriza el operador, y el `merge-gate` sobre la
+PR es la puerta que falta.

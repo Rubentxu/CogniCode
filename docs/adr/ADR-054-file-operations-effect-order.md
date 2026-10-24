@@ -1,6 +1,6 @@
 # ADR-054 — El efecto viene después de la promesa, y una validación que no ocurrió lo dice
 
-**Estado**: ACEPTADO (decidido el 2026-10-24 al elegir la unidad H1 · Archivos seguros; pendiente de ejecución)
+**Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el código y en la suite)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H25 · operaciones sobre archivos (`crates/cognicode-core/src/application/services/file_operations.rs`), unidad `C33` de la cola de la misión
@@ -73,11 +73,11 @@ validó. No se validó: no había parser, o no se conoce el lenguaje. Un
 cliente que aprende a leer `passed` como «el producto comprobó tu fichero»
 aprende a leer una comprobación que no ocurrió como una que sí.
 
-El daño no es teórico: `passed` es lo que el sandbox lee para clasificar el
-desenlace de un escenario (`crates/cognicode-sandbox/src/main.rs:1912` y
-`:2065`), y lo que la métrica de `edit_file` usa para contar un rechazo
-(`interface/mcp/file_ops_handlers.rs:188`). Un campo que significa dos cosas
-no puede significar las dos bien.
+El daño no es teórico: `passed` es lo que la métrica de `edit_file` usa para
+contar un rechazo (`interface/mcp/file_ops_handlers.rs:188`) y lo que cinco
+aserciones de las pruebas de consumidor leen
+(`crates/cognicode/tests/file_ops_integration_tests.rs`). Un campo que
+significa dos cosas no puede significar las dos bien.
 
 La auditoría externa del 2026-10-24 marca estos dos hallazgos como P0 y P1.
 Los dos están medidos sobre el árbol.
@@ -152,6 +152,45 @@ llevar un discriminante único por escritura.
 
 ---
 
+## Ejecución
+
+**El puerto.** `PathPolicy` (`application/ports/mod.rs`) gana un segundo
+método, `resolve_for_creation`, que es **obligatorio**: no tiene
+implementación por defecto, porque un puerto con una respuesta silenciosa
+es exactamente lo que este trabajo vino a quitar. `InputValidator`
+(`interface/mcp/security.rs`) lo implementa con las mismas reglas y en el
+mismo orden que `validate_path` — traversal, bytes nulos, profundidad,
+symlink — y sólo cambia el último paso: el límite del workspace se juzga
+sobre **el ancestro más profundo que ya existe**, porque los directorios que
+faltan no pueden esconder una fuga (un nombre se queda en el directorio donde
+se escribe) y los que existen sí (un symlink que sale del workspace es
+uno). Devuelve la ruta resuelta: la misma que se crea y la que se escribe.
+
+La resolución de la ruta se extrajo a un solo sitio
+(`resolve_against_allowed`), que las dos fases comparten.
+
+**El servicio.** `write_file` (`application/services/file_operations.rs`)
+pregunta primero (`resolve_for_creation`), y **después** crea los directorios
+— sobre la ruta que el puerto resolvió, no sobre una segunda resolución de
+la misma petición — y por último hace la fase canónica
+(`validate_resolved_path`). La ruta relativa ya no se resuelve contra el
+directorio del proceso: se resuelve una vez, contra el workspace.
+
+**La validación.** `EditVerification` (`application/dto/common.rs`) es un
+enum de tres estados, `verified` / `unverified` / `rejected`, con `passed`
+cierto **sólo** cuando hay `verified`. La escritura se decide con el estado,
+no con `passed`: se escribe salvo que un parser haya rechazado el contenido.
+`reason` gana `no_change` para la edición que no cambia nada, y su
+documentación en `schemas.rs` ahora nombra los cuatro valores.
+
+**El temporal.** `unique_temp_path` da a cada escritura su propio nombre:
+el PID y un contador. Antes, dos escrituras al mismo camino dentro del
+mismo proceso compartían fichero.
+
+**Lo que no cambió.** El fichero que se escribe. Una edición en un lenguaje
+sin parser se escribía antes y se escribe ahora; lo que cambia es lo que la
+respuesta afirma. La superficie MCP **gana** un campo y no pierde ninguno.
+
 ## Alternativas consideradas
 
 1. **Validar la ruta absoluta sin resolverla antes del `mkdir`.** No cambia
@@ -198,11 +237,9 @@ llevar un discriminante único por escritura.
   «la edición no fue rechazada» recibe `false` donde antes recibía `true`.
   La mitigación es que la otra pregunta tiene su campo, y que el cambio se
   mide con las pruebas de consumidor de abajo.
-- El sandbox clasifica el desenlace de un escenario con `!validation.passed`
-  (`cognicode-sandbox/src/main.rs:1912` y `:2065`). Con el significado
-  nuevo, un escenario en un lenguaje sin parser se clasificaría como fallo.
-  El sandbox pasa a leer `verification`, y sus escenarios de `edit_file` se
-  vuelven a verificar en la misma unidad.
+- La métrica de `edit_file` cuenta un rechazo cuando `passed` es falso. Con
+  el significado nuevo, una edición sin verificar no es un rechazo: el
+  contador pasa a leer el estado de la verificación.
 
 **Mitigaciones**:
 
@@ -210,7 +247,11 @@ llevar un discriminante único por escritura.
   `crates/cognicode/tests/file_ops_integration_tests.rs` (cinco aserciones
   sobre `validation.passed`), las de
   `crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs` y la
-  clasificación del sandbox.
+  métrica del propio handler.
+- El sandbox **no** es un consumidor afectado: su `validation` es su propio
+  `ValidationResult` —el de su pipeline de validación—, no el `EditValidation`
+  de la herramienta. Se comprobó antes de escribir esto, porque la suposición
+  contraria habría puesto una migra en la decisión.
 - El discriminante se ve al revés: revirtiendo sólo la Fase 2 (el `mkdir`
   antes de la promesa) o sólo la Decisión 3 (el `passed` sin verificación),
   los contratos correspondientes se ponen rojos.

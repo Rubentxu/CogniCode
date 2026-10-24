@@ -462,18 +462,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     la inyecta; el guard arquitectónico ve la dependencia escrita donde se
 >     usa, no solo la importada. El arreglo no necesitó un framework nuevo.
 >
->   **H25** — las operaciones sobre archivos no producen efectos fuera del
->   workspace, y una validación que no ocurrió lo dice. `write_file` crea los
->   directorios antes de validar la ruta, y la resuelve contra el directorio
->   del proceso mientras la validación la resuelve contra el workspace: una
->   petición rechazada deja el árbol de directorios ya creado, y una ruta
->   relativa crea el árbol donde el proceso está y no donde el workspace
->   está. `edit_file` devuelve `validation.passed = true` cuando no había
->   parser o el lenguaje es desconocido: la respuesta afirma una validación
->   que no ocurrió. La forma de la respuesta y el orden del efecto los fija
->   `docs/adr/ADR-054-file-operations-effect-order.md`.
->
->   Los candidatos de las tres unidades —con su evidencia y su criterio de
+>   Los candidatos de las dos unidades —con su evidencia y su criterio de
 >   cierre— viven en la backlog de la misión (`goal-compass.json`).
 >
 >   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
@@ -520,7 +509,7 @@ prefiere callarse a mentir—. El estado sigue en el párrafo; aquí vive el
 
 | Bloque | Qué entrega | Candidatos | Autoridad |
 |---|---|---|---|
-| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C18` `C28` `C29` `C14` `C31` `C33` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · `docs/adr/ADR-054-file-operations-effect-order.md` |
+| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C18` `C28` `C29` `C14` `C31` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
 | B2 | Testing rápido y sin duplicidades | `C32` `C6` `C5` `C7` `C21` `C8` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · retirada de UAT (nota 2) |
 | B3 | Ontología y arquitectura simplificadas | `C19` `C30` `C9` `C16` `C10` `C26` `C15` `C23` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-010-CONTROL-PLANE-READ.md` · `docs/adr/ADR-029-callgraph-projection-port-seam.md` |
 | B4 | Caché incremental fiable | `C11` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md` |
