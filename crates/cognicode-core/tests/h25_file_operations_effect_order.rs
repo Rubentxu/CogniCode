@@ -68,10 +68,7 @@ async fn a_rejected_write_leaves_no_directory_outside_the_workspace() {
     )
     .await;
 
-    assert!(
-        result.is_err(),
-        "a path outside the workspace is refused"
-    );
+    assert!(result.is_err(), "a path outside the workspace is refused");
     assert!(
         !outside.path().join("deep").exists(),
         "a refused write left a directory tree outside the workspace: {:?}",
@@ -118,10 +115,7 @@ async fn a_relative_write_creates_the_tree_inside_the_workspace() {
         result.is_ok(),
         "a relative path is resolved against the workspace that the context declares"
     );
-    assert!(
-        written.exists(),
-        "the file is written inside the workspace"
-    );
+    assert!(written.exists(), "the file is written inside the workspace");
     assert!(
         !stray_exists,
         "the directory tree was created at the process directory instead of the workspace: {:?}",
@@ -193,10 +187,7 @@ async fn a_broken_file_is_rejected() {
     .await
     .expect("the edit is answered");
 
-    assert!(
-        !output.applied,
-        "a file that does not parse is not written"
-    );
+    assert!(!output.applied, "a file that does not parse is not written");
     assert!(
         !output.validation.passed,
         "a rejected content is not a passed validation"
@@ -275,8 +266,5 @@ async fn a_write_is_not_blocked_by_what_another_write_left_behind() {
         result.is_ok(),
         "a write is not refused because of what a previous write left at a predictable name"
     );
-    assert!(
-        target.exists(),
-        "the file is written"
-    );
+    assert!(target.exists(), "the file is written");
 }
