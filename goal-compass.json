@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C22",
-      "title": "El arbol sintactico se parsea una vez",
-      "unit": "H24",
-      "objective": "Que el fichero se parsee una sola vez por camino, y que la capa semantica y el lector del dominio compartan el mismo arbol.",
-      "whyNow": "MEDIDO: la capa semantica llama al extractor generico, que parsea el fichero, y el lector de Terraform lo vuelve a parsear con `parse(source)`. Es trabajo repetido y una oportunidad de divergencia: dos lectores del mismo texto pueden discrepar. La auditoria del 2026-10-20 lo senala como mejora lateral, con la condicion de medir antes.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/infrastructure/parser/terraform_handler.rs"
-      ],
-      "doneWhen": [
-        "MEDIDO: el coste de parsear dos veces por fichero, con el numero",
-        "un solo arbol por fichero en el camino de la capa semantica, si el coste lo justifica",
-        "ningun cambio en los modelos de dominio"
-      ],
-      "scope": "H24",
-      "risk": "high",
-      "priority": 50,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",

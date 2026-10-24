@@ -37,6 +37,24 @@ contrato no depende de qué binario lo sirva. La forma canónica del resumen
 está escrita, con su ejemplo, en
 `docs/roadmap/consumer-contracts/specs/SPEC-CU-010-CONTROL-PLANE-READ.md`.
 
+**Un fichero, un árbol.** El lector de un lenguaje —Ansible, Terraform—
+parseaba el fichero por su cuenta para tener un árbol propio, y el fichero
+pagaba dos árboles donde bastaba uno. Medido sobre 400 ficheros reales del
+propio repositorio, el segundo árbol costaba el 99,4% del primero: 3,19
+segundos de trabajo puro en cada construcción del índice. Ahora el lector
+recibe el árbol que ya se había construido, el árbol se construye en un
+solo sitio y el número de árboles que cuesta un fichero es una pregunta con
+respuesta. Dos árboles del mismo texto son dos respuestas que pueden
+divergir; ahora hay una.
+
+**Un fallo se dice como un fallo.** La herramienta de preguntas en lenguaje
+natural respondía con `isError: false` cuando no podía responder: el
+cliente leía un fallo como una respuesta y aprendía a leer todos los fallos
+como respuestas. El enrutador dice ahora, con un tipo y no con un número,
+si la pregunta quedó contestada; el transporte lleva esa verdad en su
+bandera; y la carga útil de un fallo conserva el motivo y lo que sí se
+podía preguntar en su lugar.
+
 ## [v0.101.30] — 2026-10-23
 
 **Un recurso de infraestructura dejó de publicarse como una función.** El
