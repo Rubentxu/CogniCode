@@ -25531,7 +25531,7 @@ está en la cola, y tres son trabajo nuevo.
 
 **La unidad que abre esta entrada.** La primera intervención del informe es
 la seguridad y la honestidad de las operaciones sobre ficheros. No estaba en la
-cola, así que se abre como `C33`, con la unidad `H25` y con la forma de la
+cola, así que se abre como `C35`, con la unidad `H25` y con la forma de la
 respuesta decidida por escrito, porque toca seguridad y ROADMAP §4 lo exige:
 
 - **`docs/adr/ADR-054-file-operations-effect-order.md`** — el efecto viene
@@ -25539,8 +25539,8 @@ respuesta decidida por escrito, porque toca seguridad y ROADMAP §4 lo exige:
   resolución, una autoridad; el efecto después de la política; tres estados
   (`verified`, `unverified`, `rejected`) con `passed` cierto **sólo** cuando
   hubo verificación; y un temporal por escritura en vez de uno por proceso.
-- **`goal-compass.json`** — `C33` entra en la cola con prioridad 50, la
-  primera: `C33`, `C23`, `C11`, `C12`, `C13`.
+- **`goal-compass.json`** — `C35` entra en la cola con prioridad 50, la
+  primera: `C35`, `C23`, `C11`, `C12`, `C13`.
 
 **El discriminante, medido sobre el producto.** El fichero
 `crates/cognicode-core/tests/h25_file_operations_effect_order.rs` mide el
@@ -25577,12 +25577,12 @@ correr. La suite entera del core se midió aparte, con `--no-fail-fast`, para
 saber si lo demás seguía en pie: **3103 pruebas pasaron y 5 fallaron**, y las
 cinco son las de este fichero.
 
-**El estado de la unidad.** `C33` está **abierta**, no cerrada. El arreglo no
+**El estado de la unidad.** `C35` está **abierta**, no cerrada. El arreglo no
 está escrito: lo que hay es la decisión, el contrato y la puerta en rojo.
 Cerrarla exige el arreglo mínimo, el discriminante verde, el gate completo y
 su recibo.
 
-**Lo que queda vivo.** La cola de la misión, en orden: `C33` (esta),
+**Lo que queda vivo.** La cola de la misión, en orden: `C35` (esta),
 `C23` (el servicio de análisis deja de ser un módulo de 4.100 líneas),
 `C11` (el `SnapshotKey`), `C12` (Kotlin) y `C13` (Kotlin↔Java). Y quedan tres
 hallazgos del informe con dueño y sin abrir: el `RouteStore` sin adaptador y
@@ -25672,3 +25672,12 @@ categoría que nunca afecta al `BuildStatus`.
 `feature/the-effect-after-the-promise` está local y **sin subir**: el
 `push` y la fusión los autoriza el operador, y el `merge-gate` sobre la
 PR es la puerta que falta.
+
+**Una renumeración, y por qué.** Esta unidad se abrió como `C33` y a las
+08:26 de ese mismo día otro worktree del mismo repositorio declaraba `C33`
+para otra unidad —la guarda de frescura del binario de release—, y `C34` en
+otro. Dos unidades con el mismo identificador en el mismo roadmap es la
+fuente de verdad duplicada que este repo no admite, así que esta unidad pasa
+a **`C35`**, que estaba libre. Los mensajes de commit que dicen `C33`
+quedan como historia: el Journal es el registro y aquí queda la corrección,
+con su motivo y su fecha.

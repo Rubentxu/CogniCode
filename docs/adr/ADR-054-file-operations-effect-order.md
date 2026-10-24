@@ -3,7 +3,7 @@
 **Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el código y en la suite)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
-**Contexto**: H25 · operaciones sobre archivos (`crates/cognicode-core/src/application/services/file_operations.rs`), unidad `C33` de la cola de la misión
+**Contexto**: H25 · operaciones sobre archivos (`crates/cognicode-core/src/application/services/file_operations.rs`), unidad `C35` de la cola de la misión
 
 ---
 
@@ -264,4 +264,4 @@ respuesta afirma. La superficie MCP **gana** un campo y no pierde ninguno.
 - [ADR-D1-006 — retirada de la clase UAT](./ADR-D1-006-uat-retirement.md) — precedente de cómo se declara lo que una decisión deja de comprobar
 - `crates/cognicode-core/src/application/services/file_operations.rs` — `write_file` (`:1095`), `validate_path` (`:268`), `edit_file` (`:1150`)
 - `crates/cognicode-core/src/interface/mcp/security.rs:326-443` — la política de rutas
-- `docs/roadmap/JOURNAL.md` — el recibo de la unidad `C33`
+- `docs/roadmap/JOURNAL.md` — el recibo de la unidad `C35`
