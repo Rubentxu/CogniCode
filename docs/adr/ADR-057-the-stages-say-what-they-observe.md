@@ -1,6 +1,6 @@
 # ADR-057 — Una etapa que no puede hacer caer la puerta tiene que decir qué observó
 
-**Estado**: ACEPTADO (decidido el 2026-10-24; pendiente de ejecución)
+**Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el contrato y en la suite)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H27 · las puertas y lo que no puede hacerlas caer (`integration.pipeline.kts`, `certification.pipeline.kts`, `release-candidate.pipeline.kts`, `release.pipeline.kts`), candidato `C37` de la cola de la misión
@@ -205,6 +205,64 @@ declaración del fallo, no la forma del marcador.
 - No reescribe la historia de los pipelines que cuentan de dónde salieron: la regla
   de citas comprobables alcanza al motivo de una etapa, no a la genealogía de una
   lane.
+
+## Ejecución
+
+**La declaración.** `scripts/ci/test_advisory_stages_are_declared.py` declara las trece
+etapas con su motivo y su recuento por lane, y el recuento se comprueba contra el árbol:
+siete en `integration.pipeline.kts`, cuatro en `certification.pipeline.kts`, una en
+`release-candidate.pipeline.kts` y una en `release.pipeline.kts`. La regla que sostiene
+no es «las etapas que están marcadas», sino **«las que tragan un fallo»**, y el criterio
+es el efecto y no la forma: una etapa se traga el fallo si convierte un error en un
+código de salida cero.
+
+**El RED, medido antes del arreglo.** Cuatro comprobaciones fallaron, con su motivo
+literal:
+
+- `release-candidate.pipeline.kts: install-cargo-deny` y `release.pipeline.kts:
+  create-draft` — «se tragan un fallo y no lo declaran».
+- «la etapa que se llama «instalación en HOME limpio» no pidió la instalación: invocó al
+  instalador con `['install', '--profile', 'core']`».
+- «la etapa declara un HOME limpio pero la instalación caería fuera: la raíz elegida
+  fue `` y el HOME de la etapa es `/tmp/cognicode-test-home-1000`».
+- «la prosa que justifica estas etapas cita ficheros que no existen:
+  `integration.pipeline.kts: parser-adversarial cita `ci.yml`».
+
+Los controles del contrato son los que hacen que el verde signifique algo: el
+inventario tiene que encontrar etapas, una etapa que traga un fallo y no se declara
+tiene que salir en rojo, un motivo que cita un fichero ausente tiene que salir en rojo,
+y la comprobación de la instalación tiene que distinguir una etapa que instala de una
+que sólo planifica.
+
+**La instalación.** La etapa de HOME limpio pide la instalación de verdad, con la
+opción de aplicar, y fija la raíz dentro de su propio HOME. Medido con el binario
+release, antes y después:
+
+```
+antes, con CARGO_HOME en el entorno   -> <CARGO_HOME>/bin/cogh
+después, con la raíz fijada            -> <HOME>/.local/share/cognicode/bin/cogh
+```
+
+`doctor_pass: true`, sha256 del artefacto y el `CARGO_HOME` del entorno sin tocar.
+
+**La prosa.** Siete citas a ficheros que no existen, eliminadas: cinco a `ci.yml` en
+`integration.pipeline.kts` y dos a `sandbox-nightly.yml` en
+`certification.pipeline.kts`. La genealogía de las lanes no se reescribe: es historia, y
+la regla de citas comprobables alcanza al motivo de una etapa, no al relato de la
+migración.
+
+**El T6.** Sus patrones de fichero no veían los contratos de la casa, que son su suite
+de pruebas de CI. Con los patrones originales, esta rama se rechaza con «fix(*)
+commits found but no test files changed in the diff»; con el nivel L5 añadido, pasa. La
+puerta no era ciega al test: era ciega a una parte de la suite.
+
+**El GREEN.** 13/13. La puerta completa: 6.368 pruebas del workspace y 0 fallos, los 48
+contratos de CI y de producto en verde, los cuatro pipelines tocados con
+`VALIDATION SUCCESSFUL`.
+
+**Lo que queda abierto.** Nada de esta unidad. `C37` sale del backlog de la misión: sus
+cuatro decisiones están implementadas y el contrato las vigila. Lo que queda por
+separado es el motor común de las tres rutas del grafo, que es otra unidad (`C23`).
 
 ## Referencias
 
