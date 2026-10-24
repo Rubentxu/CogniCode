@@ -15,10 +15,10 @@
 //
 // A MEASURED CORRECTION TO A DIAGNOSIS THAT WAS WRONG
 // ---------------------------------------------------
-// `sandbox-nightly.yml` has been red on purpose since 2026-10-01, and its two
-// steps said why. One reason was that `rootful/setup-podman` had been deleted
-// from GitHub. The other was that the lane recipes "live in sandbox/justfile
-// and do not resolve from the workspace root".
+// The nightly sandbox workflow this lane replaces was red on purpose, and
+// its two steps said why. One reason was that `rootful/setup-podman` had
+// been deleted from GitHub. The other was that the lane recipes "live in
+// sandbox/justfile and do not resolve from the workspace root".
 //
 // Both were treated as fact and neither survives a measurement:
 //
@@ -171,10 +171,10 @@ pipeline {
         }
 
         // ------------------------------------------------------------ scorecards
-        // The nightly cadence `sandbox-nightly.yml` claims for itself and does
-        // not run. It is here because it is the thing that measures whether the
-        // rare runs above are getting worse, which is the reason to run them
-        // rarely at all.
+        // The nightly cadence the workflow this lane replaces claimed for
+        // itself and did not run. It is here because it is the thing that
+        // measures whether the rare runs above are getting worse, which is
+        // the reason to run them rarely at all.
         stage("scorecard-nightly") {
             sh("""
                 $cd || exit 1

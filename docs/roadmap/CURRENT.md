@@ -5,12 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `2ac87c02c2117003062145ce9ef5aa97697fc342` (el
-> `main` ya fusionado que cierra el tramo: la lectura declara la identidad
-> de lo que leyó —y esa identidad es del código y no del sitio donde está
-> el código—, el grafo tiene un escenario que pregunta qué se movió y qué
-> se quedó, y los checks del módulo compartido se ejecutan una vez y no
-> veintiún).
+> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
+> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
+> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
+> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
+> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
+> si fuera una respuesta).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -151,6 +151,20 @@ código o de la máquina.
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**Una etapa que no puede hacer caer la puerta dice qué observa, y la que dice
+que instala instala.** Trece etapas se ejecutaban sin poder bloquear, y
+ninguna declaraba qué valen: su motivo vivía en la prosa de un pipeline y
+citaba un `ci.yml` que ya no está en el repositorio, porque la casa migró de
+GitHub Actions a PipelineK y el nombre del workflow viejo se quedó en el
+comentario. Ahora las trece que tragan un fallo están declaradas con su motivo
+y su recuento comprobado, en un contrato que pone en rojo la etapa nueva que
+se marca advisory sin declararse, y la etapa nueva que traga un fallo sin
+decirlo. Y la que se llamaba instalación en HOME limpio sólo planificaba:
+`cogh install` es un dry-run que imprime el destino y sale con cero. Ahora
+instala de verdad, con la opción de aplicar, y fija la raíz dentro de su
+propio HOME — porque sin esa fijación la raíz la decide el `CARGO_HOME` del
+entorno, y en un runner de CI eso es fuera del sandbox que la etapa declara.
 
 **El grafo deja de tener una segunda manera de responder está cerrada.** Una
 instantánea de un grafo dice cómo lucía una vez; no puede decir que el grafo

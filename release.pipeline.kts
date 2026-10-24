@@ -216,7 +216,10 @@ pipeline {
                         echo "This lane publishes. It does not dry-run."
                         exit 1
                     fi
-                    NOTES=$(bash scripts/generate-release-notes.sh "" "${'$'}RELEASE_TAG" || echo "CogniCode ${'$'}RELEASE_TAG")
+                    if ! NOTES=$(bash scripts/generate-release-notes.sh "" "${'$'}RELEASE_TAG"); then
+                        echo "ADVISORY: the release notes could not be generated; the draft gets a default title"
+                        NOTES="CogniCode ${'$'}RELEASE_TAG"
+                    fi
                     # The tag already exists, so --target is not passed: that flag
                     # is for creating a tag that is missing, and passing it would
                     # move the release onto whatever the name resolves to now.

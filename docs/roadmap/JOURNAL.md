@@ -25972,3 +25972,151 @@ ciclo, y laDeclaration de cierre es por ciclo, no por unidad.
 local y **sin subir**, con este recibo como último commit. El `push`, la apertura de
 la PR y la fusión los autoriza el operador; el `merge-gate` sobre la PR es la puerta
 que GitHub exige antes de dejar fusionar.
+
+## 2026-10-24 — H27 / C37: una etapa que no puede hacer caer la puerta dice qué observa
+
+**La unidad.** La cuarta propuesta del informe de auditoría —H5, «certificación
+ligera y real»— medida contra el árbol antes de abrir nada. Es la última de las
+seis del informe que quedaba sin cerrar, y es la que menos se parecía a lo que
+el informe pedía.
+
+**Lo que encontró la medición.** El informe dice que «la clasificación estricta
+de las pruebas» no existe y que «las capacidades de integración real han perdido
+validación frecuente». Los dos hechos son ciertos sobre el *paper*, y falsos
+sobre este árbol:
+
+- **La clasificación ya existe.** `scripts/ci/test_every_test_surface_has_a_lane.py`
+  declara cada superficie del repositorio en uno de dos mundos: tiene un carril
+  que la corre de verdad, o no lo tiene y dice por qué y cuántos son. Los 41
+  specs de `apps/explorer-ui/e2e/` están en el segundo mundo, con el motivo
+  escrito y el recuento comprobado, así que una superficie no puede crecer en
+  silencio. Eso es exactamente la «clasificación estricta» que el informe
+  pedía, con la casa como dueño.
+- **El circuito real ya corre.** `scripts/ci/release-install-smoke.sh` instala y
+  opera el tarball publicado; `binary-smoke-$target` y
+  `core-b6-w1-release-stdio-smoke` hablan JSON-RPC con el binario release;
+  `cogh_cli.rs` opera el binario `cogh` real con un HOME aislado;
+  `cp1_control_plane_endpoint.rs:669` hace HTTP real contra el router. El
+  criterio de cierre del informe —«dos o tres escenarios críticos ejecutados
+  contra binarios actuales o publicados»— **se cumple hoy**.
+- **«Eliminación de los E2E temporales» no tiene objeto.** Cero coincidencias de
+  `temporal`, `temporary` o `wip` en `apps/explorer-ui/e2e/`.
+
+Lo que sí faltaba era el dueño de lo que **no** puede hacer caer la puerta.
+
+**Trece etapas, y ninguna decía qué valen.** PipelineK no tiene
+`continue-on-error`, así que la casa convierte un fallo en un código de salida
+cero con `|| echo 'ADVISORY: …'`. La palabra `ADVISORY` no aparecía en ningún
+contrato de `scripts/ci/`: una etapa que falla y no bloquea se declaraba en la
+prosa del comentario del pipeline y en ningún sitio más. Y esa prosa citaba
+`ci.yml`, un fichero que no está en el repositorio desde que la casa migró de
+GitHub Actions a PipelineK.
+
+**Una corrección de una cuenta propia.** El ADR-057 se escribió con «diez
+etapas» y las contaba por el idiom `|| echo`. La medición por cuerpo —el
+marcador vive dentro del argumento de `sh(...)`, no en la línea donde empieza—
+da **trece**: once se tragan el fallo y se declaran solas, y dos se lo tragan
+sin decir nada. La undécima que faltaba, `perf-budget-verdict`, no usa
+`|| echo`: usa `set +e`, captura el código de salida y emite su propio
+`ADVISORY:`. Contar por el idiom era contar por la forma; el contrato cuenta
+por el efecto.
+
+**El rojo que se midió, con el motivo literal.** El contrato nuevo
+(`scripts/ci/test_advisory_stages_are_declared.py`) falló en cuatro
+comprobaciones, y ninguna por otra cosa:
+
+1. `release-candidate: install-cargo-deny` y `release: create-draft` se
+   tragaban un fallo y no lo declaraban.
+2. «la etapa que se llama «instalación en HOME limpio» no pidió la
+   instalación: invocó al instalador con `['install', '--profile', 'core']`».
+3. «la etapa declara un HOME limpio pero la instalación caería fuera: la raíz
+   elegida fue `` y el HOME de la etapa es `/tmp/cognicode-test-home-1000`».
+4. «la prosa que justifica estas etapas cita ficheros que no existen:
+   `integration.pipeline.kts: parser-adversarial cita `ci.yml`» (y las otras
+   cuatro).
+
+**El segundo defecto, medido con el binario real.** `cogh install --profile
+core` es un dry-run: imprime el plan, dice «re-run with `--apply` to perform
+the install» y sale con cero. La etapa ejecutaba exactamente eso y terminaba
+con el eco «clean-HOME install attempted». Con `--apply` instala de verdad
+—sin red, `doctor_pass: true`, sha256 del artefacto y el binario copiado— pero
+la raíz de instalación **no es la que la etapa cree**: `resolve_install_root`
+pregunta `$CARGO_HOME` antes que `$XDG_DATA_HOME`, y `CARGO_HOME` está puesto
+en un entorno de CI. Medido con el binario release:
+
+```
+HOME limpio, sin CARGO_HOME   -> <HOME>/.local/share/cognicode/bin/cogh
+HOME limpio, con CARGO_HOME   -> <CARGO_HOME>/bin/cogh
+```
+
+Es decir: la etapa escribía fuera del sandbox que ella misma declara, o
+fallaba con un error de permisos que `|| echo` se tragaba y que nadie leía. No
+se arregla con `unset CARGO_HOME`: `scripts/ci/target-dir.sh` consulta a
+`cargo metadata`, y `cargo` lee su configuración de `$CARGO_HOME`; sin él y con
+el HOME sustituido, el target dir resuelto sería otro y la etapa no
+encontraría el binario que quiere instalar. La raíz se fija, no se unsetea.
+
+**Lo que cambió, exactamente.**
+
+- Un contrato nuevo con trece etapas declaradas, su motivo y su recuento por
+  lane, comprobado contra el árbol. La regla que sostiene: **tragar un fallo
+  obliga a declararse**, y el marcador `ADVISORY` es el mecanismo de la casa.
+  Una etapa nueva que se marque advisory sin declararse pone el contrato en
+  rojo; una etapa nueva que trague un fallo sin decirlo, también.
+- La etapa de HOME limpio instala de verdad (`--apply`) y fija la raíz de
+  instalación dentro de su propio HOME con `COGNICODE_BIN_DIR`, que es la
+  primera de la precedencia del producto. Medido después del arreglo: el
+  binario cae en `<HOME>/.local/share/cognicode/bin/cogh` y el `CARGO_HOME` del
+  entorno no se toca.
+- Las dos etapas que se tragaban un fallo en silencio ahora lo declaran, y la
+  del borrador lo dice en una rama propia para que el marcador no se mezcle
+  con el título que se publica.
+- Siete citas a ficheros que no existen, eliminadas: cinco a `ci.yml` en
+  `integration.pipeline.kts` y dos a `sandbox-nightly.yml` en
+  `certification.pipeline.kts`. La genealogía de las lanes —de dónde salió un
+  pipeline— no se reescribe: es historia, y la regla de citas comprobables
+  alcanza al motivo de una etapa, no al relato de la migración.
+- El snapshot de `CURRENT.md` regenerado: declaraba un SHA seis commits
+  atrás y el ratchet de versión lo ponía en rojo. Ahora declara el `main` que
+  el snapshot lee.
+
+**El gate de la unidad, en rojo como debe estar.** `python3
+scripts/ci/test_advisory_stages_are_declared.py` con las cuatro
+comprobaciones en rojo sobre el árbol anterior al arreglo, y las trece en
+verde después. Los controles del contrato son los que hacen que el verde
+signifique algo: el inventario tiene que encontrar etapas, una etapa que traga
+un fallo y no se declara tiene que salir en rojo, un motivo que cita un
+fichero ausente tiene que salir en rojo, y la comprobación de la instalación
+tiene que distinguir una etapa que instala de una que sólo planifica.
+
+**Un hueco que esta unidad destapó.** El T6 —la regla que exige que una
+corrección lleve un test— no veía la suite de contratos de la casa: sus
+patrones sólo conocían el test en Rust, el sandbox y el navegador. Una
+corrección de CI cuyo único test es un contrato no podía pasar la regla que
+dice que una corrección lleva un test. No es una hipótesis: con los patrones
+originales, **esta misma rama se rechaza** (`rc=1`, «fix(*) commits found
+but no test files changed in the diff»), y con el nivel L5 añadido pasa. La
+puerta no era ciega al test: era ciega a una parte de la suite. La casa ya
+había cerrado una corrección de CI con esa forma —la guarda de frescura, PR
+#458— sin que esta regla la pudiera ver.
+
+**La puerta completa, con su recuento.** `bash scripts/test-fast.sh` → `rc=0`.
+`bash scripts/test-full.sh` → `rc=0`: formato, clippy con `-D warnings`, la
+suite del workspace entera (**6.368 pruebas, 0 fallos**), los doctests, los 48
+contratos de CI y de producto, y el baseline de fallos conocidos. Los cuatro
+pipelines tocados pasan `pipelinek validate`: `VALIDATION SUCCESSFUL` en los
+cuatro. Y `check_regression_test.sh` sobre la rama → `rc=0`, con el contrato
+reconocido como el test que acompaña a la corrección.
+
+**El estado de la unidad.** `C37` está **cerrada**: las cuatro decisiones del
+ADR-057 están implementadas y el contrato las vigila. La cola de la misión
+queda con `C23` (las tres rutas que construyen el grafo —falta partir el
+fichero de 4.369 líneas—), `C11` (`SnapshotKey` e incrementalidad honesta),
+`C12` (navegación Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java sólo
+cuando se pueden probar).
+
+**Lo que queda para el operador.** La rama
+`feature/the-stages-say-what-they-observe` sigue local y **sin subir**, con
+este recibo como último commit. El `push`, la apertura de la PR y la fusión los
+autoriza el operador; el `merge-gate` sobre la PR es la puerta que GitHub
+exige antes de dejar fusionar.

@@ -470,8 +470,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     asíncrona. La forma, en
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
 >
->   Los candidatos de las dos unidades —con su evidencia y su criterio de
->   cierre— viven en la backlog de la misión (`goal-compass.json`).
+>   Los candidatos —con su evidencia y su criterio de cierre— viven en la
+>   backlog de la misión (`goal-compass.json`).
 >
 >   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
 >   poda documental están en el Journal: este bloque es estado, no historia.

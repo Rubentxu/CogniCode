@@ -277,7 +277,7 @@ pipeline {
             // it failing. Same shape here: the version is pinned to the one
             // deny.toml is written against, and the install is not the verdict.
             stage("install-cargo-deny") {
-                sh("$cd && cargo install cargo-deny --version 0.20.2 --locked || echo 'the install is not the verdict; the gate below reports it'")
+                sh("$cd && cargo install cargo-deny --version 0.20.2 --locked || echo 'ADVISORY: the install is not the verdict; the gate below reports it'")
             }
 
             stage("advisories") {

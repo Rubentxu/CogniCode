@@ -1,5 +1,5 @@
 // integration — the full suite, the feature matrix, the coverage gate and the
-// portable builds. Everything here is what `ci.yml` runs today.
+// portable builds. Everything here is what this repository runs end to end.
 //
 // This is the lane that answers "did the whole workspace still work", which is
 // not a question a pull-request gate should be paying for on every commit.
@@ -7,18 +7,18 @@
 // touches, the contracts. This one is exhaustive and runs on integration,
 // certification and release.
 //
-// Semantics are preserved, including the parts that are advisory. Three jobs
-// in `ci.yml` carry `continue-on-error: true` — benchmarks, the adversarial
-// corpora and version-sync — and a migration that turned them into hard gates
-// would tighten CI rather than move it. They are marked ADVISORY here and a
-// failure is reported without failing the lane.
+// Semantics are preserved, including the parts that are advisory. The jobs
+// that carry `continue-on-error: true` — benchmarks, the adversarial corpora
+// and version-sync — are marked ADVISORY here, and a migration that turned
+// them into hard gates would tighten CI rather than move it. A failure is
+// reported without failing the lane.
 //
-// One step is NOT migrated: the sandbox sanity check in `ci.yml` carries
-// `if: false` and is disabled pending a running API server. Migrating a
-// disabled step would put a gate in the inventory that nothing has ever
-// executed, which is the same failure this whole migration is trying to
-// remove. It stays in the YAML until it is enabled there, and moves here when
-// it does.
+// One step is NOT migrated: the sandbox sanity check in the workflow this
+// lane replaced carries `if: false` and is disabled pending a running API
+// server. Migrating a disabled step would put a gate in the inventory that
+// nothing has ever executed, which is the same failure this whole migration
+// is trying to remove. It stays there until it is enabled, and moves here
+// when it does.
 //
 // Like `merge-gate.pipeline.kts`, the repository root is resolved once and
 // interpolated: PipelineK gives every stage a throwaway directory and the DSL
@@ -168,10 +168,10 @@ pipeline {
         }
 
         // ------------------------------------------------------------ adversarial
-        // ADVISORY. `ci.yml` runs this job with `continue-on-error: true`; a
-        // regression is recorded for review, not blocked. Kept advisory on
-        // purpose: tightening it here would be a policy change wearing a
-        // migration's clothes.
+        // ADVISORY. The job this stage came from ran with
+        // `continue-on-error: true`; a regression is recorded for review, not
+        // blocked. Kept advisory on purpose: tightening it here would be a
+        // policy change wearing a migration's clothes.
         stage("adversarial") {
             stage("parser-adversarial") {
                 sh("$cd && cargo test -p cognicode-core --lib infrastructure::parser -- --test-threads=1 || echo 'ADVISORY: parser adversarial reported failures'")
@@ -216,6 +216,12 @@ pipeline {
 
             // Clean-HOME install. A CLI that reads a developer's real ~/.config
             // while testing can pass on the machine that wrote the bug.
+            //
+            // The install root is pinned inside this HOME. Left to the
+            // environment, it would not be: the resolver asks `CARGO_HOME`
+            // before `XDG_DATA_HOME`, and `CARGO_HOME` is set on a CI
+            // runner, so the install would land in the machine's cargo home
+            // instead of the clean one this stage declares.
             stage("cogh-clean-home-install") {
                 sh("""
                     $cd || exit 1
@@ -223,11 +229,16 @@ pipeline {
                     export HOME=/tmp/cognicode-test-home-${'$'}(id -u)
                     export XDG_CONFIG_HOME="${'$'}HOME/.config"
                     export XDG_DATA_HOME="${'$'}HOME/.local/share"
+                    export COGNICODE_BIN_DIR="${'$'}HOME/.local/share/cognicode"
                     mkdir -p "${'$'}HOME"
                     # Cargo may write somewhere other than the repository's `target/`;
                     # asking is the only way to find the binary this stage installs.
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    "${'$'}TARGET_DIR/release/cogh" install --profile core || echo "ADVISORY: cogh install reported failures"
+                    # `--apply` is what makes the installer install. Without it
+                    # the installer prints a plan and exits zero, and this
+                    # stage would only prove that the planner knows where it
+                    # would install.
+                    "${'$'}TARGET_DIR/release/cogh" install --profile core --apply || echo "ADVISORY: the clean-HOME install reported failures"
                     echo "clean-HOME install attempted"
                 """.trimIndent())
             }
@@ -276,7 +287,8 @@ pipeline {
 
         // -------------------------------------------------------------- advisory
         stage("advisory-only") {
-            // ADVISORY. `continue-on-error: true` in ci.yml.
+            // ADVISORY. The job this stage came from ran with
+            // `continue-on-error: true`.
             stage("benchmarks") {
                 sh("$cd && cargo bench -p cognicode-core || echo 'ADVISORY: benchmarks reported failures'")
             }

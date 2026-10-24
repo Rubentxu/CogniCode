@@ -10,9 +10,19 @@
 #   Every pull request that contains `fix(*)` commits MUST also add,
 #   modify, or re-enable at least one test in the same PR.
 #
-# The test can be unit (L1), integration (L2), sandbox scenario (L3), or
-# browser-E2E (L4) — the level chosen depends on the bug's surface, but
-# a test file MUST exist in the diff.
+# The test can be unit (L1), integration (L2), sandbox scenario (L3),
+# browser-E2E (L4) or CI contract (L5) — the level chosen depends on the
+# bug's surface, but a test file MUST exist in the diff.
+#
+# MEDIDO 2026-10-24. L5 no es nuevo por capricho. Los contratos de
+# `scripts/ci/` y de `scripts/product/` son la suite de pruebas de esta
+# casa para el comportamiento de CI —los ejecuta el runner de contratos en
+# cada puerta—, y la lista de patrones de este gate no los veia. Una
+# correccion de CI cuyo unico test es un contrato no podia pasar la regla
+# que dice «una correccion lleva un test»: la puerta no era ciega al test,
+# era ciega a una parte de la suite. La casa ya habia cerrado una correccion
+# de CI con esa forma —la guarda de frescura, PR #458— sin que esta regla
+# la pudiera ver.
 #
 # Exit code:
 #   0  PASS (no fix(*) commits, OR fix(*) commits with test files)
@@ -129,6 +139,9 @@ TEST_PATTERNS=(
   '^sandbox/manifests/.+\.yml$'
   # L4 browser E2E
   '^apps/explorer-ui/e2e/.+\.spec\.ts$'
+  # L5 CI contracts: the house's own test suite for CI behaviour
+  '^scripts/ci/test_[^/]+\.py$'
+  '^scripts/product/test_[^/]+\.py$'
   # Acceptance / harness
   '^crates/cognicode-rule-test-harness/.+'
   '^crates/cognicode-core/tests/.+'
