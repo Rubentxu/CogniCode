@@ -1130,6 +1130,19 @@ impl FileOperationsService {
             .resolve_for_creation(Path::new(&input.path))
             .map_err(Self::policy_error)?;
 
+        // FW-5: Enforce size limit (10MB default). The limit is judged
+        // before any effect on the filesystem: it is the one control that
+        // depends on the request alone, so it cannot arrive after the
+        // directories are already on disk. A write refused for its size
+        // leaves nothing behind.
+        const DEFAULT_MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+        let content_size = input.content.len() as u64;
+        if content_size > DEFAULT_MAX_FILE_SIZE {
+            return Err(AppError::InvalidParameter(
+                "File content exceeds maximum allowed size (10MB)".to_string(),
+            ));
+        }
+
         if input.create_dirs.unwrap_or(false)
             && let Some(parent) = resolved.parent()
             && !parent.exists()
@@ -1140,15 +1153,6 @@ impl FileOperationsService {
         }
 
         let validated_path = self.validate_resolved_path(&resolved)?;
-
-        // FW-5: Enforce size limit (10MB default)
-        const DEFAULT_MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
-        let content_size = input.content.len() as u64;
-        if content_size > DEFAULT_MAX_FILE_SIZE {
-            return Err(AppError::InvalidParameter(
-                "File content exceeds maximum allowed size (10MB)".to_string(),
-            ));
-        }
 
         let bytes_written = input.content.len() as u64;
 
@@ -1180,8 +1184,11 @@ impl FileOperationsService {
 
     /// Applies edits to a file with syntax validation
     ///
-    /// Each edit must match exactly one occurrence. After applying all edits,
-    /// the modified content is validated with tree-sitter for syntax errors.
+    /// Each edit must match exactly one occurrence in the original content.
+    /// The edits are applied together on that original, so none of them sees
+    /// the result of another; two edits that cover the same region are
+    /// refused as ambiguous. After applying all edits, the modified content
+    /// is validated with tree-sitter for syntax errors.
     pub fn edit_file(&self, input: EditFileRequest) -> AppResult<EditFileResult> {
         let validated_path = self.validate_path(&input.path)?;
 
@@ -1189,7 +1196,12 @@ impl FileOperationsService {
         let original_content = fs::read_to_string(&validated_path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
-        // Check that each old_string appears exactly once
+        // Each edit is located once, in the original content. The
+        // positions are computed on the original, and the changes are
+        // applied from the end, so an earlier position keeps its meaning
+        // and two edits do not tread on each other.
+        let mut spans: Vec<(usize, usize, &str)> = Vec::with_capacity(input.edits.len());
+
         for edit in &input.edits {
             let matches: Vec<_> = original_content.match_indices(&edit.old_string).collect();
             if matches.is_empty() {
@@ -1225,15 +1237,51 @@ impl FileOperationsService {
                     reason: Some("multiple_matches".to_string()),
                 });
             }
+
+            let start = matches[0].0;
+            let end = start + edit.old_string.len();
+
+            // Two identical edits are the same edit, and count once.
+            if spans
+                .iter()
+                .any(|(s, e, new)| *s == start && *e == end && *new == edit.new_string.as_str())
+            {
+                continue;
+            }
+
+            spans.push((start, end, edit.new_string.as_str()));
         }
 
-        // Apply edits
-        let mut new_content = original_content.clone();
-        for edit in &input.edits {
-            let new = new_content.replace(&edit.old_string, &edit.new_string);
-            if new != new_content {
-                new_content = new;
+        // Two edits that cover the same region are an ambiguous request:
+        // there is no single result. It is refused, and the reason says
+        // so, instead of one edit silently disappearing.
+        let mut ordered = spans;
+        ordered.sort_by_key(|(start, end, _)| (*start, *end));
+        for pair in ordered.windows(2) {
+            let previous_end = pair[0].1;
+            let next_start = pair[1].0;
+            if next_start < previous_end {
+                return Ok(EditFileResult {
+                    applied: false,
+                    validation: EditValidation {
+                        passed: false,
+                        verification: EditVerification::Unverified,
+                        syntax_issues: vec![],
+                    },
+                    preview: Some(
+                        "Overlapping edits: two edits cover the same region of the file"
+                            .to_string(),
+                    ),
+                    bytes_changed: 0,
+                    reason: Some("overlapping_edits".to_string()),
+                });
             }
+        }
+
+        // Apply the edits to the original content, from the end backwards.
+        let mut new_content = original_content.clone();
+        for (start, end, new_text) in ordered.iter().rev() {
+            new_content.replace_range(*start..*end, new_text);
         }
 
         // If content unchanged, return early

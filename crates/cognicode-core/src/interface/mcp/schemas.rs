@@ -1545,8 +1545,8 @@ pub struct EditFileOutput {
     pub bytes_changed: u64,
 
     /// Reason for rejection or non-application (if not applied)
-    /// Possible values: "no_match", "multiple_matches", "no_change",
-    /// "syntax_rejected", or None if applied successfully
+    /// Possible values: "no_match", "multiple_matches", "overlapping_edits",
+    /// "no_change", "syntax_rejected", or None if applied successfully
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
