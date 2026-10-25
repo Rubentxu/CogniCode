@@ -26702,3 +26702,80 @@ El caso mas alcanzable no es el exotico: un fichero con fecha anterior a la
 epoca --`touch -t 196001010000`-- basta para que el producto afirme que se
 escribio en la epoca. Entra en la cola como `C45`, y es de `H5`, porque es
 la base temporal de la que la incrementalidad depende.
+
+
+## 2026-10-25 — C43: un rechazo llega al cliente como un rechazo
+
+**C43 closed.** C43 acceptance: PASS (rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**421 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**Lo que se midió, con ejecución.** En el árbol de `d0607abb`:
+
+- `crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:88`, `:139`,
+  `:197`, `:253` y `:306` — los cinco handlers que pasan por el contador
+  reconstruían el error como `AppError::InternalError(e.message)`. El camino
+  **sin** colector (`:64`, `:119`, `:172`, `:232`, `:286`) conservaba la
+  categoría con `map_err(HandlerError::App)`.
+- La cadena que el cliente recibía, medida con el binario real por stdio:
+  `application: Internal error: Invalid parameter: Path outside workspace`.
+- **Por qué era invisible a la suite entera**: `init_global_metrics()` lo
+  llaman el servidor MCP (`crates/cognicode-mcp/src/server.rs:266` y
+  `main.rs:70`), nunca los tests. `TOOL_METRICS` es un `OnceLock`, así que en
+  un binario de test `get_global_metrics()` devuelve `None` y los tests toman
+  siempre el camino que ya funcionaba. El defecto no estaba escondido por
+  descuido: estaba **fuera del alcance de lo que se probaba**.
+- `handle_retrieve_and_verify` no pasa por el contador y ya conservaba la
+  categoría (`map_err(HandlerError::App)`): medido, no le afectaba el defecto.
+- El prefijo `"Invalid regex pattern: "` estaba duplicado —el validador lo
+  añadía y su llamante lo volvía a añadir—, de modo que el cliente leía la
+  misma frase dos veces.
+
+**El RED, medido antes de tocar el código.**
+`crates/cognicode-core/tests/a_rejection_arrives_as_a_rejection.rs` (nuevo, dos
+tests escritos sobre la cadena que el protocolo publica) fallaba **2 de 2**, y
+el fallo nombraba los cinco handlers. El contrato nuevo
+(`scripts/ci/test_a_rejection_arrives_as_a_rejection.py`) fallaba **2 de 4**
+contra el código anterior, y su detector nombraba las cinco posiciones
+exactas donde se aplanaba el error (88, 139, 197, 253, 306).
+
+**Lo que se cambió.**
+
+- `instrument_tool` es genérico sobre el error y lo devuelve **intacto**. La
+  firma ya no menciona `ToolError`: el error de la aplicación viaja por la
+  telemetría sin ser de la telemetría. Lo único que la telemetría pide es una
+  etiqueta, que es lo que necesita para contar.
+- `AppError::category()` nombra la variante con un `match` **exhaustivo**: una
+  variante nueva que no se nombre ahí no compila, de modo que la lista no puede
+  quedarse vieja en silencio. No es una segunda fuente de verdad de la
+  taxonomía —es una derivación, como lo es ya el `Display` de `thiserror`—,
+  sino el punto donde el compilador obliga a mantenerla al día.
+- La etiqueta de la métrica pasa a ser la categoría. Antes era `"AppError"` en
+  los cinco handlers, el único sitio del repositorio que nombraba el *tipo*
+  del error donde la convención —la de los propios tests de la telemetría, que
+  usan `"PathTraversal"` y `"Validation"`— nombra la categoría. Medido: el
+  literal `"AppError"` no aparece en ningún otro sitio, así que ningún panel,
+  contrato ni golden dependía de él.
+- Los handlers quedan **más cortos**: el `match` que convertía el error dentro
+  del `async` desaparece, porque ya no hay nada que convertir.
+- El prefijo duplicado del error de expresión regular desaparece: el validador
+  devuelve el motivo y el llamante dice qué parámetro falló. Es la misma cadena
+  que esta unidad entrega al cliente, y por eso va aquí y no en otra unidad.
+
+**Las alternativas, descartadas con su motivo.** Reconstruir el `AppError` desde
+su categoría y su mensaje sería una segunda lista de diecisiete variantes, y una
+variante nueva que no apareciera en ella caería en `InternalError`: el defecto
+que se corrige, reintroducido un nivel más abajo. Atrapar el error en una
+variable local mientras el contador corre funciona, pero mete el mismo error en
+dos sitios a la vez y el compilador no dice nada si se desincronizan. Dejar la
+etiqueta como estaba sería la mitad del arreglo de la misma confusión. Las tres
+quedan escritas en `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo: una
+escritura fuera del workspace llegó como `application: Invalid parameter: Path
+outside workspace`, un patrón inválido llegó como `application: Invalid
+parameter: Invalid regex pattern: regex parse error: …` —con el motivo dicho
+**una** vez— y una lectura de un fichero que existe siguió funcionando. El
+servidor MCP **sí** inicializa el colector, que es exactamente el camino que los
+tests no pueden ver. El escenario es efímero y vive fuera del repo: lo que se
+promueve es el test de frontera, que dice lo mismo sin depender del transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**421 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.

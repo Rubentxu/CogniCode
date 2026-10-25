@@ -31,27 +31,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C43",
-      "title": "Un rechazo llega como si fuera un fallo interno",
-      "unit": "H29",
-      "objective": "Que un rechazo deliberado llegue al cliente como un rechazo, y no como un fallo interno del producto: el consumidor tiene que poder distinguir 'lo has pedido mal' de 'nos hemos roto'.",
-      "whyNow": "MEDIDO 2026-10-25, con el binario real por stdio: el rechazo de la escritura condicional llego al cliente como `application: Internal error: Invalid parameter: The file is not the version the caller read: ...`. El mensaje es correcto y nombra las dos versiones, pero la categoria dice 'fallo interno'. La causa esta medida: los handlers de ficheros aplanan todo error a `AppError::InternalError` cuando hay colector de metricas instalado --`crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:139` en write_file, y lo mismo en `:88` (read_file), `:197` (edit_file), `:253` (search_content) y `:306` (list_files)--, mientras que sin colector la misma categoria se conserva en `:119`. O sea: el mismo rechazo se dice de dos maneras segun haya o no metricas, y la que dice el cliente es la peor. La categoria se pierde dos veces: `app_error_to_tool_error` (`file_ops_handlers.rs:29`) aplasta la variante en un `ToolError::new(\"AppError\", e.to_string())`, y la vuelta al dominio elige `InternalError` sin mirar.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs",
-        "crates/cognicode-core/src/interface/mcp/error.rs",
-        "crates/cognicode-core/src/infrastructure/telemetry/mod.rs"
-      ],
-      "doneWhen": [
-        "un rechazo por version no llega al cliente como `Internal error`: la categoria sobrevive al camino instrumentado",
-        "el mismo rechazo se dice igual con y sin colector de metricas",
-        "un test en la frontera comprueba la categoria del error, no solo que hay error"
-      ],
-      "scope": "H29",
-      "risk": "low",
-      "priority": 40,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C45",
       "title": "El producto no publica una fecha que no ha medido",
       "unit": "H5",
