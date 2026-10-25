@@ -223,6 +223,19 @@ pipeline {
                 sh("$cd && cargo build -p cognicode-cli --bin cognicode")
             }
 
+            // El cosign fijado, instalado antes de los contratos que lo necesitan.
+            //
+            // El `cosign` de una maquina es el que le dejo su gestor de paquetes.
+            // El reciente pide aceptar unos terminos de uso que un lane no puede
+            // aceptar: sin terminal, los rechaza y sale con rc=1, asi que los
+            // contratos de provenance fallan en una maquina cuyo toolchain esta
+            // bien. El lane instala por eso la version contra la que esta escrita
+            // la declaracion de provenance de la release, verifica su suma, y se
+            // niega a instalar otra.
+            stage("install-cosign") {
+                sh("$cd && bash scripts/ci/install-cosign.sh --version 3.1.3")
+            }
+
             // The contract suite. One entry point, no list: the pipeline names a
             // script, the script discovers `scripts/ci/test_*.py` by glob. The
             // previous shape named eight contract files inside pr-ci.yml, which
