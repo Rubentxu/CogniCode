@@ -104,6 +104,11 @@ pub struct WriteFileRequest {
     pub content: String,
     #[serde(default)]
     pub create_dirs: Option<bool>,
+    /// The digest of the content the caller read, when the caller declares
+    /// it. If the destination no longer holds that content, the write is
+    /// refused instead of replacing somebody else's work.
+    #[serde(default)]
+    pub expected_content_hash: Option<String>,
 }
 
 impl WriteFileRequest {
@@ -112,6 +117,7 @@ impl WriteFileRequest {
             path: path.into(),
             content: content.into(),
             create_dirs: None,
+            expected_content_hash: None,
         }
     }
 }
@@ -132,6 +138,11 @@ pub struct WriteFileResult {
 pub struct EditFileRequest {
     pub path: String,
     pub edits: Vec<FileEdit>,
+    /// The digest of the content the caller read, when the caller declares
+    /// it. If the destination no longer holds that content, the edit is
+    /// refused instead of replacing somebody else's work.
+    #[serde(default)]
+    pub expected_content_hash: Option<String>,
 }
 
 impl EditFileRequest {
@@ -139,6 +150,7 @@ impl EditFileRequest {
         Self {
             path: path.into(),
             edits,
+            expected_content_hash: None,
         }
     }
 }

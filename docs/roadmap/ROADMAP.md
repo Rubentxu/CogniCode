@@ -471,14 +471,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
->   intenta, ni perder lo que escribe. La parte de las fronteras ya esta: un
->   corte por indice de byte sobre texto multibyte partia un caracter y
->   abortaba el servicio —alcanzable desde el token de continuacion, que no
->   esta firmado— y ahora el corte se pide con la forma que el tipo hace
->   segura, con un contrato que vigila que no vuelva. La parte de la escritura
->   sigue abierta: el temporal se abre sin creacion exclusiva, si la escritura
->   falla el temporal se queda en disco, y no hay comprobacion de version que
->   impida que una edicion pise un cambio hecho por otro editor.
+>   intenta, ni perder lo que escribe. Las dos partes del nucleo estan
+>   cerradas: el corte se pide con la forma que el tipo hace segura, con un
+>   contrato que vigila que no vuelva; y la escritura se publica entera o no
+>   se publica, con el temporal en exclusiva, limpio solo si no se publica, y
+>   una comprobacion de version para que una edicion no pise el trabajo de
+>   otro editor. Queda publicarlo al consumidor del protocolo: el campo no
+>   cruza la frontera del MCP y el catalogo se genera desde una captura real,
+>   de modo que es otra unidad (`C42`), medida y en la cola.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).

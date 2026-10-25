@@ -55,6 +55,7 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-057](./ADR-057-the-stages-say-what-they-observe.md) | Una etapa que no puede hacer caer la puerta tiene que decir qué observó | EXECUTED | 2026-10-24 |
 | [ADR-058](./ADR-058-what-is-refused-leaves-no-trace.md) | Lo que se rechaza no deja rastro, y las ediciones se aplican al original | EXECUTED | 2026-10-24 |
 | [ADR-060](./ADR-060-a-cut-never-splits-a-character.md) | Un corte por byte no parte un carácter | EXECUTED | 2026-10-25 |
+| [ADR-061](./ADR-061-the-write-is-published-whole.md) | La escritura se publica entera, o no se publica | EXECUTED | 2026-10-25 |
 
 ## Format
 
