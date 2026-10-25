@@ -42,7 +42,10 @@ pub struct AnalysisService {
     graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     /// File cache: maps file path to (mtime, size, content_hash,
-    /// facts) — F2.W9 + PRF audit H-01. The
+    /// facts). The mtime is absent when the filesystem did not report a
+    /// time; an absent time is not the epoch, and it does not invalidate
+    /// the entry by itself — the content hash decides.
+    /// F2.W9 + PRF audit H-01. The
     /// content_hash field is SHA-256 of the file bytes at parse time,
     /// added in `5ed7f865` (H-01 RED pin) GREEN. This invalidates the
     /// cache when bytes change while mtime AND size stay the same.
@@ -52,7 +55,7 @@ pub struct AnalysisService {
             std::collections::HashMap<
                 String,
                 (
-                    u64,
+                    Option<i64>,
                     u64,
                     [u8; 32],
                     crate::application::ingest::types::FileFacts,

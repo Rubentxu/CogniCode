@@ -10,6 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::domain::value_objects::file_time::measured_nanos;
+
 /// Record for a single file in the manifest.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileRecord {
@@ -17,8 +19,13 @@ pub struct FileRecord {
     pub path: PathBuf,
     /// File size in bytes.
     pub size: u64,
-    /// Last modified time as nanoseconds since epoch.
-    pub mtime_ns: u64,
+    /// Last modified time as nanoseconds since epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. A `Some(0)` is a
+    /// file written at the epoch; a `None` is a file whose clock nobody
+    /// read. The fastpath below compares the two, so a file without a
+    /// date does not invalidate the manifest by itself.
+    pub mtime_ns: Option<i64>,
     /// Blake3 content hash (hex-encoded).
     pub content_hash: String,
     /// When this record was last scanned (epoch nanoseconds).
@@ -112,12 +119,10 @@ impl FileManifest {
             };
 
             let size = metadata.len();
-            let mtime_ns = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(0);
+            // La fecha que el sistema de ficheros publica, o ninguna si no
+            // la publica. En nanosegundos, con signo: una fecha anterior a
+            // la epoca es una fecha.
+            let mtime_ns = measured_nanos(metadata.modified().ok());
 
             if let Some(record) = self.files.get(rel_path) {
                 // Mtime fastpath: if size + mtime match, assume unchanged
@@ -166,12 +171,7 @@ impl FileManifest {
             };
 
             let content_hash = Self::hash_file(&abs_path).unwrap_or_default();
-            let mtime_ns = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                .map(|d| d.as_nanos() as u64)
-                .unwrap_or(0);
+            let mtime_ns = measured_nanos(metadata.modified().ok());
 
             self.upsert(FileRecord {
                 path: rel_path.clone(),
@@ -191,12 +191,7 @@ impl FileManifest {
             if let Some(record) = self.files.get_mut(rel_path) {
                 let abs_path = project_dir.join(rel_path);
                 if let Ok(metadata) = std::fs::metadata(&abs_path) {
-                    let mtime_ns = metadata
-                        .modified()
-                        .ok()
-                        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
-                        .map(|d| d.as_nanos() as u64)
-                        .unwrap_or(record.mtime_ns);
+                    let mtime_ns = measured_nanos(metadata.modified().ok()).or(record.mtime_ns);
                     record.size = metadata.len();
                     record.mtime_ns = mtime_ns;
                 }
@@ -259,7 +254,7 @@ mod tests {
         let record = FileRecord {
             path: PathBuf::from("src/main.rs"),
             size: 100,
-            mtime_ns: 1_000_000,
+            mtime_ns: Some(1_000_000),
             content_hash: "abc123".to_string(),
             scanned_at_ns: 2_000_000,
         };
@@ -277,14 +272,14 @@ mod tests {
         manifest.upsert(FileRecord {
             path: PathBuf::from("a.rs"),
             size: 10,
-            mtime_ns: 1,
+            mtime_ns: Some(1),
             content_hash: "h1".to_string(),
             scanned_at_ns: 1,
         });
         manifest.upsert(FileRecord {
             path: PathBuf::from("a.rs"),
             size: 20,
-            mtime_ns: 2,
+            mtime_ns: Some(2),
             content_hash: "h2".to_string(),
             scanned_at_ns: 2,
         });
@@ -298,7 +293,7 @@ mod tests {
         manifest.upsert(FileRecord {
             path: PathBuf::from("a.rs"),
             size: 10,
-            mtime_ns: 1,
+            mtime_ns: Some(1),
             content_hash: "h".to_string(),
             scanned_at_ns: 1,
         });
@@ -456,14 +451,14 @@ mod tests {
         manifest.upsert(FileRecord {
             path: PathBuf::from("src/main.rs"),
             size: 100,
-            mtime_ns: 1_000_000,
+            mtime_ns: Some(1_000_000),
             content_hash: "abc123".to_string(),
             scanned_at_ns: 2_000_000,
         });
         manifest.upsert(FileRecord {
             path: PathBuf::from("src/lib.rs"),
             size: 200,
-            mtime_ns: 1_500_000,
+            mtime_ns: Some(1_500_000),
             content_hash: "def456".to_string(),
             scanned_at_ns: 2_500_000,
         });

@@ -885,7 +885,7 @@ mod e2e_search_list_tests {
         for file_entry in &output.files {
             assert!(file_entry.size > 0, "File should have size");
             assert!(
-                file_entry.modified > 0,
+                file_entry.modified.is_some_and(|modified| modified > 0),
                 "File should have modified timestamp"
             );
         }

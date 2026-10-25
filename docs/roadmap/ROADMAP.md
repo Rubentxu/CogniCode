@@ -417,7 +417,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   **H3** (gramática tree-sitter de Kotlin), **H4.4**
 >   (relaciones Kotlin↔Java, sólo cuando se pueden probar) y **H5**
 >   (incremental/distribución: `SnapshotKey`, identidades de caché por
->   ruta y corte de release). **Sí tienen spec propio**, aunque no con
+>   ruta y corte de release; la base temporal ya solo publica fechas
+>   medidas). **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
 >   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y cada
 >   uno tiene **su propio ADR de autoridad normativa** —

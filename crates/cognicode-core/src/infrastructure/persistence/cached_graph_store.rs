@@ -175,7 +175,7 @@ mod tests {
 
         // Save manifest
         let mut manifest = FileManifest::new(PathBuf::from("/proj"));
-        manifest.update_entries(&[(PathBuf::from("a.rs"), "h".to_string(), 1, 1)]);
+        manifest.update_entries(&[(PathBuf::from("a.rs"), "h".to_string(), Some(1), 1)]);
         store.save_manifest(&manifest).unwrap();
         assert!(store.exists().unwrap());
 

@@ -31,6 +31,7 @@ use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundar
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
+use crate::domain::value_objects::file_time::measured_seconds;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
@@ -38,7 +39,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1170,12 +1170,9 @@ impl FileOperationsService {
         let metadata = fs::metadata(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read metadata: {}", e)))?;
 
-        let modified = metadata
-            .modified()
-            .unwrap_or(SystemTime::UNIX_EPOCH)
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        // La fecha que el sistema de ficheros publica, o ninguna si no la
+        // publica. El fichero se midio; lo que puede faltar es su reloj.
+        let modified = measured_seconds(metadata.modified().ok());
 
         let language = Self::detect_language(path);
 
@@ -1895,12 +1892,10 @@ impl FileOperationsService {
                 Err(_) => continue,
             };
 
-            let modified = metadata
-                .modified()
-                .unwrap_or(SystemTime::UNIX_EPOCH)
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+            // La fecha que el sistema de ficheros publica, o ninguna si no
+            // la publica. El fichero se midio; lo que puede faltar es su
+            // reloj.
+            let modified = measured_seconds(metadata.modified().ok());
 
             entries.push(FileEntry {
                 path: path.to_string_lossy().to_string(),
