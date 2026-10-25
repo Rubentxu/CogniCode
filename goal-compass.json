@@ -31,20 +31,22 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C11",
-      "title": "Construir el SnapshotKey de H5",
+      "candidateId": "C47",
+      "title": "La caché incremental reconstruye solo lo que cambió, y lo dice",
       "unit": "H5",
-      "objective": "Construir el `SnapshotKey` de CU-005.1: identidad del workspace, paths normalizados con su hash, manifiesto de contenido completo, revision de origen, digest de arbol sucio, build real del analizador, esquema, features, perfil de configuracion y ambito.",
-      "whyNow": "MEDIDO: `SnapshotKey` tiene 0 apariciones en `crates/`; la cache es un `HashMap<String, FileGraphCacheEntry>` con la ruta como clave. Sin el, C2 solo arregla una parte del problema de stale. Es la unidad grande, y depende de que C2 haya sentado la base.",
+      "objective": "Que un cambio en un fichero no rehaga el grafo entero: la reconstruccion se limita a ese fichero y a las relaciones afectadas, el inventario incremental no pierde ficheros, y el cold, el warm y la edicion se miden sin inventar tiempos.",
+      "whyNow": "MEDIDO 2026-10-25, al cerrar la identidad del snapshot: la identidad ya esta --el snapshot declara quien lo produjo, y un snapshot de otro analizador no se sirve--, pero el motor de incrementalidad es el que falta. `build_project_graph` (`crates/cognicode-core/src/application/services/analysis_service.rs:174`) relee y re-hashea TODOS los ficheros en cada construccion: la cache por fichero (`file_cache`) ahorra solo el parseo de Tree-sitter, no la lectura ni el hash, y el comentario del propio sitio lo dice. Y el indice global de simbolos, que es lo que resuelve las referencias, se rehace desde cero en cada llamada (`global_index` se crea al principio de la funcion): cambiar un fichero rehace la resolucion del proyecto entero, no solo la de ese fichero. El `CacheStore` de `crates/cognicode-core/src/incremental/content_hash.rs` es un `BTreeMap<PathBuf, ContentHash>` por sesion: sabe QUE ficheros cambiaron, pero no sabe que relaciones quedan afectadas, que es lo que hace falta para reconstruir poco. MEDIDO Y NO ES CIERTO: la cache por fichero si evita volver a parsear un fichero intacto, y la invalidacion por contenido ya es correcta (el hash manda, no la marca de tiempo).",
       "evidenceRefs": [
+        "crates/cognicode-core/src/application/services/analysis_service.rs",
+        "crates/cognicode-core/src/incremental/content_hash.rs",
+        "crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs",
         "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md"
       ],
       "doneWhen": [
-        "existe el tipo con los componentes que enumera CU-005.1, y una funcion pura que lo construye",
-        "cold y warm equivalen semanticamente; un cambio semantico invalida; la corrupcion falla cerrado",
-        "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados",
+        "cambiar un fichero no reconstruye el grafo entero: la reconstruccion se limita a ese fichero y a las relaciones afectadas, y el coste se mide en ese termino",
         "el inventario incremental no pierde ficheros: usa el mismo `SourceInventory` que el inventario principal, con los errores de recorrido contados aparte de las exclusiones legitimas",
-        "cambiar un fichero no reconstruye el grafo entero: la reconstruccion se limita a ese fichero y a las relaciones afectadas, y el coste se mide en ese termino"
+        "cold y warm se miden en p50 y p95, con asignaciones y bytes de salida, sobre una fixture representativa, y ningun test del merge exige tiempos inestables",
+        "cold y warm siguen siendo equivalentes semanticamente: lo que se sirve desde cache y lo que se construye dicen lo mismo"
       ],
       "scope": "H5",
       "risk": "high",

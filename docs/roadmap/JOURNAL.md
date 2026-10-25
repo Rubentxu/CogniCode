@@ -26947,3 +26947,153 @@ publicado. El cliente sigue recibiendo la fecha que el producto midió, y
 ahora puede distinguir una fecha medida de una fecha que no existe, que es
 la diferencia que no se podía ver antes. La decisión queda escrita en
 `docs/adr/ADR-064-a-date-is-published-only-when-it-was-measured.md`.
+
+
+## 2026-10-25 — C11: el snapshot dice quién lo produjo
+
+**Lo que se midió, con ejecución.** El producto persiste un snapshot del grafo
+y lo vuelve a servir cuando las fuentes no han cambiado. En el árbol de
+`1b8f03df`, el snapshot guardaba **dos** cosas: el grafo (`CallGraph`) y el
+manifiesto de contenido (`FileManifest`). La decisión de servirlo la tomaba
+`is_manifest_stale`
+(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1023`), que compara
+la marca de tiempo y luego el hash de cada fichero.
+
+Lo que el snapshot **no** guardaba era quién lo había calculado: ni la versión
+del analizador, ni su commit, ni sus capacidades, ni el esquema. La
+consecuencia medida: un binario distinto —otra versión, otro commit, otro
+conjunto de capacidades— **servía el snapshot igual que si fuera suyo**, y el
+grafo que el consumidor recibía lo había calculado otro analizador, con otra
+ontología y otras reglas, sin que nada en la respuesta lo dijera.
+
+Lo que sí se publicaba era una `basis` —el workspace, el digest de la
+configuración y el digest del manifiesto— con `complete: true`. Es decir: la
+identidad del análisis se declaraba completa mientras le faltaba justamente
+la parte que decide si el análisis sigue valiendo.
+
+**Por qué era invisible a la suite entera.** La suite probaba que el snapshot
+se guardaba, que se cargaba, que uno corrupto se rechazaba y que uno con las
+fuentes cambiadas se rechazaba. No probaba **quién** lo había escrito, porque
+el snapshot no lo decía.
+
+**El RED, medido antes de tocar el código.**
+
+- `crates/cognicode-core/tests/a_snapshot_says_who_produced_it.rs` (nuevo,
+  cuatro tests escritos sobre lo que el cliente ve) fallaba **3 de 4** contra
+  el código anterior: la base no declaraba el analizador, el snapshot
+  persistido no lo declaraba, y un snapshot marcado como de otro analizador
+  se servía igual. El cuarto —que el análisis en frío y el servido declaran
+  la misma identidad— pasaba, y es la contraprueba: sin ella, un producto que
+  publicara una identidad distinta en frío y en caliente también pasaría.
+- El contrato nuevo
+  (`scripts/ci/test_a_snapshot_says_who_produced_it.py`) encuentra **16
+  hallazgos** contra el código anterior: la clave que no existe, el analizador
+  que no se identifica, el snapshot que se guarda y se carga sin la clave, la
+  base que no declara el analizador y el catálogo que no declara lo mismo.
+
+**Lo que se cambió.**
+
+- **La clave vive en el dominio**, en
+  `crates/cognicode-core/src/domain/value_objects/snapshot_key.rs`, y declara
+  tres componentes: el **workspace** canónico (qué se miró), el **analizador**
+  (quién lo miró) y el **esquema** (con qué forma se escribió). El
+  constructor es puro: mismos datos, misma clave; no lee el disco, no
+  pregunta al reloj.
+- **El analizador se identifica con hechos.** `AnalyzerBuild` lleva la versión
+  del crate que *calcula* —el proveedor, no el consumidor que pregunta—, el
+  commit del que se construyó, que un `build.rs` nuevo hornea con el mismo
+  mecanismo que ya usa el CLI para `cognicode identity`, y la lista de
+  capacidades con las que se compiló. El commit es `null` cuando el binario
+  se construyó fuera de un checkout: es un hecho sobre el binario, no un hueco
+  que se rellene con un valor inventado.
+- **El snapshot guarda la clave y se decide con ella.** El formato pasa de
+  `cognicode.graph.cache/v3` a `v4`, porque la forma del fichero cambia. Al
+  cargar, la primera pregunta es sobre el productor y no cuesta nada —se
+  responde sin leer el árbol—: si el snapshot lo produjo otro analizador, no
+  se sirve, el producto reconstruye y el motivo queda en el log de
+  observabilidad. Solo si el producto coincide se pasa a la comparación de
+  contenido, que es la que ya existía.
+- **La base publicada declara el analizador**, con cuatro campos: versión,
+  commit, capacidades y esquema. Vienen de la **misma clave** con la que se
+  escribe el snapshot, así que la base no puede describir un analizador que el
+  snapshot no nombre. El catálogo publicado (`product/tools.json`) declara
+  los mismos cuatro, y un contrato lo comprueba: un documento que describe
+  una forma que el producto ya no tiene es una promesa que el producto no
+  cumple.
+
+**Lo que la clave NO lleva, y por qué.** La especificación de la unidad
+enumera más componentes, y tres quedan fuera con su motivo, escrito en
+`docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`:
+
+- **El digest del manifiesto.** El snapshot ya lo guarda y el producto ya lo
+  compara fichero a fichero. Meterlo en la clave sería una segunda fuente de
+  verdad sobre los mismos bytes.
+- **La revisión del workspace analizado y su digest de suciedad.** El
+  análisis es una función de los bytes y del analizador: con los bytes
+  fijados, la revisión es redundante, y pedirla invalidaría la caché en cada
+  commit sin cambiar ninguna respuesta.
+- **El perfil de configuración y el ámbito.** La parte de la configuración que
+  cambia lo que el analizador puede ver son las capacidades, y ya están en la
+  clave; el nivel de log no cambia el grafo. El ámbito del snapshot es el
+  árbol entero del workspace, y eso ya lo fijan el workspace y el manifiesto.
+
+**Las alternativas, descartadas con su motivo.** Subir la versión del snapshot
+y no hacer nada más no cierra el defecto: la versión del formato solo cambia
+cuando cambia la forma, y un analizador nuevo que escriba el mismo formato
+seguiría sirviendo el snapshot del anterior. Poner el digest del manifiesto
+dentro de la clave, o reemplazar la comparación por manifiesto por la
+comparación de la clave, crea una segunda verdad sobre los mismos bytes y
+cambia una semántica que ya está probada —un fichero ilegible invalida, uno
+borrado invalida, uno nuevo invalida—, sin que la unidad lo necesite: la
+clave se **añade** a la decisión, no la sustituye. Dejar la identidad en el
+interior, sin publicarla, cerraría el defecto pero dejaría al consumidor sin
+forma de saber quién calculó la respuesta que tiene delante, con una `basis`
+que dice `complete: true` sobre una identidad a medias.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo, en
+un directorio temporal fuera del repo. Lo que se midió:
+
+- La base publicada declara el analizador: `analyzer_version: "0.101.31"`,
+  `analyzer_commit: "1b8f03df"`, `analyzer_features: ["evidence-kernel",
+  "multimodal", "persistence"]`, `snapshot_schema:
+  "cognicode.graph.cache/v4"`, `complete: true`.
+- El snapshot persistido —**641 bytes**— contiene la versión del analizador, y
+  la contiene **una vez**: el test puede afirmar algo sobre la identidad a
+  partir de ahí.
+- Un snapshot al que se le cambia la versión declarada por otra **de la misma
+  longitud** —de modo que el fichero sigue siendo legible y lo que cambia es
+  la identidad, no la integridad— **no se sirve**: tras la segunda llamada el
+  snapshot vuelve a declarar la versión del analizador que está ahora, y la
+  respuesta dice `status: "complete"`. El producto reconstruyó.
+
+El `analyzer_commit` que sale es el commit base, no el árbol: el binario se
+construyó con cambios sin commitear. Es la limitación de una identidad
+horneada en tiempo de construcción, y está escrita en el ADR en vez de
+disimulada; para un binario de release —árbol limpio, commit etiquetado— la
+identidad es exacta.
+
+El escenario es efímero y vive fuera del repo: lo que se promueve es el test
+de frontera, que dice lo mismo sin depender del transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato,
+clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos
+—**435 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**La unidad, cerrada sobre `ea5b92cf90db728336102c07cb7f6be84c9dba70`.** C11 está cerrada: el snapshot
+declara quién lo produjo, un snapshot de otro analizador no se sirve, y el
+consumidor puede ver en la base quién calculó la respuesta que tiene delante.
+
+**Lo que queda de esta unidad, y es una unidad propia.** El motor de
+incrementalidad no se ha tocado, y es lo que de verdad falta: medirlo dio
+que `build_project_graph`
+(`crates/cognicode-core/src/application/services/analysis_service.rs:174`)
+**relee y re-hashea todos los ficheros** en cada construcción —la caché por
+fichero ahorra solo el parseo, no la lectura— y que el índice global de
+símbolos, que es lo que resuelve las referencias, **se rehace desde cero**
+siempre. El `CacheStore` de
+`crates/cognicode-core/src/incremental/content_hash.rs` sabe *qué* ficheros
+cambiaron, pero no qué relaciones quedan afectadas. Eso queda medido y
+encolado como **C47**.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10).

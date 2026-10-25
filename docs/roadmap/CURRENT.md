@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-25, sobre `363ac9e59a62d736645153a5eb0d407dd1d8f0f8` (la rama de la unidad de la
-> fecha: el producto solo publica una fecha que ha medido, y el consumidor
-> puede ver la diferencia entre una fecha medida y una fecha que no existe).
+> **Snapshot**: 2026-10-25, sobre `ea5b92cf90db728336102c07cb7f6be84c9dba70` (la rama de la unidad de la
+> identidad: el snapshot declara quién lo produjo, y un análisis hecho por
+> otro analizador no se sirve).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -146,9 +146,13 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H5** (`C46`, `C11`) | la base temporal honesta y el `SnapshotKey` | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
-| **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
+| **H5** (`C46`) | la ingestión que no borra del escaneo lo que no puede fechar | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
+| **H5** (`C47`) | la incrementalidad: reconstruir solo lo cambiado y medirlo | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
+La identidad vive ahora en el dominio, en un valor con constructor puro: `SnapshotKey` dice qué se miró (el workspace), quién lo miró (el analizador: su versión, su commit y sus capacidades) y con qué forma se escribió (el esquema). El snapshot la guarda y se decide con ella, y la primera pregunta al cargar es sobre el productor, que no cuesta nada porque se responde sin leer el árbol. Si lo produjo otro analizador, no se sirve: el producto reconstruye y el motivo queda en el log. La base publicada gana cuatro campos que salen de la misma clave con la que se escribe el snapshot, y el catálogo publicado declara los mismos.
+El RED está medido sobre el camino malo: los tests nuevos fallaban 3 de 4 y el contrato de CI encontraba 16 hallazgos contra el código anterior. Con el binario real por stdio, un snapshot al que se le cambia la versión declarada no se sirve. Lo que queda de esta unidad —que un cambio no rehaga el grafo entero, y la medición de frío, tibio y edición— está medido y encolado como `C47`.
 
 **Una fecha se publica solo si se midió, está cerrada.** El producto publicaba la marca de tiempo de un fichero como un número de segundos desde la época, y ese número decía siempre algo: cuando la fecha no se podía leer publicaba `0`, que dice «1 de enero de 1970»; y el grafo por fichero, que convertía la distancia a la época en vez del instante, publicaba 1980 para un fichero de 1960. Once sitios de producción medían la fecha por su cuenta. La caché nunca sirvió un grafo viejo —la invalidación compara también el hash del contenido—, así que el defecto no era de estabilidad: era que el producto publicaba una fecha que no había medido.
 La causa eran tres hechos distintos —una fecha medida, la época exacta y la ausencia de fecha— vestidos del mismo número. Ahora el tipo publicado distingue los tres: `Some(0)` es un fichero escrito en la época, `Some(-60)` uno escrito antes, y `None` uno del que no se sabe cuándo se escribió. El signo no es decorativo: un fichero puede traer una fecha anterior a la época, y un contador sin signo no la puede representar. La medida tiene un dueño único en el dominio, y la caché sigue invalidando por contenido: un fichero sin reloj no invalida el snapshot por su cuenta.
