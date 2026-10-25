@@ -57,6 +57,7 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-060](./ADR-060-a-cut-never-splits-a-character.md) | Un corte por byte no parte un carácter | EXECUTED | 2026-10-25 |
 | [ADR-061](./ADR-061-the-write-is-published-whole.md) | La escritura se publica entera, o no se publica | EXECUTED | 2026-10-25 |
 | [ADR-062](./ADR-062-the-consumer-declares-the-version.md) | El consumidor declara la versión sobre la que escribe | EXECUTED | 2026-10-25 |
+| [ADR-063](./ADR-063-a-rejection-arrives-as-a-rejection.md) | Un rechazo llega al cliente como un rechazo | EXECUTED | 2026-10-25 |
 
 ## Format
 

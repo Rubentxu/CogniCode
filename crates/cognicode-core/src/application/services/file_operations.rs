@@ -1714,9 +1714,11 @@ impl FileOperationsService {
     /// Validates a regex pattern before processing
     /// Returns Err with description if pattern is invalid
     fn validate_regex_pattern(pattern: &str) -> Result<(), String> {
-        Regex::new(pattern)
-            .map(|_| ())
-            .map_err(|e| format!("Invalid regex pattern: {}", e))
+        // The reason, not a sentence about it: the caller says which
+        // parameter failed, and the error's own category says what kind of
+        // failure it is. Naming it here too made the client read the same
+        // words twice.
+        Regex::new(pattern).map(|_| ()).map_err(|e| e.to_string())
     }
 
     /// Checks if a path matches a glob pattern

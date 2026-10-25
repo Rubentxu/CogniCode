@@ -222,13 +222,21 @@ impl<T> From<ToolError> for Result<T, ToolError> {
 ///
 /// Wraps a tool operation and records call count, duration, and errors
 /// to the provided ToolMetrics instance.
-pub async fn instrument_tool<F, T>(
+///
+/// The operation's error comes back **unchanged**. The counter needs a name
+/// for the error, not the error: asking the caller for a label and returning
+/// the error as it is keeps the metric honest and leaves the category intact.
+/// The wrapper used to demand a `ToolError` and hand back an error of its
+/// own kind, which meant every caller had to rebuild the error it already
+/// had -- and the rebuild was lossy.
+pub async fn instrument_tool<F, T, E>(
     metrics: &ToolMetrics,
     tool_name: &str,
     f: F,
-) -> Result<T, ToolError>
+    label: impl Fn(&E) -> ToolError,
+) -> Result<T, E>
 where
-    F: Future<Output = Result<T, ToolError>>,
+    F: Future<Output = Result<T, E>>,
 {
     let start = Instant::now();
     metrics
@@ -248,7 +256,7 @@ where
                 1,
                 &[
                     KeyValue::new("tool", tool_name.to_string()),
-                    KeyValue::new("error_type", e.kind.clone()),
+                    KeyValue::new("error_type", label(&e).kind),
                 ],
             );
             Err(e)
