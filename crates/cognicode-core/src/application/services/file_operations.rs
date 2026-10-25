@@ -26,6 +26,7 @@ use crate::application::dto::{
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
+use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -498,7 +499,12 @@ impl FileOperationsService {
                                         e
                                     ))
                                 })?;
-                                content[..offset].lines().count() as u32 + 1
+                                content
+                                    .get(..floor_char_boundary(&content, offset))
+                                    .unwrap_or_default()
+                                    .lines()
+                                    .count() as u32
+                                    + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
                             (chunk, chunk_end_line, has_more, next_token)
@@ -523,7 +529,12 @@ impl FileOperationsService {
                                         e
                                     ))
                                 })?;
-                                content[..ct.offset].lines().count() as u32 + 1
+                                content
+                                    .get(..floor_char_boundary(&content, ct.offset))
+                                    .unwrap_or_default()
+                                    .lines()
+                                    .count() as u32
+                                    + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
                             (chunk, chunk_end_line, has_more, next_token)
@@ -956,8 +967,13 @@ impl FileOperationsService {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
         let cap = byte_offset.min(content.len());
+        // Count the newlines before the offset without slicing: the offset can
+        // land inside a multibyte character, and slicing there aborts.
         let mut line: u32 = 1;
-        for ch in content[..cap].chars() {
+        for (index, ch) in content.char_indices() {
+            if index >= cap {
+                break;
+            }
             if ch == '\n' {
                 line += 1;
             }
@@ -982,9 +998,26 @@ impl FileOperationsService {
             return Ok((String::new(), offset, true));
         }
 
+        // `get` yields None when the range does not land on character
+        // boundaries, so a read can never split a character: the type carries
+        // the guarantee, not a validation that a later change could forget.
+        let remaining = content.get(offset..).ok_or_else(|| {
+            AppError::InvalidParameter(format!(
+                "Offset {} is not a character boundary in the file.",
+                offset
+            ))
+        })?;
+
         // Read from offset, limited to chunk_size
-        let remaining = &content[offset..];
-        let read_size = chunk_size.min(remaining.len());
+        // A cut that ends inside a multibyte character would split it, so the
+        // chunk ends on the last whole character that fits.
+        let read_size = floor_char_boundary(remaining, chunk_size.min(remaining.len()));
+        if read_size == 0 && !remaining.is_empty() {
+            return Err(AppError::InvalidParameter(format!(
+                "Chunk size {} is smaller than the first character at offset {}.",
+                chunk_size, offset
+            )));
+        }
 
         // Find the appropriate end position:
         // 1. If chunk ends at a newline, use chunk_size as-is
@@ -1000,7 +1033,13 @@ impl FileOperationsService {
                 (offset + newline_pos + 1, false)
             } else {
                 // No newline in our chunk - look ahead for next newline
-                if let Some(next_newline) = remaining[read_size..].find('\n') {
+                let lookahead = remaining.get(read_size..).ok_or_else(|| {
+                    AppError::InvalidParameter(format!(
+                        "Chunk size {} does not land on a character boundary.",
+                        chunk_size
+                    ))
+                })?;
+                if let Some(next_newline) = lookahead.find('\n') {
                     (offset + read_size + next_newline + 1, false)
                 } else {
                     // No more newlines, return rest of file
@@ -1009,7 +1048,12 @@ impl FileOperationsService {
             }
         };
 
-        let chunk = String::from(&content[offset..end_offset]);
+        let chunk = String::from(content.get(offset..end_offset).ok_or_else(|| {
+            AppError::InvalidParameter(format!(
+                "The chunk range {}..{} does not land on character boundaries.",
+                offset, end_offset
+            ))
+        })?);
         Ok((chunk, end_offset, reached_end))
     }
 
@@ -1048,7 +1092,14 @@ impl FileOperationsService {
             return Ok(String::new());
         }
 
-        Ok(String::from(&content[start_byte..end_byte]))
+        Ok(String::from(content.get(start_byte..end_byte).ok_or_else(
+            || {
+                AppError::InvalidParameter(format!(
+                    "The range {}..{} does not land on character boundaries.",
+                    start_byte, end_byte
+                ))
+            },
+        )?))
     }
 
     /// Counts total lines in a file
@@ -1373,7 +1424,7 @@ impl FileOperationsService {
         if s.len() <= max_len {
             s.to_string()
         } else {
-            format!("{}...", &s[..max_len])
+            format!("{}...", truncate_at_boundary(s, max_len))
         }
     }
 

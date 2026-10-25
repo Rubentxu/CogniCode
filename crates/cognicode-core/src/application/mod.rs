@@ -104,6 +104,9 @@ pub mod promotion_authority;
 #[cfg(feature = "evidence-kernel")]
 pub mod software_world;
 pub mod workspace_session;
+// Fronteras de caracter en texto UTF-8: la unica via por la que el producto
+// recorta texto sin partir un caracter multibyte.
+pub mod text_boundary;
 
 // Re-export error types for convenience
 pub use error::{AppError, AppResult};
