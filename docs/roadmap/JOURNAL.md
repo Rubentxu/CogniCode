@@ -27097,3 +27097,23 @@ encolado como **C47**.
 
 **Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
 operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10).
+
+**El veredicto del `merge-gate`.** rc=0 sobre `cd9aedbb`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #471.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate, con su identificador de corrida `649bb5aa-2468-4331-9723-b9935dfdc491`,
+las 58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate no perdona.** El formato se comprueba antes que nada, y en
+esta unidad casi lo hunde: el `fmt --check` del primer `test-full` rechazó los
+imports sin ordenar y dos llamadas que se salían de línea. Es un fallo de
+forma, no de fondo, pero es un fallo: un gate que se pone rojo por el estilo
+no examina el resto del árbol. Se corrigió antes de que el árbol fuera el que
+se evaluó, y el veredicto que se publica es el del árbol que se entrega.
+
+**Lo que el gate dice de esta unidad.** No se rompe ningún contrato
+publicado. El consumidor sigue recibiendo el grafo, y ahora recibe también la
+identidad de quien lo calculó: la versión, el commit cuando se pudo saber, las
+capacidades y el esquema. Un snapshot hecho por otro analizador deja de
+servirse. La decisión queda escrita en
+`docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
