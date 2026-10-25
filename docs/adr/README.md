@@ -60,6 +60,7 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-063](./ADR-063-a-rejection-arrives-as-a-rejection.md) | Un rechazo llega al cliente como un rechazo | EXECUTED | 2026-10-25 |
 | [ADR-064](./ADR-064-a-date-is-published-only-when-it-was-measured.md) | Una fecha se publica solo si se midió | EXECUTED | 2026-10-25 |
 | [ADR-065](./ADR-065-a-snapshot-says-who-produced-it.md) | El snapshot dice quién lo produjo | EXECUTED | 2026-10-25 |
+| [ADR-066](./ADR-066-the-guard-does-not-need-the-network.md) | La guarda del toolchain no pregunta a rustc: el host se resuelve una vez y se pasa | EXECUTED | 2026-10-25 |
 
 ## Format
 

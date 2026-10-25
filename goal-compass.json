@@ -31,6 +31,28 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C48",
+      "title": "La guarda del toolchain no depende de la red y no puede dar veredictos falsos",
+      "unit": "B2",
+      "objective": "Que la guarda de toolchain cruzado reciba el triple del host como dato, en vez de preguntarselo a rustc dentro de un entorno aislado donde rustup intenta instalar la toolchain desde la red; y que, cuando no lo pueda resolver, se niegue a dar veredicto y lo diga.",
+      "whyNow": "MEDIDO 2026-10-25: el gate de la unidad de la identidad del snapshot se puso en rojo en la etapa `contracts/sh-0` con `shell exited with code 1`, y el unico cambio de codigo entre la corrida verde y la roja era un parrafo del Journal. La etapa tardaba 662,1 s contra 84,3 s. La causa es que `check-cross-toolchain.sh` resolvia el host con `rustc -vV` DENTRO de un HOME aislado: el shim de rustup no encuentra ahi ninguna toolchain, lee el `rust-toolchain.toml` del repositorio e intenta instalarla desde la red. Medido: 117,7 s por llamada, con el `timeout=120` del contrato al borde, y con la red un poco mas lenta el `TimeoutExpired` tumbaba la etapa entera con 3 tests en rojo. MEDIDO Y NO ES CIERTO: el fallo no era del codigo que se certificaba; dos corridas del gate de esa misma manana habian fallado en la misma etapa con la misma firma. El defecto de fondo es que la guarda, cuando `rustc -vV` fallaba, dejaba el host vacio y rechazaba el target NATIVO como si fuera cruzado, con el motivo de que faltaba el compilador de C: un veredicto sobre una causa que no se habia mirado.",
+      "evidenceRefs": [
+        "scripts/ci/check-cross-toolchain.sh",
+        "scripts/ci/test_cross_toolchain_guard.py",
+        "release-candidate.pipeline.kts"
+      ],
+      "doneWhen": [
+        "la guarda recibe el host como dato y no pregunta a rustc: el contrato tarda 0,64 s en vez de 117,7 s por llamada, y la etapa `contracts` deja de depender de la red",
+        "cuando la guarda no puede resolver el host, se niega a dar veredicto y nombra esa causa, en vez de rechazar el target nativo como si fuera cruzado",
+        "la ruta que resuelve el host dentro de la guarda sigue viva y con cobertura, con un `rustc` de mentira",
+        "la lane de release sigue funcionando sin cambios en su pipeline, y gana el fallo cerrado"
+      ],
+      "scope": "B2",
+      "risk": "low",
+      "priority": 40,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C47",
       "title": "La caché incremental reconstruye solo lo que cambió, y lo dice",
       "unit": "H5",
