@@ -26522,3 +26522,46 @@ en el lane de release, no en el servicio de análisis.
 motivo, y el `merge-gate` que corre sobre esta rama publicará el mismo
 veredicto. La publicación de la v0.101.31 sigue en espera, que es lo que el
 operador decidió.
+
+## 2026-10-25 — El `merge-gate` de esta rama: fallo en la etapa de contratos, por el motivo ya medido
+
+**El veredicto, medido sobre el head de la rama.**
+
+`bash scripts/ci/publish-merge-gate.sh` — corrida `b8793970`, sobre
+`c9a2f21ec006f9b67e7e2c10e6290b81db5c4170`. Publicado en GitHub como
+`merge-gate=failure`.
+
+La puerta llegó hasta la etapa `contracts` con todo lo anterior en verde:
+
+| Etapa | Veredicto |
+|---|---|
+| `build-isolation` | OK |
+| `toolchain` | OK |
+| `repo-contract` | OK |
+| `fmt` | OK |
+| `clippy` | OK |
+| `contract-toolchain` | OK |
+| `build-cognicode-for-contracts` | OK |
+| `contracts` | **FAIL** — en `test_provenance_generation.py`, 11 passed / 2 failed |
+
+Los dos rojos son los mismos dos de siempre, y son los únicos:
+
+```
+FAIL test_the_subject_digest_is_the_artifact_digest
+FAIL test_the_bundle_verifies_with_the_key_that_ships_with_the_release
+```
+
+El contrato nuevo de esta unidad, `test_the_service_is_split_by_responsibility.py`,
+pasó 5/5 **dentro de esa misma etapa**.
+
+**Qué significa.** El `merge-gate` no tropieza con el código de esta unidad:
+tropieza con la máquina. Es el mismo rojo que `scripts/test-full.sh` mide en
+local, y el mismo que se midió idéntico sobre un clon limpio de `87aab47f`. La
+PR #464 queda bloqueada por el check que GitHub exige, y ese bloqueo es de la
+infraestructura de la release, no del servicio de análisis.
+
+**Los dos caminos que tiene el operador.** Uno: contestar el prompt desde una
+terminal —con TTY, `cosign` firma y publica en el registro público de Rekor—.
+Dos: decidir la política del registro, que es el candidato `C39`, y que el lane
+deje de depender de una respuesta interactiva. El primero tapa el síntoma; el
+segundo lo cierra.

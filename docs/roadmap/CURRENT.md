@@ -12,6 +12,13 @@
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
+> **Rama abierta**: `feature/the-service-is-split-by-responsibility`, con la PR
+> #464 abierta contra `main` —el servicio de análisis partido por responsabilidad,
+> ADR-059—. Su `merge-gate` está en rojo **por la etapa `contracts`**: los dos
+> checks de `test_provenance_generation.py`, por el cosign v3.1.4 de esta máquina.
+> No es el código de la unidad. Las medidas y la política que lo cierra están en
+> el Journal y en el candidato `C39`.
+>
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
 ## Release: la última publicada es la v0.101.30
