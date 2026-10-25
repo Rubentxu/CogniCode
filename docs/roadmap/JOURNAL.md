@@ -26435,3 +26435,10 @@ una edición pise un cambio hecho por otro editor entre la lectura y la
 escritura. Un `rename` atómico tampoco es persistencia garantizada tras un
 fallo eléctrico. Queda abierto como `C41`, con la evidencia medida en la
 misma rama y en la cola de la misión.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `38429804`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #466. La
+correccion no cambia ningun contrato publicado, asi que no habia nada que
+deprender de la version; lo que si cambia es que el producto ya no aborta el
+proceso que atiende a los agentes. La decision queda escrita en
+`docs/adr/ADR-060-a-cut-never-splits-a-character.md`.
