@@ -31,28 +31,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C45",
-      "title": "El producto no publica una fecha que no ha medido",
-      "unit": "H5",
-      "objective": "Que la marca de tiempo de un fichero sea un hecho medido o ninguna: si la fecha no se puede leer, o es anterior a la epoca, el producto no puede publicar `mtime 0` como si dijera que el fichero se escribio en la epoca.",
-      "whyNow": "MEDIDO 2026-10-25, al contrastar una auditoria externa con el codigo: `source_files.rs:242` publica `mtime_millis = 0` cuando `meta.modified()` falla, y `duration_since(UNIX_EPOCH).unwrap_or_default()` hace lo mismo con una fecha anterior a la epoca. El docstring de la funcion (linea 230) dice justo lo contrario: un dato no medido no se presenta como medido. El contrato vigente solo vigila el fallo de la metadata, no el de la fecha. Lo que no se rompe es la cache: la invalidacion compara tambien el hash del contenido (`handlers/mod.rs:1056`), de modo que un mtime a cero no sirve un grafo viejo; el defecto es de verdad, no de estabilidad: el MCP publica `mtime: 0` y `\"0\"` como si fueran la fecha del fichero. Es de H5 porque es la base temporal de la que depende la incrementalidad.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
-        "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
-        "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md"
-      ],
-      "doneWhen": [
-        "una fecha que no se puede leer, o anterior a la epoca, no se publica como `mtime 0`",
-        "el tipo dice la diferencia entre una fecha medida y una fecha que no existe, y el consumidor lo puede ver",
-        "el contrato vigila el caso de la fecha no leible, no solo el de la metadata no leible",
-        "la cache sigue invalidando por contenido: un fichero no medible no invalida por su cuenta, y el motivo queda dicho"
-      ],
-      "scope": "H5",
-      "risk": "low",
-      "priority": 35,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
@@ -71,6 +49,29 @@
       "scope": "H5",
       "risk": "high",
       "priority": 30,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C46",
+      "title": "El escaneo declara los ficheros que no puede fechar, y no los borra",
+      "unit": "H5",
+      "objective": "Que el escaneo de la ingestion no borre del indice un fichero cuya fecha no se puede leer, y que la fecha que persiste en el manifiesto sea la que se midio, con su signo.",
+      "whyNow": "MEDIDO 2026-10-25, al cerrar la unidad de la fecha medida: la familia de la ingestion es la que queda con la fabricacion. `application/ingest/scan.rs:159` mide en segundos con coma flotante y, si la fecha no se puede leer, el `filter_map` descarta el fichero entero: no aparece en el escaneo y no aparece en el informe de cobertura. `:421` hace lo mismo en la segunda lectura. La fecha que se persiste va a `FileChange.mtime: f64` (`application/ingest/types.rs:43`) y de ahi a la tabla `ScanManifest` en otro crate (`crates/cognicode-ladybug/src/lib.rs:907`), cuya columna es `mtime DOUBLE`; ahi un fichero anterior a la epoca queda como 0, que es la epoca. El hueco esta registrado como excepcion en `scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`, con su motivo, y el contrato avisa cuando se cierre.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/ingest/scan.rs",
+        "crates/cognicode-core/src/application/ingest/types.rs",
+        "crates/cognicode-ladybug/src/lib.rs",
+        "scripts/ci/test_a_date_is_published_only_when_it_was_measured.py"
+      ],
+      "doneWhen": [
+        "un fichero cuya fecha no se puede leer aparece en el escaneo y en el informe de cobertura, con su hueco declarado, en vez de desaparecer",
+        "la fecha que se persiste en el manifiesto es la que se midio, con su signo, y una fecha anterior a la epoca no se persiste como 0",
+        "el tipo de la fecha persistida puede estar ausente, y la columna de la base de datos lo admite",
+        "el contrato de la fecha medida deja de declarar este hueco, porque el registro de huecos avisa cuando uno se cierra"
+      ],
+      "scope": "H5",
+      "risk": "medium",
+      "priority": 25,
       "source": "roadmap"
     },
     {

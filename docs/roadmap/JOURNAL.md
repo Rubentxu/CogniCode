@@ -26787,3 +26787,135 @@ un error, y lo que cambia es que ese error dice su categoria en vez de
 "Internal error". Un rechazo del producto deja de parecer una caida del
 producto. La decision queda escrita en
 `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+
+## 2026-10-25 — C45: una fecha se publica solo si se midió
+
+**Lo que se midió, con ejecución.** Once sitios de producción leían la marca de
+tiempo de un fichero y la convertían a "segundos desde la época" por su cuenta.
+En el árbol de `229991e8`:
+
+- `crates/cognicode-core/src/infrastructure/graph/source_files.rs:242` — la
+  medida interna del inventario publicaba `mtime_millis = 0` cuando la fecha
+  no se podía leer.
+- `crates/cognicode-core/src/application/services/file_operations.rs:1173` y
+  `:1898` — la superficie publicada (`read_file` y `list_files`) hacía lo
+  mismo.
+- `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs:998` — el
+  grafo por fichero no publicaba cero: publicaba **la distancia a la época**
+  en vez del instante. Su comentario decía «saturate to 0» y el código hacía
+  otra cosa, de modo que un fichero de 1960 se publicaba como 1980: una fecha
+  plausible y equivocada.
+- `crates/cognicode-core/src/interface/mcp/handlers/aix_handlers.rs:1888` — el
+  manejador de reparseo usaba `mtime == 0` como centinela de «borrado», con
+  lo que un fichero anterior a la época se reportaba como **eliminado del
+  grafo**, con sus símbolos fuera.
+- `crates/cognicode-core/src/application/workspace_session.rs:396` y `:471`,
+  `crates/cognicode-core/src/infrastructure/graph/file_manifest.rs:115`,
+  `:169` y `:194`, y
+  `crates/cognicode-core/src/infrastructure/git/git_history.rs:99` — el mismo
+  defecto en el resto de familias.
+
+**La premisa anterior, corregida.** La entrada de C42 y la de C45 en la cola
+apuntaban a `interface/mcp/handlers/mod.rs:1093` y `:1098` como la superficie
+que publica la fecha. No lo es: esos dos sitios son el **manifiesto de
+caché** (`build_manifest`), no la salida del protocolo. La superficie MCP real
+se calcula por su cuenta, en `application/services/file_operations.rs`, y es
+la que produce el `metadata.modified` de `read_file` y el `modified` de cada
+entrada de `list_files`. La premisa no cambia el defecto —sigue siendo una
+fecha fabricada— pero sí el lugar donde se arregla, y por eso se anota aquí
+en vez de reescribir lo de antes.
+
+**La caché nunca sirvió un grafo viejo.** La invalidación del manifiesto
+compara también el hash del contenido
+(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1040`), de modo que
+un `mtime` a cero no servía nada. El defecto era de verdad, no de
+estabilidad: era que el producto **publicaba una fecha que no había medido**.
+
+**Por qué era invisible a la suite entera.** Las dos aserciones que existían
+(`crates/cognicode/tests/file_ops_integration_tests.rs:888` y
+`crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:1173`)
+comprobaban `modified > 0`, que es exactamente la condición que el defecto
+cumple: cero es «no es un número positivo», y la prueba leía eso como «tiene
+fecha».
+
+**El RED, medido antes de tocar el código.**
+`crates/cognicode-core/tests/a_date_is_published_only_when_it_was_measured.rs`
+(nuevo, tres tests escritos sobre la cadena que el protocolo publica) fallaba
+**2 de 3**: un fichero con fecha de un minuto antes de la época salía con
+`modified: 0` donde debía salir `-60`. El tercer test —la contraprueta de un
+fichero con fecha normal— pasaba, lo que confirma que el sistema de ficheros
+sí soporta fechas anteriores a la época y que el fallo era del producto. El
+contrato nuevo
+(`scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`) encuentra
+**24 hallazgos** contra el código anterior: el tipo publicado que no
+distingue, el dueño que no existe, y once sitios que convierten el instante
+por su cuenta.
+
+**Lo que se cambió.**
+
+- El dueño único de la medida vive en el dominio, en
+  `crates/cognicode-core/src/domain/value_objects/file_time.rs`:
+  `epoch_seconds`, `epoch_millis`, `epoch_nanos`, sus tres formas
+  `measured_*` y `seconds_of_millis`. El corte es hacia el suelo, y la regla
+  vive en un solo sitio: un instante dentro del segundo anterior a la época
+  cuenta como `-1`, no como `0`.
+- El tipo publicado pasa a `Option<i64>`. `Some(0)` es un fichero escrito en
+  la época —una medición—; `None` es un fichero del que no se sabe cuándo se
+  escribió, que no es una medición. El signo no es decorativo: un fichero
+  puede traer una fecha anterior a la época, y un contador sin signo no la
+  puede representar.
+- Los once sitios de producción miden por el dueño. Donde el tipo no admitía
+  la ausencia —el manifiesto binario— el formato cambia, y por eso el
+  snapshot del grafo pasa de `cognicode.graph.cache/v2` a `v3`: un snapshot de
+  la versión anterior no se lee con la forma nueva, y su versión lo dice, de
+  modo que se reconstruye en vez de aceptarse como evidencia.
+- El manejador de reparseo separa **existir** de **tener fecha**: que el
+  fichero exista lo dice el `stat`, no el reloj. Antes, `mtime == 0` significaba
+  «borrado».
+- La caché sigue invalidando por contenido: un fichero sin reloj no invalida
+  el snapshot por su cuenta, porque dos ausencias comparecen como iguales y lo
+  que decide es el hash de los bytes. El motivo queda escrito en el sitio
+  donde se decide.
+
+**Las alternativas, descartadas con su motivo.** Mantener `u64` con un
+centinela no funciona: un centinela es un número, y el producto publica
+números, así que el cliente no puede distinguir «la época» de «no se midió» —
+que es justo lo que hay que distinguir— y `0` ya está ocupado por un
+significado real. `Option<u64>` resuelve el caso principal pero degrada una
+fecha **conocida** a «no hay fecha»: un fichero de 1960 pasaría de publicar
+su fecha a publicar `null`, y el consumidor perdería un dato que el producto sí
+tenía. Acotar el arreglo a la superficie publicada dejaría dos verdades sobre
+la misma fecha —la línea que la auditoría señalaba primero es la medida
+interna, que es la base temporal de la que depende la incrementalidad—. Las
+tres quedan escritas en
+`docs/adr/ADR-064-a-date-is-published-only-when-it-was-measured.md`.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo: un
+fichero con fecha de un minuto antes de la época devuelve `modified: -60` en
+`read_file` y en `list_files`, y un fichero con fecha normal devuelve
+`1700000000`. El escenario es efímero y vive fuera del repo: lo que se
+promueve es el test de frontera, que dice lo mismo sin depender del
+transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`):
+formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los
+contratos —**427 comprobaciones verdes, 0 rojas**— y el comprobante de
+línea base.
+
+**Lo que queda abierto, y es una unidad propia.** La familia de la ingestión
+(`crates/cognicode-core/src/application/ingest/scan.rs`) mide en segundos con
+coma flotante y persiste el resultado en la base de datos de Ladybug, en otro
+crate. Su hueco es doble: una fecha anterior a la época se publica como `0`, y
+un fichero cuya fecha no se puede leer **desaparece del escaneo** en vez de
+declararse. Arreglarla cambia el esquema persistido. Está medido, encolado como
+**C46**, y registrado como hueco conocido en el contrato de la fecha: si el
+hueco se cierra, el contrato avisa para que el registro se actualice.
+
+**La unidad, cerrada sobre `363ac9e59a62d736645153a5eb0d407dd1d8f0f8`.** C45 está cerrada: el producto ya no
+publica una fecha que no ha medido, el consumidor puede ver la diferencia entre
+una fecha medida y una fecha que no existe, y la caché sigue invalidando por
+contenido.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C11 (30), C46 (25), C12 (20), C44 (15) y C13 (10).
+

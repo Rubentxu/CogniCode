@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-25, sobre `1e14946536387078a1e5da789b975381dc625444` (la rama de la unidad del
-> rechazo: un rechazo del producto llega al cliente como un rechazo, con su
-> categoría, y no como un fallo interno).
+> **Snapshot**: 2026-10-25, sobre `363ac9e59a62d736645153a5eb0d407dd1d8f0f8` (la rama de la unidad de la
+> fecha: el producto solo publica una fecha que ha medido, y el consumidor
+> puede ver la diferencia entre una fecha medida y una fecha que no existe).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -146,10 +146,13 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H5** (`C45`, `C11`) | la base temporal honesta y el `SnapshotKey` | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
+| **H5** (`C46`, `C11`) | la base temporal honesta y el `SnapshotKey` | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
+**Una fecha se publica solo si se midió, está cerrada.** El producto publicaba la marca de tiempo de un fichero como un número de segundos desde la época, y ese número decía siempre algo: cuando la fecha no se podía leer publicaba `0`, que dice «1 de enero de 1970»; y el grafo por fichero, que convertía la distancia a la época en vez del instante, publicaba 1980 para un fichero de 1960. Once sitios de producción medían la fecha por su cuenta. La caché nunca sirvió un grafo viejo —la invalidación compara también el hash del contenido—, así que el defecto no era de estabilidad: era que el producto publicaba una fecha que no había medido.
+La causa eran tres hechos distintos —una fecha medida, la época exacta y la ausencia de fecha— vestidos del mismo número. Ahora el tipo publicado distingue los tres: `Some(0)` es un fichero escrito en la época, `Some(-60)` uno escrito antes, y `None` uno del que no se sabe cuándo se escribió. El signo no es decorativo: un fichero puede traer una fecha anterior a la época, y un contador sin signo no la puede representar. La medida tiene un dueño único en el dominio, y la caché sigue invalidando por contenido: un fichero sin reloj no invalida el snapshot por su cuenta.
+El RED está medido sobre el camino malo: los tests nuevos fallaban 2 de 3 y el contrato de CI encontraba 24 hallazgos contra el código anterior. Con el binario real por stdio, un fichero de 1960 devuelve `modified: -60`.
 **Un rechazo llega al cliente como un rechazo, está cerrada.** El servicio de ficheros puede rechazar una petición —un camino fuera del workspace, un patrón que no es una expresión regular— y eso es una decisión del producto, no una caída. Pero los cinco handlers que pasan por el contador de métricas reconstruían el error como fallo interno, de modo que el cliente recibía "application: Internal error: Invalid parameter: …" donde debía recibir "application: Invalid parameter: …".
 La causa no era el aplanado sino su por qué: el contador exigía su propio tipo de error, así que el llamante tenía que convertir el suyo y reconstruirlo después, y esa reconstrucción perdía la categoría. Ahora el contador es genérico sobre el error y lo devuelve intacto; pide una etiqueta, que es lo único que la telemetría necesita saber. La etiqueta es la categoría del error, con un match exhaustivo que el compilador mantiene al día.
 El defecto era invisible a la suite entera por una razón concreta: el servidor MCP inicializa el colector de métricas y los tests no, de modo que la suite probaba siempre el camino que ya funcionaba. El RED está medido sobre el camino malo: los dos tests nuevos fallaban y nombraban los cinco handlers, y el contrato de CI fallaba dos de cuatro contra el código anterior. Con el binario real por stdio, el servidor —que sí cuenta— entrega la categoría.
@@ -364,7 +367,7 @@ instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 8 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 6 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.
