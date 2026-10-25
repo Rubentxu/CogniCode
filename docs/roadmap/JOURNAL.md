@@ -26643,3 +26643,62 @@ al medir esto, y que son unidades propias:
   curadas que se perderían.
 
 **La puerta.** `scripts/test-fast.sh` rc=0 y `scripts/test-full.sh` rc=0: formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**417 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `1e0dbafe`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #468.
+La correccion no rompe ningun contrato publicado: el campo nuevo es opcional
+y aditivo, de modo que el consumidor que no declara la version sigue
+escribiendo exactamente igual que antes. Lo que cambia es que el consumidor
+**puede** nombrar la version que leyo, y una escritura que declare una
+version que ya no es la del destino se niega en vez de pisarlo. La decision
+queda escrita en `docs/adr/ADR-062-the-consumer-declares-the-version.md`.
+
+**Una auditoria externa, contrastada una a una con el codigo.** El 2026-10-25
+llego una auditoria del estado de `main` en `87aab47f`. Sus conclusiones se
+han medido contra el codigo de esta rama, y la mayoria ya estaba cerrada:
+
+- El **P1 de los cortes por byte** --`line_at_offset`, `read_file_chunk`, la
+  ruta de continuacion y `truncate_string`-- ya no corta un caracter: lo
+  cierra `c9a0ba94` (PR #466), que sustituye cada corte por
+  `floor_char_boundary`, `truncate_at_boundary` y `get(..).ok_or_else(..)`.
+  El offset que cae fuera del fichero tambien se rechaza, porque
+  `content.get(offset..)` devuelve `None` y el corte se vuelve un error
+  controlado en vez de un `panic`. La auditoria estaba escrita contra un
+  `main` anterior a ese PR.
+- La **escritura transaccional** la cierra `e771670f` (PR #467), con el
+  `AtomicFileWriter` y la version declarada.
+- La **ontologia de cobertura** y la **paginacion** ya estaban medidas y
+  descartadas con evidencia previa.
+- La **caché incremental** sigue abierta y es `C11` (H5). El **acoplamiento
+  del servicio de analisis** sigue abierto y es `C23` (H24), a la espera de
+  que el operador fusione el PR #465 para poder re-ejecutar el gate del #464.
+- El **bloqueo de integracion** que la auditoria describe --#464 y #465 fuera
+  de `main`-- es decision del operador, no una unidad.
+
+De la auditoria queda **un hallazgo nuevo, medido y sin contrato que lo
+cubra**: el producto publica una fecha que no ha medido.
+
+MEDIDO: `crates/cognicode-core/src/infrastructure/graph/source_files.rs:242`
+lee `meta.modified()` y, cuando la lectura falla, publica `mtime_millis = 0`;
+y `duration_since(UNIX_EPOCH).unwrap_or_default()` hace lo mismo con un
+fichero cuya fecha es anterior a la epoca. El docstring de esa misma funcion
+dice, en la linea 230, lo contrario: *"Publishing it with `mtime 0, size 0`
+would say 'this file was last written at the epoch', which is a fact we do not
+know"*. El contrato de esa funcion (`measure`) solo vigila el fallo de la
+*metadata*, no el de la *fecha*: hay un test que asegura que un fichero
+medible publica una medida distinta de cero, y ninguno que vigile el caso de
+la fecha no leible.
+
+Lo que **no** se rompe, y conviene decir porque la auditoria lo daba por
+mayor: la invalidacion de la cache sigue siendo correcta. En
+`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1040` la entrada
+antigua solo se reutiliza cuando la marca de tiempo coincide **y** el hash
+del contenido en disco coincide con el guardado (linea 1056), de modo que un
+`mtime` a cero no sirve un grafo viejo. El defecto es de verdad, no de
+estabilidad: el MCP publica `mtime: 0` (linea 1098) y `"0"` (linea 1093)
+como si fueran la fecha del fichero.
+
+El caso mas alcanzable no es el exotico: un fichero con fecha anterior a la
+epoca --`touch -t 196001010000`-- basta para que el producto afirme que se
+escribio en la epoca. Entra en la cola como `C45`, y es de `H5`, porque es
+la base temporal de la que la incrementalidad depende.
