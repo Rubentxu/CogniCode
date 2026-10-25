@@ -26273,3 +26273,88 @@ completo rc=0).
 como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
 operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
 fusionar.
+
+## 2026-10-25 — C39: el lane de provenance firma con el cosign que dice
+
+**C39 closed.** C39 acceptance: PASS (la decision del maintainer aplicada y
+escrita; el contrato de generacion en verde con el binario fijado —13/13, con
+los dos checks que estaban rojos—; el contrato estructural nuevo RED con 13
+hallazgos sobre un clon limpio de `87aab47f` y GREEN aqui; puerta rapida rc=0;
+contratos 399 comprobaciones verdes y 0 rojas).
+
+**Lo que estaba roto, medido.** La v3.1.4 de cosign ya no tiene
+`--tlog-upload`: el registro de transparencia paso a ser obligatorio, y cada
+`attest-blob` pide aceptar los terminos de uso de sigstore.
+
+- sin terminal: `Error: user declined the prompt`, rc=1;
+- con terminal y respondiendo `y`: firma y **publica la huella en el registro
+  publico de Rekor**;
+- la aceptacion no se cachea: el prompt vuelve en cada llamada.
+
+Un lane no tiene terminal. MEDIDO con una sonda de un minuto sobre un step
+real de PipelineK: `STDIN: NO TTY`, `STDOUT: NO TTY`, y `cosign` en
+`/usr/bin/cosign`. El contrato, por tanto, no se saltaba: se ejecutaba y
+fallaba. Dos comprobaciones en rojo, y el `merge-gate` —que corre en esta
+misma maquina— sin poder pasar su etapa de contratos.
+
+**Las tres vias, medidas antes de decidir.**
+
+| Via | Firmar | Verificar | Sale algo de la maquina |
+|---|---|---|---|
+| `--yes` | sin prompt | limpio | **si**, al registro publico de Rekor |
+| `--signing-config` sin tlog | sin prompt, sin red | pide `--insecure-ignore-tlog` | no |
+| version fijada (3.1.3) | sin prompt, sin red | limpio | no |
+
+**La decision, del maintainer: fijar la v3.1.3.** Es la version que el ADR ya
+habia medido como firmada offline, sin red y sin registro, con la clave que
+acompana a la release. Conserva exactamente lo medido, y no obliga a quien
+verifica a pasar un flag que el propio cosign declara inseguro.
+
+**Lo que se ejecuto.**
+
+- `scripts/ci/cosign-tool.sh`: el pin. Version, sumas oficiales por plataforma
+  y donde vive el binario. Una sola fuente, de la que beben el generador y el
+  contrato.
+- `scripts/ci/install-cosign.sh`: instala la version fijada, verifica su suma
+  contra la declarada y se niega a instalar otra.
+- `scripts/ci/attest-provenance.sh`: firma con el binario fijado. El
+  `cosign` que aparezca en el PATH no se usa: es lo que rompio el lane.
+- `scripts/ci/test_provenance_generation.py`: mide el binario fijado.
+- `scripts/ci/test_provenance_lane_pins_its_cosign.py`: el contrato nuevo.
+- `merge-gate.pipeline.kts`: instala el cosign fijado **antes** de los
+  contratos, para que la medicion no se salte por falta de herramienta.
+- `release-candidate.pipeline.kts`: idem en la lane que firma.
+- `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md`: la decision, lo que cuesta y
+  lo que sigue abierto.
+
+**El RED, medido sobre un clon limpio de `87aab47f`.** El contrato nuevo dio
+13 hallazgos, cada comprobacion fallando por su propio motivo: el generador
+buscaba el `cosign` del PATH, el contrato tambien, ninguna lane lo instalaba, y
+la version no estaba declarada en ninguna parte. En este arbol, GREEN.
+
+**Lo que cuesta, dicho de frente.** El lane necesita **red** para descargar la
+herramienta, una vez por maquina. El binario se verifica por su suma, escrita
+junto a la version; el instalador se niega a instalar una version que no sea la
+declarada, para que la lane y los contratos no puedan discrepar sobre que
+herramienta miden.
+
+**Lo que sigue abierto, y no se ha tocado.** La **custodia de la clave**: donde
+vive la clave privada y quien puede usarla. El **anclaje al registro de
+transparencia**: fijar la version conserva el comportamiento medido —sin
+anclaje—, no lo decide; publicar en Rekor sigue disponible y sin decidir. Y el
+**camino del consumidor**: la lane de publicacion sigue verificando con
+`gh attestation verify`, que no verifica un bundle de cosign, y migrarlo cambia
+el comportamiento de una release ya publicada.
+
+**La puerta.** `scripts/test-fast.sh` rc=0. `scripts/ci/run-all-contracts.sh`
+rc=0: 399 comprobaciones verdes, 0 rojas. Y el `merge-gate` —la puerta que
+GitHub exige para dejar fusionar— **rc=0** sobre `7da3192c`, con las 57 etapas
+en verde, la de contratos incluida. Ese era el rojo: una etapa, y era de la
+maquina.
+
+**La cola.** `C39` se abrio en la rama de `C23` y se cierra aqui. En `main` la
+cola sigue llevando `C23`, porque su PR #464 continua abierta, y la rama de
+`C23` retirara `C39` de su cola cuando recoja este cambio. Con `C23` y `C39`
+cerrados, la cola viva queda con `C11` (SnapshotKey e incrementalidad honesta),
+`C12` (navegacion Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java, solo
+cuando se pueden probar).
