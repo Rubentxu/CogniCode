@@ -26436,3 +26436,38 @@ publicas, y el criterio de cierre de esta unidad dice que no cambian.
 La cola viva queda con `C11` (SnapshotKey e incrementalidad honesta), `C12`
 (navegacion Kotlin sin JVM) y `C13` (relaciones Kotlin-Java, solo cuando se
 pueden probar).
+
+## 2026-10-25 — El rojo de procedencia sale de la nota y entra en la cola
+
+**Lo que cambia: la cola nombra el problema.**
+
+El recibo de `C23` midió el rojo de `scripts/ci/test_provenance_generation.py` y
+lo dejó dicho y no resuelto: es de la máquina, no del código, y arreglarlo es una
+decisión del lane de release, no de esta unidad. El operador lo ha abierto como
+candidato propio. La declaración de la misión (`goal-compass.json`) lleva ahora
+`C39` —la política del registro de transparencia en el lane de procedencia— con
+la evidencia que lo sostiene y con un criterio de cierre observable.
+
+`C39` no es una unidad del roadmap: el programa vivo sigue siendo el que dice
+`docs/roadmap/ROADMAP.md`, y su §11 no cambia. Es trabajo de la cola, que es
+donde cabe un problema de infraestructura que no es una unidad.
+
+**Prioridad 25.** La cola queda `C11` (30), `C39` (25), `C12` (20), `C13` (10). No
+va primero porque el trabajo vivo del roadmap no se aparta por un rojo de la
+máquina: el `merge-gate` corre en el runner de PipelineK y allí el contrato
+pasa, así que la entrega no está bloqueada. No va último porque `AGENTS.md`
+exige puerta completa en verde antes de un tag o de una release, y mientras la
+política no esté decidida la puerta local no puede dar rc=0.
+
+**Lo que `C39` NO cierra.** La custodia de la clave privada sigue siendo la
+decisión abierta del ADR de procedencia, y sigue siéndolo por una razón distinta
+de la que la bloquea hoy: no es que falte el mecanismo —el lane genera la
+atestación y la clave pública viaja con la release—, es que nadie ha decidido
+dónde vive la clave privada y quién puede usarla. `C39` decide la política del
+registro; la custodia es otra decisión, y el ADR las separa.
+
+**El estado del ciclo, medido.** La rama
+`feature/the-service-is-split-by-responsibility` está subida en `26aaf8b3` y la
+PR #464 está abierta contra `main`. La puerta que GitHub exige antes de dejar
+fusionar es el `merge-gate` sobre esa PR; la puerta local medida en este ciclo da
+rc=1 por el contrato de procedencia, con todo lo demás en verde.
