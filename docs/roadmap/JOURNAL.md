@@ -26358,3 +26358,80 @@ cola sigue llevando `C23`, porque su PR #464 continua abierta, y la rama de
 cerrados, la cola viva queda con `C11` (SnapshotKey e incrementalidad honesta),
 `C12` (navegacion Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java, solo
 cuando se pueden probar).
+
+## 2026-10-25 — C40: un corte por byte no parte un carácter
+
+**Lo que se midió, con ejecución.** Una auditoría externa señaló que el servicio
+de ficheros recortaba texto por índice de byte. En este árbol la afirmación es
+cierta, y se mide con el pánico, no con la lectura:
+
+- `crates/cognicode-core/src/application/services/file_operations.rs:986` —
+  `&content[offset..]`. El desplazamiento sale del token de continuación, que
+  no está firmado y que elige el llamante: con una `é` acentuada, un token con
+  `offset: 1` abortaba el proceso.
+- `file_operations.rs:1003` — `remaining[read_size..]`. El tamaño del trozo lo
+  elige el llamante: `chunk_size: 2` sobre `a`, una `é` acentuada y un salto
+  de línea partía la `é` acentuada.
+- `file_operations.rs:1376` — `&s[..max_len]`. El mensaje de una edición
+  rechazada truncaba en el byte 50, que cae dentro de un carácter de tres
+  bytes.
+- `file_operations.rs:501` y `:526` — el conteo de líneas de la página de
+  continuación, con el mismo desplazamiento sin validar.
+- `crates/cognicode-cli/src/presenter.rs:672` — el diagrama se truncaba en el
+  byte 2000.
+- `crates/cognicode-cli/src/cmd/lifecycle_resolver.rs:445` — el nombre de una
+  release se truncaba por byte.
+
+Los cuatro tests nuevos fallan con el pánico exacto: `start byte index 1 is
+not a char boundary; it is inside 'é' (bytes 0..2 of string)` y `end byte
+index 50 is not a char boundary; it is inside '€' (bytes 48..51 of string)`.
+Cuatro de cuatro, en las líneas 986, 1003 (dos veces) y 1376. La clase de fallo
+no es teórica: en el servidor de protocolo, el proceso que corta es el que
+atiende a los agentes conectados, y un `panic` ahí se lleva por delante las
+peticiones de todos.
+
+**Lo que se cambió.** La garantía la lleva el tipo, no una validación que un
+cambio posterior pueda olvidar:
+
+- `crates/cognicode-core/src/application/text_boundary.rs` (nuevo): las cuatro
+  operaciones de frontera —`floor_char_boundary`, `is_char_boundary`,
+  `truncate_at_boundary` y `slice_at_boundaries`— con cinco tests unitarios.
+- `file_operations.rs`: los tramos se piden con `get`, que devuelve `None`
+  cuando el rango no cae en fronteras, y el tamaño del trozo se ajusta al
+  último carácter entero que cabe; un trozo más pequeño que el primer carácter
+  se rechaza con su motivo. El conteo de líneas ya no corta: cuenta los saltos
+  con `char_indices`. El mensaje de la edición rechazada trunca en una
+  frontera. También el rango de líneas, que antes se cortaba por índice
+  aunque sus extremos vinieran de un cálculo que hoy los garantiza.
+- `presenter.rs` y `lifecycle_resolver.rs`: los dos recortes de la CLI pasan
+  por el helper.
+- `crates/cognicode-core/tests/a_cut_never_splits_a_character.rs` (nuevo): los
+  cuatro tests de comportamiento, con el RED medido antes de tocar el código.
+  El cuarto comprueba que los trozos siguen reensamblando el fichero byte a
+  byte cuando el tamaño cae dentro de un carácter: la corrección no puede
+  perder contenido.
+- `scripts/ci/test_a_cut_never_splits_a_character.py` (nuevo): el contrato. No
+  lista los cortes prohibidos uno a uno: mira cualquier corte por índice sobre
+  texto en los ficheros que recortan y exige que pase por `get` o por una
+  frontera. Lleva su control anti-vacuidad —el detector ve un corte cuando hay
+  uno, y no marca uno que usa `get`—, y su propia prueba de que el helper
+  existe, se declara y expone las cuatro operaciones.
+
+**La puerta.** **La puerta.** `scripts/test-fast.sh` rc=0: 2385 pruebas del nucleo en
+verde y clippy limpio. `scripts/test-full.sh` rc=0: formato, clippy con
+`-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**404
+comprobaciones verdes, 0 rojas**— y el comprobante de linea base. Los 66
+tests del modulo de servicio de ficheros, con los que este cambio convive,
+en verde. El `merge-gate` se corre sobre el commit del recibo y su
+veredicto se publica como estado de la pull request; el recibo de ese
+veredicto queda anexado mas abajo, con su SHA.
+
+**Lo que queda abierto, medido y no tocado.** La escritura del servicio de
+ficheros todavía no es transaccional: el temporal se abre con `File::create`,
+que no exige creación exclusiva, así que un temporal preexistente se trunca;
+si la escritura falla, el temporal se queda en disco, porque la limpieza sólo
+está en el error del `rename`; y no hay comprobación de versión que impida que
+una edición pise un cambio hecho por otro editor entre la lectura y la
+escritura. Un `rename` atómico tampoco es persistencia garantizada tras un
+fallo eléctrico. Queda abierto como `C41`, con la evidencia medida en la
+misma rama y en la cola de la misión.
