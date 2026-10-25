@@ -31,26 +31,24 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C42",
-      "title": "El consumidor MCP puede declarar la version sobre la que escribe",
+      "candidateId": "C43",
+      "title": "Un rechazo llega como si fuera un fallo interno",
       "unit": "H29",
-      "objective": "Que un cliente del servidor de protocolo pueda leer un fichero, recibir la version que leyo, y declarar esa version al escribir: la escritura condicional llega al consumidor, no se queda en la capa de aplicacion.",
-      "whyNow": "MEDIDO 2026-10-25: la escritura condicional ya existe en la capa de aplicacion (`crates/cognicode-core/src/application/dto/file_ops.rs`, `expected_content_hash`), pero en la frontera del MCP el campo vale `None` fijo: `crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` lo hardcodean. El esquema que ve el cliente (`crates/cognicode-core/src/interface/mcp/schemas.rs:1556`, `WriteFileInput`) no lo declara, y la salida de `read_file` (`schemas.rs:1489`, `ReadFileOutput`) no publica ningun digest, asi que el consumidor no tiene forma de nombrar la version que leyo. Publicarlo no es solo anadir un campo: el catalogo publico de herramientas se genera desde una captura real de `tools/list` (`scripts/product/generate_tool_catalog.py`) y `scripts/product/test_product_tool_catalog.py` lo compara, de modo que el catalogo no se puede editar a mano: hay que regenerarlo con la captura del commit que lo introduce.",
+      "objective": "Que un rechazo deliberado llegue al cliente como un rechazo, y no como un fallo interno del producto: el consumidor tiene que poder distinguir 'lo has pedido mal' de 'nos hemos roto'.",
+      "whyNow": "MEDIDO 2026-10-25, con el binario real por stdio: el rechazo de la escritura condicional llego al cliente como `application: Internal error: Invalid parameter: The file is not the version the caller read: ...`. El mensaje es correcto y nombra las dos versiones, pero la categoria dice 'fallo interno'. La causa esta medida: los handlers de ficheros aplanan todo error a `AppError::InternalError` cuando hay colector de metricas instalado --`crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:139` en write_file, y lo mismo en `:88` (read_file), `:197` (edit_file), `:253` (search_content) y `:306` (list_files)--, mientras que sin colector la misma categoria se conserva en `:119`. O sea: el mismo rechazo se dice de dos maneras segun haya o no metricas, y la que dice el cliente es la peor. La categoria se pierde dos veces: `app_error_to_tool_error` (`file_ops_handlers.rs:29`) aplasta la variante en un `ToolError::new(\"AppError\", e.to_string())`, y la vuelta al dominio elige `InternalError` sin mirar.",
       "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/dto_mapping.rs",
-        "crates/cognicode-core/src/interface/mcp/schemas.rs",
-        "scripts/product/generate_tool_catalog.py",
-        "scripts/product/test_product_tool_catalog.py"
+        "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs",
+        "crates/cognicode-core/src/interface/mcp/error.rs",
+        "crates/cognicode-core/src/infrastructure/telemetry/mod.rs"
       ],
       "doneWhen": [
-        "la salida de `read_file` publica el digest del contenido que devolvio, con el mismo digest que usa la escritura condicional",
-        "el esquema del MCP acepta el hash que el consumidor quiere declarar, y la conversion lo lleva a la peticion de aplicacion en vez de fijarlo a `None`",
-        "el catalogo publico de herramientas se regenera desde una captura real y el gate lo compara contra esa captura",
-        "un cliente del MCP puede leer un fichero, escribir declarando la version leida, y ser rechazado cuando la version ya no es la que leyo"
+        "un rechazo por version no llega al cliente como `Internal error`: la categoria sobrevive al camino instrumentado",
+        "el mismo rechazo se dice igual con y sin colector de metricas",
+        "un test en la frontera comprueba la categoria del error, no solo que hay error"
       ],
       "scope": "H29",
-      "risk": "medium",
-      "priority": 35,
+      "risk": "low",
+      "priority": 40,
       "source": "roadmap"
     },
     {
@@ -91,6 +89,27 @@
       "scope": "H3",
       "risk": "high",
       "priority": 20,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C44",
+      "title": "El catalogo publicado dice de su runtime una version que no es la",
+      "unit": "B1",
+      "objective": "Que el catalogo publicado describa al runtime que lo publica: el `runtime_metadata` que dice `tool_version` tiene que decir la version que el runtime reporta, y las claves curadas a mano no se pueden perder al sincronizar.",
+      "whyNow": "MEDIDO 2026-10-25: el `runtime_metadata.tool_version` del maestro dice `0.99.2` en las 78 tools, mientras que el runtime reporta `0.101.31`; ademas `check_architecture` lleva dos claves de `runtime_metadata` --`gate_authority` y `produces_observations_only`-- que el runtime no publica. La deriva es invisible porque el gate solo comparaba el conjunto de nombres de tools, y un nombre no cambia porque cambie la version. La captura se refresco en `C42` y ya dice `0.101.31`, asi que el maestro es lo que quedo viejo. La sincronizacion no puede ser una copia ciega: el maestro tiene claves curadas que el runtime no reporta, y copiarlas encima las quitaria.",
+      "evidenceRefs": [
+        "product/tools.json",
+        "product/tool-catalog-runtime.json",
+        "crates/cognicode-core/src/interface/catalog.rs"
+      ],
+      "doneWhen": [
+        "el `runtime_metadata.tool_version` del maestro dice lo mismo que el runtime reporta",
+        "las claves curadas que el runtime no publica siguen en el maestro",
+        "el contrato compara el metadato entero, no solo el esquema de entrada"
+      ],
+      "scope": "B1",
+      "risk": "low",
+      "priority": 15,
       "source": "roadmap"
     },
     {

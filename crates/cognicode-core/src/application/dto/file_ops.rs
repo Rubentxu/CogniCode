@@ -91,6 +91,14 @@ pub struct ReadFileResult {
     pub next_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_chunk_size: Option<usize>,
+    /// The digest of the whole file, as it was when it was read.
+    ///
+    /// This is the version the caller can declare back when it writes, so that
+    /// a write that was prepared against another version is refused instead of
+    /// overwriting somebody else's work. It names the whole file, not the
+    /// piece that was returned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
 }
 
 // ============================================================================

@@ -52,6 +52,8 @@ async fn a_write_refused_for_being_too_big_leaves_no_directory() {
             path: target.to_string_lossy().into_owned(),
             content: "x".repeat(10 * 1024 * 1024 + 1),
             create_dirs: Some(true),
+
+            expected_content_hash: None,
         },
     )
     .await;
@@ -94,6 +96,8 @@ async fn two_edits_are_applied_to_the_original_content() {
                     new_string: "C".to_string(),
                 },
             ],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -140,6 +144,8 @@ async fn overlapping_edits_are_refused_instead_of_losing_one() {
                     new_string: "Y".to_string(),
                 },
             ],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -181,6 +187,8 @@ async fn a_single_edit_still_applies() {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() { }".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -210,6 +218,8 @@ async fn an_edit_without_a_match_still_says_no_match() {
                 old_string: "inexistente".to_string(),
                 new_string: "x".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -242,6 +252,8 @@ async fn an_edit_with_several_matches_still_says_multiple_matches() {
                 old_string: "x".to_string(),
                 new_string: "y".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await

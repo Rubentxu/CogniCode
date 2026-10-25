@@ -440,7 +440,11 @@ impl FileOperationsService {
             Self::validate_token_binding(&ct, &validated_path, &self.workspace_root)?;
         }
         let metadata = self.build_file_metadata(&validated_path)?;
-        let total_lines = self.count_lines(&validated_path)?;
+        // The digest is taken from the same read that counts the lines, and
+        // that happens before the content is read. If the file changes in
+        // between, the digest still names the older version, so a write that
+        // declares it is refused rather than accepted over newer content.
+        let (total_lines, content_hash) = self.count_lines_and_hash(&validated_path)?;
 
         // Handle different modes using static enum dispatch
         let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) = match mode
@@ -698,6 +702,7 @@ impl FileOperationsService {
             has_more,
             next_token,
             suggested_chunk_size,
+            content_hash: Some(content_hash),
         })
     }
 
@@ -1146,11 +1151,18 @@ impl FileOperationsService {
         )?))
     }
 
-    /// Counts total lines in a file
-    fn count_lines(&self, path: &str) -> AppResult<u32> {
+    /// Counts the lines of a file and returns the digest of its content.
+    ///
+    /// Both come from the same read, so the digest names exactly the bytes the
+    /// file had when it was counted: no extra pass over the file, and no window
+    /// in which the file could change between the two numbers.
+    fn count_lines_and_hash(&self, path: &str) -> AppResult<(u32, String)> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
-        Ok(content.lines().count() as u32)
+        Ok((
+            content.lines().count() as u32,
+            sha256_hex(content.as_bytes()),
+        ))
     }
 
     /// Builds file metadata

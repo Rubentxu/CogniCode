@@ -52,6 +52,7 @@ impl From<ReadFileResult> for ReadFileOutput {
             has_more: result.has_more,
             next_token: result.next_token,
             suggested_chunk_size: result.suggested_chunk_size,
+            content_hash: result.content_hash,
         }
     }
 }
@@ -66,7 +67,7 @@ impl From<WriteFileInput> for WriteFileRequest {
             path: input.path,
             content: input.content,
             create_dirs: input.create_dirs,
-            expected_content_hash: None,
+            expected_content_hash: input.expected_content_hash,
         }
     }
 }
@@ -89,7 +90,7 @@ impl From<EditFileInput> for EditFileRequest {
         EditFileRequest {
             path: input.path,
             edits: input.edits,
-            expected_content_hash: None,
+            expected_content_hash: input.expected_content_hash,
         }
     }
 }
