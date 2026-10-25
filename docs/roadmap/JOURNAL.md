@@ -27202,3 +27202,25 @@ comentarios sobre un fichero que ya tiene fechas en su prosa.
 **Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
 operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10). C48 sale de la
 cola al cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `eab3820b`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #471, que
+queda `CLEAN` y `MERGEABLE`. La corrida es comprobable después del hecho: queda
+en la base de eventos del gate, con su identificador de corrida
+`9859c293-c825-4474-997c-fd5e30add306`, las 58 etapas en `success` y el
+`RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La etapa
+`contracts` tardó **74,1 s**. En la corrida que se puso en rojo tardó 662,1 s,
+y en la verde anterior al arreglo, 84,3 s. La etapa ya no toca la red, y su
+duración no depende de que la red esté rápida: la diferencia entre una corrida
+verde y una roja ya no la decide la descarga de una toolchain.
+
+**Lo que este ciclo deja medido para el siguiente.** La incrementalidad que
+falta no es un motor que no exista: es un estado que no sobrevive. La caché por
+fichero ya evita volver a parsear lo que no cambió —eso está fijado por
+`cached_coverage_is_honest.rs`—, pero `build_project_graph` relee y re-hashea
+todos los ficheros, rehace el índice global de símbolos desde cero y vuelve a
+resolver todas las relaciones en cada construcción. El `CacheStore` de
+`incremental/content_hash.rs` sabe qué ficheros cambiaron y no tiene consumidor
+de producción. Eso queda encolado como **C47**.
