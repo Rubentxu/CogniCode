@@ -26919,3 +26919,31 @@ contenido.
 **Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
 operador), C11 (30), C46 (25), C12 (20), C44 (15) y C13 (10).
 
+
+**El veredicto del `merge-gate`.** rc=0 sobre `2f0f3947`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #470.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate, con su identificador de corrida `b3d96c2f-fed8-41bb-9c67-0f4ee28ec860`,
+las 58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate encontró antes de dar su veredicto, que es lo que un gate
+sirve.** El primer `test-full` de esta unidad se puso rojo dos veces, y las
+dos veces por razones que no eran del defecto que la unidad persigue:
+
+- `fmt --check` rechazó los imports sin ordenar. Es un fallo de forma, no de
+  fondo, pero es un fallo: un gate que se pone rojo por el estilo no puede
+  examinar el resto del árbol.
+- El contrato nuevo rompía el runner. El runner de contratos descubre
+  funciones `test_*` **sin argumentos**, y el helper que escribí para
+  enumerar los módulos de prueba les exigía argumentos: el runner no podía
+  ni descubrirlo ni llamarlo. Se renombró a `ranges_of_test_modules`, que ya
+  no empieza por `test_`, y el contrato volvió a las seis comprobaciones.
+
+Las dos correcciones están en el árbol que el gate evaluó, no en un commit
+aparte: el veredicto que se publica es el del árbol que se entrega.
+
+**Lo que el gate dice de esta unidad.** No se rompe ningún contrato
+publicado. El cliente sigue recibiendo la fecha que el producto midió, y
+ahora puede distinguir una fecha medida de una fecha que no existe, que es
+la diferencia que no se podía ver antes. La decisión queda escrita en
+`docs/adr/ADR-064-a-date-is-published-only-when-it-was-measured.md`.
