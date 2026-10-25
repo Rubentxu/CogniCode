@@ -82,6 +82,8 @@ mod path_traversal_tests {
             path: "../../evil.txt".to_string(),
             content: "malicious content".to_string(),
             create_dirs: Some(false),
+
+            expected_content_hash: None,
         };
 
         let result = handle_write_file(&ctx, input).await;
@@ -97,6 +99,8 @@ mod path_traversal_tests {
             path: "/tmp/evil.txt".to_string(),
             content: "malicious content".to_string(),
             create_dirs: Some(false),
+
+            expected_content_hash: None,
         };
 
         let result = handle_write_file(&ctx, input).await;
@@ -117,6 +121,8 @@ mod path_traversal_tests {
                 old_string: "something".to_string(),
                 new_string: "replacement".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -134,6 +140,8 @@ mod path_traversal_tests {
                 old_string: "something".to_string(),
                 new_string: "replacement".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -632,6 +640,8 @@ mod e2e_edit_file_tests {
                 old_string: "old_name".to_string(),
                 new_string: "new_name".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -670,6 +680,8 @@ mod e2e_edit_file_tests {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() { ".to_string(), // Missing closing brace
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -714,6 +726,8 @@ mod e2e_edit_file_tests {
                     new_string: "qux".to_string(),
                 },
             ],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -741,6 +755,8 @@ mod e2e_edit_file_tests {
                 old_string: "nonexistent_string".to_string(),
                 new_string: "replacement".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -1149,6 +1165,8 @@ mod telemetry_tests {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() { ".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -1455,6 +1473,8 @@ mod spec_compliance_new_tests {
                 old_string: "World".to_string(),
                 new_string: "World".to_string(), // Same string = no change
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;
@@ -1506,6 +1526,8 @@ mod spec_compliance_new_tests {
                 old_string: "World".to_string(),
                 new_string: "Rust".to_string(),
             }],
+
+            expected_content_hash: None,
         };
 
         let result = handle_edit_file(&ctx, input).await;

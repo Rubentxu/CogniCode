@@ -37,6 +37,7 @@ use crate::error::InstallerError;
 use crate::release_contract::{
     RELEASE_DOWNLOAD_BASE, RELEASE_REPO, TIER1_PLATFORMS, bundle_manifest_filename, platform_token,
 };
+use cognicode_core::application::text_boundary::truncate_at_boundary;
 
 /// Default GitHub API base URL.
 pub const DEFAULT_API_BASE: &str = "https://api.github.com";
@@ -442,7 +443,7 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        format!("{}…", truncate_at_boundary(s, max))
     }
 }
 

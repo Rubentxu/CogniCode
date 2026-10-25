@@ -1085,6 +1085,12 @@ pipeline {
             // deliberado, y el fallo deliberado de una etapa opcional es una
             // release rota. Lo que no es opcional es decirlo, asi que la etapa
             // anuncia por que no firmo.
+            //
+            // El signer de esta etapa es el cosign fijado, no el que aparezca en
+            // el PATH de la maquina: el reciente exige aceptar unos terminos de
+            // uso que un lane no puede aceptar. El instalador verifica la suma
+            // del binario y se niega a instalar una version que no sea la
+            // declarada, para que la lane y los contratos midan la misma.
             stage("provenance") {
                 sh("""
                     set -eo pipefail
@@ -1099,6 +1105,7 @@ pipeline {
                         exit 0
                     fi
                     echo "provenance: signing with the key named by RELEASE_PROVENANCE_KEY"
+                    bash scripts/ci/install-cosign.sh --version 3.1.3
                     scripts/ci/attest-provenance.sh \
                         --key "${'$'}{RELEASE_PROVENANCE_KEY}" \
                         --out-dir release \

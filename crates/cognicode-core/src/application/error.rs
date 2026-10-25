@@ -68,6 +68,38 @@ pub enum AppError {
 // Note: AppError already implements std::error::Error via thiserror,
 // so it can be converted to anyhow::Error via the blanket impl.
 
+impl AppError {
+    /// La categoria del error: el nombre de la variante.
+    ///
+    /// La categoria es lo que dice que clase de fallo es, y es lo que necesita
+    /// la telemetria para nombrar un error sin aplanarlo a un "fallo interno".
+    ///
+    /// El match es exhaustivo a proposito. Una variante nueva que no se
+    /// nombre aqui no compila, de modo que la lista no puede quedarse vieja en
+    /// silencio: el compilador es el que la mantiene al dia.
+    pub fn category(&self) -> &'static str {
+        match self {
+            AppError::SymbolNotFound(_) => "SymbolNotFound",
+            AppError::LocationNotFound(_) => "LocationNotFound",
+            AppError::NavigationError(_) => "NavigationError",
+            AppError::AnalysisError(_) => "AnalysisError",
+            AppError::CycleDetected => "CycleDetected",
+            AppError::InvalidCallGraph(_) => "InvalidCallGraph",
+            AppError::RefactorError(_) => "RefactorError",
+            AppError::InvalidRefactorAction(_) => "InvalidRefactorAction",
+            AppError::RefactorTargetNotFound(_) => "RefactorTargetNotFound",
+            AppError::StrategyNotFound(_) => "StrategyNotFound",
+            AppError::SafetyCheckFailed(_) => "SafetyCheckFailed",
+            AppError::SearchError(_) => "SearchError",
+            AppError::InspectionError(_) => "InspectionError",
+            AppError::RepositoryError(_) => "RepositoryError",
+            AppError::InvalidParameter(_) => "InvalidParameter",
+            AppError::InternalError(_) => "InternalError",
+            AppError::NotImplemented(_) => "NotImplemented",
+        }
+    }
+}
+
 impl From<crate::domain::error::DomainError> for AppError {
     fn from(err: crate::domain::error::DomainError) -> Self {
         match err {

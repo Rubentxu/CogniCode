@@ -1516,6 +1516,15 @@ pub struct ReadFileOutput {
 
     /// Suggested chunk size for future reads
     pub suggested_chunk_size: Option<usize>,
+
+    /// The digest of the whole file, as it was when it was read.
+    ///
+    /// This is the version a caller declares back when it writes, so that a
+    /// write prepared against another version is refused instead of
+    /// overwriting somebody else's work. It names the whole file, not the
+    /// piece that was returned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_hash: Option<String>,
 }
 
 /// Input for edit_file tool
@@ -1526,6 +1535,14 @@ pub struct EditFileInput {
 
     /// Edits to apply (required)
     pub edits: Vec<FileEdit>,
+
+    /// The digest of the content the caller read, if it wants the edit to be
+    /// conditional on the file still holding that version.
+    ///
+    /// When it is declared and the file has moved on, the edit is refused
+    /// instead of overwriting whatever is there now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_content_hash: Option<String>,
 }
 
 /// Output for edit_file tool
@@ -1562,6 +1579,14 @@ pub struct WriteFileInput {
 
     /// Whether to create parent directories if they don't exist (default: false)
     pub create_dirs: Option<bool>,
+
+    /// The digest of the content the caller read, if it wants the write to be
+    /// conditional on the destination still holding that version.
+    ///
+    /// When it is declared and the destination has moved on, the write is
+    /// refused instead of overwriting whatever is there now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_content_hash: Option<String>,
 }
 
 #[allow(dead_code)]
