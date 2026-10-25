@@ -26552,3 +26552,94 @@ deprender de la version; lo que si cambia es que el servicio de ficheros ya
 no pisa el trabajo de otro editor, ni deja un temporal en disco cuando la
 escritura falla, ni publica un destino a medio escribir. La decision queda
 escrita en `docs/adr/ADR-061-the-write-is-published-whole.md`.
+
+## 2026-10-25 — C42: el consumidor declara la versión sobre la que escribe
+
+**Lo que se midió, con ejecución.** La escritura condicional ya existía en la
+capa de aplicación (`ADR-061`), pero el borde la perdía. En el árbol de
+`98edb89c`:
+
+- `crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` — el
+  campo se fijaba a `None` a propósito: el protocolo lo recibía y lo tiraba.
+- `crates/cognicode-core/src/interface/mcp/schemas.rs` — `WriteFileInput` y
+  `EditFileInput` no declaraban el campo, de modo que un cliente que lo
+  enviara no llegaba ni al servicio.
+- `ReadFileOutput` no publicaba ningún digest. **El consumidor no tenía forma
+  de nombrar la versión que leyó**: la capacidad existía y era inalcanzable.
+- `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:577` — el
+  `inputSchema` que ve el cliente sale de `product/tools.json`, no del tipo
+  Rust. El documento publicado es la superficie, y su captura
+  (`product/tool-catalog-runtime.json`) es lo que prueba qué publica el
+  runtime de verdad.
+- La captura venía de `v0.101.17`; el runtime reportaba `0.101.31`. Nadie lo
+  veía porque el gate sólo comparaba el **conjunto de nombres**, y un nombre
+  no cambia porque cambie la versión.
+- `product/README.md` instruía un procedimiento que **regeneraba
+  `product/tools.json` con el generador**, y el generador no es dueño de nueve
+  campos (`limitations`, `required_args`, `prerequisites`, `follow_ups`,
+  `intent_tags`, `language_scope`, `feature`, `impact_direction_floor`,
+  `precision_floor`): no tienen origen en el `_meta.cognicode` del runtime.
+  El procedimiento, tal como estaba escrito, borraba los nueve. La decisión
+  de que el maestro es de autoría manual y no se regenera ya estaba tomada
+  (`JOURNAL.md`, entrada de H2.1), pero el seguía instruyendo lo contrario.
+
+**El RED, medido antes de tocar el código.** El test nuevo
+(`crates/cognicode-core/tests/the_consumer_can_declare_the_version.rs`, siete
+casos, escrito en JSON porque el JSON es la frontera que cambia) fallaba
+**6 de 7**: el que pasa es el que escribe sin declarar versión, que es la
+guarda de no-regresión. El contrato nuevo
+(`scripts/ci/test_the_consumer_can_declare_the_version.py`) fallaba **2 de 6**:
+justo los dos que vigilan la captura, que es lo que tenía que delatar.
+
+**Lo que se cambió.**
+
+- `read_file` publica el digest del fichero entero, y sale de la **misma
+  lectura que cuenta las líneas** (`count_lines_and_hash`): no hay una segunda
+  pasada por el fichero y el digest nombra exactamente los bytes que el
+  fichero tenía cuando se contó. El orden es además el seguro —el digest se
+  calcula *antes* de leer el contenido—, así que si el fichero cambia entre
+  medias, el digest sigue nombrando la versión más antigua y una escritura
+  que lo declare **se niega** en vez de aceptarse por encima de contenido más
+  nuevo. El digest nombra el fichero entero, no el trozo: es lo que lo hace
+  comparable con lo que la escritura comprueba.
+- El MCP acepta `expected_content_hash` en `write_file` y en `edit_file`, y la
+  conversión lo lleva a la aplicación en vez de fijarlo a `None`.
+- `product/tools.json` declara el campo en las dos tools que lo aceptan, y la
+  captura se refrescó desde un `tools/list` real de un build con las tres
+  features (`persistence`, `program-analysis-server`, `evidence-cli-ladybug`),
+  que es el que publica los 78 tools del catálogo.
+- El contrato nuevo vigila que el documento publicado y la captura digan lo
+  mismo sobre el **esquema de entrada** de cada tool, y cada detector se
+  aplica a un texto que lo viola, para que un detector que no mira nada no
+  pueda declararse verde.
+- `product/README.md` deja de instruir el procedimiento que destruye datos: la
+  captura se regenera, el maestro se escribe a mano, y el generador produce
+  una proyección para comparar. Sus cifras también estaban viejas: medido
+  hoy, un build por defecto publica **75** tools —no 77— y el catálogo publica
+  78.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo:
+`read_file` devolvió el digest `0577d41597bf…`; `write_file` declarándolo se
+aplicó; otro agente escribió por fuera; y `write_file` con el digest viejo
+**se negó**, con `isError: true` y el mensaje que nombra las dos versiones, y
+el trabajo del otro quedó intacto. El escenario es efímero y vive fuera del
+repo: lo que se promueve es el test de frontera, que dice lo mismo sin
+depender del transporte.
+
+**Lo que queda abierto, medido y no tocado.** Dos defectos reales que aparecieron
+al medir esto, y que son unidades propias:
+
+- `C43` — un rechazo llega como si fuera un fallo interno. Los handlers de
+  ficheros aplanan todo error a `AppError::InternalError` cuando hay colector
+  de métricas (`file_ops_handlers.rs:139`, y lo mismo en `:88`, `:197`, `:253`
+  y `:306`), mientras que sin colector la categoría se conserva (`:119`). El
+  rechazo ocurre y su mensaje dice las dos versiones, así que la garantía se
+  cumple; lo que falla es la taxonomía: el cliente no puede distinguir un
+  rechazo de una caída.
+- `C44` — el `runtime_metadata.tool_version` del maestro dice `0.99.2` en las
+  78 tools mientras el runtime reporta `0.101.31`, y `check_architecture`
+  lleva dos claves de `runtime_metadata` que el runtime no publica. La
+  sincronización no puede ser una copia ciega: el maestro tiene claves
+  curadas que se perderían.
+
+**La puerta.** `scripts/test-fast.sh` rc=0 y `scripts/test-full.sh` rc=0: formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**417 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
