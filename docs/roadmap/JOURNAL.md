@@ -26273,3 +26273,166 @@ completo rc=0).
 como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
 operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
 fusionar.
+## 2026-10-25 — El cierre verificado: lo que se rechaza no deja rastro llega a `main` con su recibo
+
+**El cierre, con lo que se comprobó y quién lo comprobó.**
+
+PR #463 — `fix(core): lo que se rechaza no deja rastro, y las ediciones van al original (#463)`.
+
+- fusionado el 2026-10-24T21:01:13Z; squash `87aab47f87e4d02b761ce41c63d301159348b53a`
+- `merge-gate`: SUCCESS
+- ADR-058 `docs/adr/ADR-058-what-is-refused-leaves-no-trace.md`: EJECUTADO
+- puerta rápida y puerta completa: rc=0, con los recuentos en el recibo de la unidad
+
+El recibo de la unidad decía que la rama seguía local y sin subir. Eso era
+cierto cuando se escribió —la rama se escribió antes de que el operador
+subiera nada— y dejó de serlo a las 21:01 UTC, cuando la PR se abrió y se
+fusionó con la puerta en verde. Este es el recibo que faltaba: sin él, el
+Journal afirmaba una cosa que el remoto ya había desmentido.
+
+## 2026-10-25 — C23: el servicio de analisis deja de ser un modulo de 4.100 lineas
+
+**C23 closed.** C23 acceptance: PASS (la equivalencia de las tres vias, verificada
+por la red de `h24_the_routes_say_the_same`; el troceo, verificado por el
+contrato nuevo; los contratos publicos sin cambios; y la suite del workspace en
+verde con 6.379 pruebas y 0 fallidas). La puerta completa local queda en rc=1 por
+un contrato de procedencia de cosign que falla igual sobre un clon limpio de la
+base: no es de esta unidad y no se esconde —esta misma entrada lo mide—.
+
+**La unidad, con lo que se midio antes y despues.**
+
+MEDIDO ANTES: `crates/cognicode-core/src/application/services/analysis_service.rs`
+tenia 4.354 lineas. La produccion terminaba en la 2.086; las otras 2.268 eran
+tres modulos de pruebas escritos en linea. Dentro convivian cinco
+responsabilidades que no se hablan entre si: la construccion del grafo (1.266
+lineas), la cache y el indice de simbolos (60), la resolucion de simbolos (279),
+las metricas (85) y el analisis del dominio (253). Un cambio en las metricas
+obligaba a leer el constructor del grafo.
+
+MEDIDO DESPUES: la fachada son 115 lineas y cada responsabilidad vive en su
+fichero.
+
+| Fichero | Lineas | Responsabilidad |
+|---|---|---|
+| `analysis_service.rs` | 115 | estado, constructores, accesores |
+| `analysis_service/construction.rs` | 1.387 | construir el grafo |
+| `analysis_service/cache.rs` | 59 | indice de simbolos y cache de ficheros |
+| `analysis_service/resolution.rs` | 277 | resolver simbolos y sus usos |
+| `analysis_service/metrics.rs` | 82 | metricas del grafo |
+| `analysis_service/analysis.rs` | 254 | analisis del dominio |
+| `analysis_service/tests.rs` | 2.072 | pruebas del modulo |
+| `analysis_service/find_symbol_usages_tests.rs` | 145 | pruebas de usos |
+| `analysis_service/reader_failure_tests.rs` | 49 | pruebas del lector |
+
+**El RED, y la demostracion de que el RED es del contrato y no del codigo.**
+
+Contrato nuevo: `scripts/ci/test_the_service_is_split_by_responsibility.py`.
+Sobre el arbol anterior al troceo ponia en rojo las tres reglas que mide —un
+fichero no vive dos responsabilidades, la fachada no implementa ninguna, y las
+pruebas en linea no son parte del modulo de produccion—, y despues del troceo
+pasa 5/5.
+
+La demostracion de que cada comprobacion muerde la suya se hizo con tres
+experimentos reversibles, y cada uno se midio por separado:
+
+| Experimento | Que se movio | Que se puso en rojo |
+|---|---|---|
+| A | todo el troceo, sobre el arbol original | las tres reglas |
+| B | solo las pruebas vuelven a la fachada | solo la de las pruebas en linea |
+| C | solo una responsabilidad vuelve a la fachada | solo la de la fachada |
+
+Un contrato que solo dice "esto cambio" no se puede volver a poner en rojo; uno
+que dice "esto no puede ser" se puede. Por eso el contrato mide la forma y no
+el resultado, y por eso las tres comprobaciones se demuestran por separado.
+
+**Lo que el guard arquitectonico dijo, y lo que se hizo con ello.**
+
+La deuda de produccion del ratchet de CR-06 se mide por par (fichero,
+dependencia). Al partir un fichero acoplado en seis, ese numero sube aunque
+el acoplamiento sea identico: MEDIDO, de 28 a 35, con 9 pares añadidos y 2
+retirados —los dos retirados son reales, la fachada ya no importa el parser ni
+la politica de recorrido.
+
+Se podia evitar, y se descarto: enrutar los tipos de infraestructura por
+`super::` deja el numero igual, pero es justo el agujero que el guard ya
+cerró una vez —el guard tiene que ver la dependencia escrita donde se usa—. Un
+guard que no ve el acoplamiento es peor que no tener guard, porque parece que
+vigila. Cada modulo declara sus propias dependencias, el guard las ve, y los
+nueve pares quedan nombrados en el ratchet con quien los aprobo. El
+movimiento real de los tipos detras de un puerto queda para su propia unidad,
+donde el acoplamiento si desaparece.
+
+**Las guardas de comportamiento.**
+
+`crates/cognicode-core/tests/c23_the_responsibilities_still_answer_together.rs`:
+3/3. Las metricas describen el arbol que el servicio construyo —la cobertura
+cuenta los dos fuentes del corpus y no el manifiesto ni el readme—, el indice
+resuelve el simbolo que el grafo tiene y en el fichero que lo tiene, y la
+busqueda de usos encuentra la llamada que el grafo conocia. Las tres
+responsabilidades ahora viven en tres ficheros distintos, y el test es sobre
+el servicio entero: un test por responsabilidad pasaria sola cada una.
+
+**Lo que la puerta midio.**
+
+```
+bash scripts/test-fast.sh
+→ rc=0
+
+bash scripts/test-full.sh
+→ rc=1
+```
+
+Cada etapa, con su veredicto:
+
+| Etapa | Veredicto |
+|---|---|
+| `fmt --check` | OK |
+| `clippy -D warnings` | OK |
+| `test --workspace` | OK — 240 suites, 6.379 pruebas, 0 fallidas, 34 ignoradas |
+| `test --workspace --doc` | OK |
+| `test explorer (multimodal)` | OK |
+| contratos | FAIL (rc=1) — 55 ficheros, 394 comprobaciones verdes, 2 rojas |
+| `known_failures (core/lib)` | OK — la linea base no declara fallos conocidos |
+
+Las dos comprobaciones rojas son del mismo contrato,
+`scripts/ci/test_provenance_generation.py`, y no son de este codigo. MEDIDO: el
+contrato falla exactamente igual sobre un clon limpio de `87aab47f`, sin una
+sola linea de este cambio. La causa es la maquina: el cosign de aqui es la
+v3.1.4, y en esa version `--tlog-upload` esta deprecado y el registro de
+transparencia es obligatorio, asi que cosign pregunta los terminos del registro
+publico en cada `attest-blob` y, sin TTY, declina —MEDIDO, con y sin `yes` en
+la entrada, y la aceptacion no se cachea—. El lane se midio con cosign 3.1.3,
+que permitia firmar sin red y sin registro.
+
+Eso no se arregla aqui, y no se arreglo: arreglarlo es decidir si una release
+publica la huella de su artefacto en el registro publico de sigstore o si se
+migra el lane al modelo de `signing-config` de la v3.1.4. Es una decision del
+lane de release, no de esta unidad, y por eso queda dicha y no resuelta.
+
+El `merge-gate` no se ve afectado: las cinco ultimas fusiones pasaron con ese
+mismo contrato en verde, y el runner de PipelineK tiene un cosign donde el
+contrato funciona.
+
+**Dos fallos de la puerta que eran de la maquina y no del codigo.** La primera
+vez que corrio la puerta completa, `test --workspace` salio en rojo por tres
+pruebas de `prf_f6_w1_release_coherence` que exigian binarios de perfil release
+que no estaban construidos (`cogh`, `cognicode`, `cognicode-release`). Se
+construyeron (`cargo build --release --bin cogh --bin cognicode-mcp --bin
+cognicode --bin cognicode-release`) y la etapa salio en verde. La segunda vez,
+el contrato de autoridades de atribucion salio en rojo porque el ADR nuevo no
+estaba versionado: `docs/adr/` esta en `.gitignore` a proposito, y los ADR se
+anaden con `git add -f`. Anadido como manda la convencion.
+
+**Lo que queda fuera.**
+
+La constructor de grafo sigue siendo el modulo mas grande, con 1.387 lineas, y
+es donde vive el trabajo de verdad. El movimiento de los tipos de
+infraestructura detras de un puerto —que es lo que haria desaparecer el
+acoplamiento y no solo repartirlo— no se hizo aqui porque cambia las firmas
+publicas, y el criterio de cierre de esta unidad dice que no cambian.
+
+**Lo que viene.**
+
+La cola viva queda con `C11` (SnapshotKey e incrementalidad honesta), `C12`
+(navegacion Kotlin sin JVM) y `C13` (relaciones Kotlin-Java, solo cuando se
+pueden probar).
