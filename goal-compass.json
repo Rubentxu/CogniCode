@@ -52,6 +52,28 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C45",
+      "title": "El producto no publica una fecha que no ha medido",
+      "unit": "H5",
+      "objective": "Que la marca de tiempo de un fichero sea un hecho medido o ninguna: si la fecha no se puede leer, o es anterior a la epoca, el producto no puede publicar `mtime 0` como si dijera que el fichero se escribio en la epoca.",
+      "whyNow": "MEDIDO 2026-10-25, al contrastar una auditoria externa con el codigo: `source_files.rs:242` publica `mtime_millis = 0` cuando `meta.modified()` falla, y `duration_since(UNIX_EPOCH).unwrap_or_default()` hace lo mismo con una fecha anterior a la epoca. El docstring de la funcion (linea 230) dice justo lo contrario: un dato no medido no se presenta como medido. El contrato vigente solo vigila el fallo de la metadata, no el de la fecha. Lo que no se rompe es la cache: la invalidacion compara tambien el hash del contenido (`handlers/mod.rs:1056`), de modo que un mtime a cero no sirve un grafo viejo; el defecto es de verdad, no de estabilidad: el MCP publica `mtime: 0` y `\"0\"` como si fueran la fecha del fichero. Es de H5 porque es la base temporal de la que depende la incrementalidad.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
+        "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
+        "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md"
+      ],
+      "doneWhen": [
+        "una fecha que no se puede leer, o anterior a la epoca, no se publica como `mtime 0`",
+        "el tipo dice la diferencia entre una fecha medida y una fecha que no existe, y el consumidor lo puede ver",
+        "el contrato vigila el caso de la fecha no leible, no solo el de la metadata no leible",
+        "la cache sigue invalidando por contenido: un fichero no medible no invalida por su cuenta, y el motivo queda dicho"
+      ],
+      "scope": "H5",
+      "risk": "low",
+      "priority": 35,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
