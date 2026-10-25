@@ -463,12 +463,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     la inyecta; el guard arquitectónico ve la dependencia escrita donde se
 >     usa, no solo la importada. El arreglo no necesitó un framework nuevo.
 >   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
->     abierto. La vía completa, la filtrada y la asíncrona son de producción y
->     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
->     dos rutas y silencio en la tercera, un directorio que no existe se
->     rechaza en una sola, y el orden de los resultados no lo fija la
->     asíncrona. La forma, en
->     `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     cerrado. La vía completa, la filtrada y la asíncrona contestan lo mismo
+>     sobre el mismo árbol, y un contrato lo mide: un symlink declinado es un
+>     hueco declarado en las tres, un directorio que no existe se rechaza en
+>     las tres, y el orden de los resultados lo fijan las tres. Y el servicio
+>     que las construye ya no es un fichero: se partió por responsabilidad, y
+>     el módulo que lo declara no es el que construye el grafo. La forma, en
+>     `docs/adr/ADR-056-the-routes-say-the-same.md` y
+>     `docs/adr/ADR-059-the-service-is-split-by-responsibility.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).

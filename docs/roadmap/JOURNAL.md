@@ -26273,3 +26273,295 @@ completo rc=0).
 como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
 operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
 fusionar.
+## 2026-10-25 — El cierre verificado: lo que se rechaza no deja rastro llega a `main` con su recibo
+
+**El cierre, con lo que se comprobó y quién lo comprobó.**
+
+PR #463 — `fix(core): lo que se rechaza no deja rastro, y las ediciones van al original (#463)`.
+
+- fusionado el 2026-10-24T21:01:13Z; squash `87aab47f87e4d02b761ce41c63d301159348b53a`
+- `merge-gate`: SUCCESS
+- ADR-058 `docs/adr/ADR-058-what-is-refused-leaves-no-trace.md`: EJECUTADO
+- puerta rápida y puerta completa: rc=0, con los recuentos en el recibo de la unidad
+
+El recibo de la unidad decía que la rama seguía local y sin subir. Eso era
+cierto cuando se escribió —la rama se escribió antes de que el operador
+subiera nada— y dejó de serlo a las 21:01 UTC, cuando la PR se abrió y se
+fusionó con la puerta en verde. Este es el recibo que faltaba: sin él, el
+Journal afirmaba una cosa que el remoto ya había desmentido.
+
+## 2026-10-25 — C23: el servicio de analisis deja de ser un modulo de 4.100 lineas
+
+**C23 closed.** C23 acceptance: PASS (la equivalencia de las tres vias, verificada
+por la red de `h24_the_routes_say_the_same`; el troceo, verificado por el
+contrato nuevo; los contratos publicos sin cambios; y la suite del workspace en
+verde con 6.379 pruebas y 0 fallidas). La puerta completa local queda en rc=1 por
+un contrato de procedencia de cosign que falla igual sobre un clon limpio de la
+base: no es de esta unidad y no se esconde —esta misma entrada lo mide—.
+
+**La unidad, con lo que se midio antes y despues.**
+
+MEDIDO ANTES: `crates/cognicode-core/src/application/services/analysis_service.rs`
+tenia 4.354 lineas. La produccion terminaba en la 2.086; las otras 2.268 eran
+tres modulos de pruebas escritos en linea. Dentro convivian cinco
+responsabilidades que no se hablan entre si: la construccion del grafo (1.266
+lineas), la cache y el indice de simbolos (60), la resolucion de simbolos (279),
+las metricas (85) y el analisis del dominio (253). Un cambio en las metricas
+obligaba a leer el constructor del grafo.
+
+MEDIDO DESPUES: la fachada son 115 lineas y cada responsabilidad vive en su
+fichero.
+
+| Fichero | Lineas | Responsabilidad |
+|---|---|---|
+| `analysis_service.rs` | 115 | estado, constructores, accesores |
+| `analysis_service/construction.rs` | 1.387 | construir el grafo |
+| `analysis_service/cache.rs` | 59 | indice de simbolos y cache de ficheros |
+| `analysis_service/resolution.rs` | 277 | resolver simbolos y sus usos |
+| `analysis_service/metrics.rs` | 82 | metricas del grafo |
+| `analysis_service/analysis.rs` | 254 | analisis del dominio |
+| `analysis_service/tests.rs` | 2.072 | pruebas del modulo |
+| `analysis_service/find_symbol_usages_tests.rs` | 145 | pruebas de usos |
+| `analysis_service/reader_failure_tests.rs` | 49 | pruebas del lector |
+
+**El RED, y la demostracion de que el RED es del contrato y no del codigo.**
+
+Contrato nuevo: `scripts/ci/test_the_service_is_split_by_responsibility.py`.
+Sobre el arbol anterior al troceo ponia en rojo las tres reglas que mide —un
+fichero no vive dos responsabilidades, la fachada no implementa ninguna, y las
+pruebas en linea no son parte del modulo de produccion—, y despues del troceo
+pasa 5/5.
+
+La demostracion de que cada comprobacion muerde la suya se hizo con tres
+experimentos reversibles, y cada uno se midio por separado:
+
+| Experimento | Que se movio | Que se puso en rojo |
+|---|---|---|
+| A | todo el troceo, sobre el arbol original | las tres reglas |
+| B | solo las pruebas vuelven a la fachada | solo la de las pruebas en linea |
+| C | solo una responsabilidad vuelve a la fachada | solo la de la fachada |
+
+Un contrato que solo dice "esto cambio" no se puede volver a poner en rojo; uno
+que dice "esto no puede ser" se puede. Por eso el contrato mide la forma y no
+el resultado, y por eso las tres comprobaciones se demuestran por separado.
+
+**Lo que el guard arquitectonico dijo, y lo que se hizo con ello.**
+
+La deuda de produccion del ratchet de CR-06 se mide por par (fichero,
+dependencia). Al partir un fichero acoplado en seis, ese numero sube aunque
+el acoplamiento sea identico: MEDIDO, de 28 a 35, con 9 pares añadidos y 2
+retirados —los dos retirados son reales, la fachada ya no importa el parser ni
+la politica de recorrido.
+
+Se podia evitar, y se descarto: enrutar los tipos de infraestructura por
+`super::` deja el numero igual, pero es justo el agujero que el guard ya
+cerró una vez —el guard tiene que ver la dependencia escrita donde se usa—. Un
+guard que no ve el acoplamiento es peor que no tener guard, porque parece que
+vigila. Cada modulo declara sus propias dependencias, el guard las ve, y los
+nueve pares quedan nombrados en el ratchet con quien los aprobo. El
+movimiento real de los tipos detras de un puerto queda para su propia unidad,
+donde el acoplamiento si desaparece.
+
+**Las guardas de comportamiento.**
+
+`crates/cognicode-core/tests/c23_the_responsibilities_still_answer_together.rs`:
+3/3. Las metricas describen el arbol que el servicio construyo —la cobertura
+cuenta los dos fuentes del corpus y no el manifiesto ni el readme—, el indice
+resuelve el simbolo que el grafo tiene y en el fichero que lo tiene, y la
+busqueda de usos encuentra la llamada que el grafo conocia. Las tres
+responsabilidades ahora viven en tres ficheros distintos, y el test es sobre
+el servicio entero: un test por responsabilidad pasaria sola cada una.
+
+**Lo que la puerta midio.**
+
+```
+bash scripts/test-fast.sh
+→ rc=0
+
+bash scripts/test-full.sh
+→ rc=1
+```
+
+Cada etapa, con su veredicto:
+
+| Etapa | Veredicto |
+|---|---|
+| `fmt --check` | OK |
+| `clippy -D warnings` | OK |
+| `test --workspace` | OK — 240 suites, 6.379 pruebas, 0 fallidas, 34 ignoradas |
+| `test --workspace --doc` | OK |
+| `test explorer (multimodal)` | OK |
+| contratos | FAIL (rc=1) — 55 ficheros, 394 comprobaciones verdes, 2 rojas |
+| `known_failures (core/lib)` | OK — la linea base no declara fallos conocidos |
+
+Las dos comprobaciones rojas son del mismo contrato,
+`scripts/ci/test_provenance_generation.py`, y no son de este codigo. MEDIDO: el
+contrato falla exactamente igual sobre un clon limpio de `87aab47f`, sin una
+sola linea de este cambio. La causa es la maquina: el cosign de aqui es la
+v3.1.4, y en esa version `--tlog-upload` esta deprecado y el registro de
+transparencia es obligatorio, asi que cosign pregunta los terminos del registro
+publico en cada `attest-blob` y, sin TTY, declina —MEDIDO, con y sin `yes` en
+la entrada, y la aceptacion no se cachea—. El lane se midio con cosign 3.1.3,
+que permitia firmar sin red y sin registro.
+
+Eso no se arregla aqui, y no se arreglo: arreglarlo es decidir si una release
+publica la huella de su artefacto en el registro publico de sigstore o si se
+migra el lane al modelo de `signing-config` de la v3.1.4. Es una decision del
+lane de release, no de esta unidad, y por eso queda dicha y no resuelta.
+
+El `merge-gate` no se ve afectado: las cinco ultimas fusiones pasaron con ese
+mismo contrato en verde, y el runner de PipelineK tiene un cosign donde el
+contrato funciona.
+
+**Dos fallos de la puerta que eran de la maquina y no del codigo.** La primera
+vez que corrio la puerta completa, `test --workspace` salio en rojo por tres
+pruebas de `prf_f6_w1_release_coherence` que exigian binarios de perfil release
+que no estaban construidos (`cogh`, `cognicode`, `cognicode-release`). Se
+construyeron (`cargo build --release --bin cogh --bin cognicode-mcp --bin
+cognicode --bin cognicode-release`) y la etapa salio en verde. La segunda vez,
+el contrato de autoridades de atribucion salio en rojo porque el ADR nuevo no
+estaba versionado: `docs/adr/` esta en `.gitignore` a proposito, y los ADR se
+anaden con `git add -f`. Anadido como manda la convencion.
+
+**Lo que queda fuera.**
+
+La constructor de grafo sigue siendo el modulo mas grande, con 1.387 lineas, y
+es donde vive el trabajo de verdad. El movimiento de los tipos de
+infraestructura detras de un puerto —que es lo que haria desaparecer el
+acoplamiento y no solo repartirlo— no se hizo aqui porque cambia las firmas
+publicas, y el criterio de cierre de esta unidad dice que no cambian.
+
+**Lo que viene.**
+
+La cola viva queda con `C11` (SnapshotKey e incrementalidad honesta), `C12`
+(navegacion Kotlin sin JVM) y `C13` (relaciones Kotlin-Java, solo cuando se
+pueden probar).
+
+## 2026-10-25 — El rojo de procedencia sale de la nota y entra en la cola
+
+**Lo que cambia: la cola nombra el problema.**
+
+El recibo de `C23` midió el rojo de `scripts/ci/test_provenance_generation.py` y
+lo dejó dicho y no resuelto: es de la máquina, no del código, y arreglarlo es una
+decisión del lane de release, no de esta unidad. El operador lo ha abierto como
+candidato propio. La declaración de la misión (`goal-compass.json`) lleva ahora
+`C39` —la política del registro de transparencia en el lane de procedencia— con
+la evidencia que lo sostiene y con un criterio de cierre observable.
+
+`C39` no es una unidad del roadmap: el programa vivo sigue siendo el que dice
+`docs/roadmap/ROADMAP.md`, y su §11 no cambia. Es trabajo de la cola, que es
+donde cabe un problema de infraestructura que no es una unidad.
+
+**Prioridad 25.** La cola queda `C11` (30), `C39` (25), `C12` (20), `C13` (10). No
+va primero porque el trabajo vivo del roadmap no se aparta por un rojo de la
+máquina: el `merge-gate` corre en el runner de PipelineK y allí el contrato
+pasa, así que la entrega no está bloqueada. No va último porque `AGENTS.md`
+exige puerta completa en verde antes de un tag o de una release, y mientras la
+política no esté decidida la puerta local no puede dar rc=0.
+
+**Lo que `C39` NO cierra.** La custodia de la clave privada sigue siendo la
+decisión abierta del ADR de procedencia, y sigue siéndolo por una razón distinta
+de la que la bloquea hoy: no es que falte el mecanismo —el lane genera la
+atestación y la clave pública viaja con la release—, es que nadie ha decidido
+dónde vive la clave privada y quién puede usarla. `C39` decide la política del
+registro; la custodia es otra decisión, y el ADR las separa.
+
+**El estado del ciclo, medido.** La rama
+`feature/the-service-is-split-by-responsibility` está subida en `26aaf8b3` y la
+PR #464 está abierta contra `main`. La puerta que GitHub exige antes de dejar
+fusionar es el `merge-gate` sobre esa PR; la puerta local medida en este ciclo da
+rc=1 por el contrato de procedencia, con todo lo demás en verde.
+
+## 2026-10-25 — Corrección al recibo de `C23`: el `merge-gate` no era ajeno al rojo
+
+**Lo que se corrige.** El recibo de `C23` afirmaba que "el `merge-gate` no se ve
+afectado" porque las cinco últimas fusiones habían pasado con ese mismo
+contrato en verde. La primera parte era una suposición, y la suposición era
+falsa: el `merge-gate` **corre en esta misma máquina** —`pipelinek` es un
+runner local— y su etapa de contratos ejecuta `scripts/ci/run-all-contracts.sh`,
+que incluye `scripts/ci/test_provenance_generation.py`.
+
+**MEDIDO, con una sonda de un minuto.** Un step de PipelineK:
+
+- **no tiene TTY**: `STDIN: NO TTY`, `STDOUT: NO TTY`;
+- **sí encuentra `cosign`**: `COSIGN: /usr/bin/cosign`.
+
+El contrato, entonces, no se salta: se ejecuta, y con cosign v3.1.4 falla.
+
+**MEDIDO, el mecanismo completo.** `cosign attest-blob` con la v3.1.4 imprime los
+términos del servicio de sigstore y pregunta:
+
+```
+Are you sure you would like to continue? [y/N]
+```
+
+- **Sin TTY**: `Error: user declined the prompt`, rc=1, `attest-provenance.sh`
+  aborta con `FAIL: cosign refused to attest`, y caen las dos comprobaciones
+  positivas del contrato.
+- **Con TTY y respondiendo `y`**: firma y **publica la huella en el registro
+  público de Rekor** (`Wrote bundle to file out2.bundle.json`, MEDIDO).
+- La aceptación **no se cachea**: en una misma corrida el prompt volvió a
+  aparecer (MEDIDO).
+
+**Lo que no se ha verificado.** Que las corridas de los días 23 y 24 de octubre
+pasaran porque alguien contestó el prompt desde la terminal es la explicación
+compatible con lo medido, no un hecho comprobado: el `durable-shell` de esas
+corridas ya no está en disco y el registro del pipeline guarda el resultado de
+cada etapa, no su salida. Lo que sí está medido es lo que decide hoy: el
+`merge-gate` no puede pasar esa etapa sin una respuesta interactiva.
+
+**Por qué esto no se arregla en este ciclo.** Contestar el prompt es aceptar
+los términos de sigstore **en nombre de quien lo contesta** y publicar en un
+registro público. Eso es justo la decisión que el ADR de procedencia deja
+abierta —"la política del registro de transparencia"— y que el operador ha
+decidido **no** tomar en este ciclo: se abre como candidato `C39` y queda
+escrita, no resuelta. La unidad `C23` tampoco lo puede arreglar: es un cambio
+en el lane de release, no en el servicio de análisis.
+
+**Lo que queda medido y sin resolver.** `scripts/test-full.sh` da rc=1 por este
+motivo, y el `merge-gate` que corre sobre esta rama publicará el mismo
+veredicto. La publicación de la v0.101.31 sigue en espera, que es lo que el
+operador decidió.
+
+## 2026-10-25 — El `merge-gate` de esta rama: fallo en la etapa de contratos, por el motivo ya medido
+
+**El veredicto, medido sobre el head de la rama.**
+
+`bash scripts/ci/publish-merge-gate.sh` — corrida `b8793970`, sobre
+`c9a2f21ec006f9b67e7e2c10e6290b81db5c4170`. Publicado en GitHub como
+`merge-gate=failure`.
+
+La puerta llegó hasta la etapa `contracts` con todo lo anterior en verde:
+
+| Etapa | Veredicto |
+|---|---|
+| `build-isolation` | OK |
+| `toolchain` | OK |
+| `repo-contract` | OK |
+| `fmt` | OK |
+| `clippy` | OK |
+| `contract-toolchain` | OK |
+| `build-cognicode-for-contracts` | OK |
+| `contracts` | **FAIL** — en `test_provenance_generation.py`, 11 passed / 2 failed |
+
+Los dos rojos son los mismos dos de siempre, y son los únicos:
+
+```
+FAIL test_the_subject_digest_is_the_artifact_digest
+FAIL test_the_bundle_verifies_with_the_key_that_ships_with_the_release
+```
+
+El contrato nuevo de esta unidad, `test_the_service_is_split_by_responsibility.py`,
+pasó 5/5 **dentro de esa misma etapa**.
+
+**Qué significa.** El `merge-gate` no tropieza con el código de esta unidad:
+tropieza con la máquina. Es el mismo rojo que `scripts/test-full.sh` mide en
+local, y el mismo que se midió idéntico sobre un clon limpio de `87aab47f`. La
+PR #464 queda bloqueada por el check que GitHub exige, y ese bloqueo es de la
+infraestructura de la release, no del servicio de análisis.
+
+**Los dos caminos que tiene el operador.** Uno: contestar el prompt desde una
+terminal —con TTY, `cosign` firma y publica en el registro público de Rekor—.
+Dos: decidir la política del registro, que es el candidato `C39`, y que el lane
+deje de depender de una respuesta interactiva. El primero tapa el síntoma; el
+segundo lo cierra.

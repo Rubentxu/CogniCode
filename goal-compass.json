@@ -8,29 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C23",
-      "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
-      "unit": "H24",
-      "objective": "Que la construccion del grafo, la cache, la resolucion y las metricas dejen de vivir en un mismo archivo, sin cambiar los contratos publicos.",
-      "whyNow": "MEDIDO 2026-10-24: el archivo tiene 4.369 lineas y cinco constructores vivos, no tres: la via completa, la filtrada, la asincrona, la per-file y la lightweight. Las tres que construyen el grafo del proyecto son de produccion: la CLI, `workspace_session.rs:1171` y el handler MCP `aix_handlers.rs:1979`. El lector de arbol ya esta unificado, pero el inventario centralizado solo llega a dos de las tres, y resolucion, cache y reporte estan triplicados: 111 lineas identicas entre la completa y la filtrada, 80 comunes a las tres. MEDIDAS: un symlink declinado es hueco en dos rutas y silencio en la asincrona, que puede publicar `Complete` sobre un arbol que no cubria; un directorio inexistente se rechaza en una sola ruta; y el orden de los resultados no lo fija la asincrona, de modo que el indice de nombres repetidos hereda el orden del recorrido. MEDIDO Y NO ES CIERTO: el denominador de la cobertura ya coincide en las tres rutas (la completa cuenta `files_with_lang`), igual que las relaciones sobre un corpus sin ambiguedad. El criterio de cierre que propone la auditoria externa -un mismo corpus produce relaciones y cobertura equivalentes por las tres vias- no lo verifica ningun test: lo que se compara entre vias es la lista de ficheros omitidos, nunca lo que el grafo dice.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/services/analysis_service.rs",
-        "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
-        "crates/cognicode-core/src/application/dto/analysis.rs",
-        "docs/adr/ADR-056-the-routes-say-the-same.md"
-      ],
-      "doneWhen": [
-        "las tres rutas que construyen el grafo publican la misma cobertura, las mismas relaciones y los mismos huecos sobre el mismo corpus, y un test lo verifica",
-        "el archivo se parte por responsabilidad, y cada parte tiene su nombre",
-        "los contratos publicos del servicio no cambian",
-        "la suite sigue verde"
-      ],
-      "scope": "H24",
-      "risk": "high",
-      "priority": 50,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
@@ -50,6 +27,29 @@
       "risk": "high",
       "priority": 30,
       "source": "roadmap"
+    },
+    {
+      "candidateId": "C39",
+      "title": "La política del registro de transparencia en el lane de procedencia",
+      "objective": "Decidir y aplicar la política de registro de transparencia del lane de procedencia, para que `scripts/ci/test_provenance_generation.py` pase con la versión de cosign realmente instalada y sin relajar la puerta: o la release publica la huella de su artefacto en el registro público de sigstore, o el lane migra al modelo `signing-config` de la v3.1.4 con `--trusted-root` para la verificación. La decisión se escribe en el ADR de procedencia; la custodia de la clave privada sigue siendo una decisión distinta y no se cierra aquí.",
+      "whyNow": "MEDIDO 2026-10-25: el cosign de esta máquina es la v3.1.4 (rpm instalado 2026-10-23 06:12) y deprecó `--tlog-upload`: el registro de transparencia pasó a ser obligatorio y `cosign attest-blob` imprime los términos del servicio de sigstore y pregunta `Are you sure you would like to continue? [y/N]`. Sin TTY responde `Error: user declined the prompt` y sale con rc=1, así que `attest-provenance.sh` aborta con `FAIL: cosign refused to attest` y las dos comprobaciones positivas del contrato caen (`test_the_subject_digest_is_the_artifact_digest` y `test_the_bundle_verifies_with_the_key_that_ships_with_the_release`), de forma idéntica sobre un clon limpio de `87aab47f`: es de la máquina, no del código. MEDIDO también: la aceptación NO se cachea —cada `attest-blob` vuelve a preguntar— y contestarla con `y` sí firma, pero publica la huella en el registro público de Rekor. MEDIDO también: un step de PipelineK no tiene TTY (`STDIN: NO TTY`) y sí encuentra `cosign` en `/usr/bin/cosign`, así que la etapa de contratos del `merge-gate` —que corre en esta misma máquina— no puede pasar sola. Mientras la política no esté decidida, `scripts/test-full.sh` no puede dar rc=0 en local, y `AGENTS.md` exige puerta completa en verde antes de un tag o de una release.",
+      "evidenceRefs": [
+        "docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md",
+        "scripts/ci/attest-provenance.sh",
+        "scripts/ci/test_provenance_generation.py",
+        "docs/roadmap/JOURNAL.md"
+      ],
+      "doneWhen": [
+        "la política del registro de transparencia está decidida y escrita en el ADR de procedencia, con la alternativa descartada y su consecuencia; si la elección es el registro público, dice quién asume su disponibilidad y qué pasa si no está disponible",
+        "`scripts/ci/test_provenance_generation.py` da 0 rojas con el cosign instalado en la máquina: el test falla ANTES del cambio y pasa DESPUÉS, con la versión real, sin shim en el PATH ni versión pineada que esquive el problema",
+        "la etapa de contratos del `merge-gate` pasa sin que nadie conteste un prompt: si la política es el registro público, el lane dice explícitamente que publica en Rekor y lo hace de forma no interactiva; si no lo es, el lane deja de exigirlo",
+        "el ADR separa lo que queda decidido de lo que sigue abierto —la custodia de la clave— en vez de dejar «la decisión» como un bloque ambiguo",
+        "`scripts/test-full.sh` termina con rc=0 en local, y la razón por la que antes no lo daba queda escrita"
+      ],
+      "scope": "release-provenance",
+      "risk": "medium",
+      "priority": 25,
+      "source": "observed"
     },
     {
       "candidateId": "C12",

@@ -129,6 +129,13 @@ pub fn exceptions() -> Vec<TemporaryException> {
         // ====================================================================
         // application_no_infrastructure — ST-03 (AnalysisService mega-split)
         // ====================================================================
+        // The service was one file with four responsibilities inside it. It
+        // is now one file per responsibility, and the drift followed the
+        // code into the file that owns it: the same dependency, named from
+        // a different path. The coupling did not grow; the inventory did,
+        // because an entry is keyed by (file, dependency) and one file
+        // became six.
+        //
         // Bare module path (`use crate::infrastructure::graph;` with
         // no leaf) emits without trailing `::`; prefix-match below
         // covers the module itself plus every leaf under it.
@@ -139,16 +146,78 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-03",
             "ST-03: graph types behind a port (LightweightIndex, PerFileGraphCache, BuildStatus, PetGraphStore).",
         ),
-        // The evaluator emits the bare module path when an import
-        // group (`use crate::infrastructure::parser::{Language, ...}`)
-        // cannot be resolved to a leaf; prefix-match below covers the
-        // group itself plus every leaf under it.
         ex(
             "application_no_infrastructure",
-            "application/services/analysis_service.rs",
+            "application/services/analysis_service/cache.rs",
+            "infrastructure::graph",
+            "team:st-03",
+            "ST-03: graph types behind a port (LightweightIndex, SymbolLocation).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/construction.rs",
+            "infrastructure::graph",
+            "team:st-03",
+            "ST-03: graph types behind a port (PetGraphStore, BuildStatus, BuildReport).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/construction.rs",
             "infrastructure::parser",
             "team:st-03",
             "ST-03: parser types behind a port (Language, TreeSitterParser).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/metrics.rs",
+            "infrastructure::graph",
+            "team:st-03",
+            "ST-03: graph types behind a port (BuildStatus, SkippedFile, SkipReason).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/metrics.rs",
+            "infrastructure::parser",
+            "team:st-03",
+            "ST-03: parser types behind a port (Language).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/resolution.rs",
+            "infrastructure::graph",
+            "team:st-03",
+            "ST-03: graph types behind a port (SymbolLocation).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/resolution.rs",
+            "infrastructure::parser",
+            "team:st-03",
+            "ST-03: parser types behind a port (Language, TreeSitterParser).",
+        ),
+        // The service's own test modules live in their own files now, and
+        // their imports sit inside a `#[cfg(test)]` scope: composing the
+        // real adapter in a test is not production drift.
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/tests.rs",
+            "infrastructure::graph",
+            "team:st-03",
+            "cfg(test)-only: the service's own test module composes the real graph types.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/tests.rs",
+            "infrastructure::parser",
+            "team:st-03",
+            "cfg(test)-only: the service's own test module composes the real parser.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/reader_failure_tests.rs",
+            "infrastructure::parser",
+            "team:st-03",
+            "cfg(test)-only: the reader failure test composes the real parser.",
         ),
         ex(
             "application_no_infrastructure",
@@ -380,7 +449,14 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         ex(
             "application_no_infrastructure",
-            "application/services/analysis_service.rs",
+            "application/services/analysis_service/construction.rs",
+            "infrastructure::walk_policy::",
+            "team:st-02",
+            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service/resolution.rs",
             "infrastructure::walk_policy::",
             "team:st-02",
             "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
@@ -701,10 +777,22 @@ mod tests {
         // are written inline where they are used. The other three are the
         // test-only imports that the unit tests of the analytics services
         // carry, now that those tests compose the real projection.
+        // 41 -> 51. The service was one file with four responsibilities in
+        // it, and it is now one file per responsibility. The drift followed
+        // the code: the same dependency, named from a different path. Two
+        // entries are genuinely DELETED — the facade no longer imports the
+        // parser or the walk policy — and twelve are genuinely ADDED, nine
+        // of them production ones that the split distributed across the
+        // files that own the responsibility.
+        //
+        // The coupling did not change; the count did, because an entry is
+        // keyed by (file, dependency) and one file became six. That is
+        // what the production ratchet measures against, and why the added
+        // pairs are named there with who approved them.
         assert_eq!(
             list.len(),
-            41,
-            "expected exactly 41 entries; if you removed/added a drift \
+            51,
+            "expected exactly 51 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
