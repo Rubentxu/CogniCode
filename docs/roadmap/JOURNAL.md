@@ -26471,3 +26471,54 @@ registro; la custodia es otra decisión, y el ADR las separa.
 PR #464 está abierta contra `main`. La puerta que GitHub exige antes de dejar
 fusionar es el `merge-gate` sobre esa PR; la puerta local medida en este ciclo da
 rc=1 por el contrato de procedencia, con todo lo demás en verde.
+
+## 2026-10-25 — Corrección al recibo de `C23`: el `merge-gate` no era ajeno al rojo
+
+**Lo que se corrige.** El recibo de `C23` afirmaba que "el `merge-gate` no se ve
+afectado" porque las cinco últimas fusiones habían pasado con ese mismo
+contrato en verde. La primera parte era una suposición, y la suposición era
+falsa: el `merge-gate` **corre en esta misma máquina** —`pipelinek` es un
+runner local— y su etapa de contratos ejecuta `scripts/ci/run-all-contracts.sh`,
+que incluye `scripts/ci/test_provenance_generation.py`.
+
+**MEDIDO, con una sonda de un minuto.** Un step de PipelineK:
+
+- **no tiene TTY**: `STDIN: NO TTY`, `STDOUT: NO TTY`;
+- **sí encuentra `cosign`**: `COSIGN: /usr/bin/cosign`.
+
+El contrato, entonces, no se salta: se ejecuta, y con cosign v3.1.4 falla.
+
+**MEDIDO, el mecanismo completo.** `cosign attest-blob` con la v3.1.4 imprime los
+términos del servicio de sigstore y pregunta:
+
+```
+Are you sure you would like to continue? [y/N]
+```
+
+- **Sin TTY**: `Error: user declined the prompt`, rc=1, `attest-provenance.sh`
+  aborta con `FAIL: cosign refused to attest`, y caen las dos comprobaciones
+  positivas del contrato.
+- **Con TTY y respondiendo `y`**: firma y **publica la huella en el registro
+  público de Rekor** (`Wrote bundle to file out2.bundle.json`, MEDIDO).
+- La aceptación **no se cachea**: en una misma corrida el prompt volvió a
+  aparecer (MEDIDO).
+
+**Lo que no se ha verificado.** Que las corridas de los días 23 y 24 de octubre
+pasaran porque alguien contestó el prompt desde la terminal es la explicación
+compatible con lo medido, no un hecho comprobado: el `durable-shell` de esas
+corridas ya no está en disco y el registro del pipeline guarda el resultado de
+cada etapa, no su salida. Lo que sí está medido es lo que decide hoy: el
+`merge-gate` no puede pasar esa etapa sin una respuesta interactiva.
+
+**Por qué esto no se arregla en este ciclo.** Contestar el prompt es aceptar
+los términos de sigstore **en nombre de quien lo contesta** y publicar en un
+registro público. Eso es justo la decisión que el ADR de procedencia deja
+abierta —"la política del registro de transparencia"— y que el operador ha
+decidido **no** tomar en este ciclo: se abre como candidato `C39` y queda
+escrita, no resuelta. La unidad `C23` tampoco lo puede arreglar: es un cambio
+en el lane de release, no en el servicio de análisis.
+
+**Lo que queda medido y sin resolver.** `scripts/test-full.sh` da rc=1 por este
+motivo, y el `merge-gate` que corre sobre esta rama publicará el mismo
+veredicto. La publicación de la v0.101.31 sigue en espera, que es lo que el
+operador decidió.
