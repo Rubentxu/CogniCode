@@ -26779,3 +26779,11 @@ tests no pueden ver. El escenario es efímero y vive fuera del repo: lo que se
 promueve es el test de frontera, que dice lo mismo sin depender del transporte.
 
 **La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**421 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `add5a40e`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #469.
+La correccion no rompe ningun contrato publicado: el cliente sigue recibiendo
+un error, y lo que cambia es que ese error dice su categoria en vez de
+"Internal error". Un rechazo del producto deja de parecer una caida del
+producto. La decision queda escrita en
+`docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
