@@ -5,12 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
-> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
-> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
-> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
-> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
-> si fuera una respuesta).
+> **Snapshot**: 2026-10-25, sobre `c5dc26247cfe0f71e9fae4022b9a568e7f90999e` (la rama de la unidad del
+> borde: el consumidor del protocolo declara la versión que leyó y la escritura se
+> niega si el destino ya no la tiene).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -149,8 +146,56 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
+| **H29** (`C43`) | un rechazo llega como un rechazo, no como un fallo interno | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**El consumidor declara la versión sobre la que escribe, está cerrada.** La
+escritura condicional existía en la capa de aplicación, pero el borde la perdía: el
+campo se fijaba a `None` en la conversión, el esquema del protocolo no lo declaraba,
+y `read_file` no publicaba ningún digest. Es decir, la capacidad existía y era
+inaccesible: el consumidor no tenía forma de nombrar la versión que leyó. Ahora
+`read_file` publica el digest del fichero entero, y sale de la misma lectura que
+cuenta las líneas —sin una segunda pasada por el fichero, y con el orden seguro,
+porque el digest se calcula antes de leer el contenido—. `write_file` y `edit_file`
+aceptan el hash declarado y la conversión lo lleva. El documento publicado declara
+el campo, y la captura del runtime se refrescó desde un `tools/list` real: su
+`tool_version` decía `0.101.17` y el gate, que sólo comparaba el conjunto de
+nombres, no se enteraba.
+La demostración está hecha: seis de los siete tests nuevos se vieron fallar antes,
+el contrato fallaba dos de seis, y el UAT con el binario real por stdio leyó,
+escribió declarando la versión y fue rechazado cuando la versión ya no era la.
+
+**La escritura se publica entera, o no se publica, está cerrada.** El servicio
+de ficheros abría el temporal con `File::create`, que no exige creación exclusiva,
+de modo que un temporal preexistente se trunca; la limpieza estaba sólo en el error
+del cambio de nombre, así que un fallo de escritura dejaba el temporal en disco; y
+no había comprobación de versión, de modo que una edición pisaba el trabajo de otro
+editor entre la lectura y la escritura sin que nadie se enterara. Ahora hay un
+adaptador único: el temporal se crea en exclusiva, el contenido se sincroniza antes
+de que el destino exista, el directorio se sincroniza después del cambio de nombre,
+y la limpieza está en `Drop`, de modo que lo que no se publica se borra porque el
+escritor se suelta y no porque alguien se acuerde de borrar en cada camino de
+error. El llamante puede declarar la versión que leyó, y la escritura se niega si
+el destino ya no la tiene: la versión se comprueba antes de crear nada —para que
+una petición rechazada no deje ni el fichero ni los directorios que pidió— y otra
+vez justo antes de publicar. El digest es el del producto, no una tercera forma de
+hashar. La demostración está hecha: tres de los cinco tests nuevos se vieron fallar
+antes, y el contrato que vigila que no vuelva comprueba que cada detector nota un
+texto que la viola.
+
+**Un corte por byte no parte un caracter está cerrada.** El servicio de ficheros
+recortaba el texto por índice de byte, y con texto multibyte un índice dentro
+de un carácter abortaba el proceso: el desplazamiento lo elegía el llamante —
+el token de continuación no está firmado— y el tamaño del trozo también. El
+corte se pide ahora con la forma que el tipo hace segura: los tramos se toman
+con `get`, que devuelve `None` cuando el rango no cae en fronteras, y el
+tamaño del trozo se ajusta al último carácter entero que cabe. Un módulo
+nuevo de fronteras sustituye a los recortes sueltos, y hay un contrato que
+vigila que no vuelva: no lista los cortes prohibidos uno a uno, sino que mira
+cualquier corte por índice sobre texto en los ficheros que recortan. La
+demostración está hecha: los cuatro tests nuevos se vieron abortar antes, en
+las líneas 986, 1003 (dos veces) y 1376.
 
 **Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
 cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de

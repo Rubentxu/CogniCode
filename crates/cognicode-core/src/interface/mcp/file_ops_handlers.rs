@@ -513,6 +513,7 @@ mod tests {
                 path: "../../evil.txt".to_string(),
                 content: "malicious content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -528,6 +529,7 @@ mod tests {
                 path: "/tmp/evil.txt".to_string(),
                 content: "malicious content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -548,6 +550,7 @@ mod tests {
                     old_string: "something".to_string(),
                     new_string: "replacement".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -737,6 +740,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "atomic content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -763,6 +767,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "content with parent dirs".to_string(),
                 create_dirs: Some(true),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -785,6 +790,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "new content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -819,6 +825,7 @@ mod tests {
                     old_string: "old_name".to_string(),
                     new_string: "new_name".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -842,6 +849,7 @@ mod tests {
                     old_string: "fn test() {}".to_string(),
                     new_string: "fn test() { ".to_string(), // Missing closing brace
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -872,6 +880,7 @@ mod tests {
                     old_string: "nonexistent_string".to_string(),
                     new_string: "replacement".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -905,6 +914,7 @@ mod tests {
                         new_string: "quux".to_string(),
                     },
                 ],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;

@@ -65,6 +65,8 @@ async fn a_rejected_write_leaves_no_directory_outside_the_workspace() {
             path: target.to_string_lossy().into_owned(),
             content: "malicious content".to_string(),
             create_dirs: Some(true),
+
+            expected_content_hash: None,
         },
     )
     .await;
@@ -102,6 +104,8 @@ async fn a_relative_write_creates_the_tree_inside_the_workspace() {
             path: relative.clone(),
             content: "dentro del workspace".to_string(),
             create_dirs: Some(true),
+
+            expected_content_hash: None,
         },
     )
     .await;
@@ -146,6 +150,8 @@ async fn an_edit_that_could_not_be_verified_does_not_report_a_passed_validation(
                 old_string: "hola".to_string(),
                 new_string: "adios".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -187,6 +193,8 @@ async fn a_verified_edit_says_it_was_verified() {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() { }".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -226,6 +234,8 @@ async fn a_broken_file_is_rejected() {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() { ".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -265,6 +275,8 @@ async fn an_edit_that_changes_nothing_says_why() {
                 old_string: "fn test() {}".to_string(),
                 new_string: "fn test() {}".to_string(),
             }],
+
+            expected_content_hash: None,
         },
     )
     .await
@@ -305,6 +317,8 @@ async fn a_write_is_not_blocked_by_what_another_write_left_behind() {
             path: target.to_string_lossy().into_owned(),
             content: "contenido".to_string(),
             create_dirs: Some(false),
+
+            expected_content_hash: None,
         },
     )
     .await;

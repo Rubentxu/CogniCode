@@ -470,6 +470,17 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     asíncrona. La forma, en
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
 >
+>   **H29** — leer y editar un fichero no puede abortar el proceso que lo
+>   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
+>   pide con la forma que el tipo hace segura, con un contrato que vigila que
+>   no vuelva; y la escritura se publica entera o no se publica, con el
+>   temporal en exclusiva, limpio solo si no se publica, y una comprobacion de
+>   version para que una edicion no pise el trabajo de otro editor. Y el
+>   consumidor del protocolo ya puede declarar esa version: `read_file`
+>   publica el digest del fichero entero y `write_file`/`edit_file` lo
+>   aceptan, con un contrato que vigila que el documento publicado y la
+>   captura real digan lo mismo.
+>
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).
 >

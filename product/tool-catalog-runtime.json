@@ -27,7 +27,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -104,7 +104,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -136,7 +136,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -181,7 +181,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -203,7 +203,7 @@
           "description": "Provenance basis for a build_graph result.",
           "properties": {
             "complete": {
-              "description": "`true` only when every identity component was established.",
+              "description": "`true` only when every identity component was established and\nthere was material to identify. A workspace with nothing to\nanalyze has an established identity of an empty tree, which\ndescribes no analysis: the basis is not complete.",
               "type": "boolean"
             },
             "config_digest": {
@@ -336,7 +336,7 @@
               "type": "null"
             }
           ],
-          "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable."
+          "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable, or\nwhen the workspace had nothing to analyze."
         },
         "edges": {
           "items": {
@@ -373,7 +373,7 @@
           ]
         },
         "status": {
-          "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), or a reference could not\n    be tied to a declaration.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.",
+          "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), or a reference could not\n    be tied to a declaration.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.",
           "type": "string"
         },
         "success": {
@@ -405,7 +405,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -440,7 +440,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -472,7 +472,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -497,7 +497,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -547,7 +547,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -583,7 +583,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -616,7 +616,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -641,7 +641,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -671,7 +671,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -701,6 +701,10 @@
           },
           "type": "array"
         },
+        "expected_content_hash": {
+          "description": "Digest of the content that was read; the edit is refused if the file no longer holds that version (optional)",
+          "type": "string"
+        },
         "path": {
           "description": "Path to the file to edit (required)",
           "type": "string"
@@ -721,7 +725,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -770,7 +774,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -815,7 +819,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -847,7 +851,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -886,7 +890,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -922,7 +926,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -955,7 +959,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "gated",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1000,7 +1004,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1032,7 +1036,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1057,7 +1061,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1093,7 +1097,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1122,7 +1126,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1190,7 +1194,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1237,7 +1241,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1262,7 +1266,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1316,7 +1320,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1344,7 +1348,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1382,7 +1386,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1465,7 +1469,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1500,7 +1504,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1537,7 +1541,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1566,7 +1570,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1631,7 +1635,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1656,7 +1660,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1688,7 +1692,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1708,7 +1712,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1832,7 +1836,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1852,7 +1856,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1877,7 +1881,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1897,7 +1901,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -1926,7 +1930,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2054,7 +2058,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2209,7 +2213,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2229,7 +2233,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2261,7 +2265,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2281,7 +2285,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2310,7 +2314,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2345,7 +2349,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2448,7 +2452,7 @@
         "requires_graph": true,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2493,7 +2497,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2513,7 +2517,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2544,7 +2548,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2576,7 +2580,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2728,7 +2732,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2810,7 +2814,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2842,7 +2846,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2896,7 +2900,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2924,7 +2928,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2955,7 +2959,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -2995,7 +2999,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3062,7 +3066,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3106,7 +3110,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3147,7 +3151,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3199,7 +3203,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3229,7 +3233,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3259,7 +3263,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3291,7 +3295,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3311,7 +3315,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3341,7 +3345,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3382,7 +3386,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3415,7 +3419,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3431,6 +3435,10 @@
         "create_dirs": {
           "description": "Whether to create parent directories if they don't exist (default: false)",
           "type": "boolean"
+        },
+        "expected_content_hash": {
+          "description": "Digest of the content that was read; the write is refused if the destination no longer holds that version (optional)",
+          "type": "string"
         },
         "path": {
           "description": "Path to the file to write (required)",
@@ -3452,7 +3460,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3482,7 +3490,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3511,7 +3519,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   },
@@ -3547,7 +3555,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "stable",
-        "tool_version": "0.101.17"
+        "tool_version": "0.101.31"
       }
     }
   }

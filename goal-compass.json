@@ -31,6 +31,49 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C43",
+      "title": "Un rechazo llega como si fuera un fallo interno",
+      "unit": "H29",
+      "objective": "Que un rechazo deliberado llegue al cliente como un rechazo, y no como un fallo interno del producto: el consumidor tiene que poder distinguir 'lo has pedido mal' de 'nos hemos roto'.",
+      "whyNow": "MEDIDO 2026-10-25, con el binario real por stdio: el rechazo de la escritura condicional llego al cliente como `application: Internal error: Invalid parameter: The file is not the version the caller read: ...`. El mensaje es correcto y nombra las dos versiones, pero la categoria dice 'fallo interno'. La causa esta medida: los handlers de ficheros aplanan todo error a `AppError::InternalError` cuando hay colector de metricas instalado --`crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:139` en write_file, y lo mismo en `:88` (read_file), `:197` (edit_file), `:253` (search_content) y `:306` (list_files)--, mientras que sin colector la misma categoria se conserva en `:119`. O sea: el mismo rechazo se dice de dos maneras segun haya o no metricas, y la que dice el cliente es la peor. La categoria se pierde dos veces: `app_error_to_tool_error` (`file_ops_handlers.rs:29`) aplasta la variante en un `ToolError::new(\"AppError\", e.to_string())`, y la vuelta al dominio elige `InternalError` sin mirar.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs",
+        "crates/cognicode-core/src/interface/mcp/error.rs",
+        "crates/cognicode-core/src/infrastructure/telemetry/mod.rs"
+      ],
+      "doneWhen": [
+        "un rechazo por version no llega al cliente como `Internal error`: la categoria sobrevive al camino instrumentado",
+        "el mismo rechazo se dice igual con y sin colector de metricas",
+        "un test en la frontera comprueba la categoria del error, no solo que hay error"
+      ],
+      "scope": "H29",
+      "risk": "low",
+      "priority": 40,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C45",
+      "title": "El producto no publica una fecha que no ha medido",
+      "unit": "H5",
+      "objective": "Que la marca de tiempo de un fichero sea un hecho medido o ninguna: si la fecha no se puede leer, o es anterior a la epoca, el producto no puede publicar `mtime 0` como si dijera que el fichero se escribio en la epoca.",
+      "whyNow": "MEDIDO 2026-10-25, al contrastar una auditoria externa con el codigo: `source_files.rs:242` publica `mtime_millis = 0` cuando `meta.modified()` falla, y `duration_since(UNIX_EPOCH).unwrap_or_default()` hace lo mismo con una fecha anterior a la epoca. El docstring de la funcion (linea 230) dice justo lo contrario: un dato no medido no se presenta como medido. El contrato vigente solo vigila el fallo de la metadata, no el de la fecha. Lo que no se rompe es la cache: la invalidacion compara tambien el hash del contenido (`handlers/mod.rs:1056`), de modo que un mtime a cero no sirve un grafo viejo; el defecto es de verdad, no de estabilidad: el MCP publica `mtime: 0` y `\"0\"` como si fueran la fecha del fichero. Es de H5 porque es la base temporal de la que depende la incrementalidad.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
+        "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
+        "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md"
+      ],
+      "doneWhen": [
+        "una fecha que no se puede leer, o anterior a la epoca, no se publica como `mtime 0`",
+        "el tipo dice la diferencia entre una fecha medida y una fecha que no existe, y el consumidor lo puede ver",
+        "el contrato vigila el caso de la fecha no leible, no solo el de la metadata no leible",
+        "la cache sigue invalidando por contenido: un fichero no medible no invalida por su cuenta, y el motivo queda dicho"
+      ],
+      "scope": "H5",
+      "risk": "low",
+      "priority": 35,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
@@ -68,6 +111,27 @@
       "scope": "H3",
       "risk": "high",
       "priority": 20,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C44",
+      "title": "El catalogo publicado dice de su runtime una version que no es la",
+      "unit": "B1",
+      "objective": "Que el catalogo publicado describa al runtime que lo publica: el `runtime_metadata` que dice `tool_version` tiene que decir la version que el runtime reporta, y las claves curadas a mano no se pueden perder al sincronizar.",
+      "whyNow": "MEDIDO 2026-10-25: el `runtime_metadata.tool_version` del maestro dice `0.99.2` en las 78 tools, mientras que el runtime reporta `0.101.31`; ademas `check_architecture` lleva dos claves de `runtime_metadata` --`gate_authority` y `produces_observations_only`-- que el runtime no publica. La deriva es invisible porque el gate solo comparaba el conjunto de nombres de tools, y un nombre no cambia porque cambie la version. La captura se refresco en `C42` y ya dice `0.101.31`, asi que el maestro es lo que quedo viejo. La sincronizacion no puede ser una copia ciega: el maestro tiene claves curadas que el runtime no reporta, y copiarlas encima las quitaria.",
+      "evidenceRefs": [
+        "product/tools.json",
+        "product/tool-catalog-runtime.json",
+        "crates/cognicode-core/src/interface/catalog.rs"
+      ],
+      "doneWhen": [
+        "el `runtime_metadata.tool_version` del maestro dice lo mismo que el runtime reporta",
+        "las claves curadas que el runtime no publica siguen en el maestro",
+        "el contrato compara el metadato entero, no solo el esquema de entrada"
+      ],
+      "scope": "B1",
+      "risk": "low",
+      "priority": 15,
       "source": "roadmap"
     },
     {

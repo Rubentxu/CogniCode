@@ -366,6 +366,7 @@ impl Tool for WriteFileTool {
                 path: args.path,
                 content: args.content,
                 create_dirs: args.create_dirs,
+                expected_content_hash: None,
             };
 
             let result = self
@@ -456,6 +457,7 @@ impl Tool for EditFileTool {
             let request = EditFileRequest {
                 path: args.path,
                 edits,
+                expected_content_hash: None,
             };
 
             let result = self

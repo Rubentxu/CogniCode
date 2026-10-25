@@ -97,10 +97,12 @@ wrong one is silent — it produces a smaller catalog that still validates.
 
 The two tools that a default build hides are gated by
 `program-analysis-server` and `evidence-cli-ladybug`. Build with both, or the
-capture will come up three tools short and regenerating will delete
-`interproc_summary`, `list_evidence` and `search_evidence` from the published
-surface. Measured 2026-10-15: a default build reports 77 tools, a
-full-feature build reports exactly the 80 the catalog publishes.
+capture will come up three tools short and will be missing
+`interproc_summary`, `list_evidence` and `search_evidence`. Measured
+2026-10-25: a default build reports 75 tools, and a full-feature build
+reports the 78 the catalog publishes.
+
+Capture what the runtime really publishes:
 
 ```bash
 cargo build -p cognicode-mcp \
@@ -110,11 +112,24 @@ cargo build -p cognicode-mcp \
   --method tools/list \
   --server-binary /var/home/rubentxu/cargo-targets/debug/cognicode-mcp \
   > product/tool-catalog-runtime.json
+```
+
+**`product/tools.json` is hand-authored. Do not write the generator's output
+over it.** The generator does not own nine of the fields (listed below), so
+running it over the master drops all nine. Use it to see what the runtime
+would publish, and compare that against the committed document:
+
+```bash
 python3 scripts/product/generate_tool_catalog.py \
   --input product/tool-catalog-runtime.json \
-  --output product/tools.json \
+  --output /tmp/tools.generated.json \
   --source-commit "$(git rev-parse HEAD)"
 ```
+
+The committed master and the capture are compared by
+`scripts/ci/test_the_consumer_can_declare_the_version.py`, which fails when
+the document published and the capture disagree about a tool's input schema:
+the tool names can agree while the shape the consumer passes has drifted.
 
 Validate the committed projection with:
 
@@ -132,8 +147,11 @@ relevant public profile. No output contract is invented here.
 `language_scope`, `feature`, `impact_direction_floor` and `precision_floor`
 are present in the published catalog and are **not** produced by
 `generate_tool_catalog.py`: the runtime's `_meta.cognicode` carries no source
-for them. Running the procedure above therefore drops all nine. They are
-curated by hand and have drifted — `tool_version` still reads `0.99.2` for
-tools whose runtime now reports `0.101.17`. Until the generator owns them,
-`--check` cannot be the authority over this document; see the open decision in
-`docs/roadmap/JOURNAL.md`.
+for them. Running the generator over the master therefore drops all nine.
+They are curated by hand, and the curation has drifted: `runtime_metadata`
+still reads `tool_version: 0.99.2` for the 78 tools whose runtime now reports
+`0.101.31`, and `check_architecture` carries two `runtime_metadata` keys
+(`gate_authority`, `produces_observations_only`) that the runtime does not
+report at all. Until the generator owns them, `--check` cannot be the
+authority over this document; the decision that the master is hand-authored
+and is never regenerated is recorded in `docs/roadmap/JOURNAL.md`.

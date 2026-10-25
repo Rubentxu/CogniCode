@@ -26,30 +26,75 @@ use crate::application::dto::{
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
+use crate::application::services::atomic_file_writer::AtomicFileWriter;
+use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
+use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
-/// Gives every temporary file its own name.
+/// The digest of the content the destination holds, if it holds any.
 ///
-/// The name used to be the target path plus the process identifier, so two
-/// writes to the same path inside one process shared one temporary file:
-/// they wrote into it at the same time and the survivor was whichever
-/// rename landed last. The counter makes the name unique per write, which
-/// is what "atomic" means when two writers meet.
-fn unique_temp_path(target: &str) -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{target}.tmp.{}.{n}", std::process::id())
+/// The digest is the one the whole product uses for content identity, so a
+/// caller that read a file through any interface can name the version it
+/// read without having to learn a second way of hashing.
+fn current_content_hash(path: &Path) -> Option<String> {
+    fs::read(path).ok().map(|bytes| sha256_hex(&bytes))
+}
+
+/// Whether two digests name the same version.
+///
+/// The comparison is not constant-time on purpose: the digest is not a
+/// secret, it is how two parties say "we are looking at the same version".
+fn same_version(expected: &str, actual: &str) -> bool {
+    expected.eq_ignore_ascii_case(actual)
+}
+
+/// Refuses the request when the declared version is not the current one.
+fn refuse_if_version_differs(declared: &str, actual: &str) -> AppResult<()> {
+    if same_version(declared, actual) {
+        return Ok(());
+    }
+    Err(AppError::InvalidParameter(format!(
+        "The file is not the version the caller read: declared {declared}, found {actual}"
+    )))
+}
+
+/// Checks that the destination is still the version the caller read.
+///
+/// `original` is the content this call read, when it read one; `declared`
+/// is the version the caller says it read, when it says one. Either one is
+/// enough to catch a file that changed underneath the request, and the
+/// check happens before the content is published, not only at the start.
+fn refuse_if_changed(path: &Path, original: Option<&str>, declared: Option<&str>) -> AppResult<()> {
+    if declared.is_none() && original.is_none() {
+        return Ok(());
+    }
+    let current = current_content_hash(path);
+    if let Some(declared) = declared {
+        let Some(current) = current.as_deref() else {
+            return Err(AppError::InvalidParameter(
+                "The file does not exist, so the declared version cannot match".to_string(),
+            ));
+        };
+        return refuse_if_version_differs(declared, current);
+    }
+    if let (Some(original), Some(current)) = (original, current.as_deref()) {
+        let original_digest = sha256_hex(original.as_bytes());
+        if !same_version(&original_digest, current) {
+            return Err(AppError::InvalidParameter(
+                "The file changed while the request was being prepared".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Continuation token for chunked file reading
@@ -395,7 +440,11 @@ impl FileOperationsService {
             Self::validate_token_binding(&ct, &validated_path, &self.workspace_root)?;
         }
         let metadata = self.build_file_metadata(&validated_path)?;
-        let total_lines = self.count_lines(&validated_path)?;
+        // The digest is taken from the same read that counts the lines, and
+        // that happens before the content is read. If the file changes in
+        // between, the digest still names the older version, so a write that
+        // declares it is refused rather than accepted over newer content.
+        let (total_lines, content_hash) = self.count_lines_and_hash(&validated_path)?;
 
         // Handle different modes using static enum dispatch
         let (content, start_line, end_line, has_more, next_token, suggested_chunk_size) = match mode
@@ -498,7 +547,12 @@ impl FileOperationsService {
                                         e
                                     ))
                                 })?;
-                                content[..offset].lines().count() as u32 + 1
+                                content
+                                    .get(..floor_char_boundary(&content, offset))
+                                    .unwrap_or_default()
+                                    .lines()
+                                    .count() as u32
+                                    + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
                             (chunk, chunk_end_line, has_more, next_token)
@@ -523,7 +577,12 @@ impl FileOperationsService {
                                         e
                                     ))
                                 })?;
-                                content[..ct.offset].lines().count() as u32 + 1
+                                content
+                                    .get(..floor_char_boundary(&content, ct.offset))
+                                    .unwrap_or_default()
+                                    .lines()
+                                    .count() as u32
+                                    + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
                             (chunk, chunk_end_line, has_more, next_token)
@@ -643,6 +702,7 @@ impl FileOperationsService {
             has_more,
             next_token,
             suggested_chunk_size,
+            content_hash: Some(content_hash),
         })
     }
 
@@ -956,8 +1016,13 @@ impl FileOperationsService {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
         let cap = byte_offset.min(content.len());
+        // Count the newlines before the offset without slicing: the offset can
+        // land inside a multibyte character, and slicing there aborts.
         let mut line: u32 = 1;
-        for ch in content[..cap].chars() {
+        for (index, ch) in content.char_indices() {
+            if index >= cap {
+                break;
+            }
             if ch == '\n' {
                 line += 1;
             }
@@ -982,9 +1047,26 @@ impl FileOperationsService {
             return Ok((String::new(), offset, true));
         }
 
+        // `get` yields None when the range does not land on character
+        // boundaries, so a read can never split a character: the type carries
+        // the guarantee, not a validation that a later change could forget.
+        let remaining = content.get(offset..).ok_or_else(|| {
+            AppError::InvalidParameter(format!(
+                "Offset {} is not a character boundary in the file.",
+                offset
+            ))
+        })?;
+
         // Read from offset, limited to chunk_size
-        let remaining = &content[offset..];
-        let read_size = chunk_size.min(remaining.len());
+        // A cut that ends inside a multibyte character would split it, so the
+        // chunk ends on the last whole character that fits.
+        let read_size = floor_char_boundary(remaining, chunk_size.min(remaining.len()));
+        if read_size == 0 && !remaining.is_empty() {
+            return Err(AppError::InvalidParameter(format!(
+                "Chunk size {} is smaller than the first character at offset {}.",
+                chunk_size, offset
+            )));
+        }
 
         // Find the appropriate end position:
         // 1. If chunk ends at a newline, use chunk_size as-is
@@ -1000,7 +1082,13 @@ impl FileOperationsService {
                 (offset + newline_pos + 1, false)
             } else {
                 // No newline in our chunk - look ahead for next newline
-                if let Some(next_newline) = remaining[read_size..].find('\n') {
+                let lookahead = remaining.get(read_size..).ok_or_else(|| {
+                    AppError::InvalidParameter(format!(
+                        "Chunk size {} does not land on a character boundary.",
+                        chunk_size
+                    ))
+                })?;
+                if let Some(next_newline) = lookahead.find('\n') {
                     (offset + read_size + next_newline + 1, false)
                 } else {
                     // No more newlines, return rest of file
@@ -1009,7 +1097,12 @@ impl FileOperationsService {
             }
         };
 
-        let chunk = String::from(&content[offset..end_offset]);
+        let chunk = String::from(content.get(offset..end_offset).ok_or_else(|| {
+            AppError::InvalidParameter(format!(
+                "The chunk range {}..{} does not land on character boundaries.",
+                offset, end_offset
+            ))
+        })?);
         Ok((chunk, end_offset, reached_end))
     }
 
@@ -1048,14 +1141,28 @@ impl FileOperationsService {
             return Ok(String::new());
         }
 
-        Ok(String::from(&content[start_byte..end_byte]))
+        Ok(String::from(content.get(start_byte..end_byte).ok_or_else(
+            || {
+                AppError::InvalidParameter(format!(
+                    "The range {}..{} does not land on character boundaries.",
+                    start_byte, end_byte
+                ))
+            },
+        )?))
     }
 
-    /// Counts total lines in a file
-    fn count_lines(&self, path: &str) -> AppResult<u32> {
+    /// Counts the lines of a file and returns the digest of its content.
+    ///
+    /// Both come from the same read, so the digest names exactly the bytes the
+    /// file had when it was counted: no extra pass over the file, and no window
+    /// in which the file could change between the two numbers.
+    fn count_lines_and_hash(&self, path: &str) -> AppResult<(u32, String)> {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
-        Ok(content.lines().count() as u32)
+        Ok((
+            content.lines().count() as u32,
+            sha256_hex(content.as_bytes()),
+        ))
     }
 
     /// Builds file metadata
@@ -1143,6 +1250,11 @@ impl FileOperationsService {
             ));
         }
 
+        // The version the caller declares is judged before anything is
+        // created: a request that is refused leaves the file as it was, and
+        // not even the directories it asked for.
+        refuse_if_changed(&resolved, None, input.expected_content_hash.as_deref())?;
+
         if input.create_dirs.unwrap_or(false)
             && let Some(parent) = resolved.parent()
             && !parent.exists()
@@ -1156,23 +1268,26 @@ impl FileOperationsService {
 
         let bytes_written = input.content.len() as u64;
 
-        // Atomic write: write to temp file then rename
-        let temp_path = unique_temp_path(&validated_path);
+        // The content is written whole or not at all: the temporary file is
+        // created in exclusive mode, made durable, and only then published
+        // with a rename.
+        let mut writer = AtomicFileWriter::create(Path::new(&validated_path)).map_err(|e| {
+            AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
+        })?;
+        writer.write(input.content.as_bytes()).map_err(|e| {
+            AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
+        })?;
 
-        // Write content to temp file
-        {
-            let mut file = File::create(&temp_path).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
-            })?;
-            file.write_all(input.content.as_bytes()).map_err(|e| {
-                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
-            })?;
-        }
+        // The version is judged again right before the content is published:
+        // a file that changed while the request was being prepared must not
+        // be replaced.
+        refuse_if_changed(
+            Path::new(&validated_path),
+            None,
+            input.expected_content_hash.as_deref(),
+        )?;
 
-        // Atomically rename temp file to target
-        fs::rename(&temp_path, &validated_path).map_err(|e| {
-            // Clean up temp file on error
-            let _ = fs::remove_file(&temp_path);
+        writer.commit().map_err(|e| {
             AppError::InvalidParameter(format!("Failed to write file atomically: {}", e))
         })?;
 
@@ -1195,6 +1310,13 @@ impl FileOperationsService {
         // Read current content
         let original_content = fs::read_to_string(&validated_path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
+
+        // The version the caller declares is judged against the content
+        // this call read: if it is not the same, the caller is working on a
+        // version that is already gone.
+        if let Some(declared) = input.expected_content_hash.as_deref() {
+            refuse_if_version_differs(declared, &sha256_hex(original_content.as_bytes()))?;
+        }
 
         // Each edit is located once, in the original content. The
         // positions are computed on the original, and the changes are
@@ -1322,21 +1444,32 @@ impl FileOperationsService {
         // to check it is not a reason to refuse the edit — it is a reason to
         // say that it was not checked.
         let written = if validation.verification != EditVerification::Rejected {
-            // Write the modified content atomically
-            let temp_path = unique_temp_path(&validated_path);
+            // The destination must still be the version this call read:
+            // replacing a file that changed meanwhile would throw away
+            // somebody else's work.
+            refuse_if_changed(
+                Path::new(&validated_path),
+                Some(&original_content),
+                input.expected_content_hash.as_deref(),
+            )?;
 
-            {
-                let mut file = File::create(&temp_path).map_err(|e| {
-                    AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
-                })?;
-                file.write_all(new_content.as_bytes()).map_err(|e| {
-                    AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
-                })?;
-            }
+            // The content is written whole or not at all: the temporary file
+            // is created in exclusive mode, made durable, and only then
+            // published with a rename.
+            let mut writer = AtomicFileWriter::create(Path::new(&validated_path)).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to create temp file: {}", e))
+            })?;
+            writer.write(new_content.as_bytes()).map_err(|e| {
+                AppError::InvalidParameter(format!("Failed to write to temp file: {}", e))
+            })?;
 
-            fs::rename(&temp_path, &validated_path).map_err(|e| {
-                // Clean up temp file on error
-                let _ = fs::remove_file(&temp_path);
+            refuse_if_changed(
+                Path::new(&validated_path),
+                Some(&original_content),
+                input.expected_content_hash.as_deref(),
+            )?;
+
+            writer.commit().map_err(|e| {
                 AppError::InvalidParameter(format!("Failed to write file atomically: {}", e))
             })?;
             true
@@ -1373,7 +1506,7 @@ impl FileOperationsService {
         if s.len() <= max_len {
             s.to_string()
         } else {
-            format!("{}...", &s[..max_len])
+            format!("{}...", truncate_at_boundary(s, max_len))
         }
     }
 
@@ -2251,6 +2384,7 @@ mod tests {
             path: file_path.to_str().unwrap().to_string(),
             content: "Hello, atomic world!".to_string(),
             create_dirs: Some(false),
+            expected_content_hash: None,
         };
 
         let result = service.write_file(input);
@@ -2279,6 +2413,7 @@ mod tests {
             path: nested_path.to_str().unwrap().to_string(),
             content: "nested content".to_string(),
             create_dirs: Some(true),
+            expected_content_hash: None,
         };
 
         let result = service.write_file(input);
@@ -2318,6 +2453,7 @@ mod tests {
                 old_string: "old_name".to_string(),
                 new_string: "new_name".to_string(),
             }],
+            expected_content_hash: None,
         };
 
         let result = service.edit_file(input);
@@ -2347,6 +2483,7 @@ mod tests {
                 old_string: "foo".to_string(),
                 new_string: "bar".to_string(),
             }],
+            expected_content_hash: None,
         };
 
         let result = service.edit_file(input);
@@ -2376,6 +2513,7 @@ mod tests {
                 old_string: "nonexistent".to_string(),
                 new_string: "something".to_string(),
             }],
+            expected_content_hash: None,
         };
 
         let result = service.edit_file(input);
@@ -2749,6 +2887,7 @@ mod tests {
                 old_string: "World".to_string(),
                 new_string: "Rust".to_string(),
             }],
+            expected_content_hash: None,
         };
 
         let result = service.edit_file(input);
@@ -2775,6 +2914,7 @@ mod tests {
                 old_string: "NonExistent".to_string(),
                 new_string: "Something".to_string(),
             }],
+            expected_content_hash: None,
         };
 
         let result = service.edit_file(input);
