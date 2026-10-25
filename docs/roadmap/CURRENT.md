@@ -5,12 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
-> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
-> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
-> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
-> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
-> si fuera una respuesta).
+> **Snapshot**: 2026-10-25, sobre `87aab47f87e4d02b761ce41c63d301159348b53a` (el
+> `main` ya fusionado que cierra el tramo: lo que se rechaza no deja rastro y
+> las ediciones se aplican al original, la etapa que dice que instala instala,
+> y la ruta asíncrona de construir el grafo ya no tiene su propio recorrido).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -148,9 +146,22 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**El servicio de análisis deja de ser un módulo de 4.100 líneas está cerrada.** El
+servicio eran 4.354 líneas con cinco responsabilidades dentro —la construcción del
+grafo, la caché, la resolución de símbolos, las métricas y el análisis del
+dominio—, y 2.268 de esas líneas eran pruebas escritas en línea. Ahora la fachada
+son 115 líneas y cada responsabilidad vive en su fichero: construir, cachear,
+resolver, medir, analizar. Un cambio en las métricas ya no obliga a leer el
+constructor del grafo. Y la deuda de producción del guard arquitectónico, que se
+mide por par (fichero, dependencia), subió de 28 a 35: el acoplamiento es el
+mismo —la misma dependencia, escrita en el fichero que la posee—, pero un
+fichero son seis y la entrada está indexada por fichero. Los nueve pares que
+nacen de la partición están nombrados en el ratchet con quién los aprobó, y el
+movimiento real de los tipos detrás de un puerto queda para su propia unidad,
+donde el acoplamiento sí desaparece.
 
 **Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
 cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de

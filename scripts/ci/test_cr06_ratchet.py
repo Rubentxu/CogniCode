@@ -99,6 +99,26 @@ APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
     ("application/services/analyze.rs", "infrastructure::graph::per_file_graph::"),
     ("application/services/refactor_service.rs", "infrastructure::walk_policy::"),
     ("application/workspace_session.rs", "infrastructure::walk_policy::"),
+    # The analysis service was one file with four responsibilities in it and
+    # is now one file per responsibility. The drift followed the code: the
+    # same dependency, named from the file that owns the responsibility
+    # now. The coupling did not grow — the count did, because an entry is
+    # keyed by (file, dependency) and one file became six. The two entries
+    # the service had on the facade itself are genuinely retired by the
+    # same change: the facade no longer imports the parser or the walk
+    # policy. Approved by the maintainer in the pull request that split the
+    # service by responsibility, with the movement of the graph types
+    # behind a port left to its own unit: that one moves the dependency
+    # for real, this one only moves where it is written.
+    ("application/services/analysis_service/cache.rs", "infrastructure::graph"),
+    ("application/services/analysis_service/construction.rs", "infrastructure::graph"),
+    ("application/services/analysis_service/construction.rs", "infrastructure::parser"),
+    ("application/services/analysis_service/construction.rs", "infrastructure::walk_policy::"),
+    ("application/services/analysis_service/metrics.rs", "infrastructure::graph"),
+    ("application/services/analysis_service/metrics.rs", "infrastructure::parser"),
+    ("application/services/analysis_service/resolution.rs", "infrastructure::graph"),
+    ("application/services/analysis_service/resolution.rs", "infrastructure::parser"),
+    ("application/services/analysis_service/resolution.rs", "infrastructure::walk_policy::"),
 }
 
 # An inventory entry is a call to the local `ex(...)` helper that opens on its
