@@ -318,12 +318,34 @@
           "BasisDto": {
             "description": "Provenance basis for a build_graph result.",
             "properties": {
+              "analyzer_commit": {
+                "description": "The commit the analyzer was built from, when it could be known.\n\n`null` when the binary was built outside a checkout. That is a\nfact about the binary, not a value invented to fill the field.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "analyzer_features": {
+                "description": "The capabilities the analyzer was built with, in a stable order.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "analyzer_version": {
+                "description": "The version of the analyzer that produced this analysis.\n\nThe provider's version, not the consumer's: it says which build\ncalculated the answer, which is what a cached answer has to be\nchecked against before it can be served again.",
+                "type": "string"
+              },
               "complete": {
                 "description": "`true` only when every identity component was established.",
                 "type": "boolean"
               },
               "config_digest": {
                 "description": "Digest over the effective configuration relevant to the build.\nStable across identical configurations; changes when config changes.",
+                "type": "string"
+              },
+              "snapshot_schema": {
+                "description": "The shape the snapshot was written in.",
                 "type": "string"
               },
               "source_manifest_digest": {
@@ -339,6 +361,9 @@
               "workspace",
               "config_digest",
               "source_manifest_digest",
+              "analyzer_version",
+              "analyzer_features",
+              "snapshot_schema",
               "complete"
             ],
             "type": "object"

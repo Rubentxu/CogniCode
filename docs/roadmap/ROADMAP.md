@@ -417,8 +417,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   **H3** (gramática tree-sitter de Kotlin), **H4.4**
 >   (relaciones Kotlin↔Java, sólo cuando se pueden probar) y **H5**
 >   (incremental/distribución: `SnapshotKey`, identidades de caché por
->   ruta y corte de release; la base temporal ya solo publica fechas
->   medidas). **Sí tienen spec propio**, aunque no con
+>   ruta y corte de release; la identidad del snapshot ya se declara).
+>   **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
 >   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y cada
 >   uno tiene **su propio ADR de autoridad normativa** —
@@ -459,10 +459,6 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     categoría del extractor genérico no contradice la semántica del
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
 >     Cerrado: el extractor genérico y el campo que el consumidor lee.
->   - **El dominio no construye su adaptador** — cerrado. El puerto declara
->     la fábrica, la infraestructura la implementa y la raíz de composición
->     la inyecta; el guard arquitectónico ve la dependencia escrita donde se
->     usa, no solo la importada. El arreglo no necesitó un framework nuevo.
 >   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
 >     abierto. La vía completa, la filtrada y la asíncrona son de producción y
 >     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
@@ -476,12 +472,15 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   pide con la forma que el tipo hace segura, con un contrato que vigila que
 >   no vuelva; y la escritura se publica entera o no se publica, con el
 >   temporal en exclusiva, limpio solo si no se publica, y una comprobacion de
->   version para que una edicion no pise el trabajo de otro editor. Y el
->   consumidor del protocolo ya puede declarar esa version: `read_file`
->   publica el digest del fichero entero y `write_file`/`edit_file` lo
->   aceptan, con un contrato que vigila que el documento publicado y la
->   captura real digan lo mismo. Y un rechazo llega al cliente como un rechazo,
->   con su categoria. La forma, en `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+>   version para que una edicion no pise el trabajo de otro editor. Y un
+>   rechazo llega al cliente como un rechazo, con su categoria. La forma, en
+>   `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+>
+>   **H5** — la caché incremental. Cerrado: el snapshot declara quién lo
+>   produjo —versión, commit y capacidades— y un snapshot de otro analizador
+>   no se sirve; la fecha solo se publica si se midió. Queda la
+>   incrementalidad: reconstruir solo lo cambiado, y medir frío, tibio y
+>   edición. La forma, en `docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).
