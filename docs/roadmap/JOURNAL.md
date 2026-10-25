@@ -26544,3 +26544,11 @@ del protocolo (`C42`), con la evidencia de arriba. Y una consecuencia que no
 se ha tocado porque es de otra unidad: la versión de un fichero no tiene
 nombre, tiene digest, así que un cliente tiene que calcularlo o pedirlo; el
 camino natural es que `read_file` lo publique.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `b64a490b`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #467.
+La correccion no cambia ningun contrato publicado, asi que no habia nada que
+deprender de la version; lo que si cambia es que el servicio de ficheros ya
+no pisa el trabajo de otro editor, ni deja un temporal en disco cuando la
+escritura falla, ni publica un destino a medio escribir. La decision queda
+escrita en `docs/adr/ADR-061-the-write-is-published-whole.md`.
