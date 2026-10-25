@@ -3,6 +3,7 @@
 //! Provides functions to retrieve file modification times from git history.
 //! Falls back to filesystem mtime when git history is unavailable.
 
+use crate::domain::value_objects::file_time::measured_seconds;
 use anyhow::Result;
 use std::path::Path;
 use std::process::Command;
@@ -96,10 +97,10 @@ pub fn file_mtime(path: &Path) -> Result<Option<i64>> {
     match std::fs::metadata(path) {
         Ok(metadata) => match metadata.modified() {
             Ok(system_time) => {
-                let duration = system_time
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default();
-                Ok(Some(duration.as_secs() as i64))
+                // La fecha que el sistema de ficheros publica. Una fecha
+                // anterior a la epoca es una fecha, con signo negativo: no
+                // es la epoca.
+                Ok(measured_seconds(Some(system_time)))
             }
             Err(e) => {
                 tracing::warn!("Failed to get mtime for {}: {}", path.display(), e);

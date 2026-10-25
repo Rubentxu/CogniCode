@@ -193,6 +193,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: content.to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             // Roundtrip input
@@ -226,6 +227,7 @@ mod tests {
                     old_string: "World".to_string(),
                     new_string: "CogniCode".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             // Roundtrip input
@@ -708,7 +710,7 @@ fn simple_function() {
             let metadata = FileMetadata {
                 path: "/test/file.rs".to_string(),
                 size: 1024,
-                modified: 1699999999,
+                modified: Some(1699999999),
                 language: Some("Rust".to_string()),
             };
 
@@ -768,6 +770,7 @@ fn simple_function() {
                 path: file_path.to_str().unwrap().to_string(),
                 content: content.to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let json = serde_json::to_string(&input).unwrap();

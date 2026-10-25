@@ -9,6 +9,7 @@ pub mod dependency_type;
 pub mod edge_kind;
 pub mod edge_metadata;
 pub mod file_manifest;
+pub mod file_time;
 pub mod language;
 pub mod location;
 pub mod node_kind;

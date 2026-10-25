@@ -25,9 +25,16 @@ use crate::interface::mcp::schemas::{
     WriteFileInput, WriteFileOutput,
 };
 
-/// Converts AppError to ToolError for use with instrument_tool
-fn app_error_to_tool_error(e: AppError) -> ToolError {
-    ToolError::new("AppError", e.to_string())
+/// The name the metric gives the error.
+///
+/// The metric needs to know what class of failure it is counting, and that
+/// is all it needs: the error itself travels on untouched, so the client
+/// still receives the category the service produced. Naming the error here,
+/// where the metric is recorded, is what lets the caller keep its own error
+/// type instead of converting it into a telemetry type and rebuilding it
+/// afterwards.
+fn app_error_to_tool_error(e: &AppError) -> ToolError {
+    ToolError::new(e.category(), e.to_string())
 }
 
 /// Handler for read_file tool
@@ -68,12 +75,12 @@ pub async fn handle_read_file(
     let mode = input.mode.clone();
     let dto_input: crate::application::dto::ReadFileRequest = input.into();
 
-    let result = instrument_tool(&metrics, "read_file", async {
-        match service.read_file(dto_input) {
-            Ok(output) => Ok(output),
-            Err(e) => Err(app_error_to_tool_error(e)),
-        }
-    })
+    let result = instrument_tool(
+        &metrics,
+        "read_file",
+        async { service.read_file(dto_input) },
+        app_error_to_tool_error,
+    )
     .await;
 
     match result {
@@ -85,7 +92,7 @@ pub async fn handle_read_file(
             );
             Ok(mcp_output)
         }
-        Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
+        Err(e) => Err(HandlerError::App(e)),
     }
 }
 
@@ -122,12 +129,12 @@ pub async fn handle_write_file(
     };
     let dto_input: crate::application::dto::WriteFileRequest = input.into();
 
-    let result = instrument_tool(&metrics, "write_file", async {
-        match service.write_file(dto_input) {
-            Ok(output) => Ok(output),
-            Err(e) => Err(app_error_to_tool_error(e)),
-        }
-    })
+    let result = instrument_tool(
+        &metrics,
+        "write_file",
+        async { service.write_file(dto_input) },
+        app_error_to_tool_error,
+    )
     .await;
 
     match result {
@@ -136,7 +143,7 @@ pub async fn handle_write_file(
             metrics.record_bytes_written(mcp_output.bytes_written as f64);
             Ok(mcp_output)
         }
-        Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
+        Err(e) => Err(HandlerError::App(e)),
     }
 }
 
@@ -175,12 +182,12 @@ pub async fn handle_edit_file(
     };
     let dto_input: crate::application::dto::EditFileRequest = input.into();
 
-    let result = instrument_tool(&metrics, "edit_file", async {
-        match service.edit_file(dto_input) {
-            Ok(output) => Ok(output),
-            Err(e) => Err(app_error_to_tool_error(e)),
-        }
-    })
+    let result = instrument_tool(
+        &metrics,
+        "edit_file",
+        async { service.edit_file(dto_input) },
+        app_error_to_tool_error,
+    )
     .await;
 
     match result {
@@ -194,7 +201,7 @@ pub async fn handle_edit_file(
             }
             Ok(mcp_output)
         }
-        Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
+        Err(e) => Err(HandlerError::App(e)),
     }
 }
 
@@ -235,12 +242,12 @@ pub async fn handle_search_content(
     };
     let dto_input: crate::application::dto::SearchContentRequest = input.into();
 
-    let result = instrument_tool(&metrics, "search_content", async {
-        match service.search_content(dto_input) {
-            Ok(output) => Ok(output),
-            Err(e) => Err(app_error_to_tool_error(e)),
-        }
-    })
+    let result = instrument_tool(
+        &metrics,
+        "search_content",
+        async { service.search_content(dto_input) },
+        app_error_to_tool_error,
+    )
     .await;
 
     match result {
@@ -250,7 +257,7 @@ pub async fn handle_search_content(
             metrics.record_files_scanned(mcp_output.files_scanned as f64);
             Ok(mcp_output)
         }
-        Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
+        Err(e) => Err(HandlerError::App(e)),
     }
 }
 
@@ -289,12 +296,12 @@ pub async fn handle_list_files(
     };
     let dto_input: crate::application::dto::ListFilesRequest = input.into();
 
-    let result = instrument_tool(&metrics, "list_files", async {
-        match service.list_files(dto_input) {
-            Ok(output) => Ok(output),
-            Err(e) => Err(app_error_to_tool_error(e)),
-        }
-    })
+    let result = instrument_tool(
+        &metrics,
+        "list_files",
+        async { service.list_files(dto_input) },
+        app_error_to_tool_error,
+    )
     .await;
 
     match result {
@@ -303,7 +310,7 @@ pub async fn handle_list_files(
             metrics.record_files_scanned(mcp_output.total as f64);
             Ok(mcp_output)
         }
-        Err(e) => Err(HandlerError::App(AppError::InternalError(e.message))),
+        Err(e) => Err(HandlerError::App(e)),
     }
 }
 
@@ -513,6 +520,7 @@ mod tests {
                 path: "../../evil.txt".to_string(),
                 content: "malicious content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -528,6 +536,7 @@ mod tests {
                 path: "/tmp/evil.txt".to_string(),
                 content: "malicious content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -548,6 +557,7 @@ mod tests {
                     old_string: "something".to_string(),
                     new_string: "replacement".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -737,6 +747,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "atomic content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -763,6 +774,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "content with parent dirs".to_string(),
                 create_dirs: Some(true),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -785,6 +797,7 @@ mod tests {
                 path: file_path.to_str().unwrap().to_string(),
                 content: "new content".to_string(),
                 create_dirs: Some(false),
+                expected_content_hash: None,
             };
 
             let result = handle_write_file(&ctx, input).await;
@@ -819,6 +832,7 @@ mod tests {
                     old_string: "old_name".to_string(),
                     new_string: "new_name".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -842,6 +856,7 @@ mod tests {
                     old_string: "fn test() {}".to_string(),
                     new_string: "fn test() { ".to_string(), // Missing closing brace
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -872,6 +887,7 @@ mod tests {
                     old_string: "nonexistent_string".to_string(),
                     new_string: "replacement".to_string(),
                 }],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -905,6 +921,7 @@ mod tests {
                         new_string: "quux".to_string(),
                     },
                 ],
+                expected_content_hash: None,
             };
 
             let result = handle_edit_file(&ctx, input).await;
@@ -1153,7 +1170,7 @@ mod tests {
             if let Some(file_entry) = output.files.first() {
                 assert!(file_entry.size > 0, "file should have size");
                 assert!(
-                    file_entry.modified > 0,
+                    file_entry.modified.is_some_and(|modified| modified > 0),
                     "file should have modified timestamp"
                 );
             }

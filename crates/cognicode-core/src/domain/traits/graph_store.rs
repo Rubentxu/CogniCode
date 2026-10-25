@@ -204,7 +204,12 @@ mod tests {
     fn test_save_and_load_manifest() {
         let store = InMemoryGraphStore::new();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash123".to_string(), 1000, 5)]);
+        manifest.update_entries(&[(
+            PathBuf::from("src/main.rs"),
+            "hash123".to_string(),
+            Some(1000),
+            5,
+        )]);
 
         store.save_manifest(&manifest).unwrap();
         let loaded = store.load_manifest().unwrap().unwrap();
@@ -226,7 +231,12 @@ mod tests {
 
         store.save_graph(&graph).unwrap();
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
-        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash".to_string(), 1000, 5)]);
+        manifest.update_entries(&[(
+            PathBuf::from("src/main.rs"),
+            "hash".to_string(),
+            Some(1000),
+            5,
+        )]);
         store.save_manifest(&manifest).unwrap();
 
         store.clear().unwrap();

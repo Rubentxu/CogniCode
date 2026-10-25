@@ -46,8 +46,8 @@
 //! can see it.
 
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
+use crate::domain::value_objects::file_time::{measured_millis, seconds_of_millis};
 use crate::domain::value_objects::{Language, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
     SkipReason, SkippedFile, WalkClassification, classify_declined_ignore_entry,
@@ -69,7 +69,11 @@ pub struct SourceFile {
     ///
     /// Milliseconds because a manifest has to tell two writes apart that
     /// a filesystem with a coarse clock would report as the same instant.
-    pub mtime_millis: u64,
+    ///
+    /// `None` when the filesystem does not report a time. A `Some(0)` is a
+    /// file written at the epoch, which is a measurement; a `None` is a
+    /// file whose clock nobody read, which is not one.
+    pub mtime_millis: Option<i64>,
     /// Size in bytes.
     pub size: u64,
 }
@@ -80,8 +84,8 @@ impl SourceFile {
     /// The per-file cache compares this one; the manifest compares the
     /// finer one. Both come from the same stat, so they cannot disagree
     /// about which file was read.
-    pub fn mtime_secs(&self) -> u64 {
-        self.mtime_millis / 1000
+    pub fn mtime_secs(&self) -> Option<i64> {
+        seconds_of_millis(self.mtime_millis)
     }
 }
 
@@ -239,15 +243,12 @@ fn measure(
     meta: std::io::Result<std::fs::Metadata>,
 ) -> Result<SourceFile, std::io::Error> {
     let meta = meta?;
-    let mtime_millis = meta
-        .modified()
-        .ok()
-        .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64)
-        .unwrap_or(0);
     Ok(SourceFile {
         path: path.to_path_buf(),
         language: Language::from_extension(path.extension()),
-        mtime_millis,
+        // La fecha que el sistema de ficheros publica, o ninguna si no la
+        // publica. El fichero se midio; lo que puede faltar es su reloj.
+        mtime_millis: measured_millis(meta.modified().ok()),
         size: meta.len(),
     })
 }
@@ -287,7 +288,10 @@ mod tests {
         let file = measure(&path, std::fs::metadata(&path)).expect("the file is measurable");
 
         assert_eq!(file.size, expected_size);
-        assert!(file.mtime_millis > 0, "una medida real no es cero");
+        assert!(
+            file.mtime_millis.is_some_and(|mtime| mtime > 0),
+            "una medida real no es cero"
+        );
         assert!(
             file.language.is_some(),
             "una fuente que el registro reconoce se publica con su lenguaje"

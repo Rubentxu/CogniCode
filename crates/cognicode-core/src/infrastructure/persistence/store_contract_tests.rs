@@ -35,8 +35,18 @@ mod tests {
     fn create_test_manifest() -> FileManifest {
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
         manifest.update_entries(&[
-            (PathBuf::from("src/main.rs"), "hash123".to_string(), 1000, 5),
-            (PathBuf::from("src/lib.rs"), "hash456".to_string(), 2000, 3),
+            (
+                PathBuf::from("src/main.rs"),
+                "hash123".to_string(),
+                Some(1000),
+                5,
+            ),
+            (
+                PathBuf::from("src/lib.rs"),
+                "hash456".to_string(),
+                Some(2000),
+                3,
+            ),
         ]);
         manifest
     }

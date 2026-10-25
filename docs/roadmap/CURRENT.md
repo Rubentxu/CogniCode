@@ -5,12 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
-> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
-> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
-> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
-> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
-> si fuera una respuesta).
+> **Snapshot**: 2026-10-25, sobre `363ac9e59a62d736645153a5eb0d407dd1d8f0f8` (la rama de la unidad de la
+> fecha: el producto solo publica una fecha que ha medido, y el consumidor
+> puede ver la diferencia entre una fecha medida y una fecha que no existe).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -149,8 +146,63 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
+| **H5** (`C46`, `C11`) | la base temporal honesta y el `SnapshotKey` | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**Una fecha se publica solo si se midió, está cerrada.** El producto publicaba la marca de tiempo de un fichero como un número de segundos desde la época, y ese número decía siempre algo: cuando la fecha no se podía leer publicaba `0`, que dice «1 de enero de 1970»; y el grafo por fichero, que convertía la distancia a la época en vez del instante, publicaba 1980 para un fichero de 1960. Once sitios de producción medían la fecha por su cuenta. La caché nunca sirvió un grafo viejo —la invalidación compara también el hash del contenido—, así que el defecto no era de estabilidad: era que el producto publicaba una fecha que no había medido.
+La causa eran tres hechos distintos —una fecha medida, la época exacta y la ausencia de fecha— vestidos del mismo número. Ahora el tipo publicado distingue los tres: `Some(0)` es un fichero escrito en la época, `Some(-60)` uno escrito antes, y `None` uno del que no se sabe cuándo se escribió. El signo no es decorativo: un fichero puede traer una fecha anterior a la época, y un contador sin signo no la puede representar. La medida tiene un dueño único en el dominio, y la caché sigue invalidando por contenido: un fichero sin reloj no invalida el snapshot por su cuenta.
+El RED está medido sobre el camino malo: los tests nuevos fallaban 2 de 3 y el contrato de CI encontraba 24 hallazgos contra el código anterior. Con el binario real por stdio, un fichero de 1960 devuelve `modified: -60`.
+**Un rechazo llega al cliente como un rechazo, está cerrada.** El servicio de ficheros puede rechazar una petición —un camino fuera del workspace, un patrón que no es una expresión regular— y eso es una decisión del producto, no una caída. Pero los cinco handlers que pasan por el contador de métricas reconstruían el error como fallo interno, de modo que el cliente recibía "application: Internal error: Invalid parameter: …" donde debía recibir "application: Invalid parameter: …".
+La causa no era el aplanado sino su por qué: el contador exigía su propio tipo de error, así que el llamante tenía que convertir el suyo y reconstruirlo después, y esa reconstrucción perdía la categoría. Ahora el contador es genérico sobre el error y lo devuelve intacto; pide una etiqueta, que es lo único que la telemetría necesita saber. La etiqueta es la categoría del error, con un match exhaustivo que el compilador mantiene al día.
+El defecto era invisible a la suite entera por una razón concreta: el servidor MCP inicializa el colector de métricas y los tests no, de modo que la suite probaba siempre el camino que ya funcionaba. El RED está medido sobre el camino malo: los dos tests nuevos fallaban y nombraban los cinco handlers, y el contrato de CI fallaba dos de cuatro contra el código anterior. Con el binario real por stdio, el servidor —que sí cuenta— entrega la categoría.
+
+**El consumidor declara la versión sobre la que escribe, está cerrada.** La
+escritura condicional existía en la capa de aplicación, pero el borde la perdía: el
+campo se fijaba a `None` en la conversión, el esquema del protocolo no lo declaraba,
+y `read_file` no publicaba ningún digest. Es decir, la capacidad existía y era
+inaccesible: el consumidor no tenía forma de nombrar la versión que leyó. Ahora
+`read_file` publica el digest del fichero entero, y sale de la misma lectura que
+cuenta las líneas —sin una segunda pasada por el fichero, y con el orden seguro,
+porque el digest se calcula antes de leer el contenido—. `write_file` y `edit_file`
+aceptan el hash declarado y la conversión lo lleva. El documento publicado declara
+el campo, y la captura del runtime se refrescó desde un `tools/list` real: su
+`tool_version` decía `0.101.17` y el gate, que sólo comparaba el conjunto de
+nombres, no se enteraba.
+La demostración está hecha: seis de los siete tests nuevos se vieron fallar antes,
+el contrato fallaba dos de seis, y el UAT con el binario real por stdio leyó,
+escribió declarando la versión y fue rechazado cuando la versión ya no era la.
+
+**La escritura se publica entera, o no se publica, está cerrada.** El servicio
+de ficheros abría el temporal con `File::create`, que no exige creación exclusiva,
+de modo que un temporal preexistente se trunca; la limpieza estaba sólo en el error
+del cambio de nombre, así que un fallo de escritura dejaba el temporal en disco; y
+no había comprobación de versión, de modo que una edición pisaba el trabajo de otro
+editor entre la lectura y la escritura sin que nadie se enterara. Ahora hay un
+adaptador único: el temporal se crea en exclusiva, el contenido se sincroniza antes
+de que el destino exista, el directorio se sincroniza después del cambio de nombre,
+y la limpieza está en `Drop`, de modo que lo que no se publica se borra porque el
+escritor se suelta y no porque alguien se acuerde de borrar en cada camino de
+error. El llamante puede declarar la versión que leyó, y la escritura se niega si
+el destino ya no la tiene: la versión se comprueba antes de crear nada —para que
+una petición rechazada no deje ni el fichero ni los directorios que pidió— y otra
+vez justo antes de publicar. El digest es el del producto, no una tercera forma de
+hashar. La demostración está hecha: tres de los cinco tests nuevos se vieron fallar
+antes, y el contrato que vigila que no vuelva comprueba que cada detector nota un
+texto que la viola.
+
+**Un corte por byte no parte un caracter está cerrada.** El servicio de ficheros
+recortaba el texto por índice de byte, y con texto multibyte un índice dentro
+de un carácter abortaba el proceso: el desplazamiento lo elegía el llamante —
+el token de continuación no está firmado— y el tamaño del trozo también. El
+corte se pide ahora con la forma que el tipo hace segura: los tramos se toman
+con `get`, que devuelve `None` cuando el rango no cae en fronteras, y el
+tamaño del trozo se ajusta al último carácter entero que cabe. Un módulo
+nuevo de fronteras sustituye a los recortes sueltos, y hay un contrato que
+vigila que no vuelva: no lista los cortes prohibidos uno a uno, sino que mira
+cualquier corte por índice sobre texto en los ficheros que recortan. La
+demostración está hecha: los cuatro tests nuevos se vieron abortar antes, en
+las líneas 986, 1003 (dos veces) y 1376.
 
 **Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
 cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de
@@ -315,7 +367,7 @@ instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 8 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 6 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.

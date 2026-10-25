@@ -26,6 +26,8 @@
 
 use super::*;
 
+use crate::domain::value_objects::file_time::measured_millis;
+
 // AIX Tool Handlers
 // ============================================================================
 
@@ -1884,15 +1886,13 @@ pub async fn handle_reparse_on_edit(
             ctx.working_dir.join(file_path)
         };
 
-        // Check if file exists and get its mtime
-        let file_mtime = match std::fs::metadata(&full_path) {
-            Ok(meta) => meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
-            Err(_) => 0, // File doesn't exist
+        // If the file exists, and when it was written. A file without a
+        // date still exists: that is what the stat says, not what the
+        // clock says. And a date before the epoch is a date, with a
+        // negative sign.
+        let (file_exists, file_mtime) = match std::fs::metadata(&full_path) {
+            Ok(meta) => (true, measured_millis(meta.modified().ok())),
+            Err(_) => (false, None),
         };
 
         let rel_path = full_path
@@ -1903,7 +1903,7 @@ pub async fn handle_reparse_on_edit(
         // Compare with manifest entry
         let was_in_manifest = existing_manifest.entries.contains_key(&rel_path);
 
-        if file_mtime == 0 && was_in_manifest {
+        if !file_exists && was_in_manifest {
             // File was deleted
             files_removed += 1;
             symbols_removed += existing_manifest
@@ -1913,9 +1913,15 @@ pub async fn handle_reparse_on_edit(
                 .unwrap_or(0);
             graph_updated = true;
             changed_abs_paths.push(full_path);
-        } else if file_mtime > 0 {
+        } else if file_exists {
             if let Some(entry) = existing_manifest.entries.get(&rel_path) {
-                if entry.mtime == file_mtime {
+                // Only an unchanged file can be called unchanged, and that
+                // needs both measures to exist and to agree. Without a
+                // date there is nothing to compare, and a file that was
+                // not compared is not a file that did not change: it is
+                // read again.
+                let unchanged = matches!((entry.mtime, file_mtime), (Some(a), Some(b)) if a == b);
+                if unchanged {
                     // File unchanged
                     files_skipped += 1;
                 } else {

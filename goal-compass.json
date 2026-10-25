@@ -52,6 +52,29 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C46",
+      "title": "El escaneo declara los ficheros que no puede fechar, y no los borra",
+      "unit": "H5",
+      "objective": "Que el escaneo de la ingestion no borre del indice un fichero cuya fecha no se puede leer, y que la fecha que persiste en el manifiesto sea la que se midio, con su signo.",
+      "whyNow": "MEDIDO 2026-10-25, al cerrar la unidad de la fecha medida: la familia de la ingestion es la que queda con la fabricacion. `application/ingest/scan.rs:159` mide en segundos con coma flotante y, si la fecha no se puede leer, el `filter_map` descarta el fichero entero: no aparece en el escaneo y no aparece en el informe de cobertura. `:421` hace lo mismo en la segunda lectura. La fecha que se persiste va a `FileChange.mtime: f64` (`application/ingest/types.rs:43`) y de ahi a la tabla `ScanManifest` en otro crate (`crates/cognicode-ladybug/src/lib.rs:907`), cuya columna es `mtime DOUBLE`; ahi un fichero anterior a la epoca queda como 0, que es la epoca. El hueco esta registrado como excepcion en `scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`, con su motivo, y el contrato avisa cuando se cierre.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/ingest/scan.rs",
+        "crates/cognicode-core/src/application/ingest/types.rs",
+        "crates/cognicode-ladybug/src/lib.rs",
+        "scripts/ci/test_a_date_is_published_only_when_it_was_measured.py"
+      ],
+      "doneWhen": [
+        "un fichero cuya fecha no se puede leer aparece en el escaneo y en el informe de cobertura, con su hueco declarado, en vez de desaparecer",
+        "la fecha que se persiste en el manifiesto es la que se midio, con su signo, y una fecha anterior a la epoca no se persiste como 0",
+        "el tipo de la fecha persistida puede estar ausente, y la columna de la base de datos lo admite",
+        "el contrato de la fecha medida deja de declarar este hueco, porque el registro de huecos avisa cuando uno se cierra"
+      ],
+      "scope": "H5",
+      "risk": "medium",
+      "priority": 25,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C12",
       "title": "El lenguaje Kotlin: gramática y navegación",
       "unit": "H3",
@@ -68,6 +91,27 @@
       "scope": "H3",
       "risk": "high",
       "priority": 20,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C44",
+      "title": "El catalogo publicado dice de su runtime una version que no es la",
+      "unit": "B1",
+      "objective": "Que el catalogo publicado describa al runtime que lo publica: el `runtime_metadata` que dice `tool_version` tiene que decir la version que el runtime reporta, y las claves curadas a mano no se pueden perder al sincronizar.",
+      "whyNow": "MEDIDO 2026-10-25: el `runtime_metadata.tool_version` del maestro dice `0.99.2` en las 78 tools, mientras que el runtime reporta `0.101.31`; ademas `check_architecture` lleva dos claves de `runtime_metadata` --`gate_authority` y `produces_observations_only`-- que el runtime no publica. La deriva es invisible porque el gate solo comparaba el conjunto de nombres de tools, y un nombre no cambia porque cambie la version. La captura se refresco en `C42` y ya dice `0.101.31`, asi que el maestro es lo que quedo viejo. La sincronizacion no puede ser una copia ciega: el maestro tiene claves curadas que el runtime no reporta, y copiarlas encima las quitaria.",
+      "evidenceRefs": [
+        "product/tools.json",
+        "product/tool-catalog-runtime.json",
+        "crates/cognicode-core/src/interface/catalog.rs"
+      ],
+      "doneWhen": [
+        "el `runtime_metadata.tool_version` del maestro dice lo mismo que el runtime reporta",
+        "las claves curadas que el runtime no publica siguen en el maestro",
+        "el contrato compara el metadato entero, no solo el esquema de entrada"
+      ],
+      "scope": "B1",
+      "risk": "low",
+      "priority": 15,
       "source": "roadmap"
     },
     {

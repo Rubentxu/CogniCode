@@ -911,11 +911,13 @@ fn save_durable_snapshot(
     use bincode::serde::encode_to_vec;
 
     // The version says what the snapshot means, and the meaning of a
-    // snapshot changed: a graph is now only "complete" when its references
-    // are tied too, and a snapshot written before that says complete about
-    // a graph that had holes in it. A snapshot of the old version is
+    // snapshot changed twice: a graph is now only "complete" when its
+    // references are tied too, and a snapshot written before that says
+    // complete about a graph that had holes in it; and the manifest now
+    // records a modification time that can be absent, a shape the
+    // previous layout cannot hold. A snapshot of an older version is
     // therefore not evidence of anything: it is rebuilt.
-    let snapshot = ("cognicode.graph.cache/v2", graph, manifest);
+    let snapshot = ("cognicode.graph.cache/v3", graph, manifest);
     let bytes = encode_to_vec(snapshot, standard())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -965,7 +967,7 @@ fn load_durable_snapshot(
 
     let bytes = std::fs::read(db_path).ok()?;
     let (snapshot, _): ((String, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != "cognicode.graph.cache/v2" {
+    if snapshot.0 != "cognicode.graph.cache/v3" {
         return None;
     }
     Some((snapshot.1, snapshot.2))
@@ -1048,6 +1050,11 @@ fn is_manifest_stale(
                 // read (e.g. permissions revoked after the snapshot)
                 // invalidates the snapshot — serving it would hide the
                 // loss of coverage behind a stale "complete" result.
+                //
+                // A file whose clock nobody read has no time to compare:
+                // both sides are absent, the times agree, and the file
+                // does not invalidate the snapshot by itself. What decides
+                // is the content hash.
                 let bytes = match std::fs::read(path) {
                     Ok(b) => b,
                     Err(_) => return true,
@@ -1067,6 +1074,12 @@ fn is_manifest_stale(
 }
 
 /// Builds a FileManifest for the given project directory.
+/// La marca de un fichero que se enumero pero no se pudo leer.
+///
+/// No puede coincidir con un digest real, porque un digest hexadecimal no
+/// lleva letras fuera de `a`..`f`.
+const UNREADABLE_CONTENT: &str = "unreadable";
+
 fn build_manifest(
     project_dir: &Path,
 ) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
@@ -1088,9 +1101,14 @@ fn build_manifest(
         // Content_hash must hash CONTENT, not metadata.
         // The previous mtime proxy produced identical digests for
         // different files written in the same millisecond.
+        //
+        // A file that cannot be read has no content hash. What is stored
+        // then is the mark of not having read it, which no real digest
+        // can collide with; the freshness of the snapshot is decided by
+        // the real hash, when the file can be read.
         let content_hash = std::fs::read(&file.path)
             .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
-            .unwrap_or_else(|_| file.mtime_millis.to_string());
+            .unwrap_or_else(|_| UNREADABLE_CONTENT.to_string());
         let _ = manifest.entries.insert(
             rel,
             FileEntry {
@@ -4787,7 +4805,7 @@ mod tests {
                 rel,
                 FileEntry {
                     content_hash: hash,
-                    mtime: 1_700_000_000_000 + i as u64,
+                    mtime: Some(1_700_000_000_000 + i as i64),
                     symbol_count: i % 200,
                 },
             );
@@ -7929,7 +7947,7 @@ mod tests {
                 let f = OpenOptions::new().write(true).open(&file).unwrap();
                 f.set_modified(pinned).unwrap();
             }
-            let pinned_millis = pinned.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+            let pinned_millis = pinned.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
             // Manually build a manifest with the pinned mtime and a
             // content_hash matching the ORIGINAL bytes.
@@ -7940,7 +7958,7 @@ mod tests {
                 rel.clone(),
                 FileEntry {
                     content_hash: original_hash.clone(),
-                    mtime: pinned_millis,
+                    mtime: Some(pinned_millis),
                     symbol_count: 0,
                 },
             );
@@ -8004,12 +8022,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel.clone(),
                 FileEntry {
                     content_hash: hash,
-                    mtime,
+                    mtime: Some(mtime),
                     symbol_count: 0,
                 },
             );
@@ -8063,12 +8081,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel_a,
                 FileEntry {
                     content_hash: hash_a,
-                    mtime: mtime_a,
+                    mtime: Some(mtime_a),
                     symbol_count: 0,
                 },
             );
@@ -8105,12 +8123,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel,
                 FileEntry {
                     content_hash: hash,
-                    mtime,
+                    mtime: Some(mtime),
                     symbol_count: 0,
                 },
             );

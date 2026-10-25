@@ -417,7 +417,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   **H3** (gramática tree-sitter de Kotlin), **H4.4**
 >   (relaciones Kotlin↔Java, sólo cuando se pueden probar) y **H5**
 >   (incremental/distribución: `SnapshotKey`, identidades de caché por
->   ruta y corte de release). **Sí tienen spec propio**, aunque no con
+>   ruta y corte de release; la base temporal ya solo publica fechas
+>   medidas). **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
 >   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y cada
 >   uno tiene **su propio ADR de autoridad normativa** —
@@ -469,6 +470,18 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     rechaza en una sola, y el orden de los resultados no lo fija la
 >     asíncrona. La forma, en
 >     `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>
+>   **H29** — leer y editar un fichero no puede abortar el proceso que lo
+>   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
+>   pide con la forma que el tipo hace segura, con un contrato que vigila que
+>   no vuelva; y la escritura se publica entera o no se publica, con el
+>   temporal en exclusiva, limpio solo si no se publica, y una comprobacion de
+>   version para que una edicion no pise el trabajo de otro editor. Y el
+>   consumidor del protocolo ya puede declarar esa version: `read_file`
+>   publica el digest del fichero entero y `write_file`/`edit_file` lo
+>   aceptan, con un contrato que vigila que el documento publicado y la
+>   captura real digan lo mismo. Y un rechazo llega al cliente como un rechazo,
+>   con su categoria. La forma, en `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`).

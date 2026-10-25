@@ -1047,6 +1047,10 @@
             },
             "type": "array"
           },
+          "expected_content_hash": {
+            "description": "Digest of the content that was read; the edit is refused if the file no longer holds that version (optional)",
+            "type": "string"
+          },
           "path": {
             "description": "Path to the file to edit (required)",
             "type": "string"
@@ -5149,6 +5153,10 @@
           "create_dirs": {
             "description": "Whether to create parent directories if they don't exist (default: false)",
             "type": "boolean"
+          },
+          "expected_content_hash": {
+            "description": "Digest of the content that was read; the write is refused if the destination no longer holds that version (optional)",
+            "type": "string"
           },
           "path": {
             "description": "Path to the file to write (required)",
