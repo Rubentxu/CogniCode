@@ -122,8 +122,24 @@ done
     "The public half travels with the release, so a consumer needs the release," \
     "not the publisher, to check a bundle."
 
-command -v cosign >/dev/null 2>&1 || die "cosign is not on PATH" \
-    "It is the signer this path is built on. See the ADR, option B."
+# El signer no es el `cosign` que aparezca en el PATH: es la version fijada en
+# `cosign-tool.sh`. MEDIDO: la v3.1.4 pide aceptar los terminos del registro de
+# transparencia en cada `attest-blob` y, sin terminal —y un lane no tiene
+# terminal—, declina y sale con rc=1. La v3.1.3, que es la version que el ADR
+# midio, firma offline y sin registro.
+#
+# No hay vuelta al `cosign` del PATH: caer en el es volver al defecto que este
+# script viene a evitar.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/cosign-tool.sh
+. "${SCRIPT_DIR}/cosign-tool.sh"
+
+if ! COSIGN_BIN="$(cosign_tool_path)"; then
+    die "the pinned cosign (${COGNICODE_COSIGN_VERSION}) is not installed" \
+        "Install it with: bash scripts/ci/install-cosign.sh" \
+        "Signing with a different version changes what a release says about itself." \
+        "See docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md, option B."
+fi
 
 if [ -z "${OUT_DIR}" ]; then
     OUT_DIR="$(dirname "${ARTIFACTS[0]}")"
@@ -204,7 +220,7 @@ for artifact in "${ARTIFACTS[@]}"; do
             }' > "${predicate}"
     fi
 
-    if ! cosign attest-blob \
+    if ! "${COSIGN_BIN}" attest-blob \
             --key "${KEY}" \
             --bundle "${bundle}" \
             --predicate "${predicate}" \
