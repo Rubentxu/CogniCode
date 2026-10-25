@@ -5,10 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-25, sobre `c9a0ba941d531b0ea4a50c0f9cded64cfc15bff0` (la
-> rama de la unidad de fronteras de carácter: el servicio de ficheros y la
-> presentación de la CLI ya no recortan el texto por índice de byte, y el
-> contrato nuevo vigila que no vuelva).
+> **Snapshot**: 2026-10-25, sobre `e771670f6d60f22853f90475e56bd850de8feb21` (la rama de la unidad de
+> escritura: el servicio de ficheros publica el fichero entero o no lo publica, y
+> el llamante puede declarar la versión que leyó para que una edición no pise el
+> trabajo de otro editor).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -147,9 +147,27 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H29** (`C41`) | la escritura del servicio de ficheros es transaccional | `ROADMAP.md` §11 |
+| **H29** (`C42`) | la escritura condicional llega al consumidor del protocolo | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**La escritura se publica entera, o no se publica, está cerrada.** El servicio
+de ficheros abría el temporal con `File::create`, que no exige creación exclusiva,
+de modo que un temporal preexistente se trunca; la limpieza estaba sólo en el error
+del cambio de nombre, así que un fallo de escritura dejaba el temporal en disco; y
+no había comprobación de versión, de modo que una edición pisaba el trabajo de otro
+editor entre la lectura y la escritura sin que nadie se enterara. Ahora hay un
+adaptador único: el temporal se crea en exclusiva, el contenido se sincroniza antes
+de que el destino exista, el directorio se sincroniza después del cambio de nombre,
+y la limpieza está en `Drop`, de modo que lo que no se publica se borra porque el
+escritor se suelta y no porque alguien se acuerde de borrar en cada camino de
+error. El llamante puede declarar la versión que leyó, y la escritura se niega si
+el destino ya no la tiene: la versión se comprueba antes de crear nada —para que
+una petición rechazada no deje ni el fichero ni los directorios que pidió— y otra
+vez justo antes de publicar. El digest es el del producto, no una tercera forma de
+hashar. La demostración está hecha: tres de los cinco tests nuevos se vieron fallar
+antes, y el contrato que vigila que no vuelva comprueba que cada detector nota un
+texto que la viola.
 
 **Un corte por byte no parte un caracter está cerrada.** El servicio de ficheros
 recortaba el texto por índice de byte, y con texto multibyte un índice dentro

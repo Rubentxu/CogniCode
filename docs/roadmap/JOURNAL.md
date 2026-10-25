@@ -26442,3 +26442,105 @@ correccion no cambia ningun contrato publicado, asi que no habia nada que
 deprender de la version; lo que si cambia es que el producto ya no aborta el
 proceso que atiende a los agentes. La decision queda escrita en
 `docs/adr/ADR-060-a-cut-never-splits-a-character.md`.
+
+## 2026-10-25 — C41: la escritura se publica entera, o no se publica
+
+**Lo que se midió, con ejecución.** Una auditoría externa de 2026-10-25 señaló,
+como P2, que la escritura del servicio de ficheros todavía no era
+transaccional. En este árbol la afirmación es cierta, y se mide con el código
+anterior en la mano, no con la lectura:
+
+- `crates/cognicode-core/src/application/services/file_operations.rs:1215` —
+  `File::create(&temp_path)`. No exige creación exclusiva: un temporal que ya
+  estaba se abre y **se trunca**, con lo que tenía dentro.
+- `file_operations.rs:1218` — `file.write_all(...)?`. La limpieza del temporal
+  estaba **sólo en el error del `rename`** (`:1226`), así que un fallo de
+  escritura salía por el `?` y **dejaba el temporal en disco**.
+- `file_operations.rs:1224` — `fs::rename`. El cambio de nombre es atómico, pero
+  no había `fsync`: un corte de luz podía dejar el destino con el contenido
+  viejo, o con el nombre viejo.
+- `file_operations.rs:1380` y `:1388` — lo mismo en `edit_file`, y además **sin
+  comprobación de versión**: una edición pisaba el trabajo de otro editor entre
+  la lectura y la escritura, sin que nadie se enterara.
+
+Lo cuarto no era un defecto de robustez: era una pérdida de trabajo. El
+servicio leía un fichero, calculaba el cambio y lo publicaba; si otra persona
+—otro agente, otro editor, un formateador— había escrito entre medias, ese
+trabajo desaparecía. Y no había forma de que el llamante declarara con qué
+versión estaba trabajando: la petición no tenía dónde decirlo.
+
+**El RED, medido antes de tocar el código.** El test nuevo
+(`crates/cognicode-core/tests/the_write_refuses_a_file_that_changed.rs`) tiene
+cinco casos. **Tres fallaban** sobre el código anterior: una escritura que
+declara una versión que el destino ya no tiene, una escritura que declara una
+versión para un fichero que no existe, y una edición que declara una versión
+que ya no es la que leyó. Los otros dos —la escritura y la edición que declaran
+la versión vigente— pasaban, y siguen pasando: el cambio no puede romper lo
+que ya funcionaba.
+
+**Lo que se cambió.** La garantía la lleva un adaptador y una comparación, no
+una validación que un cambio posterior pueda olvidar:
+
+- `crates/cognicode-core/src/application/services/atomic_file_writer.rs`
+  (nuevo): el único camino por el que el servicio publica un fichero. El
+  temporal se crea **en exclusiva** (`create_new(true)`, hasta 16 nombres
+  libres), el contenido se **sincroniza** antes de que el destino exista, el
+  directorio se sincroniza después del cambio de nombre, y la **limpieza está
+  en `Drop`**: lo que no se publica se borra porque el escritor se suelta, no
+  porque alguien se acuerde de borrar en cada camino de error. Con cinco tests
+  unitarios.
+- `file_operations.rs`: `write_file` y `edit_file` pasan por el adaptador, y el
+  llamante puede **declarar la versión que leyó** (`expected_content_hash`). La
+  versión se comprueba **dos veces**: antes de crear nada —para que una
+  petición rechazada no deje ni el fichero ni los directorios que pidió, que
+  es lo que el propio servicio prometía desde antes— y justo antes de
+  publicar, que es donde se detecta el cambio ocurrido mientras la petición se
+  preparaba. `edit_file` compara además el contenido que leyó con el que hay,
+  **incluso sin hash declarado**.
+- `crates/cognicode-core/src/application/dto/file_ops.rs`: el campo
+  `expected_content_hash` en `WriteFileRequest` y en `EditFileRequest`.
+- **El digest es el del producto**: `domain::findings::sha256_hex`, que ya es la
+  identidad de contenido del repositorio. Una implementación de hash nueva
+  habría sido una tercera forma de decir lo mismo —el repositorio ya tenía el
+  FNV-64 normalizado de la evidencia portable y el `sha256:` prefijado del
+  registro de inteligencia—, y el producto no necesitaba una cuarta. Por eso el
+  módulo de digest que se había escrito al principio **no está en el árbol**.
+- `scripts/ci/test_the_write_is_atomic_and_declares_the_version.py` (nuevo): el
+  contrato. No lista los errores prohibidos uno a uno: mira el código de
+  producción y exige que las garantías estén donde tienen que estar y en el
+  orden en que tienen que estar. Cada detector devuelve los hallazgos que
+  encuentra, así que el propio contrato puede aplicarse a un texto que viola
+  la garantía — un detector que no mira nada no puede declararse verde.
+
+**El gate encontró el contrato, y por eso vale la puerta.** La primera versión
+del contrato exponía las reglas con nombres que no eran `test_*`, y el runner
+de contratos la rechazó con `exposes no test_* function`: un contrato que no
+expone pruebas no es un contrato verde, es un contrato que no ha comprobado
+nada. La regla se reescribió con la convención de la casa —cada `test_*` sin
+argumentos, y un `main()` que la ejecuta también en solitario— y volvió a
+pasar por los dos caminos: 7 de 7 en directo y 7 de 7 a través del runner.
+
+**Lo que no cambia.** Los contratos publicados de `cognicode`,
+`cognicode-mcp` y `cogh`: el campo vale `None` en la frontera del MCP, y el
+servicio acepta y publica exactamente lo mismo que antes. Publicarlo al
+consumidor del protocolo es otra unidad, y está medida: en
+`crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` el campo se
+fija a `None` a propósito, el esquema que ve el cliente
+(`crates/cognicode-core/src/interface/mcp/schemas.rs:1556`) no lo declara, y la
+salida de `read_file` (`:1489`) no publica ningún digest, así que el
+consumidor no tiene forma de nombrar la versión que leyó. No es sólo añadir un
+campo: el catálogo público de herramientas se genera desde una captura real de
+`tools/list` (`scripts/product/generate_tool_catalog.py`) y
+`scripts/product/test_product_tool_catalog.py` lo compara, de modo que el
+catálogo no se puede editar a mano. Queda como `C42`, en la cola.
+
+**La puerta.** `scripts/test-fast.sh` rc=0: 4416 pruebas verdes, ninguna en
+rojo. `scripts/test-full.sh` rc=0: formato, clippy con `-D warnings`, `cargo
+test --workspace`, doc-tests, los contratos —**411 comprobaciones verdes, 0
+rojas**— y el comprobante de línea base.
+
+**Lo que queda abierto, medido y no tocado.** La publicación por el consumidor
+del protocolo (`C42`), con la evidencia de arriba. Y una consecuencia que no
+se ha tocado porque es de otra unidad: la versión de un fichero no tiene
+nombre, tiene digest, así que un cliente tiene que calcularlo o pedirlo; el
+camino natural es que `read_file` lo publique.
