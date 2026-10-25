@@ -26273,3 +26273,172 @@ completo rc=0).
 como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
 operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
 fusionar.
+
+## 2026-10-25 — C39: el lane de provenance firma con el cosign que dice
+
+**C39 closed.** C39 acceptance: PASS (la decision del maintainer aplicada y
+escrita; el contrato de generacion en verde con el binario fijado —13/13, con
+los dos checks que estaban rojos—; el contrato estructural nuevo RED con 13
+hallazgos sobre un clon limpio de `87aab47f` y GREEN aqui; puerta rapida rc=0;
+contratos 399 comprobaciones verdes y 0 rojas).
+
+**Lo que estaba roto, medido.** La v3.1.4 de cosign ya no tiene
+`--tlog-upload`: el registro de transparencia paso a ser obligatorio, y cada
+`attest-blob` pide aceptar los terminos de uso de sigstore.
+
+- sin terminal: `Error: user declined the prompt`, rc=1;
+- con terminal y respondiendo `y`: firma y **publica la huella en el registro
+  publico de Rekor**;
+- la aceptacion no se cachea: el prompt vuelve en cada llamada.
+
+Un lane no tiene terminal. MEDIDO con una sonda de un minuto sobre un step
+real de PipelineK: `STDIN: NO TTY`, `STDOUT: NO TTY`, y `cosign` en
+`/usr/bin/cosign`. El contrato, por tanto, no se saltaba: se ejecutaba y
+fallaba. Dos comprobaciones en rojo, y el `merge-gate` —que corre en esta
+misma maquina— sin poder pasar su etapa de contratos.
+
+**Las tres vias, medidas antes de decidir.**
+
+| Via | Firmar | Verificar | Sale algo de la maquina |
+|---|---|---|---|
+| `--yes` | sin prompt | limpio | **si**, al registro publico de Rekor |
+| `--signing-config` sin tlog | sin prompt, sin red | pide `--insecure-ignore-tlog` | no |
+| version fijada (3.1.3) | sin prompt, sin red | limpio | no |
+
+**La decision, del maintainer: fijar la v3.1.3.** Es la version que el ADR ya
+habia medido como firmada offline, sin red y sin registro, con la clave que
+acompana a la release. Conserva exactamente lo medido, y no obliga a quien
+verifica a pasar un flag que el propio cosign declara inseguro.
+
+**Lo que se ejecuto.**
+
+- `scripts/ci/cosign-tool.sh`: el pin. Version, sumas oficiales por plataforma
+  y donde vive el binario. Una sola fuente, de la que beben el generador y el
+  contrato.
+- `scripts/ci/install-cosign.sh`: instala la version fijada, verifica su suma
+  contra la declarada y se niega a instalar otra.
+- `scripts/ci/attest-provenance.sh`: firma con el binario fijado. El
+  `cosign` que aparezca en el PATH no se usa: es lo que rompio el lane.
+- `scripts/ci/test_provenance_generation.py`: mide el binario fijado.
+- `scripts/ci/test_provenance_lane_pins_its_cosign.py`: el contrato nuevo.
+- `merge-gate.pipeline.kts`: instala el cosign fijado **antes** de los
+  contratos, para que la medicion no se salte por falta de herramienta.
+- `release-candidate.pipeline.kts`: idem en la lane que firma.
+- `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md`: la decision, lo que cuesta y
+  lo que sigue abierto.
+
+**El RED, medido sobre un clon limpio de `87aab47f`.** El contrato nuevo dio
+13 hallazgos, cada comprobacion fallando por su propio motivo: el generador
+buscaba el `cosign` del PATH, el contrato tambien, ninguna lane lo instalaba, y
+la version no estaba declarada en ninguna parte. En este arbol, GREEN.
+
+**Lo que cuesta, dicho de frente.** El lane necesita **red** para descargar la
+herramienta, una vez por maquina. El binario se verifica por su suma, escrita
+junto a la version; el instalador se niega a instalar una version que no sea la
+declarada, para que la lane y los contratos no puedan discrepar sobre que
+herramienta miden.
+
+**Lo que sigue abierto, y no se ha tocado.** La **custodia de la clave**: donde
+vive la clave privada y quien puede usarla. El **anclaje al registro de
+transparencia**: fijar la version conserva el comportamiento medido —sin
+anclaje—, no lo decide; publicar en Rekor sigue disponible y sin decidir. Y el
+**camino del consumidor**: la lane de publicacion sigue verificando con
+`gh attestation verify`, que no verifica un bundle de cosign, y migrarlo cambia
+el comportamiento de una release ya publicada.
+
+**La puerta.** `scripts/test-fast.sh` rc=0. `scripts/ci/run-all-contracts.sh`
+rc=0: 399 comprobaciones verdes, 0 rojas. Y el `merge-gate` —la puerta que
+GitHub exige para dejar fusionar— **rc=0** sobre `7da3192c`, con las 57 etapas
+en verde, la de contratos incluida. Ese era el rojo: una etapa, y era de la
+maquina.
+
+**La cola.** `C39` se abrio en la rama de `C23` y se cierra aqui. En `main` la
+cola sigue llevando `C23`, porque su PR #464 continua abierta, y la rama de
+`C23` retirara `C39` de su cola cuando recoja este cambio. Con `C23` y `C39`
+cerrados, la cola viva queda con `C11` (SnapshotKey e incrementalidad honesta),
+`C12` (navegacion Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java, solo
+cuando se pueden probar).
+
+## 2026-10-25 — C40: un corte por byte no parte un carácter
+
+**Lo que se midió, con ejecución.** Una auditoría externa señaló que el servicio
+de ficheros recortaba texto por índice de byte. En este árbol la afirmación es
+cierta, y se mide con el pánico, no con la lectura:
+
+- `crates/cognicode-core/src/application/services/file_operations.rs:986` —
+  `&content[offset..]`. El desplazamiento sale del token de continuación, que
+  no está firmado y que elige el llamante: con una `é` acentuada, un token con
+  `offset: 1` abortaba el proceso.
+- `file_operations.rs:1003` — `remaining[read_size..]`. El tamaño del trozo lo
+  elige el llamante: `chunk_size: 2` sobre `a`, una `é` acentuada y un salto
+  de línea partía la `é` acentuada.
+- `file_operations.rs:1376` — `&s[..max_len]`. El mensaje de una edición
+  rechazada truncaba en el byte 50, que cae dentro de un carácter de tres
+  bytes.
+- `file_operations.rs:501` y `:526` — el conteo de líneas de la página de
+  continuación, con el mismo desplazamiento sin validar.
+- `crates/cognicode-cli/src/presenter.rs:672` — el diagrama se truncaba en el
+  byte 2000.
+- `crates/cognicode-cli/src/cmd/lifecycle_resolver.rs:445` — el nombre de una
+  release se truncaba por byte.
+
+Los cuatro tests nuevos fallan con el pánico exacto: `start byte index 1 is
+not a char boundary; it is inside 'é' (bytes 0..2 of string)` y `end byte
+index 50 is not a char boundary; it is inside '€' (bytes 48..51 of string)`.
+Cuatro de cuatro, en las líneas 986, 1003 (dos veces) y 1376. La clase de fallo
+no es teórica: en el servidor de protocolo, el proceso que corta es el que
+atiende a los agentes conectados, y un `panic` ahí se lleva por delante las
+peticiones de todos.
+
+**Lo que se cambió.** La garantía la lleva el tipo, no una validación que un
+cambio posterior pueda olvidar:
+
+- `crates/cognicode-core/src/application/text_boundary.rs` (nuevo): las cuatro
+  operaciones de frontera —`floor_char_boundary`, `is_char_boundary`,
+  `truncate_at_boundary` y `slice_at_boundaries`— con cinco tests unitarios.
+- `file_operations.rs`: los tramos se piden con `get`, que devuelve `None`
+  cuando el rango no cae en fronteras, y el tamaño del trozo se ajusta al
+  último carácter entero que cabe; un trozo más pequeño que el primer carácter
+  se rechaza con su motivo. El conteo de líneas ya no corta: cuenta los saltos
+  con `char_indices`. El mensaje de la edición rechazada trunca en una
+  frontera. También el rango de líneas, que antes se cortaba por índice
+  aunque sus extremos vinieran de un cálculo que hoy los garantiza.
+- `presenter.rs` y `lifecycle_resolver.rs`: los dos recortes de la CLI pasan
+  por el helper.
+- `crates/cognicode-core/tests/a_cut_never_splits_a_character.rs` (nuevo): los
+  cuatro tests de comportamiento, con el RED medido antes de tocar el código.
+  El cuarto comprueba que los trozos siguen reensamblando el fichero byte a
+  byte cuando el tamaño cae dentro de un carácter: la corrección no puede
+  perder contenido.
+- `scripts/ci/test_a_cut_never_splits_a_character.py` (nuevo): el contrato. No
+  lista los cortes prohibidos uno a uno: mira cualquier corte por índice sobre
+  texto en los ficheros que recortan y exige que pase por `get` o por una
+  frontera. Lleva su control anti-vacuidad —el detector ve un corte cuando hay
+  uno, y no marca uno que usa `get`—, y su propia prueba de que el helper
+  existe, se declara y expone las cuatro operaciones.
+
+**La puerta.** **La puerta.** `scripts/test-fast.sh` rc=0: 2385 pruebas del nucleo en
+verde y clippy limpio. `scripts/test-full.sh` rc=0: formato, clippy con
+`-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**404
+comprobaciones verdes, 0 rojas**— y el comprobante de linea base. Los 66
+tests del modulo de servicio de ficheros, con los que este cambio convive,
+en verde. El `merge-gate` se corre sobre el commit del recibo y su
+veredicto se publica como estado de la pull request; el recibo de ese
+veredicto queda anexado mas abajo, con su SHA.
+
+**Lo que queda abierto, medido y no tocado.** La escritura del servicio de
+ficheros todavía no es transaccional: el temporal se abre con `File::create`,
+que no exige creación exclusiva, así que un temporal preexistente se trunca;
+si la escritura falla, el temporal se queda en disco, porque la limpieza sólo
+está en el error del `rename`; y no hay comprobación de versión que impida que
+una edición pise un cambio hecho por otro editor entre la lectura y la
+escritura. Un `rename` atómico tampoco es persistencia garantizada tras un
+fallo eléctrico. Queda abierto como `C41`, con la evidencia medida en la
+misma rama y en la cola de la misión.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `38429804`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #466. La
+correccion no cambia ningun contrato publicado, asi que no habia nada que
+deprender de la version; lo que si cambia es que el producto ya no aborta el
+proceso que atiende a los agentes. La decision queda escrita en
+`docs/adr/ADR-060-a-cut-never-splits-a-character.md`.

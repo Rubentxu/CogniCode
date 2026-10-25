@@ -54,6 +54,7 @@ This directory holds the architecture decision records (ADRs) for the CogniCode 
 | [ADR-056](./ADR-056-the-routes-say-the-same.md) | Las tres rutas que construyen el grafo tienen que decir lo mismo | EXECUTED | 2026-10-24 |
 | [ADR-057](./ADR-057-the-stages-say-what-they-observe.md) | Una etapa que no puede hacer caer la puerta tiene que decir qué observó | EXECUTED | 2026-10-24 |
 | [ADR-058](./ADR-058-what-is-refused-leaves-no-trace.md) | Lo que se rechaza no deja rastro, y las ediciones se aplican al original | EXECUTED | 2026-10-24 |
+| [ADR-060](./ADR-060-a-cut-never-splits-a-character.md) | Un corte por byte no parte un carácter | EXECUTED | 2026-10-25 |
 
 ## Format
 

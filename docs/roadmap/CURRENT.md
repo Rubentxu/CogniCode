@@ -5,12 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
-> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
-> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
-> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
-> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
-> si fuera una respuesta).
+> **Snapshot**: 2026-10-25, sobre `c9a0ba941d531b0ea4a50c0f9cded64cfc15bff0` (la
+> rama de la unidad de fronteras de carácter: el servicio de ficheros y la
+> presentación de la CLI ya no recortan el texto por índice de byte, y el
+> contrato nuevo vigila que no vuelva).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -149,8 +147,22 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
+| **H29** (`C41`) | la escritura del servicio de ficheros es transaccional | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**Un corte por byte no parte un caracter está cerrada.** El servicio de ficheros
+recortaba el texto por índice de byte, y con texto multibyte un índice dentro
+de un carácter abortaba el proceso: el desplazamiento lo elegía el llamante —
+el token de continuación no está firmado— y el tamaño del trozo también. El
+corte se pide ahora con la forma que el tipo hace segura: los tramos se toman
+con `get`, que devuelve `None` cuando el rango no cae en fronteras, y el
+tamaño del trozo se ajusta al último carácter entero que cabe. Un módulo
+nuevo de fronteras sustituye a los recortes sueltos, y hay un contrato que
+vigila que no vuelva: no lista los cortes prohibidos uno a uno, sino que mira
+cualquier corte por índice sobre texto en los ficheros que recortan. La
+demostración está hecha: los cuatro tests nuevos se vieron abortar antes, en
+las líneas 986, 1003 (dos veces) y 1376.
 
 **Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
 cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de

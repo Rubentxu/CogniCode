@@ -31,6 +31,27 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C41",
+      "title": "La escritura del servicio de ficheros es transaccional",
+      "unit": "H29",
+      "objective": "Que escribir un fichero no deje restos ni pise cambios ajenos: el temporal se crea en exclusiva y se limpia si algo falla, y una edicion comprueba la version de origen antes de sustituir el fichero.",
+      "whyNow": "MEDIDO en `crates/cognicode-core/src/application/services/file_operations.rs`: el temporal se abre con `File::create` (linea 1217), que no exige creacion exclusiva, asi que un temporal preexistente se trunca; si `write_all` falla, el temporal se queda en disco, porque la limpieza solo esta en el error del `rename` (linea 1228); y no hay comprobacion de version que impida que una edicion pise un cambio hecho por otro editor entre la lectura y la escritura. Un `rename` atomico tampoco es persistencia garantizada tras un fallo electrico.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/services/file_operations.rs",
+        "crates/cognicode-core/tests/a_cut_never_splits_a_character.rs"
+      ],
+      "doneWhen": [
+        "el temporal se crea en exclusiva: un temporal preexistente no se trunca",
+        "si la escritura falla, no queda temporal en disco, por el camino que falle",
+        "una edicion declara la version del contenido que leyo y se niega a escribir sobre un contenido distinto",
+        "el fsync que la durability prometida necesita esta decidido y escrito, no supuesto"
+      ],
+      "scope": "H29",
+      "risk": "medium",
+      "priority": 40,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
