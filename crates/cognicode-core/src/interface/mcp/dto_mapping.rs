@@ -66,6 +66,7 @@ impl From<WriteFileInput> for WriteFileRequest {
             path: input.path,
             content: input.content,
             create_dirs: input.create_dirs,
+            expected_content_hash: None,
         }
     }
 }
@@ -88,6 +89,7 @@ impl From<EditFileInput> for EditFileRequest {
         EditFileRequest {
             path: input.path,
             edits: input.edits,
+            expected_content_hash: None,
         }
     }
 }

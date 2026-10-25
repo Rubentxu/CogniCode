@@ -184,6 +184,7 @@ custody, not the mechanism.
 | SLSA/in-toto statement, DSSE envelope | inside the script | works, measured |
 | Public key travels with the release | script copies it to the candidate dir | works, measured |
 | First of the three digests checked | in the script, on every run | works, measured |
+| Version del firmante | `scripts/ci/cosign-tool.sh` | **fijada**, con su suma declarada |
 | Third digest, consumer download | where publishing happens | still the release lane's `gh attestation verify` |
 | Custody | — | **open, unchanged** |
 | `RELEASE_REQUIRE_PROVENANCE` default | `verify-provenance.sh` | still `0`, deliberately |
@@ -235,3 +236,69 @@ The third-digest claim is unchanged and re-confirmed: the bundle's
   release's trust story and that is a separate decision.
 - Retroactive provenance for v0.98.1 and earlier. It cannot be manufactured, and
   a release that predates the tooling must be described as predating it.
+
+## La version del firmante: decision tomada, con lo que cuesta
+
+### Que cambio, y por que
+
+La v3.1.4 de cosign —la que instalo el gestor de paquetes de la maquina— ya no
+tiene `--tlog-upload`: el registro de transparencia paso a ser obligatorio, y
+cada `attest-blob` pide aceptar los terminos de uso del servicio de sigstore.
+
+MEDIDO, con y sin terminal:
+
+- sin terminal, el prompt se resuelve como `Error: user declined the prompt` y
+  el comando sale con rc=1;
+- con terminal, respondiendo `y`, firma y **publica la huella en el registro
+  publico de Rekor**;
+- la aceptacion no se cachea: el prompt vuelve en cada llamada.
+
+Un lane no tiene terminal. MEDIDO: un step de PipelineK arranca con
+`STDIN: NO TTY` y `STDOUT: NO TTY`.
+
+La consecuencia se midio entera: `scripts/ci/test_provenance_generation.py`
+dejaba dos comprobaciones en rojo, y el `merge-gate` —que corre en la misma
+maquina— no podia pasar su etapa de contratos.
+
+### Las tres vias, medidas antes de decidir
+
+| Via | Firmar | Verificar | Sale algo de la maquina |
+|---|---|---|---|
+| `--yes` | sin prompt | limpio | **si**, al registro publico de Rekor |
+| `--signing-config` sin tlog | sin prompt, sin red | pide `--insecure-ignore-tlog` | no |
+| version fijada (3.1.3) | sin prompt, sin red | limpio | no |
+
+**La decision: fijar la v3.1.3.** Es la que este ADR ya habia medido, y fijarla
+conserva exactamente lo que se midio: firmar offline, sin red y sin registro,
+con la clave que acompana a la release. Ademas, no obliga a quien verifica a
+pasar un flag que el propio cosign declara inseguro.
+
+Publicar en Rekor sigue siendo una decision valida, y mejor para la
+auditabilidad, pero es **otra** decision, y no la toma un gate: exige que el
+lane firme con red contra un servicio publico, y deja la huella de cada
+release en un registro que no se puede borrar.
+
+### Lo que cuesta, dicho de frente
+
+El lane necesita **red** para descargar la herramienta, una vez por maquina.
+El binario se verifica por su suma, y esa suma esta escrita junto a la version
+en `scripts/ci/cosign-tool.sh`; el instalador se niega a instalar una version
+que no sea la declarada, de modo que la lane y los contratos no puedan
+discrepar sobre que herramienta miden.
+
+El generador y el contrato ya no preguntan al PATH: piden el binario fijado
+por su ruta. Un `cosign` suelto en el PATH es lo que rompio el lane, asi que
+volver a el seria volver al defecto.
+
+### Lo que sigue abierto, y por que el estado no cambia
+
+- **La custodia de la clave.** Sin cambios: donde vive la clave privada y quien
+  puede usarla sigue sin decidirse. Es lo que mantiene este ADR en `proposed`,
+  y el pin del firmante no lo cambia.
+- **El anclaje al registro de transparencia.** Fijar la version conserva el
+  comportamiento medido —sin anclaje—, no lo decide. Publicar en Rekor sigue
+  disponible y sigue sin estar decidido.
+- **El camino del consumidor.** La lane de publicacion sigue verificando con
+  `gh attestation verify`, que no verifica un bundle de cosign. Migrarlo cambia
+  el comportamiento de una release ya publicada, y pertenece detras de la
+  decision de custodia.

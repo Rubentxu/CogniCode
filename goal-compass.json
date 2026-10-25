@@ -31,6 +31,29 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C42",
+      "title": "El consumidor MCP puede declarar la version sobre la que escribe",
+      "unit": "H29",
+      "objective": "Que un cliente del servidor de protocolo pueda leer un fichero, recibir la version que leyo, y declarar esa version al escribir: la escritura condicional llega al consumidor, no se queda en la capa de aplicacion.",
+      "whyNow": "MEDIDO 2026-10-25: la escritura condicional ya existe en la capa de aplicacion (`crates/cognicode-core/src/application/dto/file_ops.rs`, `expected_content_hash`), pero en la frontera del MCP el campo vale `None` fijo: `crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` lo hardcodean. El esquema que ve el cliente (`crates/cognicode-core/src/interface/mcp/schemas.rs:1556`, `WriteFileInput`) no lo declara, y la salida de `read_file` (`schemas.rs:1489`, `ReadFileOutput`) no publica ningun digest, asi que el consumidor no tiene forma de nombrar la version que leyo. Publicarlo no es solo anadir un campo: el catalogo publico de herramientas se genera desde una captura real de `tools/list` (`scripts/product/generate_tool_catalog.py`) y `scripts/product/test_product_tool_catalog.py` lo compara, de modo que el catalogo no se puede editar a mano: hay que regenerarlo con la captura del commit que lo introduce.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/dto_mapping.rs",
+        "crates/cognicode-core/src/interface/mcp/schemas.rs",
+        "scripts/product/generate_tool_catalog.py",
+        "scripts/product/test_product_tool_catalog.py"
+      ],
+      "doneWhen": [
+        "la salida de `read_file` publica el digest del contenido que devolvio, con el mismo digest que usa la escritura condicional",
+        "el esquema del MCP acepta el hash que el consumidor quiere declarar, y la conversion lo lleva a la peticion de aplicacion en vez de fijarlo a `None`",
+        "el catalogo publico de herramientas se regenera desde una captura real y el gate lo compara contra esa captura",
+        "un cliente del MCP puede leer un fichero, escribir declarando la version leida, y ser rechazado cuando la version ya no es la que leyo"
+      ],
+      "scope": "H29",
+      "risk": "medium",
+      "priority": 35,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",

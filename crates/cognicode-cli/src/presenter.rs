@@ -42,6 +42,7 @@
 
 use std::io::{self, Write};
 
+use cognicode_core::application::text_boundary::truncate_at_boundary;
 use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
 use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
@@ -669,7 +670,7 @@ pub fn present_graph_mermaid(
                 // on diagram_len > 2000.
                 if *truncated {
                     let slice_end = diagram.len().min(2000);
-                    writeln!(w, "{}", &diagram[..slice_end])?;
+                    writeln!(w, "{}", truncate_at_boundary(diagram, slice_end))?;
                     writeln!(w)?;
                     writeln!(w, "... (truncated, full output in file)")?;
                 } else {
