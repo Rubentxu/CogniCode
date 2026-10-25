@@ -5,9 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-25, sobre `ea5b92cf90db728336102c07cb7f6be84c9dba70` (la rama de la unidad de la
-> identidad: el snapshot declara quién lo produjo, y un análisis hecho por
-> otro analizador no se sirve).
+> **Snapshot**: 2026-10-25, sobre `389e6d386b97ce8ba17a2d2e1b91ec1b0f4f9bd5` (la rama de la unidad de la
+> identidad y de la guarda del toolchain: el snapshot declara quién lo produjo,
+> y un análisis hecho por otro analizador no se sirve; la guarda del toolchain
+> deja de depender de la red y no da veredictos falsos).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -140,6 +141,18 @@ Y otra que encontró la ontología, que es de la misma familia:
 
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
+
+13. **Un gate que depende de la red no es un gate.** La etapa `contracts` del
+    gate se puso en rojo sin que cambiara una línea del código que certificaba:
+    entre la corrida verde y la roja solo había un párrafo del Journal. La
+    causa era que un contrato aísla el `HOME` para no heredar nada de quien lo
+    ejecuta, y al aislarlo deja a `rustup` sin toolchain, que la descarga desde
+    la red: 117,7 s por llamada, con el `timeout=120` del contrato al borde. La
+    red decidía el veredicto, y dos corridas del gate de esa misma mañana
+    habían fallado igual. La regla: una comprobación que necesita un dato de la
+    máquina —el host, la toolchain, la versión— lo recibe como dato, y si no
+    puede obtenerlo **falla cerrado y lo dice**, en vez de inventar un valor y
+    sacar de ahí un veredicto sobre otra cosa.
 
 ## Unidades abiertas
 
@@ -368,6 +381,27 @@ laboratorios de git ya no heredan las reglas de quien los ejecuta.
 **C14 se cerró con `v0.101.27`**: una PR fusionada no es una release, y esta
 sí se publicó, verificada desde sus propios bytes y con los binarios
 instalados arrancados fuera de cualquier repositorio.
+
+**La guarda del toolchain no depende de la red, está cerrada.** Una comprobación
+del gate que necesita un dato de la máquina —el triple del host— lo pedía
+justo donde no lo había: dentro de un entorno aislado que deja a `rustup` sin
+toolchain, con lo que el shim la descarga desde la red. Medido: 117,7 s por
+llamada, con el `timeout=120` del contrato al borde. El resultado era que la red
+decidía el veredicto del gate, y dos corridas de esa misma mañana ya habían
+fallado con la misma firma. El defecto de fondo era del mismo origen: cuando
+`rustc -vV` fallaba, el host quedaba vacío y el target **nativo** se rechazaba
+como si fuera cruzado, con el motivo de que faltaba un compilador que nadie
+había preguntado.
+Ahora la guarda recibe el host como dato y no ejecuta `rustc` cuando se le da;
+cuando no lo recibe, lo resuelve como antes y **falla cerrado** si no puede,
+nombrando esa causa en vez de sacar un veredicto sobre el target. El contrato
+resuelve el host una sola vez, en el proceso padre y con el entorno real, y la
+hermeticidad es estructural: la función que ejercita la guarda rechaza una
+llamada sin host salvo que se pida explícitamente la ruta de resolución. El RED
+está medido sobre el camino malo: dos de los tres tests nuevos fallaban con el
+veredicto falso, siendo el target nativo. El GREEN está medido: el contrato
+completo, 11 de 11, en 0,64 s —antes, 117,7 s por llamada—, y la suite entera
+de contratos, 438 comprobaciones verdes y 0 rojas.
 
 ## La misión
 

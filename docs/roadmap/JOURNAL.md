@@ -27117,3 +27117,88 @@ identidad de quien lo calculó: la versión, el commit cuando se pudo saber, las
 capacidades y el esquema. Un snapshot hecho por otro analizador deja de
 servirse. La decisión queda escrita en
 `docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
+
+## 2026-10-25 — C48: la guarda del toolchain no depende de la red
+
+**C48 closed.** C48 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace`, doc-tests, los contratos —**438 comprobaciones verdes, 0
+rojas**— y el comprobante de línea base).
+
+**La unidad, cerrada sobre `389e6d386b97ce8ba17a2d2e1b91ec1b0f4f9bd5`.**
+
+**El fallo, medido.** El `merge-gate` de la unidad de la identidad del snapshot
+se puso en rojo en la etapa `contracts/sh-0`, con `shell exited with code 1`, y
+el único cambio de código entre la corrida verde y la roja era un párrafo del
+Journal. La etapa tardaba **662,1 s** contra **84,3 s**. La etapa no guarda su
+salida, así que el fallo se reprodujo con su propio comando, y la reproducción
+dio la firma exacta:
+
+    subprocess.TimeoutExpired: Command '[.../check-cross-toolchain.sh',
+    'aarch64-unknown-linux-gnu']' timed out after 120 seconds
+
+Tres tests de `scripts/ci/test_cross_toolchain_guard.py` fallaban, los tres en
+`subprocess.run(..., timeout=120)`.
+
+**La causa, medida.** La guarda `scripts/ci/check-cross-toolchain.sh` resolvía
+el triple del host con `rustc -vV`. El `rustc` del PATH es el shim de `rustup`,
+y el shim busca la toolchain en `$RUSTUP_HOME`, que por defecto es
+`$HOME/.rustup`. El contrato que ejercita la guarda **aísla el entorno**: pone
+`HOME` y `TMPDIR` en un temporal, para que la guarda no herede nada de quien la
+ejecuta. Con ese HOME aislado no hay toolchain instalada; rustup lee el
+`rust-toolchain.toml` del repositorio, que fija `channel = "1.96.0"`, e intenta
+**instalarla desde la red**. Medido: `rustc -vV` con HOME aislado tardaba
+**40,3 s** —descargando seis componentes— frente a **9 ms** con `RUSTUP_HOME`
+real; la guarda completa tardaba **117,7 s**, con el `timeout=120` del contrato
+al borde. La guarda pagaba esa descarga en cada una de las siete llamadas del
+contrato, y con la red un poco más lenta una sola superaba los 120 s.
+
+**Lo que el defecto NO era.** No era del código que se certificaba: entre la
+corrida verde y la roja solo cambió un párrafo del Journal. Y no era de hoy:
+dos corridas del gate de esa misma mañana —`b8793970` a las 10:13:55 y
+`d724da35` a las 10:17:24— habían fallado en la misma etapa con la misma firma.
+El defecto llevaba todo el día ahí, y la latencia de la red decidía si el gate
+era verde o rojo. Un gate cuyo veredicto depende de una descarga que no dice
+nada de lo que se comprueba, es un gate que no mide.
+
+**El defecto de fondo, del mismo origen.** Cuando `rustc -vV` fallaba, el host
+quedaba vacío, y el target nativo —el que se estaba comprobando— se rechazaba
+como si fuera cruzado, con el motivo de que faltaba el compilador de C. El
+veredicto hablaba de una causa que no se había mirado y señalaba un compilador
+que nunca se preguntó.
+
+**Lo que se hizo.** La guarda acepta el triple del host como segundo argumento
+y, cuando se le da, no ejecuta `rustc` en absoluto. Cuando no se le da, lo
+resuelve como antes y **falla cerrado** si no puede: el motivo nombra que no se
+pudo resolver el host y explica por qué un veredicto sobre el target sería
+falso. El contrato resuelve el host una sola vez, en el proceso padre y con el
+entorno real, y se lo pasa a cada llamada. La hermeticidad es estructural, no
+de disciplina: `run_guard` rechaza una llamada sin host salvo que se pida
+explícitamente `resolve_host=True`, que es la opción que ejercita la ruta de
+resolución con un `rustc` de mentira.
+
+**El RED, medido sobre el camino malo.** Dos de los tres tests nuevos fallaron
+contra el código anterior, y los dos con el veredicto falso de la guarda:
+`no C compiler for x86_64-unknown-linux-gnu`, siendo el target **nativo**. El
+tercero, que protege la ruta que resuelve el host dentro de la guarda, pasaba:
+es la ruta que el arreglo deja de ejercitar de forma implícita, y por eso se
+mantiene a propósito.
+
+**El GREEN, medido.** El contrato completo: **11 de 11**, en **0,64 s** —antes,
+117,7 s por llamada—. La suite entera de contratos: **438 passed, 0 failed**
+—antes, 435 passed y 3 failed, con timeouts de 120 s—. El gate `fast` y el
+gate `full`, los dos en rc=0.
+
+**Lo que no se toca.** La stage `toolchain-for-$target` de
+`release-candidate.pipeline.kts` sigue llamando a la guarda con un solo
+argumento, así que sigue resolviendo el host ella misma. Único cambio: cuando
+no puede resolverlo, la guarda falla cerrado en vez de rechazar el target
+nativo como si fuera cruzado. La lane de release gana el arreglo sin tocar el
+pipeline, y el pipeline no se toca porque tocar un `.kts` activa el contrato de
+comentarios sobre un fichero que ya tiene fechas en su prosa.
+
+**La decisión.** `docs/adr/ADR-066-the-guard-does-not-need-the-network.md`.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10). C48 sale de la
+cola al cerrarse.
