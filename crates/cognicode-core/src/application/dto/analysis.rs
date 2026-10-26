@@ -196,6 +196,36 @@ impl GraphCoverageMetrics {
     }
 }
 
+/// How much of the previous graph the last build kept.
+///
+/// Una construcción en caliente no rehace el grafo entero: lo que no cambió
+/// se conserva, y lo que cambió se rehace. Este recuento dice cuánto se
+/// conservó, para que un consumidor pueda distinguir «el grafo está
+/// completo» de «el grafo se rehizo entero».
+///
+/// Los dos números son una cuenta sobre el trabajo hecho, no una promesa
+/// sobre lo que el grafo contiene: un grafo completo puede venir de una
+/// construcción en frío (todo resuelto) o de una en caliente (casi todo
+/// reutilizado). Lo que el consumidor necesita saber es eso: cuánto del
+/// grafo anterior sigue en pie.
+///
+/// Los dos números cuentan las relaciones que el resolver miró, y cada
+/// relación cuenta una vez: o se volvió a mirar, o se conservó. Las
+/// relaciones cuyos dos extremos ya estaban identificados no las miró nadie
+/// —el lector que las produjo sabía los dos— y no cuentan en ninguna de las
+/// dos columnas.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GraphReuse {
+    /// Relationships that were resolved again in this build.
+    ///
+    /// Relaciones que se resolvieron de nuevo en esta construcción.
+    pub relationships_resolved: usize,
+    /// Relationships that were kept from the previous build.
+    ///
+    /// Relaciones que se conservaron de la construcción anterior.
+    pub relationships_reused: usize,
+}
+
 /// Statistics about the call graph
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphStatsDto {

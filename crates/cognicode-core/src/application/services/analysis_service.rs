@@ -14,7 +14,7 @@
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
-    GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph,
+    GraphReuse, GraphStatsDto, ModuleDependenciesResult, ModuleDependency, ModuleDependencyGraph,
     RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
@@ -23,9 +23,9 @@ use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{DependencyType, WalkFilter};
+use crate::domain::value_objects::WalkFilter;
 use crate::infrastructure::graph::per_file_graph::{
-    GlobalSymbolIndex, TargetResolution, WalkClassification, classify_walk_extension,
+    GlobalSymbolIndex, WalkClassification, classify_walk_extension,
 };
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
@@ -70,6 +70,62 @@ pub struct AnalysisService {
     /// `build_project_graph_filtered` / `build_graph_per_file` /
     /// `build_graph_with_strategy` call.
     last_build_report: Mutex<Option<crate::infrastructure::graph::per_file_graph::BuildReport>>,
+    /// What the service remembers between builds: what the last one
+    /// proved, and how much of it this one kept.
+    ///
+    /// The handle is clonable because the asynchronous route builds the
+    /// graph in a task that cannot borrow `self`: the route that publishes
+    /// the number has to be the route that did the work.
+    reuse: ReuseState,
+}
+
+/// What the service remembers between builds about what the last one proved.
+///
+/// The ledger describes the last build this service did, and it is replaced
+/// wholesale by each build. A build that covers a different set of files
+/// keeps nothing — the ledger's answers describe a project this one is not.
+#[derive(Clone, Default)]
+struct ReuseState {
+    /// What the last build proved.
+    ledger: Arc<Mutex<crate::infrastructure::graph::reuse::ReuseLedger>>,
+    /// How much of the previous graph the last build kept. None until the
+    /// first successful build on this service instance.
+    metrics: Arc<Mutex<Option<GraphReuse>>>,
+}
+
+impl ReuseState {
+    /// Resolves the relationships of a build, keeping what the last build
+    /// proved, and publishes how much was kept.
+    ///
+    /// The three graph routes share this one method on purpose. A route that
+    /// resolved on its own would publish its own number for the same tree,
+    /// and `h24_the_routes_say_the_same` already exists to catch exactly
+    /// that: three routes that answer differently about the same project
+    /// are three graphs.
+    ///
+    /// The pending references are looked up again in every build: their
+    /// candidates are the declarations of the caller's own module, and that
+    /// is not the set the ledger keeps answers about. They are counted as
+    /// work done, because they are.
+    fn resolve(
+        &self,
+        relationships: &[(String, String, String)],
+        index: &GlobalSymbolIndex,
+        declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile>,
+        pending_lookups: usize,
+    ) -> crate::infrastructure::graph::reuse::Resolution {
+        let mut ledger = self.ledger.lock().unwrap();
+        let changes = ledger.changes(&declared_files);
+        let mut resolution =
+            crate::infrastructure::graph::reuse::resolve(relationships, index, &ledger, &changes);
+        resolution.resolved += pending_lookups;
+        ledger.remember(declared_files, &mut resolution);
+        *self.metrics.lock().unwrap() = Some(GraphReuse {
+            relationships_resolved: resolution.resolved,
+            relationships_reused: resolution.reused,
+        });
+        resolution
+    }
 }
 
 impl AnalysisService {
@@ -84,6 +140,7 @@ impl AnalysisService {
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
+            reuse: ReuseState::default(),
         }
     }
 
@@ -101,6 +158,7 @@ impl AnalysisService {
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
+            reuse: ReuseState::default(),
         }
     }
 
@@ -421,6 +479,9 @@ impl AnalysisService {
         // Before F2.W7 this was just `(caller_symbol, callee_name)` and
         // the resolution lost the file path of the caller.
         let mut all_relationships: Vec<(String, String, String)> = Vec::new();
+        // What each file declares, for the ledger that decides what the
+        // next build can keep.
+        let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> = Vec::new();
         let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
             Vec::new();
         // The references the files state and nobody declared. They are not
@@ -442,6 +503,14 @@ impl AnalysisService {
             } else {
                 cached_files += 1;
             }
+            // What this file declares, and the identity of each
+            // declaration: the ledger decides by that identity what a
+            // change can have altered.
+            declared_files.push(crate::infrastructure::graph::reuse::DeclaredFile::of(
+                file_path.clone(),
+                content_hash,
+                &facts.symbols,
+            ));
             // PRF audit H-01: cache entries keyed by (mtime, size,
             // content_hash). The hash covers the case where bytes
             // change while mtime AND size stay the same (e.g.,
@@ -500,6 +569,7 @@ impl AnalysisService {
         // declaration they name may live in another file of the project.
         // What the lookup proves becomes a relation; what it cannot prove
         // stays pending and travels with the report.
+        let pending_count = pending_references.len();
         let pending_resolution = crate::infrastructure::graph::pending::resolve_pending_references(
             pending_references,
             &global_index,
@@ -509,26 +579,19 @@ impl AnalysisService {
         }
 
         let total_relationships = all_relationships.len() + identified_count;
-        for (caller_fqn, caller_file, callee_name) in all_relationships {
-            let caller_id = SymbolId::new(&caller_fqn);
-            let name_lower = callee_name.to_lowercase();
-            let caller_path = std::path::Path::new(&caller_file);
-            match global_index.resolve(&name_lower, Some(caller_path)) {
-                TargetResolution::Resolved(callee_id) => {
-                    store
-                        .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
-                        .ok();
-                }
-                // Both refusals mean the same thing to this statistic: no
-                // edge was created. They are now distinguishable upstream,
-                // but `unresolved_edges` is published in the summary, and
-                // splitting it there is a report change, not a resolver
-                // one — H4.2.
-                TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
-                    unresolved_edges += 1;
-                }
-            }
+        // The relationships the resolver looks up by name go through the
+        // ledger: the ones the change cannot have altered are kept from
+        // the last build, and only the rest are looked up again.
+        let resolution = self.reuse.resolve(
+            &all_relationships,
+            &global_index,
+            declared_files,
+            pending_count,
+        );
+        for (caller, callee, kind) in &resolution.edges {
+            store.add_dependency(caller, callee, *kind).ok();
         }
+        unresolved_edges += resolution.unresolved;
 
         // Stage: resolve — log edge resolution outcome
         info!(
@@ -965,6 +1028,9 @@ impl AnalysisService {
 
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships: Vec<(String, String, String)> = Vec::new();
+        // What each file declares, for the ledger that decides what the
+        // next build can keep.
+        let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> = Vec::new();
         let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
             Vec::new();
         // The references the files state and nobody declared. They are
@@ -979,6 +1045,14 @@ impl AnalysisService {
             } else {
                 cached_files += 1;
             }
+            // What this file declares, and the identity of each
+            // declaration: the ledger decides by that identity what a
+            // change can have altered.
+            declared_files.push(crate::infrastructure::graph::reuse::DeclaredFile::of(
+                file_path.clone(),
+                content_hash,
+                &facts.symbols,
+            ));
             cache.insert(
                 file_path.clone(),
                 (mtime, size, content_hash, facts.clone()),
@@ -1029,6 +1103,7 @@ impl AnalysisService {
         // index: the declaration they name may live in another file of
         // the project. What the lookup proves becomes a relation; what
         // it cannot prove stays pending and travels with the report.
+        let pending_count = pending_references.len();
         let pending_resolution = crate::infrastructure::graph::pending::resolve_pending_references(
             pending_references,
             &global_index,
@@ -1037,24 +1112,19 @@ impl AnalysisService {
             store.add_dependency(source_id, target_id, *kind).ok();
         }
 
-        for (caller_fqn, caller_file, callee_name) in all_relationships {
-            let caller_id = SymbolId::new(&caller_fqn);
-            let caller_path = std::path::Path::new(&caller_file);
-            match global_index.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
-                TargetResolution::Resolved(callee_id) => {
-                    store
-                        .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
-                        .ok();
-                }
-                // Sin destino probado no hay arista: ambigua y ausente se
-                // cuentan igual porque ambas dejan el grafo igual de
-                // completo, y distinguirlas es trabajo de reporte, no del
-                // grafo.
-                TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
-                    unresolved_edges += 1;
-                }
-            }
+        // The relationships the resolver looks up by name go through the
+        // ledger: the ones the change cannot have altered are kept from the
+        // last build, and only the rest are looked up again.
+        let resolution = self.reuse.resolve(
+            &all_relationships,
+            &global_index,
+            declared_files,
+            pending_count,
+        );
+        for (caller, callee, kind) in &resolution.edges {
+            store.add_dependency(caller, callee, *kind).ok();
         }
+        unresolved_edges += resolution.unresolved;
 
         let call_graph = store.to_call_graph();
 
@@ -1111,6 +1181,7 @@ impl AnalysisService {
 
         let graph_cache = self.graph_cache.clone();
         let file_cache = self.file_cache.clone();
+        let reuse = self.reuse.clone();
         let dir_path = dir.to_path_buf();
 
         // Spawn blocking task to run the heavy computation. Devuelve tambien el
@@ -1277,6 +1348,10 @@ impl AnalysisService {
 
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
+                // What each file declares, for the ledger that decides what the
+                // next build can keep.
+                let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> =
+                    Vec::new();
                 let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
                     Vec::new();
                 let mut pending_references: Vec<crate::domain::value_objects::PendingReference> =
@@ -1288,6 +1363,14 @@ impl AnalysisService {
                     } else {
                         cached_files += 1;
                     }
+                    // What this file declares, and the identity of each
+                    // declaration: the ledger decides by that identity
+                    // what a change can have altered.
+                    declared_files.push(crate::infrastructure::graph::reuse::DeclaredFile::of(
+                        file_path.clone(),
+                        content_hash,
+                        &facts.symbols,
+                    ));
                     // PRF audit H-01: cache entries keyed by
                     // (mtime, size, content_hash).
                     cache.insert(file_path.clone(), (mtime, size, content_hash, facts.clone()));
@@ -1345,6 +1428,7 @@ impl AnalysisService {
                 // report. This is the same rule the synchronous path
                 // applies, and both must apply it: two paths that answer
                 // differently about the same project are two graphs.
+                let pending_count = pending_references.len();
                 let pending_resolution =
                     crate::infrastructure::graph::pending::resolve_pending_references(
                         pending_references,
@@ -1358,22 +1442,23 @@ impl AnalysisService {
                         .ok();
                 }
 
-                for (caller_fqn, caller_file, callee_name) in all_relationships {
-                    let caller_id = SymbolId::new(&caller_fqn);
-                    let caller_path = std::path::Path::new(&caller_file);
-                    match global_index.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
-                        TargetResolution::Resolved(callee_id) => {
-                            store
-                                .lock()
-                                .unwrap()
-                                .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
-                                .ok();
-                        }
-                        TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
-                            unresolved_edges += 1;
-                        }
-                    }
+                // The relationships the resolver looks up by name go through
+                // the ledger: the ones the change cannot have altered are kept
+                // from the last build, and only the rest are looked up again.
+                let resolution = reuse.resolve(
+                    &all_relationships,
+                    &global_index,
+                    declared_files,
+                    pending_count,
+                );
+                for (caller, callee, kind) in &resolution.edges {
+                    store
+                        .lock()
+                        .unwrap()
+                        .add_dependency(caller, callee, *kind)
+                        .ok();
                 }
+                unresolved_edges += resolution.unresolved;
 
                 let call_graph = store.into_inner().unwrap().to_call_graph();
                 graph_cache.replace(call_graph.clone());
@@ -1487,6 +1572,16 @@ impl AnalysisService {
     /// Returns coverage metrics from the last graph build.
     pub fn get_coverage_metrics(&self) -> Option<GraphCoverageMetrics> {
         self.coverage_metrics.lock().unwrap().clone()
+    }
+
+    /// Returns how much of the previous graph the last build kept.
+    ///
+    /// Devuelve cuánto de la construcción anterior se conservó. Es la
+    /// diferencia entre «el grafo está completo» y «el grafo se rehizo
+    /// entero»: las dos cosas dan un grafo completo, y solo una de ellas
+    /// es barata.
+    pub fn get_reuse_metrics(&self) -> Option<GraphReuse> {
+        *self.reuse.metrics.lock().unwrap()
     }
 
     /// F2.W8: returns the [`BuildReport`] from the last graph build,

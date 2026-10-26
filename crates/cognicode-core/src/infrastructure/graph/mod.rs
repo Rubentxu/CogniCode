@@ -34,6 +34,8 @@ mod on_demand_graph;
 pub(crate) mod pending;
 pub mod per_file_graph;
 mod pet_graph_store;
+/// What the last build already proved, and what a change invalidates.
+pub mod reuse;
 pub mod semantic_layer;
 pub mod snapshot_graph_executor;
 pub mod snapshot_provider;
