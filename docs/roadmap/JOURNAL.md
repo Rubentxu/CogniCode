@@ -27413,3 +27413,121 @@ en la carga útil del CLI ni del MCP: publicarlo en esas superficies es un
 cambio de contrato con su propio gate, y aquí no se ha tocado ninguna de las
 dos. La cola queda con C23 (50, bloqueada por el operador), C46 (25), C12 (20),
 C44 (15) y C13 (10).
+
+## 2026-10-26 — C46: el escaneo declara los ficheros que no puede fechar
+
+**C46 closed.** C46 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 442 pruebas verdes en 247 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**61 guiones, 439 comprobaciones verdes, 0 rojas**— y
+el comprobante de línea base).
+
+**La unidad, cerrada sobre `991bb2c4408e1e988aa3c89c114e03162cef96ca`.**
+
+Esa revisión es la que aterriza, y no la que se midió: la rama se reconstruyó
+sobre `main` para que la pull request no arrastrara el trabajo anterior, y al
+reconstruir cambiaron los padres, no el contenido. El árbol es el mismo —
+`7376dc256f7747571b01410dc5e818f8873b1c39` en las dos revisiones—, así que la
+medición del gate sigue siendo la medición de lo que entra.
+
+**Qué es esta unidad.** La última excepción que quedaba del contrato de la
+fecha medida (H5): que el escaneo de la ingestión no borre del índice un
+fichero cuya fecha no se puede leer, y que la fecha que persiste en el
+manifiesto sea la que se midió, con su signo. El hueco estaba registrado como
+excepción en `scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`,
+con su motivo, y el contrato avisaba cuando se cerrara.
+
+**El defecto, y una lectura que hay que hacer explícita.** El hueco era doble,
+y las dos caras eran el mismo hecho: la medida de la fecha y la decisión que
+la usa estaban en el mismo sitio, y ese sitio era un `filter_map`. Cuando la
+fecha no se podía leer, el fichero entero se perdía —no aparecía en el
+escaneo— y la fecha que sí se persistía iba en segundos con coma flotante, de
+modo que un fichero anterior a la época quedaba como 0, que es la época.
+
+La primera cara es un hueco de información: un fichero cuya fecha no se puede
+leer no es un fichero sin fecha, es un fichero que el escaneo ya no conocía. Y
+un fichero que el escaneo no conoce no tiene dónde declarar su hueco: el hueco
+se va con el fichero.
+
+La segunda cara es una fecha inventada: 0 dice «1 de enero de 1970», que es una
+fecha que nadie midió. Ya se había cerrado la unidad de la fecha medida para
+el resto de sitios de producción; esta familia era la que quedaba, y por eso
+tenía su propia unidad.
+
+**La lectura de «informe de cobertura».** El criterio de cierre dice que el
+fichero aparece «en el escaneo y en el informe de cobertura». La ingestión
+**no tiene** informe de cobertura: `ScanResult` —el tipo que la contendría—
+no se construye en ningún sitio, y las etapas de la tubería que iban al
+PostgreSQL se fueron con la retirada del postgres («e29-7»). El registro de
+cobertura de la ingestión es **el manifiesto**: una fila por fichero cubierto,
+que es lo que se consulta para saber qué se ha visto. Por eso el criterio se
+cumple en dos sitios: el escaneo conserva el fichero, y el manifiesto conserva
+su fila con la ausencia declarada. Y como el DDL de `ScanManifest` sólo lo
+crean ayudantes de prueba —no hay DDL de producción para esa tabla, porque la
+familia es una costura dormida—, el «informe» de esta ingestión es exactamente
+la fila del manifiesto.
+
+**Lo que se hizo.** La medida deja de ser un filtro. Cada fichero que el
+recorrido encuentra se mide con el dueño único —`file_time::measured_millis`— y
+se queda en el escaneo con su fecha ausente cuando el sistema de ficheros no
+la publica. La fecha es `Option<i64>` en milisegundos y con signo en todo el
+camino: `FileChange.mtime_millis`, `ScanManifestEntry.mtime_millis`, el puerto
+`ScanManifest.mtime_millis` y la columna de Ladybug, que pasa de `mtime DOUBLE`
+a `mtime_millis INT64`, admite la ausencia, y devuelve `None` cuando lee un
+NULL en vez de `0`.
+
+Hay una segunda decisión, y es la que evita un silencio peor: **sin fecha no se
+puede afirmar nada**. Un fichero cuya fecha no se pudo leer la vez anterior no
+se da por igual —no hay nada que comparar— así que se vuelve a mirar y decide el
+hash, que es lo que siempre decidió. La tolerancia sigue siendo de un
+milisegundo, la misma que permitía la medida en segundos con coma flotante, y
+no de un segundo: persistir segundos enteros habría hecho que una edición
+dentro del mismo segundo no re-hasheara el fichero.
+
+**El RED, medido sobre el camino malo.** La suite de caracterización se
+escribió antes que el arreglo, y falló contra el código viejo con el mensaje
+que lo dice: «el fichero cuya fecha no se puede leer tiene que seguir en el
+escaneo; el escaneo lo borró y con él se borró su hueco». La reproducción es
+real y no falsifica el reloj: un directorio con modo `0444` se puede listar
+pero no atravesar, de modo que sus entradas se ven y `stat` sobre ellas falla
+con EACCES. Es un caso que ocurre —un directorio que el usuario ve pero no
+recorre— y no hace falta tocar el reloj para reproducirlo.
+
+**El GREEN, medido con mutación focal.** Se rompieron cuatro veces el
+comportamiento a propósito, y cada mutante tenía que morir sólo por los tests
+escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — el fichero sin fecha desaparece del escaneo (el comportamiento viejo) | `un_fichero_que_no_se_puede_fechar_no_desaparece_del_escaneo`, `un_fichero_sin_fecha_declara_su_hueco` |
+| B — la fecha medida se publica como 0 | `una_fecha_anterior_a_la_epoca_se_publica_con_su_signo`, `una_fecha_medida_se_publica_como_el_numero_que_es`, `un_fichero_sin_fecha_declara_su_hueco` |
+| C — una fecha ausente se publica como la época | `un_fichero_sin_fecha_declara_su_hueco` |
+| D — un fichero sin fecha se da por igual y no se vuelve a mirar | `un_fichero_que_no_se_pudo_fechar_la_vez_anterior_no_se_da_por_igual` |
+
+Los cuatro se revirtieron y `scan.rs` quedó intacto byte a byte: la
+discriminación es exacta, ningún mutante murió por un test que no es el suyo.
+La suite queda en **5 de 5**, y el adaptador añade dos: una fila sin fecha
+vuelve como `None` —no como `Some(0)`— y una fecha anterior a la época vuelve
+con su signo. El gate `fast` y el gate `full`, los dos en rc=0.
+
+**El contrato de la fecha medida.** El hueco de la ingestión sale del
+registro, así que el registro queda vacío —y un registro vacío es una
+afirmación, no un olvido—. El contrato ahora exige que la afirmación se
+declare: un registro sin huecos y sin declaración es un hallazgo, y un registro
+que dice a la vez «no hay ninguno» y «hay estos» también. Y el sitio sigue
+vigilado: se metió una fabricación de vuelta en `scan.rs` y los dos
+detectores —la regla por ventana y la del conversor— la cazaron. El registro
+sigue avisando cuando un hueco se cierra.
+
+**Lo que no se toca.** Un fichero que no se puede leer tiene el hash de nada —
+`content_hash: Some("")`—, porque el hash de un fichero ilegible no es un
+hash. Es un hueco contiguo de la misma familia, pero el `content_hash` del
+manifiesto es un `String` y no una ausencia, así que es otro contrato y otra
+unidad. Y esta familia es una costura dormida: `scan_for_changes` no tiene
+llamante de producción, `ScanResult` no se construye nunca y el DDL de
+`ScanManifest` sólo existe en ayudantes de prueba. Lo que se arregla aquí es la
+semántica de la fecha, no una ruta viva; lo que la vuelva viva es otra unidad,
+con su propio gate.
+
+**Siguiente WU.** La cola queda con cuatro candidatos: C23 (50, bloqueada por
+el operador), C12 (20), C44 (15) y C13 (10). C46 sale de la cola al cerrarse.
