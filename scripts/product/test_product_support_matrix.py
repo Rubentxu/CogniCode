@@ -42,10 +42,10 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
 def test_generation_and_classification() -> None:
     generator = load_generator()
     languages, platforms = generator.build_documents(ROOT, BASELINE)
-    assert len(languages["languages"]) == 30
+    assert len(languages["languages"]) == 31
     assert len(platforms["platforms"]) == 6
     assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 18
-    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 12
+    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 13
     assert [item["id"] for item in languages["languages"]] == sorted(item["id"] for item in languages["languages"])
     # The certified set is whatever the release lane builds, read here
     # independently of the generator. Asserting two literals instead would be a

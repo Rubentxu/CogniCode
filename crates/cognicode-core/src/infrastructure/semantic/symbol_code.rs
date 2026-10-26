@@ -170,7 +170,7 @@ impl SymbolCodeService {
         if let Some(node) = node {
             // Walk ancestors to find enclosing function/class/method instead of
             // returning the smallest AST node (e.g., an identifier or literal)
-            let interesting_node = find_enclosing_symbol(node);
+            let interesting_node = find_enclosing_symbol(node, language);
 
             let start_line = interesting_node.start_position().row as u32 + 1;
             let end_line = interesting_node.end_position().row as u32 + 1;
@@ -296,13 +296,12 @@ const INTERESTING_NODE_KINDS: &[&str] = &[
 
 /// Walks ancestors from the given node to find the first "interesting" enclosing symbol.
 /// If no interesting ancestor is found, returns the original node (backward compatible).
-fn find_enclosing_symbol(node: tree_sitter::Node) -> tree_sitter::Node {
+fn find_enclosing_symbol(node: tree_sitter::Node, language: Language) -> tree_sitter::Node {
     let mut current = node;
     let mut best_interesting = None;
 
     while let Some(parent) = current.parent() {
-        if let Some(kind) = INTERESTING_NODE_KINDS.iter().find(|k| parent.kind() == **k) {
-            let _ = kind; // used for matching
+        if is_symbol_node(parent, language) {
             best_interesting = Some(parent);
             break;
         }
@@ -310,6 +309,35 @@ fn find_enclosing_symbol(node: tree_sitter::Node) -> tree_sitter::Node {
     }
 
     best_interesting.unwrap_or(node)
+}
+
+/// Whether a node is a declaration whose CODE is worth publishing.
+///
+/// Un lenguaje que declara sus conjuntos dice qué son sus símbolos, así
+/// que la respuesta sale de ahí: la MISMA declaración que el lector
+/// publica es la declaración cuyo código se devuelve. Una segunda
+/// tabla de nombres de nodo por lenguaje —la que esta función era—
+/// acaba contradiciendo al lector, y el lector es el que publica.
+///
+/// Los lenguajes que NO declaran conjuntos conservan la lista
+/// histórica, que es lo único que conoce sus nombres de nodo: cambiar
+/// lo que publican es de la unidad que los migra, no de esta.
+fn is_symbol_node(node: tree_sitter::Node, language: Language) -> bool {
+    let kind = node.kind();
+
+    if language.reads_declared_symbol_sets() {
+        let declared = language.symbols();
+        if declared.function_types.contains(&kind)
+            || declared.class_types.contains(&kind)
+            || declared.variable_types.contains(&kind)
+            || declared.import_types.contains(&kind)
+            || language.package_types().contains(&kind)
+        {
+            return true;
+        }
+    }
+
+    INTERESTING_NODE_KINDS.contains(&kind)
 }
 
 /// Extracts docstring/comments above a symbol

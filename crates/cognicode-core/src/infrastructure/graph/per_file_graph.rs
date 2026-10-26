@@ -1056,9 +1056,15 @@ pub struct SkippedFile {
 /// README.md (exclusión legítima, sin gap).
 ///
 /// Cada entrada vive aquí SOLO hasta que su gramática aterriza en el
-/// registro (`Language::from_extension`) — la línea Kotlin (K1) mueve
-/// `kt`/`kts` de esta lista al registro.
-pub const KNOWN_UNSUPPORTED_EXTENSIONS: &[&str] = &["kt", "kts"];
+/// registro (`Language::from_extension`).
+///
+/// MEDIDO: la línea Kotlin aterrizó su gramática, así que
+/// `kt`/`kts` salen de esta lista y entran en el registro. La lista queda
+/// vacía y el mecanismo sigue en pie para el próximo lenguaje: la
+/// clasificación `KnownUnsupportedGap` y la disposición
+/// `UnsupportedRelevant` siguen existiendo, y lo que cambia es que hoy
+/// ninguna extensión cae en ellas.
+pub const KNOWN_UNSUPPORTED_EXTENSIONS: &[&str] = &[];
 
 /// K0 — clasificación única de un archivo de walk, compartida por las
 /// estrategias. Una misma semántica, un dueño: el registro

@@ -4,7 +4,7 @@
 //! Performance target: < 10ms for files with 1000+ lines.
 
 use crate::domain::value_objects::{Location, SymbolKind};
-use crate::infrastructure::parser::Language;
+use crate::infrastructure::parser::{Language, naming};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tree_sitter::Node;
@@ -171,6 +171,24 @@ impl OutlineBuilder {
     ) -> Option<(String, SymbolKind, Location, Option<String>)> {
         let kind = node.kind();
 
+        // MEDIDO: un lector que pregunta «un tipo por
+        // categoría» no puede leer un lenguaje que declara VARIOS. Kotlin
+        // declara tres tipos de función, tres de clase y dos de variable, y
+        // su nombre no está en un campo `name`: lo nombra un hijo cuyo
+        // tipo depende del constructo (`simple_identifier` en una
+        // función, `type_identifier` en una clase). Preguntando por
+        // `identifier` este lector no encontraba NINGUNO y publicaba un
+        // esquema vacío de un fichero Kotlin que sí declara símbolos.
+        //
+        // Un lenguaje que declara sus conjuntos se lee por ellos, y por la
+        // MISMA regla de nombre que usan el extractor genérico y el
+        // parser anterior. Tres lectores, una respuesta: ese es el
+        // contrato que K1 fija sobre Kotlin, y el esquema no puede ser
+        // una tercera voz.
+        if self.language.reads_declared_symbol_sets() {
+            return self.extract_declared_symbol_info(node);
+        }
+
         // Map node kind to symbol kind
         let (symbol_kind, name_opt) = match kind {
             // Functions
@@ -233,6 +251,46 @@ impl OutlineBuilder {
         let location = Location::new(&self.file_path, start.row as u32, start.column as u32);
 
         // Extract signature if available
+        let signature = self.extract_signature(node, kind);
+
+        Some((name, symbol_kind, location, signature))
+    }
+
+    /// What a language that declares its sets says about this node.
+    ///
+    /// The sets are the language's own declaration of what a function, a
+    /// class and a variable ARE; the name is read by the same rule the
+    /// other two readers use. Nothing here knows what Kotlin is: it knows
+    /// only how to ask a language that declares sets.
+    fn extract_declared_symbol_info(
+        &self,
+        node: Node,
+    ) -> Option<(String, SymbolKind, Location, Option<String>)> {
+        let declared = self.language.symbols();
+        let kind = node.kind();
+
+        let symbol_kind = if declared.function_types.contains(&kind) {
+            SymbolKind::Function
+        } else if declared.class_types.contains(&kind) {
+            SymbolKind::Class
+        } else if declared.variable_types.contains(&kind) {
+            SymbolKind::Variable
+        } else if self.language.package_types().contains(&kind) {
+            SymbolKind::Package
+        } else {
+            return None;
+        };
+
+        let name = naming::declaration_name(
+            &node,
+            self.source.as_bytes(),
+            &self.language.name_rule(),
+            declared.class_types,
+        )?;
+
+        let start = node.start_position();
+        let location = Location::new(&self.file_path, start.row as u32, start.column as u32);
+
         let signature = self.extract_signature(node, kind);
 
         Some((name, symbol_kind, location, signature))
@@ -352,6 +410,19 @@ impl OutlineBuilder {
                     }
                 }
             }
+            Language::Kotlin => {
+                // MEDIDO: la gramática de Kotlin llama
+                // `function_value_parameters` a la lista de parámetros, y
+                // sus hijos son `parameter` (los de una función) y
+                // `class_parameter` (los del constructor primario).
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i)
+                        && child.kind() == "function_value_parameters"
+                    {
+                        return Some(self.format_kotlin_params(child));
+                    }
+                }
+            }
             Language::Java => {
                 // Find parameters in Java method
                 for i in 0..node.child_count() {
@@ -432,6 +503,34 @@ impl OutlineBuilder {
                 && let Some(identifier) = self.find_name_in_node(child, "identifier")
             {
                 params.push(identifier);
+            }
+        }
+        format!("({})", params.join(", "))
+    }
+
+    /// Los parámetros de una función Kotlin.
+    ///
+    /// El nombre de un parámetro lo nombra un `simple_identifier` —no un
+    /// `identifier`—, así que se lee por la misma regla de nombre que el
+    /// resto de lectores de Kotlin.
+    fn format_kotlin_params(&self, params_node: Node) -> String {
+        let declared = self.language.symbols();
+        let rule = self.language.name_rule();
+        let mut params = Vec::new();
+        for i in 0..params_node.child_count() {
+            let Some(child) = params_node.child(i) else {
+                continue;
+            };
+            if child.kind() != "parameter" && child.kind() != "class_parameter" {
+                continue;
+            }
+            if let Some(name) = naming::declaration_name(
+                &child,
+                self.source.as_bytes(),
+                &rule,
+                declared.class_types,
+            ) {
+                params.push(name);
             }
         }
         format!("({})", params.join(", "))

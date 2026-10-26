@@ -125,12 +125,23 @@ Un agente puede usar CogniCode indistintamente por biblioteca Rust, CLI y MCP; r
 > roadmap paralelo y los documentos nuevos que la línea vigente prohíbe; no
 > se commitea.
 
-Kotlin **no** está implementado en el core (verificado 2026-10-17: sin
-variante `Language::Kotlin`, sin gramática tree-sitter, sin entrada en
-`product/languages.json`). La línea se ejecuta reutilizando los contratos
+La línea se ejecuta reutilizando los contratos
 CU: SDK/facade, `AnalysisOutcome`, ADTs de evidencia, CLI/MCP, distribución
 y pruebas. Números SemVer según la regla del repo al momento de cada corte;
 no se fijan por adelantado.
+
+> **Estado verificado (2026-10-26, `main@c87340f0`):** Kotlin **sí** está
+> implementado en el core. Existen `Language::Kotlin` con extensiones `kt` y
+> `kts`, una gramática Tree-sitter Kotlin como dependencia única (sin JVM ni
+> Gradle en el parser) y una entrada `kotlin` en `product/languages.json` con
+> `support_level: experimental`. K0 (cobertura honesta) y K1 (símbolos Kotlin
+> sin JVM) están cerrados e integrados; K2 (relaciones) y K3 (semántico
+> agent-first) siguen abiertos. El estado por bloque y su evidencia viven en
+> [`kotlin-evolution/MILESTONES.md`](kotlin-evolution/MILESTONES.md) y en
+> `docs/roadmap/JOURNAL.md`: esta tabla es el plan, no el registro. La
+> verificación de 2026-10-17 (Kotlin sin variante, sin gramática y fuera del
+> catálogo) queda como el estado en que se redactó la línea, no como una
+> afirmación sobre el árbol actual.
 
 | Bloque | Valor observable | Estado |
 |---|---|---|

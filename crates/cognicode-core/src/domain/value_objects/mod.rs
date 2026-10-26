@@ -42,7 +42,7 @@ pub use dependency_type::DependencyType;
 pub use edge_kind::EdgeKind;
 pub use edge_metadata::EdgeMetadata;
 pub use file_manifest::{FileEntry, FileManifest};
-pub use language::Language;
+pub use language::{Language, LanguageSymbols, NameRule};
 pub use location::Location;
 pub use node_kind::NodeKind;
 pub use pending_reference::{PendingClass, PendingReference};

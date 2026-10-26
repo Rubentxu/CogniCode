@@ -31,25 +31,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C12",
-      "title": "El lenguaje Kotlin: gramática y navegación",
-      "unit": "H3",
-      "objective": "Anadir el lenguaje Kotlin: `Language::Kotlin`, extension `.kt`/`.kts`, una unica gramatica tree-sitter, y navegabilidad desde los binarios distribuidos sin JVM.",
-      "whyNow": "MEDIDO: no existe `Language::Kotlin` ni `tree-sitter-kotlin`; el codigo hace lo contrario a proposito (`per_file_graph.rs:916` declara `kt`/`kts` como no soportados, con honestidad). El ADR que lo exige esta en `Estado: PROPOSED`. Es la unidad mas grande del roadmap vivo.",
-      "evidenceRefs": [
-        "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md"
-      ],
-      "doneWhen": [
-        "`Language::Kotlin` existe y `.kt`/`.kts` se parsean",
-        "los simbolos Kotlin son navegables desde el binario distribuido, sin JVM",
-        "el gap tipado de `kt`/`kts` desaparece de `KNOWN_UNSUPPORTED_EXTENSIONS` y hay test de aceptacion con fixtures"
-      ],
-      "scope": "H3",
-      "risk": "high",
-      "priority": 20,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C44",
       "title": "El catalogo publicado dice de su runtime una version que no es la",
       "unit": "B1",
@@ -75,7 +56,7 @@
       "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
       "unit": "H4.4",
       "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
-      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. Depende de C12.",
+      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. C12 esta cerrada: el corpus Kotlin que esta unidad necesita ya tiene lector, gramática y contrato permanente, asi que lo que falta aqui es el lado Java y la prueba de que no sale ninguna arista sin evidencia.",
       "evidenceRefs": [
         "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md"
       ],

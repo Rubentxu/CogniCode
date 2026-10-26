@@ -672,7 +672,8 @@ impl ChangeSignatureStrategy {
             | Language::Json
             | Language::Fortran
             | Language::Verilog
-            | Language::SystemVerilog => {
+            | Language::SystemVerilog
+            | Language::Kotlin => {
                 // Convert "name: type" to "name type" for Go syntax
                 let go_params: Vec<String> = new_params
                     .iter()

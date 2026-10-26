@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-26, sobre `565cd86df5ebacbf6789de9a0baeebbed8610c5e` (la rama de la
+> **Snapshot**: 2026-10-26, sobre `c87340f0355d3f91ab908e0f3e3c0cbfc37b3f81` (la rama de la
 > incrementalidad: el grafo se reconstruye sólo donde cambió, el servicio dice
 > cuánto conservó, y el escaneo declara los ficheros que no puede fechar).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
@@ -171,7 +171,7 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+| **H4.4** (`C13`) | relaciones Kotlin↔Java, sólo cuando se pueden probar | `ROADMAP.md` §11 |
 
 **El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
 La identidad vive ahora en el dominio, en un valor con constructor puro: `SnapshotKey` dice qué se miró (el workspace), quién lo miró (el analizador: su versión, su commit y sus capacidades) y con qué forma se escribió (el esquema). El snapshot la guarda y se decide con ella, y la primera pregunta al cargar es sobre el productor, que no cuesta nada porque se responde sin leer el árbol. Si lo produjo otro analizador, no se sirve: el producto reconstruye y el motivo queda en el log. La base publicada gana cuatro campos que salen de la misma clave con la que se escribe el snapshot, y el catálogo publicado declara los mismos.
@@ -457,12 +457,17 @@ Ahora la medida no filtra: cada fichero que el recorrido encuentra se mide con e
 El RED está medido sobre el camino malo: la suite de caracterización falló contra el código viejo diciendo que el escaneo borró el fichero y con él su hueco. La reproducción es real y no falsifica el reloj: un directorio con modo `0444` se puede listar pero no atravesar. El GREEN se midió con mutación focal: cuatro veces se rompió el comportamiento a propósito, y cada mutante murió sólo por los tests escritos para él. La suite queda en 5 de 5, más dos tests del adaptador que demuestran que la ausencia y el signo negativo sobreviven al viaje de ida y vuelta a la base de datos. El contrato de la fecha medida ya no declara el hueco, y el registro de huecos —que ahora tiene que declarar que está vacío, porque un registro vacío es una afirmación y no un olvido— sigue vigilando el sitio: se metió una fabricación de vuelta en `scan.rs` y los dos detectores la cazaron.
 La integración encontró después un defecto que los gates locales no veían, y no era del producto: el arnés de pruebas del adaptador agotaba el espacio de direcciones del proceso. El motor reserva ocho terabytes de espacio de direcciones —no de memoria— por cada base de datos que abre, y la suite abre una base por test: con sesenta y cuatro tests en paralelo no cabían. El arnés abre ahora sus bases con una configuración propia, recortada como lo hace la configuración de pruebas del propio motor, y un guardián abre veinte bases a la vez para que el límite no vuelva a decidirse por suerte. La producción abre igual que antes, con la configuración por defecto.
 
+**Kotlin se navega sin JVM, está cerrada.** El producto declaraba `.kt` y `.kts` como extensiones conocidas y no soportadas: eso era honesto, pero dejaba al consumidor sin Kotlin. No era sólo un lenguaje que faltaba —el lector consumía un tipo de nodo por categoría, y un lenguaje que declara varios tipos en una categoría perdía todos menos el primero—, así que añadir el lenguaje sin cambiar el lector habría publicado un Kotlin cojo.
+Ahora el vocabulario vive en un solo sitio: `Language::symbols()` declara los conjuntos de nodos que cada lenguaje usa, el lector los consulta, y los accesores de un solo tipo derivan de ellos en lugar de repetir la lista. Kotlin llega con una gramática —una, medida, sin Kotlin Compiler ni Gradle en el parser— y con las costuras que esa gramática pedía: el prefijo que envuelve al nombre, el nombre heredado del companion, el paquete como declaración propia. Los otros quince lenguajes publican exactamente lo que publicaban antes.
+La identidad es `fichero:nombre:línea`, así que dos sobrecargas son dos símbolos y un constructor no es su clase. Un contrato permanente afirma el vocabulario completo —interface, data class, clase, clase anidada, companion con y sin nombre, enum, `object`, sealed, value class, constructor secundario, función top-level, método, extensión, sobrecargas, propiedades y paquete—, y dos contratos más comprueban que el código de un símbolo es exactamente su declaración y que el Unicode que declara se conserva. El caso negativo también está: un `.kt` que no parsea no se publica como leído, y un script `.kts` declara sus bindings de nivel superior y nada más —sus tareas y sus plugins son llamadas, no declaraciones.
+El GREEN se midió con mutación focal: cinco veces se rompió el comportamiento a propósito, y cada mutante murió sólo por los tests escritos para él. La UAT efímera sobre los binarios release dio 30 de 30, con los símbolos pedidos antes de construir grafo. La batería encontró además dos contratos que se habían quedado sin precondición —usaban un `.kt` como hueco real, y un hueco así caduca en cuanto el producto soporta el lenguaje—; ahora los dos huecos son un fichero con sintaxis rota, que es un hueco para siempre. Quedan declarados tres residuos: la lectura de complejidad sigue con un tipo por categoría, la distinción de script que nombra la especificación no existe como tipo en el producto, y el destino de un `import` con alias es cosa de la unidad de relaciones.
+
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 4 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 3 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
-B1 a B6), de mayor a menor prioridad. **C46 sale de la cola al cerrarse.**
+B1 a B6), de mayor a menor prioridad. **C46 y C12 salen de la cola al cerrarse.**
 
 El primero que encadenaba era **C31**, y está cerrado: la autoridad con la que
 una herramienta MCP se ejecutaba la leía del catálogo que había en el disco

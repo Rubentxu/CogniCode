@@ -123,26 +123,29 @@ fn graph_full_without_rust_material_fails_honestly() {
 
 #[test]
 fn graph_complexity_inherits_partial_from_last_build_report() {
-    // H0.2 (delivery-first-radical, package integration). Contrato:
-    // graph_complexity hereda Partial + gaps del BuildReport compartido,
-    // IGUAL que graph_full. El adaptador NO copia la traducción de
-    // BuildStatus en cada op: una sola traducción vive en
+    // Contrato: graph_complexity hereda Partial + gaps del BuildReport
+    // compartido, IGUAL que graph_full. El adaptador NO copia la
+    // traducción de BuildStatus en cada op: una sola traducción vive en
     // `partial_from_build_report` y ambas ops la consultan. Sin este
     // contrato, un workspace con skips reportaba "complete" en
     // graph.complexity mientras MCP decía "partial" sobre el MISMO
-    // grafo (divergencia real detectada por UAT-CU-1 2026-10-16).
+    // gráfico (divergencia real detectada por el UAT de integración).
     //
-    // MEDIDO 2026-10-19: el gap de este contrato era `Cargo.toml`. K0/H1.1
-    // (2026-10-18) declaro `Cargo.toml` exclusion legitima y no hueco, asi
-    // que el fixture dejaba de producir Partial y el contrato perdia su
-    // precondicion. El contrato NO se debilita: se le da un hueco REAL
-    // (`.kt`, fuente en lenguaje conocido-sin-soporte) para que siga
-    // detectando exactamente la divergencia que nacio para cazar.
+    // El hueco del fixture tiene que ser REAL: un fichero que el producto
+    // no puede leer. Antes lo daba un `.kt` --una fuente en lenguaje
+    // conocido-sin-soporte--, pero un hueco que depende de que
+    // lenguajes soporta el producto CADUCA en cuanto el producto crece:
+    // cuando Kotlin pasó a soportarse, el fixture dejó de producir
+    // Partial y el contrato perdió su precondición. Un fichero con
+    // sintaxis rota es un hueco para siempre, y del mismo tipo que el que
+    // el recorrido por fichero ya publica (`SkipReason::Parse`). El
+    // contrato NO se debilita: sigue detectando exactamente la
+    // divergencia que nacio para cazar.
     let tmp = tempdir();
     rust_fixture(&tmp);
     std::fs::write(
-        tmp.join("src").join("Legacy.kt"),
-        "class Legacy { fun x() = 1 }\n",
+        tmp.join("src").join("broken_syntax.rs"),
+        "pub fn broken_fn( -> u32 {\n    42\n}\n",
     )
     .unwrap();
     let basis = AnalysisBasis::for_workspace(tmp.clone());
@@ -160,7 +163,7 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     assert_eq!(
         full.state(),
         OutcomeState::Partial,
-        "precondición: el fixture con un `.kt` produce Partial (gap = Legacy.kt), got {:?}",
+        "precondición: el fixture con una fuente rota produce Partial (gap = broken_syntax.rs), got {:?}",
         full.state()
     );
     let expected_gap_messages: Vec<String> =
@@ -168,8 +171,8 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     assert!(
         expected_gap_messages
             .iter()
-            .any(|m| m.contains("Legacy.kt")),
-        "precondición: el gap debe nombrar Legacy.kt, got {:?}",
+            .any(|m| m.contains("broken_syntax.rs")),
+        "precondición: el gap debe nombrar broken_syntax.rs, got {:?}",
         expected_gap_messages
     );
 
@@ -191,8 +194,10 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
         .map(|g| g.message.clone())
         .collect();
     assert!(
-        actual_gap_messages.iter().any(|m| m.contains("Legacy.kt")),
-        "graph.complexity debe propagar el gap Legacy.kt; got {:?}",
+        actual_gap_messages
+            .iter()
+            .any(|m| m.contains("broken_syntax.rs")),
+        "graph.complexity debe propagar el gap broken_syntax.rs; got {:?}",
         actual_gap_messages
     );
     assert_eq!(

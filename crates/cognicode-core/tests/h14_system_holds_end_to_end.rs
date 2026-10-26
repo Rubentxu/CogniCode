@@ -12,9 +12,8 @@
 //!
 //!   - 3 Rust source files that parse and contribute symbols
 //!     (analyzed, become graph entries).
-//!   - 1 Kotlin file (.kt) that is a real source in a language
-//!     we have not yet wired (K0 honest gap, must surface in
-//!     every report).
+//!   - 1 Kotlin file (.kt) that parses (K1: Kotlin tiene gramática,
+//!     así que es fuente y no hueco).
 //!   - 1 README.md (legit exclusion, must NOT surface in any
 //!     report, must NOT demote BuildStatus).
 //!   - 1 .env file (security blocklist, must be pruned BEFORE
@@ -28,14 +27,20 @@
 //!
 //! The cross-cutting claim: the route that walks the whole project
 //! and the route that folds it file by file are CONSISTENT on the
-//! same corpus — they both surface the K0 gap, they both stay
-//! Complete-or-Partial on the same set of files, the .env is
-//! invisible to both, and find_symbol_usages prunes everything
-//! the WalkFilter prunes.
+//! same corpus — they both stay Complete-or-Partial on the same set
+//! of files, they both name the same source they could not read, the
+//! .env is invisible to both, and find_symbol_usages prunes
+//! everything the WalkFilter prunes.
+//!
+//! MEDIDO. El sujeto del gap era Kotlin y ya no lo
+//! es. Para que la garantía no se quede sin sujeto, el corpus
+//! adversarial incluye además un `.kt` que NO PARSEA: es una fuente
+//! real que el producto no puede leer, y las dos rutas tienen que
+//! contarla igual.
 
 use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use cognicode_core::infrastructure::graph::per_file_graph::{
-    BuildStatus, FileDisposition, SkippedFile,
+    BuildStatus, FileDisposition, SkipReason, SkippedFile,
 };
 
 const MARKER_LEGAL: &str = "unique_keep_marker_legal";
@@ -82,7 +87,7 @@ fn adversarial_corpus(dir: &std::path::Path) {
         "pub fn helper() -> u32 { 2 }\n",
     )
     .unwrap();
-    // K0 honest gap: Kotlin is a real source we have not wired.
+    // Kotlin: una fuente de verdad, y se lee (K1).
     std::fs::write(
         dir.join("src").join("Other.kt"),
         "class Other { fun x() = 1 }\n",
@@ -119,23 +124,38 @@ fn adversarial_corpus(dir: &std::path::Path) {
     .unwrap();
 }
 
-fn kt_skip(skipped: &[SkippedFile]) -> &SkippedFile {
+/// El mismo corpus, con una fuente Kotlin que NO parsea.
+fn corpus_with_unreadable_kotlin(dir: &std::path::Path) {
+    adversarial_corpus(dir);
+    std::fs::write(
+        dir.join("src").join("Broken.kt"),
+        "class Broken {\n    fun oops( {\n}\n",
+    )
+    .unwrap();
+}
+
+fn broken_skip(skipped: &[SkippedFile]) -> &SkippedFile {
     skipped
         .iter()
-        .find(|s| s.path.ends_with("Other.kt"))
-        .expect("K0 gap must be in skipped (the H1.1 K0 honest gap invariant)")
+        .find(|s| s.path.ends_with("Broken.kt"))
+        .expect("the unreadable Kotlin must be in skipped")
 }
 
 fn assert_compatible_partial(label: &str, skipped: &[SkippedFile], other_skipped_paths: &[&str]) {
     assert!(
         !skipped.is_empty(),
-        "{label}: expected Partial because of the K0 gap, got Complete"
+        "{label}: expected Partial because of the unreadable Kotlin, got Complete"
     );
-    let kt = kt_skip(skipped);
-    let disp = FileDisposition::from_skipped(kt);
+    let broken = broken_skip(skipped);
     assert!(
-        matches!(disp, FileDisposition::UnsupportedRelevant { .. }),
-        "{label}: the .kt skip must project to UnsupportedRelevant, got {disp:?}"
+        matches!(broken.reason, SkipReason::Parse(_)),
+        "{label}: the unreadable Kotlin must be reported as a parse failure, got {:?}",
+        broken.reason
+    );
+    let disp = FileDisposition::from_skipped(broken);
+    assert!(
+        matches!(disp, FileDisposition::ParseFailed { .. }),
+        "{label}: the unreadable source must project to ParseFailed, got {disp:?}"
     );
     for other in other_skipped_paths {
         assert!(
@@ -146,11 +166,12 @@ fn assert_compatible_partial(label: &str, skipped: &[SkippedFile], other_skipped
 }
 
 #[test]
-fn the_two_live_routes_agree_on_the_k0_gap() {
+fn the_two_live_routes_agree_that_a_kotlin_source_is_analysed() {
     // The cross-cutting claim: the route that walks the whole project
-    // and the route that folds it file by file project to the SAME K0
-    // honest gap on the SAME corpus. If either is silently discarding
-    // it, the system is broken at the seam.
+    // and the route that folds it file by file agree on the SAME
+    // corpus. With Kotlin readable, the whole corpus is covered, and
+    // a route that still hung the `.kt` would be publishing a gap
+    // that does not exist.
     let tmp = tempdir();
     adversarial_corpus(&tmp);
 
@@ -169,54 +190,31 @@ fn the_two_live_routes_agree_on_the_k0_gap() {
         .build_graph_per_file_with_report(&tmp)
         .expect("the per-file route builds");
 
-    // The status must agree: both are Partial with the K0 gap.
-    let whole_skipped = match &whole_report.status {
-        BuildStatus::Partial { skipped, .. } => skipped.clone(),
-        BuildStatus::Complete => panic!("whole route: expected Partial, got Complete"),
-    };
-    let service_skipped = match &service_report.status {
-        BuildStatus::Partial { skipped, .. } => skipped.clone(),
-        BuildStatus::Complete => panic!("per-file route: expected Partial, got Complete"),
-    };
-
-    // Both sides name the .kt as a skip (K0 honest gap).
-    assert!(
-        whole_skipped.iter().any(|s| s.path.ends_with("Other.kt")),
-        "whole route: K0 gap must surface, got {whole_skipped:?}"
+    assert_eq!(
+        whole_report.status,
+        BuildStatus::Complete,
+        "the whole route must read the whole corpus, Kotlin included"
     );
-    assert!(
-        service_skipped.iter().any(|s| s.path.ends_with("Other.kt")),
-        "service side: K0 gap must surface, got {service_skipped:?}"
+    assert_eq!(
+        service_report.status,
+        BuildStatus::Complete,
+        "the per-file route must read the whole corpus, Kotlin included"
     );
 
-    // Both sides project the .kt to UnsupportedRelevant (H1.1 invariant).
-    let s_disp = FileDisposition::from_skipped(kt_skip(&whole_skipped));
-    let svc_disp = FileDisposition::from_skipped(kt_skip(&service_skipped));
-    assert!(
-        matches!(s_disp, FileDisposition::UnsupportedRelevant { .. }),
-        "whole route: H1.1 invariant broken, got {s_disp:?}"
-    );
-    assert!(
-        matches!(svc_disp, FileDisposition::UnsupportedRelevant { .. }),
-        "service: H1.1 invariant broken, got {svc_disp:?}"
-    );
-
-    // Both sides agree: README.md is a legit exclusion, NOT a skip.
+    // Neither side hangs the Kotlin source, and neither surfaces the
+    // assets that are out of scope by policy.
     for (label, skipped) in [
-        ("whole route", &whole_skipped),
-        ("service", &service_skipped),
+        ("whole route", &skipped_of(&whole_report.status)),
+        ("service", &skipped_of(&service_report.status)),
     ] {
+        assert!(
+            !skipped.iter().any(|s| s.path.ends_with("Other.kt")),
+            "{label}: a Kotlin source the product can read must not be a skip"
+        );
         assert!(
             !skipped.iter().any(|s| s.path.ends_with("README.md")),
             "{label}: README is LegitExclusion, must not be a skip"
         );
-    }
-
-    // Both sides agree: pruned directories never surface as skips.
-    for (label, skipped) in [
-        ("whole route", &whole_skipped),
-        ("service", &service_skipped),
-    ] {
         for pruned in ["target", "node_modules", ".venv", ".env"] {
             assert!(
                 !skipped.iter().any(|s| s.path.contains(pruned)),
@@ -231,11 +229,91 @@ fn the_two_live_routes_agree_on_the_k0_gap() {
     let accessor_report = svc
         .get_last_build_report()
         .expect("get_last_build_report after build_graph_per_file_with_report");
-    match &accessor_report.status {
-        BuildStatus::Partial { skipped, .. } => {
-            assert!(skipped.iter().any(|s| s.path.ends_with("Other.kt")));
-        }
-        BuildStatus::Complete => panic!("accessor: expected Partial, got Complete"),
+    assert_eq!(
+        accessor_report.status,
+        BuildStatus::Complete,
+        "the accessor must return the report of THIS build, not a stale one"
+    );
+}
+
+#[test]
+fn the_two_live_routes_agree_on_what_they_could_not_read() {
+    // La misma garantía, con un sujeto REAL: un `.kt` que no parsea.
+    // Las dos rutas tienen que contarlo igual, con la misma razón.
+    // Sin esto, la sección de arriba se contentaría con que las dos
+    // digan «Complete», que es un acuerdo sobre una nada.
+    let tmp = tempdir();
+    corpus_with_unreadable_kotlin(&tmp);
+
+    let whole = AnalysisService::new();
+    whole
+        .build_project_graph(&tmp)
+        .expect("the whole-project route builds");
+    let whole_report = whole
+        .get_last_build_report()
+        .expect("the whole-project route publishes a report");
+
+    let svc = AnalysisService::new();
+    let service_report = svc
+        .build_graph_per_file_with_report(&tmp)
+        .expect("the per-file route builds");
+
+    let whole_skipped = skipped_of(&whole_report.status);
+    let service_skipped = skipped_of(&service_report.status);
+
+    for (label, skipped) in [
+        ("whole route", &whole_skipped),
+        ("service", &service_skipped),
+    ] {
+        assert_compatible_partial(label, skipped, &["target", "node_modules", ".venv", ".env"]);
+        assert!(
+            !skipped.iter().any(|s| s.path.ends_with("README.md")),
+            "{label}: README is LegitExclusion, must not be a skip"
+        );
+    }
+
+    // The two routes name the same source, with the same KIND of
+    // reason. La PALABRA del mensaje no es el contrato —las dos rutas
+    // redactan el error de parseo a su manera—, lo que no puede
+    // diferir es el hecho: las dos dicen «no lo pude parsear».
+    let whole_broken = broken_skip(&whole_skipped);
+    let service_broken = broken_skip(&service_skipped);
+    assert!(
+        matches!(whole_broken.reason, SkipReason::Parse(_)),
+        "the whole route must report a parse failure, got {:?}",
+        whole_broken.reason
+    );
+    assert!(
+        matches!(service_broken.reason, SkipReason::Parse(_)),
+        "the per-file route must report a parse failure, got {:?}",
+        service_broken.reason
+    );
+    for (label, broken) in [("whole route", whole_broken), ("service", service_broken)] {
+        assert!(
+            reason_text(&broken.reason).contains("Broken.kt"),
+            "{label}: the reason must name the file it is about, got {:?}",
+            broken.reason
+        );
+    }
+}
+
+/// Los omitidos de un estado; `Complete` no tiene ninguno.
+fn skipped_of(status: &BuildStatus) -> Vec<SkippedFile> {
+    match status {
+        BuildStatus::Complete => Vec::new(),
+        BuildStatus::Partial { skipped, .. } => skipped.clone(),
+    }
+}
+
+/// El texto que acompaña a la razón de un omitido.
+fn reason_text(reason: &SkipReason) -> String {
+    match reason {
+        SkipReason::Read(message)
+        | SkipReason::Parse(message)
+        | SkipReason::UnsupportedExtension(message)
+        | SkipReason::Walk(message)
+        | SkipReason::Other(message) => message.clone(),
+        SkipReason::Symlink { target } => target.clone(),
     }
 }
 
@@ -327,19 +405,20 @@ fn analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus() {
 
 #[test]
 fn h14_helper_compat_partial_invariants_remain_anchored() {
-    // Belt-and-suspenders for the helper used by the other three
-    // tests: assert_compatible_partial itself. If this drifts,
-    // the seam invariants above are not actually being checked.
-    use cognicode_core::infrastructure::graph::per_file_graph::SkipReason;
-    use std::path::Path;
-    let kt = SkippedFile {
-        path: "fixture/Other.kt".to_string(),
-        reason: SkipReason::UnsupportedExtension("kt".into()),
+    // Belt-and-suspenders for the helper used by the other tests:
+    // assert_compatible_partial itself. If this drifts, the seam
+    // invariants above are not actually being checked.
+    //
+    // El sujeto es un fichero Kotlin que no parsea: es la fuente que
+    // el producto no puede leer, y su razón es de PARSEO, no de
+    // «extensión no soportada». Antes de K1 el motivo era el segundo;
+    // ahora el motivo es el primero, y confundirlos publicaría una
+    // cobertura que el producto no tiene.
+    let broken = SkippedFile {
+        path: "fixture/Broken.kt".to_string(),
+        reason: SkipReason::Parse("error node".to_string()),
     };
-    let skipped = vec![kt];
+    let skipped = vec![broken];
     let other = ["target", "node_modules", ".venv", ".env"];
     assert_compatible_partial("helper", &skipped, &other);
-    // Suppress the unused-import warning for Path (kept in scope
-    // for future test cases that construct paths explicitly).
-    let _ = Path::new(".");
 }

@@ -12,13 +12,13 @@
 
 CogniCode is a Rust-based code intelligence server that provides deep analysis, call graphs, semantic search, and safe refactoring to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Think IntelliJ IDEA's capabilities — exposed as tools your AI can call.
 
-Built with **Domain-Driven Design** and **Clean Architecture**, it analyses 30
-languages out of the box — 18 with full acceptance evidence, 12 experimental.
+Built with **Domain-Driven Design** and **Clean Architecture**, it analyses 31
+languages out of the box — 18 with full acceptance evidence, 13 experimental.
 
 ## Features
 
 - **78 MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
-- **30 languages** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) and 12 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
+- **31 languages** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) and 13 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
 - **4 graph strategies** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
 - **Safe refactoring** — rename, extract, inline, move, change signature with impact preview
@@ -248,8 +248,8 @@ Choose the right strategy for your use case:
 
 ## Supported Languages
 
-30 languages are parsed and indexed. **18 are `supported`**, meaning they have
-focused acceptance evidence for the analysis paths; **12 are `experimental`**,
+31 languages are parsed and indexed. **18 are `supported`**, meaning they have
+focused acceptance evidence for the analysis paths; **13 are `experimental`**,
 meaning they parse and index but are not yet held to the same bar. The
 authoritative per-language list, with the evidence behind each level, is
 [`product/languages.json`](product/languages.json).
@@ -281,6 +281,7 @@ authoritative per-language list, with the evidence behind each level, is
 | Groovy | `.groovy` | experimental |
 | HCL | `.hcl`, `.tf` | experimental |
 | Julia | `.jl` | experimental |
+| Kotlin | `.kt`, `.kts` | experimental |
 | PowerShell | `.ps1` | experimental |
 | R | `.r` | experimental |
 | SystemVerilog | `.sv` | experimental |

@@ -90,6 +90,7 @@ tree-sitter-json.workspace = true
 tree-sitter-fortran.workspace = true
 tree-sitter-verilog.workspace = true
 tree-sitter-systemverilog.workspace = true
+tree-sitter-kotlin-sg.workspace = true
 
 # Grafos
 petgraph.workspace = true
