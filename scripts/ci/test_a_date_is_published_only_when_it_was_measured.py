@@ -10,6 +10,12 @@ publicaba como 1980: una fecha plausible y equivocada. Y el manejador de
 reparseo usaba `mtime == 0` como centinela de "borrado", con lo que un
 fichero anterior a la epoca se reportaba como eliminado del grafo.
 
+La ultima excepcion --la familia de la ingestion-- quedo cerrada: su fecha la
+mide el dueno unico, un fichero cuya fecha no se puede leer declara su hueco
+en vez de desaparecer del escaneo, y la columna que la guarda admite la
+ausencia. Por eso el registro de huecos esta vacio, y por eso un registro
+vacio es una declaracion y no un olvido.
+
 La cache nunca se rompio: la invalidacion compara tambien el hash del
 contenido. El defecto era de verdad, no de estabilidad.
 
@@ -52,17 +58,24 @@ OWNER_API = (
 )
 
 # Huecos conocidos: sitios que todavia miden por su cuenta, con el motivo por
-# el que no se han arreglado todavia. Si uno se cierra, el registro avisa.
-KNOWN_GAPS = {
-    "crates/cognicode-core/src/application/ingest/scan.rs": (
-        "La familia de la ingestion mide en segundos con coma flotante y "
-        "persiste el resultado en la base de datos de Ladybug, en otro crate. "
-        "Su hueco es doble: una fecha anterior a la epoca se publica como 0, "
-        "y un fichero cuya fecha no se puede leer desaparece del escaneo en "
-        "vez de declararse. Arreglarla cambia el esquema persistido, asi que "
-        "es una unidad propia."
-    ),
-}
+# el que no se han arreglado. Si uno se cierra, el registro avisa.
+#
+# El registro esta vacio, y vacio es una afirmacion: no queda ningun sitio de
+# produccion que convierta la fecha de un fichero por su cuenta. La ultima
+# excepcion --la familia de la ingestion-- quedo cerrada, asi que la razon
+# se declara en vez de dejar el registro mudo: un registro vacio sin
+# declaracion es un olvido, y el contrato no lo puede dar por bueno.
+KNOWN_GAPS: dict[str, str] = {}
+
+# La razon por la que no hay ningun hueco conocido. Solo tiene sentido
+# cuando el registro esta vacio: las dos afirmaciones --"no hay ninguno" y
+# "hay estos"-- no pueden ser verdad a la vez, y el contrato lo vigila.
+NO_KNOWN_GAPS = (
+    "La ingestion ya no mide por su cuenta: la fecha la mide el dueno unico "
+    "(file_time::measured_millis), un fichero cuya fecha no se puede leer "
+    "declara su hueco en vez de desaparecer del escaneo, y la columna que la "
+    "guarda admite la ausencia."
+)
 
 # Las conversiones que delatan una fabricacion: un instante que se convierte
 # a unidades de epoca y, si la conversion falla, se sustituye por un numero.
@@ -304,19 +317,41 @@ def the_production_code_does_not_fabricate_a_date(
     return findings
 
 
-def the_gap_registry_is_alive(registry: dict[str, str] | None = None) -> list[str]:
+# Sentinel: "no se paso declaracion". Distingue "no se dice nada" de "se dice
+# que no hay ninguno", que son afirmaciones distintas.
+UNDECLARED = object()
+
+
+def the_gap_registry_is_alive(
+    registry: dict[str, str] | None = None,
+    declaration: object = UNDECLARED,
+) -> list[str]:
     """El registro de huecos sigue siendo cierto.
 
     Un hueco que se cierra y sigue en el registro es un registro que ya no
     dice la verdad: el contrato tiene que avisar para que se cierre.
+
+    Un registro sin huecos es una afirmacion y por eso tiene que decirla. Un
+    registro vacio sin esa declaracion es un olvido, y el contrato no lo puede
+    dar por bueno: por eso la declaracion y el registro no pueden ser verdad
+    los dos a la vez.
     """
     findings: list[str] = []
     if registry is None:
         registry = KNOWN_GAPS
-    if not registry:
+    if declaration is UNDECLARED:
+        declaration = NO_KNOWN_GAPS
+
+    if registry and declaration:
         findings.append(
-            "el registro de huecos esta vacio: si la ingestion ya no mide por "
-            "su cuenta, el registro tiene que decir que no hay ninguno"
+            "el registro dice a la vez que no hay huecos y que hay "
+            f"{len(registry)}: las dos afirmaciones no pueden ser verdad a la "
+            "vez"
+        )
+    if not registry and not declaration:
+        findings.append(
+            "el registro de huecos esta vacio y no dice por que no hay ninguno: "
+            "un registro vacio tiene que ser una declaracion, no un olvido"
         )
     for relative in registry:
         path = REPO_ROOT / relative
@@ -370,6 +405,27 @@ def test_the_gap_registry_is_alive() -> None:
     """El registro de huecos dice la verdad."""
     findings = the_gap_registry_is_alive()
     assert not findings, "FAIL: " + "; ".join(findings)
+
+
+def test_the_gap_registry_can_declare_that_there_are_no_gaps() -> None:
+    """Un registro sin huecos es una afirmacion, y puede ser cierta.
+
+    El registro esta vacio porque la ultima excepcion --la ingestion-- quedo
+    cerrada. Cerrar un hueco no puede dejar al contrato sin poder declarar
+    que no hay ninguno: si no, el registro se llenaria de huecos que ya no
+    existen solo para no tener que escribir la afirmacion.
+    """
+    declared_empty = the_gap_registry_is_alive({}, "no hay ningun hueco conocido")
+    assert not declared_empty, "FAIL: " + "; ".join(declared_empty)
+
+    contradictory = the_gap_registry_is_alive(
+        {"crates/cognicode-core/src/application/ingest/scan.rs": "motivo"},
+        "no hay ningun hueco conocido",
+    )
+    assert contradictory, (
+        "FAIL: el detector no nota un registro que dice a la vez que no hay "
+        "huecos y que hay alguno"
+    )
 
 
 def test_the_detectors_see_a_violation_when_there_is_one() -> None:
@@ -429,11 +485,24 @@ def test_the_detectors_see_a_violation_when_there_is_one() -> None:
         ),
         (
             the_gap_registry_is_alive,
-            ({},),
+            ({}, None),
         ),
         (
             the_gap_registry_is_alive,
-            ({"crates/cognicode-core/src/no_existe.rs": "motivo"},),
+            ({"crates/cognicode-core/src/no_existe.rs": "motivo"}, None),
+        ),
+        (
+            # Un hueco declarado sobre un fichero que ya no convierte la fecha
+            # por su cuenta: el hueco se cerro y el registro tiene que decirlo.
+            the_gap_registry_is_alive,
+            (
+                {
+                    "crates/cognicode-core/src/application/ingest/types.rs": (
+                        "motivo"
+                    )
+                },
+                None,
+            ),
         ),
     ]
     for detector, args in probes:
@@ -451,6 +520,7 @@ def main() -> int:
         test_the_production_code_does_not_fabricate_a_date,
         test_the_conversion_of_an_instant_goes_through_the_owner,
         test_the_gap_registry_is_alive,
+        test_the_gap_registry_can_declare_that_there_are_no_gaps,
         test_the_detectors_see_a_violation_when_there_is_one,
     ]
     failures: list[str] = []

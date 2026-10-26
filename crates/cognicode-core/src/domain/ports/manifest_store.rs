@@ -24,7 +24,13 @@ pub struct ScanManifest {
     pub file_type: String,
     pub language: Option<String>,
     pub content_hash: String,
-    pub mtime: f64,
+    /// Last modification time in milliseconds since the epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. The column admits
+    /// the absence: a row whose date nobody measured says so instead of
+    /// carrying the epoch, which is a date somebody would have to have
+    /// measured.
+    pub mtime_millis: Option<i64>,
     pub symbol_count: i32,
     pub edge_count: i32,
     pub status: String,

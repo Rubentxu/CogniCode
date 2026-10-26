@@ -203,6 +203,33 @@ pub struct LadybugStore {
     db: Arc<Database>,
 }
 
+/// The engine configuration the tests of this crate open their databases with.
+///
+/// The engine reserves a virtual memory region of `max_db_size` bytes for
+/// every database it opens, and the default asks for eight terabytes. That is
+/// address space, not memory: the pages are faulted in on demand, but the
+/// reservation is taken at open time. Sixteen databases open at the same time
+/// exhaust the address space of the process, and the suite then dies with an
+/// mmap failure instead of an assertion — a failure that says nothing about
+/// the code under test and that changes from run to run, because it depends
+/// on how many tests happen to run at the same time.
+///
+/// The engine's own test configuration shrinks the region for exactly this
+/// reason ("it limits the number of databases which can be open in a single
+/// process"), and this crate follows it: sixteen gibibytes is far more than
+/// any test database holds, and enough databases fit side by side.
+///
+/// The buffer pool is capped too, because left at zero the engine sizes it
+/// from the physical memory of the machine — eighty percent of it, reserved
+/// per database — which would make the reservation of the suite depend on
+/// the size of the host instead of on the tests.
+#[cfg(test)]
+pub(crate) fn test_system_config() -> SystemConfig {
+    SystemConfig::default()
+        .max_db_size(16 * 1024 * 1024 * 1024)
+        .buffer_pool_size(4 * 1024 * 1024 * 1024)
+}
+
 // =============================================================================
 // LadybugGraphExecutor
 // =============================================================================
@@ -491,7 +518,27 @@ impl LadybugStore {
     /// Mirrors the spike-validated API in `crates/spike-ladybug`
     /// (`Database::new(path, SystemConfig::default())`).
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let db = Database::new(path, SystemConfig::default())?;
+        Self::open_with_config(path, SystemConfig::default())
+    }
+
+    /// Open (or create) a LadybugDB database file with an explicit engine
+    /// configuration.
+    ///
+    /// `SystemConfig::default()` asks the engine for the largest database it
+    /// supports, and the engine reserves that much *address space* per
+    /// database — eight terabytes — long before a single page is written.
+    /// One database per process is fine; a suite that opens one database per
+    /// test is not, and the engine's own test configuration shrinks the
+    /// region for exactly that reason (see `test_system_config`).
+    ///
+    /// Production goes through `LadybugStore::open`, which keeps the
+    /// default. This seam exists so the tests of this crate can open their
+    /// databases with a region that fits.
+    pub(crate) fn open_with_config<P: AsRef<Path>>(
+        path: P,
+        config: SystemConfig,
+    ) -> Result<Self, Error> {
+        let db = Database::new(path, config)?;
         let store = Self { db: Arc::new(db) };
         // e29-6: initialize all schema layers so any port works out-of-the-box.
         // All are idempotent (IF NOT EXISTS). Order matters only for
@@ -794,7 +841,7 @@ impl ManifestStore for LadybugStore {
             .map_err(|e| ManifestError::Store(format!("get_manifest: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws RETURN s.workspace_id, s.file_path, s.file_type, s.language, s.content_hash, s.mtime, s.symbol_count, s.edge_count, s.status, s.error_msg ORDER BY s.file_path;",
+                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws RETURN s.workspace_id, s.file_path, s.file_type, s.language, s.content_hash, s.mtime_millis, s.symbol_count, s.edge_count, s.status, s.error_msg ORDER BY s.file_path;",
             )
             .map_err(|e| ManifestError::Store(format!("get_manifest: prepare: {e}")))?;
         let result = conn
@@ -814,9 +861,10 @@ impl ManifestStore for LadybugStore {
                     other => Some(other.to_string()),
                 },
                 content_hash: row[4].to_string(),
-                mtime: match &row[5] {
-                    lbug::Value::Double(n) => *n,
-                    _ => 0.0,
+                mtime_millis: match &row[5] {
+                    lbug::Value::Int64(n) => Some(*n),
+                    lbug::Value::Int32(n) => Some(i64::from(*n)),
+                    _ => None,
                 },
                 symbol_count: match &row[6] {
                     lbug::Value::Int32(n) => *n,
@@ -887,7 +935,7 @@ impl ManifestStore for LadybugStore {
             // the spike's s6_cypher_compat.rs.
             let mut upd_stmt = conn
                 .prepare(
-                    "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;",
+                    "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime_millis = $mtime_millis, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;",
                 )
                 .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: update prepare: {e}")))?;
             conn.execute(
@@ -904,7 +952,13 @@ impl ManifestStore for LadybugStore {
                         },
                     ),
                     ("hash", lbug::Value::String(row.content_hash.clone())),
-                    ("mtime", lbug::Value::Double(row.mtime)),
+                    (
+                        "mtime_millis",
+                        match row.mtime_millis {
+                            Some(millis) => lbug::Value::Int64(millis),
+                            None => lbug::Value::Null(lbug::LogicalType::Int64),
+                        },
+                    ),
                     ("symcnt", lbug::Value::Int32(row.symbol_count)),
                     ("edgecnt", lbug::Value::Int32(row.edge_count)),
                     ("status", lbug::Value::String(row.status.clone())),
@@ -925,7 +979,7 @@ impl ManifestStore for LadybugStore {
             // line-continuation-sensitive — keep the CREATE on one line.)
             let mut ins_stmt = conn
                 .prepare(
-                    "CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});",
+                    "CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime_millis: $mtime_millis, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});",
                 )
                 .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: insert prepare: {e}")))?;
             conn.execute(
@@ -942,7 +996,13 @@ impl ManifestStore for LadybugStore {
                         },
                     ),
                     ("hash", lbug::Value::String(row.content_hash.clone())),
-                    ("mtime", lbug::Value::Double(row.mtime)),
+                    (
+                        "mtime_millis",
+                        match row.mtime_millis {
+                            Some(millis) => lbug::Value::Int64(millis),
+                            None => lbug::Value::Null(lbug::LogicalType::Int64),
+                        },
+                    ),
                     ("symcnt", lbug::Value::Int32(row.symbol_count)),
                     ("edgecnt", lbug::Value::Int32(row.edge_count)),
                     ("status", lbug::Value::String(row.status.clone())),
@@ -1267,7 +1327,7 @@ impl IngestCommitPort for LadybugStore {
             if existing.next().is_some() {
                 // UPDATE.
                 let mut upd_stmt = conn
-                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
+                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime_millis = $mtime_millis, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
                     .map_err(|e| {
                         cognicode_core::domain::ports::CommitError::Manifest(
                             cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
@@ -1289,7 +1349,13 @@ impl IngestCommitPort for LadybugStore {
                             },
                         ),
                         ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
+                        (
+                            "mtime_millis",
+                            match row.mtime_millis {
+                                Some(millis) => lbug::Value::Int64(millis),
+                                None => lbug::Value::Null(lbug::LogicalType::Int64),
+                            },
+                        ),
                         ("symcnt", lbug::Value::Int32(row.symbol_count)),
                         ("edgecnt", lbug::Value::Int32(row.edge_count)),
                         ("status", lbug::Value::String(row.status.clone())),
@@ -1312,7 +1378,7 @@ impl IngestCommitPort for LadybugStore {
             } else {
                 // CREATE.
                 let mut ins_stmt = conn
-                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
+                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime_millis: $mtime_millis, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
                     .map_err(|e| {
                         cognicode_core::domain::ports::CommitError::Manifest(
                             cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
@@ -1334,7 +1400,13 @@ impl IngestCommitPort for LadybugStore {
                             },
                         ),
                         ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
+                        (
+                            "mtime_millis",
+                            match row.mtime_millis {
+                                Some(millis) => lbug::Value::Int64(millis),
+                                None => lbug::Value::Null(lbug::LogicalType::Int64),
+                            },
+                        ),
                         ("symcnt", lbug::Value::Int32(row.symbol_count)),
                         ("edgecnt", lbug::Value::Int32(row.edge_count)),
                         ("status", lbug::Value::String(row.status.clone())),
@@ -3233,7 +3305,8 @@ mod tests {
     fn make_test_store() -> (LadybugStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.lbdb");
-        let store = LadybugStore::open(&path).expect("open lbug db");
+        let store =
+            LadybugStore::open_with_config(&path, test_system_config()).expect("open lbug db");
         (store, dir)
     }
 
@@ -3259,7 +3332,7 @@ mod tests {
                  file_type STRING, \
                  language STRING, \
                  content_hash STRING, \
-                 mtime DOUBLE, \
+                 mtime_millis INT64, \
                  symbol_count INT64, \
                  edge_count INT64, \
                  status STRING, \
@@ -3275,7 +3348,7 @@ mod tests {
             file_type: "rust".to_string(),
             language: Some("Rust".to_string()),
             content_hash: "abc123".to_string(),
-            mtime: 1234.5,
+            mtime_millis: Some(1_234),
             symbol_count: 42,
             edge_count: 17,
             status: "scanned".to_string(),
@@ -3305,7 +3378,7 @@ mod tests {
         assert_eq!(r.file_type, "rust");
         assert_eq!(r.language.as_deref(), Some("Rust"));
         assert_eq!(r.content_hash, "abc123");
-        assert!((r.mtime - 1234.5).abs() < 1e-9);
+        assert_eq!(r.mtime_millis, Some(1_234));
         assert_eq!(r.symbol_count, 42);
         assert_eq!(r.edge_count, 17);
         assert_eq!(r.status, "scanned");
@@ -3325,6 +3398,40 @@ mod tests {
         let r = &rows[0];
         assert!(r.language.is_none(), "language should round-trip None");
         assert!(r.error_msg.is_none(), "error_msg should round-trip None");
+    }
+
+    /// A file whose date nobody could read still has its row in the manifest:
+    /// the file was covered, and the gap is declared in the row.
+    #[tokio::test]
+    async fn manifest_row_without_a_date_round_trips_as_absent() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-4", "src/sin_fecha.rs");
+        row.mtime_millis = None;
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-4").await.expect("get");
+        assert_eq!(rows.len(), 1, "the file was covered, so it has a row");
+        assert_eq!(
+            rows[0].mtime_millis, None,
+            "una fila sin fecha dice que no tiene fecha: la epoca es una \
+             fecha que alguien habria tenido que medir"
+        );
+    }
+
+    /// A date before the epoch keeps its sign on the way in and on the way out.
+    #[tokio::test]
+    async fn manifest_row_before_the_epoch_keeps_its_sign() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-5", "src/antes_de_la_epoca.rs");
+        row.mtime_millis = Some(-60_000);
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-5").await.expect("get");
+        assert_eq!(
+            rows[0].mtime_millis,
+            Some(-60_000),
+            "una fecha anterior a la epoca es un numero negativo, no la epoca"
+        );
     }
 
     #[tokio::test]
@@ -3687,7 +3794,7 @@ mod tests {
         let conn = store.connection().expect("schema-init connection");
         conn.query("CREATE NODE TABLE IF NOT EXISTS GraphRevision(id SERIAL PRIMARY KEY, workspace_id STRING, revision_id INT64, head_of BOOLEAN);")
             .expect("GraphRevision");
-        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime DOUBLE, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
+        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime_millis INT64, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
             .expect("ScanManifest");
         conn.query("CREATE NODE TABLE IF NOT EXISTS GraphReport(id STRING PRIMARY KEY, workspace_id STRING, created_at STRING, report STRING, symbol_count INT64, edge_count INT64, health_score DOUBLE);")
             .expect("GraphReport");
@@ -3701,7 +3808,7 @@ mod tests {
             file_type: "rust".to_string(),
             language: Some("Rust".to_string()),
             content_hash: format!("hash-{path}"),
-            mtime: 1.0,
+            mtime_millis: Some(1),
             symbol_count: 10,
             edge_count: 5,
             status: "scanned".to_string(),
@@ -4735,7 +4842,8 @@ mod quality_store_tests {
     fn make_store() -> (LadybugStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("quality.lbdb");
-        let store = LadybugStore::open(&path).expect("open lbug db");
+        let store =
+            LadybugStore::open_with_config(&path, test_system_config()).expect("open lbug db");
         store.init_quality_schema().expect("quality schema");
         (store, dir)
     }
@@ -5024,7 +5132,7 @@ mod quality_store_tests {
         // schema DDL is never applied: reads must degrade gracefully.
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("raw.lbdb");
-        let db = lbug::Database::new(&path, SystemConfig::default()).expect("open db");
+        let db = lbug::Database::new(&path, test_system_config()).expect("open db");
         let store = LadybugStore::new(Arc::new(db));
 
         assert!(store.issues_for_file("src/a.rs").unwrap().is_empty());
@@ -5043,7 +5151,7 @@ mod quality_store_tests {
     fn quality_writes_error_on_missing_table() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("raw.lbdb");
-        let db = lbug::Database::new(&path, SystemConfig::default()).expect("open db");
+        let db = lbug::Database::new(&path, test_system_config()).expect("open db");
         let store = LadybugStore::new(Arc::new(db));
 
         let insert =
@@ -5131,6 +5239,52 @@ mod lineage_store_open_tests {
             result.is_ok(),
             "query on fresh open() store should succeed; got: {:?}",
             result
+        );
+    }
+}
+
+#[cfg(test)]
+mod harness_capacity_tests {
+    use super::*;
+
+    /// How many databases have to fit in the process at the same time.
+    ///
+    /// The suite opens one database per test, and the tests run in parallel:
+    /// the whole crate is up to sixty-four databases at once. Twenty is
+    /// comfortably below that, and comfortably above the number that the
+    /// default engine configuration cannot serve — sixteen of the eight
+    /// terabytes it reserves per database already exceed the address space
+    /// of the process.
+    const DATABASES_AT_ONCE: usize = 20;
+
+    /// The harness opens its databases with a configuration whose reservation
+    /// fits.
+    ///
+    /// The engine reserves address space — not memory — for every database it
+    /// opens, and the default configuration asks for eight terabytes of it per
+    /// database. Sixteen of those exhaust the address space of the process, so
+    /// a suite that opens one database per test dies with an mmap failure
+    /// instead of an assertion, and the failure moves from test to test
+    /// depending on how many of them happen to run at the same time.
+    ///
+    /// This test is the guard: with the configuration the harness uses, twenty
+    /// databases fit side by side.
+    #[test]
+    fn the_harness_holds_twenty_databases_open_at_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut databases = Vec::with_capacity(DATABASES_AT_ONCE);
+
+        for index in 0..DATABASES_AT_ONCE {
+            let path = dir.path().join(format!("db-{index}.lbdb"));
+            let db = lbug::Database::new(&path, test_system_config())
+                .unwrap_or_else(|error| panic!("open {index}: {error}"));
+            databases.push(db);
+        }
+
+        assert_eq!(
+            databases.len(),
+            DATABASES_AT_ONCE,
+            "the harness has to be able to hold its databases open at once"
         );
     }
 }

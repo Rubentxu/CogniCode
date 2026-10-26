@@ -27413,3 +27413,195 @@ en la carga útil del CLI ni del MCP: publicarlo en esas superficies es un
 cambio de contrato con su propio gate, y aquí no se ha tocado ninguna de las
 dos. La cola queda con C23 (50, bloqueada por el operador), C46 (25), C12 (20),
 C44 (15) y C13 (10).
+
+## 2026-10-26 — C46: el escaneo declara los ficheros que no puede fechar
+
+**C46 closed.** C46 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 443 pruebas verdes en 247 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**439 comprobaciones verdes, 0 rojas**— y el
+comprobante de línea base). Los dos gates se midieron por última vez sobre el
+árbol que cierra, con el arreglo del arnés ya dentro.
+
+**La unidad, cerrada sobre `565cd86df5ebacbf6789de9a0baeebbed8610c5e`.** El
+comportamiento de C46 entró en `991bb2c4408e1e988aa3c89c114e03162cef96ca`, y el
+arreglo del arnés que encontró la integración entró después, en la revisión que
+cierra.
+
+`991bb2c4…` no es la revisión que se midió: la rama se reconstruyó sobre `main`
+para que la pull request no arrastrara el trabajo anterior, y al reconstruir
+cambiaron los padres, no el contenido. El árbol es el mismo —
+`7376dc256f7747571b01410dc5e818f8873b1c39` en las dos revisiones—, así que la
+medición del gate sigue siendo la medición de lo que entra.
+
+**Qué es esta unidad.** La última excepción que quedaba del contrato de la
+fecha medida (H5): que el escaneo de la ingestión no borre del índice un
+fichero cuya fecha no se puede leer, y que la fecha que persiste en el
+manifiesto sea la que se midió, con su signo. El hueco estaba registrado como
+excepción en `scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`,
+con su motivo, y el contrato avisaba cuando se cerrara.
+
+**El defecto, y una lectura que hay que hacer explícita.** El hueco era doble,
+y las dos caras eran el mismo hecho: la medida de la fecha y la decisión que
+la usa estaban en el mismo sitio, y ese sitio era un `filter_map`. Cuando la
+fecha no se podía leer, el fichero entero se perdía —no aparecía en el
+escaneo— y la fecha que sí se persistía iba en segundos con coma flotante, de
+modo que un fichero anterior a la época quedaba como 0, que es la época.
+
+La primera cara es un hueco de información: un fichero cuya fecha no se puede
+leer no es un fichero sin fecha, es un fichero que el escaneo ya no conocía. Y
+un fichero que el escaneo no conoce no tiene dónde declarar su hueco: el hueco
+se va con el fichero.
+
+La segunda cara es una fecha inventada: 0 dice «1 de enero de 1970», que es una
+fecha que nadie midió. Ya se había cerrado la unidad de la fecha medida para
+el resto de sitios de producción; esta familia era la que quedaba, y por eso
+tenía su propia unidad.
+
+**La lectura de «informe de cobertura».** El criterio de cierre dice que el
+fichero aparece «en el escaneo y en el informe de cobertura». La ingestión
+**no tiene** informe de cobertura: `ScanResult` —el tipo que la contendría—
+no se construye en ningún sitio, y las etapas de la tubería que iban al
+PostgreSQL se fueron con la retirada del postgres («e29-7»). El registro de
+cobertura de la ingestión es **el manifiesto**: una fila por fichero cubierto,
+que es lo que se consulta para saber qué se ha visto. Por eso el criterio se
+cumple en dos sitios: el escaneo conserva el fichero, y el manifiesto conserva
+su fila con la ausencia declarada. Y como el DDL de `ScanManifest` sólo lo
+crean ayudantes de prueba —no hay DDL de producción para esa tabla, porque la
+familia es una costura dormida—, el «informe» de esta ingestión es exactamente
+la fila del manifiesto.
+
+**Lo que se hizo.** La medida deja de ser un filtro. Cada fichero que el
+recorrido encuentra se mide con el dueño único —`file_time::measured_millis`— y
+se queda en el escaneo con su fecha ausente cuando el sistema de ficheros no
+la publica. La fecha es `Option<i64>` en milisegundos y con signo en todo el
+camino: `FileChange.mtime_millis`, `ScanManifestEntry.mtime_millis`, el puerto
+`ScanManifest.mtime_millis` y la columna de Ladybug, que pasa de `mtime DOUBLE`
+a `mtime_millis INT64`, admite la ausencia, y devuelve `None` cuando lee un
+NULL en vez de `0`.
+
+Hay una segunda decisión, y es la que evita un silencio peor: **sin fecha no se
+puede afirmar nada**. Un fichero cuya fecha no se pudo leer la vez anterior no
+se da por igual —no hay nada que comparar— así que se vuelve a mirar y decide el
+hash, que es lo que siempre decidió. La tolerancia sigue siendo de un
+milisegundo, la misma que permitía la medida en segundos con coma flotante, y
+no de un segundo: persistir segundos enteros habría hecho que una edición
+dentro del mismo segundo no re-hasheara el fichero.
+
+**El RED, medido sobre el camino malo.** La suite de caracterización se
+escribió antes que el arreglo, y falló contra el código viejo con el mensaje
+que lo dice: «el fichero cuya fecha no se puede leer tiene que seguir en el
+escaneo; el escaneo lo borró y con él se borró su hueco». La reproducción es
+real y no falsifica el reloj: un directorio con modo `0444` se puede listar
+pero no atravesar, de modo que sus entradas se ven y `stat` sobre ellas falla
+con EACCES. Es un caso que ocurre —un directorio que el usuario ve pero no
+recorre— y no hace falta tocar el reloj para reproducirlo.
+
+**El GREEN, medido con mutación focal.** Se rompieron cuatro veces el
+comportamiento a propósito, y cada mutante tenía que morir sólo por los tests
+escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — el fichero sin fecha desaparece del escaneo (el comportamiento viejo) | `un_fichero_que_no_se_puede_fechar_no_desaparece_del_escaneo`, `un_fichero_sin_fecha_declara_su_hueco` |
+| B — la fecha medida se publica como 0 | `una_fecha_anterior_a_la_epoca_se_publica_con_su_signo`, `una_fecha_medida_se_publica_como_el_numero_que_es`, `un_fichero_sin_fecha_declara_su_hueco` |
+| C — una fecha ausente se publica como la época | `un_fichero_sin_fecha_declara_su_hueco` |
+| D — un fichero sin fecha se da por igual y no se vuelve a mirar | `un_fichero_que_no_se_pudo_fechar_la_vez_anterior_no_se_da_por_igual` |
+
+Los cuatro se revirtieron y `scan.rs` quedó intacto byte a byte: la
+discriminación es exacta, ningún mutante murió por un test que no es el suyo.
+La suite queda en **5 de 5**, y el adaptador añade dos: una fila sin fecha
+vuelve como `None` —no como `Some(0)`— y una fecha anterior a la época vuelve
+con su signo. El gate `fast` y el gate `full`, los dos en rc=0.
+
+**El contrato de la fecha medida.** El hueco de la ingestión sale del
+registro, así que el registro queda vacío —y un registro vacío es una
+afirmación, no un olvido—. El contrato ahora exige que la afirmación se
+declare: un registro sin huecos y sin declaración es un hallazgo, y un registro
+que dice a la vez «no hay ninguno» y «hay estos» también. Y el sitio sigue
+vigilado: se metió una fabricación de vuelta en `scan.rs` y los dos
+detectores —la regla por ventana y la del conversor— la cazaron. El registro
+sigue avisando cuando un hueco se cierra.
+
+**Lo que no se toca.** Un fichero que no se puede leer tiene el hash de nada —
+`content_hash: Some("")`—, porque el hash de un fichero ilegible no es un
+hash. Es un hueco contiguo de la misma familia, pero el `content_hash` del
+manifiesto es un `String` y no una ausencia, así que es otro contrato y otra
+unidad. Y esta familia es una costura dormida: `scan_for_changes` no tiene
+llamante de producción, `ScanResult` no se construye nunca y el DDL de
+`ScanManifest` sólo existe en ayudantes de prueba. Lo que se arregla aquí es la
+semántica de la fecha, no una ruta viva; lo que la vuelva viva es otra unidad,
+con su propio gate.
+
+**El gate de la integración encontró un defecto que los gates locales no veían.**
+Con el recibo ya escrito, la pull request #472 se puso roja en la etapa
+`cognicode-ladybug`: `shell exited with code 101`. No era un fallo de aserción
+sino un fallo del arnés —«Buffer manager exception: Mmap for size 8796093022208
+failed.»— y los tests que caían eran distintos en cada ejecución: la firma de un
+fallo que no dice nada del código bajo prueba y que depende de cuántos tests
+corren a la vez. Reproducido localmente, `cargo test -p cognicode-ladybug
+--lib` daba «62 passed; 2 failed», y con `--test-threads=8` pasaba todo.
+
+**La causa, medida.** El motor reserva una región de memoria virtual por cada
+base de datos que abre, y el tamaño la fija `max_db_size`. Por defecto son ocho
+terabytes —`DEFAULT_VM_REGION_MAX_SIZE = 1 << 43`—, y la reserva se pide al
+abrir la base, no al escribir: es espacio de direcciones, no memoria. La suite
+de este crate abre una base por test, así que con sesenta y cuatro tests en
+paralelo pide ocho terabytes por cada una, y el proceso se queda sin espacio de
+direcciones. Una sonda desechable, fuera del repo, lo midió: 8 669 781 692 kB de
+espacio de direcciones por base con la configuración por defecto, y 80 895 676 kB
+con una región de un gibibyte.
+
+**El arreglo.** La producción se queda con la configuración por defecto —una base
+por proceso, y ocho terabytes es el máximo que el motor admite—, y el arnés abre
+sus bases con la suya: `test_system_config()`, que recorta la región a
+dieciséis gibibytes y acota el grupo de páginas a cuatro. Lo segundo también
+hace falta: si el grupo de páginas se deja en cero, el motor lo dimensiona con
+la memoria física de la máquina —el ochenta por ciento de ella, por base—, y la
+reserva del arnés dependería del tamaño del anfitrión y no de los tests. Con las
+dos cosas acotadas, la reserva por base es la misma en cualquier máquina.
+
+**El RED y el GREEN del guardián.** El test nuevo
+`the_harness_holds_twenty_databases_open_at_once` abre veinte bases a la vez con
+la configuración del arnés. Con la configuración por defecto muere en la
+decimosexta, con el mismo mensaje que el gate; con la del arnés las veinte
+abren en 1,09 s. El límite de espacio de direcciones es un límite, no una
+estadística: el fallo es determinista, y no una carrera.
+
+**Lo que no se toca.** `LadybugStore::open` no cambia, y los dos tests que
+comprueban que `open()` deja el esquema listo siguen usando `open()`. Queda un
+residuo declarado: una base de producción reserva ocho terabytes de espacio de
+direcciones —para un proceso que abre una o dos bases es corriente—, y los
+crates que abren la base por la vía de producción (CLI, runtime) heredan ese
+perfil: cada uno abre pocas bases por proceso, así que no llegan al límite,
+pero un arnés que abriera muchas por proceso lo alcanzaría. El motor no ofrece
+un tope más fino para el tamaño máximo de la base, así que el residuo se declara
+en vez de esconderse.
+
+**Siguiente WU.** La cola queda con cuatro candidatos: C23 (50, bloqueada por
+el operador), C12 (20), C44 (15) y C13 (10). C46 sale de la cola al cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `07fccac6`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en la pull request #472. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+con su identificador de corrida `32d0a138-1cfd-4d46-9e7e-f8ac03c5bdb1`, las
+58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La corrida
+entera tardó **937,1 s**, contra los 917 s de la corrida de C47. La etapa
+`cognicode-ladybug` —la que estaba en rojo— tardó **61,9 s** y terminó en
+`success`: el defecto del arnés era de espacio de direcciones, no de tiempo, y
+acotarlo no ha costado ni un segundo de más. La etapa `contracts` tardó
+**73,0 s**, contra los 72,3 s de C47: el contrato de la fecha se mide igual de
+rápido. Las etapas más lentas fueron `explorer-route-capability` (135,4 s),
+`core-unrestricted-evidence-kernel` (135,1 s), `core-lib` (92,6 s) y `clippy`
+(83,3 s).
+
+**La corrida en rojo, medida.** La corrida que encontró el defecto —la que
+murió en `cognicode-ladybug` sin llegar a terminar la etapa— está también en la
+base de eventos, con su identificador `8c15b381-a7ee-4326-a222-30001d84def4` y
+`outcome: failure`: la etapa `cognicode-ladybug` tiene `StageStarted` y
+**ningún** `StageFinished`, y la corrida se paró a los 737,6 s. Las dos
+corridas quedan lado a lado en la misma base, que es donde se puede ver que el
+arreglo no cambió el trabajo: la etapa tardaba más antes de morirse que lo que
+tarda ahora en terminar.

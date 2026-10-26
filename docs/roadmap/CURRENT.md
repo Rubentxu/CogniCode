@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-26, sobre `ad9c694cecb4a563ea84607fe2c189d4567a2f47` (la rama de la
-> incrementalidad: el grafo se reconstruye sólo donde cambió, y el servicio
-> dice cuánto conservó).
+> **Snapshot**: 2026-10-26, sobre `565cd86df5ebacbf6789de9a0baeebbed8610c5e` (la rama de la
+> incrementalidad: el grafo se reconstruye sólo donde cambió, el servicio dice
+> cuánto conservó, y el escaneo declara los ficheros que no puede fechar).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -171,7 +171,6 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H5** (`C46`) | la ingestión que no borra del escaneo lo que no puede fechar | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
 **El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
@@ -453,12 +452,17 @@ asignando unos 199 MiB por construcción. El CLI y el MCP no llevan todavía el
 número en su carga útil: publicarlo en esas superficies es un cambio de
 contrato con su propio gate.
 
+**El escaneo declara los ficheros que no puede fechar, está cerrada.** La última excepción del contrato de la fecha medida era la familia de la ingestión, y su hueco era doble: una fecha anterior a la época se publicaba como 0 —que es la época— y un fichero cuya fecha no se puede leer desaparecía del escaneo. No era un fichero sin fecha: era un fichero que el escaneo ya no conocía, así que tampoco quedaba sitio donde decir que no se sabía cuándo se había escrito. La causa era que la medida y la decisión estaban en el mismo sitio, y ese sitio era un `filter_map`: cuando la fecha no se podía leer, el fichero entero se perdía.
+Ahora la medida no filtra: cada fichero que el recorrido encuentra se mide con el dueño único —`file_time::measured_millis`— y se queda en el escaneo con su fecha ausente cuando el sistema de ficheros no la publica. La fecha es `Option<i64>` en milisegundos y con signo en todo el camino —`FileChange`, `ScanManifestEntry`, el puerto y la columna `mtime_millis INT64`—, y un NULL se lee como `None` y no como `0`. Sin fecha no se puede afirmar nada, así que el fichero se vuelve a mirar y decide el hash, que es lo que siempre decidió.
+El RED está medido sobre el camino malo: la suite de caracterización falló contra el código viejo diciendo que el escaneo borró el fichero y con él su hueco. La reproducción es real y no falsifica el reloj: un directorio con modo `0444` se puede listar pero no atravesar. El GREEN se midió con mutación focal: cuatro veces se rompió el comportamiento a propósito, y cada mutante murió sólo por los tests escritos para él. La suite queda en 5 de 5, más dos tests del adaptador que demuestran que la ausencia y el signo negativo sobreviven al viaje de ida y vuelta a la base de datos. El contrato de la fecha medida ya no declara el hueco, y el registro de huecos —que ahora tiene que declarar que está vacío, porque un registro vacío es una afirmación y no un olvido— sigue vigilando el sitio: se metió una fabricación de vuelta en `scan.rs` y los dos detectores la cazaron.
+La integración encontró después un defecto que los gates locales no veían, y no era del producto: el arnés de pruebas del adaptador agotaba el espacio de direcciones del proceso. El motor reserva ocho terabytes de espacio de direcciones —no de memoria— por cada base de datos que abre, y la suite abre una base por test: con sesenta y cuatro tests en paralelo no cabían. El arnés abre ahora sus bases con una configuración propia, recortada como lo hace la configuración de pruebas del propio motor, y un guardián abre veinte bases a la vez para que el límite no vuelva a decidirse por suerte. La producción abre igual que antes, con la configuración por defecto.
+
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 5 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 4 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
-B1 a B6), de mayor a menor prioridad.
+B1 a B6), de mayor a menor prioridad. **C46 sale de la cola al cerrarse.**
 
 El primero que encadenaba era **C31**, y está cerrado: la autoridad con la que
 una herramienta MCP se ejecutaba la leía del catálogo que había en el disco
