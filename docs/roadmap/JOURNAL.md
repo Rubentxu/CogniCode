@@ -27386,3 +27386,30 @@ externo.
 **Siguiente WU.** La cola queda con cinco candidatos: C23 (50, bloqueada por
 el operador), C46 (25), C12 (20), C44 (15) y C13 (10). C47 sale de la cola al
 cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `f7525d67`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en la pull request #471, que
+queda `CLEAN` y `MERGEABLE`. La corrida es comprobable después del hecho: queda
+en la base de eventos del gate, con su identificador de corrida
+`99b19d3e-0d9e-4216-ba6a-12767226214e`, las 58 etapas en `success` y el
+`RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La etapa
+`contracts` tardó **72,3 s**, contra los 74,1 s de la corrida de C48: la etapa
+ya no toca la red, y su duración ya no depende de que la red esté rápida. La
+corrida entera tardó **917 s**. Las etapas más lentas fueron
+`core-unrestricted-evidence-kernel` (155,9 s), `explorer-route-capability`
+(114,3 s), `clippy` (83,3 s) y `core-lib` (68,2 s).
+
+**Lo que este ciclo deja medido para el siguiente.** La incrementalidad que
+faltaba no era un motor que no existiera: era un libro mayor que no sobrevivía
+a la construcción. Ahora existe y es medido, con su regla y su conservadurismo
+—un fichero que mueve muchas declaraciones re-resuelve todo lo que nombraban,
+y `kernel_ids.rs` tarda 2,32–2,46 s por eso—. Lo que queda medido y sin hacer:
+sólo se conserva la fase de resolución; analizar los ficheros sigue asignando
+unos 199 MiB por construcción, medido. Y el número que dice cuánto se conservó
+—`GraphReuse`— se publica en el borde del servicio, pero **no** viaja todavía
+en la carga útil del CLI ni del MCP: publicarlo en esas superficies es un
+cambio de contrato con su propio gate, y aquí no se ha tocado ninguna de las
+dos. La cola queda con C23 (50, bloqueada por el operador), C46 (25), C12 (20),
+C44 (15) y C13 (10).
