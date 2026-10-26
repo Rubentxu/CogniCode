@@ -285,7 +285,8 @@ mod tests {
     fn temp_store() -> (LadybugStore, TempDir) {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("evidence.lbdb");
-        let store = LadybugStore::open(&path).expect("open temp store");
+        let store = LadybugStore::open_with_config(&path, crate::test_system_config())
+            .expect("open temp store");
         (store, tmp_dir)
     }
 
@@ -294,7 +295,7 @@ mod tests {
     fn raw_store() -> (LadybugStore, TempDir) {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("evidence_raw.lbdb");
-        let db = lbug::Database::new(path, lbug::SystemConfig::default()).expect("raw db");
+        let db = lbug::Database::new(path, crate::test_system_config()).expect("raw db");
         let store = LadybugStore::new(std::sync::Arc::new(db));
         (store, tmp_dir)
     }

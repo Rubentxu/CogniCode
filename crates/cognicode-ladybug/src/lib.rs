@@ -203,6 +203,33 @@ pub struct LadybugStore {
     db: Arc<Database>,
 }
 
+/// The engine configuration the tests of this crate open their databases with.
+///
+/// The engine reserves a virtual memory region of `max_db_size` bytes for
+/// every database it opens, and the default asks for eight terabytes. That is
+/// address space, not memory: the pages are faulted in on demand, but the
+/// reservation is taken at open time. Sixteen databases open at the same time
+/// exhaust the address space of the process, and the suite then dies with an
+/// mmap failure instead of an assertion — a failure that says nothing about
+/// the code under test and that changes from run to run, because it depends
+/// on how many tests happen to run at the same time.
+///
+/// The engine's own test configuration shrinks the region for exactly this
+/// reason ("it limits the number of databases which can be open in a single
+/// process"), and this crate follows it: sixteen gibibytes is far more than
+/// any test database holds, and enough databases fit side by side.
+///
+/// The buffer pool is capped too, because left at zero the engine sizes it
+/// from the physical memory of the machine — eighty percent of it, reserved
+/// per database — which would make the reservation of the suite depend on
+/// the size of the host instead of on the tests.
+#[cfg(test)]
+pub(crate) fn test_system_config() -> SystemConfig {
+    SystemConfig::default()
+        .max_db_size(16 * 1024 * 1024 * 1024)
+        .buffer_pool_size(4 * 1024 * 1024 * 1024)
+}
+
 // =============================================================================
 // LadybugGraphExecutor
 // =============================================================================
@@ -491,7 +518,27 @@ impl LadybugStore {
     /// Mirrors the spike-validated API in `crates/spike-ladybug`
     /// (`Database::new(path, SystemConfig::default())`).
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let db = Database::new(path, SystemConfig::default())?;
+        Self::open_with_config(path, SystemConfig::default())
+    }
+
+    /// Open (or create) a LadybugDB database file with an explicit engine
+    /// configuration.
+    ///
+    /// `SystemConfig::default()` asks the engine for the largest database it
+    /// supports, and the engine reserves that much *address space* per
+    /// database — eight terabytes — long before a single page is written.
+    /// One database per process is fine; a suite that opens one database per
+    /// test is not, and the engine's own test configuration shrinks the
+    /// region for exactly that reason (see `test_system_config`).
+    ///
+    /// Production goes through `LadybugStore::open`, which keeps the
+    /// default. This seam exists so the tests of this crate can open their
+    /// databases with a region that fits.
+    pub(crate) fn open_with_config<P: AsRef<Path>>(
+        path: P,
+        config: SystemConfig,
+    ) -> Result<Self, Error> {
+        let db = Database::new(path, config)?;
         let store = Self { db: Arc::new(db) };
         // e29-6: initialize all schema layers so any port works out-of-the-box.
         // All are idempotent (IF NOT EXISTS). Order matters only for
@@ -3258,7 +3305,8 @@ mod tests {
     fn make_test_store() -> (LadybugStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("test.lbdb");
-        let store = LadybugStore::open(&path).expect("open lbug db");
+        let store =
+            LadybugStore::open_with_config(&path, test_system_config()).expect("open lbug db");
         (store, dir)
     }
 
@@ -4794,7 +4842,8 @@ mod quality_store_tests {
     fn make_store() -> (LadybugStore, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("quality.lbdb");
-        let store = LadybugStore::open(&path).expect("open lbug db");
+        let store =
+            LadybugStore::open_with_config(&path, test_system_config()).expect("open lbug db");
         store.init_quality_schema().expect("quality schema");
         (store, dir)
     }
@@ -5083,7 +5132,7 @@ mod quality_store_tests {
         // schema DDL is never applied: reads must degrade gracefully.
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("raw.lbdb");
-        let db = lbug::Database::new(&path, SystemConfig::default()).expect("open db");
+        let db = lbug::Database::new(&path, test_system_config()).expect("open db");
         let store = LadybugStore::new(Arc::new(db));
 
         assert!(store.issues_for_file("src/a.rs").unwrap().is_empty());
@@ -5102,7 +5151,7 @@ mod quality_store_tests {
     fn quality_writes_error_on_missing_table() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("raw.lbdb");
-        let db = lbug::Database::new(&path, SystemConfig::default()).expect("open db");
+        let db = lbug::Database::new(&path, test_system_config()).expect("open db");
         let store = LadybugStore::new(Arc::new(db));
 
         let insert =
@@ -5190,6 +5239,52 @@ mod lineage_store_open_tests {
             result.is_ok(),
             "query on fresh open() store should succeed; got: {:?}",
             result
+        );
+    }
+}
+
+#[cfg(test)]
+mod harness_capacity_tests {
+    use super::*;
+
+    /// How many databases have to fit in the process at the same time.
+    ///
+    /// The suite opens one database per test, and the tests run in parallel:
+    /// the whole crate is up to sixty-four databases at once. Twenty is
+    /// comfortably below that, and comfortably above the number that the
+    /// default engine configuration cannot serve — sixteen of the eight
+    /// terabytes it reserves per database already exceed the address space
+    /// of the process.
+    const DATABASES_AT_ONCE: usize = 20;
+
+    /// The harness opens its databases with a configuration whose reservation
+    /// fits.
+    ///
+    /// The engine reserves address space — not memory — for every database it
+    /// opens, and the default configuration asks for eight terabytes of it per
+    /// database. Sixteen of those exhaust the address space of the process, so
+    /// a suite that opens one database per test dies with an mmap failure
+    /// instead of an assertion, and the failure moves from test to test
+    /// depending on how many of them happen to run at the same time.
+    ///
+    /// This test is the guard: with the configuration the harness uses, twenty
+    /// databases fit side by side.
+    #[test]
+    fn the_harness_holds_twenty_databases_open_at_once() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut databases = Vec::with_capacity(DATABASES_AT_ONCE);
+
+        for index in 0..DATABASES_AT_ONCE {
+            let path = dir.path().join(format!("db-{index}.lbdb"));
+            let db = lbug::Database::new(&path, test_system_config())
+                .unwrap_or_else(|error| panic!("open {index}: {error}"));
+            databases.push(db);
+        }
+
+        assert_eq!(
+            databases.len(),
+            DATABASES_AT_ONCE,
+            "the harness has to be able to hold its databases open at once"
         );
     }
 }

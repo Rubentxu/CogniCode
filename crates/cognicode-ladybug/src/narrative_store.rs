@@ -273,7 +273,8 @@ mod tests {
     fn temp_store() -> (LadybugStore, TempDir) {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("narrative.lbdb");
-        let store = LadybugStore::open(&path).expect("open temp store");
+        let store = LadybugStore::open_with_config(&path, crate::test_system_config())
+            .expect("open temp store");
         (store, tmp_dir) // TempDir kept alive to keep path valid
     }
 
@@ -500,7 +501,8 @@ mod tests {
     async fn test_save_snapshot_on_missing_table() {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("narrative_missing.lbdb");
-        let store = LadybugStore::open(&path).expect("open store");
+        let store =
+            LadybugStore::open_with_config(&path, crate::test_system_config()).expect("open store");
 
         let snap = NarrativeSnapshot {
             id: "ws1::view1::obj1".to_string(),
@@ -534,7 +536,8 @@ mod tests {
     async fn test_load_snapshot_on_missing_table() {
         let tmp_dir = tempfile::tempdir().expect("tempdir");
         let path = tmp_dir.path().join("narrative_missing_load.lbdb");
-        let store = LadybugStore::open(&path).expect("open store");
+        let store =
+            LadybugStore::open_with_config(&path, crate::test_system_config()).expect("open store");
 
         let result = store
             .load_snapshot("ws1", "view1", "obj1")
