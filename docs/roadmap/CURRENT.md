@@ -5,10 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-25, sobre `389e6d386b97ce8ba17a2d2e1b91ec1b0f4f9bd5` (la rama de la unidad de la
-> identidad y de la guarda del toolchain: el snapshot declara quién lo produjo,
-> y un análisis hecho por otro analizador no se sirve; la guarda del toolchain
-> deja de depender de la red y no da veredictos falsos).
+> **Snapshot**: 2026-10-26, sobre `ad9c694cecb4a563ea84607fe2c189d4567a2f47` (la rama de la
+> incrementalidad: el grafo se reconstruye sólo donde cambió, y el servicio
+> dice cuánto conservó).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -154,13 +153,25 @@ código o de la máquina.
     puede obtenerlo **falla cerrado y lo dice**, en vez de inventar un valor y
     sacar de ahí un veredicto sobre otra cosa.
 
+14. **Lo que no cambió se conserva, y lo que decide qué se rehace es la
+    identidad, no el nombre.** Rehacer el grafo entero por tocar un fichero
+    no es lentitud: es trabajo que se tira. Y la pregunta de qué hay que
+    rehacer tiene una respuesta que no es «el nombre de la función», sino
+    «la identidad de la declaración»: un nombre puede seguir existiendo y
+    ser otra cosa —movida de línea, con otra declaración al lado—, y en ese
+    caso la respuesta que se guardó ya no vale aunque el nombre sea el
+    mismo. La regla que sale de ahí: cuando se decide qué se invalida, se
+    compara **lo que identifica**, no lo que se nombra; y lo que se conserva
+    se escribe en el libro mayor, porque una respuesta conservada sigue
+    siendo una respuesta —un libro que sólo guarda lo nuevo se vacía en
+    cada construcción y rehace el proyecto entero sin querer—.
+
 ## Unidades abiertas
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
 | **H5** (`C46`) | la ingestión que no borra del escaneo lo que no puede fechar | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
-| **H5** (`C47`) | la incrementalidad: reconstruir solo lo cambiado y medirlo | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
 **El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
@@ -403,9 +414,48 @@ veredicto falso, siendo el target nativo. El GREEN está medido: el contrato
 completo, 11 de 11, en 0,64 s —antes, 117,7 s por llamada—, y la suite entera
 de contratos, 438 comprobaciones verdes y 0 rojas.
 
+**El grafo se reconstruye sólo donde cambió, está cerrada.** Tocar un fichero
+rehacía el grafo entero: la fase de resolución —la que mira 34 779 relaciones
+en un proyecto de 400 ficheros— se repetía completa en cada construcción, y el
+consumidor no tenía forma de saber cuánto de su grafo anterior seguía en pie.
+Ahora un módulo nuevo, `infrastructure/graph/reuse.rs`, es el dueño único de
+esa decisión: lleva un libro mayor entre construcciones con lo que la última
+sabía de cada fichero —su hash y la identidad de cada declaración que hace— y
+lo que resolvió para cada par (fichero llamante, nombre llamado). La regla es
+la de la **identidad**: un nombre se invalida cuando algún fichero —cambiado,
+nuevo o borrado— añadió su declaración, la eliminó, o le dio otra identidad;
+y el fichero de quien llama invalida sus propias relaciones, porque las
+llamadas que dice se leen otra vez en cada construcción. Lo que el cambio no
+toca se conserva.
+Antes de escribir la regla se midió que esa identidad es estable —sobre el
+corpus de 400 ficheros, el conjunto completo de ids de la construcción en frío
+y el de la caliente son idénticos: 18 011 ids, 0 aristas colgantes—, porque una
+regla de identidad sobre identidades inestables no sería sound. El primer
+sondeo decía lo contrario (1 299 pares con id distinto) y era un artefacto del
+propio sondeo: el mapa colapsaba homónimos y guardaba el último según el
+orden de iteración.
+El GREEN está medido sobre el camino malo, con mutación focal: se rompieron
+tres veces la regla a propósito y cada mutante murió sólo por los tests
+escritos para él —la regla vieja por nombre, la regla vieja con guarda de
+ámbito, y la regla sin la cláusula de identidad—, y los tres se revirtieron.
+La suite de caracterización queda en 10 de 10, y la medición (CU-005.6) sobre
+400 ficheros en 61 directorios: frío 3,371 s; tibio 766,7 ms de p50 y 771,3
+ms de p95; edición al final 820,3 ms; edición en medio 861,3 ms de p50 y
+2,465 s de p95. Con la regla anterior, sobre el mismo corpus, la edición
+cuesta p50 2,391 s y p95 2,543 s: el endurecimiento la hace 2,8 veces más
+rápida por un 5 % en la construcción tibia. La medición encontró además un
+defecto de fondo —el libro mayor guardaba las respuestas nuevas y no las
+conservadas, así que se vaciaba en cada construcción y una de cada cuatro se
+rehacía entera— y el número dice lo que dice: cuántas relaciones se
+resolvieron otra vez y cuántas se conservaron, no «el análisis fue
+incremental». El análisis entero no lo es: analizar los ficheros sigue
+asignando unos 199 MiB por construcción. El CLI y el MCP no llevan todavía el
+número en su carga útil: publicarlo en esas superficies es un cambio de
+contrato con su propio gate.
+
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 6 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 5 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.

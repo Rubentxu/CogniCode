@@ -27224,3 +27224,165 @@ todos los ficheros, rehace el índice global de símbolos desde cero y vuelve a
 resolver todas las relaciones en cada construcción. El `CacheStore` de
 `incremental/content_hash.rs` sabe qué ficheros cambiaron y no tiene consumidor
 de producción. Eso queda encolado como **C47**.
+
+## 2026-10-26 — C47: el grafo se reconstruye sólo donde cambió
+
+**C47 closed.** C47 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 435 pruebas verdes en 246 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**438 comprobaciones verdes, 0 rojas**— y el
+comprobante de línea base).
+
+**La unidad, cerrada sobre `ad9c694cecb4a563ea84607fe2c189d4567a2f47`.**
+
+**Qué es esta unidad.** La incrementalidad que faltaba (H5, `SPEC-CU-005`):
+que tocar un fichero no rehaga el grafo entero, y que el producto diga cuánto
+conservó. La unidad tenía dos mitades y las dos están cerradas: la regla que
+decide qué resolución sigue valiendo, y la medición que dice si esa regla
+sirve de algo.
+
+Lo que **no** se afirma es que el análisis entero sea incremental. Lo que se
+conserva es la fase de resolución —la que costaba—, y el resto de la
+construcción sigue haciendo su trabajo: analizar los ficheros sigue asignando
+unos 199 MiB en cada construcción, medido. El número que publica el servicio
+dice exactamente eso: cuántas relaciones se resolvieron otra vez y cuántas se
+conservaron, no «el análisis fue incremental».
+
+**La verificación que decidía la bifurcación.** La regla que se iba a escribir
+compara la IDENTIDAD de una declaración —ruta, nombre y línea— para decidir si
+una respuesta sigue valiendo. Esa regla sólo es sound si la identidad de un
+símbolo que no cambió es la MISMA en dos construcciones consecutivas. Se midió
+antes de escribirla, sobre el corpus de 400 ficheros: el conjunto completo de
+ids de la construcción en frío y el de la construcción en caliente son
+idénticos —**18 011 ids, iguales**— y el grafo reconstruido deja **0 aristas
+colgantes**.
+
+Y hay que decir también la primera medición, porque fue mala. El primer sondeo
+dio **1 299 pares `(fichero, nombre)` con id distinto** y parecía que la
+identidad era inestable: la regla de identidad no podía sostenerse. Era un
+artefacto del sondeo, no del código: el mapa colapsaba homónimos y guardaba el
+último según el orden de iteración, así que comparaba identidades que no eran
+comparables. La identidad real es `fichero:nombre:línea`, y la comparación
+correcta es el conjunto COMPLETO de ids. Corregido el sondeo, la identidad es
+estable y la regla se puede escribir.
+
+**La regla.** Un nombre se invalida cuando algún fichero —cambiado, nuevo o
+borrado— añadió su declaración, la eliminó, o le dio otra identidad. La
+identidad de una declaración es la que su lector le dio, porque es la que el
+índice conoce; comparar otra identidad sería comparar algo que el resolver
+nunca miró. Y hay una segunda mitad: el fichero de quien llama. Las llamadas
+que dice su propio fichero se leen otra vez en cada construcción, así que las
+que ya no dice dejan de ser relaciones. Las dos mitades son necesarias: sin la
+del nombre, un fichero que empieza a declarar `foo` convierte en resoluble una
+llamada que era ambigua; sin la del fichero, se conservarían respuestas que el
+cambio invalidó. Lo que el cambio no toca, se conserva: cambiar el cuerpo de
+una función no cambia su identidad, así que las llamadas que la nombran
+conservan su respuesta; moverla a otra línea SÍ cambia su identidad, así que
+esas llamadas se vuelven a mirar —y tienen que, porque la respuesta que
+guardaban nombra una identidad que ya no existe.
+
+El libro mayor (`crates/cognicode-core/src/infrastructure/graph/reuse.rs`)
+recuerda dos cosas entre construcciones: qué sabía la última sobre cada
+fichero —su hash de contenido y la identidad de cada declaración que hace— y
+qué resolvió para cada par (fichero llamante, nombre llamado). Las dos se
+sustituyen enteras al terminar cada construcción, así que el libro mayor
+describe exactamente una construcción y nunca una mezcla de dos.
+
+**Lo que se hizo.** El módulo nuevo es el dueño único de la semántica de la
+reutilización. Las tres rutas que construyen el grafo —completa, filtrada y
+asíncrona— resuelven por un único `ReuseState::resolve`, a propósito: una ruta
+que resolviera por su cuenta publicaría su propio número sobre el mismo árbol,
+y `h24_the_routes_say_the_same` ya existe para cazar exactamente eso. El
+número se publica como `GraphReuse { relationships_resolved, relationships_reused }`,
+en el mismo sitio donde vive la métrica de cobertura. Las referencias
+pendientes se resuelven siempre y se cuentan como trabajo hecho: sus
+candidatos son las declaraciones del módulo del llamante, y ese no es el
+conjunto sobre el que el libro mayor guarda respuestas.
+
+**El RED, medido sobre el camino malo.** El endurecimiento no se probó por
+introspección: se rompieron tres veces la regla a propósito, y cada mutante
+tenía que morir sólo por los tests escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — regla vieja por nombre (invalida todos los nombres del fichero cambiado) | `cambiar_el_cuerpo_de_una_funcion_no_resuelve_nada` |
+| B — regla vieja + guarda de ámbito (todo cambio invalida el proyecto entero) | `cambiar_el_cuerpo_de_una_funcion_no_resuelve_nada`, `un_fichero_nuevo_no_invalida_lo_que_no_toca` |
+| C — sin la cláusula de identidad (basta con que el nombre siga existiendo) | `una_declaracion_que_se_muda_cambia_su_identidad` |
+
+Los tres mutantes fueron revertidos y `reuse.rs` quedó intacto. La
+discriminación es exacta: ningún mutante murió por un test que no es el suyo.
+
+**El GREEN, medido.** La suite de caracterización: **10 de 10**, en 0,01 s. El
+gate `fast` y el gate `full`, los dos en rc=0.
+
+**La medición (CU-005.6).** Fixture: 400 ficheros en 61 directorios, **18 011
+símbolos y 7 742 aristas**, y **34 779 relaciones** que el resolver mira. Con la
+regla endurecida:
+
+| construcción | p50 | p95 |
+|---|---|---|
+| frío | 3,371 s | 3,371 s |
+| tibio (nada cambió) | 766,7 ms | 771,3 ms |
+| edición al final (ninguna declaración se mueve) | 820,3 ms | 829,9 ms |
+| edición en medio (las declaraciones de debajo se mueven) | 861,3 ms | 2,465 s |
+
+Comparado con la regla anterior —la que invalidaba todos los nombres de
+cualquier fichero cambiado—, sobre el mismo corpus: frío 3,268 s, tibio
+730,8 ms, edición p50 2,391 s y p95 2,543 s. El endurecimiento hace que la
+edición sea **2,8 veces más rápida** y cuesta un **5 %** en la construcción
+tibia. Y no acelera la construcción en frío: 3,268 s → 3,371 s, porque en frío
+no hay nada que conservar.
+
+Las asignaciones y los bytes de salida también se midieron, porque CU-005.6 los
+pide. En frío: **1 925 013 693 bytes** asignados. En tibio: **208 716 850
+bytes**, casi todos en la fase de análisis de ficheros, que la regla no toca.
+En edición: entre 208 738 571 y 212 862 204. Los bytes de salida —medidos
+sobre una proyección JSON de símbolos y aristas construida desde la API pública
+del grafo, porque el `CallGraph` no se serializa a JSON directamente: sus
+claves de arista son tuplas y `serde_json` rechaza una clave que no sea
+cadena— son **5 290 510** en frío y en tibio, y suben con cada función nueva
+(5 290 688 → 5 291 212 en las cuatro ediciones). Son los bytes de la
+proyección, no los del cable de un consumidor, y así se declaran. Las cifras de
+asignación incluyen la clonación del grafo que hace `get_project_graph()` al
+final de la fase medida, y por eso son comparables entre sí.
+
+**El defecto que encontró la medición.** La primera serie de tiempos alternaba
+673 ms y 3,2 s en construcciones tibias: una construcción de cada cuatro se
+rehacía entera. La causa no era el plan, era el libro mayor: guardaba las
+respuestas que acababa de calcular, pero no las que conservó, así que se vaciaba
+en cada construcción y la segunda construcción tras un cambio no encontraba
+nada que conservar. Una respuesta conservada sigue siendo una respuesta, y
+ahora se escribe en el libro mayor nuevo igual que una calculada. El arreglo
+se ve en los números: la construcción tibia bajó de 0,81 s a 0,767 s. En el
+mismo paso se quitó la copia profunda del libro mayor —18 000 identidades y
+34 779 respuestas clonadas en cada construcción—, y los datos se toman por
+propiedad en vez de copiarse.
+
+**Lo que no se toca.** `analysis_service.rs` sigue siendo un archivo grande: la
+extracción del motor común que C23 promete no se ha hecho aquí, y el número
+publicado vive en el mismo sitio donde vive la métrica de cobertura, en el
+borde del servicio. El CLI y el MCP **no** llevan todavía el número en su
+carga útil: publicarlo en esas superficies es un cambio de contrato con su
+propio gate, y aquí no se ha tocado ninguna de las dos.
+
+**El conservadurismo, con su medida.** La regla es sound pero no gratis: un
+fichero que mueve muchas declaraciones invalida todos los nombres que se
+movieron. El peor caso medido es `kernel_ids.rs`, que re-resuelve **4 879**
+relaciones y tarda **2,32–2,46 s** — el p95 de la edición en medio. Es el
+comportamiento correcto (las identidades de esas declaraciones cambiaron de
+verdad, y las respuestas que las nombraban ya no valían), pero es el precio
+que se paga por no inventar una identidad más fina que la que el resolver
+conoce.
+
+**La decisión sobre las pruebas.** Los dos UAT efímeros de esta unidad —el
+sondeo de estabilidad de la identidad y el harness de medición— se retiran al
+cerrar: sus resultados están en este recibo, y su valor no sobrevive como
+código. Lo que se queda es la suite de caracterización
+(`crates/cognicode-core/tests/the_graph_is_rebuilt_only_where_it_changed.rs`,
+10 tests), que es la que protege la garantía —«el grafo se reconstruye sólo
+donde cambió»— sin depender de un harness de medición ni de un corpus
+externo.
+
+**Siguiente WU.** La cola queda con cinco candidatos: C23 (50, bloqueada por
+el operador), C46 (25), C12 (20), C44 (15) y C13 (10). C47 sale de la cola al
+cerrarse.
