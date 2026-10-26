@@ -35,6 +35,22 @@ exista en la misma lane**, porque invertir ese orden hace releases inalcanzables
 autoriza a exigirla hoy: la clave no existe todavia, y exigirla dejaria la lane
 roja por una razon que nadie puede accionar.
 
+## Que version se mide, y por que esta fijada
+
+La v3.1.4 de cosign —la que hay en el PATH de esta maquina— hace obligatorio el
+registro de transparencia y, sin terminal, rechaza el prompt y sale con rc=1.
+Un lane no tiene terminal, asi que ese binario no puede firmar aqui.
+
+Este contrato no mide el `cosign` que aparezca en el PATH: pide la version
+fijada a `cosign-tool.sh`, que es la unica fuente de la que bebe tambien el
+generador. MEDIDO: la v3.1.3 firma offline, sin red y sin registro, y su bundle
+verifica con la clave que acompana a la release — que es exactamente lo que el
+ADR de provenance midio.
+
+Un contrato que midiera el binario equivocado no mediria el mecanismo: mediria
+el defecto. Y uno que se saltara porque el binario fijado no esta tampoco
+mediria nada, asi que el `merge-gate` lo instala antes de correr los contratos.
+
 ## Que se comprueba
 
 - Sin clave: falla, y **no crea ninguna**.
@@ -62,7 +78,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,6 +88,7 @@ GENERATOR = REPO_ROOT / "scripts" / "ci" / "attest-provenance.sh"
 GATE = REPO_ROOT / "scripts" / "ci" / "verify-provenance.sh"
 CANDIDATE_PIPELINE = REPO_ROOT / "release-candidate.pipeline.kts"
 RELEASE_PIPELINE = REPO_ROOT / "release.pipeline.kts"
+TOOL = REPO_ROOT / "scripts" / "ci" / "cosign-tool.sh"
 
 # Contrasena de la clave DE SONDA. No es un secreto y no protege nada: la clave
 # que firma vive en un temporal que este test borra al terminar. Ponerla aqui y
@@ -83,8 +99,28 @@ PROBE_PASSWORD = "clave-de-sonda-que-no-protege-nada"
 SLSA_TYPE = "https://slsa.dev/provenance/v1"
 
 
-def _cosign() -> bool:
-    return shutil.which("cosign") is not None
+def _cosign_bin() -> str | None:
+    """La ruta del cosign FIJADO, o None si no esta instalado.
+
+    MEDIDO: el `cosign` del PATH de esta maquina es la v3.1.4, que hace
+    obligatorio el registro de transparencia y, sin terminal —un lane no tiene
+    terminal—, rechaza el prompt y sale con rc=1. Ese binario no puede firmar
+    aqui, y usarlo mediria el defecto en vez de medir el mecanismo.
+
+    Por eso el contrato pregunta por la version fijada a `cosign-tool.sh`, que
+    es la unica fuente de la que el generador tambien bebe: los dos pueden
+    discrepar sobre que version se firma, y ese contrato nuevo lo vigila.
+    """
+    result = subprocess.run(
+        ["bash", str(TOOL), "--path"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        return None
+    path = result.stdout.strip()
+    return path if path and Path(path).is_file() else None
 
 
 def _make_keypair(root: Path, prefix: str, password: str = PROBE_PASSWORD) -> None:
@@ -96,8 +132,13 @@ def _make_keypair(root: Path, prefix: str, password: str = PROBE_PASSWORD) -> No
     necesita `COSIGN_PASSWORD`. Sin esto el contrato no se puede ejecutar en
     ningun runner, y un contrato que no corre es un comentario.
     """
+    cosign = _cosign_bin()
+    assert cosign is not None, (
+        "el cosign fijado no esta instalado, y el del PATH no se usa a proposito. "
+        "Instalalo con: bash scripts/ci/install-cosign.sh"
+    )
     done = subprocess.run(
-        ["cosign", "generate-key-pair", "--output-key-prefix", str(prefix)],
+        [cosign, "generate-key-pair", "--output-key-prefix", str(prefix)],
         capture_output=True,
         text=True,
         env={**os.environ, "COSIGN_PASSWORD": password},
@@ -151,8 +192,13 @@ def _bundle_subject_digest(bundle: Path) -> str | None:
 
 
 def _verify_blob(pub: Path, bundle: Path, blob: Path) -> subprocess.CompletedProcess:
+    cosign = _cosign_bin()
+    assert cosign is not None, (
+        "el cosign fijado no esta instalado, y el del PATH no se usa a proposito. "
+        "Instalalo con: bash scripts/ci/install-cosign.sh"
+    )
     return subprocess.run(
-        ["cosign", "verify-blob", "--key", str(pub), "--bundle", str(bundle), str(blob)],
+        [cosign, "verify-blob", "--key", str(pub), "--bundle", str(bundle), str(blob)],
         capture_output=True,
         text=True,
         timeout=120,
@@ -337,7 +383,7 @@ def test_the_bundle_verifies_with_the_key_that_ships_with_the_release() -> None:
 
 def test_a_bundle_does_not_verify_against_another_key() -> None:
     """Negativa 1: la verificacion no es un sello de goma."""
-    if not _cosign():
+    if _cosign_bin() is None:
         return
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
@@ -363,7 +409,7 @@ def test_a_bundle_does_not_transfer_to_other_bytes() -> None:
     bundle deja de servir. Sin esta negativa, "hay un bundle al lado" seria todo
     lo que se puede afirmar.
     """
-    if not _cosign():
+    if _cosign_bin() is None:
         return
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
@@ -483,8 +529,12 @@ def test_the_generator_is_not_required_while_no_key_exists() -> None:
 
 
 def main() -> int:
-    if not _cosign():
-        print("SKIP - cosign no esta en PATH; el mecanismo de provenance no se puede medir")
+    if _cosign_bin() is None:
+        print(
+            "SKIP - el cosign fijado no esta instalado; el mecanismo de provenance "
+            "no se puede medir. El `cosign` del PATH no se usa a proposito. "
+            "Instalalo con: bash scripts/ci/install-cosign.sh"
+        )
         return 0
 
     module = sys.modules[__name__]

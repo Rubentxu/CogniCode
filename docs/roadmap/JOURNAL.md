@@ -26273,3 +26273,1143 @@ completo rc=0).
 como último commit. El `push`, la apertura de la PR y la fusión los autoriza el
 operador; el `merge-gate` sobre la PR es la puerta que GitHub exige antes de dejar
 fusionar.
+
+## 2026-10-25 — C39: el lane de provenance firma con el cosign que dice
+
+**C39 closed.** C39 acceptance: PASS (la decision del maintainer aplicada y
+escrita; el contrato de generacion en verde con el binario fijado —13/13, con
+los dos checks que estaban rojos—; el contrato estructural nuevo RED con 13
+hallazgos sobre un clon limpio de `87aab47f` y GREEN aqui; puerta rapida rc=0;
+contratos 399 comprobaciones verdes y 0 rojas).
+
+**Lo que estaba roto, medido.** La v3.1.4 de cosign ya no tiene
+`--tlog-upload`: el registro de transparencia paso a ser obligatorio, y cada
+`attest-blob` pide aceptar los terminos de uso de sigstore.
+
+- sin terminal: `Error: user declined the prompt`, rc=1;
+- con terminal y respondiendo `y`: firma y **publica la huella en el registro
+  publico de Rekor**;
+- la aceptacion no se cachea: el prompt vuelve en cada llamada.
+
+Un lane no tiene terminal. MEDIDO con una sonda de un minuto sobre un step
+real de PipelineK: `STDIN: NO TTY`, `STDOUT: NO TTY`, y `cosign` en
+`/usr/bin/cosign`. El contrato, por tanto, no se saltaba: se ejecutaba y
+fallaba. Dos comprobaciones en rojo, y el `merge-gate` —que corre en esta
+misma maquina— sin poder pasar su etapa de contratos.
+
+**Las tres vias, medidas antes de decidir.**
+
+| Via | Firmar | Verificar | Sale algo de la maquina |
+|---|---|---|---|
+| `--yes` | sin prompt | limpio | **si**, al registro publico de Rekor |
+| `--signing-config` sin tlog | sin prompt, sin red | pide `--insecure-ignore-tlog` | no |
+| version fijada (3.1.3) | sin prompt, sin red | limpio | no |
+
+**La decision, del maintainer: fijar la v3.1.3.** Es la version que el ADR ya
+habia medido como firmada offline, sin red y sin registro, con la clave que
+acompana a la release. Conserva exactamente lo medido, y no obliga a quien
+verifica a pasar un flag que el propio cosign declara inseguro.
+
+**Lo que se ejecuto.**
+
+- `scripts/ci/cosign-tool.sh`: el pin. Version, sumas oficiales por plataforma
+  y donde vive el binario. Una sola fuente, de la que beben el generador y el
+  contrato.
+- `scripts/ci/install-cosign.sh`: instala la version fijada, verifica su suma
+  contra la declarada y se niega a instalar otra.
+- `scripts/ci/attest-provenance.sh`: firma con el binario fijado. El
+  `cosign` que aparezca en el PATH no se usa: es lo que rompio el lane.
+- `scripts/ci/test_provenance_generation.py`: mide el binario fijado.
+- `scripts/ci/test_provenance_lane_pins_its_cosign.py`: el contrato nuevo.
+- `merge-gate.pipeline.kts`: instala el cosign fijado **antes** de los
+  contratos, para que la medicion no se salte por falta de herramienta.
+- `release-candidate.pipeline.kts`: idem en la lane que firma.
+- `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md`: la decision, lo que cuesta y
+  lo que sigue abierto.
+
+**El RED, medido sobre un clon limpio de `87aab47f`.** El contrato nuevo dio
+13 hallazgos, cada comprobacion fallando por su propio motivo: el generador
+buscaba el `cosign` del PATH, el contrato tambien, ninguna lane lo instalaba, y
+la version no estaba declarada en ninguna parte. En este arbol, GREEN.
+
+**Lo que cuesta, dicho de frente.** El lane necesita **red** para descargar la
+herramienta, una vez por maquina. El binario se verifica por su suma, escrita
+junto a la version; el instalador se niega a instalar una version que no sea la
+declarada, para que la lane y los contratos no puedan discrepar sobre que
+herramienta miden.
+
+**Lo que sigue abierto, y no se ha tocado.** La **custodia de la clave**: donde
+vive la clave privada y quien puede usarla. El **anclaje al registro de
+transparencia**: fijar la version conserva el comportamiento medido —sin
+anclaje—, no lo decide; publicar en Rekor sigue disponible y sin decidir. Y el
+**camino del consumidor**: la lane de publicacion sigue verificando con
+`gh attestation verify`, que no verifica un bundle de cosign, y migrarlo cambia
+el comportamiento de una release ya publicada.
+
+**La puerta.** `scripts/test-fast.sh` rc=0. `scripts/ci/run-all-contracts.sh`
+rc=0: 399 comprobaciones verdes, 0 rojas. Y el `merge-gate` —la puerta que
+GitHub exige para dejar fusionar— **rc=0** sobre `7da3192c`, con las 57 etapas
+en verde, la de contratos incluida. Ese era el rojo: una etapa, y era de la
+maquina.
+
+**La cola.** `C39` se abrio en la rama de `C23` y se cierra aqui. En `main` la
+cola sigue llevando `C23`, porque su PR #464 continua abierta, y la rama de
+`C23` retirara `C39` de su cola cuando recoja este cambio. Con `C23` y `C39`
+cerrados, la cola viva queda con `C11` (SnapshotKey e incrementalidad honesta),
+`C12` (navegacion Kotlin sin JVM) y `C13` (las relaciones Kotlin-Java, solo
+cuando se pueden probar).
+
+## 2026-10-25 — C40: un corte por byte no parte un carácter
+
+**Lo que se midió, con ejecución.** Una auditoría externa señaló que el servicio
+de ficheros recortaba texto por índice de byte. En este árbol la afirmación es
+cierta, y se mide con el pánico, no con la lectura:
+
+- `crates/cognicode-core/src/application/services/file_operations.rs:986` —
+  `&content[offset..]`. El desplazamiento sale del token de continuación, que
+  no está firmado y que elige el llamante: con una `é` acentuada, un token con
+  `offset: 1` abortaba el proceso.
+- `file_operations.rs:1003` — `remaining[read_size..]`. El tamaño del trozo lo
+  elige el llamante: `chunk_size: 2` sobre `a`, una `é` acentuada y un salto
+  de línea partía la `é` acentuada.
+- `file_operations.rs:1376` — `&s[..max_len]`. El mensaje de una edición
+  rechazada truncaba en el byte 50, que cae dentro de un carácter de tres
+  bytes.
+- `file_operations.rs:501` y `:526` — el conteo de líneas de la página de
+  continuación, con el mismo desplazamiento sin validar.
+- `crates/cognicode-cli/src/presenter.rs:672` — el diagrama se truncaba en el
+  byte 2000.
+- `crates/cognicode-cli/src/cmd/lifecycle_resolver.rs:445` — el nombre de una
+  release se truncaba por byte.
+
+Los cuatro tests nuevos fallan con el pánico exacto: `start byte index 1 is
+not a char boundary; it is inside 'é' (bytes 0..2 of string)` y `end byte
+index 50 is not a char boundary; it is inside '€' (bytes 48..51 of string)`.
+Cuatro de cuatro, en las líneas 986, 1003 (dos veces) y 1376. La clase de fallo
+no es teórica: en el servidor de protocolo, el proceso que corta es el que
+atiende a los agentes conectados, y un `panic` ahí se lleva por delante las
+peticiones de todos.
+
+**Lo que se cambió.** La garantía la lleva el tipo, no una validación que un
+cambio posterior pueda olvidar:
+
+- `crates/cognicode-core/src/application/text_boundary.rs` (nuevo): las cuatro
+  operaciones de frontera —`floor_char_boundary`, `is_char_boundary`,
+  `truncate_at_boundary` y `slice_at_boundaries`— con cinco tests unitarios.
+- `file_operations.rs`: los tramos se piden con `get`, que devuelve `None`
+  cuando el rango no cae en fronteras, y el tamaño del trozo se ajusta al
+  último carácter entero que cabe; un trozo más pequeño que el primer carácter
+  se rechaza con su motivo. El conteo de líneas ya no corta: cuenta los saltos
+  con `char_indices`. El mensaje de la edición rechazada trunca en una
+  frontera. También el rango de líneas, que antes se cortaba por índice
+  aunque sus extremos vinieran de un cálculo que hoy los garantiza.
+- `presenter.rs` y `lifecycle_resolver.rs`: los dos recortes de la CLI pasan
+  por el helper.
+- `crates/cognicode-core/tests/a_cut_never_splits_a_character.rs` (nuevo): los
+  cuatro tests de comportamiento, con el RED medido antes de tocar el código.
+  El cuarto comprueba que los trozos siguen reensamblando el fichero byte a
+  byte cuando el tamaño cae dentro de un carácter: la corrección no puede
+  perder contenido.
+- `scripts/ci/test_a_cut_never_splits_a_character.py` (nuevo): el contrato. No
+  lista los cortes prohibidos uno a uno: mira cualquier corte por índice sobre
+  texto en los ficheros que recortan y exige que pase por `get` o por una
+  frontera. Lleva su control anti-vacuidad —el detector ve un corte cuando hay
+  uno, y no marca uno que usa `get`—, y su propia prueba de que el helper
+  existe, se declara y expone las cuatro operaciones.
+
+**La puerta.** **La puerta.** `scripts/test-fast.sh` rc=0: 2385 pruebas del nucleo en
+verde y clippy limpio. `scripts/test-full.sh` rc=0: formato, clippy con
+`-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**404
+comprobaciones verdes, 0 rojas**— y el comprobante de linea base. Los 66
+tests del modulo de servicio de ficheros, con los que este cambio convive,
+en verde. El `merge-gate` se corre sobre el commit del recibo y su
+veredicto se publica como estado de la pull request; el recibo de ese
+veredicto queda anexado mas abajo, con su SHA.
+
+**Lo que queda abierto, medido y no tocado.** La escritura del servicio de
+ficheros todavía no es transaccional: el temporal se abre con `File::create`,
+que no exige creación exclusiva, así que un temporal preexistente se trunca;
+si la escritura falla, el temporal se queda en disco, porque la limpieza sólo
+está en el error del `rename`; y no hay comprobación de versión que impida que
+una edición pise un cambio hecho por otro editor entre la lectura y la
+escritura. Un `rename` atómico tampoco es persistencia garantizada tras un
+fallo eléctrico. Queda abierto como `C41`, con la evidencia medida en la
+misma rama y en la cola de la misión.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `38429804`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #466. La
+correccion no cambia ningun contrato publicado, asi que no habia nada que
+deprender de la version; lo que si cambia es que el producto ya no aborta el
+proceso que atiende a los agentes. La decision queda escrita en
+`docs/adr/ADR-060-a-cut-never-splits-a-character.md`.
+
+## 2026-10-25 — C41: la escritura se publica entera, o no se publica
+
+**Lo que se midió, con ejecución.** Una auditoría externa de 2026-10-25 señaló,
+como P2, que la escritura del servicio de ficheros todavía no era
+transaccional. En este árbol la afirmación es cierta, y se mide con el código
+anterior en la mano, no con la lectura:
+
+- `crates/cognicode-core/src/application/services/file_operations.rs:1215` —
+  `File::create(&temp_path)`. No exige creación exclusiva: un temporal que ya
+  estaba se abre y **se trunca**, con lo que tenía dentro.
+- `file_operations.rs:1218` — `file.write_all(...)?`. La limpieza del temporal
+  estaba **sólo en el error del `rename`** (`:1226`), así que un fallo de
+  escritura salía por el `?` y **dejaba el temporal en disco**.
+- `file_operations.rs:1224` — `fs::rename`. El cambio de nombre es atómico, pero
+  no había `fsync`: un corte de luz podía dejar el destino con el contenido
+  viejo, o con el nombre viejo.
+- `file_operations.rs:1380` y `:1388` — lo mismo en `edit_file`, y además **sin
+  comprobación de versión**: una edición pisaba el trabajo de otro editor entre
+  la lectura y la escritura, sin que nadie se enterara.
+
+Lo cuarto no era un defecto de robustez: era una pérdida de trabajo. El
+servicio leía un fichero, calculaba el cambio y lo publicaba; si otra persona
+—otro agente, otro editor, un formateador— había escrito entre medias, ese
+trabajo desaparecía. Y no había forma de que el llamante declarara con qué
+versión estaba trabajando: la petición no tenía dónde decirlo.
+
+**El RED, medido antes de tocar el código.** El test nuevo
+(`crates/cognicode-core/tests/the_write_refuses_a_file_that_changed.rs`) tiene
+cinco casos. **Tres fallaban** sobre el código anterior: una escritura que
+declara una versión que el destino ya no tiene, una escritura que declara una
+versión para un fichero que no existe, y una edición que declara una versión
+que ya no es la que leyó. Los otros dos —la escritura y la edición que declaran
+la versión vigente— pasaban, y siguen pasando: el cambio no puede romper lo
+que ya funcionaba.
+
+**Lo que se cambió.** La garantía la lleva un adaptador y una comparación, no
+una validación que un cambio posterior pueda olvidar:
+
+- `crates/cognicode-core/src/application/services/atomic_file_writer.rs`
+  (nuevo): el único camino por el que el servicio publica un fichero. El
+  temporal se crea **en exclusiva** (`create_new(true)`, hasta 16 nombres
+  libres), el contenido se **sincroniza** antes de que el destino exista, el
+  directorio se sincroniza después del cambio de nombre, y la **limpieza está
+  en `Drop`**: lo que no se publica se borra porque el escritor se suelta, no
+  porque alguien se acuerde de borrar en cada camino de error. Con cinco tests
+  unitarios.
+- `file_operations.rs`: `write_file` y `edit_file` pasan por el adaptador, y el
+  llamante puede **declarar la versión que leyó** (`expected_content_hash`). La
+  versión se comprueba **dos veces**: antes de crear nada —para que una
+  petición rechazada no deje ni el fichero ni los directorios que pidió, que
+  es lo que el propio servicio prometía desde antes— y justo antes de
+  publicar, que es donde se detecta el cambio ocurrido mientras la petición se
+  preparaba. `edit_file` compara además el contenido que leyó con el que hay,
+  **incluso sin hash declarado**.
+- `crates/cognicode-core/src/application/dto/file_ops.rs`: el campo
+  `expected_content_hash` en `WriteFileRequest` y en `EditFileRequest`.
+- **El digest es el del producto**: `domain::findings::sha256_hex`, que ya es la
+  identidad de contenido del repositorio. Una implementación de hash nueva
+  habría sido una tercera forma de decir lo mismo —el repositorio ya tenía el
+  FNV-64 normalizado de la evidencia portable y el `sha256:` prefijado del
+  registro de inteligencia—, y el producto no necesitaba una cuarta. Por eso el
+  módulo de digest que se había escrito al principio **no está en el árbol**.
+- `scripts/ci/test_the_write_is_atomic_and_declares_the_version.py` (nuevo): el
+  contrato. No lista los errores prohibidos uno a uno: mira el código de
+  producción y exige que las garantías estén donde tienen que estar y en el
+  orden en que tienen que estar. Cada detector devuelve los hallazgos que
+  encuentra, así que el propio contrato puede aplicarse a un texto que viola
+  la garantía — un detector que no mira nada no puede declararse verde.
+
+**El gate encontró el contrato, y por eso vale la puerta.** La primera versión
+del contrato exponía las reglas con nombres que no eran `test_*`, y el runner
+de contratos la rechazó con `exposes no test_* function`: un contrato que no
+expone pruebas no es un contrato verde, es un contrato que no ha comprobado
+nada. La regla se reescribió con la convención de la casa —cada `test_*` sin
+argumentos, y un `main()` que la ejecuta también en solitario— y volvió a
+pasar por los dos caminos: 7 de 7 en directo y 7 de 7 a través del runner.
+
+**Lo que no cambia.** Los contratos publicados de `cognicode`,
+`cognicode-mcp` y `cogh`: el campo vale `None` en la frontera del MCP, y el
+servicio acepta y publica exactamente lo mismo que antes. Publicarlo al
+consumidor del protocolo es otra unidad, y está medida: en
+`crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` el campo se
+fija a `None` a propósito, el esquema que ve el cliente
+(`crates/cognicode-core/src/interface/mcp/schemas.rs:1556`) no lo declara, y la
+salida de `read_file` (`:1489`) no publica ningún digest, así que el
+consumidor no tiene forma de nombrar la versión que leyó. No es sólo añadir un
+campo: el catálogo público de herramientas se genera desde una captura real de
+`tools/list` (`scripts/product/generate_tool_catalog.py`) y
+`scripts/product/test_product_tool_catalog.py` lo compara, de modo que el
+catálogo no se puede editar a mano. Queda como `C42`, en la cola.
+
+**La puerta.** `scripts/test-fast.sh` rc=0: 4416 pruebas verdes, ninguna en
+rojo. `scripts/test-full.sh` rc=0: formato, clippy con `-D warnings`, `cargo
+test --workspace`, doc-tests, los contratos —**411 comprobaciones verdes, 0
+rojas**— y el comprobante de línea base.
+
+**Lo que queda abierto, medido y no tocado.** La publicación por el consumidor
+del protocolo (`C42`), con la evidencia de arriba. Y una consecuencia que no
+se ha tocado porque es de otra unidad: la versión de un fichero no tiene
+nombre, tiene digest, así que un cliente tiene que calcularlo o pedirlo; el
+camino natural es que `read_file` lo publique.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `b64a490b`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #467.
+La correccion no cambia ningun contrato publicado, asi que no habia nada que
+deprender de la version; lo que si cambia es que el servicio de ficheros ya
+no pisa el trabajo de otro editor, ni deja un temporal en disco cuando la
+escritura falla, ni publica un destino a medio escribir. La decision queda
+escrita en `docs/adr/ADR-061-the-write-is-published-whole.md`.
+
+## 2026-10-25 — C42: el consumidor declara la versión sobre la que escribe
+
+**Lo que se midió, con ejecución.** La escritura condicional ya existía en la
+capa de aplicación (`ADR-061`), pero el borde la perdía. En el árbol de
+`98edb89c`:
+
+- `crates/cognicode-core/src/interface/mcp/dto_mapping.rs:69` y `:92` — el
+  campo se fijaba a `None` a propósito: el protocolo lo recibía y lo tiraba.
+- `crates/cognicode-core/src/interface/mcp/schemas.rs` — `WriteFileInput` y
+  `EditFileInput` no declaraban el campo, de modo que un cliente que lo
+  enviara no llegaba ni al servicio.
+- `ReadFileOutput` no publicaba ningún digest. **El consumidor no tenía forma
+  de nombrar la versión que leyó**: la capacidad existía y era inalcanzable.
+- `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:577` — el
+  `inputSchema` que ve el cliente sale de `product/tools.json`, no del tipo
+  Rust. El documento publicado es la superficie, y su captura
+  (`product/tool-catalog-runtime.json`) es lo que prueba qué publica el
+  runtime de verdad.
+- La captura venía de `v0.101.17`; el runtime reportaba `0.101.31`. Nadie lo
+  veía porque el gate sólo comparaba el **conjunto de nombres**, y un nombre
+  no cambia porque cambie la versión.
+- `product/README.md` instruía un procedimiento que **regeneraba
+  `product/tools.json` con el generador**, y el generador no es dueño de nueve
+  campos (`limitations`, `required_args`, `prerequisites`, `follow_ups`,
+  `intent_tags`, `language_scope`, `feature`, `impact_direction_floor`,
+  `precision_floor`): no tienen origen en el `_meta.cognicode` del runtime.
+  El procedimiento, tal como estaba escrito, borraba los nueve. La decisión
+  de que el maestro es de autoría manual y no se regenera ya estaba tomada
+  (`JOURNAL.md`, entrada de H2.1), pero el seguía instruyendo lo contrario.
+
+**El RED, medido antes de tocar el código.** El test nuevo
+(`crates/cognicode-core/tests/the_consumer_can_declare_the_version.rs`, siete
+casos, escrito en JSON porque el JSON es la frontera que cambia) fallaba
+**6 de 7**: el que pasa es el que escribe sin declarar versión, que es la
+guarda de no-regresión. El contrato nuevo
+(`scripts/ci/test_the_consumer_can_declare_the_version.py`) fallaba **2 de 6**:
+justo los dos que vigilan la captura, que es lo que tenía que delatar.
+
+**Lo que se cambió.**
+
+- `read_file` publica el digest del fichero entero, y sale de la **misma
+  lectura que cuenta las líneas** (`count_lines_and_hash`): no hay una segunda
+  pasada por el fichero y el digest nombra exactamente los bytes que el
+  fichero tenía cuando se contó. El orden es además el seguro —el digest se
+  calcula *antes* de leer el contenido—, así que si el fichero cambia entre
+  medias, el digest sigue nombrando la versión más antigua y una escritura
+  que lo declare **se niega** en vez de aceptarse por encima de contenido más
+  nuevo. El digest nombra el fichero entero, no el trozo: es lo que lo hace
+  comparable con lo que la escritura comprueba.
+- El MCP acepta `expected_content_hash` en `write_file` y en `edit_file`, y la
+  conversión lo lleva a la aplicación en vez de fijarlo a `None`.
+- `product/tools.json` declara el campo en las dos tools que lo aceptan, y la
+  captura se refrescó desde un `tools/list` real de un build con las tres
+  features (`persistence`, `program-analysis-server`, `evidence-cli-ladybug`),
+  que es el que publica los 78 tools del catálogo.
+- El contrato nuevo vigila que el documento publicado y la captura digan lo
+  mismo sobre el **esquema de entrada** de cada tool, y cada detector se
+  aplica a un texto que lo viola, para que un detector que no mira nada no
+  pueda declararse verde.
+- `product/README.md` deja de instruir el procedimiento que destruye datos: la
+  captura se regenera, el maestro se escribe a mano, y el generador produce
+  una proyección para comparar. Sus cifras también estaban viejas: medido
+  hoy, un build por defecto publica **75** tools —no 77— y el catálogo publica
+  78.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo:
+`read_file` devolvió el digest `0577d41597bf…`; `write_file` declarándolo se
+aplicó; otro agente escribió por fuera; y `write_file` con el digest viejo
+**se negó**, con `isError: true` y el mensaje que nombra las dos versiones, y
+el trabajo del otro quedó intacto. El escenario es efímero y vive fuera del
+repo: lo que se promueve es el test de frontera, que dice lo mismo sin
+depender del transporte.
+
+**Lo que queda abierto, medido y no tocado.** Dos defectos reales que aparecieron
+al medir esto, y que son unidades propias:
+
+- `C43` — un rechazo llega como si fuera un fallo interno. Los handlers de
+  ficheros aplanan todo error a `AppError::InternalError` cuando hay colector
+  de métricas (`file_ops_handlers.rs:139`, y lo mismo en `:88`, `:197`, `:253`
+  y `:306`), mientras que sin colector la categoría se conserva (`:119`). El
+  rechazo ocurre y su mensaje dice las dos versiones, así que la garantía se
+  cumple; lo que falla es la taxonomía: el cliente no puede distinguir un
+  rechazo de una caída.
+- `C44` — el `runtime_metadata.tool_version` del maestro dice `0.99.2` en las
+  78 tools mientras el runtime reporta `0.101.31`, y `check_architecture`
+  lleva dos claves de `runtime_metadata` que el runtime no publica. La
+  sincronización no puede ser una copia ciega: el maestro tiene claves
+  curadas que se perderían.
+
+**La puerta.** `scripts/test-fast.sh` rc=0 y `scripts/test-full.sh` rc=0: formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**417 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `1e0dbafe`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #468.
+La correccion no rompe ningun contrato publicado: el campo nuevo es opcional
+y aditivo, de modo que el consumidor que no declara la version sigue
+escribiendo exactamente igual que antes. Lo que cambia es que el consumidor
+**puede** nombrar la version que leyo, y una escritura que declare una
+version que ya no es la del destino se niega en vez de pisarlo. La decision
+queda escrita en `docs/adr/ADR-062-the-consumer-declares-the-version.md`.
+
+**Una auditoria externa, contrastada una a una con el codigo.** El 2026-10-25
+llego una auditoria del estado de `main` en `87aab47f`. Sus conclusiones se
+han medido contra el codigo de esta rama, y la mayoria ya estaba cerrada:
+
+- El **P1 de los cortes por byte** --`line_at_offset`, `read_file_chunk`, la
+  ruta de continuacion y `truncate_string`-- ya no corta un caracter: lo
+  cierra `c9a0ba94` (PR #466), que sustituye cada corte por
+  `floor_char_boundary`, `truncate_at_boundary` y `get(..).ok_or_else(..)`.
+  El offset que cae fuera del fichero tambien se rechaza, porque
+  `content.get(offset..)` devuelve `None` y el corte se vuelve un error
+  controlado en vez de un `panic`. La auditoria estaba escrita contra un
+  `main` anterior a ese PR.
+- La **escritura transaccional** la cierra `e771670f` (PR #467), con el
+  `AtomicFileWriter` y la version declarada.
+- La **ontologia de cobertura** y la **paginacion** ya estaban medidas y
+  descartadas con evidencia previa.
+- La **caché incremental** sigue abierta y es `C11` (H5). El **acoplamiento
+  del servicio de analisis** sigue abierto y es `C23` (H24), a la espera de
+  que el operador fusione el PR #465 para poder re-ejecutar el gate del #464.
+- El **bloqueo de integracion** que la auditoria describe --#464 y #465 fuera
+  de `main`-- es decision del operador, no una unidad.
+
+De la auditoria queda **un hallazgo nuevo, medido y sin contrato que lo
+cubra**: el producto publica una fecha que no ha medido.
+
+MEDIDO: `crates/cognicode-core/src/infrastructure/graph/source_files.rs:242`
+lee `meta.modified()` y, cuando la lectura falla, publica `mtime_millis = 0`;
+y `duration_since(UNIX_EPOCH).unwrap_or_default()` hace lo mismo con un
+fichero cuya fecha es anterior a la epoca. El docstring de esa misma funcion
+dice, en la linea 230, lo contrario: *"Publishing it with `mtime 0, size 0`
+would say 'this file was last written at the epoch', which is a fact we do not
+know"*. El contrato de esa funcion (`measure`) solo vigila el fallo de la
+*metadata*, no el de la *fecha*: hay un test que asegura que un fichero
+medible publica una medida distinta de cero, y ninguno que vigile el caso de
+la fecha no leible.
+
+Lo que **no** se rompe, y conviene decir porque la auditoria lo daba por
+mayor: la invalidacion de la cache sigue siendo correcta. En
+`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1040` la entrada
+antigua solo se reutiliza cuando la marca de tiempo coincide **y** el hash
+del contenido en disco coincide con el guardado (linea 1056), de modo que un
+`mtime` a cero no sirve un grafo viejo. El defecto es de verdad, no de
+estabilidad: el MCP publica `mtime: 0` (linea 1098) y `"0"` (linea 1093)
+como si fueran la fecha del fichero.
+
+El caso mas alcanzable no es el exotico: un fichero con fecha anterior a la
+epoca --`touch -t 196001010000`-- basta para que el producto afirme que se
+escribio en la epoca. Entra en la cola como `C45`, y es de `H5`, porque es
+la base temporal de la que la incrementalidad depende.
+
+
+## 2026-10-25 — C43: un rechazo llega al cliente como un rechazo
+
+**C43 closed.** C43 acceptance: PASS (rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**421 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**Lo que se midió, con ejecución.** En el árbol de `d0607abb`:
+
+- `crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:88`, `:139`,
+  `:197`, `:253` y `:306` — los cinco handlers que pasan por el contador
+  reconstruían el error como `AppError::InternalError(e.message)`. El camino
+  **sin** colector (`:64`, `:119`, `:172`, `:232`, `:286`) conservaba la
+  categoría con `map_err(HandlerError::App)`.
+- La cadena que el cliente recibía, medida con el binario real por stdio:
+  `application: Internal error: Invalid parameter: Path outside workspace`.
+- **Por qué era invisible a la suite entera**: `init_global_metrics()` lo
+  llaman el servidor MCP (`crates/cognicode-mcp/src/server.rs:266` y
+  `main.rs:70`), nunca los tests. `TOOL_METRICS` es un `OnceLock`, así que en
+  un binario de test `get_global_metrics()` devuelve `None` y los tests toman
+  siempre el camino que ya funcionaba. El defecto no estaba escondido por
+  descuido: estaba **fuera del alcance de lo que se probaba**.
+- `handle_retrieve_and_verify` no pasa por el contador y ya conservaba la
+  categoría (`map_err(HandlerError::App)`): medido, no le afectaba el defecto.
+- El prefijo `"Invalid regex pattern: "` estaba duplicado —el validador lo
+  añadía y su llamante lo volvía a añadir—, de modo que el cliente leía la
+  misma frase dos veces.
+
+**El RED, medido antes de tocar el código.**
+`crates/cognicode-core/tests/a_rejection_arrives_as_a_rejection.rs` (nuevo, dos
+tests escritos sobre la cadena que el protocolo publica) fallaba **2 de 2**, y
+el fallo nombraba los cinco handlers. El contrato nuevo
+(`scripts/ci/test_a_rejection_arrives_as_a_rejection.py`) fallaba **2 de 4**
+contra el código anterior, y su detector nombraba las cinco posiciones
+exactas donde se aplanaba el error (88, 139, 197, 253, 306).
+
+**Lo que se cambió.**
+
+- `instrument_tool` es genérico sobre el error y lo devuelve **intacto**. La
+  firma ya no menciona `ToolError`: el error de la aplicación viaja por la
+  telemetría sin ser de la telemetría. Lo único que la telemetría pide es una
+  etiqueta, que es lo que necesita para contar.
+- `AppError::category()` nombra la variante con un `match` **exhaustivo**: una
+  variante nueva que no se nombre ahí no compila, de modo que la lista no puede
+  quedarse vieja en silencio. No es una segunda fuente de verdad de la
+  taxonomía —es una derivación, como lo es ya el `Display` de `thiserror`—,
+  sino el punto donde el compilador obliga a mantenerla al día.
+- La etiqueta de la métrica pasa a ser la categoría. Antes era `"AppError"` en
+  los cinco handlers, el único sitio del repositorio que nombraba el *tipo*
+  del error donde la convención —la de los propios tests de la telemetría, que
+  usan `"PathTraversal"` y `"Validation"`— nombra la categoría. Medido: el
+  literal `"AppError"` no aparece en ningún otro sitio, así que ningún panel,
+  contrato ni golden dependía de él.
+- Los handlers quedan **más cortos**: el `match` que convertía el error dentro
+  del `async` desaparece, porque ya no hay nada que convertir.
+- El prefijo duplicado del error de expresión regular desaparece: el validador
+  devuelve el motivo y el llamante dice qué parámetro falló. Es la misma cadena
+  que esta unidad entrega al cliente, y por eso va aquí y no en otra unidad.
+
+**Las alternativas, descartadas con su motivo.** Reconstruir el `AppError` desde
+su categoría y su mensaje sería una segunda lista de diecisiete variantes, y una
+variante nueva que no apareciera en ella caería en `InternalError`: el defecto
+que se corrige, reintroducido un nivel más abajo. Atrapar el error en una
+variable local mientras el contador corre funciona, pero mete el mismo error en
+dos sitios a la vez y el compilador no dice nada si se desincronizan. Dejar la
+etiqueta como estaba sería la mitad del arreglo de la misma confusión. Las tres
+quedan escritas en `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo: una
+escritura fuera del workspace llegó como `application: Invalid parameter: Path
+outside workspace`, un patrón inválido llegó como `application: Invalid
+parameter: Invalid regex pattern: regex parse error: …` —con el motivo dicho
+**una** vez— y una lectura de un fichero que existe siguió funcionando. El
+servidor MCP **sí** inicializa el colector, que es exactamente el camino que los
+tests no pueden ver. El escenario es efímero y vive fuera del repo: lo que se
+promueve es el test de frontera, que dice lo mismo sin depender del transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos —**421 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `add5a40e`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #469.
+La correccion no rompe ningun contrato publicado: el cliente sigue recibiendo
+un error, y lo que cambia es que ese error dice su categoria en vez de
+"Internal error". Un rechazo del producto deja de parecer una caida del
+producto. La decision queda escrita en
+`docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
+
+## 2026-10-25 — C45: una fecha se publica solo si se midió
+
+**Lo que se midió, con ejecución.** Once sitios de producción leían la marca de
+tiempo de un fichero y la convertían a "segundos desde la época" por su cuenta.
+En el árbol de `229991e8`:
+
+- `crates/cognicode-core/src/infrastructure/graph/source_files.rs:242` — la
+  medida interna del inventario publicaba `mtime_millis = 0` cuando la fecha
+  no se podía leer.
+- `crates/cognicode-core/src/application/services/file_operations.rs:1173` y
+  `:1898` — la superficie publicada (`read_file` y `list_files`) hacía lo
+  mismo.
+- `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs:998` — el
+  grafo por fichero no publicaba cero: publicaba **la distancia a la época**
+  en vez del instante. Su comentario decía «saturate to 0» y el código hacía
+  otra cosa, de modo que un fichero de 1960 se publicaba como 1980: una fecha
+  plausible y equivocada.
+- `crates/cognicode-core/src/interface/mcp/handlers/aix_handlers.rs:1888` — el
+  manejador de reparseo usaba `mtime == 0` como centinela de «borrado», con
+  lo que un fichero anterior a la época se reportaba como **eliminado del
+  grafo**, con sus símbolos fuera.
+- `crates/cognicode-core/src/application/workspace_session.rs:396` y `:471`,
+  `crates/cognicode-core/src/infrastructure/graph/file_manifest.rs:115`,
+  `:169` y `:194`, y
+  `crates/cognicode-core/src/infrastructure/git/git_history.rs:99` — el mismo
+  defecto en el resto de familias.
+
+**La premisa anterior, corregida.** La entrada de C42 y la de C45 en la cola
+apuntaban a `interface/mcp/handlers/mod.rs:1093` y `:1098` como la superficie
+que publica la fecha. No lo es: esos dos sitios son el **manifiesto de
+caché** (`build_manifest`), no la salida del protocolo. La superficie MCP real
+se calcula por su cuenta, en `application/services/file_operations.rs`, y es
+la que produce el `metadata.modified` de `read_file` y el `modified` de cada
+entrada de `list_files`. La premisa no cambia el defecto —sigue siendo una
+fecha fabricada— pero sí el lugar donde se arregla, y por eso se anota aquí
+en vez de reescribir lo de antes.
+
+**La caché nunca sirvió un grafo viejo.** La invalidación del manifiesto
+compara también el hash del contenido
+(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1040`), de modo que
+un `mtime` a cero no servía nada. El defecto era de verdad, no de
+estabilidad: era que el producto **publicaba una fecha que no había medido**.
+
+**Por qué era invisible a la suite entera.** Las dos aserciones que existían
+(`crates/cognicode/tests/file_ops_integration_tests.rs:888` y
+`crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs:1173`)
+comprobaban `modified > 0`, que es exactamente la condición que el defecto
+cumple: cero es «no es un número positivo», y la prueba leía eso como «tiene
+fecha».
+
+**El RED, medido antes de tocar el código.**
+`crates/cognicode-core/tests/a_date_is_published_only_when_it_was_measured.rs`
+(nuevo, tres tests escritos sobre la cadena que el protocolo publica) fallaba
+**2 de 3**: un fichero con fecha de un minuto antes de la época salía con
+`modified: 0` donde debía salir `-60`. El tercer test —la contraprueta de un
+fichero con fecha normal— pasaba, lo que confirma que el sistema de ficheros
+sí soporta fechas anteriores a la época y que el fallo era del producto. El
+contrato nuevo
+(`scripts/ci/test_a_date_is_published_only_when_it_was_measured.py`) encuentra
+**24 hallazgos** contra el código anterior: el tipo publicado que no
+distingue, el dueño que no existe, y once sitios que convierten el instante
+por su cuenta.
+
+**Lo que se cambió.**
+
+- El dueño único de la medida vive en el dominio, en
+  `crates/cognicode-core/src/domain/value_objects/file_time.rs`:
+  `epoch_seconds`, `epoch_millis`, `epoch_nanos`, sus tres formas
+  `measured_*` y `seconds_of_millis`. El corte es hacia el suelo, y la regla
+  vive en un solo sitio: un instante dentro del segundo anterior a la época
+  cuenta como `-1`, no como `0`.
+- El tipo publicado pasa a `Option<i64>`. `Some(0)` es un fichero escrito en
+  la época —una medición—; `None` es un fichero del que no se sabe cuándo se
+  escribió, que no es una medición. El signo no es decorativo: un fichero
+  puede traer una fecha anterior a la época, y un contador sin signo no la
+  puede representar.
+- Los once sitios de producción miden por el dueño. Donde el tipo no admitía
+  la ausencia —el manifiesto binario— el formato cambia, y por eso el
+  snapshot del grafo pasa de `cognicode.graph.cache/v2` a `v3`: un snapshot de
+  la versión anterior no se lee con la forma nueva, y su versión lo dice, de
+  modo que se reconstruye en vez de aceptarse como evidencia.
+- El manejador de reparseo separa **existir** de **tener fecha**: que el
+  fichero exista lo dice el `stat`, no el reloj. Antes, `mtime == 0` significaba
+  «borrado».
+- La caché sigue invalidando por contenido: un fichero sin reloj no invalida
+  el snapshot por su cuenta, porque dos ausencias comparecen como iguales y lo
+  que decide es el hash de los bytes. El motivo queda escrito en el sitio
+  donde se decide.
+
+**Las alternativas, descartadas con su motivo.** Mantener `u64` con un
+centinela no funciona: un centinela es un número, y el producto publica
+números, así que el cliente no puede distinguir «la época» de «no se midió» —
+que es justo lo que hay que distinguir— y `0` ya está ocupado por un
+significado real. `Option<u64>` resuelve el caso principal pero degrada una
+fecha **conocida** a «no hay fecha»: un fichero de 1960 pasaría de publicar
+su fecha a publicar `null`, y el consumidor perdería un dato que el producto sí
+tenía. Acotar el arreglo a la superficie publicada dejaría dos verdades sobre
+la misma fecha —la línea que la auditoría señalaba primero es la medida
+interna, que es la base temporal de la que depende la incrementalidad—. Las
+tres quedan escritas en
+`docs/adr/ADR-064-a-date-is-published-only-when-it-was-measured.md`.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo: un
+fichero con fecha de un minuto antes de la época devuelve `modified: -60` en
+`read_file` y en `list_files`, y un fichero con fecha normal devuelve
+`1700000000`. El escenario es efímero y vive fuera del repo: lo que se
+promueve es el test de frontera, que dice lo mismo sin depender del
+transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`):
+formato, clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los
+contratos —**427 comprobaciones verdes, 0 rojas**— y el comprobante de
+línea base.
+
+**Lo que queda abierto, y es una unidad propia.** La familia de la ingestión
+(`crates/cognicode-core/src/application/ingest/scan.rs`) mide en segundos con
+coma flotante y persiste el resultado en la base de datos de Ladybug, en otro
+crate. Su hueco es doble: una fecha anterior a la época se publica como `0`, y
+un fichero cuya fecha no se puede leer **desaparece del escaneo** en vez de
+declararse. Arreglarla cambia el esquema persistido. Está medido, encolado como
+**C46**, y registrado como hueco conocido en el contrato de la fecha: si el
+hueco se cierra, el contrato avisa para que el registro se actualice.
+
+**La unidad, cerrada sobre `363ac9e59a62d736645153a5eb0d407dd1d8f0f8`.** C45 está cerrada: el producto ya no
+publica una fecha que no ha medido, el consumidor puede ver la diferencia entre
+una fecha medida y una fecha que no existe, y la caché sigue invalidando por
+contenido.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C11 (30), C46 (25), C12 (20), C44 (15) y C13 (10).
+
+
+**El veredicto del `merge-gate`.** rc=0 sobre `2f0f3947`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #470.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate, con su identificador de corrida `b3d96c2f-fed8-41bb-9c67-0f4ee28ec860`,
+las 58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate encontró antes de dar su veredicto, que es lo que un gate
+sirve.** El primer `test-full` de esta unidad se puso rojo dos veces, y las
+dos veces por razones que no eran del defecto que la unidad persigue:
+
+- `fmt --check` rechazó los imports sin ordenar. Es un fallo de forma, no de
+  fondo, pero es un fallo: un gate que se pone rojo por el estilo no puede
+  examinar el resto del árbol.
+- El contrato nuevo rompía el runner. El runner de contratos descubre
+  funciones `test_*` **sin argumentos**, y el helper que escribí para
+  enumerar los módulos de prueba les exigía argumentos: el runner no podía
+  ni descubrirlo ni llamarlo. Se renombró a `ranges_of_test_modules`, que ya
+  no empieza por `test_`, y el contrato volvió a las seis comprobaciones.
+
+Las dos correcciones están en el árbol que el gate evaluó, no en un commit
+aparte: el veredicto que se publica es el del árbol que se entrega.
+
+**Lo que el gate dice de esta unidad.** No se rompe ningún contrato
+publicado. El cliente sigue recibiendo la fecha que el producto midió, y
+ahora puede distinguir una fecha medida de una fecha que no existe, que es
+la diferencia que no se podía ver antes. La decisión queda escrita en
+`docs/adr/ADR-064-a-date-is-published-only-when-it-was-measured.md`.
+
+
+## 2026-10-25 — C11: el snapshot dice quién lo produjo
+
+**Lo que se midió, con ejecución.** El producto persiste un snapshot del grafo
+y lo vuelve a servir cuando las fuentes no han cambiado. En el árbol de
+`1b8f03df`, el snapshot guardaba **dos** cosas: el grafo (`CallGraph`) y el
+manifiesto de contenido (`FileManifest`). La decisión de servirlo la tomaba
+`is_manifest_stale`
+(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1023`), que compara
+la marca de tiempo y luego el hash de cada fichero.
+
+Lo que el snapshot **no** guardaba era quién lo había calculado: ni la versión
+del analizador, ni su commit, ni sus capacidades, ni el esquema. La
+consecuencia medida: un binario distinto —otra versión, otro commit, otro
+conjunto de capacidades— **servía el snapshot igual que si fuera suyo**, y el
+grafo que el consumidor recibía lo había calculado otro analizador, con otra
+ontología y otras reglas, sin que nada en la respuesta lo dijera.
+
+Lo que sí se publicaba era una `basis` —el workspace, el digest de la
+configuración y el digest del manifiesto— con `complete: true`. Es decir: la
+identidad del análisis se declaraba completa mientras le faltaba justamente
+la parte que decide si el análisis sigue valiendo.
+
+**Por qué era invisible a la suite entera.** La suite probaba que el snapshot
+se guardaba, que se cargaba, que uno corrupto se rechazaba y que uno con las
+fuentes cambiadas se rechazaba. No probaba **quién** lo había escrito, porque
+el snapshot no lo decía.
+
+**El RED, medido antes de tocar el código.**
+
+- `crates/cognicode-core/tests/a_snapshot_says_who_produced_it.rs` (nuevo,
+  cuatro tests escritos sobre lo que el cliente ve) fallaba **3 de 4** contra
+  el código anterior: la base no declaraba el analizador, el snapshot
+  persistido no lo declaraba, y un snapshot marcado como de otro analizador
+  se servía igual. El cuarto —que el análisis en frío y el servido declaran
+  la misma identidad— pasaba, y es la contraprueba: sin ella, un producto que
+  publicara una identidad distinta en frío y en caliente también pasaría.
+- El contrato nuevo
+  (`scripts/ci/test_a_snapshot_says_who_produced_it.py`) encuentra **16
+  hallazgos** contra el código anterior: la clave que no existe, el analizador
+  que no se identifica, el snapshot que se guarda y se carga sin la clave, la
+  base que no declara el analizador y el catálogo que no declara lo mismo.
+
+**Lo que se cambió.**
+
+- **La clave vive en el dominio**, en
+  `crates/cognicode-core/src/domain/value_objects/snapshot_key.rs`, y declara
+  tres componentes: el **workspace** canónico (qué se miró), el **analizador**
+  (quién lo miró) y el **esquema** (con qué forma se escribió). El
+  constructor es puro: mismos datos, misma clave; no lee el disco, no
+  pregunta al reloj.
+- **El analizador se identifica con hechos.** `AnalyzerBuild` lleva la versión
+  del crate que *calcula* —el proveedor, no el consumidor que pregunta—, el
+  commit del que se construyó, que un `build.rs` nuevo hornea con el mismo
+  mecanismo que ya usa el CLI para `cognicode identity`, y la lista de
+  capacidades con las que se compiló. El commit es `null` cuando el binario
+  se construyó fuera de un checkout: es un hecho sobre el binario, no un hueco
+  que se rellene con un valor inventado.
+- **El snapshot guarda la clave y se decide con ella.** El formato pasa de
+  `cognicode.graph.cache/v3` a `v4`, porque la forma del fichero cambia. Al
+  cargar, la primera pregunta es sobre el productor y no cuesta nada —se
+  responde sin leer el árbol—: si el snapshot lo produjo otro analizador, no
+  se sirve, el producto reconstruye y el motivo queda en el log de
+  observabilidad. Solo si el producto coincide se pasa a la comparación de
+  contenido, que es la que ya existía.
+- **La base publicada declara el analizador**, con cuatro campos: versión,
+  commit, capacidades y esquema. Vienen de la **misma clave** con la que se
+  escribe el snapshot, así que la base no puede describir un analizador que el
+  snapshot no nombre. El catálogo publicado (`product/tools.json`) declara
+  los mismos cuatro, y un contrato lo comprueba: un documento que describe
+  una forma que el producto ya no tiene es una promesa que el producto no
+  cumple.
+
+**Lo que la clave NO lleva, y por qué.** La especificación de la unidad
+enumera más componentes, y tres quedan fuera con su motivo, escrito en
+`docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`:
+
+- **El digest del manifiesto.** El snapshot ya lo guarda y el producto ya lo
+  compara fichero a fichero. Meterlo en la clave sería una segunda fuente de
+  verdad sobre los mismos bytes.
+- **La revisión del workspace analizado y su digest de suciedad.** El
+  análisis es una función de los bytes y del analizador: con los bytes
+  fijados, la revisión es redundante, y pedirla invalidaría la caché en cada
+  commit sin cambiar ninguna respuesta.
+- **El perfil de configuración y el ámbito.** La parte de la configuración que
+  cambia lo que el analizador puede ver son las capacidades, y ya están en la
+  clave; el nivel de log no cambia el grafo. El ámbito del snapshot es el
+  árbol entero del workspace, y eso ya lo fijan el workspace y el manifiesto.
+
+**Las alternativas, descartadas con su motivo.** Subir la versión del snapshot
+y no hacer nada más no cierra el defecto: la versión del formato solo cambia
+cuando cambia la forma, y un analizador nuevo que escriba el mismo formato
+seguiría sirviendo el snapshot del anterior. Poner el digest del manifiesto
+dentro de la clave, o reemplazar la comparación por manifiesto por la
+comparación de la clave, crea una segunda verdad sobre los mismos bytes y
+cambia una semántica que ya está probada —un fichero ilegible invalida, uno
+borrado invalida, uno nuevo invalida—, sin que la unidad lo necesite: la
+clave se **añade** a la decisión, no la sustituye. Dejar la identidad en el
+interior, sin publicarla, cerraría el defecto pero dejaría al consumidor sin
+forma de saber quién calculó la respuesta que tiene delante, con una `basis`
+que dice `complete: true` sobre una identidad a medias.
+
+**El UAT, con el binario real.** Por stdio, con el handshake del protocolo, en
+un directorio temporal fuera del repo. Lo que se midió:
+
+- La base publicada declara el analizador: `analyzer_version: "0.101.31"`,
+  `analyzer_commit: "1b8f03df"`, `analyzer_features: ["evidence-kernel",
+  "multimodal", "persistence"]`, `snapshot_schema:
+  "cognicode.graph.cache/v4"`, `complete: true`.
+- El snapshot persistido —**641 bytes**— contiene la versión del analizador, y
+  la contiene **una vez**: el test puede afirmar algo sobre la identidad a
+  partir de ahí.
+- Un snapshot al que se le cambia la versión declarada por otra **de la misma
+  longitud** —de modo que el fichero sigue siendo legible y lo que cambia es
+  la identidad, no la integridad— **no se sirve**: tras la segunda llamada el
+  snapshot vuelve a declarar la versión del analizador que está ahora, y la
+  respuesta dice `status: "complete"`. El producto reconstruyó.
+
+El `analyzer_commit` que sale es el commit base, no el árbol: el binario se
+construyó con cambios sin commitear. Es la limitación de una identidad
+horneada en tiempo de construcción, y está escrita en el ADR en vez de
+disimulada; para un binario de release —árbol limpio, commit etiquetado— la
+identidad es exacta.
+
+El escenario es efímero y vive fuera del repo: lo que se promueve es el test
+de frontera, que dice lo mismo sin depender del transporte.
+
+**La puerta.** rc=0 (`scripts/test-fast.sh` y `scripts/test-full.sh`): formato,
+clippy con `-D warnings`, `cargo test --workspace`, doc-tests, los contratos
+—**435 comprobaciones verdes, 0 rojas**— y el comprobante de línea base.
+
+**La unidad, cerrada sobre `ea5b92cf90db728336102c07cb7f6be84c9dba70`.** C11 está cerrada: el snapshot
+declara quién lo produjo, un snapshot de otro analizador no se sirve, y el
+consumidor puede ver en la base quién calculó la respuesta que tiene delante.
+
+**Lo que queda de esta unidad, y es una unidad propia.** El motor de
+incrementalidad no se ha tocado, y es lo que de verdad falta: medirlo dio
+que `build_project_graph`
+(`crates/cognicode-core/src/application/services/analysis_service.rs:174`)
+**relee y re-hashea todos los ficheros** en cada construcción —la caché por
+fichero ahorra solo el parseo, no la lectura— y que el índice global de
+símbolos, que es lo que resuelve las referencias, **se rehace desde cero**
+siempre. El `CacheStore` de
+`crates/cognicode-core/src/incremental/content_hash.rs` sabe *qué* ficheros
+cambiaron, pero no qué relaciones quedan afectadas. Eso queda medido y
+encolado como **C47**.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10).
+
+**El veredicto del `merge-gate`.** rc=0 sobre `cd9aedbb`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #471.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate, con su identificador de corrida `649bb5aa-2468-4331-9723-b9935dfdc491`,
+las 58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate no perdona.** El formato se comprueba antes que nada, y en
+esta unidad casi lo hunde: el `fmt --check` del primer `test-full` rechazó los
+imports sin ordenar y dos llamadas que se salían de línea. Es un fallo de
+forma, no de fondo, pero es un fallo: un gate que se pone rojo por el estilo
+no examina el resto del árbol. Se corrigió antes de que el árbol fuera el que
+se evaluó, y el veredicto que se publica es el del árbol que se entrega.
+
+**Lo que el gate dice de esta unidad.** No se rompe ningún contrato
+publicado. El consumidor sigue recibiendo el grafo, y ahora recibe también la
+identidad de quien lo calculó: la versión, el commit cuando se pudo saber, las
+capacidades y el esquema. Un snapshot hecho por otro analizador deja de
+servirse. La decisión queda escrita en
+`docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
+
+## 2026-10-25 — C48: la guarda del toolchain no depende de la red
+
+**C48 closed.** C48 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace`, doc-tests, los contratos —**438 comprobaciones verdes, 0
+rojas**— y el comprobante de línea base).
+
+**La unidad, cerrada sobre `389e6d386b97ce8ba17a2d2e1b91ec1b0f4f9bd5`.**
+
+**El fallo, medido.** El `merge-gate` de la unidad de la identidad del snapshot
+se puso en rojo en la etapa `contracts/sh-0`, con `shell exited with code 1`, y
+el único cambio de código entre la corrida verde y la roja era un párrafo del
+Journal. La etapa tardaba **662,1 s** contra **84,3 s**. La etapa no guarda su
+salida, así que el fallo se reprodujo con su propio comando, y la reproducción
+dio la firma exacta:
+
+    subprocess.TimeoutExpired: Command '[.../check-cross-toolchain.sh',
+    'aarch64-unknown-linux-gnu']' timed out after 120 seconds
+
+Tres tests de `scripts/ci/test_cross_toolchain_guard.py` fallaban, los tres en
+`subprocess.run(..., timeout=120)`.
+
+**La causa, medida.** La guarda `scripts/ci/check-cross-toolchain.sh` resolvía
+el triple del host con `rustc -vV`. El `rustc` del PATH es el shim de `rustup`,
+y el shim busca la toolchain en `$RUSTUP_HOME`, que por defecto es
+`$HOME/.rustup`. El contrato que ejercita la guarda **aísla el entorno**: pone
+`HOME` y `TMPDIR` en un temporal, para que la guarda no herede nada de quien la
+ejecuta. Con ese HOME aislado no hay toolchain instalada; rustup lee el
+`rust-toolchain.toml` del repositorio, que fija `channel = "1.96.0"`, e intenta
+**instalarla desde la red**. Medido: `rustc -vV` con HOME aislado tardaba
+**40,3 s** —descargando seis componentes— frente a **9 ms** con `RUSTUP_HOME`
+real; la guarda completa tardaba **117,7 s**, con el `timeout=120` del contrato
+al borde. La guarda pagaba esa descarga en cada una de las siete llamadas del
+contrato, y con la red un poco más lenta una sola superaba los 120 s.
+
+**Lo que el defecto NO era.** No era del código que se certificaba: entre la
+corrida verde y la roja solo cambió un párrafo del Journal. Y no era de hoy:
+dos corridas del gate de esa misma mañana —`b8793970` a las 10:13:55 y
+`d724da35` a las 10:17:24— habían fallado en la misma etapa con la misma firma.
+El defecto llevaba todo el día ahí, y la latencia de la red decidía si el gate
+era verde o rojo. Un gate cuyo veredicto depende de una descarga que no dice
+nada de lo que se comprueba, es un gate que no mide.
+
+**El defecto de fondo, del mismo origen.** Cuando `rustc -vV` fallaba, el host
+quedaba vacío, y el target nativo —el que se estaba comprobando— se rechazaba
+como si fuera cruzado, con el motivo de que faltaba el compilador de C. El
+veredicto hablaba de una causa que no se había mirado y señalaba un compilador
+que nunca se preguntó.
+
+**Lo que se hizo.** La guarda acepta el triple del host como segundo argumento
+y, cuando se le da, no ejecuta `rustc` en absoluto. Cuando no se le da, lo
+resuelve como antes y **falla cerrado** si no puede: el motivo nombra que no se
+pudo resolver el host y explica por qué un veredicto sobre el target sería
+falso. El contrato resuelve el host una sola vez, en el proceso padre y con el
+entorno real, y se lo pasa a cada llamada. La hermeticidad es estructural, no
+de disciplina: `run_guard` rechaza una llamada sin host salvo que se pida
+explícitamente `resolve_host=True`, que es la opción que ejercita la ruta de
+resolución con un `rustc` de mentira.
+
+**El RED, medido sobre el camino malo.** Dos de los tres tests nuevos fallaron
+contra el código anterior, y los dos con el veredicto falso de la guarda:
+`no C compiler for x86_64-unknown-linux-gnu`, siendo el target **nativo**. El
+tercero, que protege la ruta que resuelve el host dentro de la guarda, pasaba:
+es la ruta que el arreglo deja de ejercitar de forma implícita, y por eso se
+mantiene a propósito.
+
+**El GREEN, medido.** El contrato completo: **11 de 11**, en **0,64 s** —antes,
+117,7 s por llamada—. La suite entera de contratos: **438 passed, 0 failed**
+—antes, 435 passed y 3 failed, con timeouts de 120 s—. El gate `fast` y el
+gate `full`, los dos en rc=0.
+
+**Lo que no se toca.** La stage `toolchain-for-$target` de
+`release-candidate.pipeline.kts` sigue llamando a la guarda con un solo
+argumento, así que sigue resolviendo el host ella misma. Único cambio: cuando
+no puede resolverlo, la guarda falla cerrado en vez de rechazar el target
+nativo como si fuera cruzado. La lane de release gana el arreglo sin tocar el
+pipeline, y el pipeline no se toca porque tocar un `.kts` activa el contrato de
+comentarios sobre un fichero que ya tiene fechas en su prosa.
+
+**La decisión.** `docs/adr/ADR-066-the-guard-does-not-need-the-network.md`.
+
+**Siguiente WU.** La cola queda con seis candidatos: C23 (50, bloqueada por el
+operador), C47 (30), C46 (25), C12 (20), C44 (15) y C13 (10). C48 sale de la
+cola al cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `eab3820b`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en la pull request #471, que
+queda `CLEAN` y `MERGEABLE`. La corrida es comprobable después del hecho: queda
+en la base de eventos del gate, con su identificador de corrida
+`9859c293-c825-4474-997c-fd5e30add306`, las 58 etapas en `success` y el
+`RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La etapa
+`contracts` tardó **74,1 s**. En la corrida que se puso en rojo tardó 662,1 s,
+y en la verde anterior al arreglo, 84,3 s. La etapa ya no toca la red, y su
+duración no depende de que la red esté rápida: la diferencia entre una corrida
+verde y una roja ya no la decide la descarga de una toolchain.
+
+**Lo que este ciclo deja medido para el siguiente.** La incrementalidad que
+falta no es un motor que no exista: es un estado que no sobrevive. La caché por
+fichero ya evita volver a parsear lo que no cambió —eso está fijado por
+`cached_coverage_is_honest.rs`—, pero `build_project_graph` relee y re-hashea
+todos los ficheros, rehace el índice global de símbolos desde cero y vuelve a
+resolver todas las relaciones en cada construcción. El `CacheStore` de
+`incremental/content_hash.rs` sabe qué ficheros cambiaron y no tiene consumidor
+de producción. Eso queda encolado como **C47**.
+
+## 2026-10-26 — C47: el grafo se reconstruye sólo donde cambió
+
+**C47 closed.** C47 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 435 pruebas verdes en 246 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**438 comprobaciones verdes, 0 rojas**— y el
+comprobante de línea base).
+
+**La unidad, cerrada sobre `ad9c694cecb4a563ea84607fe2c189d4567a2f47`.**
+
+**Qué es esta unidad.** La incrementalidad que faltaba (H5, `SPEC-CU-005`):
+que tocar un fichero no rehaga el grafo entero, y que el producto diga cuánto
+conservó. La unidad tenía dos mitades y las dos están cerradas: la regla que
+decide qué resolución sigue valiendo, y la medición que dice si esa regla
+sirve de algo.
+
+Lo que **no** se afirma es que el análisis entero sea incremental. Lo que se
+conserva es la fase de resolución —la que costaba—, y el resto de la
+construcción sigue haciendo su trabajo: analizar los ficheros sigue asignando
+unos 199 MiB en cada construcción, medido. El número que publica el servicio
+dice exactamente eso: cuántas relaciones se resolvieron otra vez y cuántas se
+conservaron, no «el análisis fue incremental».
+
+**La verificación que decidía la bifurcación.** La regla que se iba a escribir
+compara la IDENTIDAD de una declaración —ruta, nombre y línea— para decidir si
+una respuesta sigue valiendo. Esa regla sólo es sound si la identidad de un
+símbolo que no cambió es la MISMA en dos construcciones consecutivas. Se midió
+antes de escribirla, sobre el corpus de 400 ficheros: el conjunto completo de
+ids de la construcción en frío y el de la construcción en caliente son
+idénticos —**18 011 ids, iguales**— y el grafo reconstruido deja **0 aristas
+colgantes**.
+
+Y hay que decir también la primera medición, porque fue mala. El primer sondeo
+dio **1 299 pares `(fichero, nombre)` con id distinto** y parecía que la
+identidad era inestable: la regla de identidad no podía sostenerse. Era un
+artefacto del sondeo, no del código: el mapa colapsaba homónimos y guardaba el
+último según el orden de iteración, así que comparaba identidades que no eran
+comparables. La identidad real es `fichero:nombre:línea`, y la comparación
+correcta es el conjunto COMPLETO de ids. Corregido el sondeo, la identidad es
+estable y la regla se puede escribir.
+
+**La regla.** Un nombre se invalida cuando algún fichero —cambiado, nuevo o
+borrado— añadió su declaración, la eliminó, o le dio otra identidad. La
+identidad de una declaración es la que su lector le dio, porque es la que el
+índice conoce; comparar otra identidad sería comparar algo que el resolver
+nunca miró. Y hay una segunda mitad: el fichero de quien llama. Las llamadas
+que dice su propio fichero se leen otra vez en cada construcción, así que las
+que ya no dice dejan de ser relaciones. Las dos mitades son necesarias: sin la
+del nombre, un fichero que empieza a declarar `foo` convierte en resoluble una
+llamada que era ambigua; sin la del fichero, se conservarían respuestas que el
+cambio invalidó. Lo que el cambio no toca, se conserva: cambiar el cuerpo de
+una función no cambia su identidad, así que las llamadas que la nombran
+conservan su respuesta; moverla a otra línea SÍ cambia su identidad, así que
+esas llamadas se vuelven a mirar —y tienen que, porque la respuesta que
+guardaban nombra una identidad que ya no existe.
+
+El libro mayor (`crates/cognicode-core/src/infrastructure/graph/reuse.rs`)
+recuerda dos cosas entre construcciones: qué sabía la última sobre cada
+fichero —su hash de contenido y la identidad de cada declaración que hace— y
+qué resolvió para cada par (fichero llamante, nombre llamado). Las dos se
+sustituyen enteras al terminar cada construcción, así que el libro mayor
+describe exactamente una construcción y nunca una mezcla de dos.
+
+**Lo que se hizo.** El módulo nuevo es el dueño único de la semántica de la
+reutilización. Las tres rutas que construyen el grafo —completa, filtrada y
+asíncrona— resuelven por un único `ReuseState::resolve`, a propósito: una ruta
+que resolviera por su cuenta publicaría su propio número sobre el mismo árbol,
+y `h24_the_routes_say_the_same` ya existe para cazar exactamente eso. El
+número se publica como `GraphReuse { relationships_resolved, relationships_reused }`,
+en el mismo sitio donde vive la métrica de cobertura. Las referencias
+pendientes se resuelven siempre y se cuentan como trabajo hecho: sus
+candidatos son las declaraciones del módulo del llamante, y ese no es el
+conjunto sobre el que el libro mayor guarda respuestas.
+
+**El RED, medido sobre el camino malo.** El endurecimiento no se probó por
+introspección: se rompieron tres veces la regla a propósito, y cada mutante
+tenía que morir sólo por los tests escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — regla vieja por nombre (invalida todos los nombres del fichero cambiado) | `cambiar_el_cuerpo_de_una_funcion_no_resuelve_nada` |
+| B — regla vieja + guarda de ámbito (todo cambio invalida el proyecto entero) | `cambiar_el_cuerpo_de_una_funcion_no_resuelve_nada`, `un_fichero_nuevo_no_invalida_lo_que_no_toca` |
+| C — sin la cláusula de identidad (basta con que el nombre siga existiendo) | `una_declaracion_que_se_muda_cambia_su_identidad` |
+
+Los tres mutantes fueron revertidos y `reuse.rs` quedó intacto. La
+discriminación es exacta: ningún mutante murió por un test que no es el suyo.
+
+**El GREEN, medido.** La suite de caracterización: **10 de 10**, en 0,01 s. El
+gate `fast` y el gate `full`, los dos en rc=0.
+
+**La medición (CU-005.6).** Fixture: 400 ficheros en 61 directorios, **18 011
+símbolos y 7 742 aristas**, y **34 779 relaciones** que el resolver mira. Con la
+regla endurecida:
+
+| construcción | p50 | p95 |
+|---|---|---|
+| frío | 3,371 s | 3,371 s |
+| tibio (nada cambió) | 766,7 ms | 771,3 ms |
+| edición al final (ninguna declaración se mueve) | 820,3 ms | 829,9 ms |
+| edición en medio (las declaraciones de debajo se mueven) | 861,3 ms | 2,465 s |
+
+Comparado con la regla anterior —la que invalidaba todos los nombres de
+cualquier fichero cambiado—, sobre el mismo corpus: frío 3,268 s, tibio
+730,8 ms, edición p50 2,391 s y p95 2,543 s. El endurecimiento hace que la
+edición sea **2,8 veces más rápida** y cuesta un **5 %** en la construcción
+tibia. Y no acelera la construcción en frío: 3,268 s → 3,371 s, porque en frío
+no hay nada que conservar.
+
+Las asignaciones y los bytes de salida también se midieron, porque CU-005.6 los
+pide. En frío: **1 925 013 693 bytes** asignados. En tibio: **208 716 850
+bytes**, casi todos en la fase de análisis de ficheros, que la regla no toca.
+En edición: entre 208 738 571 y 212 862 204. Los bytes de salida —medidos
+sobre una proyección JSON de símbolos y aristas construida desde la API pública
+del grafo, porque el `CallGraph` no se serializa a JSON directamente: sus
+claves de arista son tuplas y `serde_json` rechaza una clave que no sea
+cadena— son **5 290 510** en frío y en tibio, y suben con cada función nueva
+(5 290 688 → 5 291 212 en las cuatro ediciones). Son los bytes de la
+proyección, no los del cable de un consumidor, y así se declaran. Las cifras de
+asignación incluyen la clonación del grafo que hace `get_project_graph()` al
+final de la fase medida, y por eso son comparables entre sí.
+
+**El defecto que encontró la medición.** La primera serie de tiempos alternaba
+673 ms y 3,2 s en construcciones tibias: una construcción de cada cuatro se
+rehacía entera. La causa no era el plan, era el libro mayor: guardaba las
+respuestas que acababa de calcular, pero no las que conservó, así que se vaciaba
+en cada construcción y la segunda construcción tras un cambio no encontraba
+nada que conservar. Una respuesta conservada sigue siendo una respuesta, y
+ahora se escribe en el libro mayor nuevo igual que una calculada. El arreglo
+se ve en los números: la construcción tibia bajó de 0,81 s a 0,767 s. En el
+mismo paso se quitó la copia profunda del libro mayor —18 000 identidades y
+34 779 respuestas clonadas en cada construcción—, y los datos se toman por
+propiedad en vez de copiarse.
+
+**Lo que no se toca.** `analysis_service.rs` sigue siendo un archivo grande: la
+extracción del motor común que C23 promete no se ha hecho aquí, y el número
+publicado vive en el mismo sitio donde vive la métrica de cobertura, en el
+borde del servicio. El CLI y el MCP **no** llevan todavía el número en su
+carga útil: publicarlo en esas superficies es un cambio de contrato con su
+propio gate, y aquí no se ha tocado ninguna de las dos.
+
+**El conservadurismo, con su medida.** La regla es sound pero no gratis: un
+fichero que mueve muchas declaraciones invalida todos los nombres que se
+movieron. El peor caso medido es `kernel_ids.rs`, que re-resuelve **4 879**
+relaciones y tarda **2,32–2,46 s** — el p95 de la edición en medio. Es el
+comportamiento correcto (las identidades de esas declaraciones cambiaron de
+verdad, y las respuestas que las nombraban ya no valían), pero es el precio
+que se paga por no inventar una identidad más fina que la que el resolver
+conoce.
+
+**La decisión sobre las pruebas.** Los dos UAT efímeros de esta unidad —el
+sondeo de estabilidad de la identidad y el harness de medición— se retiran al
+cerrar: sus resultados están en este recibo, y su valor no sobrevive como
+código. Lo que se queda es la suite de caracterización
+(`crates/cognicode-core/tests/the_graph_is_rebuilt_only_where_it_changed.rs`,
+10 tests), que es la que protege la garantía —«el grafo se reconstruye sólo
+donde cambió»— sin depender de un harness de medición ni de un corpus
+externo.
+
+**Siguiente WU.** La cola queda con cinco candidatos: C23 (50, bloqueada por
+el operador), C46 (25), C12 (20), C44 (15) y C13 (10). C47 sale de la cola al
+cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `f7525d67`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en la pull request #471, que
+queda `CLEAN` y `MERGEABLE`. La corrida es comprobable después del hecho: queda
+en la base de eventos del gate, con su identificador de corrida
+`99b19d3e-0d9e-4216-ba6a-12767226214e`, las 58 etapas en `success` y el
+`RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La etapa
+`contracts` tardó **72,3 s**, contra los 74,1 s de la corrida de C48: la etapa
+ya no toca la red, y su duración ya no depende de que la red esté rápida. La
+corrida entera tardó **917 s**. Las etapas más lentas fueron
+`core-unrestricted-evidence-kernel` (155,9 s), `explorer-route-capability`
+(114,3 s), `clippy` (83,3 s) y `core-lib` (68,2 s).
+
+**Lo que este ciclo deja medido para el siguiente.** La incrementalidad que
+faltaba no era un motor que no existiera: era un libro mayor que no sobrevivía
+a la construcción. Ahora existe y es medido, con su regla y su conservadurismo
+—un fichero que mueve muchas declaraciones re-resuelve todo lo que nombraban,
+y `kernel_ids.rs` tarda 2,32–2,46 s por eso—. Lo que queda medido y sin hacer:
+sólo se conserva la fase de resolución; analizar los ficheros sigue asignando
+unos 199 MiB por construcción, medido. Y el número que dice cuánto se conservó
+—`GraphReuse`— se publica en el borde del servicio, pero **no** viaja todavía
+en la carga útil del CLI ni del MCP: publicarlo en esas superficies es un
+cambio de contrato con su propio gate, y aquí no se ha tocado ninguna de las
+dos. La cola queda con C23 (50, bloqueada por el operador), C46 (25), C12 (20),
+C44 (15) y C13 (10).

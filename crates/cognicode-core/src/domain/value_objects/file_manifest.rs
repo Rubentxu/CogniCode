@@ -21,8 +21,12 @@ pub struct FileManifest {
 pub struct FileEntry {
     /// Blake3 hash of file content
     pub content_hash: String,
-    /// Last modified time (from filesystem)
-    pub mtime: u64,
+    /// Last modified time in milliseconds since the epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. A file whose
+    /// clock nobody read must not invalidate the snapshot by itself: the
+    /// content hash is what decides, and the manifest says so.
+    pub mtime: Option<i64>,
     /// Number of symbols in this file
     pub symbol_count: usize,
 }
@@ -44,7 +48,7 @@ impl FileManifest {
     /// * `files` - Slice of tuples containing (path, content_hash, mtime)
     pub fn detect_changes(
         &self,
-        files: &[(PathBuf, String, u64)],
+        files: &[(PathBuf, String, Option<i64>)],
     ) -> (Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>) {
         let mut new_files = Vec::new();
         let mut modified_files = Vec::new();
@@ -82,7 +86,7 @@ impl FileManifest {
     ///
     /// # Arguments
     /// * `files` - Slice of tuples containing (path, content_hash, mtime, symbol_count)
-    pub fn update_entries(&mut self, files: &[(PathBuf, String, u64, usize)]) {
+    pub fn update_entries(&mut self, files: &[(PathBuf, String, Option<i64>, usize)]) {
         for (path, content_hash, mtime, symbol_count) in files {
             self.entries.insert(
                 path.clone(),
@@ -116,8 +120,12 @@ mod tests {
     fn test_empty_manifest_detects_all_files_as_new() {
         let manifest = FileManifest::new(PathBuf::from("/project"));
         let files = vec![
-            (PathBuf::from("src/main.rs"), "hash1".to_string(), 1000),
-            (PathBuf::from("src/lib.rs"), "hash2".to_string(), 2000),
+            (
+                PathBuf::from("src/main.rs"),
+                "hash1".to_string(),
+                Some(1000),
+            ),
+            (PathBuf::from("src/lib.rs"), "hash2".to_string(), Some(2000)),
         ];
 
         let (new_files, modified_files, deleted_files) = manifest.detect_changes(&files);
@@ -136,14 +144,19 @@ mod tests {
             (
                 PathBuf::from("src/main.rs"),
                 "same_hash".to_string(),
-                1000,
+                Some(1000),
                 5,
             ),
-            (PathBuf::from("src/lib.rs"), "old_hash".to_string(), 1000, 3),
+            (
+                PathBuf::from("src/lib.rs"),
+                "old_hash".to_string(),
+                Some(1000),
+                3,
+            ),
             (
                 PathBuf::from("src/dead.rs"),
                 "dead_hash".to_string(),
-                1000,
+                Some(1000),
                 2,
             ),
         ]);
@@ -151,12 +164,20 @@ mod tests {
         // Now filesystem has: main.rs (same hash), lib.rs (modified), new.rs (new)
         // dead.rs no longer exists
         let files = vec![
-            (PathBuf::from("src/main.rs"), "same_hash".to_string(), 1000),
-            (PathBuf::from("src/lib.rs"), "new_hash".to_string(), 2000),
+            (
+                PathBuf::from("src/main.rs"),
+                "same_hash".to_string(),
+                Some(1000),
+            ),
+            (
+                PathBuf::from("src/lib.rs"),
+                "new_hash".to_string(),
+                Some(2000),
+            ),
             (
                 PathBuf::from("src/new.rs"),
                 "new_file_hash".to_string(),
-                3000,
+                Some(3000),
             ),
         ];
 
@@ -172,7 +193,12 @@ mod tests {
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
 
         // Add a new entry
-        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash1".to_string(), 1000, 5)]);
+        manifest.update_entries(&[(
+            PathBuf::from("src/main.rs"),
+            "hash1".to_string(),
+            Some(1000),
+            5,
+        )]);
         assert_eq!(
             manifest
                 .get(&PathBuf::from("src/main.rs"))
@@ -182,10 +208,15 @@ mod tests {
         );
 
         // Update the same entry
-        manifest.update_entries(&[(PathBuf::from("src/main.rs"), "hash2".to_string(), 2000, 10)]);
+        manifest.update_entries(&[(
+            PathBuf::from("src/main.rs"),
+            "hash2".to_string(),
+            Some(2000),
+            10,
+        )]);
         let entry = manifest.get(&PathBuf::from("src/main.rs")).unwrap();
         assert_eq!(entry.content_hash, "hash2");
-        assert_eq!(entry.mtime, 2000);
+        assert_eq!(entry.mtime, Some(2000));
         assert_eq!(entry.symbol_count, 10);
     }
 
@@ -193,9 +224,24 @@ mod tests {
     fn test_remove_entries() {
         let mut manifest = FileManifest::new(PathBuf::from("/project"));
         manifest.update_entries(&[
-            (PathBuf::from("src/a.rs"), "hash_a".to_string(), 1000, 1),
-            (PathBuf::from("src/b.rs"), "hash_b".to_string(), 1000, 2),
-            (PathBuf::from("src/c.rs"), "hash_c".to_string(), 1000, 3),
+            (
+                PathBuf::from("src/a.rs"),
+                "hash_a".to_string(),
+                Some(1000),
+                1,
+            ),
+            (
+                PathBuf::from("src/b.rs"),
+                "hash_b".to_string(),
+                Some(1000),
+                2,
+            ),
+            (
+                PathBuf::from("src/c.rs"),
+                "hash_c".to_string(),
+                Some(1000),
+                3,
+            ),
         ]);
 
         manifest.remove_entries(&[PathBuf::from("src/b.rs")]);

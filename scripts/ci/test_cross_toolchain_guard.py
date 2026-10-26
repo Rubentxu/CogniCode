@@ -85,25 +85,84 @@ done
 exit 0
 """
 
+# Un `rustc` que no responde. Deja un rastro para que el test vea que se le
+# pregunto, y sale sin decir que host es: es el caso de un toolchain roto, que
+# antes se traducía en un veredicto sobre el target que no era sobre el host.
+RUSTC_SILENT = """#!/usr/bin/env bash
+: > "${RUSTC_MARKER:?the marker has to be reachable}"
+exit 1
+"""
+
+# Un `rustc` que responde con el host y no instala nada.
+RUSTC_HOSTS = """#!/usr/bin/env bash
+echo "host: x86_64-unknown-linux-gnu"
+"""
+
 
 def host_target() -> str:
+    """El triple del host, resuelto aqui y con el entorno real de este proceso.
+
+    MEDIDO 2026-10-25. Resolverlo DENTRO de la guarda, con el HOME aislado que
+    hace el aislamiento, hace que rustup intente instalar la toolchain desde la
+    red: 117,7 s por llamada y `TimeoutExpired` a los 120 s. Resolverlo aqui,
+    una vez, con el entorno real, cuesta 9 ms.
+
+    Si `rustc -vV` no dice cual es el host, esto falla y lo dice. Adivinar un
+    triple es la forma de que un veredicto de la guarda dependa de una suposicion
+    en vez de de una medida.
+    """
     out = subprocess.run(
         ["rustc", "-vV"], capture_output=True, text=True, timeout=60
     )
     for line in out.stdout.splitlines():
         if line.startswith("host:"):
             return line.split(":", 1)[1].strip()
-    return "x86_64-unknown-linux-gnu"
+    raise AssertionError(
+        "'rustc -vV' no devolvio el triple del host:\n" + out.stdout + out.stderr
+    )
 
 
-def run_guard(target: str, **env_extra: str) -> subprocess.CompletedProcess:
-    """Ejecuta la guarda con un entorno controlada y devuelve su estado real."""
+def run_guard(
+    target: str,
+    *,
+    host: str | None = None,
+    resolve_host: bool = False,
+    bin_dir: str | None = None,
+    **env_extra: str,
+) -> subprocess.CompletedProcess:
+    """Ejecuta la guarda con un entorno controlado y devuelve su estado real.
+
+    El host hay que darlo. La guarda lo resuelve sola con `rustc -vV`, y esa
+    ruta, con el HOME aislado que hace este aislamiento, hace que rustup
+    descargue la toolchain: 117,7 s por llamada, y `TimeoutExpired` a los 120 s.
+    Para ejercitar esa ruta a proposito, `resolve_host=True`.
+
+    `bin_dir` antepone un directorio al PATH. Lo usa el test que pone un `rustc`
+    de mentira: sin el, la guarda usaria el rustc de verdad, que no es lo que
+    el test quiere medir.
+    """
+    if resolve_host:
+        if host is not None:
+            raise ValueError(
+                "resolve_host=True ya dice que la guarda resuelve el host: "
+                "darlo ademas hace que el test no mida lo que dice medir"
+            )
+    elif host is None:
+        raise ValueError(
+            "el host hay que darlo: la guarda lo resuelve con `rustc -vV`, y con "
+            "el HOME aislado eso hace que rustup descargue la toolchain. Si lo que "
+            "se quiere es ejercitar esa ruta, pide resolve_host=True."
+        )
+    argv = [str(GUARD), target]
+    if host is not None:
+        argv.append(host)
     with tempfile.TemporaryDirectory() as raw:
         # El PATH se antepone el dir temporal pero conserva el real: la guarda
         # llama a `rustc -vV` para resolver el host, y con un PATH minimo el
         # target nativo parecia uno cruzado y se rechazaba a si mismo.
+        prefix = f"{bin_dir}:" if bin_dir else ""
         env = {
-            "PATH": f"{raw}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PATH": f"{prefix}{raw}:{os.environ.get('PATH', '/usr/bin:/bin')}",
             "HOME": raw,
             "TMPDIR": raw,
         }
@@ -114,7 +173,7 @@ def run_guard(target: str, **env_extra: str) -> subprocess.CompletedProcess:
         # Se llama por ruta absoluta: el PATH de la guarda es deliberadamente
         # minimo y no debe decides si el propio script se encuentra.
         return subprocess.run(
-            [str(GUARD), target],
+            argv,
             capture_output=True,
             text=True,
             timeout=120,
@@ -142,7 +201,7 @@ def test_the_guard_exists_and_is_executable() -> None:
 
 def test_a_native_target_is_not_cross_checked() -> None:
     """Preguntar por el toolchain nativo solo añadiria ruido."""
-    done = run_guard(host_target())
+    done = run_guard(host_target(), host=host_target())
     assert done.returncode == 0, (
         f"el target nativo debe pasar sin comprobacion cruzada.\n{done.stdout}"
     )
@@ -152,7 +211,10 @@ def test_a_native_target_is_not_cross_checked() -> None:
 def test_a_target_with_no_compiler_fails_and_says_which_variable() -> None:
     target = "aarch64-unknown-linux-gnu"
     done = run_guard(
-        target, CC_aarch64_unknown_linux_gnu="", CXX_aarch64_unknown_linux_gnu=""
+        target,
+        host=host_target(),
+        CC_aarch64_unknown_linux_gnu="",
+        CXX_aarch64_unknown_linux_gnu="",
     )
     assert done.returncode != 0, (
         f"sin compilador de C el target no compila y la guarda debe decirlo.\n"
@@ -174,7 +236,7 @@ def test_a_compiler_that_rejects_the_triple_fails() -> None:
     target = "aarch64-unknown-linux-gnu"
     with tempfile.TemporaryDirectory() as raw:
         cc = make_cc(raw, CC_REJECTS)
-        done = run_guard(target, CC_aarch64_unknown_linux_gnu=cc)
+        done = run_guard(target, host=host_target(), CC_aarch64_unknown_linux_gnu=cc)
     assert done.returncode != 0, (
         f"un compilador que rechaza el triple debe fallar la guarda.\n{done.stdout}"
     )
@@ -203,7 +265,10 @@ def test_a_working_compiler_passes_and_names_itself() -> None:
         cc = make_cc(raw, CC_OK, "fake-cc-ok")
         cxx = make_cc(raw, CC_OK, "fake-cxx-ok")
         done = run_guard(
-            target, CC_aarch64_unknown_linux_gnu=cc, CXX_aarch64_unknown_linux_gnu=cxx
+            target,
+            host=host_target(),
+            CC_aarch64_unknown_linux_gnu=cc,
+            CXX_aarch64_unknown_linux_gnu=cxx,
         )
     assert done.returncode == 0, (
         f"unos compiladores que compilan el probe deben pasar.\nstdout:\n{done.stdout}\n"
@@ -229,7 +294,10 @@ def test_a_broken_cxx_compiler_fails() -> None:
         cc_ok = make_cc(raw, CC_OK, "fake-cc-ok")
         cxx_bad = make_cc(raw, CC_REJECTS, "fake-cxx-bad")
         bad = run_guard(
-            target, CC_aarch64_unknown_linux_gnu=cc_ok, CXX_aarch64_unknown_linux_gnu=cxx_bad
+            target,
+            host=host_target(),
+            CC_aarch64_unknown_linux_gnu=cc_ok,
+            CXX_aarch64_unknown_linux_gnu=cxx_bad,
         )
     assert bad.returncode != 0, f"un C++ roto debe fallar.\n{bad.stdout}"
     assert "C++" in bad.stdout, bad.stdout
@@ -261,7 +329,9 @@ def test_a_target_with_no_cxx_compiler_fails_and_says_which_variable() -> None:
     target = "aarch64-unknown-linux-gnu"
     with tempfile.TemporaryDirectory() as raw:
         cc_ok = make_cc(raw, CC_OK, "fake-cc-ok")
-        absent = run_guard(target, CC_aarch64_unknown_linux_gnu=cc_ok)
+        absent = run_guard(
+            target, host=host_target(), CC_aarch64_unknown_linux_gnu=cc_ok
+        )
     assert absent.returncode != 0, (
         f"sin C++ esta lane no compila, y la guarda no puede decir que si.\n"
         f"{absent.stdout}"
@@ -269,6 +339,89 @@ def test_a_target_with_no_cxx_compiler_fails_and_says_which_variable() -> None:
     assert "CXX_aarch64_unknown_linux_gnu" in absent.stdout, (
         f"el fallo tiene que nombrar la variable que falta, no solo que falta algo.\n"
         f"{absent.stdout}"
+    )
+
+
+def test_the_guard_does_not_ask_rustc_when_the_host_is_given() -> None:
+    """Con el host dado, la guarda no necesita preguntar a rustc.
+
+    MEDIDO 2026-10-25. La guarda resolvia el host con `rustc -vV` DENTRO de un
+    HOME aislado, y ahi rustup no encuentra ninguna toolchain: lee el
+    `rust-toolchain.toml` del repositorio e intenta instalar la suya desde la
+    red. Medido: 117,7 s por llamada, y el `timeout=120` del contrato se
+    agotaba. Con la red un poco mas lenta, el contrato fallaba y la etapa
+    `contracts` del gate caia -- sin que el codigo del arbol tuviera nada que
+    ver. Con el host dado, la guarda no toca rustc y no puede depender de la red.
+    """
+    with tempfile.TemporaryDirectory() as raw:
+        marker = Path(raw) / "rustc-was-called"
+        make_cc(raw, RUSTC_SILENT, "rustc")
+        done = run_guard(
+            "x86_64-unknown-linux-gnu",
+            host="x86_64-unknown-linux-gnu",
+            bin_dir=raw,
+            RUSTC_MARKER=str(marker),
+        )
+        called = marker.exists()
+    assert done.returncode == 0, (
+        f"con el host dado, la guarda tiene que pasar sin preguntar a rustc.\n"
+        f"{done.stdout}{done.stderr}"
+    )
+    assert not called, (
+        "la guarda no puede preguntar a rustc cuando el host ya se le dio: esa "
+        "pregunta es la que hace que rustup descargue la toolchain"
+    )
+
+
+def test_a_guard_that_cannot_resolve_the_host_refuses_to_give_a_verdict() -> None:
+    """Sin host, y con un rustc que no responde, la guarda no puede veredicto.
+
+    Antes, un `rustc -vV` que fallaba dejaba el host vacio, y el target nativo
+    --el que se estaba comprobando-- se rechazaba como si fuera cruzado. Ese
+    veredicto hablaba del compilador que no se llego a mirar y del toolchain que
+    estaba roto, y decia "falta el compilador de C". Un fallo que no dice su
+    causa es un fallo que se repite.
+    """
+    with tempfile.TemporaryDirectory() as raw:
+        make_cc(raw, RUSTC_SILENT, "rustc")
+        done = run_guard(
+            "x86_64-unknown-linux-gnu",
+            resolve_host=True,
+            bin_dir=raw,
+            RUSTC_MARKER=str(Path(raw) / "rustc-was-called"),
+        )
+    assert done.returncode != 0, (
+        "sin host la guarda no puede dar un veredicto: no sabe si el target es "
+        "el nativo\n" + done.stdout + done.stderr
+    )
+    combined = done.stdout + done.stderr
+    assert "host" in combined.lower(), (
+        f"el motivo tiene que decir que no se pudo resolver el host.\n{combined}"
+    )
+    assert "no C compiler" not in combined, (
+        f"el motivo no puede ser que falte el compilador: el compilador no llego "
+        f"a preguntarse.\n{combined}"
+    )
+
+
+def test_the_guard_resolves_the_host_when_it_is_not_given() -> None:
+    """La ruta de resolver el host dentro de la guarda sigue viva.
+
+    El contrato ya no la ejercita de forma implicita --le da el host--, asi que
+    esta comprobacion la mantiene a proposito: un `rustc` de mentira responde
+    con el host y la guarda lo usa.
+    """
+    with tempfile.TemporaryDirectory() as raw:
+        make_cc(raw, RUSTC_HOSTS, "rustc")
+        done = run_guard(
+            "x86_64-unknown-linux-gnu", resolve_host=True, bin_dir=raw
+        )
+    assert done.returncode == 0, (
+        f"un rustc que responde con el host tiene que bastarle a la guarda.\n"
+        f"{done.stdout}{done.stderr}"
+    )
+    assert "host target" in done.stdout.lower(), (
+        f"la guarda tiene que decir que el target es el host.\n{done.stdout}"
     )
 
 

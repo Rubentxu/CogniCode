@@ -65,7 +65,9 @@ use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
-use crate::domain::value_objects::{ClientIdentity, SymbolKind};
+use crate::domain::value_objects::{
+    AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind,
+};
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
@@ -902,8 +904,13 @@ fn graph_db_path(directory: &Path) -> PathBuf {
 /// (`cache.tmp.<pid>.<seq>`), not a fixed slot. Two writers on the same
 /// workspace never share a temp path; an interrupted writer leaves a
 /// file whose name identifies the dying process for post-mortem.
+///
+/// The snapshot carries the **key** —who produced it, over what, and with
+/// which shape— next to the graph and the manifest. Without it, a snapshot
+/// is a graph with no author, and any other build would serve it as its own.
 fn save_durable_snapshot(
     db_path: &Path,
+    key: &SnapshotKey,
     graph: &crate::domain::aggregates::call_graph::CallGraph,
     manifest: &crate::domain::value_objects::file_manifest::FileManifest,
 ) -> std::io::Result<()> {
@@ -911,11 +918,14 @@ fn save_durable_snapshot(
     use bincode::serde::encode_to_vec;
 
     // The version says what the snapshot means, and the meaning of a
-    // snapshot changed: a graph is now only "complete" when its references
-    // are tied too, and a snapshot written before that says complete about
-    // a graph that had holes in it. A snapshot of the old version is
-    // therefore not evidence of anything: it is rebuilt.
-    let snapshot = ("cognicode.graph.cache/v2", graph, manifest);
+    // snapshot changed three times: a graph is now only "complete" when its
+    // references are tied too, and a snapshot written before that says
+    // complete about a graph that had holes in it; the manifest now records
+    // a modification time that can be absent, a shape the previous layout
+    // cannot hold; and the snapshot now names the analyzer that produced
+    // it, a shape the previous layout cannot hold either. A snapshot of an
+    // older version is therefore not evidence of anything: it is rebuilt.
+    let snapshot = (SNAPSHOT_SCHEMA, key, graph, manifest);
     let bytes = encode_to_vec(snapshot, standard())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -954,9 +964,14 @@ fn tmp_path_for(db_path: &Path) -> PathBuf {
 /// Load a durable snapshot. Returns `None` on any
 /// parse failure — a corrupt snapshot is treated as absent (rebuild),
 /// never as valid evidence.
+///
+/// The key comes back with the graph: who produced it is part of what the
+/// snapshot says, and the caller decides whether that producer is the one
+/// standing here.
 fn load_durable_snapshot(
     db_path: &Path,
 ) -> Option<(
+    SnapshotKey,
     crate::domain::aggregates::call_graph::CallGraph,
     crate::domain::value_objects::file_manifest::FileManifest,
 )> {
@@ -964,11 +979,22 @@ fn load_durable_snapshot(
     use bincode::serde::decode_from_slice;
 
     let bytes = std::fs::read(db_path).ok()?;
-    let (snapshot, _): ((String, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != "cognicode.graph.cache/v2" {
+    let (snapshot, _): ((String, _, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
+    if snapshot.0 != SNAPSHOT_SCHEMA {
         return None;
     }
-    Some((snapshot.1, snapshot.2))
+    Some((snapshot.1, snapshot.2, snapshot.3))
+}
+
+/// El workspace canónico: el mismo string en la clave y en la base.
+///
+/// Un solo sitio lo decide, para que la clave que se guarda y la que se
+/// compara no puedan separarse por una canonicalización distinta.
+fn canonical_workspace(project_dir: &Path) -> String {
+    project_dir
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| project_dir.to_string_lossy().to_string())
 }
 
 pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
@@ -1048,6 +1074,11 @@ fn is_manifest_stale(
                 // read (e.g. permissions revoked after the snapshot)
                 // invalidates the snapshot — serving it would hide the
                 // loss of coverage behind a stale "complete" result.
+                //
+                // A file whose clock nobody read has no time to compare:
+                // both sides are absent, the times agree, and the file
+                // does not invalidate the snapshot by itself. What decides
+                // is the content hash.
                 let bytes = match std::fs::read(path) {
                     Ok(b) => b,
                     Err(_) => return true,
@@ -1067,6 +1098,12 @@ fn is_manifest_stale(
 }
 
 /// Builds a FileManifest for the given project directory.
+/// La marca de un fichero que se enumero pero no se pudo leer.
+///
+/// No puede coincidir con un digest real, porque un digest hexadecimal no
+/// lleva letras fuera de `a`..`f`.
+const UNREADABLE_CONTENT: &str = "unreadable";
+
 fn build_manifest(
     project_dir: &Path,
 ) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
@@ -1088,9 +1125,14 @@ fn build_manifest(
         // Content_hash must hash CONTENT, not metadata.
         // The previous mtime proxy produced identical digests for
         // different files written in the same millisecond.
+        //
+        // A file that cannot be read has no content hash. What is stored
+        // then is the mark of not having read it, which no real digest
+        // can collide with; the freshness of the snapshot is decided by
+        // the real hash, when the file can be read.
         let content_hash = std::fs::read(&file.path)
             .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
-            .unwrap_or_else(|_| file.mtime_millis.to_string());
+            .unwrap_or_else(|_| UNREADABLE_CONTENT.to_string());
         let _ = manifest.entries.insert(
             rel,
             FileEntry {
@@ -1183,6 +1225,21 @@ pub struct BasisDto {
     /// hashes). Same sources ⇒ same digest; any source change ⇒ different
     /// digest. Empty when the manifest could not be computed.
     pub source_manifest_digest: String,
+    /// The version of the analyzer that produced this analysis.
+    ///
+    /// The provider's version, not the consumer's: it says which build
+    /// calculated the answer, which is what a cached answer has to be
+    /// checked against before it can be served again.
+    pub analyzer_version: String,
+    /// The commit the analyzer was built from, when it could be known.
+    ///
+    /// `null` when the binary was built outside a checkout. That is a
+    /// fact about the binary, not a value invented to fill the field.
+    pub analyzer_commit: Option<String>,
+    /// The capabilities the analyzer was built with, in a stable order.
+    pub analyzer_features: Vec<String>,
+    /// The shape the snapshot was written in.
+    pub snapshot_schema: String,
     /// `true` only when every identity component was established and
     /// there was material to identify. A workspace with nothing to
     /// analyze has an established identity of an empty tree, which
@@ -1246,15 +1303,37 @@ pub async fn handle_build_graph(
         // The durable snapshot is the source for both
         // graph and manifest. A corrupt snapshot is treated as absent.
         let snapshot = load_durable_snapshot(&db_path);
-        let is_stale = match snapshot.as_ref().map(|(_, manifest)| manifest) {
-            Some(manifest) => {
-                // Scan source files and compare hashes
-                is_manifest_stale(manifest, &directory)
+        // Who produced the snapshot, and who is asking now.
+        let current_key = SnapshotKey::new(
+            canonical_workspace(&directory),
+            AnalyzerBuild::current(),
+            SNAPSHOT_SCHEMA,
+        );
+        let is_stale = match snapshot.as_ref() {
+            Some((key, _, manifest)) => {
+                // The first question is about the producer, and it costs
+                // nothing: it is answered without reading the tree. A
+                // snapshot written by another analyzer —another version,
+                // another commit, another capability set — describes a
+                // graph this analyzer did not calculate, so it is not
+                // evidence of anything here.
+                if !key.same_producer_as(&current_key) {
+                    tracing::warn!(
+                        "the durable snapshot was produced by another analyzer \
+                         (version {}, commit {:?}); it is rebuilt",
+                        key.analyzer.version,
+                        key.analyzer.commit
+                    );
+                    true
+                } else {
+                    // Scan source files and compare hashes
+                    is_manifest_stale(manifest, &directory)
+                }
             }
             None => true, // No/corrupt snapshot → stale (rebuild)
         };
 
-        if !is_stale && let Some((graph, manifest)) = snapshot {
+        if !is_stale && let Some((_key, graph, manifest)) = snapshot {
             ctx.analysis_service.graph_cache().replace(graph);
             let store = ctx.get_graph_store();
             let _ = store.save_manifest(&manifest);
@@ -1318,7 +1397,16 @@ pub async fn handle_build_graph(
                 // Persist the snapshot atomically so a
                 // restart can reuse it; best-effort, never blocks the build.
                 let graph = ctx.analysis_service.get_project_graph();
-                if let Err(e) = save_durable_snapshot(&db_path, &graph, &manifest) {
+                // The snapshot is written with the key of the analyzer that
+                // just calculated it. A snapshot that does not name its
+                // producer cannot be told apart from one written by
+                // another build.
+                let key = SnapshotKey::new(
+                    canonical_workspace(&directory),
+                    AnalyzerBuild::current(),
+                    SNAPSHOT_SCHEMA,
+                );
+                if let Err(e) = save_durable_snapshot(&db_path, &key, &graph, &manifest) {
                     tracing::warn!("durable snapshot save failed: {}", e);
                 }
             }
@@ -1502,8 +1590,14 @@ pub async fn handle_build_graph(
 ///   (currently the log level; the config surface grows as handlers do).
 /// - `source_manifest_digest`: SHA-256 over sorted (rel_path, content_hash)
 ///   pairs of the source manifest.
+/// - `analyzer_*`: who produced the analysis —version, commit and
+///   capabilities— and the shape the snapshot is written in.
 /// Any component that cannot be established leaves `complete: false`
 /// and uses an empty string for that component — never a fabricated value.
+///
+/// The analyzer identity comes from the **key**, the same one the snapshot
+/// is written with. One key, one truth: the basis cannot describe an
+/// analyzer that the snapshot does not name.
 fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
     use sha2::{Digest, Sha256};
 
@@ -1543,10 +1637,18 @@ fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
         Err(_) => (String::new(), false),
     };
 
+    // The key of the analysis: who produced it, over what, and with which
+    // shape. It is the same key the snapshot is written with.
+    let key = SnapshotKey::new(workspace.clone(), AnalyzerBuild::current(), SNAPSHOT_SCHEMA);
+
     BasisDto {
         workspace,
         config_digest,
         source_manifest_digest,
+        analyzer_version: key.analyzer.version,
+        analyzer_commit: key.analyzer.commit,
+        analyzer_features: key.analyzer.features,
+        snapshot_schema: key.schema,
         complete: workspace_ok && manifest_ok,
     }
 }
@@ -4270,6 +4372,16 @@ pub mod program_analysis_handlers;
 mod tests {
     use super::*;
 
+    /// La clave que llevan los snapshots de prueba: la del analizador de
+    /// ahora, sobre un workspace cualquiera.
+    ///
+    /// Los tests de esta sección miden el formato del fichero y su
+    /// resistencia a la corrupción, no la identidad del analizador —de eso
+    /// se ocupa el test de la superficie publicada.
+    fn test_snapshot_key() -> SnapshotKey {
+        SnapshotKey::for_current_analyzer("/tmp/cognicode-test-workspace")
+    }
+
     /// Un snapshot con versión de esquema desconocida
     /// (escrito por una versión futura) se trata como ausente — nunca
     /// se carga como evidencia válida; el build reconstruye.
@@ -4323,7 +4435,7 @@ mod tests {
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
-        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest).unwrap();
         let loaded = load_durable_snapshot(&db);
         assert!(
             loaded.is_some(),
@@ -4405,7 +4517,7 @@ mod tests {
                     let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
                         db.parent().unwrap().to_path_buf(),
                     );
-                    save_durable_snapshot(&db, &graph, &manifest)
+                    save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest)
                         .unwrap_or_else(|e| panic!("writer {i} failed: {e}"));
                 })
             })
@@ -4468,7 +4580,7 @@ mod tests {
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
-        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest).unwrap();
 
         let bytes = std::fs::read(&db).expect("read snapshot");
         assert!(
@@ -4514,7 +4626,7 @@ mod tests {
                     let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
                         db.parent().unwrap().to_path_buf(),
                     );
-                    let _ = save_durable_snapshot(&db, &graph, &manifest);
+                    let _ = save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest);
                 })
             })
             .collect();
@@ -4552,7 +4664,8 @@ mod tests {
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
-        save_durable_snapshot(&db, &graph, &manifest).expect("post-crash save must succeed");
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest)
+            .expect("post-crash save must succeed");
 
         // The cache must still be valid after the post-crash save.
         assert!(
@@ -4608,7 +4721,7 @@ mod tests {
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
-        let result = save_durable_snapshot(&db, &graph, &manifest);
+        let result = save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest);
 
         // Restore perms so TempDir cleanup can rm-rf the dir.
         let mut writable = std::fs::metadata(parent).unwrap().permissions();
@@ -4672,7 +4785,7 @@ mod tests {
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
-        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest).unwrap();
         let original_bytes = std::fs::read(&db).unwrap();
         assert!(
             load_durable_snapshot(&db).is_some(),
@@ -4711,7 +4824,7 @@ mod tests {
                     let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
                         db.parent().unwrap().to_path_buf(),
                     );
-                    save_durable_snapshot(&db, &graph, &manifest)
+                    save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest)
                 })
             })
             .collect();
@@ -4787,7 +4900,7 @@ mod tests {
                 rel,
                 FileEntry {
                     content_hash: hash,
-                    mtime: 1_700_000_000_000 + i as u64,
+                    mtime: Some(1_700_000_000_000 + i as i64),
                     symbol_count: i % 200,
                 },
             );
@@ -4801,12 +4914,13 @@ mod tests {
         // Save and time it.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let t0 = Instant::now();
-        save_durable_snapshot(&db, &graph, &manifest).expect("save must succeed");
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest)
+            .expect("save must succeed");
         let save_ms = t0.elapsed().as_millis();
 
         // Load and time it.
         let t1 = Instant::now();
-        let (loaded_graph, loaded_manifest) =
+        let (_loaded_key, loaded_graph, loaded_manifest) =
             load_durable_snapshot(&db).expect("load must succeed");
         let load_ms = t1.elapsed().as_millis();
 
@@ -7929,7 +8043,7 @@ mod tests {
                 let f = OpenOptions::new().write(true).open(&file).unwrap();
                 f.set_modified(pinned).unwrap();
             }
-            let pinned_millis = pinned.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+            let pinned_millis = pinned.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
 
             // Manually build a manifest with the pinned mtime and a
             // content_hash matching the ORIGINAL bytes.
@@ -7940,7 +8054,7 @@ mod tests {
                 rel.clone(),
                 FileEntry {
                     content_hash: original_hash.clone(),
-                    mtime: pinned_millis,
+                    mtime: Some(pinned_millis),
                     symbol_count: 0,
                 },
             );
@@ -8004,12 +8118,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel.clone(),
                 FileEntry {
                     content_hash: hash,
-                    mtime,
+                    mtime: Some(mtime),
                     symbol_count: 0,
                 },
             );
@@ -8063,12 +8177,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel_a,
                 FileEntry {
                     content_hash: hash_a,
-                    mtime: mtime_a,
+                    mtime: Some(mtime_a),
                     symbol_count: 0,
                 },
             );
@@ -8105,12 +8219,12 @@ mod tests {
                 .unwrap()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis() as u64;
+                .as_millis() as i64;
             manifest.entries.insert(
                 rel,
                 FileEntry {
                     content_hash: hash,
-                    mtime,
+                    mtime: Some(mtime),
                     symbol_count: 0,
                 },
             );

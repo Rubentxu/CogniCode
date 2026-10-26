@@ -6,6 +6,7 @@
 
 use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+use crate::domain::value_objects::file_time::epoch_seconds;
 use crate::domain::value_objects::{DependencyType, PendingReference, WalkDecision};
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
@@ -14,7 +15,6 @@ use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
 
 // =============================================================================
 // PRF F2.W5 — Global symbol index for cross-file call resolution (H-R4-2).
@@ -313,7 +313,11 @@ struct FileGraphCacheEntry {
     /// blob, or an editor that pads to the same length) keeps the mtime
     /// and would, on its own, serve a stale graph. The `content_hash`
     /// below is the authoritative bytes-identity check.
-    mtime_secs: Option<u64>,
+    ///
+    /// `None` when the filesystem did not report a time. A `None` here is
+    /// the absence of a signal, not "written at the epoch": the bytes
+    /// identity check below is what decides.
+    mtime_secs: Option<i64>,
     /// Size of the source file in bytes at cache time. Secondary cheap
     /// signal: combined with `mtime_secs`, narrows the false-positive
     /// surface. Still not authoritative for the same reason as
@@ -948,7 +952,7 @@ impl Clone for PerFileGraphCache {
 /// still produce a cache miss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileFingerprint {
-    mtime_secs: u64,
+    mtime_secs: i64,
     size: u64,
     content_hash: u64,
 }
@@ -969,8 +973,9 @@ struct FileFingerprint {
 /// cost of the H0.1 / H0.5 content-identity contract.
 fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let meta = std::fs::metadata(path).ok()?;
-    let mtime = meta.modified().ok()?;
-    let mtime_secs = system_time_to_secs(mtime);
+    // Sin fecha no hay huella: el fichero se vuelve a leer. La ausencia de
+    // una senal no es una senal, y el hash de los bytes es el que decide.
+    let mtime_secs = epoch_seconds(meta.modified().ok()?);
     let size = meta.len();
     let bytes = std::fs::read(path).ok()?;
     let content_hash = content_hash_64(&bytes);
@@ -991,20 +996,6 @@ pub(crate) fn content_hash_64(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x100_0000_01b3); // FNV prime
     }
     hash
-}
-
-/// Converts a `SystemTime` to seconds since the UNIX epoch. Saturates on
-/// dates before the epoch.
-fn system_time_to_secs(t: SystemTime) -> u64 {
-    match t.duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs(),
-        Err(e) => {
-            // Date is before the UNIX epoch; saturate to 0 so the
-            // cache can still compare this value to others without
-            // panicking.
-            e.duration().as_secs()
-        }
-    }
 }
 
 /// Why a file was skipped when building a graph.

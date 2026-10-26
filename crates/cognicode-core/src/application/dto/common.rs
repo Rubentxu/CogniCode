@@ -18,7 +18,15 @@ use serde::{Deserialize, Serialize};
 pub struct FileMetadata {
     pub path: String,
     pub size: u64,
-    pub modified: u64,
+    /// Segundos desde la epoca UNIX, con signo.
+    ///
+    /// `None` cuando el sistema de ficheros no publica una fecha. Un
+    /// `Some(0)` es un fichero escrito en la epoca, que es una medicion;
+    /// un `None` es un fichero del que no se sabe cuando se escribio, que
+    /// no lo es. Publicar `0` para los dos diria "1 de enero de 1970" de
+    /// algo que nadie midio, asi que el consumidor tiene que poder ver la
+    /// diferencia.
+    pub modified: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 }
@@ -39,7 +47,12 @@ pub struct FileEdit {
 pub struct FileEntry {
     pub path: String,
     pub size: u64,
-    pub modified: u64,
+    /// Segundos desde la epoca UNIX, con signo.
+    ///
+    /// `None` cuando el sistema de ficheros no publica una fecha. La
+    /// diferencia con `Some(0)` —un fichero escrito en la epoca— es la
+    /// diferencia entre una fecha medida y una fecha que no existe.
+    pub modified: Option<i64>,
     pub is_dir: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,

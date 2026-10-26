@@ -5,12 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-24, sobre `3c7b6ebb42054440f475b13da98fc3e803eea246` (el
-> `main` ya fusionado que cierra el tramo: la ruta asíncrona de construir el
-> grafo ya no tiene su propio recorrido —usa el inventario centralizado y
-> devuelve los resultados en orden—, la capacidad de ingerir rutas sólo se
-> ofrece cuando hay un almacén detrás, y el MCP ya no presenta un error como
-> si fuera una respuesta).
+> **Snapshot**: 2026-10-26, sobre `ad9c694cecb4a563ea84607fe2c189d4567a2f47` (la rama de la
+> incrementalidad: el grafo se reconstruye sólo donde cambió, y el servicio
+> dice cuánto conservó).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -144,13 +141,96 @@ Y otra que encontró la ontología, que es de la misma familia:
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
 
+13. **Un gate que depende de la red no es un gate.** La etapa `contracts` del
+    gate se puso en rojo sin que cambiara una línea del código que certificaba:
+    entre la corrida verde y la roja solo había un párrafo del Journal. La
+    causa era que un contrato aísla el `HOME` para no heredar nada de quien lo
+    ejecuta, y al aislarlo deja a `rustup` sin toolchain, que la descarga desde
+    la red: 117,7 s por llamada, con el `timeout=120` del contrato al borde. La
+    red decidía el veredicto, y dos corridas del gate de esa misma mañana
+    habían fallado igual. La regla: una comprobación que necesita un dato de la
+    máquina —el host, la toolchain, la versión— lo recibe como dato, y si no
+    puede obtenerlo **falla cerrado y lo dice**, en vez de inventar un valor y
+    sacar de ahí un veredicto sobre otra cosa.
+
+14. **Lo que no cambió se conserva, y lo que decide qué se rehace es la
+    identidad, no el nombre.** Rehacer el grafo entero por tocar un fichero
+    no es lentitud: es trabajo que se tira. Y la pregunta de qué hay que
+    rehacer tiene una respuesta que no es «el nombre de la función», sino
+    «la identidad de la declaración»: un nombre puede seguir existiendo y
+    ser otra cosa —movida de línea, con otra declaración al lado—, y en ese
+    caso la respuesta que se guardó ya no vale aunque el nombre sea el
+    mismo. La regla que sale de ahí: cuando se decide qué se invalida, se
+    compara **lo que identifica**, no lo que se nombra; y lo que se conserva
+    se escribe en el libro mayor, porque una respuesta conservada sigue
+    siendo una respuesta —un libro que sólo guarda lo nuevo se vacía en
+    cada construcción y rehace el proyecto entero sin querer—.
+
 ## Unidades abiertas
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
+| **H5** (`C46`) | la ingestión que no borra del escaneo lo que no puede fechar | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
+La identidad vive ahora en el dominio, en un valor con constructor puro: `SnapshotKey` dice qué se miró (el workspace), quién lo miró (el analizador: su versión, su commit y sus capacidades) y con qué forma se escribió (el esquema). El snapshot la guarda y se decide con ella, y la primera pregunta al cargar es sobre el productor, que no cuesta nada porque se responde sin leer el árbol. Si lo produjo otro analizador, no se sirve: el producto reconstruye y el motivo queda en el log. La base publicada gana cuatro campos que salen de la misma clave con la que se escribe el snapshot, y el catálogo publicado declara los mismos.
+El RED está medido sobre el camino malo: los tests nuevos fallaban 3 de 4 y el contrato de CI encontraba 16 hallazgos contra el código anterior. Con el binario real por stdio, un snapshot al que se le cambia la versión declarada no se sirve. Lo que queda de esta unidad —que un cambio no rehaga el grafo entero, y la medición de frío, tibio y edición— está medido y encolado como `C47`.
+
+**Una fecha se publica solo si se midió, está cerrada.** El producto publicaba la marca de tiempo de un fichero como un número de segundos desde la época, y ese número decía siempre algo: cuando la fecha no se podía leer publicaba `0`, que dice «1 de enero de 1970»; y el grafo por fichero, que convertía la distancia a la época en vez del instante, publicaba 1980 para un fichero de 1960. Once sitios de producción medían la fecha por su cuenta. La caché nunca sirvió un grafo viejo —la invalidación compara también el hash del contenido—, así que el defecto no era de estabilidad: era que el producto publicaba una fecha que no había medido.
+La causa eran tres hechos distintos —una fecha medida, la época exacta y la ausencia de fecha— vestidos del mismo número. Ahora el tipo publicado distingue los tres: `Some(0)` es un fichero escrito en la época, `Some(-60)` uno escrito antes, y `None` uno del que no se sabe cuándo se escribió. El signo no es decorativo: un fichero puede traer una fecha anterior a la época, y un contador sin signo no la puede representar. La medida tiene un dueño único en el dominio, y la caché sigue invalidando por contenido: un fichero sin reloj no invalida el snapshot por su cuenta.
+El RED está medido sobre el camino malo: los tests nuevos fallaban 2 de 3 y el contrato de CI encontraba 24 hallazgos contra el código anterior. Con el binario real por stdio, un fichero de 1960 devuelve `modified: -60`.
+**Un rechazo llega al cliente como un rechazo, está cerrada.** El servicio de ficheros puede rechazar una petición —un camino fuera del workspace, un patrón que no es una expresión regular— y eso es una decisión del producto, no una caída. Pero los cinco handlers que pasan por el contador de métricas reconstruían el error como fallo interno, de modo que el cliente recibía "application: Internal error: Invalid parameter: …" donde debía recibir "application: Invalid parameter: …".
+La causa no era el aplanado sino su por qué: el contador exigía su propio tipo de error, así que el llamante tenía que convertir el suyo y reconstruirlo después, y esa reconstrucción perdía la categoría. Ahora el contador es genérico sobre el error y lo devuelve intacto; pide una etiqueta, que es lo único que la telemetría necesita saber. La etiqueta es la categoría del error, con un match exhaustivo que el compilador mantiene al día.
+El defecto era invisible a la suite entera por una razón concreta: el servidor MCP inicializa el colector de métricas y los tests no, de modo que la suite probaba siempre el camino que ya funcionaba. El RED está medido sobre el camino malo: los dos tests nuevos fallaban y nombraban los cinco handlers, y el contrato de CI fallaba dos de cuatro contra el código anterior. Con el binario real por stdio, el servidor —que sí cuenta— entrega la categoría.
+
+**El consumidor declara la versión sobre la que escribe, está cerrada.** La
+escritura condicional existía en la capa de aplicación, pero el borde la perdía: el
+campo se fijaba a `None` en la conversión, el esquema del protocolo no lo declaraba,
+y `read_file` no publicaba ningún digest. Es decir, la capacidad existía y era
+inaccesible: el consumidor no tenía forma de nombrar la versión que leyó. Ahora
+`read_file` publica el digest del fichero entero, y sale de la misma lectura que
+cuenta las líneas —sin una segunda pasada por el fichero, y con el orden seguro,
+porque el digest se calcula antes de leer el contenido—. `write_file` y `edit_file`
+aceptan el hash declarado y la conversión lo lleva. El documento publicado declara
+el campo, y la captura del runtime se refrescó desde un `tools/list` real: su
+`tool_version` decía `0.101.17` y el gate, que sólo comparaba el conjunto de
+nombres, no se enteraba.
+La demostración está hecha: seis de los siete tests nuevos se vieron fallar antes,
+el contrato fallaba dos de seis, y el UAT con el binario real por stdio leyó,
+escribió declarando la versión y fue rechazado cuando la versión ya no era la.
+
+**La escritura se publica entera, o no se publica, está cerrada.** El servicio
+de ficheros abría el temporal con `File::create`, que no exige creación exclusiva,
+de modo que un temporal preexistente se trunca; la limpieza estaba sólo en el error
+del cambio de nombre, así que un fallo de escritura dejaba el temporal en disco; y
+no había comprobación de versión, de modo que una edición pisaba el trabajo de otro
+editor entre la lectura y la escritura sin que nadie se enterara. Ahora hay un
+adaptador único: el temporal se crea en exclusiva, el contenido se sincroniza antes
+de que el destino exista, el directorio se sincroniza después del cambio de nombre,
+y la limpieza está en `Drop`, de modo que lo que no se publica se borra porque el
+escritor se suelta y no porque alguien se acuerde de borrar en cada camino de
+error. El llamante puede declarar la versión que leyó, y la escritura se niega si
+el destino ya no la tiene: la versión se comprueba antes de crear nada —para que
+una petición rechazada no deje ni el fichero ni los directorios que pidió— y otra
+vez justo antes de publicar. El digest es el del producto, no una tercera forma de
+hashar. La demostración está hecha: tres de los cinco tests nuevos se vieron fallar
+antes, y el contrato que vigila que no vuelva comprueba que cada detector nota un
+texto que la viola.
+
+**Un corte por byte no parte un caracter está cerrada.** El servicio de ficheros
+recortaba el texto por índice de byte, y con texto multibyte un índice dentro
+de un carácter abortaba el proceso: el desplazamiento lo elegía el llamante —
+el token de continuación no está firmado— y el tamaño del trozo también. El
+corte se pide ahora con la forma que el tipo hace segura: los tramos se toman
+con `get`, que devuelve `None` cuando el rango no cae en fronteras, y el
+tamaño del trozo se ajusta al último carácter entero que cabe. Un módulo
+nuevo de fronteras sustituye a los recortes sueltos, y hay un contrato que
+vigila que no vuelva: no lista los cortes prohibidos uno a uno, sino que mira
+cualquier corte por índice sobre texto en los ficheros que recortan. La
+demostración está hecha: los cuatro tests nuevos se vieron abortar antes, en
+las líneas 986, 1003 (dos veces) y 1376.
 
 **Lo que se rechaza no deja rastro, y las ediciones se aplican al original está
 cerrada.** Dos controles llegaban tarde o no llegaban. El límite de tamaño de
@@ -313,9 +393,69 @@ laboratorios de git ya no heredan las reglas de quien los ejecuta.
 sí se publicó, verificada desde sus propios bytes y con los binarios
 instalados arrancados fuera de cualquier repositorio.
 
+**La guarda del toolchain no depende de la red, está cerrada.** Una comprobación
+del gate que necesita un dato de la máquina —el triple del host— lo pedía
+justo donde no lo había: dentro de un entorno aislado que deja a `rustup` sin
+toolchain, con lo que el shim la descarga desde la red. Medido: 117,7 s por
+llamada, con el `timeout=120` del contrato al borde. El resultado era que la red
+decidía el veredicto del gate, y dos corridas de esa misma mañana ya habían
+fallado con la misma firma. El defecto de fondo era del mismo origen: cuando
+`rustc -vV` fallaba, el host quedaba vacío y el target **nativo** se rechazaba
+como si fuera cruzado, con el motivo de que faltaba un compilador que nadie
+había preguntado.
+Ahora la guarda recibe el host como dato y no ejecuta `rustc` cuando se le da;
+cuando no lo recibe, lo resuelve como antes y **falla cerrado** si no puede,
+nombrando esa causa en vez de sacar un veredicto sobre el target. El contrato
+resuelve el host una sola vez, en el proceso padre y con el entorno real, y la
+hermeticidad es estructural: la función que ejercita la guarda rechaza una
+llamada sin host salvo que se pida explícitamente la ruta de resolución. El RED
+está medido sobre el camino malo: dos de los tres tests nuevos fallaban con el
+veredicto falso, siendo el target nativo. El GREEN está medido: el contrato
+completo, 11 de 11, en 0,64 s —antes, 117,7 s por llamada—, y la suite entera
+de contratos, 438 comprobaciones verdes y 0 rojas.
+
+**El grafo se reconstruye sólo donde cambió, está cerrada.** Tocar un fichero
+rehacía el grafo entero: la fase de resolución —la que mira 34 779 relaciones
+en un proyecto de 400 ficheros— se repetía completa en cada construcción, y el
+consumidor no tenía forma de saber cuánto de su grafo anterior seguía en pie.
+Ahora un módulo nuevo, `infrastructure/graph/reuse.rs`, es el dueño único de
+esa decisión: lleva un libro mayor entre construcciones con lo que la última
+sabía de cada fichero —su hash y la identidad de cada declaración que hace— y
+lo que resolvió para cada par (fichero llamante, nombre llamado). La regla es
+la de la **identidad**: un nombre se invalida cuando algún fichero —cambiado,
+nuevo o borrado— añadió su declaración, la eliminó, o le dio otra identidad;
+y el fichero de quien llama invalida sus propias relaciones, porque las
+llamadas que dice se leen otra vez en cada construcción. Lo que el cambio no
+toca se conserva.
+Antes de escribir la regla se midió que esa identidad es estable —sobre el
+corpus de 400 ficheros, el conjunto completo de ids de la construcción en frío
+y el de la caliente son idénticos: 18 011 ids, 0 aristas colgantes—, porque una
+regla de identidad sobre identidades inestables no sería sound. El primer
+sondeo decía lo contrario (1 299 pares con id distinto) y era un artefacto del
+propio sondeo: el mapa colapsaba homónimos y guardaba el último según el
+orden de iteración.
+El GREEN está medido sobre el camino malo, con mutación focal: se rompieron
+tres veces la regla a propósito y cada mutante murió sólo por los tests
+escritos para él —la regla vieja por nombre, la regla vieja con guarda de
+ámbito, y la regla sin la cláusula de identidad—, y los tres se revirtieron.
+La suite de caracterización queda en 10 de 10, y la medición (CU-005.6) sobre
+400 ficheros en 61 directorios: frío 3,371 s; tibio 766,7 ms de p50 y 771,3
+ms de p95; edición al final 820,3 ms; edición en medio 861,3 ms de p50 y
+2,465 s de p95. Con la regla anterior, sobre el mismo corpus, la edición
+cuesta p50 2,391 s y p95 2,543 s: el endurecimiento la hace 2,8 veces más
+rápida por un 5 % en la construcción tibia. La medición encontró además un
+defecto de fondo —el libro mayor guardaba las respuestas nuevas y no las
+conservadas, así que se vaciaba en cada construcción y una de cada cuatro se
+rehacía entera— y el número dice lo que dice: cuántas relaciones se
+resolvieron otra vez y cuántas se conservaron, no «el análisis fue
+incremental». El análisis entero no lo es: analizar los ficheros sigue
+asignando unos 199 MiB por construcción. El CLI y el MCP no llevan todavía el
+número en su carga útil: publicarlo en esas superficies es un cambio de
+contrato con su propio gate.
+
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 8 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 5 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.

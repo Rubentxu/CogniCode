@@ -37,6 +37,7 @@ use crate::domain::value_objects::Location;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::TraversalDirection;
+use crate::domain::value_objects::file_time::measured_seconds;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -393,15 +394,12 @@ impl WorkspaceSession {
                     language?;
                     let content = std::fs::read_to_string(path).ok()?;
                     let content_hash = blake3::hash(content.as_bytes()).to_string();
-                    let mtime = std::fs::metadata(path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(|t| {
-                            t.duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs()
-                        })
-                        .unwrap_or(0);
+                    // La fecha que el sistema de ficheros publica, o ninguna
+                    // si no la publica. Un `None` no es la epoca: es la
+                    // ausencia de una medida.
+                    let mtime = measured_seconds(
+                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok()),
+                    );
                     let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
                     // Count symbols in this file from the current graph
                     let symbol_count = graph
@@ -468,15 +466,12 @@ impl WorkspaceSession {
                     language?;
                     let content = std::fs::read_to_string(path).ok()?;
                     let content_hash = blake3::hash(content.as_bytes()).to_string();
-                    let mtime = std::fs::metadata(path)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(|t| {
-                            t.duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs()
-                        })
-                        .unwrap_or(0);
+                    // La fecha que el sistema de ficheros publica, o ninguna
+                    // si no la publica. Un `None` no es la epoca: es la
+                    // ausencia de una medida.
+                    let mtime = measured_seconds(
+                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok()),
+                    );
                     let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
                     Some((relative_path, content_hash, mtime, content))
                 })

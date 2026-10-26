@@ -34,11 +34,49 @@
 # Este script no decide que un target sea buildable —solo el build lo hace—.
 # Decide que su toolchain nativa responde, que es la precondicion que faltaba.
 #
-# Uso: check-cross-toolchain.sh <target-triple>
+# MEDIDO 2026-10-25. El host se puede dar como segundo argumento. Antes, este
+# script lo resolvia siempre con `rustc -vV`, y hay un caso en el que esa
+# pregunta cuesta mas de un minuto y no responde nada:
+#
+#     HOME=/tmp/aislado  rustc -vV
+#     info: downloading 6 components
+#     warn: the missing active toolchain `stable-x86_64-unknown-linux-gnu`
+#           has been auto-installed
+#
+# El `rustc` del PATH es el shim de rustup, y con el HOME aislado no hay
+# toolchain instalada: rustup lee el `rust-toolchain.toml` del repositorio e
+# intenta instalar la suya desde la red. MEDIDO: 117,7 s por llamada, con el
+# `timeout=120` del contrato al borde. El contrato que ejercita esta guarda
+# aislaba el HOME, asi que cada llamada pagaba esa descarga, y con la red un
+# poco mas lenta el `TimeoutExpired` tumbaba la etapa `contracts` del gate.
+#
+# El host se resuelve una vez, fuera, y se pasa. El contrato lo hace con el
+# entorno real (9 ms) y la guarda no llega a preguntar a rustc.
+#
+# Y cuando no se le da el host, la guarda no puede resolverlo y **no da
+# veredicto**: antes, un `rustc -vV` que fallaba dejaba el host vacio, y el
+# target nativo --el que se estaba comprobando-- se rechazaba como si fuera
+# cruzado, con el motivo de que faltaba el compilador de C. Ese veredicto
+# hablaba de una causa que no se habia mirado.
+#
+# Uso: check-cross-toolchain.sh <target-triple> [host-triple]
 set -uo pipefail
 
-target="${1:?usage: check-cross-toolchain.sh <target-triple>}"
-host="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"
+target="${1:?usage: check-cross-toolchain.sh <target-triple> [host-triple]}"
+host="${2:-}"
+
+if [ -z "$host" ]; then
+    host="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"
+    if [ -z "$host" ]; then
+        echo "FAIL: this guard cannot tell a crossed target from the native one."
+        echo "  'rustc -vV' did not report a host target, so the comparison that"
+        echo "  follows would reject the native target as if it were crossed."
+        echo "  That verdict would be about a broken toolchain, not about the"
+        echo "  target, and it would blame a compiler that was never asked."
+        echo "  Fix the toolchain, or pass the host triple as a second argument."
+        exit 1
+    fi
+fi
 
 if [ "$target" = "$host" ]; then
     echo "  $target is the host target; the native toolchain is the build's own"
