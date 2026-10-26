@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-26, sobre `991bb2c4408e1e988aa3c89c114e03162cef96ca` (la rama de la
+> **Snapshot**: 2026-10-26, sobre `565cd86df5ebacbf6789de9a0baeebbed8610c5e` (la rama de la
 > incrementalidad: el grafo se reconstruye sólo donde cambió, el servicio dice
 > cuánto conservó, y el escaneo declara los ficheros que no puede fechar).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
@@ -455,6 +455,7 @@ contrato con su propio gate.
 **El escaneo declara los ficheros que no puede fechar, está cerrada.** La última excepción del contrato de la fecha medida era la familia de la ingestión, y su hueco era doble: una fecha anterior a la época se publicaba como 0 —que es la época— y un fichero cuya fecha no se puede leer desaparecía del escaneo. No era un fichero sin fecha: era un fichero que el escaneo ya no conocía, así que tampoco quedaba sitio donde decir que no se sabía cuándo se había escrito. La causa era que la medida y la decisión estaban en el mismo sitio, y ese sitio era un `filter_map`: cuando la fecha no se podía leer, el fichero entero se perdía.
 Ahora la medida no filtra: cada fichero que el recorrido encuentra se mide con el dueño único —`file_time::measured_millis`— y se queda en el escaneo con su fecha ausente cuando el sistema de ficheros no la publica. La fecha es `Option<i64>` en milisegundos y con signo en todo el camino —`FileChange`, `ScanManifestEntry`, el puerto y la columna `mtime_millis INT64`—, y un NULL se lee como `None` y no como `0`. Sin fecha no se puede afirmar nada, así que el fichero se vuelve a mirar y decide el hash, que es lo que siempre decidió.
 El RED está medido sobre el camino malo: la suite de caracterización falló contra el código viejo diciendo que el escaneo borró el fichero y con él su hueco. La reproducción es real y no falsifica el reloj: un directorio con modo `0444` se puede listar pero no atravesar. El GREEN se midió con mutación focal: cuatro veces se rompió el comportamiento a propósito, y cada mutante murió sólo por los tests escritos para él. La suite queda en 5 de 5, más dos tests del adaptador que demuestran que la ausencia y el signo negativo sobreviven al viaje de ida y vuelta a la base de datos. El contrato de la fecha medida ya no declara el hueco, y el registro de huecos —que ahora tiene que declarar que está vacío, porque un registro vacío es una afirmación y no un olvido— sigue vigilando el sitio: se metió una fabricación de vuelta en `scan.rs` y los dos detectores la cazaron.
+La integración encontró después un defecto que los gates locales no veían, y no era del producto: el arnés de pruebas del adaptador agotaba el espacio de direcciones del proceso. El motor reserva ocho terabytes de espacio de direcciones —no de memoria— por cada base de datos que abre, y la suite abre una base por test: con sesenta y cuatro tests en paralelo no cabían. El arnés abre ahora sus bases con una configuración propia, recortada como lo hace la configuración de pruebas del propio motor, y un guardián abre veinte bases a la vez para que el límite no vuelva a decidirse por suerte. La producción abre igual que antes, con la configuración por defecto.
 
 ## La misión
 

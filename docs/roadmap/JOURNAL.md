@@ -27418,15 +27418,19 @@ C44 (15) y C13 (10).
 
 **C46 closed.** C46 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
 `scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
---workspace` —**6 442 pruebas verdes en 247 binarios de prueba, 0 rojas**—,
-doc-tests, los contratos —**61 guiones, 439 comprobaciones verdes, 0 rojas**— y
-el comprobante de línea base).
+--workspace` —**6 443 pruebas verdes en 247 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**439 comprobaciones verdes, 0 rojas**— y el
+comprobante de línea base). Los dos gates se midieron por última vez sobre el
+árbol que cierra, con el arreglo del arnés ya dentro.
 
-**La unidad, cerrada sobre `991bb2c4408e1e988aa3c89c114e03162cef96ca`.**
+**La unidad, cerrada sobre `565cd86df5ebacbf6789de9a0baeebbed8610c5e`.** El
+comportamiento de C46 entró en `991bb2c4408e1e988aa3c89c114e03162cef96ca`, y el
+arreglo del arnés que encontró la integración entró después, en la revisión que
+cierra.
 
-Esa revisión es la que aterriza, y no la que se midió: la rama se reconstruyó
-sobre `main` para que la pull request no arrastrara el trabajo anterior, y al
-reconstruir cambiaron los padres, no el contenido. El árbol es el mismo —
+`991bb2c4…` no es la revisión que se midió: la rama se reconstruyó sobre `main`
+para que la pull request no arrastrara el trabajo anterior, y al reconstruir
+cambiaron los padres, no el contenido. El árbol es el mismo —
 `7376dc256f7747571b01410dc5e818f8873b1c39` en las dos revisiones—, así que la
 medición del gate sigue siendo la medición de lo que entra.
 
@@ -27528,6 +27532,51 @@ llamante de producción, `ScanResult` no se construye nunca y el DDL de
 `ScanManifest` sólo existe en ayudantes de prueba. Lo que se arregla aquí es la
 semántica de la fecha, no una ruta viva; lo que la vuelva viva es otra unidad,
 con su propio gate.
+
+**El gate de la integración encontró un defecto que los gates locales no veían.**
+Con el recibo ya escrito, la pull request #472 se puso roja en la etapa
+`cognicode-ladybug`: `shell exited with code 101`. No era un fallo de aserción
+sino un fallo del arnés —«Buffer manager exception: Mmap for size 8796093022208
+failed.»— y los tests que caían eran distintos en cada ejecución: la firma de un
+fallo que no dice nada del código bajo prueba y que depende de cuántos tests
+corren a la vez. Reproducido localmente, `cargo test -p cognicode-ladybug
+--lib` daba «62 passed; 2 failed», y con `--test-threads=8` pasaba todo.
+
+**La causa, medida.** El motor reserva una región de memoria virtual por cada
+base de datos que abre, y el tamaño la fija `max_db_size`. Por defecto son ocho
+terabytes —`DEFAULT_VM_REGION_MAX_SIZE = 1 << 43`—, y la reserva se pide al
+abrir la base, no al escribir: es espacio de direcciones, no memoria. La suite
+de este crate abre una base por test, así que con sesenta y cuatro tests en
+paralelo pide ocho terabytes por cada una, y el proceso se queda sin espacio de
+direcciones. Una sonda desechable, fuera del repo, lo midió: 8 669 781 692 kB de
+espacio de direcciones por base con la configuración por defecto, y 80 895 676 kB
+con una región de un gibibyte.
+
+**El arreglo.** La producción se queda con la configuración por defecto —una base
+por proceso, y ocho terabytes es el máximo que el motor admite—, y el arnés abre
+sus bases con la suya: `test_system_config()`, que recorta la región a
+dieciséis gibibytes y acota el grupo de páginas a cuatro. Lo segundo también
+hace falta: si el grupo de páginas se deja en cero, el motor lo dimensiona con
+la memoria física de la máquina —el ochenta por ciento de ella, por base—, y la
+reserva del arnés dependería del tamaño del anfitrión y no de los tests. Con las
+dos cosas acotadas, la reserva por base es la misma en cualquier máquina.
+
+**El RED y el GREEN del guardián.** El test nuevo
+`the_harness_holds_twenty_databases_open_at_once` abre veinte bases a la vez con
+la configuración del arnés. Con la configuración por defecto muere en la
+decimosexta, con el mismo mensaje que el gate; con la del arnés las veinte
+abren en 1,09 s. El límite de espacio de direcciones es un límite, no una
+estadística: el fallo es determinista, y no una carrera.
+
+**Lo que no se toca.** `LadybugStore::open` no cambia, y los dos tests que
+comprueban que `open()` deja el esquema listo siguen usando `open()`. Queda un
+residuo declarado: una base de producción reserva ocho terabytes de espacio de
+direcciones —para un proceso que abre una o dos bases es corriente—, y los
+crates que abren la base por la vía de producción (CLI, runtime) heredan ese
+perfil: cada uno abre pocas bases por proceso, así que no llegan al límite,
+pero un arnés que abriera muchas por proceso lo alcanzaría. El motor no ofrece
+un tope más fino para el tamaño máximo de la base, así que el residuo se declara
+en vez de esconderse.
 
 **Siguiente WU.** La cola queda con cuatro candidatos: C23 (50, bloqueada por
 el operador), C12 (20), C44 (15) y C13 (10). C46 sale de la cola al cerrarse.
