@@ -15,7 +15,11 @@ más el negativo que la propia línea exige («símbolo que no existe produce
 **Árbol medido:** `4920517b477b55710930bb35f7c9b77768bdffa1` —el commit donde
 el comportamiento de esta unidad entró— y su árbol
 `d964c24b17c75997437d5be63e866963f5aeeb9f`, sobre `c87340f0` (la `main`
-publicada tras el squash-merge de la PR #472).
+publicada tras el squash-merge de la PR #472). La puerta final se midió sobre
+el árbol de cierre `50873ca6efe993cbdc40ef358bf97eee4388f3d9` (el commit
+`c29e2e94`), que es el anterior más la declaración que la guarda de
+contaminación exige; entre ambos árboles no cambia ni una línea de código de
+producto.
 
 ## Qué es esta unidad
 
@@ -288,24 +292,64 @@ Por eso la evidencia de esta unidad es el `full`: el `fast` no la cubre.
 | Comprobante de línea base (`known_failures.yaml`, core/lib) | OK — la línea base no declara fallos conocidos, así que no hay nada contra qué comparar y la suite no se repite |
 | **rc global** | **0** |
 
-### El primer `full` fue rojo, y el rojo era mío
+Esta tabla es la medición del **árbol de cierre** `50873ca6` (commit
+`c29e2e94`): la única que ve el árbol como lo verá el resto del mundo, con la
+unidad ya versionada. Las cifras coinciden con las de la corrida anterior,
+que se midió sobre el árbol de trabajo —y por eso el arreglo de formato que
+se cuenta más abajo no cambió comportamiento—.
 
-La primera corrida terminó en `rc=1` en la etapa `fmt --check`: un `assert!`
+### Un `full` fue rojo, y el rojo era mío
+
+Una de las corridas terminó en `rc=1` en la etapa `fmt --check`: un `assert!`
 encadenado en `crates/cognicode-core/tests/cu1_w2_service_analyzer_contract.rs:194`
 que rustfmt quería replegar. **No** era infraestructura, ni flakiness, ni el
 ruido conocido: era un defecto de formato que esta unidad introdujo.
 
 La corrección fue mínima y cosmética —`cargo fmt --all`, que tocó un solo
-fichero y un solo fragmento— y la segunda corrida dio `rc=0` con **las mismas
+fichero y un solo fragmento— y la corrida siguiente dio `rc=0` con **las mismas
 cifras** (6 444 / 0 rojas / 237 binarios, 439 contratos / 0 rojas). Eso es
 justo lo que prueba que el arreglo no cambió comportamiento: si hubiera
 cambiado algo, los recuentos se habrían movido.
 
+### El `full` del árbol de cierre encontró un defecto que las corridas anteriores no podían ver
+
+La corrida sobre el **árbol de cierre** —el que se entrega, con la unidad ya
+versionada— salió en `rc=1`: de las 439 comprobaciones de contrato, **438
+verdes y 1 roja**, con las otras 60 suites en verde. La roja era
+`test_prose_script_contamination.py`, y la causa no fue un descuido de
+ortografía sino una propiedad del propio guard: **enumera los ficheros
+versionados** (`git ls-files`), así que mientras el contrato de Kotlin y su
+fixture estaban sin commitear no podía verlos. Sus caracteres CJK le eran
+invisibles, y las corridas verdes anteriores no lo contradecían: medían un
+árbol que todavía no existía como commit.
+
+Los caracteres no son contaminación de prosa: **son el sujeto del test**. La
+garantía que `k1_kotlin_symbol_contract` afirma es que el código que se
+publica no desplaza la columna de un identificador, y un identificador
+latino con acentos no la pondría a prueba —un acento son dos bytes, un
+ideograma son tres por carácter, y el desplazamiento es justo lo que se
+mide—. Quitar el CJK para que la guarda callara habría debilitado la
+garantía para satisfacer una guarda, y el propio contrato ofrece el
+mecanismo para esto: **declarar el fichero con su razón**.
+
+La corrección fueron dos entradas en `EXEMPTIONS` —el contrato de Kotlin y el
+fixture Unicode— con la razón que explica por qué el CJK se queda. La guarda
+sigue barriendo todo lo demás, y su comprobación de que toda exención siga
+eximiendo algo impide que la declaración se vuelva una esquina muerta. La
+corrida siguiente, sobre el árbol ya versionado, dio `rc=0` con las mismas
+cifras.
+
+**La lección es general, y por eso se queda escrita: un gate verde sobre el
+árbol de trabajo no es un gate verde sobre el árbol que se entrega.** La
+corrida de cierre no es un trámite: es la única que ve el árbol como lo verá
+el resto del mundo.
+
 ## Estado al cierre
 
 - Rama `feature/the-kotlin-declaration-is-named`, con el comportamiento en
-  `4920517b` y este veredicto y la entrada del Journal en el commit que lo
-  acompaña.
+  `4920517b`, este veredicto y la entrada del Journal en `ba55a695`, y la
+  declaración que la guarda de contaminación exige en `c29e2e94`. La puerta
+  final se midió sobre el árbol de `c29e2e94`.
 - El veredicto del `merge-gate` no se publica aquí: lo publica la pull request
   cuando GitHub lo ejecute, y el Journal lo recoge cuando exista.
 - El bump de SemVer, el tag y la publicación los decide el operador; el

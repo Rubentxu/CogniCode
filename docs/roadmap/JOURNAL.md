@@ -27755,3 +27755,32 @@ aceptación, y Kotlin no lo tiene. `product/product-manifest.json` y
 
 **Siguiente WU.** La cola queda con tres candidatos: C23 (50, bloqueada por el
 operador), C44 (15) y C13 (10). C12 sale de la cola al cerrarse.
+
+**La puerta final, medida sobre el árbol que se entrega.** El `full` se volvió a
+correr sobre el árbol de cierre `50873ca6` (commit `c29e2e94`): `rc=0`, con
+**6 444 pruebas verdes en 237 binarios de prueba, 0 rojas**, **8 doc-tests
+verdes en 10 binarios, 0 rojas**, el explorer multimodal en verde, los
+**contratos —439 comprobaciones verdes, 0 rojas, en 61 suites—** y el
+comprobante de línea base OK. Las cifras coinciden con las de la corrida
+anterior: el arreglo de formato no cambió comportamiento.
+
+Esa corrida no fue un trámite, y encontró algo. Sobre el árbol de trabajo el
+guard de contaminación de prosa daba verde; sobre el árbol de cierre dio
+**rojo**: una comprobación de 439, con las otras 60 suites en verde. La causa
+es una propiedad del guard —**enumera los ficheros versionados**, `git
+ls-files`—, así que mientras el contrato de Kotlin y su fixture estaban sin
+commitear no podía verlos: sus caracteres CJK le eran invisibles, y las
+corridas verdes anteriores no lo contradecían porque medían un árbol que
+todavía no existía como commit. Esos caracteres **son el sujeto del test**:
+la garantía que el contrato afirma es que el código publicado no desplaza la
+columna de un identificador, y un identificador latino con acentos no la
+pondría a prueba —un acento son dos bytes, un ideograma son tres por carácter,
+y el desplazamiento es justo lo que se mide—. Quitarlos para que la guarda
+callara habría debilitado la garantía para satisfacer una guarda, así que la
+corrección fue la que el propio contrato ofrece: **dos entradas en
+`EXEMPTIONS`**, el contrato de Kotlin y el fixture Unicode, cada una con su
+razón. La corrida siguiente, sobre el árbol ya versionado, dio `rc=0`.
+
+**La lección es general: un gate verde sobre el árbol de trabajo no es un gate
+verde sobre el árbol que se entrega.** Por eso la corrida de cierre se queda
+como parte del cierre, y no como un trámite.
