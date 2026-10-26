@@ -152,6 +152,15 @@ EXEMPTIONS: tuple[tuple[str, str], ...] = (
         "unicode path inside a test fixture",
     ),
     (
+        "crates/cognicode-core/tests/k1_kotlin_symbol_contract.rs",
+        "unicode identifier inside a test that proves the published code "
+        "does not shift its column",
+    ),
+    (
+        "sandbox/fixtures/kotlin/Unicode.kt",
+        "unicode fixture whose characters are the subject of the test",
+    ),
+    (
         "apps/explorer-ui/src/components/MermaidRenderer.test.tsx",
         "mermaid diagram whose node labels are not Latin",
     ),
