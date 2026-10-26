@@ -27605,3 +27605,153 @@ base de eventos, con su identificador `8c15b381-a7ee-4326-a222-30001d84def4` y
 corridas quedan lado a lado en la misma base, que es donde se puede ver que el
 arreglo no cambió el trabajo: la etapa tardaba más antes de morirse que lo que
 tarda ahora en terminar.
+
+## 2026-10-26 — C12: Kotlin se navega sin JVM
+
+**C12 closed.** C12 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 444 pruebas verdes en 237 binarios de prueba, 0 rojas**—,
+doc-tests, los contratos —**439 comprobaciones verdes, 0 rojas**— y el
+comprobante de línea base). Los dos gates se midieron sobre el árbol
+`4920517b`.
+
+El `fast` de este ciclo **cayó al subconjunto conservador**
+(`strategy=fallback`): el selector CR-08 no conoce `scripts/product/**`, así
+que la ruta de ese script no se pudo clasificar y el subconjunto no incluye los
+contratos de integración —el promovido entre ellos—. Es un hueco
+**preexistente** del selector, no de esta unidad, y por eso la evidencia de
+esta unidad es el `full`: el `fast` terminó en rc=0 sobre 4 434 pruebas en 10
+binarios, con 0 rojas, y sin el contrato que esta unidad promueve.
+
+**La unidad, cerrada sobre `4920517b477b55710930bb35f7c9b77768bdffa1`.** C12 es B5 y H3 en el vocabulario del
+roadmap, y K1 en la línea Kotlin: «Navegación Kotlin sin JVM». Su contrato son
+`SPEC-KOTLIN-SYMBOLS.md` (K-SYM-01..07) y la línea
+`KOTLIN-LINE-K0-K3.md`; su oráculo de aceptación es U-K1 en
+`uat/ACCEPTANCE.md`. El ADR de esta unidad, `ADR-K002.md`, sigue
+**PROPOSED**: cerrarla no lo aprueba.
+
+**Qué es esta unidad.** K0 había dejado Kotlin honesto pero sin capacidad:
+`kt` y `kts` estaban declarados como extensiones conocidas y **no**
+soportadas, y el grafo los contaba como `KnownUnsupportedGap`. Esta unidad
+convierte la declaración en capacidad: Kotlin se parsea, sus símbolos se
+publican con nombre y ubicación, y el código de un símbolo es su declaración.
+
+**La gramática: una, medida.** De nueve gramáticas candidatas, **una**
+compila contra el `tree-sitter 0.27` fijado en el workspace:
+`tree-sitter-kotlin-sg` 0.4.1, de la familia ast-grep (MIT, con `LICENSE` en
+el crate). Dos propiedades suyas mandaron en el diseño, y las dos se midieron
+sobre sus nodos reales: **no expone ningún campo `name`** —el nombre de una
+declaración es un hijo cuyo tipo lo dice— y **declara `receiver`**, que
+ninguna otra expone, y sin eso una extensión no tiene receptor. Su
+recuperación de errores reconstruye el fichero en vez de colapsarlo a un
+`ERROR` genérico: por eso un Kotlin roto degrada el grafo a `Partial` con el
+fichero nombrado y su razón, en vez de desaparecer del escaneo.
+
+**Las costuras de dominio: cinco, y una sola fuente de verdad.** El dominio
+declaraba los lenguajes a medias —un tipo de nodo por categoría, en
+`Language::*_node_type`—, y Kotlin no cabe en eso: declara varios tipos en
+tres categorías. La unidad añade el hueco y lo rellena **por lenguaje**, sin
+tocar lo que publican los otros quince:
+
+| Costura | Qué declara |
+|---|---|
+| `Language::Kotlin` | el lenguaje: `.kt`/`.kts`, id `kotlin`, nombre `Kotlin` |
+| `Language::symbols()` | los conjuntos de tipos por categoría |
+| `Language::name_rule()` (`NameRule`) | qué tipos llevan nombre, qué tipos pueden precederlo y qué tipos heredan el nombre de su clase |
+| `Language::package_types()` | qué nodo declara el paquete |
+| `Language::reads_declared_symbol_sets()` | si el lector antiguo lee los conjuntos declarados en vez de un tipo por categoría |
+
+`NameRule` es lo que evita la segunda fuente de verdad: el nombre de una
+declaración se lee **siempre** por la misma función
+(`infrastructure/parser/naming.rs::declaration_name`), así que el extractor
+genérico y el parser antiguo no pueden discrepar sobre cómo se llama un
+símbolo. La lección de `EvidenceStore` —no duplicar la semántica entre
+interfaces— es exactamente lo que esta costura previene. Los accesores
+antiguos de un solo tipo **derivan** ahora de `Language::symbols()`, así que
+no hay dos tablas que puedan contradecirse.
+
+Dos reglas de `NameRule` describen lo que Kotlin hace y ningún otro lenguaje:
+el **constructor secundario** no tiene nombre propio y toma el de su clase, y
+el **`companion object` sin nombre** toma el de su clase con el sufijo
+`.Companion`.
+
+**El RED y el GREEN, medido con mutación focal.** Se rompió el comportamiento
+a propósito, una vez por costura, y cada mutante tenía que morir sólo por los
+tests escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — el lector de código ignora los conjuntos declarados | `the_code_of_a_kotlin_symbol_is_its_declaration`, `the_code_of_a_kotlin_symbol_keeps_the_unicode_it_declares` |
+| B — `NameRule.prefixes` vacía | `the_kotlin_declaration_vocabulary_is_classified_explicitly`, `two_overloads_are_two_symbols_and_the_constructor_is_not_its_class` |
+| C — `NameRule.inherited` vacía | `the_kotlin_declaration_vocabulary_is_classified_explicitly`, `two_overloads_are_two_symbols_and_the_constructor_is_not_its_class` |
+| D — `package_types()` vacía | `the_code_of_a_kotlin_symbol_is_its_declaration`, `the_kotlin_declaration_vocabulary_is_classified_explicitly`, `the_kotlin_package_is_published_as_its_own_declaration` |
+| E — la gramática de Kotlin se sustituye por la de JSON | `the_two_readers_publish_the_same_kotlin_declarations`, `the_outline_reader_publishes_the_same_kotlin_declarations`, `the_code_of_a_kotlin_symbol_is_its_declaration`, `the_code_of_a_kotlin_symbol_keeps_the_unicode_it_declares` |
+
+Los cuatro primeros mueren **sólo** en el contrato promovido —los otros 90
+binarios de prueba del core siguen verdes— y el quinto muere en el binario
+unitario de la librería, que es el primero que encuentra. Los cinco se
+revirtieron y los tres ficheros mutados quedaron intactos byte a byte.
+
+**La regresión promovida.** `crates/cognicode-core/tests/k1_kotlin_symbol_contract.rs`
+—10 tests— es la única regresión permanente que esta unidad promueve. Cubre
+el vocabulario completo con su categoría y su línea (interface, data class,
+clase, clase anidada, companion con nombre, companion anónimo, enum,
+`object`, sealed, value class, constructor secundario, función top-level,
+método, extensión, las dos sobrecargas, las propiedades y el paquete), la
+identidad como `fichero:nombre:línea`, el código de un símbolo como su
+declaración, el Unicode sin desfase de columnas, el fichero que no parsea, y
+los dos scripts (`.pipeline.kts` y `build.gradle.kts`) como fuente sin
+inventar servicios.
+
+**La UAT efímera: 30/30 sobre los binarios release.** El guion efímero, fuera
+del repo, montó un corpus con el Harness Base versionado y habló por
+JSON-RPC de verdad con `cognicode-mcp` y `cognicode` **release**. Cubrió el
+positivo de símbolos y de código, la diferencia fría/caliente —idéntica, que
+es lo que la SPEC exige—, el Unicode, los scripts, el **negativo** —un
+símbolo que no existe devuelve cero ubicaciones, no un símbolo inventado— y
+el AAT de un fichero roto. **Veredicto de promoción: PROMOTE (una regresión)
++ RETIRE (el UAT)**: el guion se borra y su evidencia vive en el veredicto; el
+Harness Base (`sandbox/fixtures/kotlin/`) sí se versiona, porque el contrato
+permanente lo lee.
+
+**Dos contratos que no tenían precondición.** La suite del core no estaba
+verde, y el motivo no era Kotlin: dos contratos usaban **un fichero `.kt` como
+hueco real** —el hueco que produce `Partial`—, y un hueco así **caduca en
+cuanto el producto soporta el lenguaje**. Al soportar `.kt`, el producto pasó
+a publicar `Complete` donde ellos esperaban `Partial`. El hueco que queda es
+un fichero con **sintaxis rota** (`broken_syntax.rs`), que produce
+`SkipReason::Parse` para siempre y es del mismo tipo que el que el recorrido
+por fichero ya publica. Los dos contratos conservan sus aserciones y su
+precondición ya no depende de la matriz de lenguajes. La lección es general:
+**un fixture cuya verdad depende de que un lenguaje NO esté soportado es una
+bomba de reloj**.
+
+**Lo que esta unidad NO afirma.** Queda declarado, no escondido:
+
+- El índice de símbolos de la CLI publica ubicaciones `0:0` para el paquete y
+  publica símbolos de un fichero que no parsea. Es un defecto real, medido en
+  la UAT, y no lo arregla esta unidad: el índice es de otra familia.
+- `K-SYM-01` nombra un tipo `SourceKind` con `KotlinFile | Script | BuildDsl`
+  que **no existe** en el producto. Lo que Kotlin encuentra es la distinción
+  por extensión (`.kt` frente a `.kts`) y, dentro de los scripts, por
+  contenido. La garantía que la frase protege —un script no es un servicio
+  runtime— sí está probada; la forma que la SPEC propone no tiene a quién
+  corresponda.
+- `find_function_definitions` sigue leyendo un tipo por categoría, así que en
+  Kotlin no ve el constructor secundario. La lectura de símbolos usa los
+  conjuntos; la de complejidad no.
+- El destino textual de un `import` Kotlin con alias no está afirmado: la
+  arista de importación es una relación, y las relaciones son de la unidad
+  siguiente.
+- Kotlin se publica como `experimental`, y lo seguirá mientras no tenga un
+  escenario de aceptación en los ficheros que el generador lee.
+
+**El catálogo.** `product/languages.json` registra `kotlin` con `support_level:
+experimental`, extensiones `kt`/`kts` y lector `generic`; `README.md` y
+`README.es.md` cuentan 31 lenguajes. `experimental` no es cortesía: el
+generador decide el nivel según si el lenguaje tiene un escenario de
+aceptación, y Kotlin no lo tiene. `product/product-manifest.json` y
+`product/platforms.json` se regeneraron con su generador.
+
+**Siguiente WU.** La cola queda con tres candidatos: C23 (50, bloqueada por el
+operador), C44 (15) y C13 (10). C12 sale de la cola al cerrarse.
