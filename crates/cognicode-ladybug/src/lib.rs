@@ -794,7 +794,7 @@ impl ManifestStore for LadybugStore {
             .map_err(|e| ManifestError::Store(format!("get_manifest: {e}")))?;
         let mut stmt = conn
             .prepare(
-                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws RETURN s.workspace_id, s.file_path, s.file_type, s.language, s.content_hash, s.mtime, s.symbol_count, s.edge_count, s.status, s.error_msg ORDER BY s.file_path;",
+                "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws RETURN s.workspace_id, s.file_path, s.file_type, s.language, s.content_hash, s.mtime_millis, s.symbol_count, s.edge_count, s.status, s.error_msg ORDER BY s.file_path;",
             )
             .map_err(|e| ManifestError::Store(format!("get_manifest: prepare: {e}")))?;
         let result = conn
@@ -814,9 +814,10 @@ impl ManifestStore for LadybugStore {
                     other => Some(other.to_string()),
                 },
                 content_hash: row[4].to_string(),
-                mtime: match &row[5] {
-                    lbug::Value::Double(n) => *n,
-                    _ => 0.0,
+                mtime_millis: match &row[5] {
+                    lbug::Value::Int64(n) => Some(*n),
+                    lbug::Value::Int32(n) => Some(i64::from(*n)),
+                    _ => None,
                 },
                 symbol_count: match &row[6] {
                     lbug::Value::Int32(n) => *n,
@@ -887,7 +888,7 @@ impl ManifestStore for LadybugStore {
             // the spike's s6_cypher_compat.rs.
             let mut upd_stmt = conn
                 .prepare(
-                    "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;",
+                    "MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime_millis = $mtime_millis, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;",
                 )
                 .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: update prepare: {e}")))?;
             conn.execute(
@@ -904,7 +905,13 @@ impl ManifestStore for LadybugStore {
                         },
                     ),
                     ("hash", lbug::Value::String(row.content_hash.clone())),
-                    ("mtime", lbug::Value::Double(row.mtime)),
+                    (
+                        "mtime_millis",
+                        match row.mtime_millis {
+                            Some(millis) => lbug::Value::Int64(millis),
+                            None => lbug::Value::Null(lbug::LogicalType::Int64),
+                        },
+                    ),
                     ("symcnt", lbug::Value::Int32(row.symbol_count)),
                     ("edgecnt", lbug::Value::Int32(row.edge_count)),
                     ("status", lbug::Value::String(row.status.clone())),
@@ -925,7 +932,7 @@ impl ManifestStore for LadybugStore {
             // line-continuation-sensitive — keep the CREATE on one line.)
             let mut ins_stmt = conn
                 .prepare(
-                    "CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});",
+                    "CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime_millis: $mtime_millis, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});",
                 )
                 .map_err(|e| ManifestError::Store(format!("upsert_manifest_entry: insert prepare: {e}")))?;
             conn.execute(
@@ -942,7 +949,13 @@ impl ManifestStore for LadybugStore {
                         },
                     ),
                     ("hash", lbug::Value::String(row.content_hash.clone())),
-                    ("mtime", lbug::Value::Double(row.mtime)),
+                    (
+                        "mtime_millis",
+                        match row.mtime_millis {
+                            Some(millis) => lbug::Value::Int64(millis),
+                            None => lbug::Value::Null(lbug::LogicalType::Int64),
+                        },
+                    ),
                     ("symcnt", lbug::Value::Int32(row.symbol_count)),
                     ("edgecnt", lbug::Value::Int32(row.edge_count)),
                     ("status", lbug::Value::String(row.status.clone())),
@@ -1267,7 +1280,7 @@ impl IngestCommitPort for LadybugStore {
             if existing.next().is_some() {
                 // UPDATE.
                 let mut upd_stmt = conn
-                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime = $mtime, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
+                    .prepare("MATCH (s:ScanManifest) WHERE s.workspace_id = $ws AND s.file_path = $path SET s.file_type = $ftype, s.language = $lang, s.content_hash = $hash, s.mtime_millis = $mtime_millis, s.symbol_count = $symcnt, s.edge_count = $edgecnt, s.status = $status, s.error_msg = $errmsg;")
                     .map_err(|e| {
                         cognicode_core::domain::ports::CommitError::Manifest(
                             cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
@@ -1289,7 +1302,13 @@ impl IngestCommitPort for LadybugStore {
                             },
                         ),
                         ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
+                        (
+                            "mtime_millis",
+                            match row.mtime_millis {
+                                Some(millis) => lbug::Value::Int64(millis),
+                                None => lbug::Value::Null(lbug::LogicalType::Int64),
+                            },
+                        ),
                         ("symcnt", lbug::Value::Int32(row.symbol_count)),
                         ("edgecnt", lbug::Value::Int32(row.edge_count)),
                         ("status", lbug::Value::String(row.status.clone())),
@@ -1312,7 +1331,7 @@ impl IngestCommitPort for LadybugStore {
             } else {
                 // CREATE.
                 let mut ins_stmt = conn
-                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime: $mtime, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
+                    .prepare("CREATE (s:ScanManifest {workspace_id: $ws, file_path: $path, file_type: $ftype, language: $lang, content_hash: $hash, mtime_millis: $mtime_millis, symbol_count: $symcnt, edge_count: $edgecnt, status: $status, error_msg: $errmsg});")
                     .map_err(|e| {
                         cognicode_core::domain::ports::CommitError::Manifest(
                             cognicode_core::domain::ports::manifest_store::ManifestError::Store(format!(
@@ -1334,7 +1353,13 @@ impl IngestCommitPort for LadybugStore {
                             },
                         ),
                         ("hash", lbug::Value::String(row.content_hash.clone())),
-                        ("mtime", lbug::Value::Double(row.mtime)),
+                        (
+                            "mtime_millis",
+                            match row.mtime_millis {
+                                Some(millis) => lbug::Value::Int64(millis),
+                                None => lbug::Value::Null(lbug::LogicalType::Int64),
+                            },
+                        ),
                         ("symcnt", lbug::Value::Int32(row.symbol_count)),
                         ("edgecnt", lbug::Value::Int32(row.edge_count)),
                         ("status", lbug::Value::String(row.status.clone())),
@@ -3259,7 +3284,7 @@ mod tests {
                  file_type STRING, \
                  language STRING, \
                  content_hash STRING, \
-                 mtime DOUBLE, \
+                 mtime_millis INT64, \
                  symbol_count INT64, \
                  edge_count INT64, \
                  status STRING, \
@@ -3275,7 +3300,7 @@ mod tests {
             file_type: "rust".to_string(),
             language: Some("Rust".to_string()),
             content_hash: "abc123".to_string(),
-            mtime: 1234.5,
+            mtime_millis: Some(1_234),
             symbol_count: 42,
             edge_count: 17,
             status: "scanned".to_string(),
@@ -3305,7 +3330,7 @@ mod tests {
         assert_eq!(r.file_type, "rust");
         assert_eq!(r.language.as_deref(), Some("Rust"));
         assert_eq!(r.content_hash, "abc123");
-        assert!((r.mtime - 1234.5).abs() < 1e-9);
+        assert_eq!(r.mtime_millis, Some(1_234));
         assert_eq!(r.symbol_count, 42);
         assert_eq!(r.edge_count, 17);
         assert_eq!(r.status, "scanned");
@@ -3325,6 +3350,40 @@ mod tests {
         let r = &rows[0];
         assert!(r.language.is_none(), "language should round-trip None");
         assert!(r.error_msg.is_none(), "error_msg should round-trip None");
+    }
+
+    /// A file whose date nobody could read still has its row in the manifest:
+    /// the file was covered, and the gap is declared in the row.
+    #[tokio::test]
+    async fn manifest_row_without_a_date_round_trips_as_absent() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-4", "src/sin_fecha.rs");
+        row.mtime_millis = None;
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-4").await.expect("get");
+        assert_eq!(rows.len(), 1, "the file was covered, so it has a row");
+        assert_eq!(
+            rows[0].mtime_millis, None,
+            "una fila sin fecha dice que no tiene fecha: la epoca es una \
+             fecha que alguien habria tenido que medir"
+        );
+    }
+
+    /// A date before the epoch keeps its sign on the way in and on the way out.
+    #[tokio::test]
+    async fn manifest_row_before_the_epoch_keeps_its_sign() {
+        let (store, _dir) = make_test_store();
+        init_scan_manifest_schema(&store);
+        let mut row = sample_row("ws-5", "src/antes_de_la_epoca.rs");
+        row.mtime_millis = Some(-60_000);
+        store.upsert_manifest_entry(&row).await.expect("upsert");
+        let rows = store.get_manifest("ws-5").await.expect("get");
+        assert_eq!(
+            rows[0].mtime_millis,
+            Some(-60_000),
+            "una fecha anterior a la epoca es un numero negativo, no la epoca"
+        );
     }
 
     #[tokio::test]
@@ -3687,7 +3746,7 @@ mod tests {
         let conn = store.connection().expect("schema-init connection");
         conn.query("CREATE NODE TABLE IF NOT EXISTS GraphRevision(id SERIAL PRIMARY KEY, workspace_id STRING, revision_id INT64, head_of BOOLEAN);")
             .expect("GraphRevision");
-        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime DOUBLE, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
+        conn.query("CREATE NODE TABLE IF NOT EXISTS ScanManifest(id SERIAL PRIMARY KEY, workspace_id STRING, file_path STRING, file_type STRING, language STRING, content_hash STRING, mtime_millis INT64, symbol_count INT64, edge_count INT64, status STRING, error_msg STRING);")
             .expect("ScanManifest");
         conn.query("CREATE NODE TABLE IF NOT EXISTS GraphReport(id STRING PRIMARY KEY, workspace_id STRING, created_at STRING, report STRING, symbol_count INT64, edge_count INT64, health_score DOUBLE);")
             .expect("GraphReport");
@@ -3701,7 +3760,7 @@ mod tests {
             file_type: "rust".to_string(),
             language: Some("Rust".to_string()),
             content_hash: format!("hash-{path}"),
-            mtime: 1.0,
+            mtime_millis: Some(1),
             symbol_count: 10,
             edge_count: 5,
             status: "scanned".to_string(),

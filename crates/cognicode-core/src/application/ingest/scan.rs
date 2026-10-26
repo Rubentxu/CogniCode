@@ -10,7 +10,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use std::time::UNIX_EPOCH;
 
 use ignore::WalkBuilder;
 use rayon::prelude::*;
@@ -18,6 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::application::ingest::types::{ChangeKind, FileChange, FileType};
 use crate::domain::value_objects::Language;
+use crate::domain::value_objects::file_time::measured_millis;
 
 /// Walk a directory, returning all source files (code, documents, config).
 /// Uses `ignore` crate for `.gitignore` awareness, with a WalkFilter-like
@@ -143,39 +143,49 @@ pub fn observed_extensions() -> &'static [&'static str] {
 /// Scan a directory, returning `FileChange`s for files that have changed
 /// since the last scan. `previous` is the map of `file_path → content_hash`
 /// from the last scan_manifest.
+///
+/// Every file the walk found is scanned. A file whose date cannot be read is
+/// not a file the scan may drop: it comes out with its gap declared — no
+/// date — instead of a number that only looks like one.
 pub fn scan_for_changes(
     root: &Path,
     previous: &std::collections::HashMap<String, ScanEntry>,
 ) -> Vec<FileChange> {
     let files = walk_files(root);
 
-    // 1. Get mtime for all files (fast — just stat)
-    let current_files: Vec<(String, f64, Option<&'static str>)> = {
-        let collected: Vec<(String, f64, Option<&'static str>)> = files
-            .par_iter()
-            .filter_map(|p| {
-                let rel = relative_to(root, p);
-                let (_, lang) = classify_file(p);
-                p.metadata().ok().and_then(|m| m.modified().ok()).map(|t| {
-                    let mtime = t
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
-                    (rel, mtime, lang)
-                })
-            })
-            .collect();
-        collected
-    };
+    // 1. Measure the date of every file the walk found (fast — just stat).
+    //
+    // The measurement is not a filter: a file whose date the filesystem does
+    // not publish stays in the scan with its date absent. A file the scan
+    // does not know about is a file nobody can say anything about, and the
+    // gap would disappear with it.
+    let current_files: Vec<(String, Option<i64>, Option<&'static str>)> = files
+        .par_iter()
+        .map(|p| {
+            let rel = relative_to(root, p);
+            let (_, lang) = classify_file(p);
+            let mtime_millis = measured_millis(p.metadata().ok().and_then(|m| m.modified().ok()));
+            (rel, mtime_millis, lang)
+        })
+        .collect();
 
-    // 2. Hash only files that are new or whose mtime changed
-    let to_hash: Vec<(String, f64, Option<&'static str>)> = current_files
+    // 2. Hash only files that are new or whose date changed.
+    //
+    // A date nobody measured is not proof of anything: on either side of
+    // the comparison the file is hashed again, because the content hash is
+    // what decides. The tolerance is one millisecond, the same one the
+    // seconds-with-fraction measure allowed before.
+    let to_hash: Vec<(String, Option<i64>, Option<&'static str>)> = current_files
         .iter()
-        .filter(|(rel, mtime, _)| {
-            previous
-                .get(rel.as_str())
-                .map(|prev| (prev.mtime - mtime).abs() > 0.001)
-                .unwrap_or(true) // new file
+        .filter(|(rel, mtime_millis, _)| {
+            match previous.get(rel.as_str()).map(|prev| prev.mtime_millis) {
+                None => true, // new file
+                Some(Some(previous_millis)) => match mtime_millis {
+                    Some(millis) => previous_millis.abs_diff(*millis) > 1,
+                    None => true, // the date is unknown now: look at the content
+                },
+                Some(None) => true, // the date was unknown then: look at the content
+            }
         })
         .cloned()
         .collect();
@@ -192,7 +202,7 @@ pub fn scan_for_changes(
     let mut changes: Vec<FileChange> = Vec::new();
     let mut current_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for (rel, mtime, lang) in &current_files {
+    for (rel, mtime_millis, lang) in &current_files {
         current_paths.insert(rel.clone());
         let prev = previous.get(rel.as_str());
 
@@ -230,7 +240,7 @@ pub fn scan_for_changes(
             path,
             kind,
             content_hash: hash,
-            mtime: *mtime,
+            mtime_millis: *mtime_millis,
             file_type,
             language: *lang,
         });
@@ -243,7 +253,7 @@ pub fn scan_for_changes(
                 path: root.join(rel),
                 kind: ChangeKind::Deleted,
                 content_hash: None,
-                mtime: prev.mtime,
+                mtime_millis: prev.mtime_millis,
                 file_type: FileType::Other, // unknown
                 language: None,
             });
@@ -264,7 +274,12 @@ fn relative_to(base: &Path, path: &Path) -> String {
 #[derive(Debug, Clone)]
 pub struct ScanEntry {
     pub content_hash: String,
-    pub mtime: f64,
+    /// Last modification time in milliseconds since the epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. A file whose clock
+    /// nobody read is not a file that did not change: the content hash is
+    /// what decides, and the entry says that the date is missing.
+    pub mtime_millis: Option<i64>,
 }
 
 /// The directories the product does not look into.
@@ -415,21 +430,13 @@ mod tests {
             .filter_map(|p| {
                 let rel = relative_to(dir.path(), p);
                 let hash = hash_file(p).ok()?;
-                let mtime = p
-                    .metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        t.duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs_f64()
-                    })
-                    .unwrap_or(0.0);
+                let mtime_millis =
+                    measured_millis(p.metadata().ok().and_then(|m| m.modified().ok()));
                 Some((
                     rel,
                     ScanEntry {
                         content_hash: hash,
-                        mtime,
+                        mtime_millis,
                     },
                 ))
             })
@@ -454,7 +461,7 @@ mod tests {
             "main.rs".to_string(),
             ScanEntry {
                 content_hash: hash1.clone(),
-                mtime: 1000.0,
+                mtime_millis: Some(1_000),
             },
         );
 
@@ -480,7 +487,7 @@ mod tests {
             "existing.rs".to_string(),
             ScanEntry {
                 content_hash: hash,
-                mtime: 1000.0,
+                mtime_millis: Some(1_000),
             },
         );
 

@@ -39,8 +39,12 @@ pub struct FileChange {
     pub kind: ChangeKind,
     /// SHA256 content hash (hex). `None` for `Deleted` files.
     pub content_hash: Option<String>,
-    /// File modification time as epoch seconds.
-    pub mtime: f64,
+    /// Last modification time in milliseconds since the epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. A file whose date
+    /// nobody read does not stop being a file: the gap is declared here
+    /// instead of being published as a number that only looks measured.
+    pub mtime_millis: Option<i64>,
     /// Detected file type.
     pub file_type: FileType,
     /// Programming language if the file is code, else `None`.
@@ -246,7 +250,11 @@ pub struct ScanManifestEntry {
     pub file_type: String,
     pub language: Option<String>,
     pub content_hash: String,
-    pub mtime: f64,
+    /// Last modification time in milliseconds since the epoch, signed.
+    ///
+    /// `None` when the filesystem did not report a time. The manifest says
+    /// that the date is missing; it does not fill the hole with the epoch.
+    pub mtime_millis: Option<i64>,
     pub symbol_count: usize,
     pub edge_count: usize,
     pub status: String,

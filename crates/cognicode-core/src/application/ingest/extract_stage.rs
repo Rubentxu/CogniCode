@@ -155,7 +155,7 @@ mod tests {
             path: dir.path().join("main.rs"),
             kind: ChangeKind::New,
             content_hash: Some("deadbeef".to_string()),
-            mtime: 0.0,
+            mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
         };
@@ -173,7 +173,7 @@ mod tests {
             path: dir.path().join("deleted.rs"),
             kind: ChangeKind::Deleted,
             content_hash: None,
-            mtime: 0.0,
+            mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
         };
@@ -191,7 +191,7 @@ mod tests {
             path: dir.path().join("data.bin"),
             kind: ChangeKind::New,
             content_hash: Some("abc".to_string()),
-            mtime: 0.0,
+            mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Other,
             language: None,
         };
@@ -210,7 +210,7 @@ mod tests {
             path: dir.path().join("nonexistent.rs"),
             kind: ChangeKind::New,
             content_hash: Some("abc".to_string()),
-            mtime: 0.0,
+            mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
         };
@@ -231,7 +231,7 @@ mod tests {
                 path: dir.path().join("a.py"),
                 kind: ChangeKind::New,
                 content_hash: Some("h1".into()),
-                mtime: 0.0,
+                mtime_millis: None,
                 file_type: crate::application::ingest::types::FileType::Code,
                 language: Some("python"),
             },
@@ -239,7 +239,7 @@ mod tests {
                 path: dir.path().join("b.py"),
                 kind: ChangeKind::New,
                 content_hash: Some("h2".into()),
-                mtime: 0.0,
+                mtime_millis: None,
                 file_type: crate::application::ingest::types::FileType::Code,
                 language: Some("python"),
             },
