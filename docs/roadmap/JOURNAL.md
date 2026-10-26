@@ -27580,3 +27580,28 @@ en vez de esconderse.
 
 **Siguiente WU.** La cola queda con cuatro candidatos: C23 (50, bloqueada por
 el operador), C12 (20), C44 (15) y C13 (10). C46 sale de la cola al cerrarse.
+
+**El veredicto del `merge-gate`.** rc=0 sobre `07fccac6`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en la pull request #472. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+con su identificador de corrida `32d0a138-1cfd-4d46-9e7e-f8ac03c5bdb1`, las
+58 etapas en `success` y el `RunFinished` en `success`.
+
+**Lo que el gate dice de esta unidad, en el tiempo que tardó.** La corrida
+entera tardó **937,1 s**, contra los 917 s de la corrida de C47. La etapa
+`cognicode-ladybug` —la que estaba en rojo— tardó **61,9 s** y terminó en
+`success`: el defecto del arnés era de espacio de direcciones, no de tiempo, y
+acotarlo no ha costado ni un segundo de más. La etapa `contracts` tardó
+**73,0 s**, contra los 72,3 s de C47: el contrato de la fecha se mide igual de
+rápido. Las etapas más lentas fueron `explorer-route-capability` (135,4 s),
+`core-unrestricted-evidence-kernel` (135,1 s), `core-lib` (92,6 s) y `clippy`
+(83,3 s).
+
+**La corrida en rojo, medida.** La corrida que encontró el defecto —la que
+murió en `cognicode-ladybug` sin llegar a terminar la etapa— está también en la
+base de eventos, con su identificador `8c15b381-a7ee-4326-a222-30001d84def4` y
+`outcome: failure`: la etapa `cognicode-ladybug` tiene `StageStarted` y
+**ningún** `StageFinished`, y la corrida se paró a los 737,6 s. Las dos
+corridas quedan lado a lado en la misma base, que es donde se puede ver que el
+arreglo no cambió el trabajo: la etapa tardaba más antes de morirse que lo que
+tarda ahora en terminar.
