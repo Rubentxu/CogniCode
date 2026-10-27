@@ -161,6 +161,7 @@ pub static ALL_LANGUAGES: &[LanguageConfig] = &[
     FORTRAN_CONFIG,
     VERILOG_CONFIG,
     SYSTEMVERILOG_CONFIG,
+    KOTLIN_CONFIG,
 ];
 
 // ── Rust ─────────────────────────────────────────────────────────────────────
@@ -530,6 +531,23 @@ pub const VERILOG_CONFIG: LanguageConfig = LanguageConfig {
 pub const SYSTEMVERILOG_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::SystemVerilog,
     ts_language: || tree_sitter_systemverilog::LANGUAGE.into(),
+    type_ref_walker: NO_TYPE_REFS,
+    semantic_handler: NO_SEMANTIC_HANDLER,
+};
+
+// ── Kotlin ───────────────────────────────────────────────────────────────────
+
+/// MEDIDO: `tree-sitter-kotlin-sg` 0.4.1 es la única de
+/// nueve gramáticas candidatas que compila contra el tree-sitter 0.27
+/// fijado en el workspace, y la que expone los tipos de nodo que esta
+/// línea necesita. No declara campo `name`: de eso se ocupa `NameRule`.
+///
+/// Sin `type_ref_walker`: Kotlin anota tipos (`val x: Int`), pero un
+/// lector de tipos propio es trabajo de su propia unidad, y esta no lo
+/// promete.
+pub const KOTLIN_CONFIG: LanguageConfig = LanguageConfig {
+    language: Language::Kotlin,
+    ts_language: || tree_sitter_kotlin_sg::LANGUAGE.into(),
     type_ref_walker: NO_TYPE_REFS,
     semantic_handler: NO_SEMANTIC_HANDLER,
 };

@@ -2,7 +2,7 @@
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
   "version": "0.101.31",
-  "source_commit": "1e0bf663c52f49326d8113a71b012c620b4dd9d2",
+  "source_commit": "c87340f0355d3f91ab908e0f3e3c0cbfc37b3f81",
   "public_surface": {
     "binaries": [
       {
@@ -208,6 +208,11 @@
     },
     {
       "name": "systemverilog",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "kotlin",
       "support_level": "experimental",
       "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
     }

@@ -34,15 +34,39 @@ Todo hito termina en **funcionalidad observable usada por un consumidor**, un PR
 
 ## K1 — Kotlin navegable y fragmentos por símbolo | FEATURE / segunda release
 
+> **Estado al integrar (2026-10-26, base `main@c87340f0`, rama de trabajo
+> `feature/the-kotlin-declaration-is-named`):** K1 está **cerrada en el
+> código**: los cinco criterios están cubiertos por un contrato permanente
+> (`crates/cognicode-core/tests/k1_kotlin_symbol_contract.rs`, 10 tests) y
+> verificados además por una UAT efímera ejecutada contra los binarios
+> release (30/30). Lo que este bloque **no** afirma es el cierre de
+> distribución —PR, `merge-gate`, RC y release publicada—, que firma el
+> operador por el procedimiento común. El ADR de este bloque
+> (`adr/ADR-K002.md`) sigue **PROPOSED**: K1 no lo aprueba.
+
 **Valor:** `get_file_symbols`, `query_symbol_index` y `get_symbol_code` funcionan sobre `.kt` reales; scripts `.kts` clasificados explícitamente.
 
-- [ ] Seleccionar y fijar gramática Tree-sitter Kotlin tras spike acotado y compatibilidad Rust/crate; analizar nodos reales antes de añadir nombres a config.
-- [ ] Registrar `Language::Kotlin`, extensiones `.kt/.kts`, `LanguageConfig` y parser; unificar nodos múltiples de función/tipo/variable en extractor sin bifurcación ad hoc por lenguaje; evitar dos tablas semánticas contradictorias `Language::*_node_type` vs config.
-- [ ] Extraer identificadores con identidad consistente: package, top-level functions/properties, class/interface/enum/sealed/data/value, constructor, `object`, `companion`, extension receiver; scripts `.gradle.kts`/`.pipeline.kts` sin inventar servicios runtime.
-- [ ] Dar soporte a código del símbolo y ubicaciones correctas, UTF-8 y límites; cubrir scripts y Unicode sin overflow de coordenadas.
-- [ ] Habilitar CLI/MCP para operaciones navegables sin requerir `build_graph`; sincronizar `product/languages.json` y capabilities con distinción `syntax_available` vs `semantics_available`.
+- [x] Seleccionar y fijar gramática Tree-sitter Kotlin tras spike acotado y compatibilidad Rust/crate; analizar nodos reales antes de añadir nombres a config. _`tree-sitter-kotlin-sg` 0.4.1 (MIT): de nueve candidatos, el único que compila contra el tree-sitter fijado; `Cargo.lock` la fija. El corpus del contrato (`sandbox/fixtures/kotlin/`) se analiza con nodos reales antes de nombrar nada, y el contrato falla si el corpus no parsea sin nodos de error._
+- [x] Registrar `Language::Kotlin`, extensiones `.kt/.kts`, `LanguageConfig` y parser; unificar nodos múltiples de función/tipo/variable en extractor sin bifurcación ad hoc por lenguaje; evitar dos tablas semánticas contradictorias `Language::*_node_type` vs config. _`Language::Kotlin` declara sus conjuntos en `Language::symbols()`; los accesores de un solo tipo **derivan** de esos conjuntos, así que no hay segunda tabla. `Language::reads_declared_symbol_sets()` hace que el extractor y el parser lean los conjuntos declarados; los otros quince lenguajes conservan el tipo único que ya publicaban._
+- [x] Extraer identificadores con identidad consistente: package, top-level functions/properties, class/interface/enum/sealed/data/value, constructor, `object`, `companion`, extension receiver; scripts `.gradle.kts`/`.pipeline.kts` sin inventar servicios runtime. _La identidad es `fichero:nombre:línea` y el contrato afirma el vocabulario completo: interface, data class, clase, clase anidada, companion con nombre, companion anónimo (`Plain.Companion`), enum, `object`, sealed, value class, constructor secundario, función top-level, método, extensión y las dos sobrecargas; además, el paquete se declara como la declaración a la que pertenece el fichero. Un `.kts` declara sus bindings de nivel superior y nada más: las tareas y los plugins son llamadas, no declaraciones._
+- [x] Dar soporte a código del símbolo y ubicaciones correctas, UTF-8 y límites; cubrir scripts y Unicode sin overflow de coordenadas. _Dos tests del contrato: el código de un símbolo es exactamente su declaración, y el símbolo conserva el Unicode que declara (acento, eñe, CJK y emoji en `Unicode.kt`)._
+- [x] Habilitar CLI/MCP para operaciones navegables sin requerir `build_graph`; sincronizar `product/languages.json` y capabilities con distinción `syntax_available` vs `semantics_available`. _La UAT efímera llamó `get_file_symbols` sobre ficheros `.kt` **antes** de cualquier `build_graph`, con 30/30 sobre los binarios release. El catálogo no tiene campos `syntax_available`/`semantics_available`: la distinción que la spec nombra se expresa con el nivel de soporte, y `product/languages.json` publica `kotlin` como `experimental` mientras no se acepte la semántica._
 
 **Release usable:** navegar un proyecto Kotlin real desde binarios `cognicode` y `cognicode-mcp`. **DoD:** prueba de consumidor K1 en un proyecto mínimo + paquete distribuido, sin grafo global; matriz declarada `experimental/AST-only` hasta aceptación semántica. **Fuera:** resolver todas las llamadas Kotlin.
+
+**Residuos declarados (no cerrables en K1):**
+
+- `find_function_definitions` sigue leyendo **un** tipo por categoría, así que en
+  Kotlin no ve el constructor secundario. La lectura de símbolos —la de este
+  bloque— usa los conjuntos; la de complejidad no.
+- La distinción `SourceKind::KotlinFile | Script | BuildDsl` que nombra
+  `K-SYM-01` no existe como tipo en el producto: `.kt` y `.kts` se registran
+  en el mismo catálogo y se leen con el mismo lector. La garantía que la
+  frase protege —un script no es un servicio runtime— sí está probada, en el
+  lector y no en una taxonomía nueva.
+- El destino textual de un `import` Kotlin con alias (`import a.b.C as D`) no
+  está afirmado: la arista de importación es una relación, y las relaciones
+  son de K2.
 
 **Spec:** `specs/SPEC-KOTLIN-SYMBOLS.md`. **ADR:** `adr/ADR-K002.md`.
 

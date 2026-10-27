@@ -75,6 +75,7 @@ impl Language {
             Language::Fortran => tree_sitter_fortran::LANGUAGE.into(),
             Language::Verilog => tree_sitter_verilog::LANGUAGE.into(),
             Language::SystemVerilog => tree_sitter_systemverilog::LANGUAGE.into(),
+            Language::Kotlin => tree_sitter_kotlin_sg::LANGUAGE.into(),
         }
     }
 }
@@ -200,16 +201,48 @@ impl TreeSitterParser {
         while let Some(current) = stack.pop() {
             let kind = current.kind();
 
+            // The seam. A language that declares its sets is read by them:
+            // the single kind per category would lose every kind the
+            // language declares beyond the first, and Kotlin declares
+            // several in three categories. The other languages keep the
+            // kind they were read by, so this unit does not change what
+            // fifteen languages publish.
+            let declared = self.language.symbols();
+            let by_sets = self.language.reads_declared_symbol_sets();
+
+            let is_function = if by_sets {
+                declared.function_types.contains(&kind)
+            } else {
+                kind == function_type
+            };
+            let is_class = if by_sets {
+                declared.class_types.contains(&kind)
+            } else {
+                kind == class_type
+            };
+
             // Rust treats `let`/`const`/`static` as variable-shaped
             // symbols. The single-value API on Language returns only
             // `let_declaration`, so we broaden the check only for Rust and
             // keep other languages on their declared kind.
-            let is_variable = match self.language {
-                Language::Rust => matches!(kind, "let_declaration" | "const_item" | "static_item"),
-                _ => kind == self.language.variable_node_type(),
+            let is_variable = if by_sets {
+                declared.variable_types.contains(&kind)
+            } else {
+                match self.language {
+                    Language::Rust => {
+                        matches!(kind, "let_declaration" | "const_item" | "static_item")
+                    }
+                    _ => kind == self.language.variable_node_type(),
+                }
             };
 
-            if (kind == function_type || kind == class_type || is_variable)
+            // The package a file belongs to is a declaration like any
+            // other: a language that says which node declares one
+            // publishes it, and a language that says nothing is not
+            // missing anything.
+            let is_package = self.language.package_types().contains(&kind);
+
+            if (is_function || is_class || is_variable || is_package)
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
@@ -267,18 +300,48 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
     ) -> Option<Symbol> {
-        let name = self.find_identifier_name(node, source)?;
+        let declared = self.language.symbols();
+        let by_sets = self.language.reads_declared_symbol_sets();
+
+        // A language read by its sets is named by the same rule the generic
+        // extractor uses, so the two readers cannot disagree about what a
+        // symbol is called. The rest keep the naming they had, which is a
+        // different question asked with a different tool.
+        let name = if by_sets {
+            naming::declaration_name(
+                &node,
+                source.as_bytes(),
+                &self.language.name_rule(),
+                declared.class_types,
+            )?
+        } else {
+            self.find_identifier_name(node, source)?
+        };
 
         // Rust distinguishes module-level constants (const_item, static_item)
         // from let-bindings (let_declaration). Both shapes are variable-shaped
         // in `find_all_symbols_with_path`; here we pick the appropriate
         // `SymbolKind` for each.
-        let kind = match node.kind() {
-            "const_item" | "static_item" => SymbolKind::Constant,
-            f if f == self.language.function_node_type() => SymbolKind::Function,
-            c if c == self.language.class_node_type() => SymbolKind::Class,
-            v if v == self.language.variable_node_type() => SymbolKind::Variable,
-            _ => SymbolKind::Unknown,
+        let kind = if by_sets {
+            if declared.function_types.contains(&node.kind()) {
+                SymbolKind::Function
+            } else if declared.class_types.contains(&node.kind()) {
+                SymbolKind::Class
+            } else if declared.variable_types.contains(&node.kind()) {
+                SymbolKind::Variable
+            } else if self.language.package_types().contains(&node.kind()) {
+                SymbolKind::Package
+            } else {
+                SymbolKind::Unknown
+            }
+        } else {
+            match node.kind() {
+                "const_item" | "static_item" => SymbolKind::Constant,
+                f if f == self.language.function_node_type() => SymbolKind::Function,
+                c if c == self.language.class_node_type() => SymbolKind::Class,
+                v if v == self.language.variable_node_type() => SymbolKind::Variable,
+                _ => SymbolKind::Unknown,
+            }
         };
 
         let start = node.start_position();

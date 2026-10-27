@@ -87,30 +87,47 @@ fn file_disposition_has_exactly_the_five_spec_variants() {
 }
 
 #[test]
-fn kt_and_kts_project_to_unsupported_relevant_not_excluded_by_policy() {
-    // The K0 honest gap. `.kt`/`.kts` is NOT a policy exclusion
-    // (the path is walkable and the file is a real source). It is
-    // NOT a parse/read failure (the read succeeds; we just don't
-    // have the grammar). It IS "we know the language, we don't
-    // support it yet" → UnsupportedRelevant.
-    assert_eq!(
-        KNOWN_UNSUPPORTED_EXTENSIONS,
-        &["kt", "kts"],
-        "K0 contract: the bridge list until K1 lands"
+fn kotlin_is_analysed_now_not_a_known_unsupported_gap() {
+    // MEDIDO: la gramática de Kotlin aterrizó en el
+    // registro, así que `kt`/`kts` ya no son un gap: se analizan. Antes
+    // eran "lenguaje conocido sin soporte" y el fichero acababa en
+    // `skipped` con `UnsupportedExtension`; ahora se parsean.
+    assert!(
+        KNOWN_UNSUPPORTED_EXTENSIONS.is_empty(),
+        "K1: la lista de gap queda vacía cuando la gramática aterriza; \
+         si una extensión vuelve a aparecer, es un lenguaje nuevo sin \
+         soporte, y su propia línea debe añadirla con su motivo"
     );
-    for ext in KNOWN_UNSUPPORTED_EXTENSIONS {
+    for ext in ["kt", "kts"] {
         let class = classify_walk_extension(Some(ext));
         assert_eq!(
             class,
-            WalkClassification::KnownUnsupportedGap,
-            "classify_walk_extension must route `{ext}` to KnownUnsupportedGap"
+            WalkClassification::Analyze,
+            "K1: `{ext}` está en el registro y se analiza"
         );
         let disp = FileDisposition::from_walk_classification(class, Some(ext));
         assert!(
-            matches!(disp, FileDisposition::UnsupportedRelevant { .. }),
-            "K0 must surface `{ext}` as UnsupportedRelevant, not ExcludedByPolicy, got {disp:?}"
+            matches!(disp, FileDisposition::Parsed),
+            "K1: `{ext}` se parsea; no es una disposición de gap, got {disp:?}"
         );
     }
+}
+
+#[test]
+fn the_known_unsupported_gap_still_maps_to_unsupported_relevant() {
+    // El mecanismo de K0 sigue en pie aunque hoy ninguna extensión caiga
+    // en él: cuando el próximo lenguaje aterrice sin gramática, su
+    // fichero tiene que salir como "relevante sin soporte" y no como
+    // exclusión por política, porque la exclusión por política no
+    // degrada el estado del build y esta sí.
+    let disp = FileDisposition::from_walk_classification(
+        WalkClassification::KnownUnsupportedGap,
+        Some("kt"),
+    );
+    assert!(
+        matches!(disp, FileDisposition::UnsupportedRelevant { .. }),
+        "el gap conocido sigue siendo UnsupportedRelevant, no ExcludedByPolicy, got {disp:?}"
+    );
 }
 
 #[test]

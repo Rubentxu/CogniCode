@@ -4182,22 +4182,29 @@ def b():
     // snapshot durable cuando el build no es Complete, ese repo nunca
     // persistia nada.
     //
-    // No se borra U15: se reemplaza por la version vigente de su
-    // preocupacion, que es mas barata (una asercion) y mas discriminante
-    // (distingue las dos clases en vez de contarlas).
+    // MEDIDO: el sujeto del hueco era el `.kt`: Kotlin
+    // estaba en el catálogo y no tenía gramática, así que era un hueco
+    // honesto con nombre. Al aterrizar la gramática, el `.kt` pasó a ser
+    // fuente, y el hueco —como categoría— se queda SIN SUJETO: los 31
+    // lenguajes del catálogo tienen gramática.
+    //
+    // U15 no se borra: se le cambia el sujeto por uno REAL. Un `.kt` que
+    // NO PARSEA es una fuente que el producto no puede leer, y eso si es
+    // cobertura incompleta que hay que decir. Y la otra mitad —un asset
+    // no es un hueco— sigue viva y sigue siendo la que más cuesta:
+    // contarla degrada un repo entero a `Partial` sin motivo.
+    //
+    // Las dos mitades se miden en dos pruebas porque son dos afirmaciones
+    // que se pueden caer por separado: una prueba que las junta solo dice
+    // que ALGO falló.
     // ============================================================================
-    #[test]
-    fn test_u15_a_source_language_gap_is_reported_and_an_asset_is_not() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let temp_path = temp_dir.path();
 
+    /// Un corpus con dos assets y dos fuentes que el producto sabe leer.
+    fn u15_readable_corpus(temp_path: &std::path::Path) {
         // 1 archivo soportado (Python)
         std::fs::write(temp_path.join("supported.py"), "def a():\n    pass\n").unwrap();
-
-        // 1 hueco real: fuente en un lenguaje que conocemos y no hemos
-        // conectado (el puente K0, hasta que K1 aterrice).
+        // 1 fuente Kotlin que parsea: con K1 es fuente, no hueco.
         std::fs::write(temp_path.join("Main.kt"), "class Main { fun x() = 1 }\n").unwrap();
-
         // 2 assets: fuera del alcance por decision, no por carencia.
         std::fs::write(
             temp_path.join("unsupported.cob"),
@@ -4209,22 +4216,15 @@ def b():
             "this file has no parser at all\n",
         )
         .unwrap();
+    }
 
-        let service = AnalysisService::new();
-        service.build_project_graph(temp_path).unwrap();
-
-        let report = service
-            .get_last_build_report()
-            .expect("build_project_graph debe poblar last_build_report");
-
+    /// Los nombres de fichero de los omitidos de un reporte.
+    fn u15_skipped_names(
+        report: &crate::infrastructure::graph::per_file_graph::BuildReport,
+    ) -> Vec<String> {
         use crate::infrastructure::graph::per_file_graph::BuildStatus;
-        let skipped = match &report.status {
-            BuildStatus::Complete => panic!(
-                "U15: hay un `.kt` sin registrar y el build se declara Complete. \
-                 Eso si es soporte silencioso: un `.kt` es fuente real en un \
-                 lenguaje conocido-sin-soporte y debe aparecer en skipped. \
-                 BuildReport: {report:?}"
-            ),
+        match &report.status {
+            BuildStatus::Complete => Vec::new(),
             BuildStatus::Partial { skipped, .. } => skipped
                 .iter()
                 .map(|s| {
@@ -4235,12 +4235,77 @@ def b():
                         .unwrap()
                         .to_string()
                 })
-                .collect::<Vec<_>>(),
-        };
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_u15_an_asset_is_not_a_gap_and_a_readable_source_is_analysed() {
+        // La mitad que más cuesta: un asset NO es un hueco. Contarlo
+        // degrada el build a `Partial` sin motivo, y como `mod.rs:1312`
+        // borra el snapshot durable cuando el build no es Complete, el
+        // repo entero deja de persistir nada.
+        //
+        // Y la otra mitad, que es la que se ha movido: un `.kt` que
+        // parsea es una fuente que se ANALIZA. No basta con que no
+        // aparezca en `skipped`: tiene que estar EN EL GRAFO, porque
+        // "no colgado" y "leído" son cosas distintas.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path();
+        u15_readable_corpus(temp_path);
+
+        let service = AnalysisService::new();
+        service.build_project_graph(temp_path).unwrap();
+
+        let report = service
+            .get_last_build_report()
+            .expect("build_project_graph debe poblar last_build_report");
+        let skipped = u15_skipped_names(&report);
 
         assert!(
-            skipped.iter().any(|n| n == "Main.kt"),
-            "U15: el hueco real debe aparecer en skipped. Reported: {skipped:?}"
+            skipped.is_empty(),
+            "U15: un asset no es un hueco, y un `.kt` que parsea es fuente. \
+             Nada de este corpus es cobertura incompleta, asi que el build \
+             no puede degradarse a Partial. Reported: {skipped:?}"
+        );
+
+        let graph = service.get_project_graph();
+        assert!(
+            graph.symbols().any(|s| s.name() == "Main"),
+            "U15: el `.kt` no esta colgado, pero tampoco esta leido: \
+             una fuente que se descarta sin decir nada es exactamente \
+             lo que U15 prohibe"
+        );
+    }
+
+    #[test]
+    fn test_u15_a_source_that_cannot_be_read_is_reported() {
+        // La mitad con sujeto real: un `.kt` que NO PARSEA. El build
+        // es `Partial` y nombra el fichero con su razón. Antes de K1
+        // este papel lo hacía un `.kt` por ser un lenguaje sin soporte;
+        // ahora lo hace por no parsear, que es la misma verdad con un
+        // sujeto que existe.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path();
+        u15_readable_corpus(temp_path);
+        std::fs::write(
+            temp_path.join("Broken.kt"),
+            "class Broken {\n    fun oops( {\n}\n",
+        )
+        .unwrap();
+
+        let service = AnalysisService::new();
+        service.build_project_graph(temp_path).unwrap();
+
+        let report = service
+            .get_last_build_report()
+            .expect("build_project_graph debe poblar last_build_report");
+        let skipped = u15_skipped_names(&report);
+
+        assert!(
+            skipped.iter().any(|n| n == "Broken.kt"),
+            "U15: la fuente que no se pudo leer tiene que aparecer en \
+             skipped. Reported: {skipped:?}"
         );
         for asset in ["unsupported.cob", "notes.txt"] {
             assert!(

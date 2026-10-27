@@ -12,9 +12,9 @@
 //! El inventario entrega `files` y `declined`. En `files` caben tres
 //! cosas distintas y el consumidor tiene que adivinarlas:
 //!
-//!   - la fuente que el grafo analiza (`.rs`);
+//!   - la fuente que el gráfico analiza (`.rs`, `.kt`, ...);
 //!   - el hueco real: una fuente en un lenguaje que conocemos y todavía
-//!     no soportamos (`.kt`, `.kts`);
+//!     no soportamos;
 //!   - la exclusión legítima: un asset que no analizamos A PROPOSITO
 //!     (README, lockfile, imagen).
 //!
@@ -25,6 +25,15 @@
 //! aplican las rutas de construcción, cada una con su copia. Un
 //! `README` y un `.kt` son la misma cosa en el inventario, y no lo son.
 //!
+//! MEDIDO. Kotlin tiene gramática, así que el `.kt` de
+//! este corpus dejó de ser hueco y pasó a ser fuente. El hueco sigue
+//! existiendo como categoría —con su razón y su sitio en el
+//! inventario— pero hoy no tiene sujeto: los 31 lenguajes del
+//! catálogo tienen gramática. Este fichero mide la diferencia que
+//! SIGUE viva (fuente contra exclusión) y deja constancia de la que
+//! se perdió (fuente contra hueco), que ahora se mide en el
+//! clasificador, en `h11_unified_classification_contract.rs`.
+//!
 //! ## Lo que se exige
 //!
 //!   - `errors`: lo que el recorrido no pudo recorrer. No es un
@@ -33,14 +42,14 @@
 //!   - `legit_exclusions()`: la decisión, con el fichero que se dejó
 //!     fuera y nada más.
 //!
-//! Y que los treseveros sean disjuntos: un hueco no es una exclusión, y
-//! un error no es ninguno de los dos.
+//! Y que los tres verederos sean disjuntos: un hueco no es una
+//! exclusión, y un error no es ninguno de los dos.
 
 use cognicode_core::infrastructure::graph::per_file_graph::SkipReason;
 use cognicode_core::infrastructure::graph::source_files::inventory;
 
-/// Repo Rust normal con las tres clases de una vez: la fuente que se
-/// analiza, el hueco real y la exclusión legítima.
+/// Repo normal con las clases que hoy existen: la fuente que se
+/// analiza (Rust y Kotlin) y la exclusión legítima (el README).
 fn cargo_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
@@ -64,28 +73,21 @@ fn name_of(path: &std::path::Path) -> String {
 }
 
 #[test]
-fn el_hueco_real_y_la_exclusion_legitima_no_son_la_misma_cosa() {
+fn una_fuente_analizada_y_una_exclusion_legitima_no_se_confunden() {
     let dir = cargo_repo();
     let inv = inventory(dir.path());
 
-    // El hueco: una fuente en un lenguaje que conocemos y no soportamos.
+    // El hueco: hoy no hay ninguno. Kotlin tiene gramática, así que un
+    // `.kt` es fuente. El hueco SIGUE existiendo como categoría —con
+    // su razón y su sitio en el inventario—, pero sin sujeto: los 31
+    // lenguajes del catálogo tienen gramática. Lo que se mide aquí es
+    // que el hueco vacío no se llene con lo que no es un hueco.
     let gaps = inv.known_gaps();
-    assert_eq!(
-        gaps.len(),
-        1,
-        "un `.kt` es un hueco real y el inventario tiene que nombrarlo: {:?}",
-        gaps
-    );
     assert!(
-        gaps[0].path.ends_with("Other.kt"),
-        "el hueco nombrado es el `.kt`: {:?}",
-        gaps
-    );
-    assert!(
-        matches!(gaps[0].reason, SkipReason::UnsupportedExtension(_)),
-        "el hueco se nombra con su razón —una extensión que no soportamos—, no \
-         como un error ni como una exclusión: {:?}",
-        gaps[0].reason
+        gaps.is_empty(),
+        "ninguna fuente de este repo es un hueco: las dos que hay tienen \
+         gramática y el README no es una fuente. Un hueco aquí sería un \
+         hueco inventado: {gaps:?}"
     );
 
     // La exclusión: un asset que no analizamos a propósito.
@@ -98,16 +100,19 @@ fn el_hueco_real_y_la_exclusion_legitima_no_son_la_misma_cosa() {
     );
     assert!(
         !names.contains(&"Other.kt".to_string()),
-        "el `.kt` NO es una exclusión legítima: es un hueco, y confundir las dos \
-         es el defecto entero: {names:?}"
+        "el `.kt` NO es una exclusión legítima: es una fuente que el producto \
+         lee, y llamarlo exclusión escondería cobertura: {names:?}"
     );
 
-    // Y el grafo no se lleva ninguno de los dos.
-    let sources: Vec<String> = inv.source_files().map(|f| name_of(&f.path)).collect();
+    // Y el gráfico se lleva las fuentes, y solo las fuentes.
+    let mut sources: Vec<String> = inv.source_files().map(|f| name_of(&f.path)).collect();
+    sources.sort();
     assert_eq!(
         sources,
-        vec!["main.rs".to_string()],
-        "al grafo va la fuente y solo la fuente"
+        vec!["Other.kt".to_string(), "main.rs".to_string()],
+        "al grafo van las fuentes y solo las fuentes: un `.kt` que se cuela \
+         como exclusión pierde código, y un README que se cuela como fuente \
+         inventa análisis"
     );
 }
 

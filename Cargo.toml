@@ -78,6 +78,12 @@ tree-sitter-json = "0.24"
 tree-sitter-fortran = "0.6"
 tree-sitter-verilog = "1.0"
 tree-sitter-systemverilog = "0.3"
+# Kotlin. MEDIDO 2026-10-26 (K1): de nueve gramáticas candidatas, esta es la
+# única que compila contra el tree-sitter 0.27 fijado aquí, trae LICENSE
+# (MIT), declara un node-types.json con los tipos de nodo que la línea K1
+# necesita (incluido `receiver`, que ninguna otra expone) y su recuperación
+# de errores reconstruye el fichero en vez de colapsarlo a un ERROR.
+tree-sitter-kotlin-sg = "0.4.1"
 
 # Grafos
 petgraph = "0.6"

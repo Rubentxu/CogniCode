@@ -360,7 +360,8 @@ impl ExtractStrategy {
                     | Language::Json
                     | Language::Fortran
                     | Language::Verilog
-                    | Language::SystemVerilog => var.to_string(),
+                    | Language::SystemVerilog
+                    | Language::Kotlin => var.to_string(),
                 }
             })
             .collect();
@@ -422,7 +423,8 @@ impl ExtractStrategy {
             | Language::Json
             | Language::Fortran
             | Language::Verilog
-            | Language::SystemVerilog => {
+            | Language::SystemVerilog
+            | Language::Kotlin => {
                 let return_type = if has_return {
                     if let Some(hint) = return_type_hint {
                         format!(" /* {} */", hint)
@@ -569,7 +571,8 @@ impl ExtractStrategy {
             | Language::Json
             | Language::Fortran
             | Language::Verilog
-            | Language::SystemVerilog => {
+            | Language::SystemVerilog
+            | Language::Kotlin => {
                 let return_type = if has_return { " /* return type */" } else { "" };
                 let body_str = if body.is_empty() {
                     "    /* body */".to_string()

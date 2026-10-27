@@ -25,6 +25,14 @@
 //! of which method was called), pin that the security blocklist is
 //! now honored, and pin that the `USAGE_SKIP_DIRS` const is no
 //! longer the source of truth.
+//!
+//! MEDIDO. El sujeto del gap era Kotlin; con su
+//! gramática aterrizada, un `.kt` se analiza y deja de ser un gap. La
+//! clasificación sigue siendo la misma —una fuente que no se puede
+//! leer se reporta, y se reporta como lo que pasó—, pero el sujeto
+//! real de "esto no se pudo leer" pasa a ser un `.kt` que NO PARSEA.
+//! Eso conserva la garantía con un sujeto de verdad, en vez de
+//! dejarla sin ninguno.
 
 use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, FileDisposition};
@@ -44,8 +52,8 @@ fn tempdir(suffix: &str) -> std::path::PathBuf {
 
 fn rust_with_kt_and_readme(dir: &std::path::Path) {
     // Same fixture as h12. Two .rs files (parsed), one .kt
-    // (K0 honest gap), one README.md (legit exclusion). Together
-    // they exercise the three H1.1 dispositions.
+    // (parsed — Kotlin has a grammar since K1), one README.md
+    // (legit exclusion).
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("Cargo.toml"),
@@ -75,28 +83,36 @@ fn rust_with_kt_and_readme(dir: &std::path::Path) {
     std::fs::write(dir.join("README.md"), "# Fixture\n").unwrap();
 }
 
+/// El mismo corpus, con un `.kt` que NO parsea.
+///
+/// El fichero roto es la fuente que el producto no puede leer. El
+/// error de sintaxis va con la fuente, y el reporte lo nombra.
+fn corpus_with_unreadable_kotlin(dir: &std::path::Path) {
+    rust_with_kt_and_readme(dir);
+    std::fs::write(
+        dir.join("src").join("Broken.kt"),
+        "class Broken {\n    fun oops( {\n}\n",
+    )
+    .unwrap();
+}
+
 #[test]
-fn build_graph_per_file_with_report_returns_typed_partial_on_kt_corpus() {
-    // The new method exists and surfaces the K0 honest gap
-    // (.kt → UnsupportedRelevant → BuildStatus::Partial). This
-    // is the H1.1 envelope propagated to the per-file pipeline.
+fn build_graph_per_file_with_report_is_complete_on_a_corpus_the_product_can_read() {
+    // El `.kt` ya no es un hueco: se lee. Un corpus que el producto
+    // sabe leer entero es `Complete`, y decir otra cosa sería
+    // publicar una cobertura peor que la real.
     let tmp = tempdir("per-file-with-report");
     rust_with_kt_and_readme(&tmp);
     let svc = AnalysisService::new();
     let report = svc
         .build_graph_per_file_with_report(&tmp)
         .expect("build_graph_per_file_with_report succeeds");
-    match &report.status {
-        BuildStatus::Partial { skipped, .. } => {
-            assert!(
-                skipped.iter().any(|s| s.path.ends_with("Other.kt")),
-                "the .kt file must surface as a Partial skip via the H1.1 envelope, got {skipped:?}"
-            );
-        }
-        BuildStatus::Complete => panic!(
-            "expected Partial because of the .kt file; got Complete (the K0 honest gap was lost)"
-        ),
-    }
+    assert_eq!(
+        report.status,
+        BuildStatus::Complete,
+        "el corpus entero se lee —Rust, Kotlin y el README excluido a \
+         propósito—, así que el estado es Complete"
+    );
 }
 
 #[test]
@@ -107,8 +123,12 @@ fn build_graph_per_file_now_sets_last_build_report() {
     // build_project_graph call. The fix: the new internal helper
     // is the single source of truth, and both legacy entry points
     // route through it.
+    //
+    // El sujeto es un Kotlin que no parsea: el estado `Partial` con
+    // ESE fichero nombrado demuestra que el reporte es de ESTA
+    // llamada y no el que quedó de la anterior.
     let tmp = tempdir("per-file-sets-report");
-    rust_with_kt_and_readme(&tmp);
+    corpus_with_unreadable_kotlin(&tmp);
     let svc = AnalysisService::new();
     svc.build_graph_per_file(&tmp).expect("ok");
     let report = svc
@@ -117,38 +137,41 @@ fn build_graph_per_file_now_sets_last_build_report() {
     match &report.status {
         BuildStatus::Partial { skipped, .. } => {
             assert!(
-                skipped.iter().any(|s| s.path.ends_with("Other.kt")),
-                "the K0 gap must survive the legacy entry point, got {skipped:?}"
+                skipped.iter().any(|s| s.path.ends_with("Broken.kt")),
+                "el Kotlin que no parsea tiene que salir en el reporte del \
+                 entry point legacy, got {skipped:?}"
             );
         }
         BuildStatus::Complete => {
-            panic!("build_graph_per_file must record the .kt gap, not silently swallow it")
+            panic!(
+                "build_graph_per_file must record the unreadable Kotlin, not silently swallow it"
+            )
         }
     }
 }
 
 #[test]
-fn build_graph_per_file_kt_skip_projects_to_unsupported_relevant() {
-    // The H1.1 invariant at the AnalysisService boundary: a .kt
-    // skip is UnsupportedRelevant, not ReadFailed (the read
-    // succeeds) and not ExcludedByPolicy (the path is a relevant
-    // source).
+fn an_unreadable_kotlin_source_projects_to_parse_failed() {
+    // The H1.1 invariant at the AnalysisService boundary: a source
+    // that was read but could not be parsed is ParseFailed, not
+    // ReadFailed (the read succeeds) and not ExcludedByPolicy (the
+    // path is a relevant source).
     let tmp = tempdir("per-file-h11-invariant");
-    rust_with_kt_and_readme(&tmp);
+    corpus_with_unreadable_kotlin(&tmp);
     let svc = AnalysisService::new();
     svc.build_graph_per_file(&tmp).expect("ok");
     let report = svc.get_last_build_report().expect("ok");
-    let kt_skip = match &report.status {
+    let broken = match &report.status {
         BuildStatus::Partial { skipped, .. } => skipped
             .iter()
-            .find(|s| s.path.ends_with("Other.kt"))
-            .expect("the .kt must be in skipped"),
+            .find(|s| s.path.ends_with("Broken.kt"))
+            .expect("the broken .kt must be in skipped"),
         BuildStatus::Complete => panic!("expected Partial"),
     };
-    let disp = FileDisposition::from_skipped(kt_skip);
+    let disp = FileDisposition::from_skipped(broken);
     assert!(
-        matches!(disp, FileDisposition::UnsupportedRelevant { .. }),
-        "the .kt skip must project to UnsupportedRelevant, got {disp:?}"
+        matches!(disp, FileDisposition::ParseFailed { .. }),
+        "the broken .kt skip must project to ParseFailed, got {disp:?}"
     );
     assert!(!matches!(disp, FileDisposition::ReadFailed { .. }));
     assert!(!matches!(disp, FileDisposition::ExcludedByPolicy { .. }));

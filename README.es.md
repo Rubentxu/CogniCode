@@ -12,13 +12,13 @@
 
 CogniCode es un servidor de inteligencia de código escrito en Rust que proporciona análisis profundo, grafos de llamadas, búsqueda semántica y refactorización segura a agentes de IA a través del [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Imagina las capacidades de IntelliJ IDEA — expuestas como herramientas que tu IA puede invocar.
 
-Construido con **Domain-Driven Design** y **Clean Architecture**, analiza 30
-lenguajes de serie: 18 con evidencia de aceptación completa y 12 experimentales.
+Construido con **Domain-Driven Design** y **Clean Architecture**, analiza 31
+lenguajes de serie: 18 con evidencia de aceptación completa y 13 experimentales.
 
 ## Características
 
 - **78 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
-- **30 lenguajes** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) y 12 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
+- **31 lenguajes** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) y 13 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
 - **4 estrategias de grafo** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)
 - **Refactorización segura** — renombrar, extraer, inline, mover, cambiar firma con vista previa de impacto
@@ -235,8 +235,8 @@ Elige la estrategia adecuada para tu caso de uso:
 
 ## Lenguajes Soportados
 
-Se analizan 30 lenguajes. **18 son `supported`**, con evidencia de aceptación
-enfocada para las rutas de análisis; **12 son `experimental`**, es decir, se
+Se analizan 31 lenguajes. **18 son `supported`**, con evidencia de aceptación
+enfocada para las rutas de análisis; **13 son `experimental`**, es decir, se
 parsean e indexan pero todavía no se someten al mismo listón. La lista
 autoritativa por lenguaje, con la evidencia de cada nivel, está en
 [`product/languages.json`](product/languages.json).
@@ -268,6 +268,7 @@ autoritativa por lenguaje, con la evidencia de cada nivel, está en
 | Groovy | `.groovy` | experimental |
 | HCL | `.hcl`, `.tf` | experimental |
 | Julia | `.jl` | experimental |
+| Kotlin | `.kt`, `.kts` | experimental |
 | PowerShell | `.ps1` | experimental |
 | R | `.r` | experimental |
 | SystemVerilog | `.sv` | experimental |

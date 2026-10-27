@@ -2,7 +2,7 @@
   "schema_version": "cognicode.languages/v1",
   "product": "cognicode",
   "version": "0.101.31",
-  "source_commit": "1e0bf663c52f49326d8113a71b012c620b4dd9d2",
+  "source_commit": "c87340f0355d3f91ab908e0f3e3c0cbfc37b3f81",
   "languages": [
     {
       "id": "bash",
@@ -288,6 +288,23 @@
       "support_level": "experimental",
       "extensions": [
         "jl"
+      ],
+      "reader": "generic",
+      "not_asserted_by_generic_reader": [],
+      "evidence": [
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
+        "LanguageConfig extension mapping in language_config.rs",
+        "Node kinds the language declares, in domain/value_objects/language.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "kotlin",
+      "name": "Kotlin",
+      "support_level": "experimental",
+      "extensions": [
+        "kt",
+        "kts"
       ],
       "reader": "generic",
       "not_asserted_by_generic_reader": [],

@@ -18,6 +18,109 @@
 
 use tree_sitter::Node;
 
+use crate::domain::value_objects::NameRule;
+
+/// The name a declaration carries, read by the language's rule.
+///
+/// The question is the same for every language — "what is this
+/// declaration called?" — and the answer is not: some grammars put the
+/// name in a `name` field, some leave it as a child whose kind says so,
+/// and some have a declaration with no name of its own at all.
+///
+/// The rule is the language's answer, and it lives in the domain next to
+/// the rest of what a language declares. This is the reader that applies
+/// it, and every reader that has to name a declaration comes through here,
+/// so the generic extractor and the older parser cannot disagree about
+/// what a symbol is called. Two readers answering differently is how a
+/// language ends up with two names for one thing.
+///
+/// The `class_types` are needed only by the languages that have a
+/// declaration without a name of its own: it takes the name of the class
+/// that contains it, which is how Kotlin calls its secondary constructors
+/// and its companion objects.
+pub fn declaration_name(
+    node: &Node,
+    source: &[u8],
+    rule: &NameRule,
+    class_types: &[&str],
+) -> Option<String> {
+    if let Some(name) = own_name(node, source, rule) {
+        return Some(name);
+    }
+    rule.inherited
+        .iter()
+        .find(|(kind, _)| *kind == node.kind())
+        .and_then(|(_, suffix)| enclosing_class_name(node, source, rule, class_types, suffix))
+}
+
+/// The name a declaration carries by itself.
+///
+/// A field the grammar declares is where the grammar puts the name. When
+/// there is no such field, the name is a child whose kind says so, and the
+/// kinds that may sit in front of it —modifiers, type parameters, a
+/// receiver— do not end the search for it.
+///
+/// The header is a LEADING RUN of name-bearing children, and it stops at
+/// the first child that is not one, because that is where the body
+/// starts. This is not a rule for HCL: it is the rule that keeps a YAML
+/// `block_mapping` (whose children are `pair`) unnamed, as it was before.
+///
+/// It is a rule because the first alternative was wrong. "The first child
+/// that is an identifier" names a header grammar by its keyword: HCL's
+/// `block` is `identifier(string_lit|identifier)* block_start body?`, has
+/// no `name` field, and its first identifier is the word "resource". Over
+/// the real fixture `sandbox/fixtures/terraform-iac/main.tf` that
+/// produced 144 labels all equal to "resource", which destroyed the type
+/// and the name before the Terraform handler could see them and made every
+/// block in the file share one identity.
+fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
+    if let Some(name_node) = node.child_by_field_name("name") {
+        return Some(node_text(&name_node, source));
+    }
+
+    let mut header: Vec<String> = Vec::new();
+    for i in 0..node.child_count() {
+        let Some(child) = node.child(i) else { break };
+        if !child.is_named() {
+            continue;
+        }
+        let kind = child.kind();
+        if rule.kinds.contains(&kind) {
+            header.push(node_text(&child, source));
+        } else if rule.prefixes.contains(&kind) {
+            continue;
+        } else {
+            break;
+        }
+    }
+
+    if header.is_empty() {
+        None
+    } else {
+        Some(header.join(" "))
+    }
+}
+
+/// The name of the class that contains this node, with the suffix its
+/// language appends to it.
+fn enclosing_class_name(
+    node: &Node,
+    source: &[u8],
+    rule: &NameRule,
+    class_types: &[&str],
+    suffix: &str,
+) -> Option<String> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if class_types.contains(&parent.kind()) {
+            let name = own_name(&parent, source, rule)?;
+            return Some(format!("{name}{suffix}"));
+        }
+        current = parent.parent();
+    }
+    None
+}
+
 /// The node that holds the name of what a call calls.
 ///
 /// The name is read from the field the grammar declares for it, because that

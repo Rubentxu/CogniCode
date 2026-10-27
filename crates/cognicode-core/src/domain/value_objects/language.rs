@@ -56,6 +56,13 @@ pub enum Language {
     Fortran,
     Verilog,
     SystemVerilog,
+    /// Kotlin, and the `.kts` scripts that build with it.
+    ///
+    /// MEDIDO: la gramática es `tree-sitter-kotlin-sg`
+    /// 0.4.1, de la familia ast-grep. No expone campos `name`: el nombre
+    /// de una declaración es un hijo cuyo tipo lo dice, y eso es lo que
+    /// `NameRule` describe.
+    Kotlin,
 }
 /// The AST node kinds a language uses, and how a call names what it calls.
 ///
@@ -97,6 +104,56 @@ pub struct LanguageSymbols {
     /// it as a call would be claiming that the file calls a function named
     /// "require".
     pub import_callees: &'static [&'static str],
+}
+
+/// How a language spells the name of a declaration.
+///
+/// Most grammars put the name in a `name` field, and then the reader has
+/// nothing to ask. Some do not: the name is a child whose kind says so,
+/// and it may sit behind other children — modifiers, type parameters, a
+/// receiver. A reader that only knows the global vocabulary would either
+/// miss those names or, worse, take the first identifier it finds and
+/// publish a symbol whose name belongs to something else.
+///
+/// This is that knowledge, as data: which kinds carry a name, which kinds
+/// may sit in front of it without ending the search, and which kinds have
+/// no name of their own and take the name of the class that contains
+/// them. The reader that applies it is the same for every language; only
+/// the answers differ.
+///
+/// MEDIDO: `tree-sitter-kotlin-sg` 0.4.1 no declara
+/// ningún campo `name`. El nombre de una función es su `simple_identifier`
+/// directo; el de una clase, su `type_identifier`; el de una propiedad, el
+/// `simple_identifier` de su `variable_declaration`; y el de un `import`,
+/// el `identifier` con la ruta con puntos. Un constructor secundario y un
+/// `companion object` no tienen nombre propio: lo toman de la clase que
+/// los contiene, que es como Kotlin los llama.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NameRule {
+    /// The kinds that carry a name.
+    pub kinds: &'static [&'static str],
+    /// The kinds that may sit in front of the name without ending the
+    /// search for it.
+    pub prefixes: &'static [&'static str],
+    /// The kinds that have no name of their own, with the suffix their
+    /// language appends to the name of the class that contains them.
+    ///
+    /// An empty suffix means the name is the class's name as it stands.
+    pub inherited: &'static [(&'static str, &'static str)],
+}
+
+impl NameRule {
+    /// The rule the languages that were already supported read by.
+    ///
+    /// It is the vocabulary that was in force before any language declared
+    /// its own: the kinds that carry a name, no prefixes, and nothing
+    /// inherited. Every language that does not declare a rule reads exactly
+    /// as it did before, because this is the rule it was reading by.
+    pub const DEFAULT: NameRule = NameRule {
+        kinds: &["identifier", "string_lit", "function_name", "simple_name"],
+        prefixes: &[],
+        inherited: &[],
+    };
 }
 
 impl Language {
@@ -476,7 +533,109 @@ impl Language {
                 callee_fields: &["instance_type"],
                 import_callees: &[],
             },
+            // MEDIDO sobre `tree-sitter-kotlin-sg` 0.4.1:
+            // el nombre de una declaración es un hijo, nunca un campo, y
+            // el binding de una propiedad cuelga de `variable_declaration`
+            // (su padre `property_declaration` no lo nombra).
+            //
+            // `class_parameter` es el parámetro del constructor
+            // primario. En Kotlin, un `val`/`var` ahí DECLARA UNA
+            // PROPIEDAD, y no hay otra sintaxis para declarar un campo
+            // de clase: el conjunto es el paralelo de
+            // `local_variable_declaration`/`field_declaration` en Java,
+            // y por eso comparte con ellos el mismo `SymbolKind`.
+            //
+            // El constructor PRIMARIO no se publica aparte: su
+            // declaración es la de la clase, y publicarlo con el mismo
+            // nombre en la misma línea produciría dos símbolos con la
+            // MISMA identidad (`fichero:nombre:línea`). El secundario sí
+            // se publica, con el nombre de la clase que lo envuelve.
+            Language::Kotlin => LanguageSymbols {
+                function_types: &["function_declaration", "secondary_constructor"],
+                class_types: &[
+                    "class_declaration",
+                    "object_declaration",
+                    "companion_object",
+                ],
+                variable_types: &["variable_declaration", "class_parameter"],
+                call_types: &["call_expression"],
+                import_types: &["import_header"],
+                callee_fields: &[],
+                import_callees: &[],
+            },
         }
+    }
+
+    /// How this language spells the name of a declaration.
+    ///
+    /// The reader asks this instead of guessing. A language that says
+    /// nothing reads by `NameRule::DEFAULT`, which is what it read by
+    /// before it was asked.
+    pub const fn name_rule(self) -> NameRule {
+        match self {
+            // MEDIDO sobre `tree-sitter-kotlin-sg` 0.4.1.
+            Language::Kotlin => NameRule {
+                kinds: &["identifier", "simple_identifier", "type_identifier"],
+                prefixes: &[
+                    "modifiers",
+                    "type_parameters",
+                    "receiver_type",
+                    // `val`/`var` live here in a constructor parameter:
+                    // `private val radius: Double` carries the binding
+                    // keyword BEFORE the name it binds. Without this in
+                    // the prefixes the walk stops at the keyword and the
+                    // parameter has no name at all.
+                    "binding_pattern_kind",
+                ],
+                inherited: &[
+                    ("secondary_constructor", ""),
+                    ("companion_object", ".Companion"),
+                ],
+            },
+            _ => NameRule::DEFAULT,
+        }
+    }
+
+    /// The node kinds that declare the package a file belongs to.
+    ///
+    /// The taxonomy has always known what a package IS —`SymbolKind::
+    /// Package`— but no language said WHICH of its nodes says it, so no
+    /// reader had anything to publish. Kotlin is the first that says
+    /// something, and it says it here, in the language's own vocabulary.
+    ///
+    /// This is a seam and not a table: a language that says nothing keeps
+    /// saying nothing, so no other language changes what it publishes.
+    pub const fn package_types(self) -> &'static [&'static str] {
+        match self {
+            // MEDIDO sobre `tree-sitter-kotlin-sg` 0.4.1:
+            // `package_header` tiene un único hijo nombrado, un
+            // `identifier` que lleva la ruta con puntos —la misma forma
+            // que el `identifier` de un `import_header`.
+            Language::Kotlin => &["package_header"],
+            _ => &[],
+        }
+    }
+
+    /// Whether the reader that predates the generic extractor reads the
+    /// declared sets instead of one kind per category.
+    ///
+    /// The generic extractor has always read `Language::symbols()`. The
+    /// older reader — the one the endpoints use — asks for a single kind
+    /// per category and matches on it, which loses every kind the language
+    /// declares beyond the first. Kotlin declares several kinds in three
+    /// categories, so it needs the sets.
+    ///
+    /// This is the seam, and it is per language on purpose: switching every
+    /// language at once would change what fifteen of them publish, and
+    /// that is not a change this unit is entitled to make. A language
+    /// migrates here when its own unit says so.
+    ///
+    /// A language that answers `true` also has its symbols named by
+    /// `name_rule()`, so that the two readers agree about what a symbol is
+    /// called. Two readers answering differently is the drift this
+    /// project already paid for once.
+    pub const fn reads_declared_symbol_sets(self) -> bool {
+        matches!(self, Language::Kotlin)
     }
 }
 
@@ -519,6 +678,7 @@ impl Language {
             Language::Fortran => &["f", "f90", "f95", "f03", "f08"],
             Language::Verilog => &["v"],
             Language::SystemVerilog => &["sv"],
+            Language::Kotlin => &["kt", "kts"],
         }
     }
 
@@ -574,6 +734,7 @@ impl Language {
             Language::Fortran => "fortran",
             Language::Verilog => "verilog",
             Language::SystemVerilog => "systemverilog",
+            Language::Kotlin => "kotlin",
         }
     }
 
@@ -610,6 +771,7 @@ impl Language {
             Language::Fortran => "Fortran",
             Language::Verilog => "Verilog",
             Language::SystemVerilog => "SystemVerilog",
+            Language::Kotlin => "Kotlin",
         }
     }
 
@@ -742,6 +904,7 @@ impl Language {
             Language::Fortran,
             Language::Verilog,
             Language::SystemVerilog,
+            Language::Kotlin,
         ]
     }
 }

@@ -199,6 +199,7 @@ impl LspProcess {
             Language::Zig => "zig",
             Language::Dart => "dart",
             Language::Groovy => "groovy",
+            Language::Kotlin => "kotlin",
             Language::Elixir => "elixir",
             Language::Erlang => "erlang",
             Language::Haskell => "haskell",

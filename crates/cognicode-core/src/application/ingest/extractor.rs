@@ -112,6 +112,11 @@ pub fn extract_file_with_outcome(
     // and every other reader of the same language cannot disagree about it.
     let symbols = config.language.symbols();
 
+    // How this language spells the name of a declaration. It is read here
+    // and in the older parser, so both answer the same question the same
+    // way.
+    let name_rule = config.language.name_rule();
+
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<ExtractionEdge> = Vec::new();
     let mut symbol_ids: Vec<(String, String)> = Vec::new();
@@ -140,7 +145,8 @@ pub fn extract_file_with_outcome(
 
         // ── Function nodes ─────────────────────────────────────────────
         if symbols.function_types.contains(&node_type)
-            && let Some(name) = extract_name(&node, source_bytes)
+            && let Some(name) =
+                naming::declaration_name(&node, source_bytes, &name_rule, symbols.class_types)
         {
             let (symbol_node, symbol_id) = make_symbol_node(
                 &name,
@@ -193,7 +199,9 @@ pub fn extract_file_with_outcome(
         // ── Class/type nodes ───────────────────────────────────────────
         if symbols.class_types.contains(&node_type) {
             let kind = classify_class_type(node_type);
-            if let Some(name) = extract_name(&node, source_bytes) {
+            if let Some(name) =
+                naming::declaration_name(&node, source_bytes, &name_rule, symbols.class_types)
+            {
                 let (symbol_node, symbol_id) = make_symbol_node(
                     &name,
                     kind,
@@ -215,6 +223,26 @@ pub fn extract_file_with_outcome(
                     &mut edges,
                 );
             }
+        }
+
+        // ── Package nodes ──────────────────────────────────────────────
+        // The package a file belongs to is a declaration like any other:
+        // it has a name and a place. A language that declares one
+        // publishes it; a language that does not is not missing
+        // anything, and says nothing.
+        if config.language.package_types().contains(&node_type)
+            && let Some(name) =
+                naming::declaration_name(&node, source_bytes, &name_rule, symbols.class_types)
+        {
+            let (symbol_node, symbol_id) = make_symbol_node(
+                &name,
+                SymbolKind::Package,
+                &source_path_str,
+                (node.start_position().row + 1) as u32,
+                (node.start_position().column + 1) as u32,
+            );
+            edges.push(contains_edge(&file_node_id, &symbol_id, &source_path_str));
+            nodes.push(symbol_node);
         }
 
         // ── Import nodes ───────────────────────────────────────────────
@@ -251,7 +279,8 @@ pub fn extract_file_with_outcome(
         // same path as functions and classes: the walk visits it, names it
         // and publishes it.
         if symbols.variable_types.contains(&node_type)
-            && let Some(name) = extract_name(&node, source_bytes)
+            && let Some(name) =
+                naming::declaration_name(&node, source_bytes, &name_rule, symbols.class_types)
         {
             let kind = match node_type {
                 "const_item" | "static_item" => SymbolKind::Constant,
@@ -337,59 +366,6 @@ fn cause_of(fell_over: Box<dyn std::any::Any + Send>) -> String {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/// Extract the `name` field text from a node, falling back to the node's
-/// HEADER when no `name` field exists.
-///
-/// El fallback anterior devolvia "el primer hijo que sea un identifier", lo
-/// cual para una gramatica de cabeceras no nombra nada: en HCL el nodo
-/// `block` es `identifier(string_lit|identifier)* block_start body? block_end`
-/// y NO tiene campo `name`, asi que el primer identifier es la palabra clave
-/// y solo la palabra clave. Sobre el fixture real
-/// `sandbox/fixtures/terraform-iac/main.tf` eso producia 144 etiquetas todas
-/// iguales a `"resource"`, destruyendo el tipo y el nombre antes de que
-/// `terraform_handler` los viera, haciendo que todos los bloques del fichero
-/// compartieran identidad.
-///
-/// La regla general es la correcta y no es una excepcion de HCL: **un nodo
-/// sin campo `name` se nombra por su cabecera**. Se recorren los hijos
-/// DIRECTOS que sean `identifier` o `string_lit` y se paran en cuanto aparece
-/// algo que no lo es —el cuerpo empieza ahi—, de modo que un `block_mapping`
-/// de YAML (cuyos hijos son `pair`) sigue sin nombre, igual que antes.
-///
-/// Solo se alcanza este camino donde ya no habia campo `name`: los lenguajes
-/// que si lo tienen (Rust, Python, TypeScript, Go, Java...) no cambian.
-fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
-    if let Some(name_node) = node.child_by_field_name("name") {
-        return Some(node_text(&name_node, source));
-    }
-
-    // Header: leading identifier / string-literal children, up to the body.
-    let mut header: Vec<String> = Vec::new();
-    for i in 0..node.child_count() {
-        let Some(child) = node.child(i) else { break };
-        // A keyword is not the end of the header: the PowerShell grammar
-        // puts the `function` keyword before the name it declares. The
-        // header ends at the first named child that is not a name.
-        if !child.is_named() {
-            continue;
-        }
-        match child.kind() {
-            // `function_name` and `simple_name` are how the PowerShell
-            // grammar names a function and a class; no other grammar
-            // produces them.
-            "identifier" | "string_lit" | "function_name" | "simple_name" => {
-                header.push(node_text(&child, source));
-            }
-            _ => break,
-        }
-    }
-
-    if header.is_empty() {
-        return None;
-    }
-    Some(header.join(" "))
-}
 
 /// The fields that can hold the name of an imported dependency.
 ///

@@ -29,3 +29,31 @@
 `docs/roadmap/ROADMAP.md`; `docs/roadmap/CURRENT.md`; `docs/roadmap/JOURNAL.md`; `docs/roadmap/MAINTENANCE.md`; `docs/prf/specs/SPEC-ANALYSIS.md`; `docs/prf/specs/SPEC-CLI.md`; `docs/prf/specs/SPEC-MCP.md`; `docs/prf/specs/SPEC-STATE.md`; `docs/adr/ADR-016-renderer-neutral-semantic-projections.md`; `docs/adr/ADR-018-evidence-gated-product-operability.md`; `docs/adr/ADR-029-callgraph-projection-port-seam.md`; `docs/adr/ADR-034-cognicode-distribution-package.md`; `docs/cognicode-community-productization/13-ROADMAP-COMMUNITY-PRODUCTIZATION.md`; `docs/roadmap/production-ready/METRICS-AND-ACCEPTANCE.md`; `docs/roadmap/production-ready/ROADMAP-ADDENDUM.md`.
 
 Los documentos `ADR-K00*` de este paquete son **nuevos y propuestos**; no atribuirles aprobación previa.
+
+## Actualización tras K1 (2026-10-26)
+
+La tabla anterior es la línea base del 2026-10-16 y no se reescribe: es el
+registro de lo que se observó entonces. Este apartado dice, para cada
+debilidad que K1 tocaba, qué hay en el árbol después de K1 y qué queda
+**fuera** del cierre. El recibo del bloque con su evidencia vive en
+[`MILESTONES.md`](MILESTONES.md) y en `docs/roadmap/JOURNAL.md`; aquí solo
+consta el estado del código.
+
+| Debilidad de la línea base | Estado tras K1 | Dónde se ve |
+|---|---|---|
+| Kotlin no aparece como lenguaje ni extensión `.kt/.kts` | **Cerrada.** `Language::Kotlin` existe con `kt` y `kts`, y el catálogo registra `kotlin` con `support_level: experimental`. | `crates/cognicode-core/src/domain/value_objects/language.rs`; `product/languages.json` |
+| Kotlin no tiene `LanguageConfig` | **Cerrada.** Una config liga Kotlin con su gramática y el extractor genérico la consume. | `crates/cognicode-core/src/infrastructure/parser/language_config.rs` |
+| Tree-sitter sin gramática Kotlin | **Cerrada.** Una sola dependencia de gramática, fijada en `Cargo.lock`, sin Kotlin Compiler ni Gradle en el parser. | `Cargo.toml`; `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs` |
+| Extractor con nodo singular | **Cerrada para la lectura de símbolos.** La lectura por conjuntos declarados sustituye al nodo único en el extractor y en el parser; los accesores de un solo tipo derivan de esos mismos conjuntos, así que no queda segunda tabla semántica. **Fuera del cierre:** `find_function_definitions` sigue leyendo un tipo por categoría, de modo que en Kotlin no ve el constructor secundario. | `crates/cognicode-core/src/domain/value_objects/language.rs`; `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs` |
+
+Lo que K1 **no** afirmaba y por tanto no cierra:
+
+- La distinción `SourceKind::KotlinFile | Script | BuildDsl` que nombra
+  `K-SYM-01` no existe como tipo en el producto: `.kt` y `.kts` se
+  registran en el mismo catálogo y se leen con el mismo lector. Lo que sí
+  está probado es la garantía observable que la frase protege —un script se
+  lee como fuente y no se publica como servicio runtime— y vive en el
+  contrato permanente, no en una taxonomía nueva.
+- El texto de destino de un `import` Kotlin con alias (`import a.b.C as D`)
+  no está afirmado por el contrato de K1: la arista de importación es una
+  relación, y las relaciones son objeto de K2.

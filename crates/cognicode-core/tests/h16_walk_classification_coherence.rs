@@ -11,13 +11,20 @@
 //! build_project_graph_async     => <no publica reporte>
 //! ```
 //!
-//! Y con un `Other.kt` de verdad:
+//! Y con un `Other.kt` de verdad, cuando Kotlin era un hueco honesto
+//! (K0, antes de K1):
 //!
 //! ```text
 //! build_project_graph           => Partial skipped=3   (README.md, Cargo.toml, Other.kt)
 //! build_graph_per_file_with_report => Partial skipped=1   (Other.kt)
 //! build_project_graph_async     => <no publica reporte>
 //! ```
+//!
+//! MEDIDO, después de la gramática: Kotlin tiene gramática, así que
+//! un `.kt` es una fuente que se ANALIZA. Las tres rutas dan
+//! `Complete` y `Other.kt` no aparece en `skipped` por ninguna parte.
+//! La diferencia con el caso de arriba no es de redacción: es que el
+//! hueco pasó a ser cobertura.
 //!
 //! ## Por qué esto ya no se vio
 //!
@@ -52,7 +59,12 @@ use cognicode_core::infrastructure::graph::per_file_graph::BuildStatus;
 
 /// Repo Rust ordinario. Cero fuentes sin soporte: solo assets que no
 /// analizamos A PROPOSITO y asi lo decimos en el clasificador.
-fn cargo_repo(suffix: &str, with_kotlin_gap: bool) -> std::path::PathBuf {
+///
+/// `with_kotlin_source` añade un `.kt` de verdad. Antes de K1 ese
+/// fichero era un hueco honesto; ahora es una fuente que se lee, y el
+/// corpus conserva el caso porque es el que mide si el hueco se cerró
+/// o se convirtió en cobertura.
+fn cargo_repo(suffix: &str, with_kotlin_source: bool) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "h16-{suffix}-{}-{}",
         std::process::id(),
@@ -78,7 +90,7 @@ fn cargo_repo(suffix: &str, with_kotlin_gap: bool) -> std::path::PathBuf {
         "pub fn run() -> u32 { 1 }\n",
     )
     .unwrap();
-    if with_kotlin_gap {
+    if with_kotlin_source {
         std::fs::write(
             dir.join("src").join("Other.kt"),
             "class Other { fun x() = 1 }\n",
@@ -209,29 +221,32 @@ async fn a_readme_is_never_reported_as_a_coverage_gap_on_any_route() {
 }
 
 #[tokio::test]
-async fn a_real_language_gap_survives_on_every_route() {
-    // La direccion opuesta. Si arreglar lo anterior colgara un `.kt`
-    // por el camino, el repo pasaria a `Complete` y el gap K0
-    // desapareceria del reporte. Esto es lo que NO puede pasar.
-    let dir = cargo_repo("gap", true);
+async fn a_kotlin_source_is_analysed_and_not_reported_as_a_gap_on_any_route() {
+    // La dirección nueva , después de la gramática. Kotlin tiene gramática: un
+    // `.kt` es una fuente que el producto lee, no un hueco. Una ruta
+    // que lo siguiera reportando como hueco estaría publicando una
+    // cobertura peor que la real, y una ruta que lo leyera pero lo
+    // colgara del reporte estaría publicando un hueco que no existe.
+    // Las dos cosas se comprueban.
+    let dir = cargo_repo("kotlin", true);
 
     for (name, status) in status_from_all_three(&dir).await {
         let status = status.as_ref().unwrap_or_else(|| {
             panic!(
-                "la ruta {name} no publico BuildReport; un `.kt` sin registrar es \
-                 justamente el caso que mas necesita que alguien mire"
+                "la ruta {name} no publico BuildReport; un `.kt` es justamente \
+                 el caso que mas necesita que alguien mire"
             )
         });
         assert!(
-            !is_complete(status),
-            "un `.kt` es una fuente real en un lenguaje conocido-sin-soporte: \
-             es un hueco honesto y la ruta {name} lo reporta como complete"
+            is_complete(status),
+            "un `.kt` es una fuente que el producto ya sabe leer: la ruta {name} \
+             la reporto como hueco o como cobertura incompleta. Se obtuvo: {status:?}"
         );
-        assert_eq!(
-            skipped_names(status),
-            vec!["Other.kt".to_string()],
-            "la ruta {name} debe reportar EXACTAMENTE el hueco real, ni uno mas \
-             ni uno menos"
+        assert!(
+            !skipped_names(status).iter().any(|n| n == "Other.kt"),
+            "la ruta {name} colgo un `.kt` que si sabe leer: es un hueco \
+             inventado, y un hueco inventado es peor que un hueco real \
+             porque esconde la cobertura que el producto tiene"
         );
     }
 
