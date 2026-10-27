@@ -56,14 +56,17 @@ ramas quedaron viejas, no su trabajo pendiente.
 
 ## La puerta que queda abierta
 
-La rama `feature/the-kotlin-declaration-is-named` está 0 commits por detrás y
-6 por delante de `origin/main`, con el veredicto de K1 en
-`docs/roadmap/production-ready/veredictos/2026-10-26-k1-kotlin-symbols.md`.
-El **`full` está medido sobre el árbol que se entrega**, no sobre el árbol de
-trabajo: `rc=0`, con fmt, clippy `-D warnings`, 6 456 pruebas verdes en 248
-binarios, doc-tests, el explorer multimodal, 439 comprobaciones de contrato en
-61 suites y el comprobante de línea base.
+**El ciclo de K1 está cerrado en el remoto.** El pull request `#473` —la
+primera publicación de la rama `feature/the-kotlin-declaration-is-named`— se
+fusionó por squash como `cbfc8316`, con el `merge-gate` verde sobre
+`d3f61452`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El veredicto de K1
+está en `docs/roadmap/production-ready/veredictos/2026-10-26-k1-kotlin-symbols.md`.
 
-**El pull request `#473` está abierto.** La fusión la decide el `merge-gate`,
-que es la autoridad: `scripts/ci/publish-merge-gate.sh` publica el veredicto
-que GitHub exige para dejar fusionar.
+La puerta que queda abierta es la de la cola:
+
+- **`C49`** — el escaneo no confunde un fallo de lectura con una ausencia de
+  cambio. Medido sobre `application/ingest/scan.rs`, con un criterio de cierre
+  observable, y no bloqueado por nada: puede correr mientras `C23` espera.
+- **`C23`** — la unidad de mayor retorno de todo lo que propone la auditoría
+  externa. Sigue bloqueada por el operador: su pull request `#464` es la
+  única de las siete que aún lleva trabajo íntegro.

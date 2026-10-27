@@ -27784,3 +27784,80 @@ razón. La corrida siguiente, sobre el árbol ya versionado, dio `rc=0`.
 **La lección es general: un gate verde sobre el árbol de trabajo no es un gate
 verde sobre el árbol que se entrega.** Por eso la corrida de cierre se queda
 como parte del cierre, y no como un trámite.
+
+## 2026-10-27 — K1 llega al remoto, y la auditoría externa queda enrutada
+
+**El ciclo de K1/C12 está cerrado en el remoto.** El pull request `#473` —la
+primera publicación de la rama `feature/the-kotlin-declaration-is-named`— se
+fusionó por squash como `cbfc8316` (`feat(core): Kotlin se publica con
+nombre, ubicación y código`). El `merge-gate` es la autoridad de esa fusión y
+la exerció: el puente `scripts/ci/publish-merge-gate.sh` corrió
+`merge-gate.pipeline.kts` sobre `d3f61452` y publicó `merge-gate=success`
+para ese SHA —**58 etapas, 0 rojas**, incluidas las que el `full` no cubre
+(`advisories`, `licenses`, `supply-chain`, `install-rust-analyzer`, las suites
+MCP y el lane `e91-w7-regression-budget`). La cabecera de la fusión se juzgó
+**antes** de que existiera, con `scripts/ci/check-merge-subject.sh`: la
+política de la casa la admite.
+
+**La entrega, medida sobre el árbol que se entrega.** `bash
+scripts/test-full.sh` → `rc=0` sobre `9f359d61`: fmt, clippy `-D warnings`,
+**6 456 pruebas verdes en 248 binarios**, doc-tests, el explorer multimodal,
+**439 comprobaciones de contrato en 61 suites** y el comprobante de línea
+base. `bash scripts/test-fast.sh` → `rc=0` con 4 434 verdes en el subconjunto
+conservador: el selector CR-08 cayó en `fallback` porque `goal-compass.json`
+no está en su mapa, así que corrieron core, explorer, mcp, cli, ladybug y
+merge.
+
+**Lo que este cierre corrige respecto al recibo de C12.** Aquel recibo midió
+sus dos gates sobre `4920517b` y dejó la puerta sin publicar. Lo que se
+entrega es `d3f61452`: cinco commits por encima —la corrección del guard de
+contaminación, el veredicto de K1, la puerta de cierre y el enrutado de la
+auditoría—, de los cuales cuatro son documentación. La lección de aquella
+entrada se aplicó entera: **el `full` se volvió a correr sobre el árbol
+versionado, no sobre el de trabajo**, y el `merge-gate` se corrió sobre el SHA
+exacto de la cabeza que GitHub iba a proteger.
+
+**La auditoría externa del 2026-10-26, enrutada y no ejecutada.** Llegó con
+una base (`main@87aab47f`) anterior a `#471`, `#472` y a Kotlin, con una
+propuesta de programa de cinco bloques (`B0`–`B5`) y con nueve hallazgos. Contra
+el árbol real de `e3832b87`: **ocho de los nueve sobreviven y el noveno es
+falso**. El enrutado es el siguiente, y no abre ningún programa nuevo:
+
+| Hallazgo | Dueño |
+|---|---|
+| H2 — el escaneo confunde «no pude leer» con «no ha cambiado» | **`C49`**, nuevo en `goal-compass.json` |
+| H4, H5, H6, H7a, H7b | `C23` |
+| H3 — la resolución se decide por proximidad de ficheros | `C13` |
+| H1 — la ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
+| H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
+| H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
+| «Kotlin sigue declarado como extensión no soportada» | **falso**: `KNOWN_UNSUPPORTED_EXTENSIONS` está vacío desde K1 (`4920517b`) |
+
+**El bloque de mayor retorno que propone la auditoría —una autoridad única de
+inventario y snapshot— es `C23`**, que ya estaba en la cola con prioridad 50.
+Abrir `B0`–`B5` habría sido el segundo roadmap que este proyecto no admite, y
+por eso la auditoría no se ejecutó: se repartió.
+
+**Sobre las siete pull requests que seguían abiertas.** La pregunta útil no
+es si están abiertas, sino si siguen llevando trabajo. Medido por SHA de blob
+de cada fichero contra `origin/main`: **#465–#470 ya están dentro de `main`** —
+via el squash `#471` (`8689de6e`), y #470 además via `#472` (`c87340f0`)—. La
+causa está en el historial: `#471` fue un squash de seis pull requests a la
+vez, así que sus ramas quedaron viejas, no su trabajo pendiente. **#464 es la
+única que sigue viva**: no comparte ni un solo fichero con `main`, es `C23`, y
+espera al operador.
+
+**Lo que esta entrada NO afirma.** `C49` es un candidato con criterio de
+cierre, no trabajo hecho: `application/ingest/scan.rs:212` sigue publicando un
+hash vacío para un fichero nuevo ilegible, y `:219-232` sigue tratando como
+*sin cambios* un fichero cuyo hash no se pudo leer. H1 y H8 quedan declarados
+y sin ejecutar: los dos piden una decisión de alcance —qué significa
+«concurrencia» cuando participan procesos externos— que no es del análisis de
+código. El borrador completo de la reconciliación, con el detalle por
+`fichero:línea`, queda como documento local no versionado, igual que el de
+2026-10-20.
+
+**La puerta que queda abierta.** `C49` es el siguiente paso ejecutable: es
+autocontenido, no bloquea nada y no depende de `C23`. `C23` sigue esperando
+al operador. La cola de la misión queda con cuatro candidatos —`C23` (50),
+`C49` (20), `C44` (15) y `C13` (10)—, y la prioridad es del operador.
