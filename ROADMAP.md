@@ -57,8 +57,13 @@ ramas quedaron viejas, no su trabajo pendiente.
 ## La puerta que queda abierta
 
 La rama `feature/the-kotlin-declaration-is-named` está 0 commits por detrás y
-4 por delante de `origin/main`, con la puerta final de K1 medida en `rc=0` sobre
-`c29e2e94` y el veredicto en
+6 por delante de `origin/main`, con el veredicto de K1 en
 `docs/roadmap/production-ready/veredictos/2026-10-26-k1-kotlin-symbols.md`.
-**No existe pull request para esta rama**: el ciclo está cerrado en el papel y
-abierto en el remoto, y el `push` lo autoriza el operador.
+El **`full` está medido sobre el árbol que se entrega**, no sobre el árbol de
+trabajo: `rc=0`, con fmt, clippy `-D warnings`, 6 456 pruebas verdes en 248
+binarios, doc-tests, el explorer multimodal, 439 comprobaciones de contrato en
+61 suites y el comprobante de línea base.
+
+**El pull request `#473` está abierto.** La fusión la decide el `merge-gate`,
+que es la autoridad: `scripts/ci/publish-merge-gate.sh` publica el veredicto
+que GitHub exige para dejar fusionar.
