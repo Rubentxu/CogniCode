@@ -31,6 +31,28 @@
       "source": "roadmap"
     },
     {
+      "candidateId": "C49",
+      "title": "El escaneo no confunde un fallo de lectura con una ausencia de cambio",
+      "unit": "B4",
+      "objective": "Que la decision de «¿esto cambio?» deje de ser binaria: un hash que no se pudo leer se publica como fallo y no como afirmacion, y un fichero ilegible no entra en el indice con un hash vacio.",
+      "whyNow": "MEDIDO 2026-10-27 sobre e3832b87: en `application/ingest/scan.rs` el filtro que hashea los ficheros usa `hash_file(&abs).ok()`, asi que un fichero que no se pudo leer desaparece del mapa de hashes. En `:212` un fichero NUEVO ilegible entra con `unwrap_or_default()`, es decir con un hash vacio que el indice publica como si fuera el contenido; en `:219-232` un fichero EXISTENTE ilegible cae en la misma rama que un fichero cuyo mtime no cambio y se publica como «sin cambios». La consecuencia: el escaneo decide que se vuelve a leer, asi que un fichero que cambio y que ademas fallo al leerse no se vuelve a leer nunca, y el indice guarda un hash viejo sin decir nada. Es la misma clase de defecto que C46 cerro en la dimension de la fecha, y que nadie ha cerrado en la dimension del hash. El caso negativo es reproducible: un fichero en modo 0444 dentro de un directorio que si se puede listar. La auditoria externa del 2026-10-26 lo senala, y su base (87aab47f) es anterior a C46, de modo que su afirmacion sigue vigente en este arbol.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/ingest/scan.rs",
+        "crates/cognicode-core/src/application/ingest/extractor.rs"
+      ],
+      "doneWhen": [
+        "la decision de cambio es un ADT con la misma forma que la fecha ya tiene (New, Changed, Unchanged, Unreadable, UnknownFreshness), y un fallo de lectura se publica como fallo",
+        "un fichero nuevo ilegible no entra en el indice con un hash vacio",
+        "un fichero que no se pudo hashear no se confunde con uno intacto, y el escaneo lo vuelve a mirar en la siguiente pasada",
+        "existe un test RED que se ve caer, y una UAT efimera que dice que se publica cuando el fichero no se puede leer",
+        "la suite sigue verde"
+      ],
+      "scope": "B4",
+      "risk": "medium",
+      "priority": 20,
+      "source": "roadmap"
+    },
+    {
       "candidateId": "C44",
       "title": "El catalogo publicado dice de su runtime una version que no es la",
       "unit": "B1",
