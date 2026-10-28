@@ -293,3 +293,9 @@ out-*.json
 # El mismo contrato que vigila `leases/` y `last-run/` los vigila ahora.
 /[0-9a-f][0-9a-f]*[0-9a-f]*-[0-9a-z]*-s[0-9]*-[0-9]*/
 .goal-compass/
+
+# Backlog.md: la bandeja de trabajo local. Los ficheros de planificación no se
+# rastrean en Git (política de documentos privados): son estado del agente, no
+# fuente del producto. Lo que se deriva de ellos —identificadores de tarea y
+# su recibo— se anota en el Journal, que sí es la autoridad versionada.
+.backlog/

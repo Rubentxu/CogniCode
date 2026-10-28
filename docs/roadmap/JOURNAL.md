@@ -28061,3 +28061,96 @@ ese contrato desde la fusión de `#475`, y sólo se ve al correr el gate sobre
 `main`, no sobre la rama que lo escribió. La corrección es regenerar el
 snapshot citando un SHA alcanzable (`09310efb`), y el RED —el propio
 contrato— pasa después.
+
+## 2026-10-28 — La auditoría del 2026-10-28 entra en la bandeja
+
+**Lo que se midió antes de escribir nada.** Cada hallazgo de la segunda
+auditoría externa se volvió a medir contra el árbol real antes de decidir su
+dueño. Una cifra de la auditoría se reproduce exactamente; otra no se
+reproduce en absoluto; y dos hallazgos que la auditoría señalaba en un solo
+fichero son, medidos, un patrón de todo el directorio.
+
+La deuda CR-06 de producción, medida con el clasificador de
+`scripts/ci/test_cr06_ratchet.py` sobre `main@5c63e949` contra la cabeza de
+`#464` (`32ae7bc1`): **28 pares de producción en `main`, 35 en la pull
+request**, nueve añadidos y dos eliminados. Los nueve nuevos viven en los
+módulos que la pull request crea al partir el servicio (`cache.rs`,
+`construction.rs`, `metrics.rs`, `resolution.rs`). La cifra de la auditoría
+—«de 28 a 35»— es exacta. También crece el inventario completo de la
+allowlist, de 41 a 51 entradas, pero ésa es otra cuenta: la partición de
+producción es la que el ratchet mide y la que la auditoría cita.
+
+La duplicidad de las especificaciones de perspectiva de Explorer, en cambio,
+**no se reproduce**: `perspective-toggle.spec.ts` (174 líneas) prueba el
+comportamiento del toggle —P2.1 a P2.6— y `perspective-toggle-full.spec.ts`
+(39 líneas) tiene un test de visibilidad y otro desactivado con la marca
+`[DEBT: layout may not visibly change in mock mode]`. No hay dos aserciones
+sobre lo mismo: el caso que la auditoría llama duplicado es un caso
+desactivado por una señal que falta.
+
+Lo que sí se reproduce es el patrón de fondo. En `apps/explorer-ui/e2e/` hay
+**59 llamadas a `page.waitForTimeout` en 24 ficheros**, con una causa
+dominante que los propios comentarios escriben: el atajo global `Meta+k` lo
+registra un componente que se monta tras la hidratación y no hay en el DOM
+nada que lo delate. Y hay **16 casos desactivados en 13 ficheros**, siete de
+ellos con la marca `[DEBT: …]` que nombra la señal que falta
+(`data-pane-on-node`, endpoint de inyección de error en MSW, flag sembrable,
+botón sin cablear a la URL, fixture de hotspots reales, instrumentación
+mínima, layout que no cambia visiblemente en modo mock). La auditoría vio un
+fichero; la medición muestra el directorio.
+
+**Lo que entra como tarea.** Siete tareas en la bandeja local de Backlog.md,
+cada una con su medición en el cuerpo y sus criterios de aceptación:
+
+| Tarea | Hallazgo | Dueño previo |
+|---|---|---|
+| `TASK-1` | el resultado incremental publica dos recuentos que nadie midió (`symbols_removed = deleted_files.len() * 2`) | sin dueño: `symbols_removed` no aparece en ningún recibo |
+| `TASK-2` | el resolutor de la capa de aplicación elige un homónimo en silencio | sin dueño; `TargetResolution::Ambiguous` ya existe y la capa de aplicación no la usa |
+| `TASK-3` | el grafo publica aristas que el almacén nunca confirmó | sin dueño |
+| `TASK-4` | partir el servicio de análisis sube la deuda CR-06 de producción de 28 a 35 pares | `C23`, pero como puerta medible del `#464` |
+| `TASK-5` | dos dueños del grafo del workspace | sin dueño |
+| `TASK-6` | la suite E2E de Explorer espera con reloj donde la aplicación no expone señal | sin dueño |
+| `TASK-7` | dieciséis casos desactivados en la suite E2E de Explorer y ninguno nombra un dueño | sin dueño |
+
+**Lo que entra como borrador.** Cinco propuestas de la sección 7 de la
+auditoría, que no son trabajo hasta que alguien las mida: `DRAFT-1` (que
+CogniCode seleccione sus propias pruebas), `DRAFT-2` (el snapshot como
+unidad de verdad), `DRAFT-3` (tests con valor marginal demostrable),
+`DRAFT-4` (refactorización por fronteras de comportamiento) y `DRAFT-5`
+(inventario del coste del harness).
+
+**Lo que no entra, y por qué.** `C49` (lecturas silenciadas) está cerrada con
+su recibo el 2026-10-28 (`5c63e949`). `C44` (catálogo desactualizado) y
+`C13` (relaciones Kotlin↔Java) están en la cola viva. `C23` (inventario y
+snapshot) es el bloque de mayor retorno y su pull request `#464` es la única
+de las siete que aún lleva trabajo íntegro; el acoplamiento
+aplicación↔infraestructura y el tamaño de `views.rs` (9 669 líneas) y de
+`AnalysisService` (4 517) son suyos. La ventana entre verificar y publicar
+(`file_operations.rs:1281-1287`) y el grafo temporal del refactor (H8) ya
+estaban declarados sin unidad el 2026-10-26: piden una decisión de alcance,
+no una tarea. El plan de cinco fases de la auditoría no entra porque su
+bloque de mayor retorno es `C23`, que ya está en la cola.
+
+**La bandeja no es una segunda agenda.** `.backlog/` no se rastrea: es estado
+local del agente, y los identificadores que se derivan de él quedan escritos
+aquí. La cola viva sigue en `goal-compass.json` —`C23`, `C44`, `C13`— y la
+autoridad de agenda en `docs/roadmap/ROADMAP.md` §11. La bandeja recoge lo
+que todavía no tiene dueño; no reordena lo que ya lo tiene.
+
+**El ratchet del snapshot estaba rojo sobre `main`, y por segunda vez.** Al
+preparar este recibo, `scripts/ci/test_roadmap_version_ratchet.py` falló en
+`main` con `test_current_sha_matches_head` y `test_control_all_green` en
+rojo: `CURRENT.md` declaraba el snapshot sobre `09310efb`, que es la cabeza
+de la rama `docs/the-cycle-of-c49-is-closed` y quedó fuera del historial
+cuando `#476` se fusionó por squash como `082ba34c`.
+
+Es el mismo defecto que el cierre anterior ya había encontrado y corregido —
+un SHA de una rama fusionada por squash no es alcanzable desde `main`— pero
+la corrección anterior no lo arreglaba: `09310efb` era alcanzable desde la
+*rama*, que es donde corre el gate, y no desde `main`, que es donde vive
+después del squash. Un gate verde sobre la rama no deja `main` verde.
+
+La regla que sale de las dos vueltas es una sola: **el snapshot cita un SHA
+que ya existe en `main`**, no uno que la rama acaba de crear. La corrección
+es regenerar la cabecera citando `082ba34c`, que es un ancestro de `main` y
+lo seguirá siendo después del squash de este recibo.
