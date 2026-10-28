@@ -2081,10 +2081,18 @@ pub struct ReparseOnEditOutput {
     pub files_skipped: usize,
     /// Number of files that were removed from the graph
     pub files_removed: usize,
-    /// Number of symbols added
+    /// Symbols the changed files gained, counted in the graph
     pub symbols_added: usize,
-    /// Number of symbols removed
+    /// Symbols the changed files lost, counted in the graph
     pub symbols_removed: usize,
+    /// Files whose symbol change could not be counted.
+    ///
+    /// The counts above describe the files that were measured. A file
+    /// listed here is one whose change is unknown: there was no graph to
+    /// count against, or the graph could not be rebuilt. Its symbols are
+    /// not in `symbols_added` nor in `symbols_removed`, and this field is
+    /// what says so.
+    pub symbols_unmeasured: usize,
     /// Whether the graph was actually updated
     pub graph_updated: bool,
     /// Metadata about the operation

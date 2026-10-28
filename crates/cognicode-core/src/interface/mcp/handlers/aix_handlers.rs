@@ -27,6 +27,7 @@
 use super::*;
 
 use crate::domain::value_objects::file_time::measured_millis;
+use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
 // AIX Tool Handlers
 // ============================================================================
@@ -1875,9 +1876,20 @@ pub async fn handle_reparse_on_edit(
     let mut files_removed = 0;
     let mut symbols_added = 0;
     let mut symbols_removed = 0;
+    let mut symbols_unmeasured = 0;
     let mut graph_updated = false;
     // Track changed absolute paths for graph rebuild
     let mut changed_abs_paths: Vec<PathBuf> = Vec::new();
+    // The changed files whose symbols have to be counted in the rebuilt
+    // graph. A file that was deleted is not here: it has no symbols left
+    // to count, and its count is settled against the graph as it was.
+    let mut changed_rel_paths: Vec<PathBuf> = Vec::new();
+
+    // The graph as it stands before this call: the baseline the symbol
+    // counts are measured against. A graph that holds no symbols at all
+    // measured nothing, and the counts it would produce are unknown
+    // rather than zero.
+    let baseline_graph = ctx.analysis_service.get_project_graph();
 
     for file_path in &input.file_paths {
         let full_path = if Path::new(file_path).is_absolute() {
@@ -1904,14 +1916,17 @@ pub async fn handle_reparse_on_edit(
         let was_in_manifest = existing_manifest.entries.contains_key(&rel_path);
 
         if !file_exists && was_in_manifest {
-            // File was deleted
+            // File was deleted. The symbols it had are the ones the graph
+            // held of it before this call; a file that is gone holds none.
             files_removed += 1;
-            symbols_removed += existing_manifest
-                .entries
-                .get(&rel_path)
-                .map(|e| e.symbol_count)
-                .unwrap_or(0);
-            graph_updated = true;
+            let delta = symbol_delta(
+                baseline_graph.symbol_count_for_file(&rel_path),
+                SymbolCount::Measured(0),
+            );
+            symbols_removed += delta.removed();
+            if !delta.is_measured() {
+                symbols_unmeasured += 1;
+            }
             changed_abs_paths.push(full_path);
         } else if file_exists {
             if let Some(entry) = existing_manifest.entries.get(&rel_path) {
@@ -1929,12 +1944,11 @@ pub async fn handle_reparse_on_edit(
                     files_parsed += 1;
                     match ctx.semantic_search.index_file_from_path(&full_path) {
                         Ok(()) => {
-                            // Successfully indexed - symbols will be in DashMap and FTS5
-                            // Note: index_file_from_path returns Ok(()) on success, not symbol count
-                            // We increment by 1 as a proxy since actual count isn't available from the method
-                            symbols_added += 1;
-                            graph_updated = true;
+                            // Successfully indexed - symbols will be in DashMap and FTS5.
+                            // How many they are is not published here: it is
+                            // counted in the graph, once it has been rebuilt.
                             changed_abs_paths.push(full_path);
+                            changed_rel_paths.push(rel_path);
                         }
                         Err(e) => {
                             // Parse failure - log at WARN and count as skipped
@@ -1950,9 +1964,8 @@ pub async fn handle_reparse_on_edit(
                 match ctx.semantic_search.index_file_from_path(&full_path) {
                     Ok(()) => {
                         // Successfully indexed
-                        symbols_added += 1;
-                        graph_updated = true;
                         changed_abs_paths.push(full_path);
+                        changed_rel_paths.push(rel_path);
                     }
                     Err(e) => {
                         // Parse failure - log at WARN and count as skipped
@@ -1969,7 +1982,8 @@ pub async fn handle_reparse_on_edit(
 
     // Rebuild call graph if files were actually modified
     // This ensures the graph stays in sync with FTS5/DashMap after code changes
-    if graph_updated && !changed_abs_paths.is_empty() {
+    let mut rebuild_succeeded = false;
+    if !changed_abs_paths.is_empty() {
         tracing::debug!(
             "Rebuilding call graph for {} changed files in reparse_on_edit",
             changed_abs_paths.len()
@@ -1980,14 +1994,38 @@ pub async fn handle_reparse_on_edit(
             .invalidate_file_cache_for(&changed_abs_paths);
 
         // Rebuild the project graph to reflect the changes
-        if let Err(e) = ctx
+        match ctx
             .analysis_service
             .build_project_graph_async(&ctx.working_dir)
             .await
         {
-            tracing::warn!("Failed to rebuild call graph in reparse_on_edit: {}", e);
-            // Don't fail the whole operation - FTS5/DashMap are already updated
+            Ok(()) => rebuild_succeeded = true,
+            Err(e) => {
+                tracing::warn!("Failed to rebuild call graph in reparse_on_edit: {}", e);
+                // Don't fail the whole operation - FTS5/DashMap are already updated
+            }
         }
+        graph_updated = rebuild_succeeded;
+    }
+
+    // The symbols of the changed files, counted in the rebuilt graph. When
+    // the graph could not be rebuilt there is no "after" to count against,
+    // and the change is unknown rather than zero.
+    if rebuild_succeeded {
+        let rebuilt_graph = ctx.analysis_service.get_project_graph();
+        for rel_path in &changed_rel_paths {
+            let delta = symbol_delta(
+                baseline_graph.symbol_count_for_file(rel_path),
+                rebuilt_graph.symbol_count_for_file(rel_path),
+            );
+            symbols_added += delta.added();
+            symbols_removed += delta.removed();
+            if !delta.is_measured() {
+                symbols_unmeasured += 1;
+            }
+        }
+    } else {
+        symbols_unmeasured += changed_rel_paths.len();
     }
 
     Ok(ReparseOnEditOutput {
@@ -1996,6 +2034,7 @@ pub async fn handle_reparse_on_edit(
         files_removed,
         symbols_added,
         symbols_removed,
+        symbols_unmeasured,
         graph_updated,
         metadata: AnalysisMetadata {
             total_calls: files_parsed + files_skipped + files_removed,
