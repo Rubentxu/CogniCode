@@ -52,7 +52,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 | Hallazgo de la auditoría | Dueño |
 |---|---|
 | Lecturas silenciadas en el escaneo | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
-| `symbols_removed = deleted_files.len() * 2` — un recuento publicado como medido que no lo está | **`TASK-1`** |
+| Recuentos de símbolos publicados como medidos y no medidos (`symbols_removed = deleted_files.len() * 2`, `symbols_added += 1`, el `symbol_count` del manifiesto) | **`TASK-1`**, cerrada el 2026-10-28 (`ca378733`) |
 | Resolución ambigua de símbolos en la capa de aplicación | **`TASK-2`** |
 | Errores de arista descartados con `.ok()` | **`TASK-3`** |
 | La PR #464 sube la deuda CR-06 de producción de 28 a 35 pares | **`TASK-4`** — puerta medible de `C23` |
@@ -85,13 +85,14 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de C49 está cerrado en el remoto.** El pull request `#475` —la
-publicación de la rama `feature/the-scan-declares-what-it-cannot-read`— se
-fusionó por squash como `5c63e949`, con el `merge-gate` verde sobre
-`7f6a110d`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El escaneo ya
-declara los ficheros que no puede leer: un fichero ilegible se publica como
-fallo, sin hash y con su causa; el índice guarda la ausencia; y la segunda
-pasada vuelve a mirarlo.
+**El ciclo de M0.T01 está cerrado en el remoto.** El pull request `#478` —la
+publicación de la rama `fix/m0-t01-measured-symbol-counts`— se fusionó por
+squash como `ca378733`, con el `merge-gate` verde sobre `93374a22`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. Los recuentos que el producto
+publica están medidos: la línea base es el grafo (ADR-001), la diferencia es
+una función pura del dominio, y lo que no se pudo medir se declara en
+`symbols_unmeasured` en vez de publicar un cero que parece medido. La
+herramienta MCP y la sesión de workspace publican la misma medida.
 
 La puerta que queda abierta es la de la cola:
 
@@ -103,3 +104,7 @@ La puerta que queda abierta es la de la cola:
 - **`C13`** — las relaciones Kotlin↔Java sólo cuando se pueden probar, con un
   corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
   Prioridad 10, sin bloqueo.
+
+Y, dentro del hito `m-0` del ciclo, la siguiente unidad es **`M0.T02`**
+(`TASK-2`): el resolutor de la capa de aplicación elige un homónimo en
+silencio, sin decir cuál de los dos eligió.
