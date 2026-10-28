@@ -36,6 +36,18 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
+/// How a build obtains the repository that holds the relations.
+///
+/// The repository is created per build and not shared between builds: a
+/// build owns the relations it publishes, and a repository shared across
+/// builds would let two builds write into the same graph.
+pub type RepositoryFactory = Arc<dyn Fn() -> Box<dyn DependencyRepository> + Send + Sync>;
+
+/// The repository a build uses when nobody injects another one.
+fn default_repository_factory() -> RepositoryFactory {
+    Arc::new(|| Box::new(PetGraphStore::new()) as Box<dyn DependencyRepository>)
+}
+
 /// Service for analyzing code structure and complexity
 pub struct AnalysisService {
     complexity_calculator: ComplexityCalculator,
@@ -79,6 +91,13 @@ pub struct AnalysisService {
     /// graph in a task that cannot borrow `self`: the route that publishes
     /// the number has to be the route that did the work.
     reuse: ReuseState,
+    /// How a build obtains the repository that holds the relations.
+    ///
+    /// The product's own repository never refuses a relation, so a
+    /// refusal could not be observed at all without this seam. The seam
+    /// changes where the repository comes from and nothing else: what a
+    /// build publishes is decided by the rules, not by the factory.
+    repository_factory: RepositoryFactory,
 }
 
 /// What the service remembers between builds about what the last one proved.
@@ -143,6 +162,7 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
+            repository_factory: default_repository_factory(),
         }
     }
 
@@ -161,7 +181,22 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
+            repository_factory: default_repository_factory(),
         }
+    }
+
+    /// Replaces the factory that creates the repository of a build.
+    ///
+    /// The product's own repository accepts every relation, so the
+    /// refusal path is unreachable without this seam. Injecting a
+    /// repository that refuses is how a caller observes what the
+    /// product does with a relation the store did not confirm.
+    pub fn with_repository_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Box<dyn DependencyRepository> + Send + Sync + 'static,
+    {
+        self.repository_factory = Arc::new(factory);
+        self
     }
 
     /// Returns the graph cache for accessing the project graph
@@ -253,7 +288,7 @@ impl AnalysisService {
             )));
         }
 
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         // F2.W7: replace the legacy `name_lower → SymbolId` map with a
         // `GlobalSymbolIndex` that supports scope-aware resolution
         // (see `infrastructure/graph/per_file_graph.rs::GlobalSymbolIndex`
@@ -524,7 +559,9 @@ impl AnalysisService {
 
             for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&symbol_id, symbol.clone());
+                store
+                    .add_symbol(&symbol_id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                 // F2.W7: feed every symbol into the GlobalSymbolIndex
                 // regardless of how many homonyms exist. Resolution
                 // happens later, with caller-file context.
@@ -609,7 +646,7 @@ impl AnalysisService {
             let guard = skipped_files.lock().unwrap();
             guard.clone()
         };
-        let call_graph = store.to_call_graph();
+        let call_graph = store.get_call_graph();
         // The status carries the two coverages: the files the walk could not
         // process, and the references it could not tie to a declaration.
         // "Complete" is only said when both of them are whole.
@@ -709,17 +746,19 @@ impl AnalysisService {
             .map_err(|e| AppError::AnalysisError(e.to_string()))?;
 
         // Convert index entries to a minimal CallGraph (symbols, no call edges)
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         for (name, locations) in index.entries() {
             for loc in locations {
                 let sym_kind = loc.symbol_kind;
                 let location = Location::new(loc.file.clone(), loc.line, loc.column);
                 let symbol = Symbol::new(name.clone(), sym_kind, location);
                 let id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&id, symbol);
+                store
+                    .add_symbol(&id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
             }
         }
-        let graph = store.to_call_graph();
+        let graph = store.get_call_graph();
         self.graph_cache.replace(graph);
         Ok(())
     }
@@ -892,7 +931,7 @@ impl AnalysisService {
             )));
         }
 
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         // The resolver keeps the multiconset of the homonyms and only
         // resolves when a rule demonstrates it, so a call is never
         // wired against whichever homonym the traversal happened to
@@ -1062,7 +1101,9 @@ impl AnalysisService {
 
             for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&symbol_id, symbol.clone());
+                store
+                    .add_symbol(&symbol_id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                 global_index.insert(
                     symbol_id,
                     std::path::PathBuf::from(&file_path),
@@ -1128,7 +1169,7 @@ impl AnalysisService {
         }
         unresolved_edges += resolution.unresolved;
 
-        let call_graph = store.to_call_graph();
+        let call_graph = store.get_call_graph();
 
         // The status carries the two coverages: the files the walk could
         // not process, and the references it could not tie to a
@@ -1184,6 +1225,10 @@ impl AnalysisService {
         let graph_cache = self.graph_cache.clone();
         let file_cache = self.file_cache.clone();
         let reuse = self.reuse.clone();
+        // The factory travels into the blocking task with the rest of the
+        // state: a route that built its repository by another rule would
+        // publish a graph the other routes do not.
+        let repository_factory = self.repository_factory.clone();
         let dir_path = dir.to_path_buf();
 
         // Spawn blocking task to run the heavy computation. Devuelve tambien el
@@ -1202,8 +1247,7 @@ impl AnalysisService {
             tokio::task::JoinError,
         > = tokio::task::spawn_blocking(move || {
                 // Create a minimal service context for building the graph
-                let store =
-                    std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
+                let store = std::sync::Mutex::new((repository_factory)());
                 // H4.2: mismo defecto que `build_project_graph_filtered` — un
                 // `HashMap<String, SymbolId>` no distingue dos homónimos, así que
                 // toda llamada se cableaba contra el que sobrevivió por orden de
@@ -1382,7 +1426,8 @@ impl AnalysisService {
                         store
                             .lock()
                             .unwrap()
-                            .add_symbol_with_location(&symbol_id, symbol.clone());
+                            .add_symbol(&symbol_id, &symbol)
+                            .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                         global_index.insert(
                             symbol_id,
                             std::path::PathBuf::from(&file_path),
@@ -1462,7 +1507,7 @@ impl AnalysisService {
                 }
                 unresolved_edges += resolution.unresolved;
 
-                let call_graph = store.into_inner().unwrap().to_call_graph();
+                let call_graph = store.into_inner().unwrap().get_call_graph();
                 graph_cache.replace(call_graph.clone());
 
                 // Compute coverage
