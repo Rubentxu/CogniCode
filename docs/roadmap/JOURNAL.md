@@ -28271,3 +28271,49 @@ misma política que ya aplican `.backlog/` y `docs/`.
 `C23` (50, bloqueada por el operador), `C44` (15) y `C13` (10). La bandeja del
 ciclo avanza a `M0.T02`, que es `TASK-2`: el resolutor de la capa de aplicación
 que elige un homónimo en silencio.
+
+## 2026-10-28 — El ciclo de M0.T01 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `93374a22`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request
+`#478`. La corrida es comprobable después del hecho: queda en la base de
+eventos del gate, con su identificador de corrida
+`7d457c0d-fe9d-4f29-b6cc-15f0386048e7`, las 58 etapas en `success` y el
+`RunFinished` en `success`. A diferencia del cierre de `C49`, este gate pasó
+a la primera: el snapshot de `CURRENT.md` citaba `3a299730`, que ya estaba en
+`main`, así que la guarda de alcanzabilidad del ratchet no tenía nada que
+señalar.
+
+**La fusión.** El pull request `#478` se fusionó por squash como `ca378733`.
+El `merge-gate` es la autoridad y estaba verde sobre el SHA exacto de la
+cabeza que GitHub iba a proteger, que es el mismo árbol que el `full` midió.
+
+**Lo que queda en el árbol, después del cierre.** Los recuentos que el
+producto publica están medidos: la línea base es el grafo (ADR-001), la
+diferencia es una función pura del dominio (`symbol_delta`), y lo que no se
+pudo medir se declara en `symbols_unmeasured` en vez de publicar un cero que
+parece medido. La herramienta MCP y la sesión de workspace publican la misma
+medida. El cambio son nueve ficheros de código y de producto, siete
+modificados y dos nuevos, `+671/−36`.
+
+**Lo que este corte NO cubre.** El `symbol_count: 0` del manifiesto MCP sigue
+ahí: corregirlo exige mover el manifiesto después de construir el grafo, con
+las consecuencias de frescura que el propio código explica.
+`FileEntry::symbol_count` sigue siendo un `usize` sin estado de «no medido».
+La caché de incrementalidad (`infrastructure/graph/file_manifest.rs`) sigue
+siendo un segundo dueño del estado del fichero (`M1.T01` / `TASK-5`). El
+resultado incremental cuenta sólo los ficheros tocados. `M0.T02` y `M0.T03` no
+se han ejecutado: son el resto del hito `m-0`.
+
+**La tarea en la bandeja.** `TASK-1` (`m-0` / `M0.T01`) queda cerrada en la
+bandeja local de Backlog.md con este mismo SHA: los seis criterios de
+aceptación y los tres puntos de la Definition of Done tienen evidencia real —
+los cinco tests en rojo medidos contra el código anterior, el verde de `fast`
+y `full`, el recibo que cita el SHA, y la medida compartida por la herramienta
+MCP y la sesión de workspace. El hito `m-0` queda en 1 de 3.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) sigue con `C23` (50, bloqueada por el operador), `C44`
+(15) y `C13` (10). La bandeja del ciclo avanza a `M0.T02`, que es `TASK-2`: el
+resolutor de la capa de aplicación que elige un homónimo en silencio, sin
+decir cuál de los dos eligió.

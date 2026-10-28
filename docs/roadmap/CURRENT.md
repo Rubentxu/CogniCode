@@ -5,10 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-28, sobre `3a299730b77ac2018b4b921d7747d892b7c2f932` (la
+> **Snapshot**: 2026-10-28, sobre `ca378733d3bb6f5be9868f61f1eb28c3276b4f67` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
-> puede fechar ni los que no puede leer).
+> puede fechar ni los que no puede leer; y los recuentos que el producto
+> publica están medidos: la línea base es el grafo, y lo que no se pudo medir
+> se declara en vez de publicar un cero).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -492,6 +494,34 @@ hallazgo. El GREEN se midió con mutación focal: cinco veces se rompió el
 comportamiento a propósito y cada mutante murió sólo por los tests escritos
 para él. La UAT efímera dice que el fichero sale sin hash y con su causa, que
 el índice guarda la ausencia y que la segunda pasada vuelve a mirarlo.
+
+**Los recuentos que el producto publica están medidos, está cerrada.** El
+producto publicaba tres cifras que nadie midió: `symbols_added += 1` por cada
+fichero que cambiaba, el `symbol_count` de un manifiesto que guardaba cero en
+todos los ficheros, y `deleted_files.len() * 2` en el resultado incremental. Los
+tres son el mismo defecto: un número que se publica como medido y no lo está. Un
+cliente que compara el número con el grafo ve una diferencia que no sabe
+explicar, y no tiene con qué comprobarla.
+La línea base pasó a ser el grafo (ADR-001): es lo único poblado en las dos
+rutas de publicación, y es lo que el cliente puede contrastar, porque lo
+reconstruye y lo consulta. El manifiesto no puede servir —el que escribe la ruta
+MCP pone `symbol_count: 0` en todos los ficheros, y además se toma antes de
+construir el grafo—, y el índice semántico tampoco: en esa ruta se construye
+vacío. De esa decisión salen tres cosas: la medida tiene un dueño
+(`CallGraph::symbol_count_for_file`, que además dice si el número se midió), la
+diferencia es una función pura del dominio (`symbol_delta`, en
+`domain/value_objects/`), y lo que no se pudo medir se declara en
+`symbols_unmeasured` en vez de publicar un cero que parece medido. Un grafo
+vacío no midió nada: es la ausencia de una medida, no una medida de cero.
+El RED está medido sobre el camino malo: cinco tests fallaron contra el código
+anterior, y fallaron por el número y no por el campo — un fichero que crecía
+publicaba 1 en vez de 4, uno que encogía 0 en vez de 4, uno que se borraba 0 en
+vez de 4, un cambio no medible 0 en vez de declarar 1, y el resultado
+incremental 2 en vez de 1—. El GREEN está medido: `test-fast` rc=0
+(956+161+0+80+15+13+6) y `test-full` rc=0 (fmt, clippy con `-D warnings`, 6462
+pruebas del workspace, 8 doc-tests, 439 contratos en 61 ficheros, `known_failures`
+sin diferencias). La herramienta MCP y la sesión de workspace publican la misma
+medida.
 
 ## La misión
 
