@@ -28486,3 +28486,126 @@ hito `m-0` queda en 2 de 3.
 (`goal-compass.json`) sigue con `C23` (50, bloqueada por el operador), `C44`
 (15) y `C13` (10). La bandeja del ciclo avanza a `M0.T03`, que es `TASK-3`:
 el grafo publica aristas que el almacén nunca confirmó.
+## 2026-10-28 — El grafo publica las aristas que el almacén confirmó
+
+**El defecto, medido en el árbol real.** El almacén —el puerto
+`DependencyRepository`— puede negarse a guardar una relación, y en los doce
+sitios donde el producto ofrece una relación al almacén esa negativa se
+descartaba: `.ok()` en nueve, `debug_assert!(attached.is_ok())` en tres. El
+fallo **no se contaba en ninguna parte ni se publicaba en ninguna parte**. Peor: el log de
+`stage=resolve` publicaba el número de relaciones que se le habían *ofrecido*
+al almacén, un número que incluía las que el almacén nunca confirmó. Un grafo
+que dice que tiene una arista que nadie guardó es un grafo que dice una
+falsehood sobre lo que sabe.
+
+Lo que lo hacía invisible: el almacén del producto (`PetGraphStore`) **nunca
+niega**. Su `add_dependency` fabrica los símbolos que falten
+(`ensure_symbol`) y devuelve `Ok(())` siempre. El camino de la negativa era
+inalcanzable, así que nadie podía observarlo ni escribir un test que lo
+observara. Por eso el commit anterior —el *seam*— inyecta la fábrica del
+repositorio: sin un seam el defecto no es medible, sólo invisible.
+
+**El RED, medido** contra `45c4d5cb` (el seam, sin la corrección):
+**1 passed; 2 failed**.
+
+| test | lo que publicaba el código viejo | lo que tenía que publicar |
+|---|---|---|
+| `the_log_publishes_the_same_relation_count_as_the_response` | el log publicaba **3** relaciones | el log publica el número que el grafo tiene (**2**) |
+| `a_refused_relation_is_published_and_not_swallowed` | el build se declaraba `Complete` sobre un grafo al que le faltaba una relación | el build no se declara completo: la relación rechazada es un hueco |
+| `the_published_relation_count_is_the_one_the_repository_holds` | ya publicaba el número guardado | el número guardado — **pasó contra el código viejo**, y por eso mide AC2 como guarda de regresión |
+
+La primera ley pasó contra el código viejo porque el defecto no estaba en el
+número de la respuesta —ese ya era el que el grafo tenía— sino en el log y en
+el silencio. Una ley que pasa contra el código viejo no es un test inútil: es
+la que dice que no se ha roto lo que ya estaba bien.
+
+**La regla, en el dominio, y es una sola.**
+
+- `domain/services/edge_attachment.rs`: `attach_relations` ofrece cada
+  relación al almacén y recoge las que éste rechaza. Ninguna se pierde por el
+  camino, y el que decide es el dominio, no la infraestructura.
+- `domain/value_objects/rejected_relation.rs`: `RejectedRelation { source,
+  target, kind, reason }` — un tipo con su propia forma, no un `Option` con un
+  `if` dentro.
+- `interface/coverage.rs`: `RejectedRelationInfo::from_rejection` — la **única**
+  proyección, y las dos interfaces la comparten. El CLI y el MCP no pueden
+  divergir porque no tienen dos reglas que puedan divergir.
+
+**Lo que cambia en lo que se publica.**
+
+- `relationships_found` es el número que el grafo tiene
+  (`call_graph.edge_count()`), no el que se le ofreció.
+- Una relación rechazada se nombra: `rejected_relationships` en el MCP,
+  `rejected_relations` en el CLI, con su origen, su destino, su tipo y el
+  motivo del rechazo.
+- El build deja de declararse completo sobre un grafo al que le falta una
+  relación: `BuildStatus::Partial { skipped, pending, rejected }` → hueco de
+  cobertura `graph.rejected` → `OutcomeState::Partial` → `status: "partial"`.
+- El log dice lo mismo que la respuesta: publica el número que el grafo tiene
+  y, aparte, cuántas relaciones fueron rechazadas.
+
+**Lo que NO cambió.** El `required` del catálogo publicado no se tocó: el
+catálogo se escribe a mano y no es un artefacto generado. La descripción de
+`status` ya tenía una deriva propia —no mencionaba el valor `"unsupported"`— y
+se corrigió de paso, con el mismo cuidado con el que se corrigen las derivas
+que se tocan de paso.
+
+**El GREEN, medido.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 cayó al subconjunto
+  conservador (`strategy=fallback`, motivo `unknown_path(product/tools.json)`:
+  el catálogo no es un camino que el selector sepa clasificar), con 3200
+  pasados y 2 ignorados en la suite de `cognicode-core/lib`, 956, 161, 80, 15,
+  13 y 6 en las demás, y clippy con `-D warnings` limpio. Ese subconjunto no
+  incluye los tests de integración contractuales, y por eso `full` no es
+  opcional en esta unidad.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con 6477 pasados, 0 fallidos
+  y 22 ignorados, doc-tests con 8 pasados y 12 ignorados, explorer multimodal
+  con 4 pasados, contratos con 439 verdes repartidos en 61 ficheros, y
+  `known_failures` sin diferencias: la base no declara ninguna.
+- Integración: los 3 tests nuevos, los 23 de `cu1_w2`/`cu1_w3`/`t1_5_4` y los
+  22 de `t1_5_5_json_dispatch`, todos en verde.
+- Ratchet CR-06, que es la puerta de la deuda de arquitectura: **28 pares de
+  producción contra 28 en la base** (0 añadidos, 0 retirados); 13 de las 41
+  entradas de la allowlist son `cfg(test)` y no cuentan como deuda.
+
+**Lo que este corte NO cubre.**
+
+- `pet_graph_store.rs:104` (`to_call_graph`): `let _ = call_graph.add_dependency(...)`.
+  Aquí la arista no es de un símbolo desconocido —los dos extremos salen de
+  `index_to_symbol`, que `ensure_symbol` rellena—, así que el `SymbolNotFound`
+  es inalcanzable por construcción. Es el agregado del dominio, no el puerto:
+  otra cosa que descartar, con otra forma.
+- `refactor_service.rs:681,692` (`build_minimal_graph`): `let _ = store.add_dependency(...)`
+  sobre el almacén concreto. `PetGraphStore` nunca niega, así que la negativa
+  es inalcanzable; y es otra construcción —un grafo de trabajo para planear un
+  refactor— que no publica un número de relaciones. La forma es la del defecto
+  corregido; la ruta no es la del build que el producto publica. Queda anotada
+  para que la siguiente unidad la enrute.
+- El colapso de aristas paralelas: el `CallGraph` del dominio indexa las
+  aristas por `(target, dependency_type)` mientras el `StableGraph` de la
+  infraestructura las guarda todas. `store.dependency_count()` puede ser mayor
+  que `call_graph.edge_count()`. El número que se publica es el del grafo que
+  el producto publica, que es el que la respuesta describe.
+- `product/tools.json` es un camino desconocido para el selector CR-08, así
+  que `fast` corre el subconjunto conservador y avisa de que no incluye los
+  tests de integración contractuales. No es un defecto del código, pero
+  significa que en esta unidad `fast` no sustituye a `full`.
+
+**Lo que deja el árbol.** Veintidós ficheros: diecinueve modificados y tres
+nuevos —dos del dominio (`domain/services/edge_attachment.rs` y
+`domain/value_objects/rejected_relation.rs`) y el test de integración
+`m0_t03_graph_publishes_unconfirmed_edges.rs`—. La regla vive en el dominio, los
+doce puntos donde el producto ofrece una relación al almacén pasan por ella,
+y lo que el producto dice de sí mismo se puede medir contra lo que el grafo
+realmente tiene.
+
+**Siguiente WU.** `M0.T03` es la última de las tres unidades del hito `m-0`:
+después de esta, el hito no tiene más. La cola viva del proyecto
+(`goal-compass.json`) sigue con `C23` (50, bloqueada por el operador), `C44`
+(15) y `C13` (10). En la agenda privada, `M1.T01` (`TASK-5`) y `M1.T02`
+(`TASK-4`) siguen bloqueadas —la primera por una decisión de alcance del
+operador, la segunda por `C23`—, así que la siguiente unidad sin bloqueo es
+**`M1.T03`** (`C44`): el catálogo publicado dice de su runtime una versión que
+no es la.
