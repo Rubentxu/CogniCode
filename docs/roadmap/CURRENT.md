@@ -5,14 +5,16 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-28, sobre `c7e5439c9349ff103d81e5a984d07faf029c5325` (la
+> **Snapshot**: 2026-10-28, sobre `0b7e61d63af7082602c11c21a35042bd2419ae4d` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
 > publica están medidos: la línea base es el grafo, y lo que no se pudo medir
-> se declara en vez de publicar un cero; y un nombre que llevan varios
+> se declara en vez de publicar un cero; un nombre que llevan varios
 > símbolos ya no se resuelve en silencio: la ambigüedad se publica con sus
-> candidatos).
+> candidatos; y una relación que el almacén rechazó ya no se descarta: se
+> nombra, y el número de relaciones que se publica es el que el grafo
+> realmente tiene).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >

@@ -20,6 +20,16 @@ pub trait DependencyRepository: Send + Sync {
         dependency_type: DependencyType,
     ) -> Result<(), DependencyError>;
 
+    /// Adds a symbol to the repository.
+    ///
+    /// A relation needs both of its ends to exist, so a repository that
+    /// holds relations holds symbols too. The method is required and not
+    /// defaulted on purpose: a default that took the symbol and dropped
+    /// it would leave a graph missing a symbol it was given, and a graph
+    /// that says it read something it did not read is worse than one
+    /// that says it could not read it.
+    fn add_symbol(&mut self, id: &SymbolId, symbol: &Symbol) -> Result<(), DependencyError>;
+
     /// Removes a symbol and all its dependencies
     fn remove_symbol(&mut self, id: &SymbolId) -> Option<Symbol>;
 
@@ -87,6 +97,11 @@ mod tests {
                 .entry(source_id.clone())
                 .or_insert_with(HashSet::new)
                 .insert((target_id.clone(), dependency_type));
+            Ok(())
+        }
+
+        fn add_symbol(&mut self, id: &SymbolId, symbol: &Symbol) -> Result<(), DependencyError> {
+            self.symbols.insert(id.clone(), symbol.clone());
             Ok(())
         }
 

@@ -19,11 +19,12 @@ pub fn present_build_graph(
     outcome: &AnalysisOutcome<AnalysisValue>,
     loaded_from_cache: bool,
 ) -> BuildGraphOutput {
-    let (symbols, relationships, pending) = match outcome.value() {
+    let (symbols, relationships, pending, rejected) = match outcome.value() {
         Some(AnalysisValue::Graph(crate::application::analysis_basis::GraphValue::Full {
             symbols,
             dependencies,
             pending_references,
+            rejected_relations,
             ..
         })) => (
             *symbols,
@@ -32,8 +33,12 @@ pub fn present_build_graph(
                 .iter()
                 .map(crate::interface::coverage::PendingReferenceInfo::from_reference)
                 .collect(),
+            rejected_relations
+                .iter()
+                .map(crate::interface::coverage::RejectedRelationInfo::from_rejection)
+                .collect(),
         ),
-        _ => (0, 0, Vec::new()),
+        _ => (0, 0, Vec::new(), Vec::new()),
     };
 
     let (status, skipped) = match outcome.state() {
@@ -75,6 +80,7 @@ pub fn present_build_graph(
         message: String::new(),
         skipped_files: skipped,
         pending_references: Some(pending),
+        rejected_relationships: Some(rejected),
         basis: None,
     }
 }

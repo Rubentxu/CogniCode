@@ -354,6 +354,14 @@ pub const SKIPPED_FILE_CAPABILITY: &str = "graph";
 /// consumer half the truth.
 pub const PENDING_REFERENCE_CAPABILITY: &str = "graph.pending";
 
+/// The capability of the gap that says a relation was refused.
+///
+/// Three coverages are three gaps with three capabilities, because they
+/// are three facts: a file that could not be read, a reference that could
+/// not be tied, and a relation the repository would not take. A presenter
+/// that reads one of them as another tells the consumer half the truth.
+pub const REJECTED_RELATION_CAPABILITY: &str = "graph.rejected";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisError {
     pub kind: AnalysisErrorKind,
@@ -636,6 +644,12 @@ pub enum GraphValue {
         /// references it does not know, in the same place where it says what
         /// it does know.
         pending_references: Vec<crate::domain::value_objects::PendingReference>,
+        /// The relations the repository refused.
+        ///
+        /// A relation that was refused is not a relation of the graph, and
+        /// `dependencies` counts the relations the graph holds. Naming the
+        /// refusals is what keeps the number and the graph in agreement.
+        rejected_relations: Vec<crate::domain::value_objects::RejectedRelation>,
     },
     OnDemand {
         symbol: String,

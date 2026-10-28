@@ -8,6 +8,7 @@ mod confidence_rules;
 #[cfg(feature = "multimodal")]
 mod corroboration;
 mod cycle_detector;
+mod edge_attachment;
 mod impact_analyzer;
 mod target_resolution;
 
@@ -21,5 +22,6 @@ pub use confidence_rules::{ConfidenceError, ConfidenceRules, ExtractionContext};
 #[cfg(feature = "multimodal")]
 pub use corroboration::{edge_score, provenance_weight, score_subgraph, target_score};
 pub use cycle_detector::{Cycle, CycleDetectionResult, CycleDetector};
+pub use edge_attachment::attach_relations;
 pub use impact_analyzer::{ImpactAnalyzer, ImpactLevel, ImpactReport, ImpactThreshold};
 pub use target_resolution::resolve_target;

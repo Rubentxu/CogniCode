@@ -129,6 +129,11 @@ impl DependencyRepository for PetGraphStore {
         Ok(())
     }
 
+    fn add_symbol(&mut self, id: &SymbolId, symbol: &Symbol) -> Result<(), DependencyError> {
+        self.add_symbol_with_location(id, symbol.clone());
+        Ok(())
+    }
+
     fn remove_symbol(&mut self, id: &SymbolId) -> Option<Symbol> {
         if let Some(idx) = self.get_index(id) {
             let node_data = self.graph.remove_node(idx)?;

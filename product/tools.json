@@ -445,6 +445,34 @@
             ],
             "type": "object"
           },
+          "RejectedRelationInfo": {
+            "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+            "properties": {
+              "kind": {
+                "description": "What the relation is.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the repository refused it.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The declaration that holds the relation.",
+                "type": "string"
+              },
+              "target": {
+                "description": "The declaration the relation points at.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
           "SkippedFileDto": {
             "description": "Per-file skipped-file record surfaced through `build_graph`.",
             "properties": {
@@ -498,6 +526,16 @@
               "null"
             ]
           },
+          "rejected_relationships": {
+            "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`None` when the graph was served from cache (no walk happened on\nthis call); `Some([])` when every relation was taken.",
+            "items": {
+              "$ref": "#/$defs/RejectedRelationInfo"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "relationships_found": {
             "format": "uint",
             "minimum": 0,
@@ -514,7 +552,7 @@
             ]
           },
           "status": {
-            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), or a reference could not\n    be tied to a declaration.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.",
+            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), a reference could not\n    be tied to a declaration, or the repository refused a\n    relation.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.",
             "type": "string"
           },
           "success": {

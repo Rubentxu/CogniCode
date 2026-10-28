@@ -957,18 +957,19 @@ pub struct SkippedFileInfo {
 /// The shape and the projection live in
 /// [`interface::coverage`](crate::interface::coverage): the fact is one
 /// fact, and every consumer reads it the same way.
-pub use crate::interface::coverage::{PendingReason, PendingReferenceInfo};
+pub use crate::interface::coverage::{PendingReason, PendingReferenceInfo, RejectedRelationInfo};
 
 /// How much of what was asked for is actually in the answer.
 ///
 /// This is an ADT on purpose: `Complete` carries no list, so "complete but
 /// here are four gaps" is unrepresentable, and `Partial` is only ever
 /// constructed through [`MergeCoverage::from`], which yields `Complete`
-/// when both lists are empty. `file_count`-style counts cannot express
+/// when every list is empty. `file_count`-style counts cannot express
 /// that, which is how a partial merge used to read as a clean one.
 ///
-/// The two lists are the two coverages: the files that could not be read,
-/// and the references that could not be tied to a declaration.
+/// The three lists are the three coverages: the files that could not be
+/// read, the references that could not be tied to a declaration, and the
+/// relations the repository refused.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum MergeCoverage {
@@ -976,19 +977,25 @@ pub enum MergeCoverage {
     Partial {
         skipped_files: Vec<SkippedFileInfo>,
         pending_references: Vec<PendingReferenceInfo>,
+        rejected_relations: Vec<RejectedRelationInfo>,
     },
 }
 
 impl MergeCoverage {
     /// The only constructor, and the only place the empty-vs-non-empty
     /// decision is made.
-    pub fn from(skipped: Vec<SkippedFileInfo>, pending: Vec<PendingReferenceInfo>) -> Self {
-        if skipped.is_empty() && pending.is_empty() {
+    pub fn from(
+        skipped: Vec<SkippedFileInfo>,
+        pending: Vec<PendingReferenceInfo>,
+        rejected: Vec<RejectedRelationInfo>,
+    ) -> Self {
+        if skipped.is_empty() && pending.is_empty() && rejected.is_empty() {
             MergeCoverage::Complete
         } else {
             MergeCoverage::Partial {
                 skipped_files: skipped,
                 pending_references: pending,
+                rejected_relations: rejected,
             }
         }
     }

@@ -5,9 +5,13 @@
 //! CLI publish it in different transports, but they publish the same thing,
 //! so the projection lives here — once — instead of twice.
 //!
-//! The fact itself lives in the domain ([`PendingReference`]): this module is
-//! only the way of writing it down.
-use crate::domain::value_objects::{PendingClass, PendingReference};
+//! A relation the repository refused is the same kind of fact: it is not
+//! part of the graph, and the consumer has to be able to say so next to
+//! the count of what the graph holds.
+//!
+//! The facts themselves live in the domain ([`PendingReference`],
+//! [`RejectedRelation`]): this module is only the way of writing them down.
+use crate::domain::value_objects::{PendingClass, PendingReference, RejectedRelation};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +57,35 @@ impl PendingReferenceInfo {
             kind: reference.kind.to_string(),
             reason,
             candidates,
+        }
+    }
+}
+
+/// A relation the repository refused to take.
+///
+/// The relation is not an edge of the graph: the number of relationships
+/// the consumer reads counts the relations the graph *holds*. Naming the
+/// refused ones is what keeps that number and the graph in agreement.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct RejectedRelationInfo {
+    /// The declaration that holds the relation.
+    pub source: String,
+    /// The declaration the relation points at.
+    pub target: String,
+    /// What the relation is.
+    pub kind: String,
+    /// Why the repository refused it.
+    pub reason: String,
+}
+
+impl RejectedRelationInfo {
+    /// The one projection of the fact, for every consumer that publishes it.
+    pub fn from_rejection(rejection: &RejectedRelation) -> Self {
+        Self {
+            source: rejection.source.as_str().to_string(),
+            target: rejection.target.as_str().to_string(),
+            kind: rejection.kind.to_string(),
+            reason: rejection.reason.clone(),
         }
     }
 }

@@ -8,7 +8,7 @@ use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
 use crate::domain::value_objects::{
-    DependencyType, PendingReference, TargetResolution, WalkDecision,
+    DependencyType, PendingReference, RejectedRelation, TargetResolution, WalkDecision,
 };
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
@@ -456,6 +456,10 @@ impl PerFileGraphCache {
 
         let mut merged = CallGraph::new();
         let mut skipped: Vec<SkippedFile> = Vec::new();
+        // The relations the merged graph refused to take. They are holes
+        // in what the merge knows, and a hole nobody names is a relation
+        // the graph does not have and nobody was told about.
+        let mut rejected: Vec<RejectedRelation> = Vec::new();
         // Cross-file edges collected per file, to be reconciled into the
         // merged graph once every file's symbols are in place.
         let mut pending_cross_file_edges: Vec<CrossFileEdge> = Vec::new();
@@ -495,6 +499,12 @@ impl PerFileGraphCache {
             }
 
             // Merge edges
+            //
+            // The relations of this file are collected first and offered
+            // to the merged graph afterwards: the merged graph is the one
+            // that decides whether it takes them, and a relation it
+            // refuses is named instead of lost.
+            let mut file_relations: Vec<(SymbolId, SymbolId, DependencyType)> = Vec::new();
             for (source_id, target_id, dep_type) in graph.all_dependencies() {
                 let source_symbol = graph.get_symbol(source_id);
                 let target_symbol = graph.get_symbol(target_id);
@@ -506,18 +516,13 @@ impl PerFileGraphCache {
                     let new_target_id = crate::domain::aggregates::call_graph::SymbolId::new(
                         tgt.fully_qualified_name(),
                     );
-                    // Both ends were added to the merged graph a moment
-                    // ago, so the edge is attachable. The assert keeps
-                    // the invariant under the test suite: a relation
-                    // that cannot be attached would be a relation the
-                    // graph lost in silence.
-                    let attached = merged.add_dependency(&new_source_id, &new_target_id, *dep_type);
-                    debug_assert!(
-                        attached.is_ok(),
-                        "the merged graph holds both ends of the edge: {attached:?}"
-                    );
+                    file_relations.push((new_source_id, new_target_id, *dep_type));
                 }
             }
+            rejected.extend(crate::domain::services::attach_relations(
+                |source, target, kind| merged.add_dependency(source, target, kind),
+                file_relations,
+            ));
 
             // Cross-file edges discovered while building this file are
             // deferred: their endpoints must exist in `merged` before
@@ -531,16 +536,19 @@ impl PerFileGraphCache {
         // been merged. `merged` already contains all SymbolIds, so
         // `add_dependency` should accept every cross-file edge whose
         // resolution was unambiguous.
-        let mut reconciled_cross_file = 0usize;
-        for (source_id, target_id) in pending_cross_file_edges {
-            if merged
-                .add_dependency(&source_id, &target_id, DependencyType::Calls)
-                .is_ok()
-            {
-                reconciled_cross_file += 1;
-            }
-        }
-        let _ = reconciled_cross_file; // accounted for in edge_count(); kept for future diagnostics
+        //
+        // A relation it refuses is a hole in the graph, and the hole is
+        // named: a relation nobody names is a relation the graph does
+        // not have.
+        let cross_file_relations: Vec<(SymbolId, SymbolId, DependencyType)> =
+            pending_cross_file_edges
+                .into_iter()
+                .map(|(source_id, target_id)| (source_id, target_id, DependencyType::Calls))
+                .collect();
+        rejected.extend(crate::domain::services::attach_relations(
+            |source, target, kind| merged.add_dependency(source, target, kind),
+            cross_file_relations,
+        ));
 
         // The references that could not be tied to a declaration are looked
         // up once every file of the merge is known: the declaration they
@@ -551,22 +559,21 @@ impl PerFileGraphCache {
             pending_references,
             &global_index,
         );
-        for (source_id, target_id, kind) in &resolution.proven {
-            // The relation was proven against the index of the very
-            // files that were merged, so both ends are in the graph.
-            let attached = merged.add_dependency(source_id, target_id, *kind);
-            debug_assert!(
-                attached.is_ok(),
-                "the merged graph holds both ends of the proven relation: {attached:?}"
-            );
-        }
+        rejected.extend(crate::domain::services::attach_relations(
+            |source, target, kind| merged.add_dependency(source, target, kind),
+            resolution
+                .proven
+                .iter()
+                .map(|(source_id, target_id, kind)| (source_id.clone(), target_id.clone(), *kind)),
+        ));
 
-        let status = if skipped.is_empty() && resolution.pending.is_empty() {
+        let status = if skipped.is_empty() && resolution.pending.is_empty() && rejected.is_empty() {
             BuildStatus::Complete
         } else {
             BuildStatus::Partial {
                 skipped,
                 pending: resolution.pending,
+                rejected,
             }
         };
 
@@ -1293,11 +1300,13 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 
 /// Overall status of a `merge_with_report` operation.
 ///
-/// Two coverages live here and they are not the same thing: the files the
-/// walk could not process, and the references it could not tie to a
-/// declaration. A "Complete" result means both of them are whole: every
-/// input file was processed, and every reference that names something
-/// inside the project points at a declaration the project holds.
+/// Three coverages live here and they are not the same thing: the files
+/// the walk could not process, the references it could not tie to a
+/// declaration, and the relations the graph could not attach. A
+/// "Complete" result means all of them are whole: every input file was
+/// processed, every reference that names something inside the project
+/// points at a declaration the project holds, and every relation the
+/// build stated is a relation the graph carries.
 ///
 /// A reference that names something outside the project — a call to a
 /// function of another crate, a module of Ansible — is not a hole in what
@@ -1310,18 +1319,26 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 /// `merge_with_report`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildStatus {
-    /// Every file was processed, and every reference that names something
-    /// inside the project was tied to a declaration.
+    /// Every file was processed, every reference that names something
+    /// inside the project was tied to a declaration, and every relation
+    /// the build stated was attached.
     Complete,
-    /// Something is missing: a file the walk could not process, or a
+    /// Something is missing: a file the walk could not process, a
     /// reference that names something inside the project and could not be
-    /// tied to a declaration.
+    /// tied to a declaration, or a relation the repository refused.
     Partial {
         /// The files the walk could not process, with the reason.
         skipped: Vec<SkippedFile>,
         /// The references that could not be tied to a declaration, with
         /// their origin and the class that says why.
         pending: Vec<PendingReference>,
+        /// The relations the repository refused, with the reason it gave.
+        ///
+        /// A relation that was refused is not a relation of the graph.
+        /// Naming it is what keeps the graph and the report in agreement:
+        /// a graph that silently loses an edge reads as a graph that has
+        /// none.
+        rejected: Vec<RejectedRelation>,
     },
 }
 

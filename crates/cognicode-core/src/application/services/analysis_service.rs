@@ -22,10 +22,10 @@ use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{
-    ComplexityCalculator, CycleDetector, ImpactAnalyzer, resolve_target,
+    ComplexityCalculator, CycleDetector, ImpactAnalyzer, attach_relations, resolve_target,
 };
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{TargetResolution, WalkFilter};
+use crate::domain::value_objects::{RejectedRelation, TargetResolution, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_extension,
 };
@@ -35,6 +35,18 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
+
+/// How a build obtains the repository that holds the relations.
+///
+/// The repository is created per build and not shared between builds: a
+/// build owns the relations it publishes, and a repository shared across
+/// builds would let two builds write into the same graph.
+pub type RepositoryFactory = Arc<dyn Fn() -> Box<dyn DependencyRepository> + Send + Sync>;
+
+/// The repository a build uses when nobody injects another one.
+fn default_repository_factory() -> RepositoryFactory {
+    Arc::new(|| Box::new(PetGraphStore::new()) as Box<dyn DependencyRepository>)
+}
 
 /// Service for analyzing code structure and complexity
 pub struct AnalysisService {
@@ -79,6 +91,13 @@ pub struct AnalysisService {
     /// graph in a task that cannot borrow `self`: the route that publishes
     /// the number has to be the route that did the work.
     reuse: ReuseState,
+    /// How a build obtains the repository that holds the relations.
+    ///
+    /// The product's own repository never refuses a relation, so a
+    /// refusal could not be observed at all without this seam. The seam
+    /// changes where the repository comes from and nothing else: what a
+    /// build publishes is decided by the rules, not by the factory.
+    repository_factory: RepositoryFactory,
 }
 
 /// What the service remembers between builds about what the last one proved.
@@ -143,6 +162,7 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
+            repository_factory: default_repository_factory(),
         }
     }
 
@@ -161,7 +181,22 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
+            repository_factory: default_repository_factory(),
         }
+    }
+
+    /// Replaces the factory that creates the repository of a build.
+    ///
+    /// The product's own repository accepts every relation, so the
+    /// refusal path is unreachable without this seam. Injecting a
+    /// repository that refuses is how a caller observes what the
+    /// product does with a relation the store did not confirm.
+    pub fn with_repository_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Box<dyn DependencyRepository> + Send + Sync + 'static,
+    {
+        self.repository_factory = Arc::new(factory);
+        self
     }
 
     /// Returns the graph cache for accessing the project graph
@@ -253,7 +288,7 @@ impl AnalysisService {
             )));
         }
 
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         // F2.W7: replace the legacy `name_lower → SymbolId` map with a
         // `GlobalSymbolIndex` that supports scope-aware resolution
         // (see `infrastructure/graph/per_file_graph.rs::GlobalSymbolIndex`
@@ -524,7 +559,9 @@ impl AnalysisService {
 
             for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&symbol_id, symbol.clone());
+                store
+                    .add_symbol(&symbol_id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                 // F2.W7: feed every symbol into the GlobalSymbolIndex
                 // regardless of how many homonyms exist. Resolution
                 // happens later, with caller-file context.
@@ -559,12 +596,21 @@ impl AnalysisService {
         // The relations whose ends are already identified go in now
         // that every symbol of every file is in the store. They needed no
         // lookup, so they are resolved relations and count as such.
-        let identified_count = identified_relations.len();
-        for relation in identified_relations {
-            store
-                .add_dependency(&relation.caller, &relation.callee, relation.kind)
-                .ok();
-        }
+        //
+        // The store is the one that says whether it takes a relation: one
+        // it refuses is a hole in the graph, and a hole nobody names is
+        // indistinguishable from a relation the code never stated.
+        let mut rejected: Vec<RejectedRelation> = Vec::new();
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            identified_relations.iter().map(|relation| {
+                (
+                    relation.caller.clone(),
+                    relation.callee.clone(),
+                    relation.kind,
+                )
+            }),
+        ));
 
         // The references the files could not tie to a declaration are looked
         // up now that every symbol of every file is in the index: the
@@ -576,11 +622,14 @@ impl AnalysisService {
             pending_references,
             &global_index,
         );
-        for (source_id, target_id, kind) in &pending_resolution.proven {
-            store.add_dependency(source_id, target_id, *kind).ok();
-        }
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            pending_resolution
+                .proven
+                .iter()
+                .map(|(source_id, target_id, kind)| (source_id.clone(), target_id.clone(), *kind)),
+        ));
 
-        let total_relationships = all_relationships.len() + identified_count;
         // The relationships the resolver looks up by name go through the
         // ledger: the ones the change cannot have altered are kept from
         // the last build, and only the rest are looked up again.
@@ -590,35 +639,48 @@ impl AnalysisService {
             declared_files,
             pending_count,
         );
-        for (caller, callee, kind) in &resolution.edges {
-            store.add_dependency(caller, callee, *kind).ok();
-        }
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            resolution
+                .edges
+                .iter()
+                .map(|(caller, callee, kind)| (caller.clone(), callee.clone(), *kind)),
+        ));
         unresolved_edges += resolution.unresolved;
-
-        // Stage: resolve — log edge resolution outcome
-        info!(
-            "build_project_graph: stage=resolve — {} relationships, {} resolved, {} unresolved",
-            total_relationships + pending_resolution.proven.len(),
-            (total_relationships + pending_resolution.proven.len())
-                .saturating_sub(unresolved_edges),
-            unresolved_edges
-        );
 
         // F2.W8: drain skipped files before building the call graph.
         let skipped_vec = {
             let guard = skipped_files.lock().unwrap();
             guard.clone()
         };
-        let call_graph = store.to_call_graph();
-        // The status carries the two coverages: the files the walk could not
-        // process, and the references it could not tie to a declaration.
-        // "Complete" is only said when both of them are whole.
-        let status = if skipped_vec.is_empty() && pending_resolution.pending.is_empty() {
+        let call_graph = store.get_call_graph();
+        let edge_count = call_graph.edge_count();
+
+        // Stage: resolve — the number the log publishes is the number the
+        // graph holds, the same number the response publishes. What did
+        // not make it is named, not hidden: the references that could not
+        // be tied to a declaration, and the relations the store refused.
+        info!(
+            "build_project_graph: stage=resolve — {} relationships, {} unresolved, {} refused",
+            edge_count,
+            unresolved_edges,
+            rejected.len()
+        );
+
+        // The status carries the three coverages: the files the walk could
+        // not process, the references it could not tie to a declaration,
+        // and the relations the store refused.
+        // "Complete" is only said when all of them are whole.
+        let status = if skipped_vec.is_empty()
+            && pending_resolution.pending.is_empty()
+            && rejected.is_empty()
+        {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: skipped_vec,
                 pending: pending_resolution.pending,
+                rejected,
             }
         };
         let report = crate::infrastructure::graph::per_file_graph::BuildReport {
@@ -627,7 +689,6 @@ impl AnalysisService {
         };
         *self.last_build_report.lock().unwrap() = Some(report);
         let symbol_count = call_graph.symbol_count();
-        let edge_count = call_graph.edge_count();
 
         // Stage: done — final graph with per-language breakdown
         let mut lang_counts: std::collections::HashMap<String, usize> =
@@ -709,17 +770,19 @@ impl AnalysisService {
             .map_err(|e| AppError::AnalysisError(e.to_string()))?;
 
         // Convert index entries to a minimal CallGraph (symbols, no call edges)
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         for (name, locations) in index.entries() {
             for loc in locations {
                 let sym_kind = loc.symbol_kind;
                 let location = Location::new(loc.file.clone(), loc.line, loc.column);
                 let symbol = Symbol::new(name.clone(), sym_kind, location);
                 let id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&id, symbol);
+                store
+                    .add_symbol(&id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
             }
         }
-        let graph = store.to_call_graph();
+        let graph = store.get_call_graph();
         self.graph_cache.replace(graph);
         Ok(())
     }
@@ -829,21 +892,27 @@ impl AnalysisService {
 
         // Merge the per-file cache's own report (.rs parse/read
         // failures) with our K0 honest-gap skips. The envelope
-        // collapses to Complete only when BOTH lists are empty.
-        let (graph, mut all_skipped, all_pending) = match cache_report.status {
-            PfgBuildStatus::Complete => (cache_report.graph, Vec::new(), Vec::new()),
-            PfgBuildStatus::Partial { skipped, pending } => (cache_report.graph, skipped, pending),
+        // collapses to Complete only when EVERY list is empty.
+        let (graph, mut all_skipped, all_pending, all_rejected) = match cache_report.status {
+            PfgBuildStatus::Complete => (cache_report.graph, Vec::new(), Vec::new(), Vec::new()),
+            PfgBuildStatus::Partial {
+                skipped,
+                pending,
+                rejected,
+            } => (cache_report.graph, skipped, pending, rejected),
         };
         all_skipped.extend(k0_skipped);
         all_skipped.extend(walk_skipped);
-        let final_status = if all_skipped.is_empty() && all_pending.is_empty() {
-            PfgBuildStatus::Complete
-        } else {
-            PfgBuildStatus::Partial {
-                skipped: all_skipped,
-                pending: all_pending,
-            }
-        };
+        let final_status =
+            if all_skipped.is_empty() && all_pending.is_empty() && all_rejected.is_empty() {
+                PfgBuildStatus::Complete
+            } else {
+                PfgBuildStatus::Partial {
+                    skipped: all_skipped,
+                    pending: all_pending,
+                    rejected: all_rejected,
+                }
+            };
         let final_report = PfgBuildReport {
             graph,
             status: final_status,
@@ -892,7 +961,7 @@ impl AnalysisService {
             )));
         }
 
-        let mut store = PetGraphStore::new();
+        let mut store = (self.repository_factory)();
         // The resolver keeps the multiconset of the homonyms and only
         // resolves when a rule demonstrates it, so a call is never
         // wired against whichever homonym the traversal happened to
@@ -1062,7 +1131,9 @@ impl AnalysisService {
 
             for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                store.add_symbol_with_location(&symbol_id, symbol.clone());
+                store
+                    .add_symbol(&symbol_id, &symbol)
+                    .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                 global_index.insert(
                     symbol_id,
                     std::path::PathBuf::from(&file_path),
@@ -1094,11 +1165,21 @@ impl AnalysisService {
 
         // The relations whose ends are already identified go in now
         // that every symbol of every file is in the store.
-        for relation in identified_relations {
-            store
-                .add_dependency(&relation.caller, &relation.callee, relation.kind)
-                .ok();
-        }
+        //
+        // The store is the one that says whether it takes a relation:
+        // one it refuses is a hole in the graph, and a hole nobody names
+        // is indistinguishable from a relation the code never stated.
+        let mut rejected: Vec<RejectedRelation> = Vec::new();
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            identified_relations.iter().map(|relation| {
+                (
+                    relation.caller.clone(),
+                    relation.callee.clone(),
+                    relation.kind,
+                )
+            }),
+        ));
 
         // The references the files could not tie to a declaration are
         // looked up now that every symbol of every file is in the
@@ -1110,9 +1191,13 @@ impl AnalysisService {
             pending_references,
             &global_index,
         );
-        for (source_id, target_id, kind) in &pending_resolution.proven {
-            store.add_dependency(source_id, target_id, *kind).ok();
-        }
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            pending_resolution
+                .proven
+                .iter()
+                .map(|(source_id, target_id, kind)| (source_id.clone(), target_id.clone(), *kind)),
+        ));
 
         // The relationships the resolver looks up by name go through the
         // ledger: the ones the change cannot have altered are kept from the
@@ -1123,27 +1208,35 @@ impl AnalysisService {
             declared_files,
             pending_count,
         );
-        for (caller, callee, kind) in &resolution.edges {
-            store.add_dependency(caller, callee, *kind).ok();
-        }
+        rejected.extend(attach_relations(
+            |source, target, kind| store.add_dependency(source, target, kind),
+            resolution
+                .edges
+                .iter()
+                .map(|(caller, callee, kind)| (caller.clone(), callee.clone(), *kind)),
+        ));
         unresolved_edges += resolution.unresolved;
 
-        let call_graph = store.to_call_graph();
+        let call_graph = store.get_call_graph();
 
-        // The status carries the two coverages: the files the walk could
-        // not process, and the references it could not tie to a
-        // declaration. "Complete" is only said when both of them are
-        // whole.
+        // The status carries the three coverages: the files the walk could
+        // not process, the references it could not tie to a declaration,
+        // and the relations the store refused.
+        // "Complete" is only said when all of them are whole.
         let skipped_vec = {
             let guard = skipped.lock().unwrap();
             guard.clone()
         };
-        let status = if skipped_vec.is_empty() && pending_resolution.pending.is_empty() {
+        let status = if skipped_vec.is_empty()
+            && pending_resolution.pending.is_empty()
+            && rejected.is_empty()
+        {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: skipped_vec,
                 pending: pending_resolution.pending,
+                rejected,
             }
         };
 
@@ -1184,6 +1277,10 @@ impl AnalysisService {
         let graph_cache = self.graph_cache.clone();
         let file_cache = self.file_cache.clone();
         let reuse = self.reuse.clone();
+        // The factory travels into the blocking task with the rest of the
+        // state: a route that built its repository by another rule would
+        // publish a graph the other routes do not.
+        let repository_factory = self.repository_factory.clone();
         let dir_path = dir.to_path_buf();
 
         // Spawn blocking task to run the heavy computation. Devuelve tambien el
@@ -1196,14 +1293,14 @@ impl AnalysisService {
                     CallGraph,
                     Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
                     Vec<crate::domain::value_objects::PendingReference>,
+                    Vec<crate::domain::value_objects::RejectedRelation>,
                 ),
                 AppError,
             >,
             tokio::task::JoinError,
         > = tokio::task::spawn_blocking(move || {
                 // Create a minimal service context for building the graph
-                let store =
-                    std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
+                let store = std::sync::Mutex::new((repository_factory)());
                 // H4.2: mismo defecto que `build_project_graph_filtered` — un
                 // `HashMap<String, SymbolId>` no distingue dos homónimos, así que
                 // toda llamada se cableaba contra el que sobrevivió por orden de
@@ -1382,7 +1479,8 @@ impl AnalysisService {
                         store
                             .lock()
                             .unwrap()
-                            .add_symbol_with_location(&symbol_id, symbol.clone());
+                            .add_symbol(&symbol_id, &symbol)
+                            .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                         global_index.insert(
                             symbol_id,
                             std::path::PathBuf::from(&file_path),
@@ -1412,14 +1510,19 @@ impl AnalysisService {
                 }
 
                 // The relations whose ends are already identified go in now
-                // that every symbol of every file is in the store.
+                // that every symbol of every file is in the store. The ones
+                // the repository refuses are kept: a refused relation is a
+                // hole in the graph, and a hole nobody names is
+                // indistinguishable from a relation the code never stated.
+                let mut rejected: Vec<RejectedRelation> = Vec::new();
                 {
                     let mut guard = store.lock().unwrap();
-                    for relation in identified_relations {
-                        guard
-                            .add_dependency(&relation.caller, &relation.callee, relation.kind)
-                            .ok();
-                    }
+                    rejected.extend(attach_relations(
+                        |source, target, kind| guard.add_dependency(source, target, kind),
+                        identified_relations
+                            .iter()
+                            .map(|relation| (relation.caller.clone(), relation.callee.clone(), relation.kind)),
+                    ));
                 }
 
                 // The references the files could not tie to a declaration are
@@ -1436,12 +1539,15 @@ impl AnalysisService {
                         pending_references,
                         &global_index,
                     );
-                for (source_id, target_id, kind) in &pending_resolution.proven {
-                    store
-                        .lock()
-                        .unwrap()
-                        .add_dependency(source_id, target_id, *kind)
-                        .ok();
+                {
+                    let mut guard = store.lock().unwrap();
+                    rejected.extend(attach_relations(
+                        |source, target, kind| guard.add_dependency(source, target, kind),
+                        pending_resolution
+                            .proven
+                            .iter()
+                            .map(|(source_id, target_id, kind)| (source_id.clone(), target_id.clone(), *kind)),
+                    ));
                 }
 
                 // The relationships the resolver looks up by name go through
@@ -1453,16 +1559,19 @@ impl AnalysisService {
                     declared_files,
                     pending_count,
                 );
-                for (caller, callee, kind) in &resolution.edges {
-                    store
-                        .lock()
-                        .unwrap()
-                        .add_dependency(caller, callee, *kind)
-                        .ok();
+                {
+                    let mut guard = store.lock().unwrap();
+                    rejected.extend(attach_relations(
+                        |source, target, kind| guard.add_dependency(source, target, kind),
+                        resolution
+                            .edges
+                            .iter()
+                            .map(|(caller, callee, kind)| (caller.clone(), callee.clone(), *kind)),
+                    ));
                 }
                 unresolved_edges += resolution.unresolved;
 
-                let call_graph = store.into_inner().unwrap().to_call_graph();
+                let call_graph = store.into_inner().unwrap().get_call_graph();
                 graph_cache.replace(call_graph.clone());
 
                 // Compute coverage
@@ -1484,11 +1593,17 @@ impl AnalysisService {
                 // claim of completeness that nothing backs. The inventory
                 // already published them with the declined ones.
 
-                Ok((coverage, call_graph, k0_skipped, pending_resolution.pending))
+                Ok((
+                    coverage,
+                    call_graph,
+                    k0_skipped,
+                    pending_resolution.pending,
+                    rejected,
+                ))
             })
             .await;
 
-        let (coverage, call_graph, k0_skipped, k0_pending) = result
+        let (coverage, call_graph, k0_skipped, k0_pending, k0_rejected) = result
             .map_err(|e| AppError::AnalysisError(format!("Task join error: {}", e)))?
             .map_err(|e| AppError::AnalysisError(format!("Build error: {}", e)))?;
 
@@ -1501,17 +1616,19 @@ impl AnalysisService {
         // usa esta ruta, asi que tras editar un consumidor leia cobertura
         // pre-edicion. Se publica aqui, fuera del `spawn_blocking`, porque
         // el reporte pertenece al servicio y no a la tarea bloqueante.
-        // El estado lleva las dos coberturas: los ficheros que el recorrido
-        // no pudo procesar, y las referencias que no se pudieron atar a una
-        // declaración. "Complete" sólo se dice cuando las dos están
-        // completas; esta ruta no puede decir "complete" sobre una
-        // cobertura de relaciones que no midió.
-        let status = if k0_skipped.is_empty() && k0_pending.is_empty() {
+        // El estado lleva las tres coberturas: los ficheros que el recorrido
+        // no pudo procesar, las referencias que no se pudieron atar a una
+        // declaración, y las relaciones que el almacén no confirmó.
+        // "Complete" sólo se dice cuando las tres están completas; esta ruta
+        // no puede decir "complete" sobre una cobertura de relaciones que no
+        // midió.
+        let status = if k0_skipped.is_empty() && k0_pending.is_empty() && k0_rejected.is_empty() {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: k0_skipped,
                 pending: k0_pending,
+                rejected: k0_rejected,
             }
         };
         *self.last_build_report.lock().unwrap() =

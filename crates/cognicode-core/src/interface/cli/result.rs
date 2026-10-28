@@ -378,6 +378,13 @@ pub enum GraphResult {
         /// tied every reference is complete, and a consumer has to be able
         /// to tell which of the two is missing.
         pending_references: Vec<crate::interface::coverage::PendingReferenceInfo>,
+        /// The relations the repository refused to take.
+        ///
+        /// The `dependencies` count says how many relations the graph
+        /// *holds*. A refused relation is not one of them, so it has to be
+        /// named next to the count: otherwise the count reads as "every
+        /// relation the build found".
+        rejected_relations: Vec<crate::interface::coverage::RejectedRelationInfo>,
     },
     /// `cognicode graph hot-paths [--limit N] [--min-fan-in N] <path>`
     HotPaths {
