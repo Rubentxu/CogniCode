@@ -168,7 +168,7 @@ fn un_fichero_que_no_se_pudo_fechar_la_vez_anterior_no_se_da_por_igual() {
     let previous = HashMap::from([(
         "main.rs".to_string(),
         ScanEntry {
-            content_hash: "el-hash-anterior".to_string(),
+            content_hash: Some("el-hash-anterior".to_string()),
             mtime_millis: None,
         },
     )]);

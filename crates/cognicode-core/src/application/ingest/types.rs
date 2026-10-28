@@ -28,6 +28,59 @@ pub enum ChangeKind {
     Changed,
     /// File existed in the previous manifest but is now gone.
     Deleted,
+    /// The content of the file could not be read.
+    ///
+    /// The scan says so and claims nothing about the content: a file
+    /// nobody could read is not a file that did not change. The silence
+    /// of the scan means "nothing changed", so the file has to be
+    /// published with its failure instead of being left out.
+    Unreadable,
+}
+
+/// What the date of a file says about it, compared with the index.
+///
+/// The date is the cheap signal, and it has three answers. When it is the
+/// one the index already has, the content cannot have changed and nobody
+/// has to read the file. When it is a different one, the content has to be
+/// read. When there is no date on one of the two sides, there is nothing
+/// to compare and the content has to be read too: an unknown date is not
+/// a proof of anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Freshness {
+    /// The date the filesystem published is the one the index has.
+    Unchanged,
+    /// The date is different from the one the index has.
+    Changed,
+    /// There is no date on one of the two sides to compare.
+    Unknown,
+}
+
+/// What the scan decided about the content of one file.
+///
+/// The content of a file has four answers, and they are not the same
+/// thing: it is new, it changed, it did not change, or nobody could read
+/// it. The fourth one used to be missing, and the hole was filled with
+/// an empty hash and a "nothing changed" — two claims about a file that
+/// nobody read.
+///
+/// The date has the same shape and lives in its own field: a file whose
+/// date the filesystem did not publish is published with the date
+/// absent, and the scan looks at its content again. A file whose content
+/// nobody could read is published here, with the failure declared.
+///
+/// The fifth case of the decision —the date nobody could measure— lives
+/// in [`Freshness`]: the content is read to decide, and what it says is
+/// one of the four answers above.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangeDecision {
+    /// The file is not in the index and its content was read.
+    New { content_hash: String },
+    /// The file was read and its content is not the one in the index.
+    Changed { content_hash: String },
+    /// The file was read and its content is the one in the index.
+    Unchanged,
+    /// The content could not be read; the reason says why.
+    Unreadable { reason: String },
 }
 
 /// A single file change detected by the Scan stage.
@@ -38,7 +91,15 @@ pub struct FileChange {
     /// What kind of change was detected.
     pub kind: ChangeKind,
     /// SHA256 content hash (hex). `None` for `Deleted` files.
+    ///
+    /// `None` also when the content could not be read: a hash here would
+    /// be a claim about a content that nobody read.
     pub content_hash: Option<String>,
+    /// Why the content could not be read, when it could not.
+    ///
+    /// `None` when the content was read. A read that fails has a cause,
+    /// and a failure without a cause is half a failure.
+    pub read_error: Option<String>,
     /// Last modification time in milliseconds since the epoch, signed.
     ///
     /// `None` when the filesystem did not report a time. A file whose date
@@ -249,7 +310,12 @@ pub struct ScanManifestEntry {
     pub file_path: String,
     pub file_type: String,
     pub language: Option<String>,
-    pub content_hash: String,
+    /// SHA256 content hash (hex), when the content could be read.
+    ///
+    /// `None` when it could not: the manifest says that nobody read the
+    /// content, instead of carrying a hash that says otherwise. A file
+    /// with no hash is looked at again in the next pass.
+    pub content_hash: Option<String>,
     /// Last modification time in milliseconds since the epoch, signed.
     ///
     /// `None` when the filesystem did not report a time. The manifest says
