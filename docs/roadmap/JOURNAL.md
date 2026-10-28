@@ -28048,3 +28048,16 @@ cambio son ocho ficheros y `+538/−79`.
 **La puerta que queda abierta.** La cola viva tiene tres candidatos: `C23`
 (50, bloqueada por el operador), `C44` (15) y `C13` (10). `C49` sale de la
 cola al cerrarse, y `goal-compass.json` lo refleja.
+
+**Lo que encontró el gate del cierre.** El `merge-gate` de este recibo no
+pasó a la primera: la etapa `contracts` se puso en rojo, con
+`test_current_sha_matches_head` en rojo dentro de
+`scripts/ci/test_roadmap_version_ratchet.py`. El motivo es medible.
+`docs/roadmap/CURRENT.md` declaraba el snapshot sobre `62a36897`, que era la
+cabeza de la rama de trabajo que el squash convirtió en `5c63e949`; un SHA de
+una rama fusionada por squash no es alcanzable desde `main`, y la guarda
+mide alcanzabilidad antes que distancia. El árbol de `main` estaba rojo con
+ese contrato desde la fusión de `#475`, y sólo se ve al correr el gate sobre
+`main`, no sobre la rama que lo escribió. La corrección es regenerar el
+snapshot citando un SHA alcanzable (`09310efb`), y el RED —el propio
+contrato— pasa después.
