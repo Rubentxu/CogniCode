@@ -28024,3 +28024,40 @@ unidad, con su propio gate.
 
 **Siguiente WU.** La cola queda con tres candidatos: C23 (50, bloqueada por
 el operador), C44 (15) y C13 (10). C49 sale de la cola al cerrarse.
+
+## 2026-10-28 — El ciclo de C49 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `7f6a110d`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request
+`#475`. La corrida es comprobable después del hecho: queda en la base de
+eventos del gate, con su identificador de corrida
+`614f875a-6413-40bf-a4ee-c94e2a2d3eb1`, las 58 etapas en `success` y el
+`RunFinished` en `success`.
+
+**La fusión.** El pull request `#475` se fusionó por squash como `5c63e949`.
+El `merge-gate` es la autoridad y estaba verde sobre el SHA exacto de la
+cabeza que GitHub iba a proteger, que es el mismo árbol que el `full` midió.
+
+**Lo que queda en el árbol, después del cierre.** La unidad dejó el escaneo
+declarando lo que no puede leer: la decisión de cambio es un ADT con la
+misma forma que la fecha, el hash de contenido es `Option<String>` en todo
+el camino, un fichero ilegible se publica como fallo con su causa, y el
+índice guarda la ausencia para que la siguiente pasada vuelva a mirarlo. El
+cambio son ocho ficheros y `+538/−79`.
+
+**La puerta que queda abierta.** La cola viva tiene tres candidatos: `C23`
+(50, bloqueada por el operador), `C44` (15) y `C13` (10). `C49` sale de la
+cola al cerrarse, y `goal-compass.json` lo refleja.
+
+**Lo que encontró el gate del cierre.** El `merge-gate` de este recibo no
+pasó a la primera: la etapa `contracts` se puso en rojo, con
+`test_current_sha_matches_head` en rojo dentro de
+`scripts/ci/test_roadmap_version_ratchet.py`. El motivo es medible.
+`docs/roadmap/CURRENT.md` declaraba el snapshot sobre `62a36897`, que era la
+cabeza de la rama de trabajo que el squash convirtió en `5c63e949`; un SHA de
+una rama fusionada por squash no es alcanzable desde `main`, y la guarda
+mide alcanzabilidad antes que distancia. El árbol de `main` estaba rojo con
+ese contrato desde la fusión de `#475`, y sólo se ve al correr el gate sobre
+`main`, no sobre la rama que lo escribió. La corrección es regenerar el
+snapshot citando un SHA alcanzable (`09310efb`), y el RED —el propio
+contrato— pasa después.

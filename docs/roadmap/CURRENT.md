@@ -5,10 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-28, sobre `62a368976c6a5c020cdf96e5b1315acc042c55a2` (la rama de la
-> incrementalidad: el grafo se reconstruye sólo donde cambió, el servicio dice
-> cuánto conservó, el escaneo declara los ficheros que no puede fechar y los
-> que no puede leer).
+> **Snapshot**: 2026-10-28, sobre `09310efb398e79b6d0e087ecc439ae1119cfb6c1` (la
+> incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
+> el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
+> puede fechar ni los que no puede leer).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
