@@ -84,6 +84,7 @@ impl Analyze for SpyAnalyzer {
                     dependencies: 2,
                     elapsed_ms: 12,
                     pending_references: vec![],
+                    rejected_relations: vec![],
                 }))
             }
             AnalysisOp::GraphComplexity { path } => {

@@ -170,6 +170,7 @@ use crate::interface::mcp::schemas::{
     RankedSymbolsInput,
     RefactorAction,
     ReferenceEntry,
+    RejectedRelationInfo,
     ReparseOnEditInput,
     ReparseOnEditOutput,
     RiskLevel,
@@ -1200,8 +1201,9 @@ pub struct BuildGraphOutput {
     ///   - `"complete"`: walk happened, no file was dropped and no
     ///     reference was left without a declaration.
     ///   - `"partial"`: walk happened, and something is missing: a file
-    ///     was dropped (I/O or parsing failure), or a reference could not
-    ///     be tied to a declaration.
+    ///     was dropped (I/O or parsing failure), a reference could not
+    ///     be tied to a declaration, or the repository refused a
+    ///     relation.
     ///   - `"unknown"`: served from the in-memory graph cache, no
     ///     walk happened on this call.
     ///   - `"unsupported"`: the walk happened and the tree holds no
@@ -1231,6 +1233,17 @@ pub struct BuildGraphOutput {
     /// this call); `Some([])` when every reference was tied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_references: Option<Vec<PendingReferenceInfo>>,
+    /// The relations the repository refused.
+    ///
+    /// A relation that was refused is not an edge of the graph, and
+    /// `relationships_found` counts the relations the graph holds. Naming
+    /// the refused ones is what keeps that number and the graph in
+    /// agreement.
+    ///
+    /// `None` when the graph was served from cache (no walk happened on
+    /// this call); `Some([])` when every relation was taken.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejected_relationships: Option<Vec<RejectedRelationInfo>>,
     /// Identity of what the graph was built from.
     /// `None` only when identity cannot be established at all;
     /// otherwise present with `complete: false` when any component
@@ -1475,7 +1488,7 @@ pub async fn handle_build_graph(
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
-    let (skipped_files, pending_references, status) = if loaded_from_cache {
+    let (skipped_files, pending_references, rejected_relationships, status) = if loaded_from_cache {
         // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
         // unreadable-file detection). Coverage of the restored graph is
@@ -1483,16 +1496,25 @@ pub async fn handle_build_graph(
         // `complete` with an empty skip list, exactly like a fresh
         // walk with no omissions. The old `unknown` verdict was correct
         // only when no validation existed (pre-persistence).
-        (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
+        (
+            Some(Vec::new()),
+            Some(Vec::new()),
+            Some(Vec::new()),
+            "complete".to_string(),
+        )
     } else {
         let report = ctx.analysis_service.get_last_build_report();
         match report.as_ref().map(|r| &r.status) {
-            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => {
-                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
-            }
+            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => (
+                Some(Vec::new()),
+                Some(Vec::new()),
+                Some(Vec::new()),
+                "complete".to_string(),
+            ),
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
                 pending,
+                rejected,
             }) => {
                 let mapped: Vec<SkippedFileDto> = skipped
                     .iter()
@@ -1522,14 +1544,28 @@ pub async fn handle_build_graph(
                     .iter()
                     .map(PendingReferenceInfo::from_reference)
                     .collect();
-                (Some(mapped), Some(pending), "partial".to_string())
+                let rejected: Vec<RejectedRelationInfo> = rejected
+                    .iter()
+                    .map(RejectedRelationInfo::from_rejection)
+                    .collect();
+                (
+                    Some(mapped),
+                    Some(pending),
+                    Some(rejected),
+                    "partial".to_string(),
+                )
             }
             None => {
                 // No report available — defensive: treat as complete
                 // (the build did not produce a BuildReport, which
                 // means the legacy path was used and no skip
                 // occurred in any case).
-                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
+                (
+                    Some(Vec::new()),
+                    Some(Vec::new()),
+                    Some(Vec::new()),
+                    "complete".to_string(),
+                )
             }
         }
     };
@@ -1607,6 +1643,7 @@ pub async fn handle_build_graph(
         message,
         skipped_files,
         pending_references,
+        rejected_relationships,
         basis: Some(basis),
     })
 }
@@ -3774,7 +3811,11 @@ pub async fn handle_merge_graphs(
         crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
             (MergeCoverage::Complete, 0)
         }
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, pending } => {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+            skipped,
+            pending,
+            rejected,
+        } => {
             let skipped: Vec<SkippedFileInfo> = skipped
                 .into_iter()
                 .map(|s| {
@@ -3801,8 +3842,12 @@ pub async fn handle_merge_graphs(
                 .iter()
                 .map(PendingReferenceInfo::from_reference)
                 .collect();
+            let rejected: Vec<RejectedRelationInfo> = rejected
+                .iter()
+                .map(RejectedRelationInfo::from_rejection)
+                .collect();
             let n = skipped.len();
-            (MergeCoverage::from(skipped, pending), n)
+            (MergeCoverage::from(skipped, pending, rejected), n)
         }
     };
 

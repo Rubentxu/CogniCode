@@ -241,6 +241,7 @@ fn partial_outcome() -> AnalysisOutcome<AnalysisValue> {
             dependencies: 2,
             elapsed_ms: 10,
             pending_references: vec![],
+            rejected_relations: vec![],
         }),
         vec![AnalysisError::gap("graph", "src/broken.rs: syntax error")],
     )

@@ -126,12 +126,13 @@ impl ServiceAnalyzer {
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
         //
-        // Las dos coberturas son dos hechos y los dos cuentan: un fichero
-        // que no se pudo leer y una referencia que no se pudo atar son
-        // respuestas distintas a "lo sabes todo?". La referencia viaja con
-        // el valor —donde el consumidor lee lo que sí se resolvió— y el
-        // gap dice que la cobertura de relaciones no está completa.
-        let Some((skipped, pending)) = self.partial_coverage() else {
+        // Las tres coberturas son tres hechos y los tres cuentan: un
+        // fichero que no se pudo leer, una referencia que no se pudo atar y
+        // una relación que el almacén rechazó son respuestas distintas a
+        // "lo sabes todo?". La referencia y la relación rechazada viajan
+        // con el valor —donde el consumidor lee lo que sí se resolvió— y el
+        // gap dice qué cobertura no está completa.
+        let Some((skipped, pending, rejected)) = self.partial_coverage() else {
             // No hay reporte: no se midio nada. Eso no es lo mismo que
             // medir y no encontrar nada, asi que la respuesta no dice
             // "complete": dice "unknown", y el consumidor lo sabe.
@@ -142,6 +143,7 @@ impl ServiceAnalyzer {
                 dependencies: stats.edge_count,
                 elapsed_ms: 0,
                 pending_references: Vec::new(),
+                rejected_relations: Vec::new(),
             }));
         };
         let stats = self.service.get_graph_stats();
@@ -151,8 +153,9 @@ impl ServiceAnalyzer {
             dependencies: stats.edge_count,
             elapsed_ms: 0, // el elapsed real va en la provenance
             pending_references: pending.clone(),
+            rejected_relations: rejected.clone(),
         });
-        let gaps = coverage_gaps(&skipped, &pending);
+        let gaps = coverage_gaps(&skipped, &pending, &rejected);
         if gaps.is_empty() {
             return AnalysisOutcome::complete(value);
         }
@@ -203,8 +206,8 @@ impl ServiceAnalyzer {
         // `coverage_gaps` (H0.2): añadir otra copia en una tercera op
         // reintroduciría la divergencia CLI/SDK/MCP que UAT-CU-1 detectó
         // el 2026-10-16.
-        let (skipped, pending) = self.partial_coverage().unwrap_or_default();
-        let gaps = coverage_gaps(&skipped, &pending);
+        let (skipped, pending, rejected) = self.partial_coverage().unwrap_or_default();
+        let gaps = coverage_gaps(&skipped, &pending, &rejected);
         if !gaps.is_empty() {
             return AnalysisOutcome::partial(
                 AnalysisValue::Graph(GraphValue::Complexity {
@@ -221,26 +224,29 @@ impl ServiceAnalyzer {
         }))
     }
 
-    /// Las dos coberturas que el último build no alcanzó.
+    /// Las tres coberturas que el último build no alcanzó.
     ///
-    /// El servicio contesta con dos hechos que no se deducen uno del otro:
-    /// los ficheros que el recorrido no pudo leer, y las referencias que no
-    /// se pudieron atar a una declaración. Un build que no dejó ninguno de
-    /// los dos huecos está completo.
+    /// El servicio contesta con tres hechos que no se deducen uno del otro:
+    /// los ficheros que el recorrido no pudo leer, las referencias que no
+    /// se pudieron atar a una declaración, y las relaciones que el almacén
+    /// rechazó. Un build que no dejó ninguno de los tres huecos está
+    /// completo.
     fn partial_coverage(
         &self,
     ) -> Option<(
         Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
         Vec<crate::domain::value_objects::PendingReference>,
+        Vec<crate::domain::value_objects::RejectedRelation>,
     )> {
         let report = self.service.get_last_build_report()?;
         match report.status {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
                 pending,
-            } => Some((skipped, pending)),
+                rejected,
+            } => Some((skipped, pending, rejected)),
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-                Some((Vec::new(), Vec::new()))
+                Some((Vec::new(), Vec::new(), Vec::new()))
             }
         }
     }
@@ -248,12 +254,14 @@ impl ServiceAnalyzer {
 
 /// Los gaps que dicen qué cobertura no está completa.
 ///
-/// Cada cobertura dice la suya: un gap por fichero que no se pudo leer, y
-/// un gap por la cobertura de relaciones. Un consumidor que lee los gaps
-/// sabe así cuál de las dos falta, y no sólo que falta algo.
+/// Cada cobertura dice la suya: un gap por fichero que no se pudo leer, un
+/// gap por la cobertura de referencias y un gap por la de relaciones.
+/// Un consumidor que lee los gaps sabe así cuál falta, y no sólo que falta
+/// algo.
 fn coverage_gaps(
     skipped: &[crate::infrastructure::graph::per_file_graph::SkippedFile],
     pending: &[crate::domain::value_objects::PendingReference],
+    rejected: &[crate::domain::value_objects::RejectedRelation],
 ) -> Vec<AnalysisError> {
     let mut gaps: Vec<AnalysisError> = skipped
         .iter()
@@ -268,6 +276,12 @@ fn coverage_gaps(
         gaps.push(AnalysisError::gap(
             crate::application::analysis_basis::PENDING_REFERENCE_CAPABILITY,
             &format!("{} reference(s) without a declaration", pending.len()),
+        ));
+    }
+    if !rejected.is_empty() {
+        gaps.push(AnalysisError::gap(
+            crate::application::analysis_basis::REJECTED_RELATION_CAPABILITY,
+            &format!("{} relation(s) refused by the repository", rejected.len()),
         ));
     }
     gaps

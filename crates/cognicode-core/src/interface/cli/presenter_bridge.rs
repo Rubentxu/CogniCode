@@ -8,7 +8,7 @@
 
 use crate::application::analysis_basis::{AnalysisOutcome, AnalysisValue, OutcomeState};
 use crate::interface::cli::result::{GraphResult, SkippedFile};
-use crate::interface::coverage::PendingReferenceInfo;
+use crate::interface::coverage::{PendingReferenceInfo, RejectedRelationInfo};
 
 /// Presenta un outcome de `graph.full` como `GraphResult::Full` N−1.
 ///
@@ -20,29 +20,32 @@ use crate::interface::coverage::PendingReferenceInfo;
 /// - `Failed`   → el caller maneja el error ANTES de llamar aquí;
 ///   este presentador solo recibe outcomes con valor.
 ///
-/// Las dos coberturas se publican en su sitio: los ficheros que no se
-/// pudieron leer van en `skipped_files`, y las referencias que no se
-/// pudieron atar a una declaración van en `pending_references`. Un
-/// consumidor que pregunta "lo sabes todo?" recibe las dos respuestas.
+/// Las tres coberturas se publican en su sitio: los ficheros que no se
+/// pudieron leer van en `skipped_files`, las referencias que no se pudieron
+/// atar a una declaración van en `pending_references`, y las relaciones
+/// que el almacén rechazó van en `rejected_relations`. Un consumidor que
+/// pregunta "lo sabes todo?" recibe las tres respuestas.
 pub fn present_graph_full(
     outcome: &AnalysisOutcome<AnalysisValue>,
     path: &str,
     rebuild: bool,
 ) -> GraphResult {
-    let (symbols, dependencies, elapsed_ms, pending) = match outcome.value() {
+    let (symbols, dependencies, elapsed_ms, pending, rejected) = match outcome.value() {
         Some(AnalysisValue::Graph(crate::application::analysis_basis::GraphValue::Full {
             symbols,
             dependencies,
             elapsed_ms,
             pending_references,
+            rejected_relations,
             ..
         })) => (
             *symbols,
             *dependencies,
             *elapsed_ms,
             pending_references.clone(),
+            rejected_relations.clone(),
         ),
-        _ => (0, 0, 0, Vec::new()),
+        _ => (0, 0, 0, Vec::new(), Vec::new()),
     };
 
     let (status, skipped_files) = match outcome.state() {
@@ -89,6 +92,10 @@ pub fn present_graph_full(
         pending_references: pending
             .iter()
             .map(PendingReferenceInfo::from_reference)
+            .collect(),
+        rejected_relations: rejected
+            .iter()
+            .map(RejectedRelationInfo::from_rejection)
             .collect(),
     }
 }

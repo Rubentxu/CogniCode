@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::aggregates::call_graph::CallGraph;
-use crate::domain::value_objects::PendingReference;
+use crate::domain::value_objects::{PendingReference, RejectedRelation};
 use crate::infrastructure::graph::per_file_graph::{BuildReport, BuildStatus, SkippedFile};
 
 /// The project's graph, and what the build could not cover.
@@ -36,6 +36,13 @@ pub struct ProjectGraph {
     /// The references the graph could not tie to a declaration, if there are
     /// any.
     pub pending: Vec<PendingReference>,
+    /// The relations the repository refused, if it refused any.
+    ///
+    /// A relation that was refused is not an edge of the graph, so the
+    /// graph's own count does not include it. Saying nothing about it
+    /// would leave a reader believing the graph holds every relation the
+    /// build found.
+    pub rejected: Vec<RejectedRelation>,
 }
 
 /// Builds the project's graph with the service the MCP uses.
@@ -51,27 +58,34 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
         )
     })?;
 
-    let (skipped, pending) = match service.get_last_build_report() {
+    let (skipped, pending, rejected) = match service.get_last_build_report() {
         Some(BuildReport {
-            status: BuildStatus::Partial { skipped, pending },
+            status:
+                BuildStatus::Partial {
+                    skipped,
+                    pending,
+                    rejected,
+                },
             ..
-        }) => (skipped, pending),
-        _ => (Vec::new(), Vec::new()),
+        }) => (skipped, pending, rejected),
+        _ => (Vec::new(), Vec::new(), Vec::new()),
     };
 
     Ok(ProjectGraph {
         graph: service.get_project_graph(),
         skipped,
         pending,
+        rejected,
     })
 }
 
 /// Says what the build could not cover.
 ///
-/// The service answers with two coverages: the files the walk could not
-/// read, and the references it could not tie to a declaration. A command
-/// that shows one of them and hides the other tells half the truth, so
-/// every command says both, in the same words the MCP says them.
+/// The service answers with three coverages: the files the walk could not
+/// read, the references it could not tie to a declaration, and the
+/// relations the repository refused. A command that shows one of them and
+/// hides the other tells half the truth, so every command says all of
+/// them, in the same words the MCP says them.
 pub fn warn_incomplete(built: &ProjectGraph) {
     if !built.skipped.is_empty() {
         eprintln!(
@@ -98,6 +112,25 @@ pub fn warn_incomplete(built: &ProjectGraph) {
                         reference.origin_file,
                         reference.origin_line.unwrap_or_default(),
                         reference.target
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if !built.rejected.is_empty() {
+        eprintln!(
+            "Warning: graph is PARTIAL: {} relation(s) refused by the repository ({})",
+            built.rejected.len(),
+            built
+                .rejected
+                .iter()
+                .map(|rejection| {
+                    format!(
+                        "{} -> {} ({})",
+                        rejection.source.as_str(),
+                        rejection.target.as_str(),
+                        rejection.reason
                     )
                 })
                 .collect::<Vec<_>>()

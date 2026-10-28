@@ -94,6 +94,7 @@ fn graph_result_full_serializes_with_status_and_skipped() {
             reason: "ParseError".to_string(),
         }],
         pending_references: vec![],
+        rejected_relations: vec![],
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "full");
