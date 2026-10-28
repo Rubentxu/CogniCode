@@ -127,9 +127,12 @@ python3 scripts/product/generate_tool_catalog.py \
 ```
 
 The committed master and the capture are compared by
-`scripts/ci/test_the_consumer_can_declare_the_version.py`, which fails when
-the document published and the capture disagree about a tool's input schema:
-the tool names can agree while the shape the consumer passes has drifted.
+`scripts/ci/test_the_consumer_can_declare_the_version.py`. It fails when they
+disagree about a tool's input schema — the tool names can agree while the
+shape the consumer passes has drifted — and also when they disagree about the
+`runtime_metadata`: the master's mirror of what the runtime publishes has to
+say the runtime's own version, not the version of the day the entry was
+authored.
 
 Validate the committed projection with:
 
@@ -148,10 +151,31 @@ relevant public profile. No output contract is invented here.
 are present in the published catalog and are **not** produced by
 `generate_tool_catalog.py`: the runtime's `_meta.cognicode` carries no source
 for them. Running the generator over the master therefore drops all nine.
-They are curated by hand, and the curation has drifted: `runtime_metadata`
-still reads `tool_version: 0.99.2` for the 78 tools whose runtime now reports
-`0.101.31`, and `check_architecture` carries two `runtime_metadata` keys
-(`gate_authority`, `produces_observations_only`) that the runtime does not
-report at all. Until the generator owns them, `--check` cannot be the
-authority over this document; the decision that the master is hand-authored
-and is never regenerated is recorded in `docs/roadmap/JOURNAL.md`.
+They are curated by hand and stay hand-authored: the decision that the master
+is never regenerated is recorded in `docs/roadmap/JOURNAL.md`.
+
+### Keeping the master's mirror of the runtime honest
+
+`runtime_metadata` is a different kind of field. It is the mirror of what the
+runtime publishes in `_meta.cognicode`, `tool_version` included, and the
+runtime injects that version from `CARGO_PKG_VERSION` on every response. A
+mirror that is written once and never revisited therefore drifts every time
+the runtime moves. It is synchronized, never regenerated:
+
+```bash
+python3 scripts/product/sync_tool_catalog_runtime_metadata.py
+python3 scripts/product/sync_tool_catalog_runtime_metadata.py --check
+```
+
+The synchronization is a merge. It takes from the runtime the keys the runtime
+publishes and leaves everything else alone: the nine fields above, the tool
+set, and the curated keys the runtime does not publish — `check_architecture`
+carries `gate_authority` and `produces_observations_only`, which no
+`tools/list` will ever return, and a copy would take them away. `--check`
+proves the committed master is a fixed point of that merge, and
+`scripts/ci/test_the_consumer_can_declare_the_version.py` fails when the
+committed master stops being one.
+
+The capture is the reference, and it is provenance: it is a real `tools/list`,
+so it has to be refreshed when the runtime moves. A capture that has gone
+stale proves nothing.
