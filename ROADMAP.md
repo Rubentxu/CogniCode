@@ -28,7 +28,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 
 | Hallazgo de la auditoría | Dueño |
 |---|---|
-| H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, nuevo en `goal-compass.json` |
+| H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
 | H3 — la resolución se decide por proximidad de ficheros | `C13` |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
@@ -56,17 +56,21 @@ ramas quedaron viejas, no su trabajo pendiente.
 
 ## La puerta que queda abierta
 
-**El ciclo de K1 está cerrado en el remoto.** El pull request `#473` —la
-primera publicación de la rama `feature/the-kotlin-declaration-is-named`— se
-fusionó por squash como `cbfc8316`, con el `merge-gate` verde sobre
-`d3f61452`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El veredicto de K1
-está en `docs/roadmap/production-ready/veredictos/2026-10-26-k1-kotlin-symbols.md`.
+**El ciclo de C49 está cerrado en el remoto.** El pull request `#475` —la
+publicación de la rama `feature/the-scan-declares-what-it-cannot-read`— se
+fusionó por squash como `5c63e949`, con el `merge-gate` verde sobre
+`7f6a110d`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El escaneo ya
+declara los ficheros que no puede leer: un fichero ilegible se publica como
+fallo, sin hash y con su causa; el índice guarda la ausencia; y la segunda
+pasada vuelve a mirarlo.
 
 La puerta que queda abierta es la de la cola:
 
-- **`C49`** — el escaneo no confunde un fallo de lectura con una ausencia de
-  cambio. Medido sobre `application/ingest/scan.rs`, con un criterio de cierre
-  observable, y no bloqueado por nada: puede correr mientras `C23` espera.
 - **`C23`** — la unidad de mayor retorno de todo lo que propone la auditoría
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
+- **`C44`** — el catálogo publicado dice de su runtime una versión que no es
+  la. Prioridad 15, sin bloqueo.
+- **`C13`** — las relaciones Kotlin↔Java sólo cuando se pueden probar, con un
+  corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
+  Prioridad 10, sin bloqueo.
