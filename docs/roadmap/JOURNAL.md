@@ -27866,9 +27866,18 @@ al operador. La cola de la misión queda con cuatro candidatos —`C23` (50),
 
 **C49 closed.** C49 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
 `scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
---workspace` —**6 466 pruebas verdes en 249 binarios de prueba, 0 rojas**—,
-doc-tests —**20 verdes**—, los contratos —**439 comprobaciones verdes, 0
-rojas**— y el comprobante de línea base).
+--workspace` —**6 454 pruebas verdes en 228 binarios de prueba, 0 rojas, 22
+ignoradas**—, doc-tests —**8 verdes, 12 ignorados**—, los contratos —**439
+comprobaciones verdes, 0 rojas**— y el comprobante de línea base).
+
+**Una cifra que hubo que corregir.** La primera versión de este párrafo decía
+«6 466 pruebas verdes en 249 binarios» y «20 doc-tests verdes». Las dos
+cifras estaban contadas con una regla que sumaba las pruebas ignoradas como
+si fueran ejecutadas: el recuento real es 6 454 verdes y 22 ignoradas, y los
+doc-tests son 8 verdes y 12 ignorados. No cambia el veredicto —`rc=0` en las
+dos etapas— pero un recibo que dice una cifra que el log no respalda es un
+recibo que miente por omisión, así que se corrige aquí y en el cuerpo del pull
+request, que decía lo mismo.
 
 **La unidad, cerrada sobre `62a368976c6a5c020cdf96e5b1315acc042c55a2`.**
 
