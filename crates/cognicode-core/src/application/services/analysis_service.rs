@@ -21,9 +21,11 @@ use crate::application::error::{AppError, AppResult};
 use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
+use crate::domain::services::{
+    ComplexityCalculator, CycleDetector, ImpactAnalyzer, resolve_target,
+};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::WalkFilter;
+use crate::domain::value_objects::{TargetResolution, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_extension,
 };
@@ -1925,28 +1927,27 @@ impl AnalysisService {
     }
 
     /// Finds a symbol ID by its name
+    ///
+    /// The rule is the domain's: a name that one symbol carries resolves to
+    /// it, a name that several carry is ambiguous and says so, and a name
+    /// that none carries is not found. The application layer does not pick
+    /// between homonyms: it has no way to prove which one was meant, and a
+    /// path through a symbol nobody named is worse than no path at all.
     fn find_symbol_id_by_name(&self, graph: &CallGraph, name: &str) -> AppResult<SymbolId> {
-        let name_lower = name.to_lowercase();
-
-        // First try exact match on the fully qualified name
-        for symbol in graph.symbols() {
-            let fqn = symbol.fully_qualified_name().to_lowercase();
-            if fqn == name_lower {
-                return Ok(SymbolId::new(symbol.fully_qualified_name()));
-            }
+        match resolve_target(graph, name) {
+            TargetResolution::Resolved(id) => Ok(id),
+            TargetResolution::Ambiguous { name, candidates } => Err(AppError::AmbiguousSymbol {
+                name,
+                candidates: candidates
+                    .iter()
+                    .map(|candidate| candidate.as_str().to_string())
+                    .collect(),
+            }),
+            TargetResolution::Unresolved(_) => Err(AppError::SymbolNotFound(format!(
+                "Symbol not found: {}",
+                name
+            ))),
         }
-
-        // Then try matching just the base name
-        for symbol in graph.symbols() {
-            if symbol.name().to_lowercase() == name_lower {
-                return Ok(SymbolId::new(symbol.fully_qualified_name()));
-            }
-        }
-
-        Err(AppError::SymbolNotFound(format!(
-            "Symbol not found: {}",
-            name
-        )))
     }
 }
 

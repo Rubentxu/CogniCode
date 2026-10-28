@@ -28317,3 +28317,115 @@ MCP y la sesión de workspace. El hito `m-0` queda en 1 de 3.
 (15) y `C13` (10). La bandeja del ciclo avanza a `M0.T02`, que es `TASK-2`: el
 resolutor de la capa de aplicación que elige un homónimo en silencio, sin
 decir cuál de los dos eligió.
+
+## 2026-10-28 — Un nombre que nombran dos símbolos se niega, no elige uno
+
+**El defecto, medido en el árbol real.** La capa de aplicación resolvía un
+nombre por símbolo con dos reglas —primero el nombre completo, luego «el
+primero» cuyo nombre base coincide— y la superficie MCP que publica
+`trace_path` traía **su propia copia** de esa regla, con el orden de las
+tier invertido. Ninguna de las dos decía qué símbolo había elegido. Y como el
+grafo guarda los símbolos en un mapa hash, el «primero» no era siquiera el
+mismo entre dos ejecuciones del mismo árbol.
+
+El RED de este ciclo lo dejó ver con una nitidez que la descripción de la
+tarea no anticipaba: en **la misma ejecución**, las dos copias de la regla
+eligieron símbolos distintos. La superficie MCP publicó un camino por
+`src/a.rs:helper`; la capa de aplicación publicó un camino por
+`src/b.rs:helper`. Dos copias de la misma regla, dos respuestas distintas, y
+ninguna decía cuál era la suya.
+
+**La regla, en el dominio.** El resolutor es ahora una función pura del
+dominio (`domain/services/target_resolution.rs`): `resolve_target(graph, name)`
+devuelve un `TargetResolution`, que es un tipo con tres casos y no un
+`Option` con un `if`:
+
+- `Resolved(SymbolId)` — el nombre lo lleva un solo símbolo;
+- `Ambiguous { name, candidates }` — lo llevan varios, y el error dice cuáles;
+- `Unresolved(name)` — no lo lleva ninguno.
+
+Las reglas que decide son tres, de la más específica a la menos: el nombre
+completo (la identidad del símbolo, que es única por grafo y por tanto nunca
+ambigua), el nombre base (los homónimos) y un segmento del nombre completo.
+La primera capa que casa decide; una capa que casa con uno resuelve, una que
+casa con varios es ambigua y los publica todos, y ninguna que case deja el
+nombre sin resolver.
+
+**Los candidatos van ordenados.** El grafo guarda sus símbolos en un mapa
+hash, así que el orden en que salen cambia entre ejecuciones. Un error que
+listara los candidatos en ese orden sería una respuesta distinta cada vez que
+se preguntara, y el consumidor no podría distinguir un hecho estable de un
+accidente. Los candidatos se ordenan por identidad.
+
+**El tipo se mudó al dominio, y no por gusto.** `TargetResolution` vivía en
+`infrastructure/graph/per_file_graph.rs` —lo puso H4.1 para el resolutor del
+grafo— y lo consumían `pending.rs` y `reuse.rs`. La capa de aplicación no
+puede importarlo de ahí: `architecture.domain_no_infrastructure` lo prohíbe, y
+el ratchet CR-06 mide esa deuda. El tipo se mudó a
+`domain/value_objects/target_resolution.rs` y la infraestructura lo importa
+desde allí. Sigue siendo **un** tipo, con **un** dueño y **una** regla: no hay
+dos fuentes de verdad, que es la lección de `EvidenceStore`.
+
+**Lo que publica cada superficie.** La capa de aplicación responde con
+`AppError::AmbiguousSymbol { name, candidates }`, que lleva el nombre y
+todos los candidatos en el mensaje y en la categoría del error
+(`AmbiguousSymbol`). La superficie MCP responde con el código **-32006** y
+los candidatos structured en `data` (`{"name": …, "candidates": [...]}`), para
+que un cliente pueda volver a preguntar con el nombre completo.
+
+**Lo que NO cambió.** El nombre completo sigue resolviendo exactamente como
+antes: es único, así que no hay nada que decidir. Los mensajes de «no
+encontrado» («Source symbol 'x' not found», «Target symbol 'x' not found»,
+«Root symbol 'x' not found», «Symbol 'x' not found») se dejan byte a byte. El
+código de error nuevo (-32006) no reutiliza ninguno de los que ya existían
+(-32000..-32005), así que un cliente que distingue por código sigue
+distinguiendo.
+
+**El RED, medido.** Se restauró la semántica vieja en su sitio (el diff
+completo de la corrección, revertido) y se corrieron los tests nuevos. Los
+tres tests nuevos compilan contra el código anterior —afirman sobre el error
+publicado y no sobre una variante tipada— y dos fallaron por el motivo
+correcto:
+
+| test | lo que publicaba el código viejo | lo que tenía que publicar |
+|---|---|---|
+| `the_mcp_trace_refuses_an_ambiguous_name_and_publishes_its_candidates` | un camino por `src/a.rs:helper` (`path_found: true`) | una ambigüedad con el nombre y los dos candidatos, código -32006 |
+| `the_application_trace_refuses_an_ambiguous_name_too` | un camino por `src/b.rs:helper` | una ambigüedad con el nombre y los dos candidatos |
+| `the_full_name_still_resolves_as_it_did` | la ruta, correctamente | la ruta, correctamente — este test pasó contra el código viejo, y por eso mide AC4 |
+
+El tercer test es el que dice que el nombre completo no se ha roto: pasó
+contra el código viejo y pasa ahora, y su fallo sería el que detectaría una
+regresión.
+
+**El GREEN, medido.** `bash scripts/test-fast.sh`: 2416 pasados en la suite de `cognicode-core/lib` y 3 en el test de integración nuevo, clippy con `-D warnings` limpio, y el baseline de fallos conocidos sin diferencias (no declara ninguno). `bash scripts/test-full.sh`: `fmt --check` sin cambios, clippy con `-D warnings` limpio, `cargo test --workspace` con 6472 pasados, 0 fallidos y 22 ignorados, doc-tests con 8 pasados y 12 ignorados, explorer multimodal con 4 pasados, contratos con 439 verdes repartidos en 61 ficheros, y `known_failures` sin diferencias: **rc=0**.
+
+El ratchet CR-06, que es la puerta de la deuda de arquitectura, dice 28 pares de producción contra 28 en la base: 0 añadidos, 0 retirados. Mudar `TargetResolution` al dominio no le cuesta un par: el tipo nuevo no depende de nada de infraestructura.
+
+**Lo que este corte NO cubre.**
+
+- La sesión de workspace (`workspace_session.rs:2005`) descarta el error de
+  la traza con `if let Ok(path)`: con un nombre ambiguo no publica ninguna
+  ruta —que es el defecto corregido— pero tampoco publica la ambigüedad.
+  Los errores descartados son `TASK-3`, no esta unidad.
+- El resolutor del grafo (`GlobalSymbolIndex::resolve`) sí resuelve con el
+  contexto del fichero que llama, y esa es una regla distinta con su propio
+  contexto: un homónimo dentro del módulo del que se llama no es la misma
+  pregunta que un homónimo en el proyecto entero.
+- `find_symbol` de la capa de aplicación devuelve **todas** las ubicaciones
+  de un nombre, no una: no es la misma forma de pregunta y no se ha tocado.
+- La ambigüedad se publica como error. Un cliente que prefiera recibir la
+  lista de candidatos en la respuesta normal en vez de en un error es otro
+  contrato.
+
+**Lo que deja el árbol.** Trece ficheros: dos nuevos del dominio
+(`domain/value_objects/target_resolution.rs` y
+`domain/services/target_resolution.rs`), nueve modificados y un test de
+integración nuevo. La regla vive en el dominio, las tres capas que resuelven
+un nombre (la aplicación, la superficie MCP y, por herencia, la sesión de
+workspace) pasan por ella, y la forma de decir «no lo puedo probar» es un
+tipo con nombre, no un `None`.
+
+**Siguiente WU.** La cola viva del proyecto (`goal-compass.json`) sigue con
+`C23` (50, bloqueada por el operador), `C44` (15) y `C13` (10). La bandeja del
+ciclo avanza a `M0.T03`, que es `TASK-3`: las aristas que el almacén
+descartó con un `.ok()`.

@@ -62,11 +62,11 @@ use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::{CallGraph, Symbol};
-use crate::domain::services::CycleDetector;
+use crate::domain::services::{CycleDetector, resolve_target};
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
 use crate::domain::value_objects::{
-    AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind,
+    AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind, TargetResolution,
 };
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
@@ -814,6 +814,17 @@ pub enum HandlerError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// The name matches more than one symbol and the caller has to say
+    /// which one it means.
+    ///
+    /// The candidates travel with the refusal: "there are two `helper`s" is
+    /// only actionable if the reader is told which two.
+    #[error("Ambiguous symbol '{name}': candidates are {}", .candidates.join(", "))]
+    Ambiguous {
+        name: String,
+        candidates: Vec<String>,
+    },
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -874,6 +885,22 @@ impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
             }
             HandlerError::Internal(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32005, e.to_string())
+            }
+            // The refusal of an ambiguous name carries its candidates as
+            // data: a client that wants to ask again needs to know which
+            // symbols it can choose from.
+            HandlerError::Ambiguous { name, candidates } => {
+                let message = format!(
+                    "Ambiguous symbol '{}': candidates are {}",
+                    name,
+                    candidates.join(", ")
+                );
+                crate::interface::mcp::schemas::McpError::new(-32006, message).with_data(
+                    serde_json::json!({
+                        "name": name,
+                        "candidates": candidates,
+                    }),
+                )
             }
         }
     }
@@ -2748,8 +2775,8 @@ pub async fn handle_trace_path(
     let graph = ctx.analysis_service.get_project_graph();
 
     // Find source and target symbols
-    let source_id = find_symbol_in_graph(&graph, &input.source);
-    let target_id = find_symbol_in_graph(&graph, &input.target);
+    let source_id = symbol_or_ambiguity(&graph, &input.source)?;
+    let target_id = symbol_or_ambiguity(&graph, &input.target)?;
 
     match (source_id, target_id) {
         (Some(source), Some(target)) => {
@@ -2863,7 +2890,7 @@ pub async fn handle_export_mermaid(
     // If a root symbol is provided, export subgraph around it
     let symbols_to_export: Box<dyn Iterator<Item = _>> =
         if let Some(ref root_name) = input.root_symbol {
-            if let Some(root_id) = find_symbol_in_graph(&graph, root_name) {
+            if let Some(root_id) = symbol_or_ambiguity(&graph, root_name)? {
                 Box::new(std::iter::once(root_id))
             } else {
                 return Err(HandlerError::NotFound(format!(
@@ -3223,36 +3250,25 @@ fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Sym
     index
 }
 
-fn find_symbol_in_graph(graph: &CallGraph, name: &str) -> Option<SymbolId> {
-    let search_name = name.to_lowercase();
-
-    // Tier 1: Exact symbol name match
-    for symbol in graph.symbols() {
-        if symbol.name().to_lowercase() == search_name {
-            return Some(SymbolId::new(symbol.fully_qualified_name()));
-        }
+/// The symbol a name means, or the refusal to guess between homonyms.
+///
+/// The rule is the domain's — `resolve_target` — so the MCP surface and the
+/// application surface answer the same question the same way. A name that
+/// one symbol carries resolves to it; a name that several carry is
+/// ambiguous and says which ones; a name that none carries is not found,
+/// and the caller says so in its own words.
+fn symbol_or_ambiguity(graph: &CallGraph, name: &str) -> Result<Option<SymbolId>, HandlerError> {
+    match resolve_target(graph, name) {
+        TargetResolution::Resolved(id) => Ok(Some(id)),
+        TargetResolution::Ambiguous { name, candidates } => Err(HandlerError::Ambiguous {
+            name,
+            candidates: candidates
+                .into_iter()
+                .map(|candidate| candidate.as_str().to_string())
+                .collect(),
+        }),
+        TargetResolution::Unresolved(_) => Ok(None),
     }
-
-    // Tier 2: Exact FQN match
-    for symbol in graph.symbols() {
-        if symbol.fully_qualified_name().to_lowercase() == search_name {
-            return Some(SymbolId::new(symbol.fully_qualified_name()));
-        }
-    }
-
-    // Tier 3: Segment-exact match (split FQN by :: and . and check any segment equals search_name)
-    for symbol in graph.symbols() {
-        let fqn = symbol.fully_qualified_name().to_lowercase();
-        let segments = fqn
-            .split("::")
-            .flat_map(|s| s.split('.'))
-            .any(|seg| seg == search_name);
-        if segments {
-            return Some(SymbolId::new(symbol.fully_qualified_name()));
-        }
-    }
-
-    None
 }
 
 // BFS path finding algorithm

@@ -411,16 +411,14 @@ pub async fn handle_suggest_refactor_plan(
     let _ensure = ensure_graph_built(ctx)?;
 
     let graph = ctx.analysis_service.get_project_graph();
-    let symbol_id = find_symbol_in_graph(&graph, &input.symbol);
+    let symbol_id = symbol_or_ambiguity(&graph, &input.symbol)?;
 
-    if symbol_id.is_none() {
+    let Some(symbol_id) = symbol_id else {
         return Err(HandlerError::NotFound(format!(
             "Symbol '{}' not found",
             input.symbol
         )));
-    }
-
-    let symbol_id = symbol_id.unwrap();
+    };
     let _symbol = graph.get_symbol(&symbol_id).unwrap();
     let caller_count = graph.callers(&symbol_id).len();
     let callee_count = graph.callees(&symbol_id).len();
@@ -606,8 +604,8 @@ pub async fn handle_ask_about_code(
     let mut answers = Vec::new();
 
     if let (Some(src), Some(tgt)) = (source, target) {
-        let src_id = find_symbol_in_graph(&graph, &src);
-        let tgt_id = find_symbol_in_graph(&graph, &tgt);
+        let src_id = symbol_or_ambiguity(&graph, &src)?;
+        let tgt_id = symbol_or_ambiguity(&graph, &tgt)?;
 
         if let (Some(sid), Some(tid)) = (src_id, tgt_id) {
             let path = find_path_bfs(&graph, &sid, &tid, 10);

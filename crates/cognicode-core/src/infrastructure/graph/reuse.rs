@@ -53,8 +53,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::DependencyType;
-use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, TargetResolution};
+use crate::domain::value_objects::{DependencyType, TargetResolution};
+use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 
 /// What one build knows about one file.
 #[derive(Debug, Clone)]
