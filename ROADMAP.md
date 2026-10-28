@@ -43,6 +43,35 @@ via el squash `#471` (`8689de6e`), y #470 además via `#472` (`c87340f0`)—, y
 el historial: `#471` fue un squash de seis pull requests a la vez, así que sus
 ramas quedaron viejas, no su trabajo pendiente.
 
+## La auditoría del 2026-10-28
+
+La segunda auditoría externa —base `main@2eef9d4f`— se reconcilió el mismo día,
+cada hallazgo medido contra el árbol real (`main@5c63e949`). Su borrador queda
+como documento local no versionado, igual que los anteriores. El enrutado:
+
+| Hallazgo de la auditoría | Dueño |
+|---|---|
+| Lecturas silenciadas en el escaneo | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
+| `symbols_removed = deleted_files.len() * 2` — un recuento publicado como medido que no lo está | **`TASK-1`** |
+| Resolución ambigua de símbolos en la capa de aplicación | **`TASK-2`** |
+| Errores de arista descartados con `.ok()` | **`TASK-3`** |
+| La PR #464 sube la deuda CR-06 de producción de 28 a 35 pares | **`TASK-4`** — puerta medible de `C23` |
+| Dos propietarios potenciales del estado del grafo | **`TASK-5`** |
+| Esperas fijas en la suite E2E de Explorer (59 en 24 ficheros) | **`TASK-6`** |
+| Casos desactivados en la suite E2E de Explorer (16 en 13 ficheros) | **`TASK-7`** |
+| Catálogo público desactualizado | `C44` |
+| Acoplamiento aplicación↔infraestructura, `views.rs` (9 669 líneas), `AnalysisService` (4 517) | `C23` |
+| TOCTOU entre verificar y publicar (`file_operations.rs:1281-1287`) | declarado, sin unidad: pide una decisión de alcance |
+| Duplicidad de las specs de perspectiva de Explorer | **no se reproduce**: `perspective-toggle.spec.ts` prueba P2.1–P2.6 y `perspective-toggle-full.spec.ts` tiene un test de visibilidad y otro desactivado con `[DEBT: …]`; el caso desactivado es justamente el que la auditoría llama duplicado |
+| Plan de cinco fases | no entra: su bloque de mayor retorno es `C23`, que ya está en la cola |
+| Propuestas laterales A–D | `DRAFT-1` a `DRAFT-4`: son propuestas, no trabajo hasta que alguien las mida |
+
+`TASK-1` a `TASK-7` y `DRAFT-1` a `DRAFT-5` viven en la bandeja local de
+Backlog.md (`.backlog/`, fuera de Git por la política de documentos privados).
+Sus identificadores y su recibo están en `docs/roadmap/JOURNAL.md`. La bandeja
+no es una segunda agenda: la cola viva sigue en `goal-compass.json` y la
+autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
+
 ## Lo que este fichero NO decide
 
 - **No abre un programa nuevo.** El bloque de mayor retorno que propone la
