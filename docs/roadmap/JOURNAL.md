@@ -28621,3 +28621,69 @@ después de esta, el hito no tiene más. La cola viva del proyecto
 operador, la segunda por `C23`—, así que la siguiente unidad sin bloqueo es
 **`M1.T03`** (`C44`): el catálogo publicado dice de su runtime una versión que
 no es la.
+
+## 2026-10-28 — El ciclo de M0.T03 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `2cfea26a`: 58 etapas,
+ninguna en rojo, y el estado `merge-gate=success` publicado en el pull request
+`#482`. La corrida es comprobable después del hecho: queda en la base de
+eventos del gate, con su identificador de corrida
+`6f568708-e2cd-4935-ab9d-a1352c9259c0`, las 58 etapas en `success` y el
+`RunFinished` en `success`. El gate corrió con su propio directorio de
+compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#482` se fusionó por squash como `b75d2028`.
+El `merge-gate` es la autoridad y estaba verde sobre el SHA exacto de la
+cabeza que GitHub iba a proteger. Entre el commit que `full` midió (`8fcf0f3f`)
+y esa cabeza sólo cambian `docs/roadmap/CURRENT.md` y `docs/roadmap/JOURNAL.md`
+—documentación—, así que el código que el gate validó es el mismo que el que
+la batería midió.
+
+**Lo que queda en el árbol, después del cierre.** Una relación que el almacén
+rechazó ya no se descarta en silencio: se cuenta, se publica, y el build deja
+de declararse completo sobre un grafo al que le falta esa relación. La regla
+es una sola y vive en el dominio (`domain/services/edge_attachment.rs`):
+`attach_relations` ofrece cada relación al almacén y recoge las que éste
+rechaza, sin que ninguna se pierda por el camino. La negativa viaja como
+`RejectedRelation` —un tipo con su propia forma, no un `Option` con un `if`
+dentro— y sale por una única proyección, `RejectedRelationInfo`, que las dos
+interfaces comparten: el CLI y el MCP no pueden divergir porque no tienen dos
+reglas que puedan divergir. Los doce puntos donde el producto ofrece una
+relación —al puerto o al agregado— pasan por esa regla. `relationships_found`
+es el número que el grafo tiene, no el que se le ofreció; una relación
+rechazada se nombra (`rejected_relationships` en el MCP, `rejected_relations`
+en el CLI, con su origen, su destino, su tipo y su motivo); el build deja de
+declararse completo y el hueco de cobertura es `graph.rejected`; y el log dice
+lo mismo que la respuesta. El cambio son veintidós ficheros: diecinueve
+modificados, dos nuevos del dominio y un test de integración nuevo.
+
+**Lo que este corte NO cubre.** Tres sitios descartan la negativa del
+**agregado** con `let _ =` y este corte no los toca:
+`domain/aggregates/call_graph.rs:1161` (el replay de
+`GraphEvent::DependencyAdded`), `on_demand_graph.rs:904`
+(`add_path_relationships`) y `on_demand_graph.rs:934` (`add_transitive_path`).
+Ahí la negativa no es una rama rara: el grafo registra cada símbolo con su
+identidad `file:nombre:línea`, y esos tres ofrecen otra cosa —`nombre:0:0`, el
+nombre a secas y `file:línea:nombre`—, así que el `SymbolNotFound` es el
+resultado esperado y la arista se pierde. Quedan además el
+`pet_graph_store.rs:104` y el `refactor_service.rs:681,692`, cuya negativa es
+inalcanzable por construcción, y el colapso de aristas paralelas entre el
+`CallGraph` del dominio y el `StableGraph` de la infraestructura.
+
+**La tarea en la bandeja.** `TASK-3` (`m-0` / `M0.T03`) queda cerrada en la
+bandeja local de Backlog.md con el SHA `b75d2028`, que es el de la
+implementación en `main`: los cuatro criterios de aceptación y los dos puntos
+de la Definition of Done tienen evidencia real —el RED medido contra el
+código anterior (los dos tests que fallan y el que pasaba y por eso mide
+AC2), el verde de `fast` y `full`, y este recibo, que cita el SHA—. El hito
+`m-0` queda en 3 de 3, y con él se cierra el hito «Lo que el producto publica
+está medido».
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) sigue con `C23` (50, bloqueada por el operador), `C44`
+(15) y `C13` (10). En la agenda privada, `M1.T01` (`TASK-5`) y `M1.T02`
+(`TASK-4`) siguen bloqueadas —la primera por una decisión de alcance del
+operador, la segunda por `C23`—, así que la siguiente unidad sin bloqueo es
+**`M1.T03`** (`C44`): el catálogo publicado dice de su runtime una versión que
+no es la.
