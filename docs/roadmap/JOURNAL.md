@@ -28490,13 +28490,14 @@ el grafo publica aristas que el almacén nunca confirmó.
 
 **El defecto, medido en el árbol real.** El almacén —el puerto
 `DependencyRepository`— puede negarse a guardar una relación, y en los doce
-sitios donde el producto ofrece una relación al almacén esa negativa se
-descartaba: `.ok()` en nueve, `debug_assert!(attached.is_ok())` en tres. El
-fallo **no se contaba en ninguna parte ni se publicaba en ninguna parte**. Peor: el log de
-`stage=resolve` publicaba el número de relaciones que se le habían *ofrecido*
-al almacén, un número que incluía las que el almacén nunca confirmó. Un grafo
-que dice que tiene una arista que nadie guardó es un grafo que dice una
-falsehood sobre lo que sabe.
+sitios donde el producto ofrece una relación esa negativa se descartaba:
+`.ok()` en nueve —el puerto, en `analysis_service.rs`— y
+`debug_assert!(attached.is_ok())` en tres —el agregado del dominio, en
+`per_file_graph.rs`—. El fallo **no se contaba en ninguna parte ni se publicaba
+en ninguna parte**. Peor: el log de `stage=resolve` publicaba el número de
+relaciones que se le habían *ofrecido* al almacén, un número que incluía las
+que el almacén nunca confirmó. Un grafo que dice que tiene una arista que nadie
+guardó es un grafo que dice una falsehood sobre lo que sabe.
 
 Lo que lo hacía invisible: el almacén del producto (`PetGraphStore`) **nunca
 niega**. Su `add_dependency` fabrica los símbolos que falten
@@ -28583,6 +28584,17 @@ que se tocan de paso.
   refactor— que no publica un número de relaciones. La forma es la del defecto
   corregido; la ruta no es la del build que el producto publica. Queda anotada
   para que la siguiente unidad la enrute.
+- Tres sitios más que descartan la negativa del **agregado** con `let _ =` y
+  que este corte **no** toca: `domain/aggregates/call_graph.rs:1161` (el
+  replay de `GraphEvent::DependencyAdded`), `on_demand_graph.rs:904`
+  (`add_path_relationships`) y `on_demand_graph.rs:934` (`add_transitive_path`).
+  Ahí la negativa **no es una rama rara**: el grafo registra cada símbolo con
+  su identidad `file:nombre:línea` (`SymbolFqn::assemble`), y esos tres
+  ofrecen otra cosa —`nombre:0:0`, el nombre a secas, y `file:línea:nombre`—,
+  así que el `SymbolNotFound` es el resultado esperado y la arista se pierde.
+  Son la misma forma de defecto que la que este corte cierra, pero sobre el
+  agregado y no sobre el puerto, y en superficies que no publican un número de
+  relaciones: quedan para la unidad que las mida.
 - El colapso de aristas paralelas: el `CallGraph` del dominio indexa las
   aristas por `(target, dependency_type)` mientras el `StableGraph` de la
   infraestructura las guarda todas. `store.dependency_count()` puede ser mayor
@@ -28597,9 +28609,9 @@ que se tocan de paso.
 nuevos —dos del dominio (`domain/services/edge_attachment.rs` y
 `domain/value_objects/rejected_relation.rs`) y el test de integración
 `m0_t03_graph_publishes_unconfirmed_edges.rs`—. La regla vive en el dominio, los
-doce puntos donde el producto ofrece una relación al almacén pasan por ella,
-y lo que el producto dice de sí mismo se puede medir contra lo que el grafo
-realmente tiene.
+doce puntos donde el producto ofrece una relación —al puerto o al agregado—
+pasan por ella, y lo que el producto dice de sí mismo se puede medir contra lo
+que el grafo realmente tiene.
 
 **Siguiente WU.** `M0.T03` es la última de las tres unidades del hito `m-0`:
 después de esta, el hito no tiene más. La cola viva del proyecto
