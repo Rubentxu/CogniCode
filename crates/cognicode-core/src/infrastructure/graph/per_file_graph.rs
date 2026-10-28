@@ -7,7 +7,9 @@
 use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
-use crate::domain::value_objects::{DependencyType, PendingReference, WalkDecision};
+use crate::domain::value_objects::{
+    DependencyType, PendingReference, TargetResolution, WalkDecision,
+};
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
 };
@@ -71,58 +73,6 @@ pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>, Vec<PendingReference>
 /// work even though F2.W5's happy path does not exercise them. The
 /// non-happy path (dropped edges, ambiguous resolutions) will need
 /// them in F3/C3 diagnostics.
-/// The outcome of resolving one callee name to one target.
-///
-/// ## Why this exists
-///
-/// The resolver used to answer `Option<SymbolId>`, which is honest about
-/// *not* naming a target but dishonest about *why*: a name that matched
-/// nothing and a name that matched two homonyms both collapsed to `None`.
-/// For impact analysis those are different facts. "This call goes to
-/// either `a.rs:foo` or `b.rs:foo`, and we could not prove which" tells
-/// the user where the uncertainty is; "there is no `foo`" tells them
-/// nothing is unknown. Collapsing them means a consumer cannot surface
-/// a gap it never learned exists.
-///
-/// Naming a target stays the privilege of `Resolved` alone. That is what
-/// keeps the "no invented edges" guarantee structural rather than a rule
-/// someone has to remember: an ambiguous call cannot become an edge
-/// because there is no variant that both says "ambiguous" and carries a
-/// target.
-///
-/// ## Relation to `ingest::types::TargetRef`
-///
-/// Not a duplicate of it. `TargetRef` is an extraction-stage *work item* —
-/// `Unresolved(name)` means "a later stage will try to match this". This
-/// is the *result* of that matching, produced against a built index of
-/// `SymbolId`s. Different stage, different payload, different lifetime.
-///
-/// ## Why no `External` variant
-///
-/// `ADR-K003` proposes a fourth variant for callees known to live outside
-/// the analyzed project. Nothing in the current pipeline can produce it —
-/// there is no external-symbol table — so it would be a variant no code
-/// can construct and no test could exercise. The rule that pays is the one
-/// that forbids representing a fact you cannot observe: an unused variant
-/// is an assumption that will survive longer than the code that should
-/// have filled it in.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TargetResolution {
-    /// Exactly one target, proven by a disambiguation rule.
-    Resolved(SymbolId),
-    /// The name matched, but the target cannot be proven. The candidates
-    /// are retained so a consumer can report the uncertainty instead of
-    /// silently shrinking the graph.
-    Ambiguous {
-        /// The lowercased callee name that was being resolved.
-        name: String,
-        /// Every candidate, in index insertion order.
-        candidates: Vec<SymbolId>,
-    },
-    /// The name matched nothing in the project.
-    Unresolved(String),
-}
-
 #[allow(dead_code)]
 pub struct GlobalSymbolIndex {
     /// `name_lower → Vec<SymbolId>` in insertion order. Symbols with the

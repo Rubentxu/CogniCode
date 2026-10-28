@@ -11,6 +11,17 @@ pub enum AppError {
     #[error("Symbol not found: {0}")]
     SymbolNotFound(String),
 
+    /// The name matches more than one symbol and the caller has to say
+    /// which one it means.
+    ///
+    /// The candidates travel with the error: "there are two `helper`s" is
+    /// only actionable if the reader is told which two.
+    #[error("Ambiguous symbol '{name}': candidates are {}", .candidates.join(", "))]
+    AmbiguousSymbol {
+        name: String,
+        candidates: Vec<String>,
+    },
+
     #[error("Location not found: {0}")]
     LocationNotFound(String),
 
@@ -80,6 +91,7 @@ impl AppError {
     pub fn category(&self) -> &'static str {
         match self {
             AppError::SymbolNotFound(_) => "SymbolNotFound",
+            AppError::AmbiguousSymbol { .. } => "AmbiguousSymbol",
             AppError::LocationNotFound(_) => "LocationNotFound",
             AppError::NavigationError(_) => "NavigationError",
             AppError::AnalysisError(_) => "AnalysisError",
@@ -168,6 +180,27 @@ mod tests {
         let err = AppError::SymbolNotFound("main".to_string());
         assert!(err.to_string().contains("main"));
         assert!(matches!(err, AppError::SymbolNotFound(_)));
+    }
+
+    #[test]
+    fn test_ambiguous_symbol_error_carries_the_name_and_the_candidates() {
+        let err = AppError::AmbiguousSymbol {
+            name: "helper".to_string(),
+            candidates: vec![
+                "src/a.rs:helper:10".to_string(),
+                "src/b.rs:helper:20".to_string(),
+            ],
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("helper"),
+            "el mensaje dice qué nombre es ambiguo: {msg}"
+        );
+        assert!(
+            msg.contains("src/a.rs:helper:10") && msg.contains("src/b.rs:helper:20"),
+            "el mensaje dice todos los candidatos: {msg}"
+        );
+        assert_eq!(err.category(), "AmbiguousSymbol");
     }
 
     #[test]

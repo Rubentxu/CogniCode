@@ -66,6 +66,13 @@ impl From<crate::application::error::AppError> for InterfaceError {
             crate::application::error::AppError::SymbolNotFound(s) => {
                 InterfaceError::NotFound(format!("symbol not found: {}", s))
             }
+            crate::application::error::AppError::AmbiguousSymbol { name, candidates } => {
+                InterfaceError::InvalidInput(format!(
+                    "ambiguous symbol '{}': {}",
+                    name,
+                    candidates.join(", ")
+                ))
+            }
             crate::application::error::AppError::LocationNotFound(s) => {
                 InterfaceError::NotFound(format!("location not found: {}", s))
             }
@@ -162,6 +169,11 @@ impl From<HandlerError> for InterfaceError {
             HE::Domain(e) => InterfaceError::Domain(e),
             HE::InvalidInput(s) => InterfaceError::InvalidInput(s),
             HE::NotFound(s) => InterfaceError::NotFound(s),
+            HE::Ambiguous { name, candidates } => InterfaceError::InvalidInput(format!(
+                "ambiguous symbol '{}': {}",
+                name,
+                candidates.join(", ")
+            )),
             HE::Internal(s) => InterfaceError::Internal(s),
         }
     }

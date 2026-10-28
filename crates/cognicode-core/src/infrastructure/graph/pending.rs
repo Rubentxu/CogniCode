@@ -15,8 +15,10 @@ use std::path::Path;
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::value_objects::pending_reference::readings;
-use crate::domain::value_objects::{DependencyType, PendingClass, PendingReference};
-use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, TargetResolution};
+use crate::domain::value_objects::{
+    DependencyType, PendingClass, PendingReference, TargetResolution,
+};
+use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 
 /// What a project-wide lookup made of the references that could not be tied
 /// to a declaration.

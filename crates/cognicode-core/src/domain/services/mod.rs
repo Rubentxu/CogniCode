@@ -9,6 +9,7 @@ mod confidence_rules;
 mod corroboration;
 mod cycle_detector;
 mod impact_analyzer;
+mod target_resolution;
 
 pub use call_graph_analyzer::{
     CallGraphAnalyzer, CallGraphComplexityReport, EntryPointAnalysis, HotPath, LeafFunctionAnalysis,
@@ -21,3 +22,4 @@ pub use confidence_rules::{ConfidenceError, ConfidenceRules, ExtractionContext};
 pub use corroboration::{edge_score, provenance_weight, score_subgraph, target_score};
 pub use cycle_detector::{Cycle, CycleDetectionResult, CycleDetector};
 pub use impact_analyzer::{ImpactAnalyzer, ImpactLevel, ImpactReport, ImpactThreshold};
+pub use target_resolution::resolve_target;
