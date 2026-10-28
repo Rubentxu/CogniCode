@@ -28429,3 +28429,60 @@ tipo con nombre, no un `None`.
 `C23` (50, bloqueada por el operador), `C44` (15) y `C13` (10). La bandeja del
 ciclo avanza a `M0.T03`, que es `TASK-3`: las aristas que el almacén
 descartó con un `.ok()`.
+
+## 2026-10-28 — El ciclo de M0.T02 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `b6d0e4d9`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request
+`#480`. La corrida es comprobable después del hecho: queda en la base de
+eventos del gate, con su identificador de corrida
+`4a238e57-d0a9-4ae1-ad49-5014b927b079`, las 58 etapas en `success` y el
+`RunFinished` en `success`. El gate corrió con su propio directorio de
+compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#480` se fusionó por squash como `c7e5439c`.
+El `merge-gate` es la autoridad y estaba verde sobre el SHA exacto de la
+cabeza que GitHub iba a proteger, que es el mismo árbol que el `full` midió.
+
+**Lo que queda en el árbol, después del cierre.** Un nombre que llevan varios
+símbolos ya no se resuelve en silencio: se publica la ambigüedad con sus
+candidatos. La regla es una sola y vive en el dominio
+(`domain/services/target_resolution.rs`): `resolve_target(graph, name)`
+devuelve un `TargetResolution` con tres casos —`Resolved`,
+`Ambiguous { name, candidates }` y `Unresolved`— en vez de un `Option` con un
+`if` dentro. Decide por tres capas, de la más específica a la menos:
+identidad del símbolo (única, nunca ambigua), nombre base y un segmento del
+nombre completo. Los candidatos van ordenados por identidad, porque el grafo
+los guarda en un mapa hash y un error que los listara en ese orden sería una
+respuesta distinta cada vez que se preguntara. El tipo se mudó de
+`infrastructure/graph/per_file_graph.rs` al dominio porque la aplicación no
+puede importarlo de infraestructura (`architecture.domain_no_infrastructure`),
+y porque un tipo con dos dueños es la lección de `EvidenceStore` repetida. La
+superficie MCP publica el código -32006 con los candidatos en `data`; la capa
+de aplicación publica `AppError::AmbiguousSymbol`. El cambio son trece
+ficheros, dos nuevos del dominio, nueve modificados y un test de integración
+nuevo.
+
+**Lo que este corte NO cubre.** La sesión de workspace
+(`workspace_session.rs:2005`) descarta el error de la traza con
+`if let Ok(path)`: con un nombre ambiguo no publica ninguna ruta —que es el
+defecto corregido— pero tampoco publica la ambigüedad. El resolutor del grafo
+(`GlobalSymbolIndex::resolve`) resuelve con el contexto del fichero que
+llama, que es otra pregunta. `find_symbol` de la capa de aplicación devuelve
+todas las ubicaciones de un nombre, no una. Y la ambigüedad se publica como
+error: un cliente que prefiera la lista de candidatos en la respuesta normal
+es otro contrato.
+
+**La tarea en la bandeja.** `TASK-2` (`m-0` / `M0.T02`) queda cerrada en la
+bandeja local de Backlog.md con el SHA `c7e5439c`, que es el de la
+implementación en `main`: los cuatro criterios de aceptación y los tres
+puntos de la Definition of Done tienen evidencia real —el RED medido contra
+el código anterior (los dos tests que fallan y el que pasaba y por eso
+mide AC4), el verde de `fast` y `full`, y este recibo, que cita el SHA—. El
+hito `m-0` queda en 2 de 3.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) sigue con `C23` (50, bloqueada por el operador), `C44`
+(15) y `C13` (10). La bandeja del ciclo avanza a `M0.T03`, que es `TASK-3`:
+el grafo publica aristas que el almacén nunca confirmó.

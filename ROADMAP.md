@@ -53,7 +53,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 |---|---|
 | Lecturas silenciadas en el escaneo | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | Recuentos de símbolos publicados como medidos y no medidos (`symbols_removed = deleted_files.len() * 2`, `symbols_added += 1`, el `symbol_count` del manifiesto) | **`TASK-1`**, cerrada el 2026-10-28 (`ca378733`) |
-| Resolución ambigua de símbolos en la capa de aplicación | **`TASK-2`** |
+| Resolución ambigua de símbolos en la capa de aplicación | **`TASK-2`**, cerrada el 2026-10-28 (`c7e5439c`) |
 | Errores de arista descartados con `.ok()` | **`TASK-3`** |
 | La PR #464 sube la deuda CR-06 de producción de 28 a 35 pares | **`TASK-4`** — puerta medible de `C23` |
 | Dos propietarios potenciales del estado del grafo | **`TASK-5`** |
@@ -85,14 +85,20 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M0.T01 está cerrado en el remoto.** El pull request `#478` —la
-publicación de la rama `fix/m0-t01-measured-symbol-counts`— se fusionó por
-squash como `ca378733`, con el `merge-gate` verde sobre `93374a22`:
-`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. Los recuentos que el producto
-publica están medidos: la línea base es el grafo (ADR-001), la diferencia es
-una función pura del dominio, y lo que no se pudo medir se declara en
-`symbols_unmeasured` en vez de publicar un cero que parece medido. La
-herramienta MCP y la sesión de workspace publican la misma medida.
+**El ciclo de M0.T02 está cerrado en el remoto.** El pull request `#480` —la
+publicación de la rama `fix/m0-t02-ambiguous-target-resolution`— se fusionó por
+squash como `c7e5439c`, con el `merge-gate` verde sobre `b6d0e4d9`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. Un nombre que llevan varios
+símbolos ya no se resuelve en silencio: hay **una** regla de resolución, vive
+en el dominio (`resolve_target` → `TargetResolution`) y decide por tres capas
+—identidad del símbolo, nombre base, segmento del nombre completo—. La capa
+que casa con uno resuelve; la que casa con varios es ambigua y publica
+**todos** los candidatos, ordenados por identidad para que la respuesta no
+dependa del recorrido de un mapa hash. La superficie MCP publica el código
+-32006 con los candidatos en `data`, y la capa de aplicación
+`AppError::AmbiguousSymbol`. El tipo `TargetResolution` se mudó al dominio
+porque la aplicación no puede importar de infraestructura, y porque un tipo
+con dos dueños ya costó una lección entera.
 
 La puerta que queda abierta es la de la cola:
 
@@ -105,6 +111,8 @@ La puerta que queda abierta es la de la cola:
   corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
   Prioridad 10, sin bloqueo.
 
-Y, dentro del hito `m-0` del ciclo, la siguiente unidad es **`M0.T02`**
-(`TASK-2`): el resolutor de la capa de aplicación elige un homónimo en
-silencio, sin decir cuál de los dos eligió.
+Y, dentro del hito `m-0` del ciclo, la siguiente unidad es **`M0.T03`**
+(`TASK-3`): el grafo publica aristas que el almacén nunca confirmó —una
+`add_dependency` rechazada se descarta en silencio, y el número de relaciones
+publicado es el que se le ofreció al almacén, no el que el almacén
+contiene—.
