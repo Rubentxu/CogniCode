@@ -299,3 +299,9 @@ out-*.json
 # fuente del producto. Lo que se deriva de ellos —identificadores de tarea y
 # su recibo— se anota en el Journal, que sí es la autoridad versionada.
 .backlog/
+
+# La proyección privada de la agenda (roadmap, SPEC, ADR y el paquete de
+# especificaciones) sigue la misma política: son estado del agente, no fuente
+# del producto. Lo que se deriva de ellos —identificadores de tarea y su
+# recibo— se anota en el Journal, que sí es la autoridad versionada.
+planning/

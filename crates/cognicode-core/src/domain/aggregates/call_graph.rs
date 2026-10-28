@@ -6,11 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
 use crate::domain::services::{ConfidenceRules, ExtractionContext};
-use crate::domain::value_objects::{DependencyType, Provenance};
+use crate::domain::value_objects::{DependencyType, Provenance, SymbolCount};
 
 /// Represents a call entry in traversal results
 ///
@@ -195,6 +196,32 @@ impl CallGraph {
     /// Returns the number of symbols in the graph
     pub fn symbol_count(&self) -> usize {
         self.symbols.len()
+    }
+
+    /// Returns the number of symbols the graph holds for one file.
+    ///
+    /// The file is matched by path suffix, component by component: the
+    /// graph stores the paths it was built from, and a caller may hold the
+    /// same file relative to the workspace root. A path therefore matches
+    /// every stored path that ends with it.
+    pub fn symbols_for_file(&self, file: &Path) -> usize {
+        self.symbols()
+            .filter(|s| Path::new(s.location().file()).ends_with(file))
+            .count()
+    }
+
+    /// The number of symbols the graph holds for one file, as a count that
+    /// knows whether it was measured.
+    ///
+    /// A graph with no symbols at all measured nothing: it is the absence
+    /// of a measurement, not a measurement of zero. A caller that publishes
+    /// the number can then say which of the two it is holding.
+    pub fn symbol_count_for_file(&self, file: &Path) -> SymbolCount {
+        if self.symbols.is_empty() {
+            SymbolCount::Unmeasured
+        } else {
+            SymbolCount::Measured(self.symbols_for_file(file))
+        }
     }
 
     /// Returns the number of edges in the graph

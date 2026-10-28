@@ -28154,3 +28154,120 @@ La regla que sale de las dos vueltas es una sola: **el snapshot cita un SHA
 que ya existe en `main`**, no uno que la rama acaba de crear. La corrección
 es regenerar la cabecera citando `082ba34c`, que es un ancestro de `main` y
 lo seguirá siendo después del squash de este recibo.
+
+## 2026-10-28 — M0.T01: los recuentos que el producto publica están medidos
+
+**De dónde sale la unidad y qué identificadores tiene.** La agenda de este
+ciclo es privada y vive fuera de Git: `planning/ROADMAP.md` proyecta el hito
+`M0` con tres unidades, `planning/specs/SPEC-001.md` dice qué tiene que ser
+cierto cuando el trabajo esté hecho, y `planning/adr/ADR-001.md` decide quién
+es el dueño de la medida. La autoridad de las tareas es la CLI de Backlog.md.
+
+La proyección de las tres unidades contra la bandeja real devolvió
+`REVIEW_EXISTING: 3` —`M0.T01` es `TASK-1`, `M0.T02` es `TASK-2`, `M0.T03` es
+`TASK-3`— y **no** `PROPOSE_CREATE`: importarlas habría duplicado tareas que ya
+existían. Lo que faltaba y se importó con la CLI fue la referencia documental
+de cada unidad (`planning/ROADMAP.md#M0.T0x`), la SPEC y la ADR como
+referencias de la tarea, y el hito que las agrupa: `m-0`, «M0 — Lo que el
+producto publica está medido», 0/3 al abrirlo. Las prioridades se conservaron
+—`high`, `medium`, `medium`— y las tres tareas llevan la etiqueta
+`audit-2026-10-28`.
+
+**El hueco, medido.** Tres sitios publicaban un número que parecía medido y no
+lo estaba:
+
+| Sitio | Lo que publicaba | Lo que había |
+|---|---|---|
+| `handlers/aix_handlers.rs` (fichero modificado) | `symbols_added += 1` | un sustituto: el método de indexado no devuelve el recuento |
+| `handlers/aix_handlers.rs` (fichero borrado) | el `symbol_count` del manifiesto | un cero: el manifiesto que escribe la ruta MCP guarda cero en todos los ficheros |
+| `workspace_session.rs` (resultado incremental) | `deleted_files.len() * 2` | una aproximación escrita a mano |
+
+El patrón es el mismo en los tres, y es el mismo que `C49` ya pagara una vez:
+**un número que se publica como medido y no lo está**.
+
+**La decisión: el grafo es la línea base** (ADR-001). El manifiesto no puede
+servir: el que escribe la ruta MCP (`build_manifest`) pone `symbol_count: 0` en
+todos los ficheros, y además se toma *antes* de construir el grafo. El índice
+semántico tampoco: en la ruta MCP se construye vacío. El grafo es lo único
+poblado en las dos rutas, y es lo que el cliente puede contrastar, porque lo
+reconstruye y lo consulta.
+
+De esa decisión salen tres cosas:
+
+1. **La medida tiene un dueño.** `CallGraph::symbols_for_file` cuenta los
+   símbolos de un fichero, y `CallGraph::symbol_count_for_file` dice además si
+   ese número se midió. Un grafo vacío no midió nada: es la ausencia de una
+   medida, no una medida de cero.
+2. **La diferencia es una función pura**
+   (`domain/value_objects/symbol_delta.rs`): `symbol_delta(previous, current)`
+   devuelve `SymbolDelta::Measured { added, removed }` cuando los dos lados se
+   midieron, y `SymbolDelta::Unmeasured` cuando no. No hay ninguna rama que
+   convierta «no medido» en cero.
+3. **Lo no medido se declara.** `symbols_unmeasured` sale en la salida de
+   `reparse_on_edit` y en `IncrementalResult`: los ficheros cuyo cambio no se
+   pudo contar. Los dos recuentos describen los ficheros medidos; ese campo
+   dice cuántos quedan fuera.
+
+**Una contradicción que hubo que resolver antes de escribir código.** El
+criterio de aceptación 1 de `TASK-1` —y su descripción— decían que el
+manifiesto era el dueño de la cifra verdadera. La decisión documentada
+invierte esa fuente: el manifiesto es un consumidor y el grafo es el dueño. El
+defecto que describen es el mismo, así que los criterios se reescribieron por
+la CLI para nombrar al dueño real, y la razón quedó en un comentario
+append-only de la tarea.
+
+**El RED, medido.** Se restauró la semántica vieja en su sitio y se corrieron
+los tests nuevos. Los cinco fallaron por el número, que es exactamente lo que
+se quería:
+
+| test | lo que publicaba el código viejo | lo que tenía que publicar |
+|---|---|---|
+| `a_file_that_grew_publishes_the_symbols_it_gained` | `1` | `4` — el fichero pasó de 2 a 6 funciones |
+| `a_file_that_shrank_publishes_the_symbols_it_lost` | `0` | `4` — el fichero pasó de 6 a 2 funciones |
+| `a_deleted_file_publishes_the_symbols_it_had` | `0` | `4` — el manifiesto guarda cero en todos los ficheros |
+| `a_change_that_cannot_be_measured_is_published_as_unmeasured` | `0` | `1` — el cambio no se pudo medir |
+| `test_incremental_reindex_deleted_file_publishes_the_symbols_it_had` | `2` | `1` — el fichero declaraba un símbolo |
+
+El RED de los cuatro primeros vive en un test de integración que afirma sobre
+el JSON que ve el cliente, no sobre el campo tipado: así compila contra el
+código anterior y falla por el número que sale, y no porque el campo todavía
+no exista. El quinto vive en el propio módulo de la sesión de workspace.
+
+**El GREEN, medido.** `bash scripts/test-fast.sh`: 956 + 161 + 0 + 80 + 15 + 13
++ 6, todos en verde. `bash scripts/test-full.sh`: `fmt --check` sin cambios,
+clippy con `-D warnings` limpio, `cargo test --workspace` con 6462 pasados, 22
+ignorados y 229 binarios de prueba, doc-tests con 8 pasados y 12 ignorados,
+explorer multimodal con 4 pasados, contratos con 439 verdes repartidos en 61
+ficheros, y `known_failures` sin diferencias: **rc=0**.
+
+**Lo que este corte NO cubre.**
+
+- El `symbol_count: 0` del manifiesto MCP sigue ahí. Corregirlo exige mover el
+  manifiesto después de construir el grafo, con las consecuencias de frescura
+  que el propio código explica; la ADR-001 lo deja fuera a propósito.
+- `FileEntry::symbol_count` sigue siendo un `usize` sin estado de «no medido».
+  Corregirlo es trabajo aparte, y hasta entonces el manifiesto no es la fuente
+  de la verdad de los recuentos: el grafo sí.
+- La caché de incrementalidad (`infrastructure/graph/file_manifest.rs`) es un
+  segundo manifiesto, con su propia forma, y sigue siendo un segundo dueño del
+  estado del fichero. Es `M1.T01` (`TASK-5`).
+- El resultado incremental cuenta los ficheros que el pase tocó, no todo el
+  workspace.
+- `M0.T02` (el resolutor que elige un homónimo en silencio) y `M0.T03` (las
+  aristas que el almacén no confirmó) no se han ejecutado: son el resto del
+  hito `m-0`.
+
+**Lo que deja el árbol.** Nueve ficheros de código y de producto, siete
+modificados y dos nuevos, `+671/−36`: un tipo nuevo del dominio
+(`symbol_delta`), dos métodos del grafo que cuentan y declaran la medida, la
+salida de la herramienta MCP con su campo `symbols_unmeasured`, la sesión de
+workspace mediendo contra el grafo con la misma función pura, y la
+documentación de los campos de `IncrementalResult` diciendo qué miden. De los
+siete modificados, uno es `.gitignore`: la regla que deja `planning/` —la
+agenda, la SPEC, la ADR y el paquete de especificaciones— fuera de Git, con la
+misma política que ya aplican `.backlog/` y `docs/`.
+
+**Siguiente WU.** La cola viva del proyecto (`goal-compass.json`) sigue con
+`C23` (50, bloqueada por el operador), `C44` (15) y `C13` (10). La bandeja del
+ciclo avanza a `M0.T02`, que es `TASK-2`: el resolutor de la capa de aplicación
+que elige un homónimo en silencio.

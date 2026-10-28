@@ -38,6 +38,7 @@ use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::TraversalDirection;
 use crate::domain::value_objects::file_time::measured_seconds;
+use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -81,10 +82,25 @@ pub struct IncrementalResult {
     pub files_skipped: usize,
     /// Number of files that were removed from the graph
     pub files_removed: usize,
-    /// Number of symbols added
+    /// Symbols the changed files gained, counted in the graph.
+    ///
+    /// The count is the difference between the symbols the graph held of a
+    /// file before this pass and the symbols it holds of it after, so a
+    /// file that kept every symbol it had contributes zero, not its total.
     pub symbols_added: usize,
-    /// Number of symbols removed
+    /// Symbols the changed files lost, counted in the graph.
+    ///
+    /// The same difference as `symbols_added`, read the other way: the
+    /// symbols the graph held of a file before this pass and no longer
+    /// holds. A file that was deleted contributes the symbols it had.
     pub symbols_removed: usize,
+    /// Files whose symbol change could not be counted.
+    ///
+    /// The two counts above describe the files that were measured. A file
+    /// listed here is one whose change is unknown: there was no graph to
+    /// count against. Its symbols are in neither count, and this field is
+    /// what says so.
+    pub symbols_unmeasured: usize,
     /// Whether the graph was actually rebuilt
     pub graph_updated: bool,
 }
@@ -493,13 +509,16 @@ impl WorkspaceSession {
         let mut result = IncrementalResult::default();
 
         // Verify graph exists (read lock, then IMMEDIATELY drop it before any await)
-        {
+        // The graph as it stands now is the baseline the symbol counts are
+        // measured against: it is what the workspace held before this pass.
+        let baseline_graph = {
             let graph_guard = self.graph.read().await;
-            if graph_guard.is_none() {
-                return Err(WorkspaceError::GraphNotBuilt("Graph not built".to_string()));
+            match graph_guard.as_ref() {
+                Some(graph) => Arc::clone(graph),
+                None => return Err(WorkspaceError::GraphNotBuilt("Graph not built".to_string())),
             }
             // graph_guard dropped here — MUST be dropped before spawn_blocking + write lock
-        }
+        };
 
         // Count files that will be skipped (not in new/modified/deleted)
         let total_files = current_files.len();
@@ -554,10 +573,7 @@ impl WorkspaceSession {
             .filter(|(p, _, _, _)| new_set.contains(p) || modified_set.contains(p))
             .map(|(p, h, t, _)| {
                 // Count symbols in this file from the NEW (rebuilt) graph
-                let symbol_count = new_graph
-                    .symbols()
-                    .filter(|s| s.location().file().ends_with(p.to_string_lossy().as_ref()))
-                    .count();
+                let symbol_count = new_graph.symbols_for_file(p);
                 (p.clone(), h.clone(), *t, symbol_count)
             })
             .collect();
@@ -597,9 +613,36 @@ impl WorkspaceSession {
             }
         }
 
-        // Update result with symbol counts
-        result.symbols_added = updated_entries.iter().map(|(_, _, _, c)| *c).sum();
-        result.symbols_removed = deleted_files.len() * 2; // Approximate
+        // Update result with symbol counts. The counts are measured against
+        // the graph as it was before this pass: a file that gained symbols
+        // publishes how many, a file that lost them publishes how many, and
+        // a file whose change could not be counted says so instead of
+        // publishing a zero that looks measured.
+        let mut symbols_unmeasured = 0;
+        for (rel_path, _, _, current_count) in &updated_entries {
+            let delta = symbol_delta(
+                baseline_graph.symbol_count_for_file(rel_path),
+                SymbolCount::Measured(*current_count),
+            );
+            result.symbols_added += delta.added();
+            result.symbols_removed += delta.removed();
+            if !delta.is_measured() {
+                symbols_unmeasured += 1;
+            }
+        }
+        for rel_path in &deleted_files {
+            // A file that is gone holds no symbols; the ones it held are
+            // the ones the graph had of it before this pass.
+            let delta = symbol_delta(
+                baseline_graph.symbol_count_for_file(rel_path),
+                SymbolCount::Measured(0),
+            );
+            result.symbols_removed += delta.removed();
+            if !delta.is_measured() {
+                symbols_unmeasured += 1;
+            }
+        }
+        result.symbols_unmeasured = symbols_unmeasured;
 
         Ok(result)
     }
@@ -3286,6 +3329,49 @@ pub struct PublicStruct {}
 
         // Deleted file should be reported
         assert!(result.files_removed >= 1, "Should detect deleted file");
+    }
+
+    /// A deleted file publishes the symbols it had.
+    ///
+    /// The count is measured against the graph as it was before the pass:
+    /// the file declared one symbol, so one symbol is removed. A count
+    /// derived from the number of deleted files would publish two.
+    #[cfg(feature = "persistence")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_incremental_reindex_deleted_file_publishes_the_symbols_it_had() {
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.rs");
+        std::fs::write(&test_file, "pub fn test_function() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        // Build the graph first
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+
+        // Create and set a store
+        let store = Arc::new(InMemoryGraphStore::new());
+        session.set_graph_store(store.clone());
+
+        // Save current state
+        session.save_to_store().await.unwrap();
+
+        // Delete the file
+        std::fs::remove_file(&test_file).unwrap();
+
+        // Run incremental reindex
+        let result = session.incremental_reindex().await.unwrap();
+
+        assert_eq!(result.files_removed, 1, "One file was deleted");
+        assert_eq!(
+            result.symbols_removed, 1,
+            "The deleted file declared one symbol: that is the number removed"
+        );
     }
 
     #[cfg(feature = "persistence")]

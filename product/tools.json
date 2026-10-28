@@ -4420,7 +4420,8 @@
       "limitations": [
         "mutates workspace",
         "requires persistence feature",
-        "content-based invalidation; slower than mtime-only"
+        "content-based invalidation; slower than mtime-only",
+        "symbol counts are counted in the graph; a file whose change cannot be counted is reported in symbols_unmeasured instead of in symbols_added/symbols_removed"
       ]
     },
     {
