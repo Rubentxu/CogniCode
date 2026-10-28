@@ -5,9 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-26, sobre `c87340f0355d3f91ab908e0f3e3c0cbfc37b3f81` (la rama de la
+> **Snapshot**: 2026-10-28, sobre `62a368976c6a5c020cdf96e5b1315acc042c55a2` (la rama de la
 > incrementalidad: el grafo se reconstruye sólo donde cambió, el servicio dice
-> cuánto conservó, y el escaneo declara los ficheros que no puede fechar).
+> cuánto conservó, el escaneo declara los ficheros que no puede fechar y los
+> que no puede leer).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -462,12 +463,42 @@ Ahora el vocabulario vive en un solo sitio: `Language::symbols()` declara los co
 La identidad es `fichero:nombre:línea`, así que dos sobrecargas son dos símbolos y un constructor no es su clase. Un contrato permanente afirma el vocabulario completo —interface, data class, clase, clase anidada, companion con y sin nombre, enum, `object`, sealed, value class, constructor secundario, función top-level, método, extensión, sobrecargas, propiedades y paquete—, y dos contratos más comprueban que el código de un símbolo es exactamente su declaración y que el Unicode que declara se conserva. El caso negativo también está: un `.kt` que no parsea no se publica como leído, y un script `.kts` declara sus bindings de nivel superior y nada más —sus tareas y sus plugins son llamadas, no declaraciones.
 El GREEN se midió con mutación focal: cinco veces se rompió el comportamiento a propósito, y cada mutante murió sólo por los tests escritos para él. La UAT efímera sobre los binarios release dio 30 de 30, con los símbolos pedidos antes de construir grafo. La batería encontró además dos contratos que se habían quedado sin precondición —usaban un `.kt` como hueco real, y un hueco así caduca en cuanto el producto soporta el lenguaje—; ahora los dos huecos son un fichero con sintaxis rota, que es un hueco para siempre. Quedan declarados tres residuos: la lectura de complejidad sigue con un tipo por categoría, la distinción de script que nombra la especificación no existe como tipo en el producto, y el destino de un `import` con alias es cosa de la unidad de relaciones.
 
+**El escaneo declara los ficheros que no puede leer, está cerrada.** El escaneo
+decide qué se vuelve a leer comparando el hash del fichero con el que el índice
+guardó la vez anterior, así que deciding hay que leer. Cuando la lectura
+fallaba, el escaneo no lo decía: el fichero desaparecía del mapa de hashes, de
+modo que un fichero nuevo ilegible entraba en el índice con el hash vacío —una
+afirmación sobre un contenido que nadie leyó— y un fichero existente ilegible
+cayía en la misma rama que uno cuya fecha no cambió, y no se publicaba en
+absoluto. El hueco era el mismo que el de la fecha, y por la misma razón: el
+silencio del escaneo significa «no ha cambiado», y no significa «no sé».
+La decisión de cambio deja de ser binaria y toma la forma que la fecha ya
+tenía: dos ADTs, cada uno con una pregunta. `ChangeDecision` dice lo que dice
+el contenido —`New`, `Changed`, `Unchanged`, `Unreadable { reason }`— y
+`Freshness` dice lo que dice la fecha —`Unchanged`, `Changed`, `Unknown`—, que
+no puede mezclarse con la anterior porque sin fecha no se puede afirmar nada:
+el contenido se lee y decide. Un hash que no se pudo leer es una ausencia y no
+un hash: `content_hash` pasa a ser `Option<String>` en todo el camino, el
+índice guarda que nadie leyó el contenido, y como no hay hash con el que
+comparar, la siguiente pasada vuelve a mirar el fichero. Y un fallo de lectura
+se publica como fallo: `ChangeKind` gana `Unreadable`, el motivo viaja con el
+cambio y la extracción publica un resultado fallido en vez de callarse.
+El RED está medido sobre el camino malo: la suite de caracterización falló 3 de
+3 contra el código viejo. Los otros dos comportamientos del contrato no se
+podían ni expresar contra él —el `ScanEntry.content_hash` viejo era un
+`String`, así que el índice no tenía forma de decir «nadie leyó esto», y el
+`FileChange` viejo no tenía dónde poner una causa—, y eso es parte del
+hallazgo. El GREEN se midió con mutación focal: cinco veces se rompió el
+comportamiento a propósito y cada mutante murió sólo por los tests escritos
+para él. La UAT efímera dice que el fichero sale sin hash y con su causa, que
+el índice guarda la ausencia y que la segunda pasada vuelve a mirarlo.
+
 ## La misión
 
 Misión `cognicode` declarada (`goal-compass.json`), con 3 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
-B1 a B6), de mayor a menor prioridad. **C46 y C12 salen de la cola al cerrarse.**
+B1 a B6), de mayor a menor prioridad. **C46, C12 y C49 salen de la cola al cerrarse.**
 
 El primero que encadenaba era **C31**, y está cerrado: la autoridad con la que
 una herramienta MCP se ejecutaba la leía del catálogo que había en el disco

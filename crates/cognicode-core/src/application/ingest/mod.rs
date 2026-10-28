@@ -37,6 +37,7 @@ pub use scan::{
     walk_files,
 };
 pub use types::{
-    ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,
-    ScanManifestEntry, ScanProgress, ScanResult, ScanStage, TargetRef, TypeRef, TypeRefContext,
+    ChangeDecision, ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,
+    Freshness, ScanManifestEntry, ScanProgress, ScanResult, ScanStage, TargetRef, TypeRef,
+    TypeRefContext,
 };

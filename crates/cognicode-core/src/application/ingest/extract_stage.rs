@@ -24,12 +24,17 @@ const EXTRACT_CHANNEL_CAPACITY: usize = 100;
 /// Extract all Changed/New files in parallel (rayon), returning all results.
 /// Simple mode — collects everything in memory. Use `extract_streaming`
 /// for large projects.
+///
+/// A file whose content nobody could read is not extracted and not hidden:
+/// it comes out as a failed result with the reason, because a file that is
+/// missing from the results is a file nobody knows is uncovered.
 pub fn extract_all(changes: Vec<FileChange>) -> Vec<ExtractionResult> {
     use rayon::prelude::*;
     changes
         .into_par_iter()
         .filter_map(|change| match change.kind {
             ChangeKind::Deleted => None, // skip deletions in extract stage
+            ChangeKind::Unreadable => Some(unreadable(change)),
             ChangeKind::New | ChangeKind::Changed => Some(extract_one(change)),
         })
         .collect()
@@ -50,6 +55,7 @@ pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionR
             .into_par_iter()
             .filter_map(|change| match change.kind {
                 ChangeKind::Deleted => None,
+                ChangeKind::Unreadable => Some(unreadable(change)),
                 ChangeKind::New | ChangeKind::Changed => Some(extract_one(change)),
             })
             .try_for_each_with(tx, |tx, result| {
@@ -63,6 +69,22 @@ pub fn extract_streaming(changes: Vec<FileChange>) -> mpsc::Receiver<ExtractionR
     });
 
     rx
+}
+
+/// The result of a file whose content nobody could read.
+///
+/// The file is not extracted, and it is not hidden either: the failure is
+/// published with the reason the scan gave. The hash is empty because
+/// there is none, and the error is what says so.
+fn unreadable(change: FileChange) -> ExtractionResult {
+    let reason = change
+        .read_error
+        .unwrap_or_else(|| "the content could not be read".to_string());
+    ExtractionResult::failed(
+        change.path.clone(),
+        String::new(),
+        format!("read error: {reason}"),
+    )
 }
 
 /// Extract a single file with error isolation (ADR-023).
@@ -155,6 +177,7 @@ mod tests {
             path: dir.path().join("main.rs"),
             kind: ChangeKind::New,
             content_hash: Some("deadbeef".to_string()),
+            read_error: None,
             mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
@@ -173,6 +196,7 @@ mod tests {
             path: dir.path().join("deleted.rs"),
             kind: ChangeKind::Deleted,
             content_hash: None,
+            read_error: None,
             mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
@@ -191,6 +215,7 @@ mod tests {
             path: dir.path().join("data.bin"),
             kind: ChangeKind::New,
             content_hash: Some("abc".to_string()),
+            read_error: None,
             mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Other,
             language: None,
@@ -210,6 +235,7 @@ mod tests {
             path: dir.path().join("nonexistent.rs"),
             kind: ChangeKind::New,
             content_hash: Some("abc".to_string()),
+            read_error: None,
             mtime_millis: None,
             file_type: crate::application::ingest::types::FileType::Code,
             language: Some("rust"),
@@ -231,6 +257,7 @@ mod tests {
                 path: dir.path().join("a.py"),
                 kind: ChangeKind::New,
                 content_hash: Some("h1".into()),
+                read_error: None,
                 mtime_millis: None,
                 file_type: crate::application::ingest::types::FileType::Code,
                 language: Some("python"),
@@ -239,6 +266,7 @@ mod tests {
                 path: dir.path().join("b.py"),
                 kind: ChangeKind::New,
                 content_hash: Some("h2".into()),
+                read_error: None,
                 mtime_millis: None,
                 file_type: crate::application::ingest::types::FileType::Code,
                 language: Some("python"),

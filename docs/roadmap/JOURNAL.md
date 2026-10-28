@@ -27861,3 +27861,166 @@ código. El borrador completo de la reconciliación, con el detalle por
 autocontenido, no bloquea nada y no depende de `C23`. `C23` sigue esperando
 al operador. La cola de la misión queda con cuatro candidatos —`C23` (50),
 `C49` (20), `C44` (15) y `C13` (10)—, y la prioridad es del operador.
+
+## 2026-10-28 — C49: el escaneo declara los ficheros que no puede leer
+
+**C49 closed.** C49 acceptance: PASS (rc=0 de `scripts/test-fast.sh` y
+`scripts/test-full.sh`: formato, clippy con `-D warnings`, `cargo test
+--workspace` —**6 454 pruebas verdes en 228 binarios de prueba, 0 rojas, 22
+ignoradas**—, doc-tests —**8 verdes, 12 ignorados**—, los contratos —**439
+comprobaciones verdes, 0 rojas**— y el comprobante de línea base).
+
+**Una cifra que hubo que corregir.** La primera versión de este párrafo decía
+«6 466 pruebas verdes en 249 binarios» y «20 doc-tests verdes». Las dos
+cifras estaban contadas con una regla que sumaba las pruebas ignoradas como
+si fueran ejecutadas: el recuento real es 6 454 verdes y 22 ignoradas, y los
+doc-tests son 8 verdes y 12 ignorados. No cambia el veredicto —`rc=0` en las
+dos etapas— pero un recibo que dice una cifra que el log no respalda es un
+recibo que miente por omisión, así que se corrige aquí y en el cuerpo del pull
+request, que decía lo mismo.
+
+**La unidad, cerrada sobre `62a368976c6a5c020cdf96e5b1315acc042c55a2`.**
+
+**Qué es esta unidad.** La dimensión del hash, que es la que faltaba después
+de que C46 cerrara la de la fecha. El hueco no era nuevo ni sospechoso: el
+recibo de C46 lo dejó escrito —«un fichero que no se puede leer tiene el hash
+de nada —`content_hash: Some("")`—, porque el hash de un fichero ilegible no es
+un hash. Es un hueco contiguo de la misma familia, pero el `content_hash` del
+manifiesto es un `String` y no una ausencia, así que es otro contrato y otra
+unidad». Esta es esa unidad.
+
+**El defecto, y la lectura que hay que hacer explícita.** El escaneo decide
+qué se vuelve a leer comparando el hash del fichero con el que el índice
+guardó la vez anterior, y para compararlo hace falta leer el fichero. Cuando
+la lectura fallaba, el escaneo no lo decía. En `application/ingest/scan.rs`
+el mapa de hashes se construía con `hash_file(&abs).ok()`, así que un fichero
+que no se pudo leer desaparecía del mapa; un fichero **nuevo** ilegible
+entraba con `unwrap_or_default()`, es decir con el hash vacío, que el índice
+publicaba como si fuera el contenido; y un fichero **existente** ilegible
+caía en la misma rama que un fichero cuya fecha no cambió —`continue`— y no se
+publicaba en absoluto. Medido en el árbol viejo: un fichero ilegible no sale
+del escaneo, y el índice se queda con su hash viejo sin decir nada.
+
+La lectura que hay que hacer explícita es esta: **el silencio del escaneo
+significa «no ha cambiado»**. No significa «no sé». Un fichero que nadie leyó
+no es un fichero que no cambió, de la misma manera que un fichero sin fecha no
+es un fichero intacto —y esa es la lección que C46 ya pagó una vez—. Por eso
+un fallo de lectura no puede ser uno de los silencios: tiene que salir
+publicado, con su causa.
+
+**Lo que se hizo.** La decisión de cambio deja de ser binaria y toma la misma
+forma que la fecha ya tenía. Hay dos ADTs y cada uno dice una cosa:
+
+| ADT | Respuestas | Dónde vive |
+|---|---|---|
+| `ChangeDecision` | `New { content_hash }`, `Changed { content_hash }`, `Unchanged`, `Unreadable { reason }` | `application/ingest/types.rs` |
+| `Freshness` | `Unchanged`, `Changed`, `Unknown` | `application/ingest/types.rs` |
+
+El contrato pedía cinco nombres —New, Changed, Unchanged, Unreadable,
+UnknownFreshness— y la cifra no era casual: son dos preguntas con dos
+vocabularios. Los cuatro primeros son lo que el **contenido** dice; el quinto
+—la frescura desconocida— es lo que la **fecha** dice, y por eso vive en su
+propio tipo: sin fecha no se puede afirmar nada, así que el contenido se lee y
+decide. La fecha manda en la vía rápida, y la ausencia de hash la anula: un
+fichero sin hash en el índice se vuelve a leer aunque su fecha no haya
+cambiado.
+
+Un hash que no se pudo leer es una ausencia, no un hash. `content_hash` pasa a
+ser `Option<String>` en todo el camino —`FileChange`, `ScanManifestEntry`, el
+puerto `ScanManifest` y la columna de Ladybug—, y un NULL se lee como `None` y
+no como una cadena vacía. El índice guarda que nadie leyó el contenido, y como
+no hay hash con el que comparar, la siguiente pasada vuelve a mirar el
+fichero. Un fallo de lectura se publica como fallo: `ChangeKind` gana
+`Unreadable`, el motivo viaja con el cambio en `read_error`, y la extracción
+publica un resultado fallido en vez de callarse.
+
+**El RED, medido sobre el camino malo.** La suite de caracterización se
+midió contra el árbol viejo, en un worktree desechable sobre `2eef9d4f` con su
+propio directorio de destino, y falló **3 de 3** con el mensaje que lo dice:
+
+| test RED | mensaje contra el código viejo |
+|---|---|
+| `un_fichero_nuevo_que_no_se_puede_leer_no_entra_con_un_hash_vacio` | `left: Some("") right: Some("")` — el hash vacío |
+| `un_fichero_que_no_se_puede_leer_se_publica` | «un fichero que nadie pudo leer tiene que salir en el escaneo» |
+| `un_fichero_que_no_se_puede_leer_no_publica_el_hash_viejo` | «el escaneo tiene que publicar el fichero» |
+
+La reproducción es real y no falsifica nada: un fichero en modo `0000` dentro
+de un directorio que se puede recorrer, que se puede listar y fechar pero no
+leer.
+
+Los otros dos comportamientos del contrato —«el escaneo lo vuelve a mirar en
+la siguiente pasada» y «el fallo se publica con su causa»— **no se podían
+expresar contra el código viejo**, y eso es parte del hallazgo: el
+`ScanEntry.content_hash` viejo era un `String`, así que el índice no tenía
+forma de decir «nadie leyó este contenido», y el `FileChange` viejo no tenía
+ningún sitio donde poner una causa. No eran dos tests que faltaban: eran dos
+palabras que el tipo no tenía.
+
+**El GREEN, medido con mutación focal.** Se rompieron cinco veces el
+comportamiento a propósito, y cada mutante tenía que morir por los tests
+escritos para él.
+
+| mutante | tests que lo cazan |
+|---|---|
+| A — el fichero ilegible desaparece del escaneo (el comportamiento viejo) | los seis de `the_scan_does_not_erase_what_it_cannot_read`, **más** `un_fichero_que_no_se_puede_fechar_no_desaparece_del_escaneo` y `un_fichero_sin_fecha_declara_su_hueco` |
+| B — el fichero ilegible entra con un hash vacío (el comportamiento viejo) | `un_fichero_nuevo_que_no_se_puede_leer_no_entra_con_un_hash_vacio`, `un_fichero_que_no_se_puede_leer_no_publica_el_hash_viejo`, `el_indice_no_guarda_el_hash_de_un_fichero_que_nadie_pudo_leer` |
+| C — el índice guarda el hash viejo del fichero ilegible | `un_fichero_que_no_se_puede_leer_no_publica_el_hash_viejo` |
+| D — un fichero sin hash no se vuelve a mirar | `un_fichero_que_no_se_pudo_leer_se_vuelve_a_mirar_en_la_siguiente_pasada` |
+| E — el fallo de lectura se publica sin causa | `un_fichero_que_no_se_puede_leer_declara_la_causa_del_fallo` |
+
+**Una salvedad que hay que decir, no una pasada por alto.** El mutante A mata
+también los dos tests de la **fecha**, y no es un falso positivo: el fixture de
+la fecha es un directorio que se puede listar pero no atravesar, así que el
+fichero que hay dentro tampoco se puede leer, y la fecha y la lectura
+comparten el mismo sujeto. El motivo del fallo es el mismo en los cuatro
+casos —el fichero desapareció del escaneo—, no uno ajeno: los dos tests de la
+fecha afirmación es «el fichero no desaparece», y un mutante que lo borra los
+toca a ellos también. Los mutantes B a E no tocan la fecha.
+
+**Una medición que hubo que corregir.** La primera corrida de la mutación
+salió con todos los mutantes vivos, y no era verdad: el filtro `ingest::scan`
+se filtró a los tres binarios de prueba, de modo que los dos binarios de
+integración no ejecutaron ni un solo test —«0 passed; 9 filtered out»— y todo
+mutante parecía sobrevivir. Separar las invocaciones —la biblioteca con su
+filtro, cada integración sin él— es lo que da la tabla de arriba. Se dice
+porque un gate que no corre lo que dice que corre es un gate que no mide, y
+porque el número de la primera corrida habría sido un veredicto falso.
+
+Los cinco se revirtieron y `scan.rs` quedó intacto byte a byte. La suite queda
+en **9 de 9**, más un test del adaptador que demuestra que una fila sin hash
+sobrevive al viaje de ida y vuelta a la base de datos: la columna admite la
+ausencia y un NULL se lee como `None`, no como una cadena vacía.
+
+**La UAT efímera.** Un escenario desechable —que se borra después de
+correrlo, porque una UAT permanente es una suite más—muestra lo que se publica
+cuando un fichero no se puede leer:
+
+```
+  ilegible.rs  kind=Unreadable  hash=None  causa=Some("Permission denied (os error 13)")
+  legible.rs   kind=New         hash=Some("536e506b…")  causa=None
+--- lo que queda en el indice ---
+  ilegible.rs  hash=None  fecha=Some(1793095783560)
+--- segunda pasada: se vuelve a mirar ---
+  ilegible.rs  kind=Unreadable  hash=None
+--- lo que publica la extraccion ---
+  ilegible.rs  ok=false  hash=""  error=Some("read error: Permission denied (os error 13)")
+```
+
+Eso es lo que se pedía: el fichero sale, sin hash, con su causa; el índice
+guarda la ausencia; la segunda pasada vuelve a mirarlo; y la extracción
+publica un fallo, no un silencio.
+
+**Lo que no se toca.** `ExtractionResult.content_hash` sigue siendo `String`:
+es un contrato publicado y no tiene ningún lector en este árbol —sólo se
+escribe—, así que el fallo se declara por `error` y el hash vacío significa
+«no hay». Cambiarlo habría arrastrado quince ficheros y un tipo publicado para
+un lector que no existe. El contrato de la fecha medida tampoco se toca: su
+registro de huecos es el de la fecha, y este hueco nunca estuvo declarado ahí.
+Y esta familia sigue siendo una costura dormida: `scan_for_changes` no tiene
+llamante de producción, `ScanResult` no se construye nunca y el DDL de
+`ScanManifest` sólo existe en ayudantes de prueba. Lo que se arregla aquí es
+la semántica del hash, no una ruta viva; lo que la vuelva viva es otra
+unidad, con su propio gate.
+
+**Siguiente WU.** La cola queda con tres candidatos: C23 (50, bloqueada por
+el operador), C44 (15) y C13 (10). C49 sale de la cola al cerrarse.

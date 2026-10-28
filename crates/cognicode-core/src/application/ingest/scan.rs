@@ -3,9 +3,13 @@
 //!
 //! Three-step flow:
 //! 1. Walk: `ignore::WalkBuilder` + `WalkFilter` to find source files
-//! 2. Hash: SHA256 per file (rayon parallel)
-//! 3. Diff: mtime-first (skip hash if mtime unchanged), then content
-//!    hash against the `scan_manifest`
+//! 2. Measure: the date of every file the walk found
+//! 3. Read and diff: the content of the files whose date does not decide,
+//!    compared against the `scan_manifest`
+//!
+//! A file whose content nobody could read is published with the failure
+//! declared. The silence of the scan means "nothing changed", so a file
+//! that could not be read cannot be one of the silent ones.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 
 use std::path::{Path, PathBuf};
@@ -15,7 +19,9 @@ use ignore::WalkBuilder;
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
-use crate::application::ingest::types::{ChangeKind, FileChange, FileType};
+use crate::application::ingest::types::{
+    ChangeDecision, ChangeKind, FileChange, FileType, Freshness,
+};
 use crate::domain::value_objects::Language;
 use crate::domain::value_objects::file_time::measured_millis;
 
@@ -147,6 +153,11 @@ pub fn observed_extensions() -> &'static [&'static str] {
 /// Every file the walk found is scanned. A file whose date cannot be read is
 /// not a file the scan may drop: it comes out with its gap declared — no
 /// date — instead of a number that only looks like one.
+///
+/// The same is true of a file whose content cannot be read: it comes out
+/// with the failure declared, because the silence of the scan means
+/// "nothing changed", and a file nobody read is not a file that did not
+/// change.
 pub fn scan_for_changes(
     root: &Path,
     previous: &std::collections::HashMap<String, ScanEntry>,
@@ -169,68 +180,40 @@ pub fn scan_for_changes(
         })
         .collect();
 
-    // 2. Hash only files that are new or whose date changed.
+    // 2. Decide, file by file, what the scan has to read.
     //
-    // A date nobody measured is not proof of anything: on either side of
-    // the comparison the file is hashed again, because the content hash is
-    // what decides. The tolerance is one millisecond, the same one the
-    // seconds-with-fraction measure allowed before.
-    let to_hash: Vec<(String, Option<i64>, Option<&'static str>)> = current_files
-        .iter()
-        .filter(|(rel, mtime_millis, _)| {
-            match previous.get(rel.as_str()).map(|prev| prev.mtime_millis) {
-                None => true, // new file
-                Some(Some(previous_millis)) => match mtime_millis {
-                    Some(millis) => previous_millis.abs_diff(*millis) > 1,
-                    None => true, // the date is unknown now: look at the content
-                },
-                Some(None) => true, // the date was unknown then: look at the content
-            }
-        })
-        .cloned()
-        .collect();
-
-    let new_hashes: std::collections::HashMap<String, String> = to_hash
-        .iter()
-        .filter_map(|(rel, _, _)| {
-            let abs = root.join(rel);
-            hash_file(&abs).ok().map(|h| (rel.clone(), h))
-        })
-        .collect();
-
-    // 3. Build FileChange list
+    // The date decides when it can. A date nobody measured is not proof of
+    // anything: on either side of the comparison the file is read again,
+    // because the content is what decides. The tolerance is one
+    // millisecond, the same one the seconds-with-fraction measure allowed
+    // before.
     let mut changes: Vec<FileChange> = Vec::new();
     let mut current_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (rel, mtime_millis, lang) in &current_files {
         current_paths.insert(rel.clone());
-        let prev = previous.get(rel.as_str());
+        let indexed = previous.get(rel.as_str());
+        let freshness = freshness_of(indexed.and_then(|entry| entry.mtime_millis), *mtime_millis);
 
-        let (kind, hash) = match prev {
-            None => {
-                // New file — must hash
-                let hash = new_hashes.get(rel).cloned().unwrap_or_default();
-                (ChangeKind::New, Some(hash))
+        let decision = if needs_content(indexed, freshness) {
+            let abs = root.join(rel);
+            match hash_file(&abs) {
+                Ok(hash) => content_decision(indexed, hash),
+                Err(error) => ChangeDecision::Unreadable {
+                    reason: error.to_string(),
+                },
             }
-            Some(prev_entry) => {
-                // Existing file. If we hashed it and the hash differs, it's
-                // Changed. If we didn't hash it (mtime unchanged), the
-                // content is assumed unchanged — skip.
-                match new_hashes.get(rel) {
-                    Some(new_hash) => {
-                        if new_hash != &prev_entry.content_hash {
-                            (ChangeKind::Changed, Some(new_hash.clone()))
-                        } else {
-                            // Unchanged — mtime may have changed but content didn't
-                            continue;
-                        }
-                    }
-                    None => {
-                        // Not hashed (mtime unchanged) — content is unchanged
-                        continue;
-                    }
-                }
+        } else {
+            ChangeDecision::Unchanged
+        };
+
+        let (kind, content_hash, read_error) = match decision {
+            ChangeDecision::New { content_hash } => (ChangeKind::New, Some(content_hash), None),
+            ChangeDecision::Changed { content_hash } => {
+                (ChangeKind::Changed, Some(content_hash), None)
             }
+            ChangeDecision::Unchanged => continue,
+            ChangeDecision::Unreadable { reason } => (ChangeKind::Unreadable, None, Some(reason)),
         };
 
         let (file_type, _) = classify_file(&root.join(rel));
@@ -239,20 +222,22 @@ pub fn scan_for_changes(
         changes.push(FileChange {
             path,
             kind,
-            content_hash: hash,
+            content_hash,
+            read_error,
             mtime_millis: *mtime_millis,
             file_type,
             language: *lang,
         });
     }
 
-    // 4. Detect deleted files
+    // 3. Detect deleted files
     for (rel, prev) in previous {
         if !current_paths.contains(rel) {
             changes.push(FileChange {
                 path: root.join(rel),
                 kind: ChangeKind::Deleted,
                 content_hash: None,
+                read_error: None,
                 mtime_millis: prev.mtime_millis,
                 file_type: FileType::Other, // unknown
                 language: None,
@@ -261,6 +246,50 @@ pub fn scan_for_changes(
     }
 
     changes
+}
+
+/// What the date says about a file, compared with the date the index has.
+fn freshness_of(indexed_millis: Option<i64>, current_millis: Option<i64>) -> Freshness {
+    match (indexed_millis, current_millis) {
+        (Some(indexed), Some(current)) if indexed.abs_diff(current) <= 1 => Freshness::Unchanged,
+        (Some(_), Some(_)) => Freshness::Changed,
+        _ => Freshness::Unknown,
+    }
+}
+
+/// Whether the content of a file has to be read to decide.
+///
+/// The date decides when it is the one the index has. Two things make the
+/// date decide nothing: there is no date on one of the two sides, and the
+/// index has no hash to compare — which happens when the last pass could
+/// not read the file either. A file nobody read is looked at again.
+fn needs_content(indexed: Option<&ScanEntry>, freshness: Freshness) -> bool {
+    match indexed {
+        None => true,
+        Some(entry) => entry.content_hash.is_none() || freshness != Freshness::Unchanged,
+    }
+}
+
+/// What the content of a file says, compared with the content in the index.
+fn content_decision(indexed: Option<&ScanEntry>, hash: String) -> ChangeDecision {
+    match indexed.and_then(|entry| entry.content_hash.as_ref()) {
+        None => ChangeDecision::New { content_hash: hash },
+        Some(previous) if previous != &hash => ChangeDecision::Changed { content_hash: hash },
+        Some(_) => ChangeDecision::Unchanged,
+    }
+}
+
+impl FileChange {
+    /// The index entry this change leaves behind.
+    ///
+    /// A file nobody could read leaves an entry without a hash: the next
+    /// pass has to look at it again, because nobody knows what it says.
+    pub fn scan_entry(&self) -> ScanEntry {
+        ScanEntry {
+            content_hash: self.content_hash.clone(),
+            mtime_millis: self.mtime_millis,
+        }
+    }
 }
 
 /// Compute relative path from base to path.
@@ -273,7 +302,12 @@ fn relative_to(base: &Path, path: &Path) -> String {
 /// Lightweight manifest entry for diff comparisons (not the full row).
 #[derive(Debug, Clone)]
 pub struct ScanEntry {
-    pub content_hash: String,
+    /// SHA256 content hash (hex), when the content could be read.
+    ///
+    /// `None` when it could not: an entry without a hash says that nobody
+    /// read the content, instead of carrying a hash that says otherwise.
+    /// A file with no hash is looked at again in the next pass.
+    pub content_hash: Option<String>,
     /// Last modification time in milliseconds since the epoch, signed.
     ///
     /// `None` when the filesystem did not report a time. A file whose clock
@@ -435,7 +469,7 @@ mod tests {
                 Some((
                     rel,
                     ScanEntry {
-                        content_hash: hash,
+                        content_hash: Some(hash),
                         mtime_millis,
                     },
                 ))
@@ -460,7 +494,7 @@ mod tests {
         previous.insert(
             "main.rs".to_string(),
             ScanEntry {
-                content_hash: hash1.clone(),
+                content_hash: Some(hash1.clone()),
                 mtime_millis: Some(1_000),
             },
         );
@@ -486,7 +520,7 @@ mod tests {
         previous.insert(
             "existing.rs".to_string(),
             ScanEntry {
-                content_hash: hash,
+                content_hash: Some(hash),
                 mtime_millis: Some(1_000),
             },
         );

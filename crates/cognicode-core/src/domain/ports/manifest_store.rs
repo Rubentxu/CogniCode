@@ -23,7 +23,13 @@ pub struct ScanManifest {
     pub file_path: String,
     pub file_type: String,
     pub language: Option<String>,
-    pub content_hash: String,
+    /// SHA256 content hash (hex), when the content could be read.
+    ///
+    /// `None` when it could not: the column admits the absence, so a row
+    /// says that nobody read the content instead of carrying a hash that
+    /// says otherwise. A row with no hash is looked at again in the next
+    /// pass.
+    pub content_hash: Option<String>,
     /// Last modification time in milliseconds since the epoch, signed.
     ///
     /// `None` when the filesystem did not report a time. The column admits
