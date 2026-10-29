@@ -29280,3 +29280,103 @@ baja.
   El contrato acota **por API** —`test.skip` ≤ 16 y `test.fixme` ≤ 1—, así
   que ninguna categoría crece y ninguna toma prestada de la otra. La
   cifra que se publique es la que el árbol contiene, y está medida.
+
+## 2026-10-29 — El ciclo de M2.T02 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `e6728def`: **58 etapas**, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request `#488`.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate —`.pipelinek/merge-gate.db`—, con su identificador de corrida
+`069825db-6f92-4dd3-b899-ae3798dadc75` y su `correlationId`
+`fb100d95-7309-48c8-b690-500b28195513`. El gate corrió con su propio directorio
+de compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#488` se fusionó por squash como `9f8b2181`.
+El `merge-gate` es la autoridad y estaba verde sobre `e6728def`, que es
+exactamente la cabeza que GitHub iba a proteger y la misma sobre la que corrió
+la batería completa: el squash cambia el SHA, no el árbol.
+
+**Lo que queda en el árbol, después del cierre.** Cada caso desactivado de la
+suite E2E de Explorer dice su motivo y nombra a su dueño. La marca es de forma
+fija —`[DEBT: <razón> — owner: <id>]`— porque un motivo sin dueño es
+exactamente la deuda que este corte cierra: no pueden escribirse por
+separado. El registro publicado es `apps/explorer-ui/e2e/DEBT.md`, y dice qué
+toma cada dueño: `TASK-9` carga once casos (los mocks de MSW no exponen lo que
+el caso necesita), `TASK-10` cuatro (la aplicación no expone una señal
+observable del cambio), `TASK-11` uno (el modal construido con `div` no atrapa
+el foco) y `TASK-12` uno (el layout de 320 px desborda). Las tareas
+propietarias viven en la bandeja local, fuera de Git por la política de
+documentos privados: el árbol versiona la publicación, la bandeja conserva la
+decisión.
+
+El contrato es
+`scripts/ci/test_explorer_e2e_disabled_cases_have_owners.py`, y no se limita a
+contar: comprueba que cada desactivación lleva marca, que todo dueño citado
+está publicado, que todo dueño publicado está citado, que el recuento del
+registro coincide con el del árbol, y dos cosas más que la auditoría no miró
+—que **ninguna desactivación se esconda detrás de un alias** y que **ningún
+helper que desactiva sea consumido** por una spec.
+
+**Lo que este corte NO cubre.** Cuatro cosas quedan fuera, y las cuatro están
+medidas:
+
+- **Los goldens obsoletos, que no son de este corte.** Los 35 fallos de la
+  suite son **todos** `toHaveScreenshot` —cero bloques de fallo sin golden—,
+  y son los mismos antes y después: 35 fallidos, 20 ignorados y 151 pasados en
+  las dos corridas, con el wall bajando de 136 s a 124 s. La suite no puede
+  quedar verde en este entorno, y la razón es ajena a la unidad. Regenerar los
+  goldens es trabajo con dueño propio.
+- **La suite de navegador no está en el `merge-gate`.** Ningún `.kts` del
+  repositorio menciona `explorer-ui`, `playwright` ni `PW_VISUAL`: la
+  evidencia de esta unidad es la medición local, no el veredicto del gate. El
+  contrato nuevo sí entra en el `merge-gate`, porque `run-all-contracts.sh` lo
+  descubre por glob; lo que el gate vigila es que **no vuelva** una
+  desactivación sin dueño, no que las specs sigan verdes.
+- **El recuento de dieciséis era una cota inferior, y ahora hay diecisiete.**
+  El hallazgo se enrutó como «16 casos en 13 ficheros», y esa cifra contaba
+  llamadas a `test.skip`. Al medir el árbol por dentro apareció un
+  `test.fixme` condicional en `responsive-full.spec.ts` que desactiva el
+  viewport de 320 px —y que **ya existía** antes de este corte, escondido
+  detrás de un alias (`const testFn = isKnownBroken ? test.fixme : test;`),
+  de modo que ni un contador de llamadas ni una búsqueda de texto lo veían, y
+  cuyo motivo vivía sólo en un comentario. La línea base real eran **17 en
+  14 ficheros**. El contrato lo encontró solo, y su hallazgo forzó el
+  restructure de ese spec: dos ramas explícitas, `test.fixme` para el viewport
+  roto y `test` para los demás, sin el `return` muerto que el `test.fixme`
+  llevaba dentro —un `test.fixme` nunca ejecuta su cuerpo, así que ese
+  `return` no justificaba nada—. El número de casos desactivados **no
+  crece**: 16 `test.skip` y 1 `test.fixme` antes, 16 y 1 después. El contrato
+  acota por API, para que ninguna categoría crezca tomando prestada de la
+  otra.
+- **El helper que apagaba casos sin dueño sigue apagando, sin que nadie lo
+  llame.** `e2e/utils/feature-flags.ts` contiene `skipIfDebt()`, que
+  desactiva con un motivo sin dueño. Hoy no tiene **ningún** consumidor: un
+  apagador que nadie llama no apaga nada. El contrato no lo tollera si
+  alguien lo conecta sin que su desactivación se posea donde está escrita.
+
+**La tarea en la bandeja.** `TASK-7` (`M2.T02`) queda cerrada en la bandeja
+local de Backlog.md con el SHA `9f8b2181`, que es el de la implementación en
+`main`: **los cuatro** criterios de aceptación tienen evidencia real —el RED
+medido contra el código anterior (el contrato nuevo en rojo con los 18
+hallazgos enumerados: dieciséis marcas ausentes, el registro inexistente y el
+alias), la possessing de cada dueño con su tarea y su registro publicado, el
+verde de `fast` y `full`, el `merge-gate` con 58 etapas en verde, y este
+recibo, que cita el SHA—. El cuarto criterio —que el número de casos
+desactivados no crezca respecto a los 16 medidos— se cumple con la
+aclaración escrita en la tarjeta: la línea base real eran 17, y este corte no
+añadió ni quitó ningún caso desactivado; les dio motivo y dueño. Un
+contrato que discrimina no se prueba con un verde: se prueba con cuatro
+perturbaciones que lo ponen en rojo —quitar el dueño de un caso publicado,
+añadir una desactivación sin marca, volver a esconder una desactivación tras
+un alias, y publicar un dueño que nadie cita— y al revertirlas vuelve a
+`rc=0`.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador) y `C13`
+(10, sin bloqueo): esta unidad no es candidata de esa cola, así que no sale de
+ella. En la agenda privada, `M1.T01` (`TASK-5`) y `M1.T02` (`TASK-4`) siguen
+bloqueadas —la primera por una decisión de alcance del operador, la segunda
+por `C23`—. La siguiente unidad sin bloqueo es **`M2.T03`** (`C13`): las
+relaciones Kotlin↔Java sólo cuando se pueden probar, con un corpus de
+homónimos y sin ninguna arista bornada por coincidencia de nombre.

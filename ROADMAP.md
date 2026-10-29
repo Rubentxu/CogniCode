@@ -58,7 +58,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 | La PR #464 sube la deuda CR-06 de producción de 28 a 35 pares | **`TASK-4`** — puerta medible de `C23` |
 | Dos propietarios potenciales del estado del grafo | **`TASK-5`** |
 | Esperas fijas en la suite E2E de Explorer (59 en 24 ficheros) | **`TASK-6`**, cerrada el 2026-10-29 (`14a67d7f`) |
-| Casos desactivados en la suite E2E de Explorer (16 en 13 ficheros) | **`TASK-7`** |
+| Casos desactivados en la suite E2E de Explorer (17 en 14 ficheros; la auditoría contó 16 en 13) | **`TASK-7`**, cerrada el 2026-10-29 (`9f8b2181`) |
 | Catálogo público desactualizado | **`C44`**, cerrada el 2026-10-29 (`cf8ad557`) |
 | Acoplamiento aplicación↔infraestructura, `views.rs` (9 669 líneas), `AnalysisService` (4 517) | `C23` |
 | TOCTOU entre verificar y publicar (`file_operations.rs:1281-1287`) | declarado, sin unidad: pide una decisión de alcance |
@@ -85,25 +85,36 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M2.T01 está cerrado en el remoto.** El pull request `#486` —la
-publicación de la rama `fix/m2-t01-explorer-e2e-waits-on-a-signal`— se fusionó
-por squash como `14a67d7f`, con el `merge-gate` verde sobre `ff564779`:
+**El ciclo de M2.T02 está cerrado en el remoto.** El pull request `#488` —la
+publicación de la rama `fix/m2-t02-explorer-e2e-disabled-cases`— se fusionó
+por squash como `9f8b2181`, con el `merge-gate` verde sobre `e6728def`:
 `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La suite E2E de Explorer ya no
-espera con reloj: la aplicación publica una señal observable de que el atajo
-global está registrado —un atributo en `<html>` que aparece exactamente
-mientras el listener está vivo— y las specs esperan esa condición con
-`expect(...)`. Las **59** llamadas a `page.waitForTimeout` han desaparecido de
-`apps/explorer-ui/e2e/`, y un contrato nuevo pone en rojo cualquier reloj fijo
-que vuelva. La duración medida de la suite **baja** (156 s → 124 s sin
-`PW_VISUAL`; 157 s → 129 s con) y el conjunto de fallos es idéntico antes y
-después.
+tiene casos desactivados sin dueño: cada desactivación dice su motivo y
+nombra la tarea que lo toma —`TASK-9` a `TASK-12`—, el registro publicado
+(`apps/explorer-ui/e2e/DEBT.md`) dice qué carga cada dueño, y un contrato
+nuevo pone en rojo la desactivación que se esconde detrás de un alias o
+detrás de un dueño que nadie publica. El número de casos desactivados **no
+crece**: 17 antes y 17 después.
 
 **Lo que este cierre no arregla, y por eso lo nombra.** Los goldens de la
 suite de Explorer están obsoletos respecto a la UI actual: los 35 fallos sin
 `PW_VISUAL` y los 40 con son todos `toHaveScreenshot`, y son los mismos
 antes y después del corte. La suite no puede quedar verde en este entorno, y
 esa mitad del cuarto criterio de aceptación no se cumple aquí. Regenerar los
-goldens es trabajo con dueño propio, y no es de esta unidad.
+goldens es trabajo con dueño propio, y no es de esta unidad. Y la suite de
+navegador no está en el `merge-gate`: lo que el gate vigila es que no vuelva
+una desactivación sin dueño, no que las specs sigan verdes.
+
+**El recuento que la auditoría no vio.** El hallazgo se enrutó como «16 casos
+en 13 ficheros», y esa cifra era una cota inferior, no un inventario: contaba
+llamadas a `test.skip`, y hay un `test.fixme` condicional en
+`responsive-full.spec.ts` que desactiva el viewport de 320 px. Ese caso
+**ya existía** antes de este corte, escondido detrás de un alias
+(`const testFn = isKnownBroken ? test.fixme : test;`), de modo que ni un
+contador de llamadas ni una búsqueda de texto lo veían, y su motivo vivía
+sólo en un comentario. La línea base real eran **17 en 14 ficheros**, y el
+contrato la acota por API —`test.skip` ≤ 16 y `test.fixme` ≤ 1—, para que
+ninguna categoría crezca y ninguna tome prestada de la otra.
 
 La puerta que queda abierta es la de la cola:
 
@@ -114,7 +125,8 @@ La puerta que queda abierta es la de la cola:
   corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
   Prioridad 10, sin bloqueo.
 
-Y, con `M2.T01` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
+Y, con `M2.T02` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
 una decisión de alcance del operador, `TASK-4` por `C23`—, la siguiente
-unidad sin bloqueo es **`M2.T02`** (`TASK-7`): la suite E2E de Explorer tiene
-dieciséis casos desactivados y ninguno nombra un dueño.
+unidad sin bloqueo es **`M2.T03`** (`C13`): las relaciones Kotlin↔Java sólo
+cuando se pueden probar, con un corpus de homónimos y sin ninguna arista
+bornada por coincidencia de nombre.
