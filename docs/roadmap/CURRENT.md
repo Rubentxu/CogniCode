@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `cf8ad557c34fc15aaab72646bfe579eb5dd1b083` (la
+> **Snapshot**: 2026-10-29, sobre `3312a7bffa7f1b40ee7fcf4fd30e72833950e543` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -17,7 +17,9 @@
 > realmente tiene; y el catálogo publicado dice de su runtime la versión que
 > ese runtime reporta: el `runtime_metadata` del maestro es el espejo de lo
 > que el runtime publica, y las claves que el runtime no publica siguen
-> curadas a mano).
+> curadas a mano; y la suite E2E de Explorer ya no duerme: la aplicación
+> publica una señal observable de que el atajo global está registrado, y las
+> specs esperan esa condición en vez de un reloj fijo).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >

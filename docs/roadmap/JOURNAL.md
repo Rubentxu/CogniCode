@@ -28911,3 +28911,169 @@ siguen bloqueadas —la primera por una decisión de alcance del operador, la
 segunda por `C23`—, así que el bloque `M1` no tiene más unidades ejecutables y
 la siguiente unidad sin bloqueo es **`M2.T01`** (`TASK-6`): la suite E2E de
 Explorer espera con reloj donde la aplicación no expone señal.
+
+## 2026-10-29 — La suite E2E de Explorer espera la señal que la aplicación publica
+
+**El defecto, medido** sobre `main@3312a7bf`: **59 llamadas a
+`page.waitForTimeout` en 24 ficheros de spec** bajo `apps/explorer-ui/e2e/`.
+Cero llamadas hoy en el mismo árbol.
+
+La causa dominante era una sola, y estaba escrita en los propios comentarios: el
+atajo global que abre el Spotter lo registra un componente que se monta después
+de la hidratación, y no había nada en el DOM que lo delatara. Como Playwright no
+puede esperarlo, las specs dormían 1 500 ms y luego pulsaban la tecla:
+
+    // Wait for the keyboard listener to mount
+    await page.waitForTimeout(1500);
+    await page.keyboard.press("Meta+k");
+
+El defecto no estaba en el temporizador: estaba en el hueco de señal que el
+temporizador tapaba. La aplicación no exponía cuándo estaba lista para recibir
+el atajo, así que 59 esperas fijas compraban una garantía que nadie había
+medido —y que dependía de la máquina, no de la aplicación—.
+
+Había un segundo hueco, del mismo género, que la auditoría no vio porque no
+miraba esa forma: `ViewTabs.tsx` devuelve `null` cuando no hay vistas que
+enseñar, y cada pane abierto trae su propia fila de pestañas, así que un
+sondeo `getByTestId("view-tabs")` sin acotar encuentra **varios** elementos. Una
+espera que se salta ese hueco no falla: **toma la otra rama**, y la spec sigue
+verde por un motivo que no era el que decía.
+
+**La corrección.** La regla del atajo tiene un dueño, y ese dueño publica la
+señal: `apps/explorer-ui/src/components/Spotter/globalShortcut.ts`. Son dos
+piezas con dos herramientas distintas, porque la regla y el efecto no son lo
+mismo. `decideShortcut(input)` es la **decisión**: qué significa una pulsación
+—`toggle`, `open` o `none`—, y es una función pura: la misma entrada devuelve
+siempre la misma salida y no toca nada. `installGlobalShortcut(options)` es el
+**efecto en el borde**: registra el listener en `window` y publica la señal.
+
+La señal es un atributo en `<html>`: `data-cognicode-global-shortcut="ready"`.
+Está presente **exactamente** mientras el listener está registrado —se publica
+al registrar y se retira cuando el último listener se va—, porque un atributo
+que puede anticipar o sobrevivir a su listener es una mentira, y toda espera
+E2E construida encima hereda la mentira. La invariante la vigilan once tests
+unitarios (`globalShortcut.test.ts`), que comprueban los dos lados: se publica
+mientras el listener está, se retira cuando deja de estar, y el atajo deja de
+responder cuando deja de estar.
+
+Las specs ya no esperan con reloj: esperan con `expect(...)`. El helper
+`e2e/utils/globalShortcut.ts` espera el atributo con `toHaveAttribute` e
+**importa las constantes del módulo de la aplicación** en vez de repetirlas —
+una regla que vive en dos sitios es una regla que se puede separar—. Las 59
+esperas fijas se sustituyeron por la condición que cada una tapaba: un
+atributo, un conteo (`toHaveCount(panesBefore + 1)`) o la visibilidad de un
+elemento. El segundo hueco tiene su helper (`e2e/utils/viewTabs.ts`), que
+espera a que las pestañas estén renderizadas y acota al primer pane.
+
+Y el rojo se ve caer porque hay un contrato que lo vigila:
+`scripts/ci/test_explorer_e2e_waits_on_conditions.py` recorre todos los `.ts`
+de `apps/explorer-ui/e2e/` y pone en rojo cualquier `waitForTimeout`. Además
+comprueba que el árbol **tiene** specs (un contrato que no encuentra nada que
+medir es un contrato que no mide nada), que el módulo dueño existe, y que el
+runner de contratos sigue descubriendo por glob —para que el contrato nuevo no
+se quede fuera del `merge-gate` por el camino—.
+
+**El RED, medido.** El contrato nuevo contra el árbol anterior: **rc=1**, con
+las 59 llamadas enumeradas. Y se comprobó que discrimina: al inyectar un
+`waitForTimeout` de vuelta en `e2e/smoke.spec.ts`, el contrato vuelve a ponerse
+rojo —un contrato que no puede fallar no mide nada—.
+
+El otro RED es una spec, y se ve caer sola:
+`e2e/spotter.spec.ts › the wait fails when the signal arrives later than the
+deadline` retrasa el arranque de la aplicación tres segundos y afirma tres
+cosas: que la espera con un plazo de un segundo **falla** —porque la señal no
+está, no porque un reloj se agotó—, que el atributo está ausente de verdad, y
+que la misma página satisface la misma espera cuando el plazo la deja llegar.
+
+**El GREEN, medido.**
+
+- La suite unitaria del módulo y la del componente: **32 de 32** (`vitest run
+  src/components/Spotter/globalShortcut.test.ts src/components/Spotter.test.tsx`).
+- El contrato nuevo, aislado: **4 de 4**.
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 cayó al subconjunto
+  conservador (`strategy=fallback`, motivo
+  `unknown_path(apps/explorer-ui/e2e/visual-regression.spec.ts)`), con 3200
+  pasados y 2 ignorados en `cognicode-core/lib`, 956, 161, 0, 80, 15, 13 y 6 en
+  las demás, y clippy con `-D warnings` limpio. Ese subconjunto no incluye los
+  contratos ni la suite de navegador, así que `full` no es opcional en esta
+  unidad.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con 6477 pasados, 0 fallidos y
+  22 ignorados, doc-tests con 8 pasados y 12 ignorados, explorer multimodal con
+  4 pasados, contratos con 447 verdes repartidos en 62 ficheros, y
+  `known_failures` sin diferencias: la base no declara ninguna.
+
+**La duración medida, que es lo que pedía el cuarto criterio.** El protocolo es
+uno solo para las cuatro corridas: el dev server arranca **fuera** de
+Playwright (el V8 de Node 25 aborta con `Lazy deopt after a fast API call with
+return value is unsupported` al servir tráfico desde dentro del proceso de
+Playwright, y ese crash es del runtime, no del código bajo prueba), con
+`VITE_USE_MOCKS=true` y `node --no-lazy`; el cronómetro mide el wall de
+`npx playwright test` con el servidor ya caliente.
+
+| corrida | `PW_VISUAL` | fallidos | ignorados | pasados | wall |
+|---|---|---|---|---|---|
+| antes (`3312a7bf`) | `true` | 40 | 20 | 144 | 157 s |
+| después (`9fccd8ff`) | `true` | 39 | 20 | 147 | **129 s** |
+| antes (`3312a7bf`) | sin | 35 | 20 | 149 | 156 s |
+| después (`9fccd8ff`) | sin | 35 | 20 | 151 | **124 s** |
+
+Sin `PW_VISUAL`, el conjunto de fallos es **idéntico** antes y después —los
+mismos 35 tests, comparados sin contar líneas—: ninguna regresión, ninguna
+resolución, ningún cambio en los ignorados, y dos pasados más (las dos specs
+nuevas). Con `PW_VISUAL`, el único cambio es que `scan-progress` deja de
+fallar por su golden y pasa. La duración medida **baja** en las dos variantes,
+que es lo que el criterio pedía.
+
+**Lo que este corte NO cubre.**
+
+- **La suite de Explorer no puede estar verde en este entorno, y no es de este
+  corte.** Los goldens del repositorio están obsoletos respecto a la UI
+  actual: los 35 fallos sin `PW_VISUAL` y los 40 con son **todos**
+  `toHaveScreenshot` —cero bloques de fallo sin golden—, y son los mismos
+  antes y después. La mitad del cuarto criterio —que la suite «siga verde»—
+  no se puede satisfacer aquí, y la razón es ajena a la unidad. La otra mitad
+  —que la duración medida no aumente— está medida, y baja.
+- **Un fallo que se movió.** En una corrida sin `PW_VISUAL`, `lens-panel` falló
+  donde antes pasaba. Aislado, ese spec **falla igual en el árbol anterior y en
+  el de este corte**, y no por su golden sino en
+  `expect(lens-sidebar-toggle).toBeVisible()`: el toggle del sidebar de lente
+  no renderiza. Es un defecto preexistente, y el veredicto que cambia dentro de
+  la suite completa depende del estado compartido del mock y del orden de los
+  workers, que este corte cambia al cambiar la duración de las esperas. La
+  segunda corrida del mismo árbol lo pone verde otra vez. Se declara, no se
+  maquilla.
+- **La suite de navegador no está en el `merge-gate`.** Ningún `.kts` del
+  repositorio menciona `explorer-ui`, `playwright` ni `PW_VISUAL`: la
+  evidencia de esta unidad es la medición local, no el veredicto del gate. El
+  contrato nuevo sí entra en el `merge-gate`, porque `run-all-contracts.sh` lo
+  descubre por glob; lo que el gate vigila es que **no vuelva** un reloj fijo, no
+  que las 200 specs sigan verdes.
+- **El reloj no desaparece de la suite: lo que desaparece es la espera.** Las
+  aserciones siguen llevando plazo (`toBeVisible({ timeout })`), y un plazo
+  dentro de una aserción es un presupuesto de fallo —cuánto se espera antes de
+  declarar que la condición no llegó—, no una espera ciega. La diferencia es
+  que la espera ciega no mira nada y la aserción con plazo mira la condición y
+  además dice qué condición.
+- **Un hueco que este corte no cubre: el resto de la superficie de Explorer.**
+  La señal nueva es del atajo global. Las pestañas de vista tienen su propio
+  helper porque su hueco era otro (el `null` y la duplicación por pane); los
+  componentes que todavía esperan con reloj fuera de `apps/explorer-ui/e2e/` no
+  se han medido.
+
+**Lo que deja el árbol.** 32 ficheros: el módulo de la regla y su test
+unitario (`src/components/Spotter/globalShortcut.ts`,
+`globalShortcut.test.ts`), el componente que lo usa
+(`src/components/Spotter.tsx`), los dos helpers de espera
+(`e2e/utils/globalShortcut.ts`, `e2e/utils/viewTabs.ts`), las 24 specs que
+esperaban con reloj, el contrato que lo vigila
+(`scripts/ci/test_explorer_e2e_waits_on_conditions.py`), y el contador del
+contrato de superficies, que sube de 83 a 84 porque hay un contrato más.
+
+**Siguiente WU.** La cola viva del proyecto (`goal-compass.json`) queda con
+`C23` (50, bloqueada por el operador) y `C13` (10, sin bloqueo): esta unidad no
+es candidata de esa cola, así que no sale de ella. En la agenda privada, `M1.T01`
+(`TASK-5`) y `M1.T02` (`TASK-4`) siguen bloqueadas —la primera por una decisión
+de alcance del operador, la segunda por `C23`—, y `M2.T03` es `C13`. La
+siguiente unidad sin bloqueo es **`M2.T02`** (`TASK-7`): la suite E2E de
+Explorer tiene dieciséis casos desactivados y ninguno nombra un dueño.
