@@ -29945,3 +29945,50 @@ ciclo NO toma por su cuenta, son:
    escrituras), y si la segunda dueña del estado del fichero —la caché de
    incrementalidad, `infrastructure/graph/file_manifest.rs`— entra en el mismo
    alcance o se declara aparte.
+
+## 2026-10-29 — Corrección del recibo de cierre de TASK-14: el recuento de ficheros
+
+**Qué se corrige.** El recibo «El ciclo de TASK-14 queda cerrado en el remoto»
+(arriba, fusionado como `047eb074`) cuenta los ficheros de código y de
+producto del squash `00169311` como «once ficheros de código y de producto
+(nueve modificados y dos nuevos)». **El número medido es otro**, y el error es
+mío, del recibo, no del árbol: `git diff --name-status 1fb68772 00169311`
+devuelve **once ficheros de código y de producto: DIEZ modificados y UNO
+nuevo**.
+
+**La medición, entera.** `git diff --name-status 1fb68772 00169311`:
+
+- Código y producto (11): `A` `crates/cognicode-core/src/domain/value_objects/call_site.rs`;
+  `M` `application/ingest/types.rs`, `application/services/analysis_service.rs`,
+  `domain/value_objects/mod.rs`, `domain/value_objects/pending_reference.rs`,
+  `domain/value_objects/target_resolution.rs`, `infrastructure/graph/pending.rs`,
+  `infrastructure/graph/per_file_graph.rs`, `infrastructure/graph/reuse.rs`,
+  `infrastructure/graph/semantic_layer.rs`,
+  `infrastructure/parser/tree_sitter_parser.rs`.
+- Test (10, todos modificados): `c13_kotlin_java_relation_contract.rs`,
+  `cu1_w2_service_analyzer_contract.rs`, `graph_walk_stays_inside_the_root.rs`,
+  `h13_analysis_service_propagation.rs`, `h14_system_holds_end_to_end.rs`,
+  `h16_walk_classification_coherence.rs`,
+  `m0_t03_graph_publishes_unconfirmed_edges.rs`,
+  `the_broken_file_is_not_published.rs`,
+  `the_filtered_route_says_what_it_covered.rs`, `walk_errors_are_errors.rs`.
+- Documentación (2): `docs/roadmap/CURRENT.md`, `docs/roadmap/JOURNAL.md`.
+
+Veintitrés ficheros en total. El único fichero NUEVO es `CallSite`; el resto
+de la forma del dominio —`PendingReference`, `TargetResolution`, la regla del
+resolvedor— ya existía y lo que cambió fue su contenido.
+
+**Lo que del recibo sí queda en pie, medido otra vez.** El contrato de Kotlin
+creció de **nueve** tests a **doce**: en `1fb68772` el fichero declara nueve
+funciones `fn ...()` de test y seis ayudantes; en `00169311` declara doce tests
+y ocho ayudantes. Las tres añadidas son las que miden la negativa publicada.
+Y el RED sigue siendo el medido: con el resolvedor mutado para elegir un
+candidato arbitrario, nueve tests pasaban y tres fallaban; restaurado byte a
+byte, doce pasan y ninguno falla.
+
+**Por qué no se reescribe el recibo anterior.** Un Journal que se reescribe a
+sí mismo pierde la capacidad de decir cuándo se estableció por primera vez.
+La entrada anterior queda como se escribió; esta la corrige y dice cuál es el
+número. La regla que se sostiene con este apunte es la del propio contrato de
+atribución de autoridad: una cita que no se puede resolver no es una cita, y
+un recuento que no sale de un `git diff` medido tampoco.
