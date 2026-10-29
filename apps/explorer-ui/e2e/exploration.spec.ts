@@ -43,7 +43,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     // Click back to Graph
     await graphBtn.click();
     await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
-    // The C4 overlay controls belong to the C4 perspective — their
+    // The overlay controls belong to the context perspective; their
     // disappearance is the fact that the graph perspective took over.
     await expect(page.getByTestId("c4-overlay-toggles")).toBeHidden({
       timeout: 10_000,
@@ -176,7 +176,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     // Switch back to Graph
     await page.getByTestId("perspective-toggle").getByTestId("perspective-graph").click();
     await expect(page.getByTestId("perspective-toggle").getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "true");
-    // The C4 overlay controls belong to the C4 perspective — their
+    // The overlay controls belong to the context perspective; their
     // disappearance is the fact that the graph perspective took over.
     await expect(page.getByTestId("c4-overlay-toggles")).toBeHidden({
       timeout: 10_000,
