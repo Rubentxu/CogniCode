@@ -35,6 +35,7 @@
 //! dejarla sin ninguno.
 
 use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
+use cognicode_core::domain::value_objects::PendingClass;
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, FileDisposition};
 
 fn tempdir(suffix: &str) -> std::path::PathBuf {
@@ -97,22 +98,55 @@ fn corpus_with_unreadable_kotlin(dir: &std::path::Path) {
 }
 
 #[test]
-fn build_graph_per_file_with_report_is_complete_on_a_corpus_the_product_can_read() {
+fn build_graph_per_file_with_report_says_what_it_could_not_tie_on_a_readable_corpus() {
     // El `.kt` ya no es un hueco: se lee. Un corpus que el producto
-    // sabe leer entero es `Complete`, y decir otra cosa sería
-    // publicar una cobertura peor que la real.
+    // sabe leer entero no tiene ficheros omitidos, y el estado lo dice
+    // con `skipped` vacío.
+    //
+    // Y leerlo entero NO es lo mismo que atar todo: `main.rs` llama a
+    // `helper`, que el proyecto declara DOS veces —en `alpha.rs` y en
+    // `beta.rs`—, así que esas dos llamadas no se pueden atar a una
+    // sola declaración. Antes el build decía `Complete` y la pérdida
+    // se contaba sin decir cuál era; ahora la pérdida se publica con
+    // su identidad y su motivo, y el build dice `Partial` POR ELLA.
     let tmp = tempdir("per-file-with-report");
     rust_with_kt_and_readme(&tmp);
     let svc = AnalysisService::new();
     let report = svc
         .build_graph_per_file_with_report(&tmp)
         .expect("build_graph_per_file_with_report succeeds");
-    assert_eq!(
-        report.status,
-        BuildStatus::Complete,
-        "el corpus entero se lee —Rust, Kotlin y el README excluido a \
-         propósito—, así que el estado es Complete"
-    );
+
+    match &report.status {
+        BuildStatus::Complete => panic!(
+            "el corpus tiene dos llamadas a `helper` que el proyecto declara dos \
+             veces: no se pueden atar, y un build que las pierde tiene que decirlo"
+        ),
+        BuildStatus::Partial {
+            skipped, pending, ..
+        } => {
+            assert!(
+                skipped.is_empty(),
+                "el corpus entero se lee —Rust, Kotlin y el README excluido a \
+                 propósito—, así que no hay ficheros omitidos: {skipped:?}"
+            );
+            assert_eq!(
+                pending.len(),
+                2,
+                "las dos llamadas a `helper` tienen que publicarse como pérdida: {pending:?}"
+            );
+            for reference in pending {
+                assert_eq!(
+                    reference.target, "helper",
+                    "la pérdida es la llamada ambigua, y su nombre dice cuál es"
+                );
+                assert_eq!(
+                    reference.class,
+                    PendingClass::Ambiguous { candidates: 2 },
+                    "la pérdida dice su motivo: el nombre lo declara el proyecto dos veces"
+                );
+            }
+        }
+    }
 }
 
 #[test]

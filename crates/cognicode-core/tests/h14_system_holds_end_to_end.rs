@@ -28,9 +28,17 @@
 //! The cross-cutting claim: the route that walks the whole project
 //! and the route that folds it file by file are CONSISTENT on the
 //! same corpus — they both stay Complete-or-Partial on the same set
-//! of files, they both name the same source they could not read, the
-//! .env is invisible to both, and find_symbol_usages prunes
-//! everything the WalkFilter prunes.
+//! of files, they both name the same source they could not read, they
+//! both publish the same references they could not tie, the .env is
+//! invisible to both, and find_symbol_usages prunes everything the
+//! WalkFilter prunes.
+//!
+//! `Complete` means more than it used to mean. It is no longer only
+//! «every file was read»: it is «every file was read AND every
+//! reference was tied to a declaration». A build that could not tie a
+//! call is `Partial`, and it publishes that call with its motive — so
+//! the two routes have to agree on the loss too, not only on the
+//! files.
 //!
 //! MEDIDO. El sujeto del gap era Kotlin y ya no lo
 //! es. Para que la garantía no se quede sin sujeto, el corpus
@@ -39,6 +47,7 @@
 //! contarla igual.
 
 use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
+use cognicode_core::domain::value_objects::{PendingClass, PendingReference};
 use cognicode_core::infrastructure::graph::per_file_graph::{
     BuildStatus, FileDisposition, SkipReason, SkippedFile,
 };
@@ -190,17 +199,44 @@ fn the_two_live_routes_agree_that_a_kotlin_source_is_analysed() {
         .build_graph_per_file_with_report(&tmp)
         .expect("the per-file route builds");
 
-    assert_eq!(
-        whole_report.status,
-        BuildStatus::Complete,
-        "the whole route must read the whole corpus, Kotlin included"
-    );
-    assert_eq!(
-        service_report.status,
-        BuildStatus::Complete,
-        "the per-file route must read the whole corpus, Kotlin included"
-    );
+    // `Complete` ya no significa sólo «se leyó todo»: significa que se
+    // leyó todo Y que cada referencia quedó atada a una declaración.
+    // Este corpus llama a `helper`, que el proyecto declara dos veces,
+    // así que esas dos llamadas no se pueden atar: el build es
+    // `Partial` POR ELLAS, no por un fichero sin leer.
+    for (label, report) in [("whole route", &whole_report), ("service", &service_report)] {
+        assert!(
+            skipped_of(&report.status).is_empty(),
+            "{label}: el corpus entero se lee —Rust, Kotlin y el README \
+             excluido a propósito—, así que no hay ficheros omitidos: {:?}",
+            skipped_of(&report.status)
+        );
+        let pending = pending_of(&report.status);
+        assert_eq!(
+            pending.len(),
+            2,
+            "{label}: las dos llamadas a `helper` tienen que publicarse como pérdida: {pending:?}"
+        );
+        for reference in &pending {
+            assert_eq!(
+                reference.target, "helper",
+                "{label}: la pérdida es la llamada ambigua, y su nombre dice cuál es"
+            );
+            assert_eq!(
+                reference.class,
+                PendingClass::Ambiguous { candidates: 2 },
+                "{label}: la pérdida dice su motivo: el nombre lo declara el proyecto dos veces"
+            );
+        }
+    }
 
+    // Las dos rutas pierden lo MISMO. Si una publicara una pérdida y la
+    // otra otra, el producto tendría dos grafos y dos coberturas.
+    assert_eq!(
+        pending_of(&whole_report.status),
+        pending_of(&service_report.status),
+        "las dos rutas tienen que publicar la misma pérdida"
+    );
     // Neither side hangs the Kotlin source, and neither surfaces the
     // assets that are out of scope by policy.
     for (label, skipped) in [
@@ -230,8 +266,7 @@ fn the_two_live_routes_agree_that_a_kotlin_source_is_analysed() {
         .get_last_build_report()
         .expect("get_last_build_report after build_graph_per_file_with_report");
     assert_eq!(
-        accessor_report.status,
-        BuildStatus::Complete,
+        accessor_report.status, service_report.status,
         "the accessor must return the report of THIS build, not a stale one"
     );
 }
@@ -298,10 +333,26 @@ fn the_two_live_routes_agree_on_what_they_could_not_read() {
 }
 
 /// Los omitidos de un estado; `Complete` no tiene ninguno.
+///
+/// `Complete` significa que no se quedó nada sin atar: ni un fichero sin
+/// leer, ni una referencia que el producto no pudo atar a una
+/// declaración. Los omitidos son una parte de esa pérdida; la otra son
+/// las referencias publicadas como pendientes.
 fn skipped_of(status: &BuildStatus) -> Vec<SkippedFile> {
     match status {
         BuildStatus::Complete => Vec::new(),
         BuildStatus::Partial { skipped, .. } => skipped.clone(),
+    }
+}
+
+/// La pérdida que el estado publica como referencias sin atar.
+///
+/// `Complete` no publica ninguna: un build que ató todo no tiene nada
+/// que decir de sus referencias.
+fn pending_of(status: &BuildStatus) -> Vec<PendingReference> {
+    match status {
+        BuildStatus::Complete => Vec::new(),
+        BuildStatus::Partial { pending, .. } => pending.clone(),
     }
 }
 
@@ -366,6 +417,12 @@ fn analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus() {
     // is Complete. The trait default and the service method must
     // agree here too (a lie the other way — false Partial — is
     // just as bad as a missed Partial).
+    //
+    // `Complete` also requires that every reference was tied: this
+    // corpus declares one function and calls nothing, so there is
+    // nothing to tie and nothing to publish. A corpus that called an
+    // ambiguous name would be `Partial`, and that is what the test
+    // above measures.
     let tmp = tempdir();
     std::fs::create_dir_all(tmp.join("src")).unwrap();
     std::fs::write(

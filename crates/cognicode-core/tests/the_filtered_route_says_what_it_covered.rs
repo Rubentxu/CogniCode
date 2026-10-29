@@ -132,6 +132,11 @@ fn the_whole_route_names_the_file_it_could_not_read() {
 
 #[test]
 fn the_filtered_route_reports_a_readable_project_as_complete() {
+    // `Complete` is more than «every file was read»: it is also «every
+    // reference was tied to a declaration». This corpus declares one
+    // function and calls nothing, so there is nothing to tie and
+    // nothing to publish — a corpus with a call the project cannot
+    // tell apart would be `Partial`, and would publish that call.
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::write(
         tmp.path().join("lib.rs"),
