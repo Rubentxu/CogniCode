@@ -5,16 +5,19 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-28, sobre `b75d2028d67edc451c1601257a4203da63416cf9` (la
+> **Snapshot**: 2026-10-29, sobre `a7fb03eb5cdae81691058d3dfaf572a1ca23dc20` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
 > publica están medidos: la línea base es el grafo, y lo que no se pudo medir
-> se declara en vez de publicar un cero; un nombre que llevan varios
+> se declara en vez de publicar un cero; un nombre que lleva varios
 > símbolos ya no se resuelve en silencio: la ambigüedad se publica con sus
-> candidatos; y una relación que el almacén rechazó ya no se descarta: se
+> candidatos; una relación que el almacén rechazó ya no se descarta: se
 > nombra, y el número de relaciones que se publica es el que el grafo
-> realmente tiene).
+> realmente tiene; y el catálogo publicado dice de su runtime la versión que
+> ese runtime reporta: el `runtime_metadata` del maestro es el espejo de lo
+> que el runtime publica, y las claves que el runtime no publica siguen
+> curadas a mano).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
