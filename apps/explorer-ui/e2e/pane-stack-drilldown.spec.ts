@@ -94,7 +94,10 @@ test.describe("Pane stack drill-down (GtPager parity)", () => {
       .locator('[data-family="symbol"]');
     const hitCount = await allHits.count();
     if (hitCount < 2) {
-      test.skip(true, "MSW fixture only exposes 1 symbol hit; cannot drill into second.");
+      test.skip(
+        true,
+        "[DEBT: MSW fixture only exposes 1 symbol hit; cannot drill into second. — owner: TASK-9]",
+      );
       return;
     }
     await allHits.nth(1).click();

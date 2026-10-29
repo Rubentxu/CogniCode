@@ -29166,3 +29166,117 @@ bloqueadas —la primera por una decisión de alcance del operador, la segunda
 por `C23`—, y `M2.T03` es `C13`. La siguiente unidad sin bloqueo es
 **`M2.T02`** (`TASK-7`): la suite E2E de Explorer tiene dieciséis casos
 desactivados y ninguno nombra un dueño.
+
+## 2026-10-29 — La suite E2E de Explorer nombra el dueño de cada caso desactivado
+
+**El defecto, medido** sobre `main@cec0ae7a`: **dieciséis desactivaciones en
+trece ficheros de spec** bajo `apps/explorer-ui/e2e/`, y **ninguna nombra un
+dueño**. El motivo de cada una estaba escrito, pero en un sitio que nadie
+puede consultar: un literal de cadena en la llamada, o un comentario al lado.
+`test.skip(true, "Ingested routes not indexed in Spotter search — mock mode
+integration gap")` dice por qué el caso no corre, y no dice quién lo va a
+arreglar. Un caso desactivado sin dueño es trabajo que nadie sabe que existe.
+
+La auditoría que levantó la tarea contó dieciséis porque contó llamadas a
+`test.skip`. Al medir el árbol por dentro aparecieron **diecisiete** puntos de
+desactivación: hay un `test.fixme` en `responsive-full.spec.ts` que no se ve
+llamando a `test.skip`. Ese caso —el viewport de 320 px, que desborda en
+horizontal— estaba además **escondido detrás de un alias**
+(`const testFn = isKnownBroken ? test.fixme : test;`), de modo que ni una
+búsqueda de texto ni un contador de llamadas lo veían, y su motivo vivía
+sólo en un comentario. La cifra de dieciséis era una cota inferior, no un
+inventario.
+
+**La corrección.** Tres piezas, y una regla por dueño:
+
+1. **Cada desactivación dice su motivo y su dueño**, con una marca de forma
+   fija: `[DEBT: <razón> — owner: <id>]`. La razón sigue siendo legible —no
+   es un código opaco— y el identificador es el de una tarea real y
+   localizable. El caso de `responsive-full` deja de esconderse tras el
+   alias: ahora hay dos ramas explícitas, `test.fixme` para el viewport roto
+   y `test` para los demás, y el `test.fixme` —que **nunca ejecuta su
+   cuerpo**— ya no puede llevar un `return` muerto dentro como justificación.
+2. **El registro de dueños es público y único**:
+   `apps/explorer-ui/e2e/DEBT.md` dice qué toma cada dueño y cuántos casos
+   carga. No es un segundo sitio donde decidir: es el sitio donde *publicar*
+   lo que ya decidió la bandeja. Una regla con dos dueños es una regla que
+   se puede separar, así que el árbol versiona la publicación y la bandeja
+   conserva la decisión.
+3. **Un contrato lo vigila**:
+   `scripts/ci/test_explorer_e2e_disabled_cases_have_owners.py`. No se limita
+   a contar: comprueba que cada desactivación lleva marca, que todo dueño
+   citado está publicado, que todo dueño publicado está citado, que el
+   recuento del registro coincide con el del árbol, que **ninguna
+   desactivación se esconde detrás de un alias**, y que **ningún helper que
+   desactiva es consumido** por una spec.
+
+Los dos últimos puntos cierran las dos vías por las que el inventario se
+escapaba. La primera es la que encontró el `test.fixme` de `responsive-full`;
+la segunda es la que deja inerte al helper `skipIfDebt()` de
+`e2e/utils/feature-flags.ts`, que desactivaba casos con un motivo sin dueño
+y que hoy **no tiene consumidores**: un apagador que nadie llama no apaga
+nada, y el contrato no lo tollera si alguien lo conecta.
+
+**El RED, medido.** El contrato nuevo contra el árbol anterior, en un
+worktree aislado en `cec0ae7a`: **rc=1**, con **18 hallazgos** enumerados —
+dieciséis marcas ausentes, el registro inexistente y el alias. El defecto
+del alias no estaba en la cola: lo encontró el contrato.
+
+**El GREEN, medido.**
+
+- El contrato nuevo, aislado: **rc=0**, sin hallazgos.
+- `bash scripts/test-fast.sh`: **rc=0** (3200 + 956 + 161 + 0 + 80 + 15 + 13 +
+  6 pasados, 0 fallidos).
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con **6489** pasados, 0
+  fallidos y 34 ignorados, doc-tests con **178** pasados y 0 fallidos, explorer
+  multimodal en verde, **454 contratos** en 63 ficheros con 0 fallos, y
+  `known_failures (core/lib)` sin diferencias.
+
+**Que el contrato discrimine, medido.** Un contrato que no puede fallar no
+mide nada, así que se comprobó con cuatro perturbaciones, todas en rojo y
+todas revertidas: quitar el dueño de un caso publicado (2 hallazgos), añadir
+una desactivación sin marca (2 hallazgos, uno de ellos el recuento), volver
+a esconder una desactivación tras un alias (1 hallazgo), y publicar un dueño
+que nadie cita (1 hallazgo). El contrato vuelve a `rc=0` al revertir.
+
+**La suite, medida antes y después.** El protocolo es el mismo que el ciclo
+anterior, porque si el protocolo cambia la comparación no vale: el dev server
+arranca **fuera** de Playwright (el V8 de Node 25 aborta con `Lazy deopt after
+a fast API call with return value is unsupported` al servir tráfico desde
+dentro del proceso de Playwright, y ese crash es del runtime, no del código
+bajo prueba), con `VITE_USE_MOCKS=true` y `node --no-lazy`; el cronómetro
+mide el wall de `playwright test` con el servidor ya caliente.
+
+| | fallidos | ignorados | pasados | wall |
+|---|---|---|---|---|
+| antes (`cec0ae7a`) | 35 | 20 | 151 | 136 s |
+| después (este corte) | 35 | 20 | 151 | 124 s |
+
+El conjunto de fallos es **el mismo**: los 35 son todos `toHaveScreenshot`
+(29 de página, 6 de locator), y al normalizar los números de línea —que mi
+edición mueve— el `diff` de las dos listas sale vacío. Los 20 ignorados
+también son los mismos: 17 desactivaciones con marca más los tres que ya
+estaban. El número de casos desactivados **no crece**, y el tiempo medido
+baja.
+
+**Lo que este corte NO cubre.**
+
+- **La suite de Explorer no puede estar verde en este entorno, y no es de este
+  corte.** Los goldens del repositorio están obsoletos respecto a la UI
+  actual: los 35 fallos son **todos** `toHaveScreenshot` —cero bloques de
+  fallo sin golden—, y son los mismos antes y después. La mitad del criterio
+  de aceptación que habla de la suite verde no se puede satisfacer aquí, y
+  la razón es ajena a la unidad. Regenerar los goldens es trabajo con dueño
+  propio.
+- **La suite de navegador no está en el `merge-gate`.** Ningún `.kts` del
+  repositorio menciona `explorer-ui`, `playwright` ni `PW_VISUAL`: la
+  evidencia de esta unidad es la medición local, no el veredicto del gate.
+  El contrato nuevo sí entra en el `merge-gate`, porque
+  `run-all-contracts.sh` lo descubre por glob; lo que el gate vigila es que
+  **no vuelva** una desactivación sin dueño, no que las specs sigan verdes.
+- **El recuento de dieciséis no era un inventario.** Esta unidad publica
+  diecisiete puntos de desactivación: dieciséis `test.skip` y un `test.fixme`.
+  El contrato acota **por API** —`test.skip` ≤ 16 y `test.fixme` ≤ 1—, así
+  que ninguna categoría crece y ninguna toma prestada de la otra. La
+  cifra que se publique es la que el árbol contiene, y está medida.

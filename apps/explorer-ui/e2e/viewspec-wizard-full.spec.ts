@@ -80,7 +80,7 @@ test.describe("ViewSpecWizard full flow (Lepiter authoring parity)", () => {
     await snapshot(page, "viewspec-wizard-steps.png");
   });
 
-  test.skip("wizard save persists ViewSpec via MSW [DEBT: minimal instrumentation]", async ({
+  test.skip("wizard save persists ViewSpec via MSW [DEBT: minimal instrumentation — owner: TASK-10]", async ({
     page,
   }) => {
     // This test is skipped because the wizard lacks per-step testids for

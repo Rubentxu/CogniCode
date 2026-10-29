@@ -106,7 +106,10 @@ test.describe("e15.5 OpenAPI ingestion (3 tests)", () => {
 
   test("E2E: ingest_openapi creates 7 routes and they appear in Spotter", async ({ page }) => {
     // SKIP: Ingested routes don't appear in Spotter search in mock mode.
-    test.skip(true, "Ingested routes not indexed in Spotter search — mock mode integration gap");
+    test.skip(
+      true,
+      "[DEBT: Ingested routes not indexed in Spotter search — mock mode integration gap — owner: TASK-9]",
+    );
     await page.goto("/");
     const mcpToolsBtn = page.getByTestId("mcp-tools-trigger");
     await mcpToolsBtn.click();

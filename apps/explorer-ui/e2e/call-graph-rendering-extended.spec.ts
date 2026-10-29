@@ -43,7 +43,7 @@ test.describe("Call-graph interaction (Mondrian parity)", () => {
     await snapshot(page, "call-graph-extended-render.png");
   });
 
-  test.skip("clicking a graph node opens a new pane [DEBT: no data-pane-on-node attribute]", async ({
+  test.skip("clicking a graph node opens a new pane [DEBT: no data-pane-on-node attribute — owner: TASK-10]", async ({
     page,
   }) => {
     // Graph node click handler is wired (per the inventory) but lacks a

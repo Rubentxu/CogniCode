@@ -92,7 +92,7 @@ test.describe("View executor coverage (15 wired)", () => {
         // skip gracefully with a debt note.
         test.skip(
           true,
-          `[DEBT] ${exec.id} view tab not present in MSW fixture (applies_to=${exec.appliesTo}). ` +
+          `[DEBT: ${exec.id} view tab not present in MSW fixture (applies_to=${exec.appliesTo}) — owner: TASK-9] ` +
             "Extend apps/explorer-ui/src/mocks/fixtures.ts to include this view in the Symbol's available_views.",
         );
         return;

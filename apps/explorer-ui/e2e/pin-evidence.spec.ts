@@ -6,7 +6,10 @@ test.describe("Pin Evidence — E21-2", () => {
   // Tests that verify error states when no investigations exist WILL run.
 
   test("pins evidence to an investigation", async ({ page }) => {
-    test.skip(true, "Requires seeded investigation data — MSW handler for /api/investigations not available in mock mode");
+    test.skip(
+      true,
+      "[DEBT: Requires seeded investigation data — MSW handler for /api/investigations not available in mock mode — owner: TASK-9]",
+    );
 
     await page.goto("/");
 
@@ -66,7 +69,10 @@ test.describe("Pin Evidence — E21-2", () => {
   });
 
   test("disables submit when note is empty", async ({ page }) => {
-    test.skip(true, "Requires seeded investigation data — MSW handler for /api/investigations not available in mock mode");
+    test.skip(
+      true,
+      "[DEBT: Requires seeded investigation data — MSW handler for /api/investigations not available in mock mode — owner: TASK-9]",
+    );
     await page.goto("/");
 
     await expect(page.getByTestId("loading-shell")).not.toBeVisible({ timeout: 10000 });
@@ -122,7 +128,10 @@ test.describe("Pin Evidence — E21-2", () => {
   test("closes on Escape key", async ({ page }) => {
     // TODO: PinEvidenceModal Escape handler not firing in Playwright — div-based dialog
     // needs explicit focus management. Skipping until focus trap is properly wired.
-    test.skip(true, "Escape key handler on div-based modal not firing in Playwright — focus trap needs fix");
+    test.skip(
+      true,
+      "[DEBT: Escape key handler on div-based modal not firing in Playwright — focus trap needs fix — owner: TASK-11]",
+    );
     await page.goto("/");
 
     await expect(page.getByTestId("loading-shell")).not.toBeVisible({ timeout: 10000 });

@@ -45,7 +45,7 @@ test.describe("Landing real-data (GT World home parity)", () => {
     await snapshot(page, "landing-real-data-recent.png");
   });
 
-  test.skip("truncation banner activates when MSW returns truncated=true [DEBT: MSW has no seedable flag]", async ({
+  test.skip("truncation banner activates when MSW returns truncated=true [DEBT: MSW has no seedable flag — owner: TASK-9]", async ({
     page,
   }) => {
     // The MSW handler returns a fixed landing payload. To test truncation

@@ -46,7 +46,7 @@ test.describe("Error states coverage", () => {
     await snapshot(page, "error-states-no-unknown.png");
   });
 
-  test.skip("GraphLanding error state shows retry button [DEBT: MSW has no error-injection endpoint]", async ({
+  test.skip("GraphLanding error state shows retry button [DEBT: MSW has no error-injection endpoint — owner: TASK-9]", async ({
     page,
   }) => {
     // To exercise the GraphLanding error path, MSW would need to return a
