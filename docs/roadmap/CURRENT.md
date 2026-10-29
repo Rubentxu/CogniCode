@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `f50eb57270fcf5b2494320c6b86a8862ca8c7022` (la
+> **Snapshot**: 2026-10-29, sobre `6404a84bd0b1a73431dfab492f9eba4e97b73aeb` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -799,6 +799,15 @@ target de integración, el `fallback` lo dice. MEDIDO sobre `cargo metadata`: de
 `cognicode-graph-wasm` (1), `cognicode-macros` (1), `cognicode-sandbox` (0)—; el
 `full` los corre, salvo `spike-ladybug`, que está excluido del workspace y por
 tanto no lo corre ningún carril de cargo: 9 targets sin carril en ninguna parte.
+El ciclo queda cerrado en el remoto: el pull request `#499` —la rama
+`fix/fast-fallback-runs-touched-target`— se fusionó por squash como `6404a84b`,
+con el `merge-gate` verde sobre `dcfdedb` —58 etapas, ninguna en rojo, y el
+estado `merge-gate=success` publicado en el pull request—. La corrida es
+comprobable después del hecho: queda en la base de eventos del gate,
+`.pipelinek/merge-gate.db`, con su identificador de corrida
+`1045a1a3-1669-4e5c-9f6f-aa3d59bfb073`, los 58 `StageFinished` en `success` —el
+primero `build-isolation`, el último `merge-gate`— y el `RunFinished` en
+`success` (`outcome: success`, `diagnostics: []`).
 
 ## La misión
 

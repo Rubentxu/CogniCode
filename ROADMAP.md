@@ -30,7 +30,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 |---|---|
 | H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
-| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`); el residuo de ese cierre —la equivalencia CLI/MCP no se ha ejercido sobre este corpus— lo toma **`TASK-15`**, cerrada el 2026-10-29 (`9e1d36d7`); el residuo de ese cierre —la respuesta que el MCP sirve desde la caché es un veredicto hueco— lo toma **`TASK-16`**, cerrada el 2026-10-29 (`323abe72`) |
+| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`); el residuo de ese cierre —la equivalencia CLI/MCP no se ha ejercido sobre este corpus— lo toma **`TASK-15`**, cerrada el 2026-10-29 (`9e1d36d7`); el residuo de ese cierre —la respuesta que el MCP sirve desde la caché es un veredicto hueco— lo toma **`TASK-16`**, cerrada el 2026-10-29 (`323abe72`); el residuo de ese cierre —el lazo de feedback da verde sin correr el test que se ha escrito— lo toma **`TASK-17`**, cerrada el 2026-10-29 (`6404a84b`) |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
 | H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
 | H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
@@ -85,169 +85,149 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de TASK-16 está cerrado en el remoto.** El pull request `#497` —la
-publicación de la rama `measure/mcp-cache-verdict-truth`— se fusionó por squash
-como `323abe72`, con el `merge-gate` verde sobre `97fbef20`. La respuesta que
-el MCP sirve desde la caché ya no está AFIRMADA como honesta: está MEDIDA, y
-medida sobre el hueco que la propia comprobación de frescura no puede ver.
+**El ciclo de TASK-17 está cerrado en el remoto.** El pull request `#499` —la
+publicación de la rama `fix/fast-fallback-runs-touched-target`— se fusionó por
+squash como `6404a84b`, con el `merge-gate` verde sobre `dcfdedb`. El lazo de
+feedback del modo rápido ya no da verde sin correr el test de integración que el
+cambio tocó.
 
-**El residuo, con las palabras del cierre anterior.** El recibo de `TASK-15`
-cerraba DESCARTANDO un camino de medición, y lo hacía nombrando la superficie
-que esta unidad mide:
+**El residuo, con las palabras del cierre anterior.** El recibo de `TASK-16`
+cerraba declarando, en su sección de gates, una advertencia que el gate mismo
+enseñaba:
 
-> **El peligro que se descartó antes de medir.** El MCP tiene un camino de
-> CACHÉ que responde `complete` con la lista de pendientes VACÍA
-> (`handlers/mod.rs:1491`, la rama `loaded_from_cache`): una equivalencia
-> medida sobre un acierto de caché sería falsa por construcción —una superficie
-> con la negativa y otra sin ella—.
+> el `fast` NO ejecuta el fichero de test nuevo, porque el selector CR-08 cae
+> en su regla de catch-all —`product/tools.json` es un path que no conoce— y el
+> camino de fallback corre `cargo test --workspace --lib`, que son SÓLO
+> pruebas unitarias.
 
-El residuo hablaba de la lista de PENDIENTES; la superficie a medir es el
-VEREDICTO entero de la respuesta. La pregunta abierta era si un consumidor del
-MCP puede recibir un `complete` HUECO: un veredicto `complete` acompañado de
-una lista de pendientes vacía mientras el grafo real NO estaba completo.
+Eso no era una limitación del entorno: era la ruta que `fast` tomaba siempre
+que el diff contenía un path que el selector no clasifica. Y
+`product/tools.json` está VERSIONADO y no lo clasifica ninguna regla de CR-08,
+así que el caso no era raro: era la norma de cualquier cambio que lo tocara. El
+test nuevo se ejecutó a mano en aquel ciclo —`cargo test -p cognicode-core
+--test cached_coverage_is_honest`, 5 pasados— y el `full` sí lo incluye, porque
+el `full` corre `cargo test --workspace`. El defecto, entonces, era del LAZO DE
+FEEDBACK, no del gate. Eso es lo que esta unidad mide y cierra.
 
-**El mecanismo, leído en el código antes de medir.** `handle_build_graph`
-(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1347`) tiene DOS
-caminos de caché —la instantánea durable (`.cognicode/graph.cache`) y el
-manifiesto de la misma sesión— y los dos marcan `loaded_from_cache = true`. En
-los dos, la respuesta se armaba con tres listas vacías y `complete`. Lo que la
-respuesta NO llevaba era el estado del árbol: el veredicto era el del BUILD que
-persistió la instantánea, no el del árbol que el consumidor tenía delante.
+**El mecanismo, leído en el código antes de tocarlo.** `scripts/test-fast.sh`
+tiene DOS caminos de ejecución, y no eran equivalentes:
 
-**Por qué la caché no podía saberlo.** El manifiesto que decide si la
-instantánea sigue siendo fresca describe los FICHEROS de los que se construye
-el grafo —los que `SourceInventory::source_files()` deja pasar—. Una entrada
-que el recorrido DECLINA —un enlace simbólico que no sigue— NO es uno de esos
-ficheros, así que no está en el manifiesto, así que `is_manifest_stale` no
-puede verla. La comprobación de frescura era ciega a una clase entera de
-huecos: los que el recorrido deja a propósito, que son los que más se parecen
-a una decisión y menos a una avería, y por eso son los que un consumidor no
-puede ignorar.
+| camino | qué corre | quién lo llama |
+|---|---|---|
+| `changed` | `cargo test -p <crate> --lib` **más** el target de integración que los paths tocan | `run_suite()` |
+| `fallback` | `cargo test --workspace --lib` y nada más | el bloque de fallback, que **se saltaba `run_suite()` entero** |
 
-**MEDIDO, sobre el corpus de tres ficheros Rust que el repo ya versiona
-(`crates/cognicode-core/testdata/silent_errors_corpus`), con un enlace
-simbólico declinado en `src/`:**
+El camino `changed` es el que M13 arregló el 2026-10-22: `touched_targets()`
+calcula el binario que cargo declara por cada fichero `.rs` directamente bajo
+`crates/<crate>/tests/`. El `fallback` no lo tenía: se saltaba la función
+entera, y por eso no veía ni la biblioteca por crate ni el target tocado. La
+entrada al `fallback` es la regla 13 del selector: «cualquier path desconocido
+-> fallback ALL».
 
-| | respuesta | veredicto | omitidos | símbolos | relaciones |
-|---|---|---|---|---|---|
-| en frío, sobre el árbol | freshly built | `partial` | `src/link.rs` [symlink] | 3 | 0 |
-| servida de la caché | cached | `complete` | *(vacío)* | 3 | 0 |
+**Lo que NO se hace, y por qué.** Tres caminos se descartaron con su coste
+medido, y ninguno se vuelve a intentar aquí:
 
-El GRAFO era el mismo y no estaba vacío: 3 símbolos y 0 relaciones en las dos.
-El hueco no estaba en el grafo: estaba en el VEREDICTO, que afirmaba de un
-árbol algo que la caché no podía saber. Un consumidor que leyera `complete`
-creería conocer un proyecto que sólo había visto a medias, y no tendría ni
-siquiera un hueco enumerado que le permitiera sospechar.
+- **Derivar el crate del path tocado** (`crates/<dir>/tests/<fichero>.rs` ->
+  `-p <dir>`). Es una SEGUNDA fuente de verdad del mapa suite->crate, que ya
+  vive —y sólo vive— dentro del `case` de `run_suite()`, y que el contrato
+  `test_the_selector_doc_and_the_runner_agree` pina ahí. Además da un ROJO
+  FALSO: `crates/spike-ladybug/` está excluido del workspace, así que
+  `cargo test -p spike-ladybug` responde «package ID specification
+  `spike-ladybug` did not match any packages» y el lazo de feedback se rompe
+  con un error que no habla del cambio.
+- **Añadir reglas al selector para los crates que no mapea.** Amplía el radio
+  de acción —cabecera del selector, `run_suite()` y el contrato que obliga a
+  que ambos coincidan— para un hueco que el `full` ya cubre.
+- **`cargo test --workspace --tests`.** Convierte `fast` en la batería de
+  integración: los 99 binarios de `core` lo convierten en minutos, que es lo
+  que `fast` no es.
 
-**La forma del dominio no cambia, y por eso no es una preferencia.**
-`BuildGraphOutput` sigue con los mismos cuatro campos y `"complete"`,
-`"partial"`, `"unknown"` y `"unsupported"` siguen siendo su juego de valores.
-No hay ADT nuevo, ni variante nueva, ni campo nuevo en ningún contrato
-público. Lo que cambia es de dónde sale el CONTENIDO de las tres listas cuando
-la respuesta viene de la caché: no del build que persistió la instantánea,
-sino del ÁRBOL.
+**La decisión de forma.** El mapa suite->crate NO se mueve y NO se duplica: el
+`fallback` llama a `run_suite()` con un segundo argumento, `touched-only`, que
+corre los targets tocados de esa suite y no su biblioteca —el `fallback` ya
+corre la biblioteca entera con `--workspace`, y repetirla cinco veces no compra
+nada—. Para que esa llamada sea posible, el bloque de `fallback` se MUEVE debajo
+de `run_suite()`: mientras vivía arriba, la función todavía no estaba
+registrada en ese punto del script, y una llamada a una función que todavía no
+existe no es una llamada, es un `command not found`. El movimiento es puro
+reordenamiento: ninguna función cambia de nombre, ninguna suite cambia de
+crate, y el `case` de `run_suite()` —lo que el contrato pina— sigue intacto.
 
-**La corrección no cuesta un recorrido nuevo.** La comprobación de frescura ya
-recorría el árbol, así que el hueco del árbol sale de la MISMA pasada: el
-inventario se calcula donde ya se calculaba y se pasa a `is_manifest_stale` en
-vez de que aquél lo vuelva a recorrer. Y los huecos tienen ahora un SOLO
-dueño: `SourceInventory::coverage_holes`
-(`crates/cognicode-core/src/infrastructure/graph/source_files.rs:163`), que es
-la composición de lo que el recorrido declined, lo que no pudo hacer y lo que
-todavía no sabe leer. Antes los componían tres sitios por su cuenta —la ruta
-de proyecto entero, la de un fichero y la de K0—, y tres composiciones propias
-son tres respuestas esperando a separarse.
+**MEDIDO: el RED, y lo que el wrapper ejecutaba.** El contrato nuevo (`M17`, en
+`scripts/ci/test_fast_full_wrappers.py`) no lee el código: ejecuta el wrapper
+de verdad en un árbol git de laboratorio, con un `cargo` falso que anota los
+argumentos que recibe, y mira la lista. El laboratorio se monta con dos paths:
+`crates/cognicode-core/tests/prf_demo.rs` y `product/tools.json`. El primero es
+un target de integración; el segundo es un path que el selector no conoce, y por
+eso el caso cae en `fallback`. Antes de la corrección, el inventario era:
 
-**MEDIDO, después de la corrección.** La respuesta servida de la caché
-publica ahora los huecos del árbol TAL COMO ESTÁ AHORA y lleva el veredicto
-que una construcción en frío daría: `partial` con `src/link.rs` declarado como
-`symlink`, el mismo grafo —3 símbolos, 0 relaciones— y el mismo motivo. Y el
-veredicto de la caché y el de una construcción en frío son IGUALES, campo por
-campo.
+```
+test --workspace --lib --quiet
+clippy --workspace --all-targets --quiet -- -D warnings
+```
 
-**Y la paridad mejora.** La CLI no tiene camino de caché: `GraphCommand::Full`
-(`crates/cognicode-core/src/interface/cli/commands.rs:1086`) va por
-`ServiceAnalyzer` y `AnalysisOp::GraphFull`, que siempre construye y siempre
-publica los huecos actuales. `loaded_from_cache` sólo existe en el handler del
-MCP. La corrección, por tanto, CIERRA una diferencia de paridad entre las dos
-superficies en vez de abrirla: hoy las dos dicen lo mismo del mismo árbol,
-caliente o frío.
+y el fallo era, literal:
 
-**La prueba no puede pasar por vacío, y eso es del contrato, no del estilo.**
-Dos respuestas vacías son iguales en el vacío, y una equivalencia medida sobre
-un grafo vacío es una equivalencia medida sobre nada. El test —en
-`crates/cognicode-core/tests/cached_coverage_is_honest.rs`, el fichero que ya
-medía la cobertura en caliente y en frío— exige, antes de comparar, que la
-respuesta EN CALIENTE venga de la caché —su mensaje lo dice—, que el grafo no
-esté vacío, y que el hueco sea EL que el árbol declara —`src/link.rs` como
-`symlink`—, porque dos respuestas que comparten un error son iguales. La
-comparación se hace sobre la ruta RELATIVA al proyecto, porque dos copias del
-corpus viven en dos directorios y lo que se compara es el árbol.
+> AssertionError: FAIL: el camino de fallback no ejecuto el target de
+> integracion que se toco. El target tocado es el unico que puede hablar del
+> cambio, y el fallback lo es tambien: no tiene excusa para no correrlo.
+> Lo que ejecuto: test --workspace --lib --quiet / clippy --workspace
+> --all-targets --quiet -- -D warnings
 
-**El RED, medido con mutación focal.** Dos mutaciones, cada una revertida, y
-cada una muerta sólo por el test escrito para ella:
+`--test prf_demo` no estaba, porque nadie lo había pedido. Después de la
+corrección, el inventario del mismo caso es:
 
-1. **El veredicto de la caché miente** (la rama de caché vuelve a decir
-   `complete`): el test cae en la comparación de las dos respuestas —
-   `left: Answer { status: "complete", … }` contra
-   `right: Answer { status: "partial", … }`.
-2. **El motivo del hueco se pierde** (el brazo del enlace simbólico deja de
-   decir `symlink`): el test cae en la aserción ABSOLUTA del hueco —
-   `left: [("src/link.rs", "other")]` contra
-   `right: [("src/link.rs", "symlink")]`—, que es la que una comparación entre
-   dos respuestas no puede ver.
+```
+test --workspace --lib --quiet
+test -p cognicode-core --test prf_demo
+clippy --workspace --all-targets --quiet -- -D warnings
+```
 
-Restaurados byte a byte, los dos dies y el test pasa. Un contrato que no se ha
-visto rojo no mide nada.
+Una invocación más, y es POR TARGET TOCADO, no por suite: un `fallback` que no
+toca ningún test de integración corre exactamente lo que corría antes. El camino
+`changed` no cambia: `test -p cognicode-core --lib`,
+`test -p cognicode-core --test prf_demo`, clippy.
 
-**El inventario del harness, medido antes y después.** CERO delta: 235 ficheros
-de test en `crates/` antes y **235** después; 62 contratos de CI
-(`scripts/ci/*.py`) antes y **62** después; 985 ficheros versionados en
-`sandbox/fixtures/` antes y **985** después. Ni un fichero de test nuevo, ni un
-contrato nuevo, ni un fixture nuevo: el corpus ya versionado y el fichero que
-ya medía la cobertura en caliente y en frío eran todo el harness que esta
-unidad necesitaba. El catálogo publicado (`product/tools.json`) es MANUSCRITO
-y no se regenera: se editó a mano, y sólo en las cuatro descripciones de
-`build_graph` que el código publica —las que son el espejo de los comentarios
-del doc—.
+**Y el hueco del que el `fallback` no puede salir, declarado en voz alta.** El
+selector no mapea todos los crates del workspace, así que un target de
+integración de uno de ellos sigue sin correrse en `fast`. MEDIDO sobre
+`cargo metadata --format-version 1 --no-deps`: 11 miembros, 213 targets de
+integración; el selector mapea 197 —`core` (131), `cli` (33), `mcp` (17),
+`explorer` (16) y `ladybug` (0)—, y quedan 16 sin mapear: `cognicode` (7),
+`cognicode-runtime` (5), `cognicode-graph-algos` (2), `cognicode-graph-wasm`
+(1), `cognicode-macros` (1) y `cognicode-sandbox` (0). El motivo es uno solo y no
+es un descuido: el mapa suite->crate del selector no tiene caso para ellos, y
+esta unidad no amplía el radio de acción del selector. El `full` sí los corre
+—`cargo test --workspace` los incluye—, salvo `spike-ladybug`, que está
+EXCLUIDO del workspace y por tanto no lo corre ningún lane de cargo: 9 targets
+de integración sin carril en ninguna parte, que quedan aquí declarados. Y para
+que el `fast` no pueda dar un verde vacío sin decirlo, el `fallback` cuenta los
+targets que ha ejecutado y, si no ha corrido ninguno, lo dice: un wrapper que
+no puede decir que no, aquí, no puede decir nada.
 
-**Lo que este corte NO cubre, y queda declarado.** La respuesta servida de la
-caché publica los huecos del árbol, pero sólo los que el recorrido puede
-ENUMERAR: un directorio que el proceso no puede leer es un hueco que se
-publica, y una entrada que desaparece entre la lectura y la medida también. Lo
-que NO se publica es el hueco de un árbol al que el recorrido no puede ENTRAR
-—un directorio sin permiso de ejecución, por ejemplo—, porque esa información
-no está en el inventario: es la misma limitación que ya tenían las tres rutas
-que lo componen, y esta unidad no la empeora ni la arregla. Y el camino de
-caché de la INSTANTÁNEA DURABLE y el de la MISMA SESIÓN se comportan igual
-porque comparten la rama, pero la verificación se ha hecho sobre el primero —el
-mensaje lo dice, «durable snapshot»—; el segundo no se ha ejercitado aparte.
-
-**Y dos derivas que este ciclo NO arregla, porque son de otra superficie.**
-`product/tools.json` declara una descripción de `BasisDto.complete` que ya no
-coincidía con la que el runtime publica, ANTES de este ciclo: es la superficie
-de la PROCEDENCIA del análisis, no la del veredicto de cobertura, y arreglarla
-aquí sería tocar un contrato que esta unidad no midió. Y el segundo mapa de
-`SkipReason` a motivo —`SkippedReasonKind`, `handlers/mod.rs:3876`— pertenece
-al contrato publicado de otra herramienta. Las dos quedan ENRUTADAS, no
-arregladas.
+**Lo que este corte NO arregla.** El `merge-gate` nunca estuvo mal: corre
+`test-full.sh`, que corre `cargo test --workspace`, que sí incluye los tests de
+integración. El defecto era del lazo de feedback del developer, y por eso esta
+unidad toca el wrapper y no el gate. Y los 16 targets de integración de los
+crates que el selector no mapea siguen sin correrse en `fast`: los declara, no
+los arregla.
 
 **La cola.** `goal-compass.json` NO cambia en este ciclo, y hay que decirlo sin
-rodeos: `TASK-16` nunca fue candidata de esa cola —nació como el residuo que el
-cierre de `TASK-15` dejó medido y con dueño, en la bandeja local—, así que no
+rodeos: `TASK-17` nunca fue candidata de esa cola —nació como el residuo que el
+cierre de `TASK-16` dejó medido y con dueño, en la bandeja local—, así que no
 hay ficha que sacar. La cola viva sigue con `C23` (50, bloqueada por el
 operador) y nada más.
 
 **Gates.** `fast` rc=0; `full` rc=0 —6504 pasados, 0 fallidos y 34 ignorados
-contando los doc-tests; 454 comprobaciones de contrato en 0 fallos—. Y una
-advertencia que el gate mismo enseña y que este recibo declara: el `fast` NO
-ejecuta el fichero de test nuevo, porque el selector CR-08 cae en su regla de
-catch-all —`product/tools.json` es un path que no conoce— y el camino de
-fallback corre `cargo test --workspace --lib`, que son SÓLO pruebas unitarias.
-La prueba de esta unidad se ejecutó directamente —`cargo test -p cognicode-core
---test cached_coverage_is_honest`, 5 pasados— y el `full` sí la incluye,
-porque corre `cargo test --workspace`. Un run filtrado no es evidencia de
-gate, y aquí se dice cuál es cuál.
+contando los doc-tests; `fmt --check` y `clippy -D warnings` en verde; 455
+comprobaciones de contrato en 0 fallos. El contrato de wrappers pasa 20 de 20 —
+19 antes de este cambio, más el `M17` nuevo—. Una nota de harness que este
+recibo declara porque el cierre de `TASK-16` también la sufrió: el contrato se
+ejecuta con `GIT_CONFIG_GLOBAL=/dev/null` y `GIT_CONFIG_SYSTEM=/dev/null`, que
+es lo que hace el runner del gate (`scripts/run_contract_tests.py`). Con la
+configuración global de esta máquina, el hook local rechaza el commit del
+laboratorio por dos diagnósticos —identidad no permitida y mensaje sin tipo
+Conventional Commit—, y el fallo es del entorno, no del contrato.
 
 La puerta que queda abierta es la de la cola:
 
@@ -255,8 +235,8 @@ La puerta que queda abierta es la de la cola:
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
 
-Y, con `TASK-16` cerrado, la cola viva se queda **sin ninguna unidad sin
-bloqueo** otra vez: `TASK-16` era el residuo que el cierre de `TASK-15` dejó
+Y, con `TASK-17` cerrado, la cola viva se queda **sin ninguna unidad sin
+bloqueo** otra vez: `TASK-17` era el residuo que el cierre de `TASK-16` dejó
 medido y con dueño, y ya está hecha. Las vecinas del entorno siguen
 igualmente atadas: `TASK-5` por una decisión de alcance del operador y
 `TASK-4` por `C23`. La siguiente unidad, por tanto, **no la decide este

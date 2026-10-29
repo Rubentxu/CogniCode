@@ -427,9 +427,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   **H23** — la poda por obligaciones y el coste de la fase de tests: las
 >   superficies que ningún gate ejecuta y el tiempo de gate que no compra
 >   garantía. La fase completa ya no repite la batería del core con la
->   línea base vacía, el modo rápido ya corre el target de integración que
->   se tocó, y la configuración ejecutable ya no apunta a documentos
->   ausentes; las superficies sin carril quedan declaradas con su motivo.
+>   línea base vacía; el modo rápido ya corre el target de integración que
+>   se tocó en AMBOS caminos (`TASK-17`); la configuración no apunta a
+>   documentos ausentes, y el Journal declara los crates que `fast` no mapea.
 >
 >   **H24** — el producto tiene que decir la verdad. Lo que le queda abierto
 >   son tres contratos y una frontera:
