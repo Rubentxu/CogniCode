@@ -293,8 +293,11 @@ test.describe("ViewSpec Wizard (G7)", () => {
 
   // G7.5: Error state — requires ability to override MSW handler or run without mocks.
   // Skipped in E2E (MSW-incompatible with page.route); covered in integration tests.
-  test.skip("save flow: shows error message when API fails", async ({ page }) => {
-    // This would require disabling MSW or using a test-specific handler override.
-    // Until then, the save-success test above provides the relevant coverage.
-  });
+  test.skip(
+    "save flow: shows error message when API fails [DEBT: mock mode never makes the API fail — owner: TASK-9]",
+    async ({ page }) => {
+      // This would require disabling MSW or using a test-specific handler override.
+      // Until then, the save-success test above provides the relevant coverage.
+    },
+  );
 });

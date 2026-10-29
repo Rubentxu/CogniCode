@@ -24,7 +24,7 @@ test.describe("Perspective toggle (GT tool perspective parity)", () => {
     await snapshot(page, "perspective-toggle-default.png");
   });
 
-  test.skip("toggle to C4 changes layout [DEBT: layout may not visibly change in mock mode]", async ({
+  test.skip("toggle to C4 changes layout [DEBT: layout may not visibly change in mock mode — owner: TASK-10]", async ({
     page,
   }) => {
     // The toggle updates state but the layout change in mock mode may be

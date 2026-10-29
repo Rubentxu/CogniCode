@@ -18,7 +18,7 @@ test.describe("Exploration sharing (Lepiter page link parity)", () => {
     await snapshot(page, "exploration-share-button.png");
   });
 
-  test.skip("clicking share generates ?exploration=<id> URL [DEBT: button not wired to URL update]", async ({
+  test.skip("clicking share generates ?exploration=<id> URL [DEBT: button not wired to URL update — owner: TASK-10]", async ({
     page,
   }) => {
     // The button is visible but the click handler does not currently update

@@ -31,7 +31,7 @@ test.describe("Lens panel (with mock-fixture debt flag)", () => {
     await snapshot(page, "lens-panel.png");
   });
 
-  test.skip("treemap uses HOTSPOT_TREEMAP_FIXTURE [DEBT: mock fixture, not real hotspots]", async ({
+  test.skip("treemap uses HOTSPOT_TREEMAP_FIXTURE [DEBT: mock fixture, not real hotspots — owner: TASK-9]", async ({
     page,
   }) => {
     // When the treemap is rendered, the data should currently come from
