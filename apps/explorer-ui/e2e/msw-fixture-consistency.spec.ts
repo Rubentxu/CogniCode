@@ -20,6 +20,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("MSW fixture consistency", () => {
   test("MSW intercepts requests when VITE_USE_MOCKS=true", async ({ page }) => {
@@ -27,7 +28,7 @@ test.describe("MSW fixture consistency", () => {
     // isn't intercepting, the Spotter would not return data and the
     // assertion would fail.
     await page.goto("/");
-    await page.waitForTimeout(500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible();

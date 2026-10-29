@@ -10,6 +10,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true).
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
   test.beforeEach(async ({ page }) => {
@@ -47,7 +48,7 @@ test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
     await ingestSpec(page);
 
     // Open Spotter and search for "pet"
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Control+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 5_000 });
@@ -59,11 +60,11 @@ test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
     const results = page.getByTestId("spotter-results");
     await expect(results).toBeVisible({ timeout: 5_000 });
 
-    // Wait for debounce (200ms) + network + render
-    await page.waitForTimeout(800);
-
-    // At least one route item should appear (GET /pets, GET /pets/{petId}, etc.)
+    // At least one route item should appear (GET /pets, GET /pets/{petId}, etc.).
+    // The first item appearing is the fact that debounce + network + render
+    // finished — no clock needed.
     const items = page.locator("[data-testid^='spotter-item-']");
+    await expect(items.first()).toBeVisible({ timeout: 5_000 });
     const count = await items.count();
     expect(count).toBeGreaterThan(0);
 
@@ -82,19 +83,21 @@ test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
     await ingestSpec(page);
 
     // Search for the route in Spotter
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Control+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 5_000 });
 
     const input = page.getByTestId("spotter-input");
     await input.fill("createPet");
-    await page.waitForTimeout(500);
 
     const results = page.getByTestId("spotter-results");
     await expect(results).toBeVisible({ timeout: 5_000 });
 
     const items = page.locator("[data-testid^='spotter-item-']");
+    // The first item appearing is the fact that debounce + network + render
+    // finished — no clock needed.
+    await expect(items.first()).toBeVisible({ timeout: 5_000 });
     const count = await items.count();
     expect(count).toBeGreaterThan(0);
 

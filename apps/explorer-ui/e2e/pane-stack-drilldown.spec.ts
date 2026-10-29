@@ -15,13 +15,14 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 /**
  * Helper: open Spotter, type query, click first result.
  */
 async function drillTo(page: import("@playwright/test").Page, query: string): Promise<void> {
   await page.goto("/");
-  await page.waitForTimeout(500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   const spotter = page.getByTestId("spotter");
   await expect(spotter).toBeVisible();

@@ -15,12 +15,13 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("Spotter multi-family (e13 parity)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     // Open Spotter via Cmd+K.
-    await page.waitForTimeout(500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible();
   });

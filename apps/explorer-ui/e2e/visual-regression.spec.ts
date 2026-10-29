@@ -16,6 +16,7 @@
  * **Visual Regression:** Capturas en cada punto clave del flujo
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("Explorer smoke flow — Visual Regression", () => {
   test("boots, opens Spotter, and inspects an object", async ({
@@ -35,8 +36,7 @@ test.describe("Explorer smoke flow — Visual Regression", () => {
       maxDiffPixels: 3000,
     });
 
-    // 2. Open the Spotter via Cmd+K — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 10_000 });
@@ -93,8 +93,7 @@ test.describe("Explorer smoke flow — Visual Regression", () => {
       animations: "disabled",
     });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
     
@@ -124,8 +123,7 @@ test.describe("Explorer smoke flow — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     
     const input = page.getByTestId("spotter-input");
@@ -156,8 +154,7 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Pick an object via the Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const input = page.getByTestId("spotter-input");
     await expect(input).toBeVisible({ timeout: 5_000 });
@@ -192,8 +189,7 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Pick an object via the Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     
     const input = page.getByTestId("spotter-input");
@@ -218,7 +214,12 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
         // easily read it from state, so we just verify the
         // inspector re-renders).
         await hotspot.first().click();
-        await page.waitForTimeout(500);
+        // Clicking a hotspot dispatches SELECT_OBJECT: the pane that
+        // holds the clicked object becomes the active one. The active
+        // pane is the fact the golden image captures — no clock needed.
+        await expect(
+          page.locator("[data-testid^='pane-tab-'][aria-selected='true']"),
+        ).toHaveCount(1, { timeout: 5_000 });
 
         // Golden image de hotspot click
         await expect(page).toHaveScreenshot("graph-hotspot-click.png", {
@@ -233,7 +234,6 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
 test.describe("Explorer error states — Visual Regression", () => {
   test("connection gate resolves to Shell in mock mode", async ({ page }) => {
     await page.goto("/");
-    await page.waitForTimeout(2000);
 
     // In mock mode, the health probe succeeds (MSW returns 200 for /api/health)
     // The connection gate resolves and the Shell mounts
@@ -257,8 +257,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await page.getByTestId("spotter-input").fill("build");
     const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
@@ -285,20 +284,27 @@ test.describe("Explorer error states — Visual Regression", () => {
 
     // The graph-landing should render without throwing
     // If MSW provides landing fixture, the graph-landing canvas should be visible
-    // It may take a moment to load
-    await page.waitForTimeout(1000);
-
-    // The component should be visible (either loading, error, or loaded)
+    //
+    // The component should be visible (either loading, error, or loaded).
+    // Whichever of the three states shows up is the fact that the
+    // landing rendered — no clock needed.
     const landingStates = [
       page.getByTestId("graph-landing-loading"),
       page.getByTestId("graph-landing-error"),
       page.getByTestId("graph-landing-canvas"),
     ];
 
-    const anyVisible = await Promise.all(
-      landingStates.map((s) => s.isVisible().catch(() => false)),
-    );
-    expect(anyVisible.some(Boolean)).toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const anyVisible = await Promise.all(
+            landingStates.map((s) => s.isVisible().catch(() => false)),
+          );
+          return anyVisible.some(Boolean);
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
 
     // Golden image del graph landing
     await expect(page.getByTestId("shell")).toHaveScreenshot("error-states-graph-landing.png", {
@@ -312,8 +318,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await page.getByTestId("spotter-input").fill("build");
     const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
@@ -332,7 +337,11 @@ test.describe("Explorer error states — Visual Regression", () => {
     // Each tab should be clickable without crashing
     const firstTab = tabs.first();
     await firstTab.click();
-    await page.waitForTimeout(300);
+    // The clicked tab reports itself as the selected one — that is the
+    // fact that the switch happened, not a clock.
+    await expect(firstTab).toHaveAttribute("aria-selected", "true", {
+      timeout: 5_000,
+    });
 
     // Inspector body should still be visible after tab switch
     await expect(page.getByTestId("object-inspector-body")).toBeVisible();
@@ -348,8 +357,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Open a pane — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await page.getByTestId("spotter-input").fill("build");
     const results = page.getByTestId("spotter-results").getByTestId(/^spotter-item-/);
@@ -375,8 +383,7 @@ test.describe("Explorer error states — Visual Regression", () => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
     await page.getByTestId("spotter-input").fill("xyznonexistent12345");

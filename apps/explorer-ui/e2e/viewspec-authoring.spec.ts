@@ -14,6 +14,8 @@
  */
 import { test, expect } from "@playwright/test";
 
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 test.describe("ViewSpec Wizard (G7)", () => {
   // ---------------------------------------------------------------------------
   // Helpers
@@ -23,14 +25,13 @@ test.describe("ViewSpec Wizard (G7)", () => {
   async function openInspectorWithObject(page: any) {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
 
     const modifier = process.platform === "linux" ? "Control" : "Meta";
     await page.keyboard.press(`${modifier}+k`);
     const input = page.getByTestId("spotter-input");
     await expect(input).toBeVisible({ timeout: 5_000 });
     await input.fill("build");
-    await page.waitForTimeout(800);
 
     const firstResult = page
       .getByTestId("spotter-results")

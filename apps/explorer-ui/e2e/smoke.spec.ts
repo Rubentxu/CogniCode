@@ -19,6 +19,7 @@
  * free E2E suite that runs in CI.
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 const VISUAL = process.env.PW_VISUAL === "true";
 
@@ -38,8 +39,7 @@ test.describe("Explorer smoke flow", () => {
     const shell = page.getByTestId("shell");
     await expect(shell).toBeVisible();
 
-    // 2. Open the Spotter via Cmd+K (wait 1500ms for keyboard listener mount).
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible();

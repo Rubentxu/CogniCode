@@ -10,6 +10,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("Error states coverage", () => {
   test("UnknownBlockView renders when view block id is unrecognized", async ({
@@ -19,7 +20,7 @@ test.describe("Error states coverage", () => {
     // include views with known renderers, but if any view is unrenderable
     // the UnknownBlockView kicks in. We verify the testid is present.
     await page.goto("/");
-    await page.waitForTimeout(500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible();

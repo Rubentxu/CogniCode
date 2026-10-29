@@ -121,7 +121,7 @@ WITHOUT_LANE = {
         "runner that no pipeline in this repository installs, so no gate "
         "executes it; the tests stay as reference material and are not "
         "presented as a guarantee",
-        83,
+        84,
     ),
     "apps/explorer-ui/e2e/": (
         "the browser suite needs a running dev server and a browser, and "

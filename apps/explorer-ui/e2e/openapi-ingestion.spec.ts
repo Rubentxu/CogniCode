@@ -19,6 +19,7 @@
 import { test, expect } from "@playwright/test";
 import { http, HttpResponse } from "msw";
 import { setupWorker } from "msw/browser";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 // Import the handlers to access routeStore for cleanup
 // (routeStore lives in the browser worker; we interact via
@@ -141,7 +142,7 @@ test.describe("e15.5 OpenAPI ingestion (3 tests)", () => {
     await expect(modal).toBeHidden({ timeout: 5_000 });
 
     // Now open Spotter and search for "pet" — route nodes should appear
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Control+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 5_000 });
@@ -155,12 +156,12 @@ test.describe("e15.5 OpenAPI ingestion (3 tests)", () => {
     const spotterResults = page.getByTestId("spotter-results");
     await expect(spotterResults).toBeVisible({ timeout: 5000 });
 
-    // Wait for debounce (200ms) + network + render
-    await page.waitForTimeout(800);
-
     // Route nodes should be in the results (method + path labels)
-    // The spotter handler includes routes when query matches path/method/summary
+    // The spotter handler includes routes when query matches path/method/summary.
+    // The first item appearing is the fact that debounce + network + render
+    // finished — no clock needed.
     const resultItems = page.locator("[data-testid^='spotter-item-']");
+    await expect(resultItems.first()).toBeVisible({ timeout: 5_000 });
     const count = await resultItems.count();
     expect(count).toBeGreaterThan(0);
 

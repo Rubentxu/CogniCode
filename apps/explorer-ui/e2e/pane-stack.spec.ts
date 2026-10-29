@@ -18,6 +18,7 @@
  *   P3.8 Switch view updates inspector body
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 /**
  * Helper: open a Spotter result and select it to create a new pane.
@@ -27,7 +28,9 @@ async function openSpotterResult(
   page: import("@playwright/test").Page,
   resultIndex = 0,
 ) {
-  await page.waitForTimeout(1500); // wait for keyboard listener
+  const panesBefore = await page.locator("[data-pane-id]").count();
+
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
 
@@ -39,7 +42,15 @@ async function openSpotterResult(
   await expect(firstResult.first()).toBeVisible({ timeout: 5_000 });
   await firstResult.nth(resultIndex).click();
   await expect(page.getByTestId("spotter")).toBeHidden();
-  await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });
+
+  // The selection opened a pane, and every open pane shows an object
+  // inspector. The count is the condition, not a clock: the app
+  // renders one inspector per pane, so an unscoped
+  // `getByTestId("object-inspector")` names one element per pane and
+  // stops naming a single element as soon as a second pane exists.
+  await expect(
+    page.locator("[data-pane-id] [data-testid='object-inspector']"),
+  ).toHaveCount(panesBefore + 1, { timeout: 5_000 });
 }
 
 /**

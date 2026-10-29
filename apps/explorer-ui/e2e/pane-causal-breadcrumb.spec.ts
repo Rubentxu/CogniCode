@@ -11,6 +11,7 @@
  * Uses MSW fixtures (VITE_USE_MOCKS=true).
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 /**
  * Helper: open Spotter, type query, click result by index.
@@ -23,7 +24,7 @@ async function openSpotterAndSelect(
   query = "build",
   resultIndex = 0,
 ) {
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   const input = page.getByTestId("spotter-input");
   await input.fill(query);

@@ -13,6 +13,8 @@
  */
 import { test, expect } from "@playwright/test";
 
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 test.describe("MCP Tools Modal (G6)", () => {
   // ---------------------------------------------------------------------------
   // Helpers
@@ -22,7 +24,7 @@ test.describe("MCP Tools Modal (G6)", () => {
   async function openModal(page: any) {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
 
     const trigger = page.getByTestId("mcp-tools-trigger");
     await expect(trigger).toBeVisible();
@@ -37,8 +39,12 @@ test.describe("MCP Tools Modal (G6)", () => {
   async function selectTool(page: any, tool: "ingest_openapi" | "trace_route") {
     const select = page.getByTestId("mcp-tool-select");
     await select.selectOption(tool);
-    // Wait for form to re-render
-    await page.waitForTimeout(100);
+    // The form re-renders for the selected tool — wait for that fact.
+    const field =
+      tool === "ingest_openapi"
+        ? page.getByTestId("mcp-spec-path")
+        : page.getByTestId("mcp-trace-method");
+    await expect(field).toBeVisible({ timeout: 5_000 });
   }
 
   /** Click Run and wait for result or error. */

@@ -14,10 +14,10 @@
  * - Each symbol has 4 views: overview, call-graph, source, quality
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 async function openSpotterAndSelect(page: import("@playwright/test").Page, query: string, resultIndex = 0) {
-  // Wait 1500ms for keyboard listener to mount
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   const input = page.getByTestId("spotter-input");
   await input.fill(query);
