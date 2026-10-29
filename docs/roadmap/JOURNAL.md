@@ -29992,3 +29992,175 @@ La entrada anterior queda como se escribió; esta la corrige y dice cuál es el
 número. La regla que se sostiene con este apunte es la del propio contrato de
 atribución de autoridad: una cita que no se puede resolver no es una cita, y
 un recuento que no sale de un `git diff` medido tampoco.
+
+## 2026-10-29 — Las dos superficies dicen lo mismo del mismo proyecto
+
+**El residuo, con las palabras del cierre anterior.** El recibo de `TASK-14`
+cerraba declarando un hueco que no era de forma, sino de MEDICIÓN:
+
+> **La equivalencia CLI/MCP no se ha ejercido sobre este corpus.** La medición
+> de equivalencia que hoy existe cubre Terraform; este contrato llama a los
+> servicios del dominio, no a la CLI ni al MCP.
+
+Y la medición que existía era de otro tipo: comparaba un RECUENTO de
+referencias pendientes. Eso basta cuando lo único que se pierde es una
+referencia que nadie declara —«hay un hueco»—, pero no cuando lo que se pierde
+tiene una IDENTIDAD y un MOTIVO. El corpus de Kotlin pierde además las
+referencias AMBIGUAS: `run` está declarado tres veces y `invoke` dos, y ninguna
+de las dos llamadas dice cuál de los candidatos quiere. Un recuento dice
+CUÁNTAS; no dice cuál es cada una, en qué fichero y línea está escrita, ni por
+qué no se pudo atar. Comparar un recuento no compara la negativa: compara su
+tamaño.
+
+**El mecanismo, leído en el código antes de medir.** Las dos superficies leen
+la misma pérdida del mismo sitio y la proyectan con la misma función:
+
+- La CLI: `GraphCommand::Full`
+  (`crates/cognicode-core/src/interface/cli/commands.rs:1086`) construye el
+  grafo con el `ServiceAnalyzer` —el caso de uso, no la presentación— y entrega
+  el resultado a `presenter_bridge::present_graph_full`
+  (`crates/cognicode-core/src/interface/cli/presenter_bridge.rs:29`), que
+  publica `GraphResult::Full { …, pending_references }`.
+- El MCP: `handle_build_graph`
+  (`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1491`) lee
+  `ctx.analysis_service.get_last_build_report()` (línea 1506) y de ahí saca el
+  veredicto —`BuildStatus::Partial { skipped, pending, rejected }` (línea
+  1514)—, y publica `pending_references` (línea 1645).
+
+Las dos proyectan con la MISMA función —`PendingReferenceInfo::from_reference`
+(`crates/cognicode-core/src/interface/coverage.rs:48`)—, que es la única
+proyección del hecho y ya traduce `PendingClass::Unresolved →
+(PendingReason::Unresolved, None)` y `PendingClass::Ambiguous { candidates } →
+(PendingReason::Ambiguous, Some(candidates))`. La forma del dominio, por
+ tanto, ya tenía dónde vivir la negativa.
+
+**La decisión de forma: `KEEP_AS_IS`.** Esta unidad NO toca la FORMA de la
+negativa, y por eso no abre una discusión de forma que ya está escrita:
+`TargetResolution` sigue con TRES variantes, la negativa sigue siendo
+`PendingClass` y `PendingReference`, y la proyección sigue siendo
+`PendingReferenceInfo`. No hay ADT nuevo, ni variante nueva, ni campo nuevo en
+ningún contrato público. Lo que faltaba era la MEDICIÓN, y una medición se
+añade con una prueba. En consecuencia, **esta unidad no toca el código de
+producción**: el diff es de un solo fichero, un fichero de test que ya existía.
+
+**El peligro que se descartó antes de medir.** El MCP tiene un camino de
+CACHÉ que responde `complete` con la lista de pendientes VACÍA
+(`handlers/mod.rs:1491`, la rama `loaded_from_cache`): si la medida se hubiera
+hecho sobre un acierto de caché, la equivalencia sería falsa por construcción
+—una superficie con la negativa y otra sin ella— y el resultado no habría
+medido nada. Se comprobó en el código que un build `Partial` NO persiste
+manifiesto —«Only persist a snapshot when the build is Complete… rebuild-every-time
+is the safe default»—, así que el camino de caché no se puede abrir sobre este
+corpus. Y la medición lo confirma por sí sola: el MCP respondió `partial` con
+las dos negativas, y la rama de caché responde `complete`.
+
+**MEDIDO, sobre `sandbox/fixtures/kotlin-java/` (12 ficheros, 8 Kotlin y 4
+Java).** Las dos superficies publican las MISMAS dos negativas, campo por
+campo:
+
+| | fichero | línea | nombre | tipo | motivo | candidatos |
+|---|---|---|---|---|---|---|
+| CLI | `demo/gamma/Caller.kt` | 3 | `run` | `calls` | `ambiguous` | 3 |
+| MCP | `demo/gamma/Caller.kt` | 3 | `run` | `calls` | `ambiguous` | 3 |
+| CLI | `demo/gamma/UseHandler.kt` | 6 | `invoke` | `calls` | `ambiguous` | 2 |
+| MCP | `demo/gamma/UseHandler.kt` | 6 | `invoke` | `calls` | `ambiguous` | 2 |
+
+El veredicto es el mismo (`partial`) y el grafo es el mismo y NO está vacío:
+**29 símbolos y 4 relaciones** en las dos superficies. La equivalencia
+SOSTENÍA: el residuo era la medición que faltaba, no un defecto del producto.
+
+**La prueba no puede pasar por vacío, y eso es del contrato, no del estilo.**
+Dos superficies que no publican nada son iguales en el vacío, y una
+equivalencia medida sobre un grafo vacío es una equivalencia medida sobre
+nada. El test exige, antes de comparar, que AMBAS superficies publiquen la
+negativa del corpus —y que el grafo no esté vacío—, y exige que la negativa sea
+LA que el corpus declara: `run` con tres candidatos e `invoke` con dos, con su
+fichero y su línea. Si el producto dejara de publicar la negativa, el test
+caería por la precondición, no por la comparación.
+
+**El RED, medido con mutación focal.** Dos mutaciones, cada una revertida, y
+cada una muerta sólo por el test escrito para ella:
+
+1. **El MCP deja de publicar la negativa** (`handlers/mod.rs`: la rama
+   `Partial` publica una lista vacía): el test cae diciendo «the MCP publishes
+   the negative the corpus declares: got []».
+2. **La proyección compartida pierde la línea** (`coverage.rs`: `origin_line`
+   deja de viajar): el test cae mostrando la diferencia —`line: None` contra
+   `line: Some(3)`—, que es la línea siendo la identidad de la negativa.
+
+Restaurados byte a byte, los dos dies y el test pasa. Un contrato que no se ha
+visto rojo no mide nada.
+
+**El inventario del harness, medido antes y después.** La lente de economía del
+harness pide medir, no suponer:
+
+| | antes (`main@40d43b01`) | después |
+|---|---|---|
+| ficheros de test en `crates/` | 235 | **235** (0) |
+| contratos de CI (`scripts/ci/test_*.py`) | 59 | **59** (0) |
+| ficheros en `scripts/ci/` | 88 | **88** (0) |
+| directorios en `sandbox/fixtures/` | 46 | **46** (0) |
+| ficheros en `sandbox/fixtures/` | 48 002 | **48 002** (0) |
+
+Cero fixtures nuevos, cero contratos nuevos, cero ficheros de test nuevos. El
+corpus `sandbox/fixtures/kotlin-java/` y el contrato de Kotlin
+(`crates/cognicode-core/tests/c13_kotlin_java_relation_contract.rs`) ya existen
+y se reutilizan tal cual; la medición vive en
+`crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`, que es el fichero que
+ya sabía lanzar la CLI como sub-proceso y el MCP sobre el MISMO árbol.
+
+**Los gates, medidos.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 eligió
+  `strategy=changed`, `suites=[cli,ladybug]`: 15 + 4 + 66 = **85** pasados, 0
+  fallidos. El filtro sobre el test nuevo también dio **rc=0** con 1 pasado.
+- `bash scripts/test-full.sh`: la PRIMERA pasada dio **rc=1** en la etapa de
+  `fmt --check` —el fichero de test no estaba formateado con `rustfmt`— y en
+  NINGUNA otra: clippy con `-D warnings` limpio, `cargo test --workspace` con
+  **6498** pasados, 0 fallidos y 34 ignorados, doc-tests en verde, explorer
+  multimodal en verde (**4** pasados), **454** comprobaciones de contrato en 0
+  fallos —63 suites: 57 contratos de CI más `scripts/product/*.py`— y
+  `known_failures (core/lib)` sin diferencias. La corrección es del FORMATO
+  (`cargo fmt`), no del comportamiento. La SEGUNDA pasada, sobre el árbol que
+  este recibo acompaña, dio **rc=0** en las siete etapas —`fmt --check`,
+  clippy con `-D warnings`, `cargo test --workspace` con **6498** pasados, 0
+  fallidos y 34 ignorados, doc-tests, explorer multimodal con **4** pasados,
+  **454** comprobaciones de contrato en 0 fallos y `known_failures (core/lib)`
+  sin diferencias—. El `merge-gate` vuelve a medir ese mismo árbol sobre el SHA
+  publicado, y su veredicto lo publica el recibo de cierre.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La equivalencia se mide sobre UN corpus y sobre UNA forma de pérdida.** La
+  prueba compara la negativa AMBIGUA sobre Kotlin/Java. No mide la negativa
+  sin candidato —que sigue siendo sólo un número, por la decisión de alcance
+  que `TASK-14` escribió— ni ninguna otra forma de pérdida.
+- **La medición es de una sola llamada por superficie.** No mide el
+  comportamiento de la segunda llamada ni de una sesión repetida. El camino de
+  caché del MCP está FUERA de la comparación, y eso es declarado por el código:
+  un build `Partial` no persiste manifiesto, así que la segunda llamada vuelve
+  a construir. Una equivalencia medida sobre la caché sería otra medición.
+- **La ruta semántica sigue fuera.** La que usa un lector con dominio —
+  Terraform, Ansible— no tiene índice del proyecto y no puede distinguir una
+  llamada ambigua de una que vive fuera del proyecto. Esta unidad mide las dos
+  superficies sobre el corpus del proyecto; la tercera ruta queda declarada, no
+  se disimula.
+- **`C23` no se desplaza.** Sigue esperando la decisión del operador sobre el
+  pull request `#464`, y esta unidad no la toma por su cuenta.
+
+**La tarea en la bandeja.** `TASK-15` queda en la bandeja local de Backlog.md
+con el SHA de la implementación que entre en `main` —que publicará el recibo de
+cierre—: los cuatro criterios de aceptación y los tres puntos de la Definition
+of Done tienen evidencia real —la equivalencia medida campo por campo sobre las
+dos superficies, la negativa con su identidad y su motivo, las precondiciones
+que impiden que la comparación pase por vacío, y la reutilización del corpus,
+del contrato y del fichero de test existentes sin ningún fichero nuevo—. El
+RED está medido sobre el camino malo con las dos mutaciones focales de arriba,
+`fast` está verde, y el veredicto de `full` y del `merge-gate` lo publica el
+recibo de cierre.
+
+**La cola.** `goal-compass.json` NO cambia en este ciclo, y hay que decirlo sin
+rodeos: `TASK-15` nunca fue candidata de esa cola —nació como el residuo que
+el cierre de `TASK-14` dejó medido y con dueño, en la bandeja local—, así que
+no hay ficha que sacar. La cola viva sigue con `C23` (bloqueada por el
+operador) y nada más.

@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `001693110ffbce58d99a52bc10062d9539b6c51a` (la
+> **Snapshot**: 2026-10-29, sobre `40d43b013bf0a6fcf18e1bfc75385769dc9f503b` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -42,7 +42,22 @@
 > dominio no cambia: `TargetResolution` sigue con tres variantes y la negativa
 > se modela donde ya había forma para ella —`PendingClass` y
 > `PendingReference`—, con un valor de dominio nuevo que transporta la línea
-> donde la llamada está escrita).
+> donde la llamada está escrita; y las dos superficies ya no se comparan por
+> separado: la equivalencia entre la CLI y el MCP se mide sobre el corpus de
+> Kotlin y se sostiene —son adaptadores sobre un mismo servicio, así que tienen
+> que decir lo mismo del mismo proyecto—, y la medición es del CONTENIDO de la
+> negativa y no de su recuento: el corpus de Terraform sólo pierde una
+> referencia que nadie declara, así que un número basta, pero el de Kotlin
+> pierde además las referencias AMBIGUAS —el nombre está declarado varias
+> veces y la llamada no dice cuál—, y la negativa tiene una identidad —qué
+> llamada, en qué fichero y en qué línea— y un motivo —cuántos candidatos
+> llevan el nombre— que las dos superficies tienen que publicar IGUALES;
+> medido: las dos publican las mismas dos negativas
+> —`demo/gamma/Caller.kt:3 → run [ambiguo: 3]` y
+> `demo/gamma/UseHandler.kt:6 → invoke [ambiguo: 2]`—, el mismo veredicto
+> (`partial`) y el mismo grafo no vacío —29 símbolos y 4 relaciones—; la
+> equivalencia SOSTENÍA, así que el residuo era la MEDICIÓN y no un defecto:
+> esta unidad no toca el código de producción).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -636,6 +651,42 @@ NO cubre, y queda declarado: la ruta semántica —la que usa un lector con
 dominio, como Terraform o Ansible— sigue sin publicar sus llamadas no
 resueltas, porque su lector no tiene índice del proyecto y no puede
 distinguir una llamada ambigua de una que vive fuera del proyecto.
+
+**Las dos superficies dicen lo mismo del mismo proyecto, está cerrada.** El
+residuo que dejó el cierre anterior lo dijo con sus palabras: «la equivalencia
+CLI/MCP no se ha ejercido sobre este corpus; la medición de equivalencia que
+hoy existe cubre Terraform; este contrato llama a los servicios del dominio, no
+a la CLI ni al MCP». Era una laguna de MEDICIÓN, y no de forma: la CLI y el MCP
+son adaptadores sobre un mismo servicio, y las dos superficies leen la misma
+pérdida del mismo sitio —el informe del build— y la proyectan con la misma
+función —`PendingReferenceInfo::from_reference`—, así que la pregunta que
+faltaba no era «¿qué.publish?» sino «¿publican lo mismo?».
+La medición anterior, la de Terraform, comparaba un RECUENTO de referencias
+pendientes. Un recuento basta cuando lo que se pierde es una referencia que
+nadie declara, porque entonces lo único que hay que decir es que hay un hueco.
+El corpus de Kotlin pierde además las referencias AMBIGUAS —`run` está
+declarado tres veces y `invoke` dos, y ninguna de las dos llamadas dice cuál—
+y esas tienen una IDENTIDAD —qué llamada, en qué fichero y en qué línea— y un
+MOTIVO —cuántos candidatos llevan el nombre—, que son exactamente las dos cosas
+que un consumidor necesita para poder actuar sobre el hueco. Comparar un
+recuento no comparaba la negativa: comparaba su tamaño.
+MEDIDO: las dos superficies publican las MISMAS dos negativas, campo por
+campo —`demo/gamma/Caller.kt:3 → run [calls, ambiguous, 3]` y
+`demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo
+veredicto (`partial`) y el mismo grafo no vacío —29 símbolos y 4 relaciones—.
+La equivalencia SOSTENÍA: el residuo era la medición que faltaba, no un
+defecto del producto, y por eso esta unidad no toca el código de producción.
+Lo que añade es la PRUEBA que mide, y la prueba no puede pasar por vacío: dos
+superficies que no publican nada son iguales en el vacío, y una equivalencia
+medida sobre un grafo vacío es una equivalencia medida sobre nada. El RED se
+midió con dos mutaciones focales, cada una revertida: sin la negativa en el MCP
+—«the MCP publishes the negative the corpus declares: got []»— y sin la línea
+en la proyección compartida. El inventario del harness antes y después es el
+MISMO: 235 ficheros de test, 59 contratos de CI y 46 directorios de fixtures,
+cero ficheros de test nuevos, cero contratos nuevos, cero fixtures nuevos —el
+corpus `sandbox/fixtures/kotlin-java/` y el contrato de Kotlin ya existen, y la
+medición vive en el fichero que ya sabía lanzar la CLI y el MCP sobre el mismo
+árbol—.
 
 ## La misión
 
