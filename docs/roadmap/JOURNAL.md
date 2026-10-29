@@ -28687,3 +28687,159 @@ está medido».
 operador, la segunda por `C23`—, así que la siguiente unidad sin bloqueo es
 **`M1.T03`** (`C44`): el catálogo publicado dice de su runtime una versión que
 no es la.
+
+## 2026-10-29 — El catálogo publicado dice la versión que su runtime reporta
+
+**El defecto, medido sobre el árbol real.** `product/tools.json` es el maestro
+publicado del catálogo: 78 tools, y cada una con un bloque `runtime_metadata`
+que es el espejo de lo que el runtime publica en `_meta.cognicode`. Ese espejo
+decía de su runtime la versión que el runtime tenía **el día en que esa entrada
+se escribió**, y el runtime tiene una sola versión, que se mueve con cada
+release.
+
+Medido sobre las 78 entradas del maestro, antes de la corrección:
+
+| tools | lo que decía el maestro | de dónde sale esa versión |
+|---|---|---|
+| 73 | `0.99.2` | la del workspace en `ebdb62fe`, el `--source-commit` con el que el maestro se generó en `85222f67` |
+| 3 | `0.101.11` | `interproc_summary`, `list_evidence`, `search_evidence`, añadidas a mano en `a4324f13` (el workspace iba en `0.101.11`) |
+| 1 | `0.101.14` | `composite_impact_query`, añadida a mano en `f3cc51a9` (el workspace iba en `0.101.14`) |
+| 1 | `0.101.15` | `safe_refactor_preview`, añadida a mano en `d6bbb748` — con una versión **por delante** de la del árbol en ese commit, que iba en `0.101.14` |
+
+El runtime —y la captura `product/tool-catalog-runtime.json`, un `tools/list`
+real— dicen `0.101.31` en las 78.
+
+**Por qué el maestro y la captura no nacieron el mismo día.** El maestro se
+generó en `85222f67` desde una captura de 73 tools, con
+`--source-commit ebdb62fe`. Las cinco tools que se añadieron después lo fueron
+a mano porque la captura no podía aportarlas: en `a4324f13`, `f3cc51a9` y
+`d6bbb748` la captura seguía teniendo 73. Quien las escribió puso la versión
+del día, y ahí se quedó. `C42` refrescó la captura con una build de una sola
+feature —78 tools, `0.101.31`— y el maestro, que no se regenera porque eso ya
+está decidido, siguió con sus cuatro versiones viejas. La deriva dejó de ser
+«un poco vieja» y pasó a ser «deliberadamente vieja»: la captura ya decía la
+verdad y el maestro seguía mintiendo, y el único comparador que había no
+miraba el metadato.
+
+**El documento se contradecía a sí mismo.** El maestro se embebe en el binario
+(`crates/cognicode-core/src/interface/catalog.rs:193`, `include_str!`), así que
+`cognicode capabilities --json` publica su bloque `runtime_metadata` tal cual.
+Medido con el binario real antes de la corrección: el mismo documento decía
+`cli_version: 0.101.31` en la cabecera y `tool_version: 0.99.2` en cada una de
+las 78 tools. En el wire MCP la versión la inyecta el runtime en cada
+respuesta (`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:630-633`,
+`env!("CARGO_PKG_VERSION")`), así que el MCP siempre decía la verdad y el
+documento publicado mentía.
+
+**La deriva, medida sobre las 78.** El único valor que discrepa entre el
+maestro y la captura es `tool_version`: los otros siete metadatos que publica
+el runtime coinciden en las 78. Y la única diferencia de conjunto de claves es
+del maestro: `check_architecture` lleva dos claves que el runtime no publica
+(`gate_authority`, `produces_observations_only`).
+
+**Lo que la hacía invisible.** El único comparador entre el maestro y la
+captura (`the_capture_agrees_with_the_master`) comparaba **el esquema de
+entrada**, y el propio detector lo decía: «Los metadatos tienen su propia
+deriva […] y esa es otra unidad, con su propia medida». Una tool no cambia de
+nombre porque cambie su versión, y el conjunto de nombres es justo lo que no
+cambia: la deriva era invisible por construcción.
+
+**El RED, medido** contra `67b63277` (el contrato y el sincronizador, sin la
+corrección): **rc=1 — 8 PASS, 2 FAIL**.
+
+| comprobación | lo que vio | lo que tenía que ver |
+|---|---|---|
+| `test_the_runtime_metadata_agrees_with_the_capture` | `0.99.2` en 78 tools | la versión que el runtime reporta |
+| `test_the_committed_master_is_synchronized` | el maestro commiteado no era el resultado de sincronizarlo | el maestro commiteado es un punto fijo de la sincronización |
+
+Las otras dos comprobaciones nuevas —`test_the_curated_runtime_metadata_is_still_there`
+y `test_the_synchronization_keeps_the_curated_metadata`— pasaron **contra el
+código viejo**, y por eso miden AC2: la curación no se había perdido, pero
+nadie la vigilaba.
+
+**La regla, y es una sola.** `scripts/product/sync_tool_catalog_runtime_metadata.py`
+es el dueño de la sincronización, y el contrato lo **usa** en vez de
+reimplementar la regla: una regla que vive en dos sitios es una regla que se
+puede separar. La regla es una: *toda clave que el runtime publica en
+`_meta.cognicode` está en el `runtime_metadata` del maestro, con el valor del
+runtime*. Es una **fusión, nunca una copia**: las claves que el runtime no
+publica no tienen de dónde volver, y una copia se las llevaría.
+
+**Lo que cambia.** Las 78 `tool_version` del maestro pasan a `0.101.31`: 156
+líneas cambiadas (78 de quita, 78 de pone), **todas `tool_version`**, ninguna
+más —medido sobre el diff—. Las claves curadas que el runtime no publica
+siguen ahí, con sus valores (`gate_authority: false`,
+`produces_observations_only: true`). Los nueve campos que ningún generador
+posee (`limitations`, `required_args`, `prerequisites`, `follow_ups`,
+`intent_tags`, `language_scope`, `feature`, `impact_direction_floor`,
+`precision_floor`) no se tocaron, ni el conjunto de tools, ni `source_commit`.
+
+**Lo que NO se hizo, y por qué.**
+
+- **Una copia ciega.** Se habría llevado las dos claves curadas de
+  `check_architecture` y los nueve campos que el generador no posee: el
+  maestro habría perdido su curación entera.
+- **Derivar la versión en tiempo de carga desde `env!("CARGO_PKG_VERSION")`.**
+  El maestro es un documento versionado: si su contenido depende del binario
+  que lo lee, el mismo documento da dos documentos según quién lo lea, y el
+  gate que compara maestro y captura no tendría contra qué comparar.
+- **Comparar el maestro con la versión del crate en vez de con la captura.**
+  Se pondría rojo en cada bump de SemVer aunque el documento esté bien, y no
+  distinguiría «el maestro está viejo» de «el runtime se movió y la captura no
+  se refrescó». La captura es la referencia —es provenance: un `tools/list`
+  real—, y por eso es también lo que hay que refrescar.
+
+**El GREEN, medido.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 cayó al subconjunto
+  conservador (`strategy=fallback`, motivo `unknown_path(product/tools.json)`),
+  con 3200 pasados y 2 ignorados en `cognicode-core/lib`, 956, 161, 0, 80, 15,
+  13 y 6 en las demás, y clippy con `-D warnings` limpio. Ese subconjunto no
+  incluye los contratos, y por eso `full` no es opcional en esta unidad.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con 6477 pasados, 0 fallidos
+  y 22 ignorados, doc-tests con 8 pasados y 12 ignorados, explorer multimodal
+  con 4 pasados, contratos con 443 verdes repartidos en 61 ficheros, y
+  `known_failures` sin diferencias: la base no declara ninguna.
+- El contrato del consumidor, aislado: **10 de 10**. El sincronizador en
+  `--check`: rc=0, y volver a sincronizar el maestro no cambia ni un byte (la
+  sincronización es idempotente).
+- Ratchet CR-06: **28 pares de producción contra 28 en la base** (0 añadidos,
+  0 retirados); 13 de las 41 entradas de la allowlist son `cfg(test)` y no
+  cuentan como deuda.
+
+**Lo que este corte NO cubre.**
+
+- **La captura se queda vieja en cada release.** Es provenance: un `tools/list`
+  real de una build. Su propio recibo (`C42`) ya lo sabía —la captura venía de
+  `v0.101.17` con el runtime en `0.101.31`—, y el maestro queda viejo con
+  ella. Este corte hace que la deriva sea **visible en el contrato** en vez de
+  silenciosa; no la evita. Refrescar la captura es un acto propio, con su
+  build de una sola feature (`product/README.md` lo dice).
+- **`source_commit` sigue apuntando a `ebdb62fe`.** Es la base de la
+  generación del maestro —el `--source-commit` con el que se generó en
+  `85222f67`—, no de su contenido: cinco tools se añadieron después a mano.
+  Cambiarlo afirmaría que todo el documento deriva de un árbol que no las tiene.
+- **Una tool que la captura no cubre.** `merge_runtime_metadata` la nombra
+  («the master publishes it and the capture does not») y no la sincroniza: no
+  hay de dónde copiar. Hoy no hay ninguna —las 78 están—; si mañana el
+  maestro publica una tool que el runtime no expone, el contrato lo dirá en
+  vez de inventar un valor.
+- **La identidad del origen.** El maestro dice lo que el runtime dice de sí
+  mismo; el wire lo inyecta. El contrato mide que los dos coincidan, no que el
+  maestro sea la fuente de la versión.
+
+**Lo que deja el árbol.** Cuatro ficheros: el maestro sincronizado
+(`product/tools.json`), el sincronizador
+(`scripts/product/sync_tool_catalog_runtime_metadata.py`, nuevo), el contrato
+(`scripts/ci/test_the_consumer_can_declare_the_version.py`) y la propiedad del
+maestro (`product/README.md`).
+
+**Siguiente WU.** La cola viva del proyecto (`goal-compass.json`) queda con
+`C23` (50, bloqueada por el operador) y `C13` (10, sin bloqueo), que en la
+agenda privada es `M2.T03`. En la agenda privada, `M1.T01` (`TASK-5`) y
+`M1.T02` (`TASK-4`) siguen bloqueadas —la primera por una decisión de alcance
+del operador, la segunda por `C23`—, así que con `M1.T03` cerrado el hito `M1`
+no tiene más unidades ejecutables. La siguiente unidad sin bloqueo es
+**`M2.T01`** (`TASK-6`): la suite E2E de Explorer espera con reloj donde la
+aplicación no expone señal.
