@@ -30,7 +30,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 |---|---|
 | H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
-| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`); el residuo de ese cierre —la equivalencia CLI/MCP no se ha ejercido sobre este corpus— lo toma **`TASK-15`**, cerrada el 2026-10-29 (`9e1d36d7`) |
+| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`); el residuo de ese cierre —la equivalencia CLI/MCP no se ha ejercido sobre este corpus— lo toma **`TASK-15`**, cerrada el 2026-10-29 (`9e1d36d7`); el residuo de ese cierre —la respuesta que el MCP sirve desde la caché es un veredicto hueco— lo toma **`TASK-16`**, cerrada el 2026-10-29 (`323abe72`) |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
 | H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
 | H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
@@ -85,98 +85,169 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de TASK-15 está cerrado en el remoto.** El pull request `#495` —la
-publicación de la rama `fix/task-15-cli-mcp-equivalence-kotlin-corpus`— se
-fusionó por squash como `9e1d36d7`, con el `merge-gate` verde sobre
-`9f7f15e4`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La equivalencia
-entre las dos superficies ya no está AFIRMADA: está MEDIDA, y medida sobre el
-corpus donde la negativa tiene identidad y motivo. MEDIDO sobre
-`sandbox/fixtures/kotlin-java/` (12 ficheros, 8 Kotlin y 4 Java): las dos
-superficies publican las MISMAS dos negativas, campo por campo —
-`demo/gamma/Caller.kt:3 → run [calls, ambiguous, 3]` y
-`demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo
-veredicto (`partial`) y el mismo grafo no vacío: **29 símbolos y 4
-relaciones**. La equivalencia SOSTENÍA: el residuo era la MEDICIÓN que
-faltaba, no un defecto del producto.
+**El ciclo de TASK-16 está cerrado en el remoto.** El pull request `#497` —la
+publicación de la rama `measure/mcp-cache-verdict-truth`— se fusionó por squash
+como `323abe72`, con el `merge-gate` verde sobre `97fbef20`. La respuesta que
+el MCP sirve desde la caché ya no está AFIRMADA como honesta: está MEDIDA, y
+medida sobre el hueco que la propia comprobación de frescura no puede ver.
 
-**Por qué un recuento no bastaba.** La medición que existía comparaba un
-RECUENTO de referencias pendientes, y eso sólo alcanza cuando lo que se
-pierde es una referencia que nadie declara: entonces lo único que hay que
-decir es que hay un hueco. El corpus de Kotlin pierde además las referencias
-AMBIGUAS —`run` está declarado tres veces e `invoke` dos, y ninguna de las dos
-llamadas dice cuál de los candidatos quiere—, y ésas tienen una IDENTIDAD —qué
-llamada, en qué fichero y en qué línea— y un MOTIVO —cuántos candidatos
-llevan el nombre—, que son exactamente las dos cosas que un consumidor
-necesita para poder actuar sobre el hueco. Comparar un recuento no comparaba
-la negativa: comparaba su TAMAÑO.
+**El residuo, con las palabras del cierre anterior.** El recibo de `TASK-15`
+cerraba DESCARTANDO un camino de medición, y lo hacía nombrando la superficie
+que esta unidad mide:
 
-**La forma del dominio no cambia, y por eso no es una preferencia.** La
-decisión de forma de `TASK-14` está escrita y no se re-discute:
-`TargetResolution` sigue TENIENDO TRES variantes y la negativa sigue siendo
-`PendingClass`/`PendingReference`. No hay ADT nuevo, ni variante nueva, ni
-campo nuevo en ningún contrato público. Lo que faltaba era el TRANSPORTE y la
-MEDICIÓN, y el transporte ya existía: las dos superficies proyectan la misma
-pérdida con la MISMA función —`PendingReferenceInfo::from_reference`
-(`crates/cognicode-core/src/interface/coverage.rs:48`)—, la CLI por
-`present_graph_full` y el MCP por `handle_build_graph`. En consecuencia, esta
-unidad NO toca el código de producción: el diff de CÓDIGO es de un solo
-fichero, un fichero de test que ya existía.
+> **El peligro que se descartó antes de medir.** El MCP tiene un camino de
+> CACHÉ que responde `complete` con la lista de pendientes VACÍA
+> (`handlers/mod.rs:1491`, la rama `loaded_from_cache`): una equivalencia
+> medida sobre un acierto de caché sería falsa por construcción —una superficie
+> con la negativa y otra sin ella—.
+
+El residuo hablaba de la lista de PENDIENTES; la superficie a medir es el
+VEREDICTO entero de la respuesta. La pregunta abierta era si un consumidor del
+MCP puede recibir un `complete` HUECO: un veredicto `complete` acompañado de
+una lista de pendientes vacía mientras el grafo real NO estaba completo.
+
+**El mecanismo, leído en el código antes de medir.** `handle_build_graph`
+(`crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1347`) tiene DOS
+caminos de caché —la instantánea durable (`.cognicode/graph.cache`) y el
+manifiesto de la misma sesión— y los dos marcan `loaded_from_cache = true`. En
+los dos, la respuesta se armaba con tres listas vacías y `complete`. Lo que la
+respuesta NO llevaba era el estado del árbol: el veredicto era el del BUILD que
+persistió la instantánea, no el del árbol que el consumidor tenía delante.
+
+**Por qué la caché no podía saberlo.** El manifiesto que decide si la
+instantánea sigue siendo fresca describe los FICHEROS de los que se construye
+el grafo —los que `SourceInventory::source_files()` deja pasar—. Una entrada
+que el recorrido DECLINA —un enlace simbólico que no sigue— NO es uno de esos
+ficheros, así que no está en el manifiesto, así que `is_manifest_stale` no
+puede verla. La comprobación de frescura era ciega a una clase entera de
+huecos: los que el recorrido deja a propósito, que son los que más se parecen
+a una decisión y menos a una avería, y por eso son los que un consumidor no
+puede ignorar.
+
+**MEDIDO, sobre el corpus de tres ficheros Rust que el repo ya versiona
+(`crates/cognicode-core/testdata/silent_errors_corpus`), con un enlace
+simbólico declinado en `src/`:**
+
+| | respuesta | veredicto | omitidos | símbolos | relaciones |
+|---|---|---|---|---|---|
+| en frío, sobre el árbol | freshly built | `partial` | `src/link.rs` [symlink] | 3 | 0 |
+| servida de la caché | cached | `complete` | *(vacío)* | 3 | 0 |
+
+El GRAFO era el mismo y no estaba vacío: 3 símbolos y 0 relaciones en las dos.
+El hueco no estaba en el grafo: estaba en el VEREDICTO, que afirmaba de un
+árbol algo que la caché no podía saber. Un consumidor que leyera `complete`
+creería conocer un proyecto que sólo había visto a medias, y no tendría ni
+siquiera un hueco enumerado que le permitiera sospechar.
+
+**La forma del dominio no cambia, y por eso no es una preferencia.**
+`BuildGraphOutput` sigue con los mismos cuatro campos y `"complete"`,
+`"partial"`, `"unknown"` y `"unsupported"` siguen siendo su juego de valores.
+No hay ADT nuevo, ni variante nueva, ni campo nuevo en ningún contrato
+público. Lo que cambia es de dónde sale el CONTENIDO de las tres listas cuando
+la respuesta viene de la caché: no del build que persistió la instantánea,
+sino del ÁRBOL.
+
+**La corrección no cuesta un recorrido nuevo.** La comprobación de frescura ya
+recorría el árbol, así que el hueco del árbol sale de la MISMA pasada: el
+inventario se calcula donde ya se calculaba y se pasa a `is_manifest_stale` en
+vez de que aquél lo vuelva a recorrer. Y los huecos tienen ahora un SOLO
+dueño: `SourceInventory::coverage_holes`
+(`crates/cognicode-core/src/infrastructure/graph/source_files.rs:163`), que es
+la composición de lo que el recorrido declined, lo que no pudo hacer y lo que
+todavía no sabe leer. Antes los componían tres sitios por su cuenta —la ruta
+de proyecto entero, la de un fichero y la de K0—, y tres composiciones propias
+son tres respuestas esperando a separarse.
+
+**MEDIDO, después de la corrección.** La respuesta servida de la caché
+publica ahora los huecos del árbol TAL COMO ESTÁ AHORA y lleva el veredicto
+que una construcción en frío daría: `partial` con `src/link.rs` declarado como
+`symlink`, el mismo grafo —3 símbolos, 0 relaciones— y el mismo motivo. Y el
+veredicto de la caché y el de una construcción en frío son IGUALES, campo por
+campo.
+
+**Y la paridad mejora.** La CLI no tiene camino de caché: `GraphCommand::Full`
+(`crates/cognicode-core/src/interface/cli/commands.rs:1086`) va por
+`ServiceAnalyzer` y `AnalysisOp::GraphFull`, que siempre construye y siempre
+publica los huecos actuales. `loaded_from_cache` sólo existe en el handler del
+MCP. La corrección, por tanto, CIERRA una diferencia de paridad entre las dos
+superficies en vez de abrirla: hoy las dos dicen lo mismo del mismo árbol,
+caliente o frío.
 
 **La prueba no puede pasar por vacío, y eso es del contrato, no del estilo.**
-Dos superficies que no publican nada son iguales en el vacío, y una
-equivalencia medida sobre un grafo vacío es una equivalencia medida sobre
-nada. El test exige, antes de comparar, que AMBAS superficies publiquen la
-negativa del corpus —y que el grafo no esté vacío—, y exige que la negativa sea
-LA que el corpus declara: `run` con tres candidatos e `invoke` con dos, con su
-fichero y su línea. Si el producto dejara de publicar la negativa, el test
-caería por la precondición, no por la comparación.
+Dos respuestas vacías son iguales en el vacío, y una equivalencia medida sobre
+un grafo vacío es una equivalencia medida sobre nada. El test —en
+`crates/cognicode-core/tests/cached_coverage_is_honest.rs`, el fichero que ya
+medía la cobertura en caliente y en frío— exige, antes de comparar, que la
+respuesta EN CALIENTE venga de la caché —su mensaje lo dice—, que el grafo no
+esté vacío, y que el hueco sea EL que el árbol declara —`src/link.rs` como
+`symlink`—, porque dos respuestas que comparten un error son iguales. La
+comparación se hace sobre la ruta RELATIVA al proyecto, porque dos copias del
+corpus viven en dos directorios y lo que se compara es el árbol.
 
 **El RED, medido con mutación focal.** Dos mutaciones, cada una revertida, y
-cada una muerta sólo por el test escrito para ella: el MCP deja de publicar la
-negativa —el test cae con «the MCP publishes the negative the corpus declares:
-got []»— y la proyección compartida pierde la línea —el test cae con `line:
-None` contra `line: Some(3)`—. Un contrato que no se ha visto rojo no mide
-nada.
+cada una muerta sólo por el test escrito para ella:
 
-**El peligro que se descartó antes de medir.** El MCP tiene un camino de
-CACHÉ que responde `complete` con la lista de pendientes VACÍA
-(`handlers/mod.rs:1491`, la rama `loaded_from_cache`): una equivalencia
-medida sobre un acierto de caché sería falsa por construcción —una superficie
-con la negativa y otra sin ella—. En el código se comprobó que un build
-`Partial` NO persiste manifiesto, así que ese camino no se puede abrir sobre
-este corpus; y la medición lo confirma por sí sola: el MCP respondió `partial`
-con las dos negativas, y la rama de caché responde `complete`.
+1. **El veredicto de la caché miente** (la rama de caché vuelve a decir
+   `complete`): el test cae en la comparación de las dos respuestas —
+   `left: Answer { status: "complete", … }` contra
+   `right: Answer { status: "partial", … }`.
+2. **El motivo del hueco se pierde** (el brazo del enlace simbólico deja de
+   decir `symlink`): el test cae en la aserción ABSOLUTA del hueco —
+   `left: [("src/link.rs", "other")]` contra
+   `right: [("src/link.rs", "symlink")]`—, que es la que una comparación entre
+   dos respuestas no puede ver.
 
-**El inventario del harness, medido antes y después.** Ficheros de test en
-`crates/`: 235 antes y **235** después. Contratos de CI
-(`scripts/ci/test_*.py`): 59 y **59**. Ficheros en `scripts/ci/`: 88 y **88**.
-Directorios en `sandbox/fixtures/`: 46 y **46**. Ficheros en
-`sandbox/fixtures/`: 48 002 y **48 002**. Cero fixtures nuevos, cero contratos
-nuevos, cero ficheros de test nuevos: el corpus `sandbox/fixtures/kotlin-java/`
-y el contrato de Kotlin ya existían y se reutilizan tal cual, y la medición
-vive en `crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`, el fichero
-que ya sabía lanzar la CLI como sub-proceso y el MCP sobre el MISMO árbol.
+Restaurados byte a byte, los dos dies y el test pasa. Un contrato que no se ha
+visto rojo no mide nada.
 
-**Lo que este cierre no arregla, y por eso lo nombra.** La equivalencia se
-mide sobre UN corpus y sobre UNA forma de pérdida: la negativa ambigua. La
-negativa sin candidato —el nombre que el proyecto no declara— sigue siendo un
-número, por la decisión de alcance que `TASK-14` escribió. La medición es de
-una sola llamada por superficie: el camino de caché del MCP queda FUERA de la
-comparación, porque un build `Partial` no persiste manifiesto y la segunda
-llamada vuelve a construir —una equivalencia medida sobre la caché sería otra
-medición—. Y la ruta semántica —la que usa un lector con dominio, como
-Terraform o Ansible— sigue sin publicar sus llamadas no resueltas: su lector
-no tiene índice del proyecto, así que no puede distinguir una llamada ambigua
-de una que vive fuera del proyecto.
+**El inventario del harness, medido antes y después.** CERO delta: 235 ficheros
+de test en `crates/` antes y **235** después; 62 contratos de CI
+(`scripts/ci/*.py`) antes y **62** después; 985 ficheros versionados en
+`sandbox/fixtures/` antes y **985** después. Ni un fichero de test nuevo, ni un
+contrato nuevo, ni un fixture nuevo: el corpus ya versionado y el fichero que
+ya medía la cobertura en caliente y en frío eran todo el harness que esta
+unidad necesitaba. El catálogo publicado (`product/tools.json`) es MANUSCRITO
+y no se regenera: se editó a mano, y sólo en las cuatro descripciones de
+`build_graph` que el código publica —las que son el espejo de los comentarios
+del doc—.
 
-**Y lo que este cierre le da a `C23`, sin cerrarla.** El primer criterio de
-cierre de `C23` pide que las TRES rutas que construyen el grafo publiquen la
-misma cobertura, las mismas relaciones y los mismos huecos sobre el mismo
-corpus, y que un test lo verifique. `TASK-14` dio el primer par medido de esa
-clase —completa y per-file— y `TASK-15` da el par de las dos SUPERFICIES
-sobre el mismo corpus; lo que `C23` exige —las tres rutas por donde el grafo
-entra en producción y además el corte del fichero de 4.369 líneas— sigue sin
-medirse. `C23` sigue bloqueada por el operador, y esta unidad no la desplaza.
+**Lo que este corte NO cubre, y queda declarado.** La respuesta servida de la
+caché publica los huecos del árbol, pero sólo los que el recorrido puede
+ENUMERAR: un directorio que el proceso no puede leer es un hueco que se
+publica, y una entrada que desaparece entre la lectura y la medida también. Lo
+que NO se publica es el hueco de un árbol al que el recorrido no puede ENTRAR
+—un directorio sin permiso de ejecución, por ejemplo—, porque esa información
+no está en el inventario: es la misma limitación que ya tenían las tres rutas
+que lo componen, y esta unidad no la empeora ni la arregla. Y el camino de
+caché de la INSTANTÁNEA DURABLE y el de la MISMA SESIÓN se comportan igual
+porque comparten la rama, pero la verificación se ha hecho sobre el primero —el
+mensaje lo dice, «durable snapshot»—; el segundo no se ha ejercitado aparte.
+
+**Y dos derivas que este ciclo NO arregla, porque son de otra superficie.**
+`product/tools.json` declara una descripción de `BasisDto.complete` que ya no
+coincidía con la que el runtime publica, ANTES de este ciclo: es la superficie
+de la PROCEDENCIA del análisis, no la del veredicto de cobertura, y arreglarla
+aquí sería tocar un contrato que esta unidad no midió. Y el segundo mapa de
+`SkipReason` a motivo —`SkippedReasonKind`, `handlers/mod.rs:3876`— pertenece
+al contrato publicado de otra herramienta. Las dos quedan ENRUTADAS, no
+arregladas.
+
+**La cola.** `goal-compass.json` NO cambia en este ciclo, y hay que decirlo sin
+rodeos: `TASK-16` nunca fue candidata de esa cola —nació como el residuo que el
+cierre de `TASK-15` dejó medido y con dueño, en la bandeja local—, así que no
+hay ficha que sacar. La cola viva sigue con `C23` (50, bloqueada por el
+operador) y nada más.
+
+**Gates.** `fast` rc=0; `full` rc=0 —6504 pasados, 0 fallidos y 34 ignorados
+contando los doc-tests; 454 comprobaciones de contrato en 0 fallos—. Y una
+advertencia que el gate mismo enseña y que este recibo declara: el `fast` NO
+ejecuta el fichero de test nuevo, porque el selector CR-08 cae en su regla de
+catch-all —`product/tools.json` es un path que no conoce— y el camino de
+fallback corre `cargo test --workspace --lib`, que son SÓLO pruebas unitarias.
+La prueba de esta unidad se ejecutó directamente —`cargo test -p cognicode-core
+--test cached_coverage_is_honest`, 5 pasados— y el `full` sí la incluye,
+porque corre `cargo test --workspace`. Un run filtrado no es evidencia de
+gate, y aquí se dice cuál es cuál.
 
 La puerta que queda abierta es la de la cola:
 
@@ -184,8 +255,8 @@ La puerta que queda abierta es la de la cola:
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
 
-Y, con `TASK-15` cerrado, la cola viva se queda **sin ninguna unidad sin
-bloqueo** otra vez: `TASK-15` era el residuo que el cierre de `TASK-14` dejó
+Y, con `TASK-16` cerrado, la cola viva se queda **sin ninguna unidad sin
+bloqueo** otra vez: `TASK-16` era el residuo que el cierre de `TASK-15` dejó
 medido y con dueño, y ya está hecha. Las vecinas del entorno siguen
 igualmente atadas: `TASK-5` por una decisión de alcance del operador y
 `TASK-4` por `C23`. La siguiente unidad, por tanto, **no la decide este

@@ -30454,3 +30454,106 @@ La prueba de esta unidad se ejecutó directamente —`cargo test -p cognicode-co
 --test cached_coverage_is_honest`, 5 pasados— y el `full` sí la incluye,
 porque corre `cargo test --workspace`. Un run filtrado no es evidencia de
 gate, y aquí se dice cuál es cuál.
+
+## 2026-10-29 — El ciclo de TASK-16 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `97fbef20`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en el pull request `#497`. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+`.pipelinek/merge-gate.db`, con su identificador de corrida
+`02119212-2184-4c8a-be96-873cee87e97a`, los 58 `StageFinished` en `success` —el
+primero `build-isolation`, el último `merge-gate`— y el `RunFinished` en
+`success` (`outcome: success`, `diagnostics: []`). El gate corrió sobre el árbol
+exacto que GitHub iba a proteger, que es el mismo árbol que `full` midió.
+
+**La fusión.** El pull request `#497` —la publicación de la rama
+`measure/mcp-cache-verdict-truth`— se fusionó por squash como `323abe72`.
+
+**Lo que queda en el árbol, después del cierre.** La respuesta que el MCP
+sirve desde la caché ya no es un veredicto hueco: está MEDIDA. Lo que entra
+es código de producción —el handler del MCP, que publica los huecos del árbol
+y el veredicto de una construcción en frío cuando la respuesta sale de la
+caché— y un fichero de test, `crates/cognicode-core/tests/cached_coverage_is_honest.rs`,
+que no es nuevo: es el fichero que ya medía la cobertura en caliente y en frío.
+La FORMA del veredicto no cambia: `BuildGraphOutput` sigue con los mismos
+cuatro campos, `"complete"`, `"partial"`, `"unknown"` y `"unsupported"` siguen
+siendo su juego de valores, y no hay ADT nuevo ni campo nuevo en ningún
+contrato público. Lo que cambia es de dónde sale el CONTENIDO de las tres
+listas cuando la respuesta viene de la caché: no del build que persistió la
+instantánea, sino del ÁRBOL. Y los huecos tienen un SOLO dueño —
+`SourceInventory::coverage_holes`—, que es la composición de lo que el
+recorrido declined, lo que no pudo hacer y lo que todavía no sabe leer; las
+tres rutas que componían esa lista por su cuenta ahora la piden. Lo medido,
+sobre el corpus de tres ficheros Rust que el repo ya versiona: la respuesta
+EN FRÍO publicaba `partial` con `src/link.rs` declarado como `symlink`, la
+respuesta SERVIDA DE LA CACHÉ publicaba `complete` con la lista de omitidos
+VACÍA, y el grafo era el mismo en las dos —3 símbolos y 0 relaciones—; después
+de la corrección las dos respuestas son IGUALES campo por campo.
+
+**El poder discriminante del test, medido.** El test no puede pasar por vacío:
+exige, ANTES de comparar, que la respuesta EN CALIENTE venga de la caché —su
+mensaje lo dice—, que el grafo no esté vacío, y que el hueco sea EL que el
+árbol declara —`src/link.rs` como `symlink`—, porque dos respuestas que
+comparten un error son iguales; y la comparación se hace sobre la ruta
+RELATIVA al proyecto, porque dos copias del corpus viven en dos directorios y
+lo que se compara es el árbol. El RED se midió con dos mutaciones focales, cada
+una revertida y cada una muerta sólo por el test escrito para ella: sin el
+veredicto honesto caía la comparación de las dos respuestas —`left: Answer {
+status: "complete", … }` contra `right: Answer { status: "partial", … }`—, y
+sin el motivo del hueco caía la aserción ABSOLUTA —`left: [("src/link.rs",
+"other")]` contra `right: [("src/link.rs", "symlink")]`—, que es la que una
+comparación entre dos respuestas no puede ver. Restaurados byte a byte, los
+dos dies y el test pasa.
+
+**Y la paridad mejora.** La CLI no tiene camino de caché: siempre recorre y
+siempre publica los huecos actuales, y `loaded_from_cache` sólo existe en el
+handler del MCP. La corrección CIERRA una diferencia de paridad entre las dos
+superficies en vez de abrirla: hoy las dos dicen lo mismo del mismo árbol,
+caliente o frío.
+
+**Lo que este corte NO cubre, y queda declarado.** La respuesta servida de la
+caché publica los huecos que el recorrido puede ENUMERAR; el hueco de un
+árbol al que el recorrido no puede ENTRAR no está en el inventario, y es la
+misma limitación que ya tenían las tres rutas que lo componen. Y el camino de
+caché de la INSTANTÁNEA DURABLE y el de la MISMA SESIÓN comparten rama, pero la
+verificación se ha hecho sobre el primero —el mensaje lo dice, «durable
+snapshot»—; el segundo no se ha ejercitado aparte.
+
+**Dos derivas ENRUTADAS, no arregladas.** `product/tools.json` declara una
+descripción de `BasisDto.complete` que ya no coincidía con la que el runtime
+publica, ANTES de este ciclo: es la superficie de la PROCEDENCIA del análisis,
+no la del veredicto de cobertura, y arreglarla aquí sería tocar un contrato que
+esta unidad no midió. Y el segundo mapa de `SkipReason` a motivo —
+`SkippedReasonKind`, `handlers/mod.rs:3876`— pertenece al contrato publicado de
+otra herramienta.
+
+**La deriva que este cierre corrige en el ROADMAP §11.** El bloque de unidades
+abiertas publicaba como ABIERTOS tres cosas que el Journal ya tenía CERRADAS,
+y por eso las declaraba como abiertas: el error del recorrido y la
+exclusión legítima (`b2634ed6`, C20), el fichero recuperado de la caché —que ya
+cuenta como cubierto— (`e6820982`, C25) y el vigilante —que ya nombra el
+conjunto de ficheros que el producto observa— (`34c2b750`). El bloque se
+corrige: esos tres salen de la lista de lo que queda abierto, con su SHA, y lo
+que entra es `TASK-16` con el suyo. La comprobación del contrato que cuenta las
+líneas de cita del bloque —`scripts/ci/test_roadmap_authority_attribution.py`,
+techo de 80— se usó como restricción de DISEÑO, no como obstáculo: la redacción
+nueva del bullet de cobertura ocupa una línea más, y se pagó con una fusión de
+párrafos que no pierde un hecho.
+
+**La cola.** `goal-compass.json` NO cambia: `TASK-16` nunca fue candidata de esa
+cola —nació como el residuo que el cierre de `TASK-15` dejó medido y con
+dueño, en la bandeja local—, así que no hay ficha que sacar. La cola viva
+sigue con `C23` (50, bloqueada por el operador) y nada más, y la cola local
+queda sin ninguna unidad sin bloqueo: `TASK-5` sigue atada por una decisión de
+alcance del operador y `TASK-4` por `C23`.
+
+**Gates.** `fast` rc=0; `full` rc=0 —6504 pasados, 0 fallidos y 34 ignorados
+contando los doc-tests; 454 comprobaciones de contrato en 0 fallos—. Y una
+advertencia que el gate mismo enseña y que este recibo declara: el `fast` NO
+ejecuta el fichero de test nuevo, porque el selector CR-08 cae en su regla de
+catch-all —`product/tools.json` es un path que no conoce— y el camino de
+fallback corre `cargo test --workspace --lib`, que son SÓLO pruebas unitarias.
+La prueba de esta unidad se ejecutó directamente —`cargo test -p cognicode-core
+--test cached_coverage_is_honest`, 5 pasados— y el `full` sí la incluye,
+porque corre `cargo test --workspace`. Un run filtrado no es evidencia de
+gate, y aquí se dice cuál es cuál.

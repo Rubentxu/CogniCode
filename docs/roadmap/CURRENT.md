@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `b769802df4abc9440bcbb0dcf9084fb58af58e10` (la
+> **Snapshot**: 2026-10-29, sobre `323abe7292e62444ead7d84d659ea20302492a10` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -741,6 +741,17 @@ dice—, que el grafo no esté vacío y que el hueco sea el que el árbol declar
 `src/link.rs` como `symlink`—, porque dos respuestas vacías son iguales en el
 vacío. El RED se midió con dos mutaciones focales, cada una revertida: sin el
 veredicto honesto y sin el motivo del hueco.
+El ciclo queda cerrado en el remoto: el pull request `#497` —la rama
+`measure/mcp-cache-verdict-truth`— se fusionó por squash como `323abe72`, con
+el `merge-gate` verde sobre `97fbef20`. `fast` rc=0 y `full` rc=0 —6504
+pasados, 0 fallidos y 34 ignorados contando los doc-tests; 454 comprobaciones
+de contrato en 0 fallos—, con una salvedad que el propio gate enseña y que
+este recibo declara: el `fast` NO ejecuta el fichero de test nuevo, porque el
+selector CR-08 cae en su regla de catch-all —`product/tools.json` es un path que
+no conoce— y el camino de fallback corre `cargo test --workspace --lib`, que
+son SÓLO pruebas unitarias; la prueba de esta unidad se ejecutó directamente —
+`cargo test -p cognicode-core --test cached_coverage_is_honest`, 5 pasados— y el
+`full` sí la incluye, porque corre `cargo test --workspace`.
 
 ## La misión
 
