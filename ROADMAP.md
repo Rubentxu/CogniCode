@@ -30,7 +30,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 |---|---|
 | H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
-| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`) |
+| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`); el residuo de ese cierre —la equivalencia CLI/MCP no se ha ejercido sobre este corpus— lo toma **`TASK-15`**, cerrada el 2026-10-29 (`9e1d36d7`) |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
 | H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
 | H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
@@ -85,56 +85,98 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de TASK-14 está cerrado en el remoto.** El pull request `#492` —la
-publicación de la rama `fix/the-refusal-is-published`— se fusionó por squash
-como `00169311`, con el `merge-gate` verde sobre `3c86d2e8`:
-`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La pérdida que el cierre
-anterior dejó medida y con dueño ya no desaparece sin decirse. MEDIDO sobre el
-corpus `sandbox/fixtures/kotlin-java/`: el extractor lee SEIS llamadas y el
-grafo publica CUATRO relaciones; las dos que no publica son las dos que no se
-pueden probar, y de esas dos no quedaba NADA publicado —la estrategia `full`
-publicaba un número, `unresolved_edges`, y la estrategia `per_file` publicaba
-un `BuildStatus::Complete` que afirmaba una cobertura que no tenía. Eso
-contradecía K-REL-02 y K-REL-07 del contrato de Kotlin. Ahora la pérdida se
-publica con su IDENTIDAD —qué llamada, en qué fichero y en qué línea— y con su
-MOTIVO —cuántos candidatos tiene el nombre—, y `Complete` pasa a significar
-«no quedó nada sin atar»: ni un fichero sin leer ni una referencia sin atar a
-una declaración. Las dos estrategias de build publican la MISMA pérdida, porque
-las dos resuelven contra el mismo índice del proyecto.
+**El ciclo de TASK-15 está cerrado en el remoto.** El pull request `#495` —la
+publicación de la rama `fix/task-15-cli-mcp-equivalence-kotlin-corpus`— se
+fusionó por squash como `9e1d36d7`, con el `merge-gate` verde sobre
+`9f7f15e4`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La equivalencia
+entre las dos superficies ya no está AFIRMADA: está MEDIDA, y medida sobre el
+corpus donde la negativa tiene identidad y motivo. MEDIDO sobre
+`sandbox/fixtures/kotlin-java/` (12 ficheros, 8 Kotlin y 4 Java): las dos
+superficies publican las MISMAS dos negativas, campo por campo —
+`demo/gamma/Caller.kt:3 → run [calls, ambiguous, 3]` y
+`demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo
+veredicto (`partial`) y el mismo grafo no vacío: **29 símbolos y 4
+relaciones**. La equivalencia SOSTENÍA: el residuo era la MEDICIÓN que
+faltaba, no un defecto del producto.
 
-**La forma del dominio no cambia, y por eso no es una preferencia.**
-`TargetResolution` sigue TENIENDO TRES variantes: una cuarta rompería el
-`match` exhaustivo que el contrato de la unidad anterior fijó, y exigiría una
-tabla de símbolos externos que el producto no tiene. La negativa se modela
-donde ya había forma para ella —`PendingClass` y `PendingReference`—, y lo que
-faltaba era el TRANSPORTE, no la forma: la arista descartada no dejaba sitio
-donde escribir su motivo porque la arista no existe. El motivo lo produce la
-resolución y lo decide el dominio (`PendingReference::of_call`), de modo que
-ninguna ruta lo decide por su cuenta, y un valor de dominio nuevo transporta la
-línea donde la llamada está escrita. No se creó ningún campo nuevo en ningún
-contrato público: lo que cambia es que se llena lo que ya existía.
+**Por qué un recuento no bastaba.** La medición que existía comparaba un
+RECUENTO de referencias pendientes, y eso sólo alcanza cuando lo que se
+pierde es una referencia que nadie declara: entonces lo único que hay que
+decir es que hay un hueco. El corpus de Kotlin pierde además las referencias
+AMBIGUAS —`run` está declarado tres veces e `invoke` dos, y ninguna de las dos
+llamadas dice cuál de los candidatos quiere—, y ésas tienen una IDENTIDAD —qué
+llamada, en qué fichero y en qué línea— y un MOTIVO —cuántos candidatos
+llevan el nombre—, que son exactamente las dos cosas que un consumidor
+necesita para poder actuar sobre el hueco. Comparar un recuento no comparaba
+la negativa: comparaba su TAMAÑO.
 
-**Lo que este cierre no arregla, y por eso lo nombra.** La llamada sin
-candidato —el nombre que el proyecto no declara— sigue siendo un número, y es
-una decisión de alcance, no una omisión: publicar todos los nombres de
-biblioteca llenaría la lista de huecos de ruido y la volvería inútil. El
-overload correcto tampoco es implementable hoy: el pipeline sólo transporta el
-NOMBRE del callee (`FileFacts.calls` es `Vec<(Symbol, String)>`), así que la
-aridad que distinguiría los dos `invoke` no llega al resolvedor; está
-declarado, no fingido. La equivalencia CLI/MCP medida hasta hoy cubre
-Terraform, no este corpus. Y la ruta semántica —la que usa un lector con
-dominio, como Terraform o Ansible— sigue sin publicar sus llamadas no
-resueltas: su lector no tiene índice del proyecto, así que no puede distinguir
-una llamada ambigua de una que vive fuera del proyecto.
+**La forma del dominio no cambia, y por eso no es una preferencia.** La
+decisión de forma de `TASK-14` está escrita y no se re-discute:
+`TargetResolution` sigue TENIENDO TRES variantes y la negativa sigue siendo
+`PendingClass`/`PendingReference`. No hay ADT nuevo, ni variante nueva, ni
+campo nuevo en ningún contrato público. Lo que faltaba era el TRANSPORTE y la
+MEDICIÓN, y el transporte ya existía: las dos superficies proyectan la misma
+pérdida con la MISMA función —`PendingReferenceInfo::from_reference`
+(`crates/cognicode-core/src/interface/coverage.rs:48`)—, la CLI por
+`present_graph_full` y el MCP por `handle_build_graph`. En consecuencia, esta
+unidad NO toca el código de producción: el diff de CÓDIGO es de un solo
+fichero, un fichero de test que ya existía.
+
+**La prueba no puede pasar por vacío, y eso es del contrato, no del estilo.**
+Dos superficies que no publican nada son iguales en el vacío, y una
+equivalencia medida sobre un grafo vacío es una equivalencia medida sobre
+nada. El test exige, antes de comparar, que AMBAS superficies publiquen la
+negativa del corpus —y que el grafo no esté vacío—, y exige que la negativa sea
+LA que el corpus declara: `run` con tres candidatos e `invoke` con dos, con su
+fichero y su línea. Si el producto dejara de publicar la negativa, el test
+caería por la precondición, no por la comparación.
+
+**El RED, medido con mutación focal.** Dos mutaciones, cada una revertida, y
+cada una muerta sólo por el test escrito para ella: el MCP deja de publicar la
+negativa —el test cae con «the MCP publishes the negative the corpus declares:
+got []»— y la proyección compartida pierde la línea —el test cae con `line:
+None` contra `line: Some(3)`—. Un contrato que no se ha visto rojo no mide
+nada.
+
+**El peligro que se descartó antes de medir.** El MCP tiene un camino de
+CACHÉ que responde `complete` con la lista de pendientes VACÍA
+(`handlers/mod.rs:1491`, la rama `loaded_from_cache`): una equivalencia
+medida sobre un acierto de caché sería falsa por construcción —una superficie
+con la negativa y otra sin ella—. En el código se comprobó que un build
+`Partial` NO persiste manifiesto, así que ese camino no se puede abrir sobre
+este corpus; y la medición lo confirma por sí sola: el MCP respondió `partial`
+con las dos negativas, y la rama de caché responde `complete`.
+
+**El inventario del harness, medido antes y después.** Ficheros de test en
+`crates/`: 235 antes y **235** después. Contratos de CI
+(`scripts/ci/test_*.py`): 59 y **59**. Ficheros en `scripts/ci/`: 88 y **88**.
+Directorios en `sandbox/fixtures/`: 46 y **46**. Ficheros en
+`sandbox/fixtures/`: 48 002 y **48 002**. Cero fixtures nuevos, cero contratos
+nuevos, cero ficheros de test nuevos: el corpus `sandbox/fixtures/kotlin-java/`
+y el contrato de Kotlin ya existían y se reutilizan tal cual, y la medición
+vive en `crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`, el fichero
+que ya sabía lanzar la CLI como sub-proceso y el MCP sobre el MISMO árbol.
+
+**Lo que este cierre no arregla, y por eso lo nombra.** La equivalencia se
+mide sobre UN corpus y sobre UNA forma de pérdida: la negativa ambigua. La
+negativa sin candidato —el nombre que el proyecto no declara— sigue siendo un
+número, por la decisión de alcance que `TASK-14` escribió. La medición es de
+una sola llamada por superficie: el camino de caché del MCP queda FUERA de la
+comparación, porque un build `Partial` no persiste manifiesto y la segunda
+llamada vuelve a construir —una equivalencia medida sobre la caché sería otra
+medición—. Y la ruta semántica —la que usa un lector con dominio, como
+Terraform o Ansible— sigue sin publicar sus llamadas no resueltas: su lector
+no tiene índice del proyecto, así que no puede distinguir una llamada ambigua
+de una que vive fuera del proyecto.
 
 **Y lo que este cierre le da a `C23`, sin cerrarla.** El primer criterio de
 cierre de `C23` pide que las TRES rutas que construyen el grafo publiquen la
 misma cobertura, las mismas relaciones y los mismos huecos sobre el mismo
-corpus, y que un test lo verifique. `TASK-14` da el primer par medido de esa
-clase —completa y per-file, con un test que las compara y que no puede pasar
-por vacío—, pero `C23` exige las tres rutas por donde el grafo entra en
-producción y además el corte del fichero de 4.369 líneas: `C23` sigue
-bloqueada por el operador, y esta unidad no la desplaza.
+corpus, y que un test lo verifique. `TASK-14` dio el primer par medido de esa
+clase —completa y per-file— y `TASK-15` da el par de las dos SUPERFICIES
+sobre el mismo corpus; lo que `C23` exige —las tres rutas por donde el grafo
+entra en producción y además el corte del fichero de 4.369 líneas— sigue sin
+medirse. `C23` sigue bloqueada por el operador, y esta unidad no la desplaza.
 
 La puerta que queda abierta es la de la cola:
 
@@ -142,8 +184,8 @@ La puerta que queda abierta es la de la cola:
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
 
-Y, con `TASK-14` cerrado, la cola viva se queda **sin ninguna unidad sin
-bloqueo** otra vez: `TASK-14` era el residuo que el cierre de `M2.T03` dejó
+Y, con `TASK-15` cerrado, la cola viva se queda **sin ninguna unidad sin
+bloqueo** otra vez: `TASK-15` era el residuo que el cierre de `TASK-14` dejó
 medido y con dueño, y ya está hecha. Las vecinas del entorno siguen
 igualmente atadas: `TASK-5` por una decisión de alcance del operador y
 `TASK-4` por `C23`. La siguiente unidad, por tanto, **no la decide este
