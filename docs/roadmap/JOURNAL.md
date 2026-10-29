@@ -29380,3 +29380,143 @@ bloqueadas —la primera por una decisión de alcance del operador, la segunda
 por `C23`—. La siguiente unidad sin bloqueo es **`M2.T03`** (`C13`): las
 relaciones Kotlin↔Java sólo cuando se pueden probar, con un corpus de
 homónimos y sin ninguna arista bornada por coincidencia de nombre.
+
+## 2026-10-29 — Las relaciones Kotlin↔Java se publican sólo cuando se pueden probar
+
+**El hueco, medido** sobre `main@565b1459`: en el repositorio no había
+**ningún** corpus `.kt`/`.java` y **ningún** test de Kotlin. `TargetResolution`
+tiene tres variantes —`Resolved`, `Ambiguous`, `Unresolved`— y el ADR de
+Kotlin pide cuatro: la cuarta, `External`, exige una tabla de símbolos
+externos que el producto no tiene y que nadie puede construir. La divergencia
+estaba documentada y ningún test fijaba ninguna de las dos formas.
+
+**El corpus.** `sandbox/fixtures/kotlin-java/`: doce ficheros —ocho en Kotlin
+y cuatro en Java—, dos lenguajes, seis paquetes. No es una muestra del mundo
+Kotlin: es un oráculo, y declara exactamente lo que la unidad tiene que medir.
+
+- **Homónimos**: `run` está declarado TRES veces —`demo/alpha/Service.kt`,
+  `demo/alpha/Service.java` y `demo/beta/Service.kt`, dos en Kotlin y una en
+  Java, en dos paquetes— y `demo/gamma/Caller.kt` lo llama **sin import**.
+- **Overloads**: `invoke` está declarado DOS veces en `demo/delta/JHandler.java`
+  (`invoke()` e `invoke(int)`), y `demo/gamma/UseHandler.kt` lo llama con
+  `import demo.delta.JHandler`.
+- **Las cuatro relaciones que sí se pueden probar**: de Kotlin a Java
+  (`JavaConsumer.kt` → `JavaTarget.java`), de Java a Kotlin (`JavaCaller.java`
+  → `KotlinTarget.kt`), de Kotlin a Kotlin (`KotlinConsumer.kt` →
+  `KotlinTarget.kt`) y de fichero a fichero (`Local.kt` → `Local.kt`).
+
+El primer caso NO lleva import a propósito: `demo.alpha` declara una clase
+`Service` en Kotlin y otra en Java, así que cualquier import de `run` sería
+ambiguo en el mismo paquete que lo declara. La ambigüedad no es un descuido
+del corpus: es lo que el caso mide.
+
+**Lo medido sobre ese corpus**: el extractor lee **SEIS** llamadas y el grafo
+publica **CUATRO** relaciones. Las dos que no publica son exactamente las dos
+que no se pueden probar. La contraparte positiva es lo que impide que este
+contrato sea un PASS vacío: sin las cuatro relaciones probables, «no sale
+ninguna arista» se cumpliría igual con un corpus que no se lee.
+
+**El mecanismo, medido.** `GlobalSymbolIndex::resolve`
+(`crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs:145`) sólo
+nombra un destino cuando hay UN candidato, o cuando una regla lo deja solo:
+la misma ruta exacta del fichero (regla 1) o una raíz de crate compartida con
+un único candidato (regla 2). Con más de uno devuelve
+`TargetResolution::Ambiguous`, y `reuse::look_up`
+(`crates/cognicode-core/src/infrastructure/graph/reuse.rs:319`) convierte
+`Ambiguous | Unresolved` en `Answer::Nothing`: la arista se cae.
+
+**El caso del overload correcto NO es implementable con lo que hoy viaja por
+el pipeline**, y queda DECLARADO, no fingido: `FileFacts.calls` es
+`Vec<(Symbol, String)>`, es decir, el NOMBRE del callee y nada más. La aridad
+que distinguiría `invoke()` de `invoke(int)` no llega al resolvedor. Publicar
+esa aridad es un cambio del pipeline, no de este contrato.
+
+**El contrato.** `crates/cognicode-core/tests/c13_kotlin_java_relation_contract.rs`:
+nueve tests que fijan las aristas que se publican, las que no, y por qué. La
+negativa se prueba en las DOS estrategias (`full` y `per_file`), porque una
+negativa que sólo se comprueba en una deja la otra sin contrastar. El
+contrato no se limita a decir «no sale ninguna arista»: exige que el extractor
+vea **las seis** llamadas —si el extractor dejara de ver una, la negativa
+dejaría de distinguirse de un olvido—, que las **cuatro** probables estén en
+el grafo, que el grafo no publique **ninguna** más, y que cada llamada no
+publicada sea una negativa **probable** y no un hueco. La forma del dominio
+queda fijada por compilación: el `match` sobre `TargetResolution` no tiene
+brazo `_`, así que una cuarta variante rompe el build, y el test comprueba
+además que el fichero de la variante conserve la razón escrita de por qué no
+hay una cuarta.
+
+**El poder discriminante, medido.** Un contrato que no puede fallar no mide
+nada. Se comprobó con una perturbación focalizada del resolvedor: la rama
+ambigua pasa a devolver `TargetResolution::Resolved(candidates[0])`, es decir,
+la primera coincidencia por nombre. El contrato pasa a **rc=101**, con **6
+pasados y 3 fallidos** —`no_relation_is_born_for_a_homonym`,
+`no_relation_is_born_for_an_overload` y
+`the_graph_publishes_no_relation_beyond_the_ones_it_can_prove`—, que son
+exactamente las tres negativas que el contrato existe para fijar. Al
+restaurar el fichero byte a byte (`sha256
+c78da8dc3e7939e54dc1c1b04128ecbe06bd6f71f6f369498c30d0df692cdec6`) el
+contrato vuelve a `rc=0` con 9 pasados.
+
+**El gate completo NO fue verde a la primera, y falló por dos cosas que eran
+mías.** La primera pasada dio `rc=1` en la etapa de contratos: el contrato
+`test_comment_standard.py` mide que los ficheros tocados no carguen más
+deuda de comentarios que la que heredan, y la cabecera del contrato nuevo
+citaba el identificador de la tarea y la fecha de la medición. La regla del
+repositorio es que un comentario explica lo que hace el código y no cita el
+papeleo —que se caduca—, así que la cabecera se reescribió para explicar la
+medición sin citarla: la deuda de comentarios de los nueve ficheros tocados
+queda en **0 contra 0** de la base. La segunda etapa que falló fue
+`fmt --check`, que rechazó el formato del contrato nuevo. Ambas correcciones
+están antes de la pasada que cuenta.
+
+**Los gates, medidos.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 chose
+  `strategy=changed`, `suites=[core,ladybug]`: el contrato nuevo vive en
+  `crates/cognicode-core/**`, el corpus vive en `sandbox/**` —que la lane de
+  certificación cubre y que no añade suite de cargo— y los documentos de
+  este corte en `docs/**`, que traen la suite de ladybug. En verde: **2416**
+  pasados del core (2 ignorados), **9** del contrato nuevo y **66** de
+  ladybug —**2491** pasados, 0 fallidos.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con **6486** pasados, 0
+  fallidos y 22 ignorados, doc-tests con **8** pasados, 12 ignorados y 0
+  fallidos, explorer multimodal en verde (**4** pasados), **454 contratos** en
+  63 ficheros con 0 fallos, y `known_failures (core/lib)` sin diferencias.
+
+**El inventario del harness, medido antes y después.** La lente de economía
+del harness pide medir, no suponer:
+
+| | antes | después |
+|---|---|---|
+| ficheros de test en `crates/` | 234 | **235** (+1) |
+| contratos de CI (`scripts/ci/*.py`) | 62 | **62** (0) |
+| ficheros versionados en `sandbox/fixtures/` | 973 | **985** (+12) |
+
+El gate no crece: un fichero de test y doce ficheros de corpus. Los doce son
+datos, no comprobaciones, y el único fichero de test nuevo es el contrato de
+esta unidad.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La pérdida de una relación no se reporta.** MEDIDO: las dos referencias
+  refusadas no aparecen ni como arista ni como pendiente, y el estado del
+  build dice `Complete`. Lo que se pierde es su IDENTIDAD —qué llamada, en
+  qué fichero y por qué motivo: ambigua con N candidatos, o sin candidato—,
+  y con ella la razón por la que el build dice `Complete`. El RECUENTO sí se
+  publica, pero sólo en la estrategia `full`
+  (`GraphCoverageMetrics.unresolved_edges: 2`); en `per_file` no aparece en
+  ninguna parte. Eso contradice K-REL-02 MUST —«cada arista almacena […] `to
+  TargetResolution` […] y `reason` si no pudo resolverse»— y K-REL-07 MUST —
+«cualquier pérdida de relaciones debe aparecer en cobertura»— de
+  `docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-RELATIONS.md`,
+  y es la casilla que K2 tiene abierta en `MILESTONES.md`. Es cross-language:
+  cambiar la semántica de `BuildStatus::Complete` toca ocho ficheros de test
+  de integración. **Esta unidad no lo arregla; lo enrutó a una unidad propia,
+  con su tarea, en la bandeja local de Backlog.md.**
+- **El overload correcto no se resuelve**, y no por falta de esfuerzo: la
+  aridad no viaja por el pipeline. Declarado arriba.
+- **La equivalencia CLI/MCP no se ha ejercido sobre este corpus.** La
+  medición de equivalencia que hoy existe cubre Terraform; este contrato
+  llama a los servicios del dominio, no a la CLI ni al MCP. No se afirma
+  paridad que no se ha medido.

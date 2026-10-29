@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `9f8b21818faacc0b11ec08537909b5abb0ed348f` (la
+> **Snapshot**: 2026-10-29, sobre `565b14598a87f386ce31a807f23c17e4f0cefdcc` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -23,7 +23,14 @@
 > desactivado de esa suite nombra a su dueño: la marca dice la razón y el
 > identificador de la tarea que lo toma, el registro publicado dice qué carga
 > cada dueño, y un contrato pone en rojo la desactivación que se esconde
-> detrás de un alias o detrás de un dueño que nadie publica).
+> detrás de un alias o detrás de un dueño que nadie publica; y las relaciones
+> Kotlin↔Java ya no se publican por coincidencia de nombre: un corpus
+> versionado declara los homónimos y los overloads que NO se pueden probar, y
+> un contrato comprueba que de esos nombres ambiguos no nace ninguna arista,
+> que las cuatro relaciones que sí se pueden probar sí se publican —de Kotlin
+> a Java, de Java a Kotlin, de Kotlin a Kotlin y de fichero a fichero—, y que
+> la forma de `TargetResolution` queda fijada: tres variantes, no cuatro, y
+> con la razón escrita de por qué la cuarta no existe).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
