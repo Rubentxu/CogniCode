@@ -517,7 +517,7 @@
             "type": "string"
           },
           "pending_references": {
-            "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`None` when the graph was served from cache (no walk happened on\nthis call); `Some([])` when every reference was tied.",
+            "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`Some([])` when every reference was tied. An answer served from\nthe cache publishes the references of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
             "items": {
               "$ref": "#/$defs/PendingReferenceInfo"
             },
@@ -527,7 +527,7 @@
             ]
           },
           "rejected_relationships": {
-            "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`None` when the graph was served from cache (no walk happened on\nthis call); `Some([])` when every relation was taken.",
+            "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`Some([])` when every relation was taken. An answer served from\nthe cache publishes the relations of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
             "items": {
               "$ref": "#/$defs/RejectedRelationInfo"
             },
@@ -542,7 +542,7 @@
             "type": "integer"
           },
           "skipped_files": {
-            "description": "Files that could not be processed during the walk.\n`None` when the graph was served from cache (no walk happened\non this call); `Some([])` when the walk finished with no\nomissions; `Some([..])` when one or more files were dropped\nbecause of I/O / parsing failures.",
+            "description": "The holes of the tree, as it is now.\n`Some([])` when the walk left nothing out; `Some([..])` when one\nor more paths were dropped —because of I/O / parsing failures,\nbecause the walk declined them, or because their language is one\nnobody supports yet.\n\nThe list belongs to the tree and not to the build that produced\nthe graph: an answer served from the cache publishes the holes of\nthe tree as it is NOW, so that no consumer can be told `complete`\nabout a tree the walk does not read whole.",
             "items": {
               "$ref": "#/$defs/SkippedFileDto"
             },
@@ -552,7 +552,7 @@
             ]
           },
           "status": {
-            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), a reference could not\n    be tied to a declaration, or the repository refused a\n    relation.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.",
+            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: the answer describes the whole tree: no file was\n    dropped and no reference was left without a declaration.\n  - `\"partial\"`: something is missing: a file was dropped (I/O or\n    parsing failure), a reference could not be tied to a\n    declaration, or the repository refused a relation.\n  - `\"unknown\"`: the answer carries no verdict about the coverage\n    of the tree.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.\n\nThe verdict is the tree's, not the build's: an answer served from\nthe cache says what the tree looks like NOW, which is the same\nthing a fresh walk of it would say.",
             "type": "string"
           },
           "success": {

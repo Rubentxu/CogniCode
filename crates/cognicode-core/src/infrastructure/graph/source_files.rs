@@ -108,6 +108,11 @@ impl SourceFile {
 /// classifier that owns it. [`SourceInventory::known_gaps`] and
 /// [`SourceInventory::legit_exclusions`] are two views of the same
 /// files, not two copies of them.
+///
+/// The holes of a walk —what it declined, what it could not do and what
+/// it could not read yet— are composed in one place,
+/// [`SourceInventory::coverage_holes`], so every route that publishes
+/// them publishes the same ones.
 pub struct SourceInventory {
     /// Every file the walk yielded and could measure.
     pub files: Vec<SourceFile>,
@@ -141,6 +146,26 @@ impl SourceInventory {
                 reason: SkipReason::UnsupportedExtension(extension_of(&f.path)),
             })
             .collect()
+    }
+
+    /// The holes in the coverage of this tree, in one list.
+    ///
+    /// Three things leave the graph incomplete: what the walk DECLINED
+    /// (a symlink it refused to follow), what it could not DO (a
+    /// directory it could not read, an entry it could not measure), and
+    /// what it could not READ yet (a language nobody supports yet).
+    ///
+    /// They are one list because a consumer cannot act on three lists:
+    /// what it has to know is whether the graph it holds describes the
+    /// whole tree. Three routes that compose this list on their own are
+    /// three answers waiting to drift apart, so the composition lives
+    /// here and the routes call it.
+    pub fn coverage_holes(&self) -> Vec<SkippedFile> {
+        let mut holes = Vec::with_capacity(self.declined.len() + self.errors.len());
+        holes.extend(self.declined.iter().cloned());
+        holes.extend(self.errors.iter().cloned());
+        holes.extend(self.known_gaps());
+        holes
     }
 
     /// The files the analysis leaves out on purpose: a README, a

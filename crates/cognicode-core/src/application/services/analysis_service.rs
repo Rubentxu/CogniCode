@@ -324,10 +324,10 @@ impl AnalysisService {
             // is decided by the classifier that owns it, and the
             // inventory already applied it: a second copy of that
             // rule here is a second source of truth waiting to drift.
+            // The composition of the three is the inventory's, so every
+            // route that publishes holes publishes the same ones.
             let mut guard = skipped_files.lock().unwrap();
-            guard.extend(inventory.declined.iter().cloned());
-            guard.extend(inventory.errors.iter().cloned());
-            guard.extend(inventory.known_gaps());
+            guard.extend(inventory.coverage_holes());
         }
 
         let files: Vec<_> = inventory
@@ -980,14 +980,9 @@ impl AnalysisService {
 
         let mut skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
             Vec::new();
-        for entry in inventory.declined.iter().chain(inventory.errors.iter()) {
+        for entry in inventory.coverage_holes() {
             if included(Path::new(&entry.path)) {
-                skipped.push(entry.clone());
-            }
-        }
-        for gap in inventory.known_gaps() {
-            if included(Path::new(&gap.path)) {
-                skipped.push(gap);
+                skipped.push(entry);
             }
         }
 
@@ -1326,9 +1321,7 @@ impl AnalysisService {
                 // inventory already knows which files are one.
                 let mut k0_skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
                     Vec::new();
-                k0_skipped.extend(inventory.declined.iter().cloned());
-                k0_skipped.extend(inventory.errors.iter().cloned());
-                k0_skipped.extend(inventory.known_gaps());
+                k0_skipped.extend(inventory.coverage_holes());
 
                 // The denominator of the coverage is the files the graph
                 // was built from: a file no language claims was never a
