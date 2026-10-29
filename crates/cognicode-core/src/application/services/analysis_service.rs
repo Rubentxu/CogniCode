@@ -130,7 +130,7 @@ impl ReuseState {
     /// work done, because they are.
     fn resolve(
         &self,
-        relationships: &[(String, String, String)],
+        calls: &[crate::domain::value_objects::CallSite],
         index: &GlobalSymbolIndex,
         declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile>,
         pending_lookups: usize,
@@ -138,7 +138,7 @@ impl ReuseState {
         let mut ledger = self.ledger.lock().unwrap();
         let changes = ledger.changes(&declared_files);
         let mut resolution =
-            crate::infrastructure::graph::reuse::resolve(relationships, index, &ledger, &changes);
+            crate::infrastructure::graph::reuse::resolve(calls, index, &ledger, &changes);
         resolution.resolved += pending_lookups;
         ledger.remember(declared_files, &mut resolution);
         *self.metrics.lock().unwrap() = Some(GraphReuse {
@@ -510,12 +510,10 @@ impl AnalysisService {
         }
 
         let mut cache = self.file_cache.lock().unwrap();
-        // F2.W7: collect (caller_fqn, caller_file, callee_name) per
-        // relationship so the resolver has both the caller SymbolId
-        // AND the caller-side path context to apply scope-aware rules.
-        // Before F2.W7 this was just `(caller_symbol, callee_name)` and
-        // the resolution lost the file path of the caller.
-        let mut all_relationships: Vec<(String, String, String)> = Vec::new();
+        // The calls travel as the reader wrote them: the resolver needs
+        // the file the caller is in to apply the scope-aware rules, and a
+        // refusal needs the line to say WHICH call it is about.
+        let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
         // What each file declares, for the ledger that decides what the
         // next build can keep.
         let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> = Vec::new();
@@ -583,14 +581,10 @@ impl AnalysisService {
             // has to hear about it.
             pending_references.extend(facts.pending.iter().cloned());
 
-            for (caller, callee_name) in facts.calls {
-                // Preserve the caller's file AND FQN so the resolver can
-                // apply the "same file" / "same crate root"
-                // disambiguation AND recover the caller SymbolId.
-                let caller_fqn = caller.fully_qualified_name().to_string();
-                let caller_file = caller.location().file().to_string();
-                all_relationships.push((caller_fqn, caller_file, callee_name));
-            }
+            // The calls travel as they were read: the file they are written
+            // in is what lets the resolver apply the scope-aware rules, and
+            // the line is what lets a refusal be pointed at.
+            all_calls.extend(facts.calls);
         }
 
         // The relations whose ends are already identified go in now
@@ -633,12 +627,9 @@ impl AnalysisService {
         // The relationships the resolver looks up by name go through the
         // ledger: the ones the change cannot have altered are kept from
         // the last build, and only the rest are looked up again.
-        let resolution = self.reuse.resolve(
-            &all_relationships,
-            &global_index,
-            declared_files,
-            pending_count,
-        );
+        let resolution =
+            self.reuse
+                .resolve(&all_calls, &global_index, declared_files, pending_count);
         rejected.extend(attach_relations(
             |source, target, kind| store.add_dependency(source, target, kind),
             resolution
@@ -647,6 +638,14 @@ impl AnalysisService {
                 .map(|(caller, callee, kind)| (caller.clone(), callee.clone(), *kind)),
         ));
         unresolved_edges += resolution.unresolved;
+
+        // The refusals that are holes in what the graph knows travel with
+        // the report: a call whose name the project declares and cannot
+        // tie to one of its declarations is a relation the graph does not
+        // carry, and the consumer has to hear about it instead of reading
+        // a graph that is missing something as a graph that has nothing.
+        let mut pending = pending_resolution.pending;
+        pending.extend(resolution.pending);
 
         // F2.W8: drain skipped files before building the call graph.
         let skipped_vec = {
@@ -671,15 +670,12 @@ impl AnalysisService {
         // not process, the references it could not tie to a declaration,
         // and the relations the store refused.
         // "Complete" is only said when all of them are whole.
-        let status = if skipped_vec.is_empty()
-            && pending_resolution.pending.is_empty()
-            && rejected.is_empty()
-        {
+        let status = if skipped_vec.is_empty() && pending.is_empty() && rejected.is_empty() {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: skipped_vec,
-                pending: pending_resolution.pending,
+                pending,
                 rejected,
             }
         };
@@ -1098,7 +1094,7 @@ impl AnalysisService {
         results.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut cache = self.file_cache.lock().unwrap();
-        let mut all_relationships: Vec<(String, String, String)> = Vec::new();
+        let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
         // What each file declares, for the ledger that decides what the
         // next build can keep.
         let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> = Vec::new();
@@ -1152,15 +1148,10 @@ impl AnalysisService {
             // consumer has to hear about it.
             pending_references.extend(facts.pending.iter().cloned());
 
-            for (caller, callee_name) in facts.calls {
-                // The file of the caller is what allows the rules
-                // "same file" and "same crate root".
-                all_relationships.push((
-                    caller.fully_qualified_name().to_string(),
-                    caller.location().file().to_string(),
-                    callee_name,
-                ));
-            }
+            // The calls travel as they were read: the file they are written
+            // in is what lets the resolver apply the scope-aware rules, and
+            // the line is what lets a refusal be pointed at.
+            all_calls.extend(facts.calls);
         }
 
         // The relations whose ends are already identified go in now
@@ -1202,12 +1193,9 @@ impl AnalysisService {
         // The relationships the resolver looks up by name go through the
         // ledger: the ones the change cannot have altered are kept from the
         // last build, and only the rest are looked up again.
-        let resolution = self.reuse.resolve(
-            &all_relationships,
-            &global_index,
-            declared_files,
-            pending_count,
-        );
+        let resolution =
+            self.reuse
+                .resolve(&all_calls, &global_index, declared_files, pending_count);
         rejected.extend(attach_relations(
             |source, target, kind| store.add_dependency(source, target, kind),
             resolution
@@ -1216,6 +1204,14 @@ impl AnalysisService {
                 .map(|(caller, callee, kind)| (caller.clone(), callee.clone(), *kind)),
         ));
         unresolved_edges += resolution.unresolved;
+
+        // The refusals that are holes in what the graph knows travel with
+        // the report: a call whose name the project declares and cannot
+        // tie to one of its declarations is a relation the graph does not
+        // carry, and the consumer has to hear about it instead of reading
+        // a graph that is missing something as a graph that has nothing.
+        let mut pending = pending_resolution.pending;
+        pending.extend(resolution.pending);
 
         let call_graph = store.get_call_graph();
 
@@ -1227,15 +1223,12 @@ impl AnalysisService {
             let guard = skipped.lock().unwrap();
             guard.clone()
         };
-        let status = if skipped_vec.is_empty()
-            && pending_resolution.pending.is_empty()
-            && rejected.is_empty()
-        {
+        let status = if skipped_vec.is_empty() && pending.is_empty() && rejected.is_empty() {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: skipped_vec,
-                pending: pending_resolution.pending,
+                pending,
                 rejected,
             }
         };
@@ -1446,7 +1439,7 @@ impl AnalysisService {
                 results.sort_by(|a, b| a.0.cmp(&b.0));
 
                 let mut cache = file_cache.lock().unwrap();
-                let mut all_relationships = Vec::new();
+                let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
                 // What each file declares, for the ledger that decides what the
                 // next build can keep.
                 let mut declared_files: Vec<crate::infrastructure::graph::reuse::DeclaredFile> =
@@ -1498,15 +1491,11 @@ impl AnalysisService {
                     // it to a declaration in another file.
                     pending_references.extend(facts.pending.iter().cloned());
 
-                    for (caller, callee_name) in facts.calls {
-                        // El fichero del llamante es lo que permite las reglas
-                        // "mismo fichero" y "misma raíz de crate".
-                        all_relationships.push((
-                            caller.fully_qualified_name().to_string(),
-                            caller.location().file().to_string(),
-                            callee_name,
-                        ));
-                    }
+                    // The calls travel as they were read: the file they are
+                    // written in is what lets the resolver apply the
+                    // scope-aware rules, and the line is what lets a
+                    // refusal be pointed at.
+                    all_calls.extend(facts.calls);
                 }
 
                 // The relations whose ends are already identified go in now
@@ -1554,7 +1543,7 @@ impl AnalysisService {
                 // the ledger: the ones the change cannot have altered are kept
                 // from the last build, and only the rest are looked up again.
                 let resolution = reuse.resolve(
-                    &all_relationships,
+                    &all_calls,
                     &global_index,
                     declared_files,
                     pending_count,
@@ -1570,6 +1559,15 @@ impl AnalysisService {
                     ));
                 }
                 unresolved_edges += resolution.unresolved;
+
+                // The refusals that are holes in what the graph knows travel
+                // with the report: a call whose name the project declares and
+                // cannot tie to one of its declarations is a relation the
+                // graph does not carry, and the consumer has to hear about
+                // it instead of reading a graph that is missing something as
+                // a graph that has nothing.
+                let mut pending = pending_resolution.pending;
+                pending.extend(resolution.pending);
 
                 let call_graph = store.into_inner().unwrap().get_call_graph();
                 graph_cache.replace(call_graph.clone());
@@ -1593,13 +1591,7 @@ impl AnalysisService {
                 // claim of completeness that nothing backs. The inventory
                 // already published them with the declined ones.
 
-                Ok((
-                    coverage,
-                    call_graph,
-                    k0_skipped,
-                    pending_resolution.pending,
-                    rejected,
-                ))
+                Ok((coverage, call_graph, k0_skipped, pending, rejected))
             })
             .await;
 
@@ -2208,7 +2200,7 @@ fn read_file_facts_with(
         )));
     }
     let symbols = parser.find_all_symbols_in_tree(&tree, source, file_path)?;
-    let calls = parser.find_call_relationships_in_tree(&tree, source, file_path)?;
+    let calls = parser.find_call_sites_in_tree(&tree, source, file_path)?;
     Ok(crate::application::ingest::types::FileFacts {
         symbols,
         identified: Vec::new(),

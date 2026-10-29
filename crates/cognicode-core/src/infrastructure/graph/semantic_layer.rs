@@ -178,10 +178,26 @@ pub fn semantic_facts_of(
                 // hole when it cannot be tied to one. A call is not: what
                 // the code calls may live outside the project — a function
                 // of another crate, a module of Ansible — and the graph
-                // says nothing about the world outside it. Neither this
-                // path nor the generic one publishes those calls as gaps,
-                // and neither counts them yet: separating the calls from
-                // the relations is its own work.
+                // says nothing about the world outside it.
+                //
+                // The pending a call can leave behind is the one the
+                // project declares and cannot tie to one of its
+                // declarations, and this path cannot tell those two
+                // apart: its reader names a callee it did not resolve, and
+                // it has no index of the project to ask whether that name
+                // is declared somewhere else. The generic path can tell —
+                // it resolves the call against the project-wide index and
+                // publishes the refusals that are holes — and the rule
+                // that decides which refusals are worth reporting is the
+                // domain's, so both routes apply the same one.
+                //
+                // What this path drops is a loss it does not measure: the
+                // calls its reader could not resolve are neither published
+                // as gaps nor counted. Recovering them is its own work,
+                // because a lookup that could tell them apart would also
+                // PROVE the ones that name a declaration of the project,
+                // and those edges are not the edges the graph carries
+                // today.
                 if kind == DependencyType::Calls {
                     continue;
                 }

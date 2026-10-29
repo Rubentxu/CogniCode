@@ -39,16 +39,21 @@
 //!      publican.
 //!   5. `TargetResolution` tiene TRES variantes, sólo `Resolved` nombra un
 //!      destino, y el fichero dice por qué no hay una cuarta.
+//!   6. Las dos referencias que no se pueden probar se PUBLICAN: con su
+//!      identidad —qué llamada, en qué fichero y línea— y su motivo —el
+//!      número de candidatos— y las dos rutas de build publican la misma
+//!      pérdida.
 //!
 //! Lo que este fichero NO dice:
 //!
 //!   - Que el corpus Java↔Kotlin completo esté resuelto: el corpus es un
 //!     oráculo, no una muestra.
-//!   - Que la pérdida de una relación se reporte. MEDIDO: las dos
-//!     referencias refusadas no aparecen ni como arista ni como
-//!     pendiente, y el estado del build dice `Complete`. Ese hueco está
-//!     enrutado a otra unidad, fuera del alcance de esta; este contrato
-//!     fija las aristas, no la cobertura.
+//!   - Que la pérdida de una relación se CORRIJA: las dos referencias
+//!     refusadas no son aristas, y este fichero lo dice. Lo que fija es
+//!     que la pérdida se PUBLICA: con su identidad y su motivo. MEDIDO
+//!     antes del arreglo: las dos referencias refusadas no aparecían ni
+//!     como arista ni como pendiente, y el estado del build decía
+//!     `Complete`.
 //!   - Que la CLI y el MCP publiquen lo mismo que este contrato. La
 //!     equivalencia CLI/MCP medida hoy cubre Terraform, no este corpus.
 
@@ -56,7 +61,8 @@ use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::services::resolve_target;
-use cognicode_core::domain::value_objects::TargetResolution;
+use cognicode_core::domain::value_objects::{PendingClass, PendingReference, TargetResolution};
+use cognicode_core::infrastructure::graph::per_file_graph::{BuildReport, BuildStatus};
 use cognicode_core::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -174,6 +180,66 @@ fn per_file_graph() -> Arc<CallGraph> {
             .expect("el grafo por fichero se construye")
             .graph,
     )
+}
+
+/// El build de proyecto completo: el grafo y el estado que publica.
+///
+/// El estado es parte del contrato: el grafo dice qué relaciones hay, y
+/// el estado dice qué referencias quedaron sin atar. Preguntar sólo por
+/// el grafo es preguntar por la mitad.
+fn full_build() -> BuildReport {
+    let service = AnalysisService::new();
+    service
+        .build_graph_with_strategy(&corpus(), "full")
+        .expect("el grafo de proyecto se construye");
+    service
+        .get_last_build_report()
+        .expect("el build de proyecto deja un informe")
+}
+
+/// El build por fichero: el grafo y el estado que publica.
+fn per_file_build() -> BuildReport {
+    let service = AnalysisService::new();
+    service
+        .build_graph_per_file_with_report(&corpus())
+        .expect("el grafo por fichero se construye")
+}
+
+/// Lo que el build publica como pérdida, si publica algo.
+fn pending_of(status: &BuildStatus) -> Vec<PendingReference> {
+    match status {
+        BuildStatus::Complete => Vec::new(),
+        BuildStatus::Partial { pending, .. } => pending.clone(),
+    }
+}
+
+/// La identidad y el motivo de una referencia pendiente, en una línea.
+///
+/// El consumidor que lee el grafo tiene que poder VER la negativa: qué
+/// llamada es, en qué fichero y línea está escrita, y por qué no se pudo
+/// atar. Un número no dice ninguna de esas tres cosas: la pérdida se
+/// contaba y desaparecía.
+fn pending_facts(graph: &CallGraph, references: &[PendingReference]) -> Vec<String> {
+    let mut out: Vec<String> = references
+        .iter()
+        .map(|reference| {
+            let caller = graph
+                .get_symbol(&reference.source)
+                .map(label_of)
+                .unwrap_or_else(|| reference.source.as_str().to_string());
+            let motive = match reference.class {
+                PendingClass::Unresolved => "sin-candidato".to_string(),
+                PendingClass::Ambiguous { candidates } => format!("ambiguo:{candidates}"),
+            };
+            format!(
+                "{caller}:{} -> {} [{motive}]",
+                reference.origin_line.unwrap_or(0),
+                reference.target
+            )
+        })
+        .collect();
+    out.sort();
+    out
 }
 
 /// Las relaciones del grafo, como pares de etiquetas.
@@ -354,6 +420,56 @@ fn no_relation_is_born_for_an_overload() {
             "[{strategy}] `invoke` está declarado dos veces y el pipeline no transporta la aridad que los distinguiría: no puede nacer ninguna arista desde `useHandler`, y nacieron {born:?}"
         );
     }
+}
+
+#[test]
+fn the_refusals_are_published_with_their_identity_and_their_motive() {
+    for (strategy, report) in [("full", full_build()), ("per_file", per_file_build())] {
+        let pending = pending_of(&report.status);
+
+        assert_eq!(
+            pending_facts(&report.graph, &pending),
+            vec![
+                "caller@demo/gamma/Caller.kt:3 -> run [ambiguo:3]".to_string(),
+                "useHandler@demo/gamma/UseHandler.kt:6 -> invoke [ambiguo:2]".to_string(),
+            ],
+            "[{strategy}] las dos llamadas que no se pueden probar tienen que publicarse con su identidad —qué llamada, en qué fichero y en qué línea— y con su motivo —cuántos candidatos tiene el nombre—. Antes del arreglo no aparecían ni como arista ni como pendiente: la pérdida se contaba y desaparecía"
+        );
+    }
+}
+
+#[test]
+fn the_build_does_not_claim_completeness_when_it_could_not_tie_a_call() {
+    for (strategy, report) in [("full", full_build()), ("per_file", per_file_build())] {
+        match &report.status {
+            BuildStatus::Complete => panic!(
+                "[{strategy}] el build dice `Complete` y el corpus tiene dos llamadas que no se pudieron atar: el estado afirma una cobertura que no es verdad"
+            ),
+            BuildStatus::Partial { pending, .. } => assert_eq!(
+                pending.len(),
+                2,
+                "[{strategy}] el build es `Partial` y tiene que decir QUÉ le falta, no sólo que le falta algo"
+            ),
+        }
+    }
+}
+
+#[test]
+fn both_build_strategies_publish_the_same_loss() {
+    let full = full_build();
+    let per_file = per_file_build();
+
+    let full_loss = pending_facts(&full.graph, &pending_of(&full.status));
+    let per_file_loss = pending_facts(&per_file.graph, &pending_of(&per_file.status));
+
+    assert!(
+        !full_loss.is_empty(),
+        "una estrategia que no publica ninguna pérdida no se puede comparar con otra: la pérdida tiene que EXISTIR para que las dos rutas puedan coincidir en ella"
+    );
+    assert_eq!(
+        full_loss, per_file_loss,
+        "las dos estrategias de build tienen que publicar la MISMA pérdida: si una dice `Complete` y la otra `Partial`, el producto tiene dos grafos y dos coberturas"
+    );
 }
 
 #[test]

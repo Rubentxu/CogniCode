@@ -46,12 +46,27 @@ pub struct PendingResolution {
 /// declaration of a sibling module does not satisfy a reference: the edge
 /// would name something the code does not name, and the hole it hides
 /// would be a real one.
+///
+/// One kind of reference is not this module's rule: a call. The route that
+/// read the call already decided which scope applies to it —the
+/// project-wide one— and it already said why the call could not be tied
+/// to a declaration. This pass would either prove it against a declaration
+/// of the caller's own module, inventing the very edge the refusal exists
+/// to prevent, or reclassify its motive with a scope the route did not
+/// use. A refused call travels through untouched.
 pub fn resolve_pending_references(
     pending: Vec<PendingReference>,
     index: &GlobalSymbolIndex,
 ) -> PendingResolution {
     let mut outcome = PendingResolution::default();
     for reference in pending {
+        // A refused call keeps its motive and its candidates: they are the
+        // answer of the route that read it, and this pass does not get to
+        // change it.
+        if reference.kind == DependencyType::Calls {
+            outcome.pending.push(reference);
+            continue;
+        }
         let origin = Path::new(&reference.origin_file);
         let module = origin.parent().unwrap_or(origin);
         let mut resolution = None;

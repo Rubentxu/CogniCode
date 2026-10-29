@@ -244,6 +244,31 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
     }
 }
 
+/// The answer the file itself gives about a name.
+///
+/// Without a project-wide index the file IS the scope, and this is the
+/// whole answer: a name the file declares once names that declaration, a
+/// name it declares several times is ambiguous, and a name it does not
+/// declare names nothing here. The motive is the same one the
+/// project-wide resolver gives, because it comes from the same place:
+/// `TargetResolution::outcome`.
+fn resolve_within_file(
+    name_lower: &str,
+    local: &HashMap<String, Vec<SymbolId>>,
+) -> TargetResolution {
+    match local
+        .get(name_lower)
+        .map(|candidates| candidates.as_slice())
+    {
+        None => TargetResolution::Unresolved(name_lower.to_string()),
+        Some([only]) => TargetResolution::Resolved(only.clone()),
+        Some(candidates) => TargetResolution::Ambiguous {
+            name: name_lower.to_string(),
+            candidates: candidates.to_vec(),
+        },
+    }
+}
+
 /// Cache entry for per-file graphs
 struct FileGraphCacheEntry {
     /// The call graph for this file
@@ -757,8 +782,11 @@ impl PerFileGraphCache {
             .find_all_symbols_in_tree(&tree, &source, file_path)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        let relationships = parser
-            .find_call_relationships_in_tree(&tree, &source, file_path)
+        // The calls travel as the reader saw them: the file they are
+        // written in is what lets the resolver apply the scope-aware
+        // rules, and the line is what lets a refusal be pointed at.
+        let calls = parser
+            .find_call_sites_in_tree(&tree, &source, file_path)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
@@ -788,86 +816,77 @@ impl PerFileGraphCache {
 
         // Add call relationships.
         //
-        // PRF F2.W5 — H-R4-2 (scope-aware cross-file resolution):
+        // The resolution has ONE owner, and it is the same one the
+        // project-wide route uses: the scope-aware rules of the global
+        // index. Two routes that answer differently about the same call
+        // would be two graphs, and the corpus of the Kotlin/Java contract
+        // is exactly where that difference would show.
         //
-        //   * If BOTH the caller and the callee belong to this file's
-        //     `name_to_symbol` map, the edge is intra-file and we add it
-        //     to `graph` directly (intra-file resolution).
+        //   * If the caller and the callee belong to this file, the edge
+        //     is intra-file and the graph can hold it.
         //
         //   * If the caller is in this file but the callee resolves to
-        //     a `SymbolId` in another file (via `global_index`), the
-        //     edge is CROSS-FILE. `CallGraph::add_dependency` rejects
-        //     edges whose endpoints are not in `self.symbols`, so we
-        //     CANNOT add it here — the `graph` only knows about this
-        //     file's symbols. We stash it in `cross_file_edges` and let
-        //     `merge_with_report` reconcile it after every file has
-        //     been merged into the project graph (where both endpoints
-        //     exist by construction).
+        //     a `SymbolId` in another file, the edge is CROSS-FILE.
+        //     `CallGraph::add_dependency` rejects edges whose endpoints
+        //     are not in `self.symbols`, so we CANNOT add it here — the
+        //     `graph` only knows about this file's symbols. We stash it
+        //     in `cross_file_edges` and let `merge_with_report` reconcile
+        //     it after every file has been merged into the project graph
+        //     (where both endpoints exist by construction).
         //
-        //   * Edges that resolve to NEITHER the local map nor the global
-        //     index are dropped honestly: they could not be proven
-        //     (ambiguous, or genuinely unresolved) and the operator's
-        //     directive forbids inventing one.
+        //   * A call the resolver refuses does not become an edge: an
+        //     ambiguous call is not a call to any of the candidates, and
+        //     inventing one is exactly what the graph must not do. It
+        //     leaves a reference behind instead, and the domain owns the
+        //     rule that says which refusals are holes.
         let caller_path = Path::new(file_path);
         let mut cross_file_edges: Vec<CrossFileEdge> = Vec::new();
-        for (caller, callee_name) in relationships {
-            let caller_id =
-                crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
+        // The refusals that are holes in what the graph knows: the calls
+        // whose name the project declares and cannot tie to one of its
+        // declarations.
+        let mut pending: Vec<PendingReference> = Vec::new();
 
-            // 1. Local lookup first (covers intra-file edges).
-            //    H4.3 — the local map is now a multimap; multiple
-            //    symbols under the same lowercase name are an
-            //    ambiguous homonym and the resolver drops the call
-            //    rather than invent an edge against a random one.
-            if let Some(candidates) = name_to_symbol.get(&callee_name.to_lowercase()) {
-                match candidates.as_slice() {
-                    [] => {}
-                    [callee_id] => {
-                        // The caller and the callee are symbols of this file, and
-                        // they are in the graph.
+        for site in calls {
+            let name_lower = site.target.to_lowercase();
+            // With a project-wide index the scope is the project; without
+            // one the file IS the scope, and the file's own multimap
+            // answers — a name declared once names its declaration, a
+            // name declared several times is ambiguous, and a name the
+            // file does not declare names nothing here.
+            let resolution = match global_index {
+                Some(index) => index.resolve(&name_lower, Some(caller_path)),
+                None => resolve_within_file(&name_lower, &name_to_symbol),
+            };
+
+            match resolution.outcome() {
+                Ok(callee_id) => {
+                    if graph.get_symbol(&callee_id).is_some() {
+                        // The caller and the callee are symbols of this
+                        // file, and they are in the graph.
                         let attached =
-                            graph.add_dependency(&caller_id, callee_id, DependencyType::Calls);
+                            graph.add_dependency(&site.source, &callee_id, DependencyType::Calls);
                         debug_assert!(
                             attached.is_ok(),
                             "the file graph holds both ends of the edge: {attached:?}"
                         );
-                    }
-                    _ => {
-                        // Genuine local homonym (e.g. two symbols
-                        // `Foo` and `foo`). The H4 spec calls for
-                        // "llamadas ambiguas quedan observadas sin
-                        // una dependencia falsa" — drop the call
-                        // edge. A future diagnostics pass can
-                        // surface the unresolved call site.
+                    } else {
+                        // The far end lives in another file: the merged
+                        // graph is the one that can hold the edge.
+                        cross_file_edges.push((site.source.clone(), callee_id));
                     }
                 }
-                continue;
-            }
-
-            // 2. Global lookup only makes sense if a `global_index` was
-            //    supplied. If the resolver finds an unambiguous match
-            //    in another file, defer the edge to the post-merge
-            //    step where both endpoints exist in the merged graph.
-            if let Some(idx) = global_index {
-                match idx.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
-                    TargetResolution::Resolved(callee_id) => {
-                        cross_file_edges.push((caller_id, callee_id));
+                Err(class) => {
+                    // The refusal leaves a reference behind when it is a
+                    // hole in what the graph knows. Whether it is one is
+                    // the domain's rule, and it lives in one place.
+                    if let Some(reference) = PendingReference::of_call(&site, class) {
+                        pending.push(reference);
                     }
-                    // Both refusals drop the edge, and neither arm can
-                    // produce one: naming a target is exclusive to
-                    // `Resolved`. The two are distinct facts now, so a
-                    // later pass can count them separately instead of
-                    // reading a single silent `None`.
-                    TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {}
                 }
             }
-            // 3. Otherwise: drop honestly. The call site references a
-            //    name with no symbol in the project, or one whose target
-            //    cannot be proven. The graph stays free of invented
-            //    edges; counting and surfacing the drops is H4.2.
         }
 
-        Ok((graph, cross_file_edges, Vec::new()))
+        Ok((graph, cross_file_edges, pending))
     }
 
     /// Returns the number of cached files
@@ -1304,14 +1323,18 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 /// the walk could not process, the references it could not tie to a
 /// declaration, and the relations the graph could not attach. A
 /// "Complete" result means all of them are whole: every input file was
-/// processed, every reference that names something inside the project
-/// points at a declaration the project holds, and every relation the
-/// build stated is a relation the graph carries.
+/// processed, every relation the build stated is a relation the graph
+/// carries, and every reference the build read was tied to a declaration.
 ///
 /// A reference that names something outside the project — a call to a
 /// function of another crate, a module of Ansible — is not a hole in what
 /// the project knows: the project has no way to see it, so it cannot be
-/// tied, and its absence is not measured here. A "Partial" result carries
+/// tied, and its absence is not measured here.
+///
+/// A reference that names a declaration the project DOES hold, and cannot
+/// tell apart from another declaration of the same name, is a hole: it is
+/// published with its origin and its motive —how many candidates the name
+/// has— and a build that has one is `Partial`. A "Partial" result carries
 /// the list of what is missing, so the caller can say it instead of
 /// concluding "no findings". There is intentionally no "Failed" state at
 /// this layer: if the strategy cannot start (e.g. the project directory
@@ -1319,9 +1342,20 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 /// `merge_with_report`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildStatus {
-    /// Every file was processed, every reference that names something
-    /// inside the project was tied to a declaration, and every relation
-    /// the build stated was attached.
+    /// Every file was processed, every relation the build stated is a
+    /// relation the graph carries, and every reference the build read was
+    /// tied to a declaration — except the calls that name what lives
+    /// outside the project, which the graph cannot see and does not
+    /// measure.
+    ///
+    /// A name the project DOES declare, and cannot tell apart from
+    /// another declaration of the same name, is tied to none of them:
+    /// that call is a hole in what the graph knows, it is published as a
+    /// pending reference with the number of candidates, and a build that
+    /// has one is `Partial`. The clause that says "every reference was
+    /// tied" was false before that was measured: a call to a name the
+    /// project declares three times was tied to none of them, and the
+    /// build said it was complete.
     Complete,
     /// Something is missing: a file the walk could not process, a
     /// reference that names something inside the project and could not be

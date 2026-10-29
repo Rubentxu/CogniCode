@@ -53,7 +53,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, TargetResolution};
+use crate::domain::value_objects::{CallSite, DependencyType, PendingClass, PendingReference};
 use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 
 /// What one build knows about one file.
@@ -101,8 +101,14 @@ impl DeclaredFile {
 /// The answer the last build gave for one call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
-    /// The last build looked this up and it named no declaration.
-    Nothing,
+    /// The last build looked this up and it named no declaration — and it
+    /// says WHICH refusal it was.
+    ///
+    /// The reason travels with the answer because the answer is kept: a
+    /// build that reuses what the last one proved has to publish the same
+    /// reason, or the two builds would answer differently about the same
+    /// call.
+    Refused(PendingClass),
     /// The last build found this target.
     Found(SymbolId),
 }
@@ -250,6 +256,14 @@ pub struct Resolution {
     pub edges: Vec<(SymbolId, SymbolId, DependencyType)>,
     /// The relationships that named no declaration.
     pub unresolved: usize,
+    /// The refusals that are holes in what the graph knows: the calls
+    /// whose name the project declares and cannot tie to one of its
+    /// declarations.
+    ///
+    /// They travel with the edges because a refusal that is only counted
+    /// is a fact the consumer cannot use: it does not say which call, in
+    /// which file and line, nor how many candidates it could have meant.
+    pub pending: Vec<PendingReference>,
     /// The relationships whose answer this build kept.
     pub reused: usize,
     /// The relationships whose answer this build computed again.
@@ -258,28 +272,30 @@ pub struct Resolution {
     outcomes: HashMap<(String, String), Answer>,
 }
 
-/// Resolves the relationships of a build, keeping what the last build proved.
+/// Resolves the calls of a build, keeping what the last build proved.
 ///
-/// The relationships are `(caller fully-qualified name, caller file, called
-/// name)`, the same shape the three graph routes collect.
+/// The calls are the ones the readers found, each with the place it is
+/// written and the declaration that holds it: the caller file is what
+/// lets the resolver apply the scope-aware rules, and the line is what
+/// lets a refusal be pointed at.
 pub fn resolve(
-    relationships: &[(String, String, String)],
+    calls: &[CallSite],
     index: &GlobalSymbolIndex,
     ledger: &ReuseLedger,
     changes: &Changes,
 ) -> Resolution {
     let mut resolution = Resolution::default();
 
-    for (caller_fqn, caller_file, callee_name) in relationships {
-        let name = callee_name.to_lowercase();
-        let answer = match ledger.kept(caller_file, &name, changes) {
+    for site in calls {
+        let name = site.target.to_lowercase();
+        let answer = match ledger.kept(&site.origin_file, &name, changes) {
             Some(answer) => {
                 resolution.reused += 1;
                 answer
             }
             None => {
                 resolution.resolved += 1;
-                look_up(index, &name, caller_file)
+                look_up(index, &name, &site.origin_file)
             }
         };
         // The answer goes into the new ledger either way: a kept answer is
@@ -289,17 +305,24 @@ pub fn resolve(
         // the whole project.
         resolution
             .outcomes
-            .insert((caller_file.clone(), name.clone()), answer.clone());
+            .insert((site.origin_file.clone(), name.clone()), answer.clone());
 
         match answer {
             Answer::Found(target) => {
-                let caller = SymbolId::new(caller_fqn);
                 resolution
                     .edges
-                    .push((caller, target, DependencyType::Calls));
+                    .push((site.source.clone(), target, DependencyType::Calls));
             }
-            Answer::Nothing => {
+            Answer::Refused(class) => {
                 resolution.unresolved += 1;
+                // The refusal leaves a reference behind when it is a hole
+                // in what the graph knows. Whether it is one is the
+                // domain's rule, and it lives in one place: this module
+                // does not decide it, it only carries what the decision
+                // says.
+                if let Some(reference) = PendingReference::of_call(site, class) {
+                    resolution.pending.push(reference);
+                }
             }
         }
     }
@@ -309,13 +332,14 @@ pub fn resolve(
 
 /// Looks one name up in the project-wide index.
 ///
-/// Both refusals mean the same thing to the caller: no edge was created.
-/// They are distinguishable upstream, but the number this module publishes
-/// is the number of relationships that named no declaration.
+/// The two refusals mean different things to the consumer — a name the
+/// project declares several times, and a name it does not declare at all
+/// — and the answer carries which one it was. The reason comes from the
+/// resolution itself, so no route decides it on its own.
 fn look_up(index: &GlobalSymbolIndex, name_lower: &str, caller_file: &str) -> Answer {
     let caller_path = std::path::Path::new(caller_file);
-    match index.resolve(name_lower, Some(caller_path)) {
-        TargetResolution::Resolved(target) => Answer::Found(target),
-        TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => Answer::Nothing,
+    match index.resolve(name_lower, Some(caller_path)).outcome() {
+        Ok(target) => Answer::Found(target),
+        Err(class) => Answer::Refused(class),
     }
 }
