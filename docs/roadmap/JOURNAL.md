@@ -28843,3 +28843,71 @@ del operador, la segunda por `C23`—, así que con `M1.T03` cerrado el hito `M1
 no tiene más unidades ejecutables. La siguiente unidad sin bloqueo es
 **`M2.T01`** (`TASK-6`): la suite E2E de Explorer espera con reloj donde la
 aplicación no expone señal.
+
+## 2026-10-29 — El ciclo de M1.T03 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `afe5d52c`: 58 etapas,
+ninguna en rojo, y el estado `merge-gate=success` publicado en el pull request
+`#484`. La corrida es comprobable después del hecho: queda en la base de
+eventos del gate, con su identificador de corrida
+`2e54f9ce-ed2d-47a4-a602-efe96d322970`, las 58 etapas en `success` y el
+`RunFinished` en `success`. El gate corrió con su propio directorio de
+compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#484` se fusionó por squash como `cf8ad557`.
+El `merge-gate` es la autoridad y estaba verde sobre `afe5d52c`, que es
+exactamente la cabeza que GitHub iba a proteger y la misma sobre la que corrió
+la batería completa: el squash cambia el SHA, no el árbol.
+
+**Lo que queda en el árbol, después del cierre.** El catálogo publicado dice de
+su runtime la versión que ese runtime reporta: el `runtime_metadata` del
+maestro es el espejo de lo que el runtime publica, y las 78 tools dicen
+`0.101.31` —lo que el runtime dice de sí mismo, inyectado desde
+`CARGO_PKG_VERSION` en cada respuesta—. Y la sincronización es una **fusión**,
+no una copia: `scripts/product/sync_tool_catalog_runtime_metadata.py` es el
+único dueño de la regla, toma del runtime las claves que el runtime publica y
+deja todo lo demás en su sitio —las nueve fields curadas a mano, el conjunto
+de tools, y las dos claves que ningún `tools/list` devolverá jamás
+(`gate_authority` y `produces_observations_only` de `check_architecture`); una
+copia se las llevaría—. El maestro se sincroniza, no se regenera: `--check`
+demuestra que el maestro comprometido es un punto fijo de esa fusión, y el
+contrato del consumidor —`scripts/ci/test_the_consumer_can_declare_the_version.py`—
+compara el metadato entero, no sólo el esquema de entrada, que es lo que
+hacía invisible la deriva. Son cuatro ficheros: el maestro sincronizado
+(`product/tools.json`), el sincronizador (nuevo), el contrato y la propiedad del
+maestro (`product/README.md`).
+
+**Lo que este corte NO cubre.** Tres cosas quedan fuera, y las tres están
+medidas:
+
+- **La captura se queda vieja en cada release.** `product/tool-catalog-runtime.json`
+  es provenance: un `tools/list` real, de una build de una sola feature. El
+  maestro queda viejo con ella. Este corte hace que la deriva sea **visible en
+  el contrato** en vez de silenciosa; no la evita.
+- **`source_commit` sigue apuntando a `ebdb62fe`.** Es la base de la generación
+  del maestro —el `--source-commit` con el que se generó en `85222f67`—, no de
+  su contenido: cinco tools se añadieron después a mano. Cambiarlo afirmaría
+  que todo el documento deriva de un árbol que no las tiene.
+- **Una tool que la captura no cubre.** El sincronizador la nombra y no la
+  sincroniza, porque no hay de dónde copiar. Hoy no hay ninguna —las 78
+  están—; si mañana el maestro publica una tool que el runtime no expone, el
+  contrato lo dirá en vez de inventar un valor.
+
+**La tarea en la bandeja.** `TASK-8` (`M1.T03` / `C44`) queda cerrada en la
+bandeja local de Backlog.md con el SHA `cf8ad557`, que es el de la
+implementación en `main`: los tres criterios de aceptación y los dos puntos de
+la Definition of Done tienen evidencia real —el RED medido contra el código
+anterior (ocho comprobaciones en verde y dos en rojo: la del metadato entero
+y la del maestro sincronizado), el verde de `fast` y `full`, y este recibo, que
+cita el SHA—.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador) y `C13`
+(10, sin bloqueo): `C44` sale de la cola en este mismo cierre, porque una
+candidata cerrada que sigue en la cola es trabajo que otro agente puede volver
+a empezar. En la agenda privada, `M1.T01` (`TASK-5`) y `M1.T02` (`TASK-4`)
+siguen bloqueadas —la primera por una decisión de alcance del operador, la
+segunda por `C23`—, así que el bloque `M1` no tiene más unidades ejecutables y
+la siguiente unidad sin bloqueo es **`M2.T01`** (`TASK-6`): la suite E2E de
+Explorer espera con reloj donde la aplicación no expone señal.

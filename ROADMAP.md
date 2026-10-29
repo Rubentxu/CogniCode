@@ -59,7 +59,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 | Dos propietarios potenciales del estado del grafo | **`TASK-5`** |
 | Esperas fijas en la suite E2E de Explorer (59 en 24 ficheros) | **`TASK-6`** |
 | Casos desactivados en la suite E2E de Explorer (16 en 13 ficheros) | **`TASK-7`** |
-| Catálogo público desactualizado | `C44` |
+| Catálogo público desactualizado | **`C44`**, cerrada el 2026-10-29 (`cf8ad557`) |
 | Acoplamiento aplicación↔infraestructura, `views.rs` (9 669 líneas), `AnalysisService` (4 517) | `C23` |
 | TOCTOU entre verificar y publicar (`file_operations.rs:1281-1287`) | declarado, sin unidad: pide una decisión de alcance |
 | Duplicidad de las specs de perspectiva de Explorer | **no se reproduce**: `perspective-toggle.spec.ts` prueba P2.1–P2.6 y `perspective-toggle-full.spec.ts` tiene un test de visibilidad y otro desactivado con `[DEBT: …]`; el caso desactivado es justamente el que la auditoría llama duplicado |
@@ -85,30 +85,29 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M0.T03 está cerrado en el remoto.** El pull request `#482` —la
-publicación de la rama `fix/m0-t03-graph-publishes-unconfirmed-edges`— se
-fusionó por squash como `b75d2028`, con el `merge-gate` verde sobre
-`2cfea26a`: `merge-gate.pipeline.kts`, 58 etapas, 0 rojas. Una relación que
-el almacén rechazó ya no se descarta en silencio: se cuenta, se publica, y el
-build deja de declararse completo sobre un grafo al que le falta esa relación.
-Hay **una** regla de publicación de negativas, vive en el dominio
-(`attach_relations` → `RejectedRelation`) y sale por una única proyección
-(`RejectedRelationInfo`) que las dos interfaces comparten: el CLI y el MCP no
-pueden divergir porque no tienen dos reglas que puedan divergir. El número de
-relaciones que el producto publica es el que el grafo tiene, no el que se le
-ofreció, y el log dice lo mismo que la respuesta.
+**El ciclo de M1.T03 está cerrado en el remoto.** El pull request `#484` —la
+publicación de la rama `fix/m1-t03-catalog-describes-its-runtime`— se fusionó
+por squash como `cf8ad557`, con el `merge-gate` verde sobre `afe5d52c`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El catálogo publicado ya no
+dice de su runtime una versión que no es la: el `runtime_metadata` del maestro
+es el espejo de lo que el runtime publica. Y la sincronización es una
+**fusión**, no una copia: las claves que el runtime no publica —`gate_authority`
+y `produces_observations_only` de `check_architecture`— siguen curadas a mano
+en el maestro, porque una copia se las llevaría. El contrato del consumidor
+compara el metadato entero y no sólo el esquema de entrada, así que la deriva
+se ve en vez de ser silenciosa: por eso se ve, por eso la puerta se puede
+abrir otra vez.
 
 La puerta que queda abierta es la de la cola:
 
 - **`C23`** — la unidad de mayor retorno de todo lo que propone la auditoría
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
-- **`C44`** — el catálogo publicado dice de su runtime una versión que no es
-  la. Prioridad 15, sin bloqueo.
 - **`C13`** — las relaciones Kotlin↔Java sólo cuando se pueden probar, con un
   corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
   Prioridad 10, sin bloqueo.
 
-Y, con el hito `m-0` cerrado —3 de 3, «Lo que el producto publica está
-medido»—, la siguiente unidad sin bloqueo es **`M1.T03`** (`C44`): el catálogo
-publicado dice de su runtime una versión que no es la.
+Y, con `M1.T03` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
+una decisión de alcance del operador, `TASK-4` por `C23`—, la siguiente
+unidad sin bloqueo es **`M2.T01`** (`TASK-6`): la suite E2E de Explorer espera
+con reloj donde la aplicación no expone señal.

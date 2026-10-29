@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `a7fb03eb5cdae81691058d3dfaf572a1ca23dc20` (la
+> **Snapshot**: 2026-10-29, sobre `cf8ad557c34fc15aaab72646bfe579eb5dd1b083` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
