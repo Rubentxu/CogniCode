@@ -94,6 +94,13 @@ cargo_filter() {
 # mientras no se cuente lo que se ejecuto.
 SELECTED=0
 
+# `TOUCHED_RAN` cuenta los targets de integracion tocados que se han
+# ejecutado. MEDIDO 2026-10-29: sin el, el camino de fallback no podia
+# distinguir "no habia ningun target tocado" de "habia y no se ha
+# corrido", y los dos se leen igual desde fuera: un verde. Un wrapper que
+# no puede decir que no, aqui, no puede decir nada.
+TOUCHED_RAN=0
+
 # Corre un comando de cargo, deja ver su salida y suma sus pruebas
 # `passed` a SELECTED. Devuelve el rc del comando, sin adornos.
 run_counting() {
@@ -203,33 +210,10 @@ if [ "$STRATEGY" = "noop" ]; then
   exit 0
 fi
 
-# Fallback o strategy vacía → ejecutar subset conservador
-if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
-  echo "fallback: corriendo subset conservador (workspace --lib + clippy)."
-  # MEDIDO 2026-10-15. Este camino se salta `run_suite` entero, asi que con
-  # el fallback del selector NUNCA se ejecutan las suites listadas — y la
-  # lista del fallback incluye `merge`, que es el merge-gate completo. El
-  # subconjunto conservador es lo que AGENTS.md prescribe para fallback
-  # ("corre el subset conservador y avisa — no falla"), asi que el rc se
-  # respeta; lo que no se respeta es que el aviso no decia en voz alta que
-  # ningun test contractual de integracion se ha corrido. Este wrapper no es
-  # el gate: el gate es `bash scripts/test-full.sh`.
-  echo "  AVISO: este subconjunto NO incluye los tests de integracion"
-  echo "  contractuales (b5_*, b6_*, prf_*). Para eso: bash scripts/test-full.sh"
-  if [ -n "$FILTER" ]; then
-    run_counting cargo test --workspace --lib --quiet -- "$FILTER"
-  else
-    run_counting cargo test --workspace --lib --quiet
-  fi
-  cargo_clippy_rc=$?
-  cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
-  clippy_rc=$?
-  if [ "$cargo_clippy_rc" -ne 0 ] || [ "$clippy_rc" -ne 0 ]; then
-    exit 1
-  fi
-  filter_verdict
-  exit $?
-fi
+# El camino de fallback vive MAS ABAJO, despues de `run_suite`. MEDIDO
+# 2026-10-29: mientras vivia aqui no podia llamar a `run_suite` —la funcion
+# todavia no estaba registrada en ese punto del script— y se saltaba la
+# funcion entera. Ver el bloque de fallback mas abajo.
 
 # ---------- mapear suites a comandos ----------
 # MEDIDO 2026-10-19: solo `explorer` recibia `$(cargo_filter)`. `core`
@@ -282,6 +266,15 @@ touched_targets() {
 
 run_suite() {
   local suite="$1"
+  # `touched-only`: solo los targets de integracion que los paths tocan, sin
+  # la biblioteca del crate. Es el modo del camino de fallback, que ya corre
+  # `cargo test --workspace --lib` y no debe repetirla una vez por suite.
+  # MEDIDO 2026-10-29. El mapa suite->crate vive AQUI, en este `case`, y es
+  # el unico sitio donde vive: el camino de fallback lo usa en vez de
+  # derivar el crate del path, que seria una segunda fuente de verdad — y
+  # que ademas daria un rojo falso sobre `crates/spike-ladybug/`, que no es
+  # miembro del workspace y por tanto no tiene paquete que cargo resuelva.
+  local mode="${2:-full}"
   local crate
   case "$suite" in
     core)     crate=cognicode-core ;;
@@ -322,15 +315,72 @@ run_suite() {
   # La suite dice QUE crate; los paths tocados dicen QUE target. Se corren
   # los dos: la biblioteca, que es el contrato de la unidad, y el binario
   # de integracion del fichero que se ha tocado, que es lo que puede
-  # hablar del cambio.
+  # hablar del cambio. En modo `touched-only` la biblioteca no se corre: el
+  # camino que usa ese modo ya la ha corrido, entera, con `--workspace`.
   local rc=0 target
-  run_counting cargo test -p "$crate" --lib $(cargo_filter) || rc=1
+  if [ "$mode" != "touched-only" ]; then
+    run_counting cargo test -p "$crate" --lib $(cargo_filter) || rc=1
+  fi
   for target in $(touched_targets "$crate"); do
     printf -- '--- %s: target de integracion tocado ---\n' "$target"
+    TOUCHED_RAN=$(( TOUCHED_RAN + 1 ))
     run_counting cargo test -p "$crate" --test "$target" $(cargo_filter) || rc=1
   done
   return $rc
 }
+
+# ---------- camino de fallback ----------
+# MEDIDO 2026-10-29, en el cierre de TASK-16. Este bloque estaba mas arriba,
+# antes de `run_suite`, y por eso no podia llamar a `run_suite`: se saltaba
+# la funcion entera y corria `cargo test --workspace --lib`, que son SOLO
+# pruebas unitarias. Con un test de integracion nuevo y un path que el
+# selector no conoce en el mismo diff —`product/tools.json` no lo conoce
+# ninguna regla de CR-08, y esta versionado— el lazo de feedback daba
+# verde sin haber corrido el test recien escrito. Es el mismo falso verde
+# que M13 cierra en el camino `changed`, un camino mas alla.
+#
+# El fallback no puede correr la bateria de integracion: eso es `full`, y
+# correr los 99 binarios de `core` convertira `fast` en minutos. Lo que si
+# puede —y debe— es correr el target que los paths tocan, que es el unico
+# que puede hablar del cambio.
+if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
+  echo "fallback: el selector no pudo clasificar el cambio (motivo: ${REASON:-sin_motivo})."
+  echo "  Subconjunto conservador (workspace --lib) + el target de integracion"
+  echo "  que los paths tocan, si lo tocan."
+  echo "  AVISO: NO se corre la bateria de integracion (b5_*, b6_*, prf_*)."
+  echo "  Para esa bateria: bash scripts/test-full.sh"
+  fallback_rc=0
+  if [ -n "$FILTER" ]; then
+    run_counting cargo test --workspace --lib --quiet -- "$FILTER" || fallback_rc=1
+  else
+    run_counting cargo test --workspace --lib --quiet || fallback_rc=1
+  fi
+  # Los targets tocados, y solo ellos. `merge` se salta: no es una suite
+  # cargo, es el merge-gate completo, y su comando es `test-full.sh`.
+  for s in $(printf '%s' "$SUITES" | tr ',' ' '); do
+    case " $s " in
+      *" merge "*) continue ;;
+    esac
+    printf '\n=== suite: %s (solo el target tocado) ===\n' "$s"
+    run_suite "$s" touched-only || fallback_rc=1
+  done
+  cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
+  clippy_rc=$?
+  if [ "$TOUCHED_RAN" -eq 0 ]; then
+    echo "  AVISO: ningun target de integracion se ha corrido. Los paths tocados"
+    echo "  no produjeron ningun target en las suites del selector, o el crate"
+    echo "  tocado no lo mapea el selector. En ambos casos este subconjunto no"
+    echo "  dice nada del cambio de integracion: el gate si lo dice"
+    echo "  (bash scripts/test-full.sh)."
+  else
+    echo "  targets de integracion ejecutados: ${TOUCHED_RAN}"
+  fi
+  if [ "$fallback_rc" -ne 0 ] || [ "$clippy_rc" -ne 0 ]; then
+    exit 1
+  fi
+  filter_verdict
+  exit $?
+fi
 
 overall_rc=0
 seen=""
