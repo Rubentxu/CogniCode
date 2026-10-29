@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `323abe7292e62444ead7d84d659ea20302492a10` (la
+> **Snapshot**: 2026-10-29, sobre `f50eb57270fcf5b2494320c6b86a8862ca8c7022` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -67,7 +67,17 @@
 > el veredicto; ahora la respuesta servida de la caché declara los huecos del
 > árbol TAL COMO ESTÁ AHORA y lleva el veredicto que una construcción en frío
 > daría —`partial`, con `src/link.rs` declarado como `symlink`—, y los huecos
-> tienen un solo dueño: `SourceInventory::coverage_holes`).
+> tienen un solo dueño: `SourceInventory::coverage_holes`); y el lazo de
+> feedback ya no puede dar verde sin mirar el test que se acaba de escribir:
+> el modo rápido tiene DOS caminos —`changed`, que corre la biblioteca del
+> crate y el target de integración que los paths tocan, y `fallback`, al que se
+> entra cuando el selector no clasifica el cambio—, y el segundo se saltaba
+> el primero entero, de modo que corría `cargo test --workspace --lib`, que
+> son SÓLO pruebas unitarias; `product/tools.json` está versionado y ninguna
+> regla de CR-08 lo clasifica, así que ese camino no era raro: era la norma de
+> cualquier cambio que lo tocara; ahora el `fallback` corre también el target
+> de integración que los paths tocan —y dice que no ha corrido ninguno cuando
+> no los tocan—, sin dejar de correr el subconjunto conservador;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -752,6 +762,43 @@ no conoce— y el camino de fallback corre `cargo test --workspace --lib`, que
 son SÓLO pruebas unitarias; la prueba de esta unidad se ejecutó directamente —
 `cargo test -p cognicode-core --test cached_coverage_is_honest`, 5 pasados— y el
 `full` sí la incluye, porque corre `cargo test --workspace`.
+
+**El lazo de feedback ya no da verde sin correr el test que se ha escrito.**
+La salvedad del cierre anterior no era una limitación del entorno: era la ruta
+que el modo rápido tomaba siempre que el diff contenía un path que el selector
+no clasifica. `scripts/test-fast.sh` tiene dos caminos y no eran equivalentes:
+`changed` —que corre la biblioteca del crate y el target de integración que los
+paths tocan, desde el 2026-10-22— y `fallback`, que se saltaba `run_suite()`
+entero y corría `cargo test --workspace --lib`, que son SÓLO pruebas unitarias.
+Como `product/tools.json` está versionado y ninguna regla de CR-08 lo clasifica,
+el `fallback` no era un caso raro: era la norma de cualquier cambio que lo
+tocara. El resultado era un lazo de feedback que daba verde sin haber mirado
+nunca el test que el developer acababa de escribir.
+El `merge-gate` nunca estuvo mal —corre `test-full.sh`, que corre
+`cargo test --workspace`—: el defecto era del lazo, y por eso la corrección
+toca el wrapper y no el gate.
+La corrección NO deriva el crate del path (sería una segunda fuente de verdad
+del mapa suite→crate, que vive y sólo vive dentro del `case` de `run_suite()`,
+y además daría un rojo falso sobre `crates/spike-ladybug/`, que no es miembro
+del workspace). El `fallback` llama a `run_suite()` con un modo nuevo,
+`touched-only`, que corre los targets tocados de esa suite sin repetir su
+biblioteca —el `fallback` ya corre la biblioteca entera—; para que esa llamada
+sea posible, el bloque de `fallback` se mueve debajo de `run_suite()`: mientras
+vivía arriba, la función todavía no estaba registrada en ese punto del script.
+MEDIDO, con un contrato que ejecuta el wrapper de verdad en un árbol de
+laboratorio y mira la lista de invocaciones: antes, el `fallback` ejecutaba
+`test --workspace --lib --quiet` y clippy, y `--test prf_demo` no estaba; ahora
+ejecuta `test --workspace --lib --quiet`, `test -p cognicode-core --test
+prf_demo` y clippy. El camino `changed` no cambia.
+Y el hueco del que el `fallback` no puede salir se DECLARA, porque un wrapper que
+no puede decir que no, aquí, no puede decir nada: si no se ha corrido ningún
+target de integración, el `fallback` lo dice. MEDIDO sobre `cargo metadata`: de
+213 targets de integración en 11 miembros, el selector mapea 197 —`core` (131),
+`cli` (33), `mcp` (17), `explorer` (16), `ladybug` (0)— y quedan 16 sin mapear
+—`cognicode` (7), `cognicode-runtime` (5), `cognicode-graph-algos` (2),
+`cognicode-graph-wasm` (1), `cognicode-macros` (1), `cognicode-sandbox` (0)—; el
+`full` los corre, salvo `spike-ladybug`, que está excluido del workspace y por
+tanto no lo corre ningún carril de cargo: 9 targets sin carril en ninguna parte.
 
 ## La misión
 

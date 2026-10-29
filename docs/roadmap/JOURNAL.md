@@ -30557,3 +30557,144 @@ La prueba de esta unidad se ejecutó directamente —`cargo test -p cognicode-co
 --test cached_coverage_is_honest`, 5 pasados— y el `full` sí la incluye,
 porque corre `cargo test --workspace`. Un run filtrado no es evidencia de
 gate, y aquí se dice cuál es cuál.
+
+## 2026-10-29 — El lazo de feedback da verde sin correr el test que se ha escrito
+
+**El residuo, con las palabras del cierre anterior.** El recibo de cierre de
+`TASK-16` declaraba, en su sección de gates, una advertencia que el gate
+mismo enseñaba:
+
+> el `fast` NO ejecuta el fichero de test nuevo, porque el selector CR-08 cae
+> en su regla de catch-all —`product/tools.json` es un path que no conoce— y el
+> camino de fallback corre `cargo test --workspace --lib`, que son SÓLO
+> pruebas unitarias.
+
+Eso no era una limitación del entorno: era la ruta que `fast` tomaba siempre
+que el diff contenía un path que el selector no clasifica. Y `product/tools.json`
+está VERSIONADO y no lo clasifica ninguna regla de CR-08, así que el caso no
+era raro: era la norma de cualquier cambio que lo tocara. El test nuevo se
+ejecutó a mano en aquel ciclo (`cargo test -p cognicode-core --test
+cached_coverage_is_honest`, 5 pasados) y el `full` sí lo incluye, porque el
+`full` corre `cargo test --workspace`. El defecto, entonces, era del LAZO DE
+FEEDBACK, no del gate. Eso es lo que esta unidad mide y cierra.
+
+**El mecanismo, leído en el código antes de tocarlo.** `scripts/test-fast.sh`
+tiene DOS caminos de ejecución, y no eran equivalentes:
+
+| camino | qué corre | quién lo llama |
+|---|---|---|
+| `changed` | `cargo test -p <crate> --lib` **más** el target de integración que los paths tocan | `run_suite()` |
+| `fallback` | `cargo test --workspace --lib` y nada más | el bloque de fallback, que **se saltaba `run_suite()` entero** |
+
+El camino `changed` es el que M13 arregló el 2026-10-22 (`touched_targets()`
+calcula el binario que cargo declara por cada fichero `.rs` directamente bajo
+`crates/<crate>/tests/`). El `fallback` no lo tenía: se saltaba la función
+entera, y por eso no veía ni la biblioteca por crate ni el target tocado. La
+entrada al `fallback` es la regla 13 del selector: «cualquier path desconocido
+-> fallback ALL».
+
+**Lo que NO se hace, y por qué.** Tres caminos se descartaron con su coste
+medido, y ninguno se vuelve a intentar aquí:
+
+- **Derivar el crate del path tocad** (`crates/<dir>/tests/<fichero>.rs` ->
+  `-p <dir>`). Es una SEGUNDA fuente de verdad del mapa suite->crate, que ya
+  vive —y sólo vive— dentro del `case` de `run_suite()`, y el contrato
+  `test_the_selector_doc_and_the_runner_agree` lo pina ahí. Además da un ROJO
+  FALSO: `crates/spike-ladybug/` está excluido del workspace, así que
+  `cargo test -p spike-ladybug` responde «package ID specification
+  `spike-ladybug` did not match any packages» y el lazo de feedback se rompe
+  con un error que no habla del cambio.
+- **Añadir reglas al selector para los crates que no mapea.** Amplía el radio
+  de acción —cabecera del selector, `run_suite()`, y el contrato que obliga a
+  que ambos coincidan— para un hueco que el `full` ya cubre.
+- **`cargo test --workspace --tests`.** Convierte `fast` en la batería de
+  integración: los 99 binarios de `core` lo convierten en minutos, que es lo
+  que `fast` no es.
+
+**La decisión de forma.** El mapa suite->crate NO se mueve y NO se duplica: el
+`fallback` llama a `run_suite()` con un segundo argumento, `touched-only`, que
+corre los targets tocados de esa suite y no su biblioteca —el `fallback` ya
+corre la biblioteca entera con `--workspace`, y repetirla cinco veces no
+compra nada—. Para que esa llamada sea posible, el bloque de `fallback` se
+MUEVE debajo de `run_suite()`: mientras vivía arriba, la función todavía no
+estaba registrada en ese punto del script, y una llamada a una función que
+todavía no existe no es una llamada, es un `command not found`. El movimiento
+es puro reordenamiento: ninguna función cambia de nombre, ninguna suite
+cambia de crate, y el `case` de `run_suite()` —lo que el contrato pinea—
+sigue intacto.
+
+**MEDIDO: el RED, y lo que el wrapper ejecutaba.** El contrato nuevo
+(`M17`, en `scripts/ci/test_fast_full_wrappers.py`) no lee el código: ejecuta
+el wrapper de verdad en un árbol git de laboratorio, con un `cargo` falso que
+anota los argumentos que recibe, y mira la lista. El laboratorio se monta con
+dos paths: `crates/cognicode-core/tests/prf_demo.rs` y `product/tools.json`.
+El primero es un target de integración; el segundo es un path que el selector
+no conoce, y por eso el caso cae en `fallback`. Antes de la corrección, el
+inventario era:
+
+```
+test --workspace --lib --quiet
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+y el fallo era, literal:
+
+> AssertionError: FAIL: el camino de fallback no ejecuto el target de
+> integracion que se toco. El target tocado es el unico que puede hablar del
+> cambio, y el fallback lo es tambien: no tiene excusa para no correrlo.
+> Lo que ejecuto: test --workspace --lib --quiet / clippy --workspace
+> --all-targets --quiet -- -D warnings
+
+`--test prf_demo` no estaba, porque nadie lo había pedido. Después de la
+corrección, el inventario del mismo caso es:
+
+```
+test --workspace --lib --quiet
+test -p cognicode-core --test prf_demo
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+Una invocación más, y es POR TARGET TOCADO, no por suite: un `fallback` que
+no toca ningún test de integración corre exactamente lo que corría antes. El
+camino `changed` no cambia: `test -p cognicode-core --lib`,
+`test -p cognicode-core --test prf_demo`, clippy.
+
+**Y el hueco del que el `fallback` no puede salir, declarado en voz alta.** El
+selector no mapea todos los crates del workspace, así que un target de
+integración de uno de ellos sigue sin correrse en `fast`. MEDIDO sobre
+`cargo metadata --format-version 1 --no-deps`: 11 miembros, 213 targets de
+integración; el selector mapea 197 —`core` (131), `cli` (33), `mcp` (17),
+`explorer` (16) y `ladybug` (0)—, y quedan 16 sin mapear: `cognicode` (7),
+`cognicode-runtime` (5), `cognicode-graph-algos` (2), `cognicode-graph-wasm`
+(1), `cognicode-macros` (1) y `cognicode-sandbox` (0). El motivo es uno solo y
+no es un descuido: el mapa suite->crate del selector no tiene caso para ellos,
+y esta unidad no amplía el radio de acción del selector. El `full` sí los
+corre —`cargo test --workspace` los incluye—, salvo `spike-ladybug`, que está
+EXCLUIDO del workspace y por tanto no lo corre ningún lane de cargo: 9
+targets de integración sin carril en ninguna parte, que quedan aquí
+declarados. Y para que el `fast` no pueda dar un verde vacío sin decirlo, el
+`fallback` cuenta los targets que ha ejecutado y, si no ha corrido ninguno,
+lo dice: un wrapper que no puede decir que no, aquí, no puede decir nada.
+
+**Lo que este corte NO arregla.** El `merge-gate` nunca estuvo mal: corre
+`test-full.sh`, que corre `cargo test --workspace`, que sí incluye los tests
+de integración. El defecto era del lazo de feedback del developer, y por eso
+esta unidad toca el wrapper y no el gate. Y los 16 targets de integración de
+los crates que el selector no mapea siguen sin correrse en `fast`: los declara,
+no los arregla.
+
+**Gates.** `fast` rc=0; `full` rc=0 —6504 pasados, 0 fallidos y 34 ignorados
+contando los doc-tests; `fmt --check` y `clippy -D warnings` en verde; 455
+comprobaciones de contrato en 0 fallos. El contrato de wrappers pasa 20 de 20
+—19 antes de este cambio, más el `M17` nuevo—. Una nota de harness que este
+recibo declara porque el cierre de `TASK-16` también la sufrió: el contrato se
+ejecuta con `GIT_CONFIG_GLOBAL=/dev/null` y `GIT_CONFIG_SYSTEM=/dev/null`, que
+es lo que hace el runner del gate (`scripts/run_contract_tests.py`). Con la
+configuración global de esta máquina, el hook local rechaza el commit del
+laboratorio por dos diagnósticos —identidad no permitida y mensaje sin tipo
+Conventional Commit—, y el fallo es del entorno, no del contrato.
+
+**La cola.** `goal-compass.json` NO cambia: `TASK-17` no era candidata de esa
+cola —nació como el residuo que el cierre de `TASK-16` dejó medido y con
+dueño, en la bandeja local—, así que no hay ficha que sacar. La cola viva
+sigue con `C23` (50, bloqueada por el operador) y nada más.

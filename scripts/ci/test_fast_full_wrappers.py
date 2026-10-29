@@ -829,6 +829,63 @@ def test_a_deleted_test_is_not_asked_for_as_a_binary() -> None:
     )
 
 
+def test_the_fallback_also_runs_the_touched_integration_target() -> None:
+    """M17: el camino de fallback tambien corre el target que se ha tocado.
+
+    MEDIDO 2026-10-29, en el cierre de TASK-16. `test-fast.sh` tiene dos
+    caminos: `changed`, que llama a `run_suite()` —y desde 2026-10-22 corre
+    el target de integracion que los paths tocan— y `fallback`, que se salta
+    `run_suite()` entero y corre `cargo test --workspace --lib`, que son solo
+    pruebas unitarias.
+
+    Se entra en `fallback` cuando algun path del diff no lo conoce el
+    selector, y eso ocurre en cambios de verdad: `product/tools.json` esta
+    versionado y ninguna regla de CR-08 lo clasifica. Con un test de
+    integracion nuevo y ese path en el mismo diff, el lazo de feedback daba
+    verde sin haber corrido el test recien escrito. Es el mismo falso verde
+    que M13 cierra en el camino `changed`, un camino mas alla.
+
+    El fallback no puede correr la bateria de integracion —eso es `full`, y
+    correr los 99 binarios de `core` convertira `fast` en minutos—, pero si
+    el target que los paths tocan, que es el unico que puede hablar del
+    cambio y que el developer acaba de escribir.
+
+    Este contrato no lee el codigo: ejecuta el wrapper de verdad en un arbol
+    de laboratorio, con un `cargo` que anota lo que recibe, y mira la lista.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        done, recorded = fast_run_in_a_lab(
+            Path(directory),
+            "crates/cognicode-core/tests/prf_demo.rs product/tools.json",
+        )
+
+    assert done.returncode == 0, (
+        f"FAIL: el wrapper salio con rc={done.returncode} sobre un arbol de "
+        f"laboratorio. stderr:\n{done.stderr}"
+    )
+    assert "--test prf_demo" in recorded, (
+        "FAIL: el camino de fallback no ejecuto el target de integracion que "
+        "se toco. El target tocado es el unico que puede hablar del cambio, "
+        "y el fallback lo es tambien: no tiene excusa para no correrlo. "
+        f"Lo que ejecuto:\n{recorded}"
+    )
+    assert "prf_demo" in done.stdout, (
+        "FAIL: el wrapper no nombro el target que corrio. Un wrapper que "
+        "calla sobre lo que ha ejecutado se lee como si lo hubiera hecho "
+        f"todo. stdout:\n{done.stdout}"
+    )
+    assert "--workspace --lib" in recorded, (
+        "FAIL: el fallback dejo de correr el subconjunto conservador. El "
+        "target tocado se anade; el subconjunto no se sustituye. "
+        f"Lo que ejecuto:\n{recorded}"
+    )
+    assert "--workspace --tests" not in recorded, (
+        "FAIL: el fallback se ha convertido en la bateria de integracion. "
+        "Eso es `full`, y `fast` no es `full`: correr los 99 binarios de "
+        f"integracion de core lo convierte en minutos. Lo que ejecuto:\n{recorded}"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for fn in (
@@ -851,6 +908,7 @@ def main() -> int:
         test_a_shared_module_under_tests_is_not_a_target,
         test_the_derived_target_names_are_the_ones_cargo_declares,
         test_a_deleted_test_is_not_asked_for_as_a_binary,
+        test_the_fallback_also_runs_the_touched_integration_target,
     ):
         try:
             fn()
