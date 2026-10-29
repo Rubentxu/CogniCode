@@ -29644,3 +29644,211 @@ etapas sin una roja, y este recibo).
 
 Con esto la cola se queda **sin ninguna unidad sin bloqueo**: la siguiente la
 desbloquea el operador, y no este documento.
+
+## 2026-10-29 — Las referencias que el grafo no puede resolver se publican con su motivo
+
+**El hueco, medido** sobre `main@1fb68772`, con el corpus
+`sandbox/fixtures/kotlin-java/` que crea la unidad M2.T03: el extractor lee
+**SEIS** llamadas y el grafo publica **CUATRO** relaciones. Las dos que no
+publica son exactamente las dos que no se pueden probar —`run`, declarado tres
+veces, llamado desde `demo/gamma/Caller.kt`, e `invoke`, declarado dos veces,
+llamado desde `demo/gamma/UseHandler.kt`—, y lo que se perdía de ellas era
+distinto según la ruta:
+
+- Estrategia `full`: `GraphCoverageMetrics { …, unresolved_edges: 2, … }`. El
+  RECUENTO sí se publica, pero es un número: no dice qué llamada, ni en qué
+  fichero y línea, ni por qué.
+- Estrategia `per_file`: `BuildStatus::Complete`. El build afirmaba una
+  cobertura que no tenía.
+
+Lo que no se publicaba en NINGUNA de las dos rutas era la IDENTIDAD y el
+MOTIVO de la pérdida. `TargetResolution::Ambiguous { name, candidates }`
+llevaba exactamente eso —el número de candidatos incluido, frente a
+`Unresolved(String)`—, y un recuento no distingue una llamada ambigua entre
+tres candidatos de una llamada sin destino. Eso contradice dos cláusulas
+MUST del contrato del consumidor: K-REL-02 —«cada arista almacena […] `to
+TargetResolution` […] y `reason` si no pudo resolverse»— y K-REL-07 —«el mismo
+conjunto de hechos conduce a grafo idéntico full/per_file […] cualquier pérdida
+de relaciones debe aparecer en cobertura»— de
+`docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-RELATIONS.md`.
+
+**El mecanismo, medido.** `reuse::look_up`
+(`crates/cognicode-core/src/infrastructure/graph/reuse.rs:319`) mapeaba
+`Ambiguous | Unresolved` a `Answer::Nothing`, y `reuse.rs:302` sólo contaba
+(`resolution.unresolved += 1`): la variante `Ambiguous` se colapsaba ANTES de
+llegar al grafo, así que su información no tenía dónde publicarse. La ruta por
+fichero tenía el brazo equivalente vacío en `per_file_graph.rs:861`, con el
+comentario «A future diagnostics pass can surface the unresolved call site».
+Ese paso futuro no existía.
+
+**La decisión de forma.** Antes de tocar Rust se decidió dónde vive la
+negativa, porque esta unidad cambia la FORMA de representar una negativa:
+
+- **Problema**: la pérdida no se publicaba porque no tenía forma.
+- **Evidencia OBSERVED**: el colapso en `Answer::Nothing`; el brazo vacío con
+  su comentario; el docstring de `BuildStatus::Complete` («Every file was
+  processed, every reference that names something inside the project was tied
+  to a declaration») que era FALSO en el caso ambiguo.
+- **Evidencia INFERRED**: una cuarta variante de `TargetResolution`
+  (`External`) resolvería el caso, pero rompe el contrato de forma que la
+  unidad M2.T03 fijó —el `match` sobre `TargetResolution` no tiene brazo `_`,
+  y el fichero de la variante declara por qué no hay una cuarta—.
+- **Alternativas**: (a) `KEEP_AS_IS` — no se publica nada; (b) variante
+  nueva `TargetResolution::External` — exige una tabla de símbolos externos
+  que el producto no tiene y rompe el `match` exhaustivo; (c) reutilizar el
+  ADT de negativa que YA existe —`PendingClass` + `PendingReference`— y darle
+  el dato que le faltaba.
+- **Decisión**: (c). `KEEP_AS_IS` se descarta porque contradice K-REL-07 y
+  hace falso el docstring de `Complete`; (b) se descarta porque el ADR de
+  Kotlin ya dice que la cuarta variante exige una tabla de símbolos externos
+  que nadie puede construir.
+- **Regla/invariante**: `TargetResolution` sigue TENIENDO TRES VARIANTES —la
+  forma del dominio no cambia—; la negativa se modela donde ya había una
+  forma para ella (`PendingClass`), y `PendingReference` es su portador. El
+  motivo lo produce la resolución (`TargetResolution::outcome() -> Result<
+  SymbolId, PendingClass>`) y lo decide el dominio
+  (`PendingReference::of_call(&CallSite, PendingClass) -> Option<
+  PendingReference>`); ninguna ruta lo decide por su cuenta.
+- **Slice**: un solo caso de uso, de punta a punta —«una llamada que no se
+  puede atar se publica con su identidad y su motivo»—: extractor →
+  `CallSite` (VO de dominio nuevo) → resolución → `PendingReference` →
+  `BuildStatus::Partial { pending }` → `coverage_gaps` → CLI y MCP.
+- **Equivalencia**: el grafo NO cambia —las cuatro relaciones que sí se pueden
+  probar se siguen publicando, y el contrato de M2.T03 sigue verde—. Lo que
+  cambia es que el build deja de afirmar `Complete` y publica la pérdida. No
+  se crea ningún campo nuevo en ningún contrato público: los campos que ya
+  existían (`pending_references` en la CLI y en el MCP) es lo que se llena.
+- **Coste/beneficio**: ningún fixture nuevo, ningún contrato de CI nuevo,
+  ninguna tabla de símbolos externos. Lo que cuesta es una decisión de
+  alcance, que se mide abajo.
+
+**La decisión de alcance: qué se publica.** Se publica la negativa
+**ambigua** —«el proyecto declara este nombre varias veces y la llamada no
+dice cuál»— y NO la negativa **sin candidato** —«este nombre no lo declara el
+proyecto»—. El motivo es medible: publicar todas las llamadas a nombres que el
+proyecto no declara inundaría la lista con nombres de biblioteca (`unwrap`,
+`len`, `expect`), que no son una pérdida del proyecto sino una llamada a otro
+proyecto. Un consumidor que ve «este nombre no lo tengo» veinte veces por
+build no ve nada; uno que ve «este nombre lo tengo tres veces y no sé cuál»
+ve un hueco real. La pérdida sin candidato sigue contando, como antes.
+
+**Los commits.** `614079b` es la implementación —el dominio, el lector, las
+tres rutas y el docstring— y `69ff04e1` es la revisión de los nueve ficheros
+de test que nombran `Complete`. El squash que entre en `main` es otro SHA, y
+lo publicará el recibo de cierre.
+
+**El contrato.** `crates/cognicode-core/tests/c13_kotlin_java_relation_contract.rs`
+—el mismo fichero que la unidad M2.T03 creó, con tres tests más—: nueve
+tests pasaron a **doce**. Los tres nuevos fijan la pérdida:
+
+- `the_refusals_are_published_with_their_identity_and_their_motive` exige, en
+  las DOS estrategias, que las dos llamadas aparezcan con su fichero, su línea
+  y su motivo: `caller@demo/gamma/Caller.kt:3 -> run [ambiguo:3]` y
+  `useHandler@demo/gamma/UseHandler.kt:6 -> invoke [ambiguo:2]`.
+- `the_build_does_not_claim_completeness_when_it_could_not_tie_a_call` exige que
+  el build NO diga `Complete` y que su `Partial` diga QUÉ le falta, no sólo que
+  le falta algo.
+- `both_build_strategies_publish_the_same_loss` exige que las dos estrategias
+  publiquen la MISMA pérdida, con una precondición que impide que el test pase
+  por vacío: una estrategia que no publica ninguna pérdida no se puede
+  comparar con otra.
+
+**El RED, medido sobre el camino malo.** Antes del arreglo el contrato daba
+**9 pasados y 3 fallidos**; después, **12 pasados y 0 fallidos**. Los tres
+fallidos eran exactamente los tres tests nuevos: no había pérdida que ver.
+
+**La semántica de `Complete`, escrita en cada sitio.** `Complete` deja de
+significar sólo «no quedó ningún fichero sin leer»: pasa a ser «no quedó
+**nada** sin atar» —ni un fichero sin leer, ni una referencia sin atar a una
+declaración—. Y `Partial` deja de ser una cosa única: tiene dos causas
+independientes (ficheros omitidos, referencias pendientes) más una tercera
+(relaciones rechazadas por el almacén), así que un test que quiere saber POR
+QUÉ tiene que mirar la lista concreta, no sólo `not Complete`. Los ocho
+ficheros que el propio encargo nombra —`h14_system_holds_end_to_end.rs`,
+`graph_walk_stays_inside_the_root.rs`, `walk_errors_are_errors.rs`,
+`the_broken_file_is_not_published.rs`, `h16_walk_classification_coherence.rs`,
+`h13_analysis_service_propagation.rs`,
+`m0_t03_graph_publishes_unconfirmed_edges.rs` y
+`the_filtered_route_says_what_it_covered.rs`— se revisaron uno a uno y el
+cambio de semántica quedó escrito en cada uno. Un noveno fichero,
+`cu1_w2_service_analyzer_contract.rs`, también lo menciona y también se
+revisó.
+
+**Dos expectativas que estaban dormidas.** Al cambiar la semántica, dos tests
+que hasta entonces pasaban por una rama que nunca se ejecutó revelaron una
+expectativa equivocada, y en los dos casos la expectativa —no el producto— era
+lo que estaba mal:
+
+- `cu1_w2_service_analyzer_contract.rs` esperaba que el gap nombrase el
+  fichero saltado `Cargo.toml`. `Cargo.toml` es una EXCLUSIÓN legítima, nunca
+  un salto, así que esa rama nunca se había ejercido; el hueco real del
+  fixture son las dos llamadas a `helper`, que el proyecto declara dos veces.
+  La expectativa se corrigió al gap real —capacidad `graph.pending`, mensaje
+  «2 reference(s) without a declaration»—.
+- `h14_system_holds_end_to_end.rs` afirmaba `Complete` en las dos rutas y en
+  el accessor. Su corpus llama a `helper`, declarado dos veces, así que el
+  build es `Partial` POR ELLAS y no por un fichero sin leer. Los tres
+  `Complete` se sustituyeron por la pérdida publicada, y se añadió que las dos
+  rutas y el accessor publiquen la MISMA.
+
+**Los gates, medidos.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 eligió
+  `strategy=changed`, `suites=[core]`: los nueve ficheros de test que
+  cambiaron viven en `crates/cognicode-core/**`. En verde: **2453**
+  pasados, 0 fallidos y 2 ignorados.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con **6489** pasados, 0
+  fallidos y 22 ignorados, doc-tests con **8** pasados, 12 ignorados y 0
+  fallidos, explorer multimodal en verde (**4** pasados), **454** comprobaciones
+  de contrato en 0 fallos —57 contratos de CI más `scripts/product/*.py`—, y
+  `known_failures (core/lib)` sin diferencias.
+- La primera pasada de `full` dio **rc=1** en la etapa de `fmt --check`: el
+  commit de la implementación no estaba formateado con `rustfmt`, y el gate
+  lo dice. La corrección es del formato —`cargo fmt`—, y el código no cambió
+  de comportamiento.
+
+**Una corrección de un número del recibo anterior.** El recibo de cierre de
+M2.T03 dice que sus dos corridas completas miden `cargo test --workspace` con
+**6498** pasados y **34** ignorados. Los logs de esa corrida que quedan en la
+máquina —`/tmp/full_m2t03.log` y `/tmp/m2t03-full-pr2.log`, los dos con
+`rc=0`— miden **6486** pasados y **22** ignorados, con los mismos **233**
+binarios de test. La cifra publicada no corresponde a ninguna corrida
+medida. La de este corte —**6489** pasados y **22** ignorados— encaja con
+ella: son los tres tests nuevos que añade este contrato sobre los 6486 de
+entonces, y los mismos 22 ignorados. El journal es append-only, así que el
+recibo de M2.T03 no se reescribe; la corrección vive aquí.
+
+**El inventario del harness, medido antes y después.** La lente de economía del
+harness pide medir, no suponer:
+
+| | antes (`main@1fb68772`) | después |
+|---|---|---|
+| ficheros de test en `crates/` | 235 | **235** (0) |
+| contratos de CI (`scripts/ci/*.py`) | 62 | **62** (0) |
+| ficheros versionados en `sandbox/fixtures/` | 985 | **985** (0) |
+
+Cero fixtures nuevos, cero contratos nuevos. El corpus y el contrato de la
+unidad M2.T03 se reutilizan tal cual: este corte no crea un oráculo nuevo,
+usa el que ya existe.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La llamada sin candidato no se publica con su identidad.** Sigue siendo un
+  número: publicar todo nombre que el proyecto no declara inundaría la lista
+  con nombres de biblioteca. Es una decisión de alcance, escrita arriba, y no
+  una omisión.
+- **El overload correcto no se resuelve**, y no por falta de esfuerzo: la
+  aridad no viaja por el pipeline (`FileFacts.calls` es
+  `Vec<(Symbol, String)>`). La llamada `invoke` se publica como ambigua con
+  dos candidatos, que es exactamente lo que la evidencia permite afirmar.
+- **La equivalencia CLI/MCP no se ha ejercido sobre este corpus.** La
+  medición de equivalencia que hoy existe cubre Terraform; este contrato
+  llama a los servicios del dominio, no a la CLI ni al MCP. El hueco de
+  publicación existe en el dominio y sus dos bordes, pero no se afirma paridad
+  que no se ha medido.
+- **La ruta semántica sigue sin publicar sus llamadas no resueltas.** Es la
+  que usa un lector con dominio —Terraform, Ansible— y su lector no tiene
+  índice del proyecto: no puede distinguir una llamada ambigua de una que vive
+  fuera del proyecto. El corte arregla las tres rutas que construyen el grafo
+  del proyecto; esa cuarta queda declarada, no se disimula.

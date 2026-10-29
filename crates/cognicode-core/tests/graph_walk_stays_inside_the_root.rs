@@ -14,6 +14,11 @@
 //! The paths recorded in the graph are the symlink paths, so nothing
 //! downstream can tell the difference — the report says `Complete`.
 //!
+//! `Complete` is a promise about two things at once: every file was
+//! read, and every reference was tied to a declaration. A report that
+//! says `Complete` while a reference hangs loose is breaking half of
+//! that promise, and a caller has no way to tell the halves apart.
+//!
 //! The law this file pins: **a walk rooted at `R` yields files under
 //! `R`, and only files under `R`.** A symlink is a name, not a
 //! licence to read through it.
@@ -236,6 +241,12 @@ fn a_real_file_inside_the_root_is_still_indexed() {
     // And the report must claim the completeness it actually has.
     // Without this, a walk that flagged every entry as skipped would
     // satisfy every other assertion in this file.
+    //
+    // `Complete` is more than «every file was read»: it also means
+    // every reference was tied to a declaration. This corpus calls one
+    // function that it declares once, so there is nothing left to tie
+    // and nothing left to publish — a corpus with a call the project
+    // cannot tell apart would be `Partial`, and would publish it.
     assert!(
         matches!(report.status, BuildStatus::Complete),
         "a workspace with no symlinks is fully covered; got {:?}",

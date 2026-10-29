@@ -7,6 +7,12 @@
 //! what a broken file is: one refused it, the other published half of it
 //! and said the coverage was complete. Now the reader of the language
 //! refuses it too, and the file stays visible as a hole.
+//!
+//! `Complete` is the promise that nothing is missing, and it covers two
+//! kinds of thing: no file was left unread, and no reference was left
+//! untied. A build that could not tie a reference is `Partial` too, and
+//! it publishes that reference with its motive — so `Complete` means
+//! there is nothing to look up anywhere else.
 
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, PerFileGraphCache};
 

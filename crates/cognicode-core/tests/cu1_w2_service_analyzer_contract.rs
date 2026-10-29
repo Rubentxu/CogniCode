@@ -20,7 +20,7 @@
 //! exige la aceptación de CU-1 para identidad de símbolos.
 
 use cognicode_core::application::analysis_basis::{
-    AnalysisBasis, AnalysisOp, AnalysisValue, Analyze, OutcomeState,
+    AnalysisBasis, AnalysisOp, AnalysisValue, Analyze, OutcomeState, PENDING_REFERENCE_CAPABILITY,
 };
 use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
 use std::path::PathBuf;
@@ -64,20 +64,28 @@ fn graph_full_over_real_workspace_completes_with_real_counts() {
         },
     );
 
-    // CU-1.4: el walk del servicio incluye Cargo.toml (extensión no
-    // soportada) → el build es Partial con gaps, EXACTAMENTE lo que
-    // handle_build_graph reporta por MCP. La ley no es "siempre
-    // Complete": es "Complete solo si el BuildReport no tiene skips".
+    // CU-1.4: el estado lo decide el BuildReport compartido. La ley no
+    // es "siempre Complete": es "Complete solo si el BuildReport no
+    // tiene pérdidas". Y `Complete` no significa sólo que no quedó
+    // ningún fichero sin leer: significa que no quedó NADA sin atar, y
+    // eso incluye las referencias.
+    //
+    // Este fixture llama a `helper`, que el proyecto declara DOS veces —
+    //en `alpha.rs` y en `beta.rs`—, así que esas dos llamadas no se
+    // pueden atar a una sola declaración: el build es `Partial` y el
+    // gap dice cuántas son y de qué cobertura se trata. Un `Complete`
+    // aquí afirmaría una cobertura que el producto no tiene.
     match outcome.state() {
         OutcomeState::Complete => assert!(outcome.gaps().is_empty()),
         OutcomeState::Partial => {
             assert!(!outcome.gaps().is_empty(), "Partial exige gaps no vacíos");
             assert!(
-                outcome
-                    .gaps()
-                    .iter()
-                    .any(|g| g.message.contains("Cargo.toml")),
-                "el gap debe nombrar el fichero saltado (Cargo.toml), got {:?}",
+                outcome.gaps().iter().any(|gap| {
+                    gap.capability.as_deref() == Some(PENDING_REFERENCE_CAPABILITY)
+                        && gap.message.contains("2 reference(s)")
+                }),
+                "el gap tiene que decir QUÉ falta: las dos llamadas que el \
+                 proyecto declara dos veces y que no se pudieron atar, got {:?}",
                 outcome.gaps()
             );
         }

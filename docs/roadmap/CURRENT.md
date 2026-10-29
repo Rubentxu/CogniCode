@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `d9bf2b4588a590e8ff9f602abe0e2e798cb449b9` (la
+> **Snapshot**: 2026-10-29, sobre `1fb687729965b81e5459ea23ec814d6d5bcc3e0c` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -30,7 +30,19 @@
 > que las cuatro relaciones que sí se pueden probar sí se publican —de Kotlin
 > a Java, de Java a Kotlin, de Kotlin a Kotlin y de fichero a fichero—, y que
 > la forma de `TargetResolution` queda fijada: tres variantes, no cuatro, y
-> con la razón escrita de por qué la cuarta no existe).
+> con la razón escrita de por qué la cuarta no existe; y una referencia que el
+> grafo no puede resolver ya no desaparece sin decirse: una llamada ambigua —
+> el proyecto declara ese nombre varias veces y la llamada no dice cuál— se
+> publica con su identidad —qué llamada, en qué fichero y en qué línea— y con
+> su motivo —cuántos candidatos tiene el nombre—, y el build deja de declarar
+> `Complete` cuando no pudo atarla: `Complete` pasa a significar «no quedó nada
+> sin atar», ni un fichero sin leer ni una referencia sin atar a una
+> declaración; las dos estrategias de build publican la misma pérdida, porque
+> las dos resuelven contra el mismo índice del proyecto; y la forma del
+> dominio no cambia: `TargetResolution` sigue con tres variantes y la negativa
+> se modela donde ya había forma para ella —`PendingClass` y
+> `PendingReference`—, con un valor de dominio nuevo que transporta la línea
+> donde la llamada está escrita).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -577,6 +589,53 @@ tampoco es implementable hoy: el pipeline sólo transporta el NOMBRE del callee
 (`FileFacts.calls` es `Vec<(Symbol, String)>`), así que la aridad que
 distinguiría los dos `invoke` no llega al resolvedor. Y la equivalencia
 CLI/MCP medida hasta hoy cubre Terraform, no este corpus.
+
+**Las referencias que el grafo no puede resolver se publican con su motivo,
+está cerrada.** La pérdida que el cierre anterior dejó medida y con dueño: el
+extractor lee SEIS llamadas sobre el corpus Kotlin/Java y el grafo publica
+CUATRO relaciones; las dos que no publica son las dos que no se pueden probar,
+y de esas dos no quedaba NADA publicado. La estrategia `full` publicaba un
+número —`unresolved_edges`— y la estrategia `per_file` publicaba un
+`BuildStatus::Complete` que afirmaba una cobertura que no era verdad. El
+número dice cuántas son; no dice cuál es cada una, en qué fichero y línea está
+escrita, ni por qué no se pudo atar. Eso contradecía K-REL-02 y K-REL-07 del
+contrato del consumidor.
+Ahora la pérdida se publica con su identidad y su motivo: qué llamada es, en
+qué fichero y línea, y cuántos candidatos tenía el nombre que nombra.
+`BuildStatus::Partial` lleva la lista —`pending`—, la CLI y el MCP ya tenían el
+campo donde publicarla, y no se creó ningún campo nuevo en ningún contrato
+público: lo que cambia es que se llena lo que ya existía. Y `Complete` deja
+de significar sólo «no quedó ningún fichero sin leer»: pasa a ser «no quedó
+NADA sin atar», ni un fichero sin leer ni una referencia sin atar a una
+declaración.
+La FORMA del dominio no cambia, y esa fue la decisión que se tomó antes de
+tocar Rust: `TargetResolution` sigue TENIENDO TRES VARIANTES —una cuarta
+rompería el `match` exhaustivo que el contrato de la unidad anterior fijó— y la
+negativa se modela donde ya había una forma para ella: `PendingClass` y
+`PendingReference`. Lo que faltaba era el TRANSPORTE, no la forma: la arista
+descartada no dejaba sitio donde escribir su motivo porque la arista no
+existe. El motivo lo produce la resolución y lo decide el dominio
+(`PendingReference::of_call`), de modo que ninguna ruta lo decide por su
+cuenta; y un valor de dominio nuevo transporta la línea donde la llamada está
+escrita, que es lo que permite señalarla.
+El alcance es una decisión, y se declara: se publica la negativa AMBIGUA —el
+proyecto declara ese nombre varias veces— y no la negativa sin candidato —el
+proyecto no declara ese nombre—, porque publicar todos los nombres de
+biblioteca (`unwrap`, `len`, `expect`) llenaría la lista de huecos de ruido y
+la volvería inútil. La pérdida sin candidato sigue contando, como antes.
+El RED está medido sobre el camino malo: el contrato —el existente, sobre el
+corpus que ya existe, sin un fixture nuevo— daba 9 pasados y 3 fallidos; ahora
+da 12 y 0. Los tres tests nuevos fijan la pérdida en las DOS estrategias, y el
+que compara ambas tiene una precondición que impide que pase por vacío. Y los
+nueve ficheros de test que nombran `BuildStatus::Complete` se revisaron uno a
+uno: el cambio de semántica está escrito en cada uno, y dos expectativas
+dormidas resultaron estar equivocadas —no el producto—: una pedía que el hueco
+nombrase un fichero que es una exclusión legítima, y otra afirmaba `Complete`
+sobre un corpus cuyo hueco real son dos llamadas ambiguas. Lo que este corte
+NO cubre, y queda declarado: la ruta semántica —la que usa un lector con
+dominio, como Terraform o Ansible— sigue sin publicar sus llamadas no
+resueltas, porque su lector no tiene índice del proyecto y no puede
+distinguir una llamada ambigua de una que vive fuera del proyecto.
 
 ## La misión
 

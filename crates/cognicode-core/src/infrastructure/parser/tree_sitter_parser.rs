@@ -2,9 +2,10 @@
 // The allows below scope the lints that this file's own shape provokes.
 #![allow(invalid_from_utf8)]
 
+use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::{ParseError, ParseResult, ParsedTree, Parser};
-use crate::domain::value_objects::{Location, SymbolKind};
+use crate::domain::value_objects::{CallSite, Location, SymbolKind};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -438,13 +439,62 @@ impl TreeSitterParser {
     ///
     /// The same reason as the symbols: a caller that already holds the
     /// tree does not make the parser build it again.
+    ///
+    /// This is the pair projection of the calls: the caller and the name.
+    /// A consumer that has to say WHICH call it is about needs the line
+    /// too, and reads it from [`Self::find_call_sites_in_tree`].
     pub fn find_call_relationships_in_tree(
         &self,
         tree: &tree_sitter::Tree,
         source: &str,
         file_path: &str,
     ) -> ParseResult<Vec<(Symbol, String)>> {
-        let mut relationships = Vec::new();
+        Ok(self
+            .find_calls_in_tree(tree, source, file_path)?
+            .into_iter()
+            .map(|(caller, callee, _line)| (caller, callee))
+            .collect())
+    }
+
+    /// The calls of a tree that has already been parsed, with the place
+    /// each one is written.
+    ///
+    /// The name a call names is not enough to say which call it is: two
+    /// calls in the same file can name the same thing, and a consumer
+    /// that is told "this call could not be tied" without the line cannot
+    /// point at anything. The line is known here and nowhere else, so it
+    /// travels with the call from the tree to the graph.
+    pub fn find_call_sites_in_tree(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+    ) -> ParseResult<Vec<CallSite>> {
+        Ok(self
+            .find_calls_in_tree(tree, source, file_path)?
+            .into_iter()
+            .map(|(caller, callee, line)| CallSite {
+                source: SymbolId::new(caller.fully_qualified_name()),
+                origin_file: file_path.to_string(),
+                line,
+                target: callee,
+            })
+            .collect())
+    }
+
+    /// The calls of a tree: who writes them, what they name, and the line
+    /// they are written on.
+    ///
+    /// One traversal, two projections: the pairs and the call sites say
+    /// the same thing about the same tree, so a reader cannot answer one
+    /// question and not the other.
+    fn find_calls_in_tree(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+    ) -> ParseResult<Vec<(Symbol, String, u32)>> {
+        let mut calls = Vec::new();
 
         // Find all function definitions
         let function_type = self.language.function_node_type();
@@ -453,10 +503,10 @@ impl TreeSitterParser {
             source,
             file_path,
             function_type,
-            &mut relationships,
+            &mut calls,
         );
 
-        Ok(relationships)
+        Ok(calls)
     }
 
     /// Helper to find function calls within function definitions (iterative DFS)
@@ -466,7 +516,7 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
         function_type: &str,
-        relationships: &mut Vec<(Symbol, String)>,
+        relationships: &mut Vec<(Symbol, String, u32)>,
     ) {
         let mut stack = Vec::new();
         stack.push(node);
@@ -496,7 +546,7 @@ impl TreeSitterParser {
         node: tree_sitter::Node,
         source: &str,
         caller_symbol: &Symbol,
-        relationships: &mut Vec<(Symbol, String)>,
+        relationships: &mut Vec<(Symbol, String, u32)>,
     ) {
         let call_type = self.language.call_node_type();
         let mut stack = Vec::new();
@@ -506,7 +556,10 @@ impl TreeSitterParser {
             if current.kind() == call_type
                 && let Some(callee_name) = self.extract_callee_name(current, source)
             {
-                relationships.push((caller_symbol.clone(), callee_name));
+                // The tree counts rows from zero; the world counts lines
+                // from one, and so does every place a line is published.
+                let line = current.start_position().row as u32 + 1;
+                relationships.push((caller_symbol.clone(), callee_name, line));
             }
 
             let cc = current.child_count();

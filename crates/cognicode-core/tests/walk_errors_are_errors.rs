@@ -9,6 +9,13 @@
 //! afirmación falsa sobre la cobertura, del mismo género que el
 //! `Complete` que un repo con un hueco real no puede decir.
 //!
+//! `Complete` es una promesa de dos cosas: que se leyó todo el árbol
+//! y que toda referencia quedó atada a una declaración. Por eso un
+//! `Partial` ya no significa sólo «hubo un error de recorrido»: puede
+//! ser que el recorrido fue entero y que una llamada no se pudo atar.
+//! La lista de omitidos es lo que distingue los dos casos, y es lo que
+//! estos tests miran.
+//!
 //! El README y el `.kt` no son parte de este defecto — son una
 //! decisión y un hueco, y ya se contaban bien (`h16`). Aquí se fijan
 //! igual, para que el arreglo de este hueco no los rompa al revés.
@@ -27,6 +34,11 @@ use cognicode_core::infrastructure::graph::per_file_graph::BuildStatus;
 /// `skipped`, así que con él el estado sería `Partial` antes y después
 /// y el test no distinguiría nada. Aquí lo que se mide es el error del
 /// recorrido, y para eso el corpus tiene que estar limpio.
+///
+/// Y `run` no lo declara nadie: una llamada a un nombre que el proyecto
+/// no declara no es una pérdida del proyecto —puede vivir fuera de él—,
+/// así que no se publica como pendiente y el estado sigue hablando sólo
+/// del recorrido.
 fn cargo_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();

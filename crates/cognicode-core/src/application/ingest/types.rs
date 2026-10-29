@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::{Symbol, SymbolId};
-use crate::domain::value_objects::{DependencyType, PendingReference, Provenance};
+use crate::domain::value_objects::{CallSite, DependencyType, PendingReference, Provenance};
 use cognicode_graph_algos::algorithms::Statement;
 use serde::{Deserialize, Serialize};
 
@@ -257,7 +257,12 @@ pub struct FileFacts {
     /// Relations whose two ends are already identified.
     pub identified: Vec<FileRelation>,
     /// Calls that still need a project-wide lookup by name.
-    pub calls: Vec<(Symbol, String)>,
+    ///
+    /// A call travels as its own value, with the place it is written and
+    /// the declaration that holds it: the name it names is not enough to
+    /// say WHICH call a refusal is about, and a refusal that cannot be
+    /// pointed at is a fact the consumer cannot use.
+    pub calls: Vec<CallSite>,
     /// References the file states and nobody declared: the far end is not
     /// identified yet, and the project may still be able to tie it to a
     /// declaration in another file.

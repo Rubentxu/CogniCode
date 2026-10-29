@@ -237,11 +237,39 @@ fn a_refused_relation_is_published_and_not_swallowed() {
     let report = service
         .get_last_build_report()
         .expect("un build que publica un grafo debe publicar su reporte");
-    assert!(
-        !matches!(report.status, BuildStatus::Complete),
-        "una relación que el almacén rechazó no puede desaparecer en silencio: \
-         el build no puede declararse completo sobre un grafo al que le falta esa relación"
-    );
+    // `Partial` no significa una sola cosa: puede ser por un fichero sin
+    // leer, por una referencia que no se pudo atar o por una relación que
+    // el almacén rechazó. Este fixture ata todas sus referencias —
+    //`helper` y `other` se declaran una vez cada una— y no tiene ficheros
+    // que no se puedan leer, así que la única razón por la que el build
+    // no es completo es la relación rechazada. Y esa relación tiene que
+    // estar nombrada: `Complete` es la promesa de que no quedó nada sin
+    // atar.
+    match &report.status {
+        BuildStatus::Partial {
+            skipped,
+            pending,
+            rejected,
+        } => {
+            assert!(
+                skipped.is_empty(),
+                "el fixture no tiene ficheros que no se puedan leer: {skipped:?}"
+            );
+            assert!(
+                pending.is_empty(),
+                "el fixture ata todas sus referencias: {pending:?}"
+            );
+            assert_eq!(
+                rejected.len(),
+                1,
+                "la relación que el almacén rechazó tiene que estar nombrada: {rejected:?}"
+            );
+        }
+        BuildStatus::Complete => panic!(
+            "una relación que el almacén rechazó no puede desaparecer en silencio: \
+             el build no puede declararse completo sobre un grafo al que le falta esa relación"
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------

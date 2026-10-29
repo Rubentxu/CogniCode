@@ -2,6 +2,7 @@
 //!
 //! Value objects are immutable types that are defined by their attributes rather than a unique identity.
 
+pub mod call_site;
 pub mod checkpoint_id;
 pub mod client_identity;
 pub mod declaration;
@@ -38,6 +39,7 @@ pub mod space;
 #[cfg(feature = "multimodal")]
 pub mod space_id;
 
+pub use call_site::CallSite;
 pub use checkpoint_id::CheckpointId;
 pub use client_identity::ClientIdentity;
 pub use declaration::Declaration;

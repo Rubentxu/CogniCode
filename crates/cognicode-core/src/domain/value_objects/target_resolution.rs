@@ -50,6 +50,7 @@
 //! have filled it in.
 
 use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::value_objects::pending_reference::PendingClass;
 
 /// The outcome of resolving one name to one target.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,4 +69,24 @@ pub enum TargetResolution {
     },
     /// The name matched nothing in the project.
     Unresolved(String),
+}
+
+impl TargetResolution {
+    /// The target, or the reason there is none.
+    ///
+    /// One owner of the motive. A resolution that does not name a target
+    /// always says the same two things — the name matched nothing, or it
+    /// matched several and the build cannot tell them apart — and every
+    /// consumer that reports a refusal reads that reason from here rather
+    /// than deciding it again. Two callers that each decide the motive
+    /// would eventually disagree about the same refusal.
+    pub fn outcome(&self) -> Result<SymbolId, PendingClass> {
+        match self {
+            TargetResolution::Resolved(target) => Ok(target.clone()),
+            TargetResolution::Ambiguous { candidates, .. } => Err(PendingClass::Ambiguous {
+                candidates: candidates.len(),
+            }),
+            TargetResolution::Unresolved(_) => Err(PendingClass::Unresolved),
+        }
+    }
 }

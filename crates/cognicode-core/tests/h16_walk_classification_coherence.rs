@@ -26,6 +26,12 @@
 //! La diferencia con el caso de arriba no es de redacción: es que el
 //! hueco pasó a ser cobertura.
 //!
+//! `Complete` no es sólo «no quedó ningún fichero sin leer»: es «no
+//! quedó nada sin atar», y eso incluye las referencias. Un build que
+//! no pudo atar una llamada es `Partial`, y publica esa llamada con su
+//! motivo, de modo que las tres rutas tienen que coincidir también en
+//! la pérdida y no sólo en los ficheros.
+//!
 //! ## Por qué esto ya no se vio
 //!
 //! El clasificador correcto existe desde K0 (`classify_walk_extension`:
@@ -121,6 +127,13 @@ fn skipped_names(status: &BuildStatus) -> Vec<String> {
     }
 }
 
+/// Si el estado dice que no quedó nada sin atar.
+///
+/// `Complete` es una promesa de dos cosas: que no quedó ningún fichero
+/// sin leer y que no quedó ninguna referencia sin atar a una
+/// declaración. Este corpus llama a `run`, que el proyecto declara una
+/// sola vez, así que no hay nada que atar y nada que publicar: el
+/// estado sigue hablando sólo de los ficheros.
 fn is_complete(status: &BuildStatus) -> bool {
     matches!(status, BuildStatus::Complete)
 }
