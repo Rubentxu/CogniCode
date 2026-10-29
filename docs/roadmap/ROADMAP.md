@@ -416,14 +416,12 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   nombre de spec con el que se escribieron:
 >   **H5** (incremental/distribución: `SnapshotKey`, identidades de caché por
 >   ruta y corte de release; la identidad del snapshot ya se declara).
->   **Sí tiene spec propio**, aunque no con
->   ese nombre: H5 tiene la suya en
+>   **Sí tiene spec propio**: H5 tiene la suya en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md`
 >   y `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >   La unidad de relaciones Kotlin↔Java, ya cerrada, tenía la suya en
 >   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md` y su ADR
->   normativo en
->   `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
+>   normativo en `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
 >   (K2).
 >
 >   **H23** — la poda por obligaciones y el coste de la fase de tests: las
@@ -439,13 +437,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   - **La cobertura y la resolución son dos hechos** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md`.
 >     Una referencia sin resolver se publica con su fichero, su línea, su
->     motivo y su clase, y `complete` no se dice si queda alguna pendiente.
->     Queda el error del recorrido, que se cuenta aparte de la exclusión
->     legítima; el vigilante, que todavía nombra un conjunto de ficheros
->     propio; y la cobertura en caché, que no es la cobertura: un fichero
->     recuperado de la caché no cuenta como analizado. Cerrado además: la
->     lista de lenguajes que el producto declara sale del registro de parsers,
->     y el documento de la matriz ya no declara lista propia.
+>     motivo y su clase, y `complete` no se dice si queda alguna pendiente:
+>     cerrado para la ambigua por `TASK-14` (`00169311`); la que no tiene
+>     candidato sigue sin identidad (alcance, Journal). Queda el error del
+>     recorrido, aparte de la exclusión legítima; el vigilante, que nombra un
+>     conjunto de ficheros propio; y la cobertura en caché, que no es la
+>     cobertura: un fichero recuperado de la caché no cuenta como analizado.
+>     Cerrado además: la lista de lenguajes sale del registro de parsers y la
+>     matriz ya no declara lista propia.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -463,7 +462,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     dos rutas y silencio en la tercera, un directorio que no existe se
 >     rechaza en una sola, y el orden de los resultados no lo fija la
 >     asíncrona. La forma, en
->     `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     `docs/adr/ADR-056-the-routes-say-the-same.md`. Medido el primer par:
+>     completa y per-file publican la misma pérdida con su motivo
+>     (`TASK-14`); faltan la asíncrona y la semántica, que exige `C23`.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se

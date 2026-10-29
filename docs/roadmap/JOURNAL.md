@@ -29852,3 +29852,96 @@ usa el que ya existe.
   índice del proyecto: no puede distinguir una llamada ambigua de una que vive
   fuera del proyecto. El corte arregla las tres rutas que construyen el grafo
   del proyecto; esa cuarta queda declarada, no se disimula.
+
+## 2026-10-29 — El ciclo de TASK-14 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `3c86d2e8`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en el pull request `#492`. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+`.pipelinek/merge-gate.db`, con su identificador de corrida
+`38cf7339-ff1e-4919-a806-9eabec63a58b`, las 58 etapas en `success` y el
+`RunFinished` en `success`. El gate corrió sobre el árbol exacto que GitHub
+iba a proteger, que es el mismo árbol que `full` midió.
+
+**La fusión.** El pull request `#492` —la publicación de la rama
+`fix/the-refusal-is-published`— se fusionó por squash como `00169311`.
+
+**Lo que queda en el árbol, después del cierre.** La pérdida que el cierre de
+M2.T03 dejó medida y con dueño ya no desaparece sin decirse. Lo que entra son
+once ficheros de código y de producto (nueve modificados y dos nuevos) y diez
+ficheros de test: el valor de dominio nuevo que transporta la línea de la
+llamada (`CallSite`), la regla del dominio que decide qué negativa merece
+publicarse (`PendingReference::of_call`), la construcción de esa referencia en
+el resolvedor, su transporte por las rutas que construyen el grafo del
+proyecto, y el docstring de `BuildStatus::Complete` diciendo lo que significa
+ahora. El contrato de Kotlin creció de nueve a doce tests, y los nueve
+ficheros de test que nombran `Complete` llevan escrito, cada uno, el cambio de
+semántica. No se creó ningún campo nuevo en ningún contrato público: la CLI y
+el MCP ya tenían `pending_references`, y lo que cambia es que se llena.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La llamada sin candidato no se publica con su identidad.** Sigue siendo un
+  número: publicar todo nombre que el proyecto no declara inundaría la lista
+  con nombres de biblioteca. Es una decisión de alcance, escrita en el recibo
+  de la implementación, y no una omisión.
+- **El overload correcto no se resuelve**, y no por falta de esfuerzo: la
+  aridad no viaja por el pipeline (`FileFacts.calls` es
+  `Vec<(Symbol, String)>`). La llamada `invoke` se publica como ambigua con
+  dos candidatos, que es exactamente lo que la evidencia permite afirmar.
+- **La equivalencia CLI/MCP no se ha ejercido sobre este corpus.** La
+  medición de equivalencia que hoy existe cubre Terraform; este contrato
+  llama a los servicios del dominio, no a la CLI ni al MCP.
+- **La ruta semántica sigue sin publicar sus llamadas no resueltas.** Es la
+  que usa un lector con dominio —Terraform, Ansible— y su lector no tiene
+  índice del proyecto: no puede distinguir una llamada ambigua de una que vive
+  fuera del proyecto. Las tres rutas que construyen el grafo del proyecto
+  publican la pérdida —comparten el resolvedor y la regla del dominio—, pero
+  el contrato mide el par completa/per-file; esa cuarta ruta queda declarada,
+  no se disimula.
+
+**Y lo que este corte NO cierra: `C23`.** El primer criterio de cierre de
+`C23` pide que las TRES rutas que construyen el grafo publiquen la misma
+cobertura, las mismas relaciones y los mismos huecos sobre el mismo corpus, y
+que un test lo verifique. Este corte da el primer par medido de esa clase —la
+vía completa y la per-file, con un test que las compara y que no puede pasar
+por vacío—; `C23` exige las tres rutas por donde el grafo entra en producción
+y además el corte del fichero de 4.369 líneas. `C23` sigue bloqueada por el
+operador y esta unidad no la desplaza.
+
+**La tarea en la bandeja.** `TASK-14` queda cerrada en la bandeja local de
+Backlog.md con el SHA `00169311`, que es el de la implementación en `main`: los
+cuatro criterios de aceptación y los tres puntos de la Definition of Done
+tienen evidencia real —el RED medido sobre el camino malo (9 pasados y 3
+fallidos antes, 12 y 0 después), el verde de `fast` y de `full`, el
+`merge-gate` con 58 etapas sin una roja, y este recibo, que cita el SHA—. El
+punto 2 de la Definition of Done nombraba ocho ficheros de test; se
+revisaron nueve, porque un noveno —`cu1_w2_service_analyzer_contract.rs`—
+también nombra `BuildStatus::Complete` y también tenía una expectativa
+dormida que resultó estar equivocada.
+
+**La cola.** `goal-compass.json` NO cambia en este ciclo, y hay que decirlo
+sin rodeos: `TASK-14` nunca fue candidata de esa cola —nació como el residuo
+que el cierre de M2.T03 dejó medido y con dueño, en la bandeja local—, así que
+no hay ficha que sacar. La cola viva sigue con `C23` (50, bloqueada por el
+operador) y nada más.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador). En la
+agenda privada, `M1.T01` (`TASK-5`) y `M1.T02` (`TASK-4`) siguen bloqueadas —la
+primera por una decisión de alcance del operador, la segunda por `C23`—, y
+`TASK-14` sale de ella al cerrarse. Con esto la cola se queda **sin ninguna
+unidad sin bloqueo**: la siguiente la desbloquea el operador, y no este
+documento. Las dos decisiones que el operador tiene sobre la mesa, y que este
+ciclo NO toma por su cuenta, son:
+
+1. **`C23`** — si el pull request `#464` entra, y en qué forma. Es la unidad
+   de mayor retorno de la auditoría externa y la única de las siete que aún
+   lleva trabajo íntegro.
+2. **El alcance de `M1.T01` (`TASK-5`)** — qué significa «una sola variable
+   sostiene el grafo del workspace»: cuál de las dos copias sobrevive (la del
+   servicio, que escriben todos los caminos de construcción y los handlers
+   MCP, o la de la sesión, que es una segunda copia con 14 lecturas y 7
+   escrituras), y si la segunda dueña del estado del fichero —la caché de
+   incrementalidad, `infrastructure/graph/file_manifest.rs`— entra en el mismo
+   alcance o se declara aparte.

@@ -30,7 +30,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 |---|---|
 | H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
-| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`) |
+| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`); su residuo declarado —la pérdida de una relación no se publica— lo toma **`TASK-14`**, cerrada el 2026-10-29 (`00169311`) |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
 | H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
 | H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
@@ -85,43 +85,56 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M2.T03 está cerrado en el remoto.** El pull request `#490` —la
-publicación de la rama `feature/m2-t03-c13-corpus-kotlin-java`— se fusionó por
-squash como `d9bf2b45`, con el `merge-gate` verde sobre `8102f082`:
-`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El grafo ya no publica una
-arista por coincidencia de nombre: hay un corpus versionado,
-`sandbox/fixtures/kotlin-java/`, con doce ficheros —ocho en Kotlin y cuatro en
-Java, en seis paquetes— que declara un homónimo (`run`, declarado tres veces
-en dos paquetes y dos lenguajes, y llamado sin import a propósito) y un par de
-overloads (`invoke()` e `invoke(int)` en el mismo fichero Java), y un contrato
-permanente que mide qué se publica y qué no. MEDIDO: el extractor lee SEIS
-llamadas y el grafo publica CUATRO relaciones; las dos que no publica son
-exactamente las dos que no se pueden probar. Las otras cuatro —Kotlin→Java,
-Java→Kotlin, Kotlin→Kotlin y fichero a fichero— sí se publican, y son las que
-hacen que la negativa no sea un PASS vacío.
+**El ciclo de TASK-14 está cerrado en el remoto.** El pull request `#492` —la
+publicación de la rama `fix/the-refusal-is-published`— se fusionó por squash
+como `00169311`, con el `merge-gate` verde sobre `3c86d2e8`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La pérdida que el cierre
+anterior dejó medida y con dueño ya no desaparece sin decirse. MEDIDO sobre el
+corpus `sandbox/fixtures/kotlin-java/`: el extractor lee SEIS llamadas y el
+grafo publica CUATRO relaciones; las dos que no publica son las dos que no se
+pueden probar, y de esas dos no quedaba NADA publicado —la estrategia `full`
+publicaba un número, `unresolved_edges`, y la estrategia `per_file` publicaba
+un `BuildStatus::Complete` que afirmaba una cobertura que no tenía. Eso
+contradecía K-REL-02 y K-REL-07 del contrato de Kotlin. Ahora la pérdida se
+publica con su IDENTIDAD —qué llamada, en qué fichero y en qué línea— y con su
+MOTIVO —cuántos candidatos tiene el nombre—, y `Complete` pasa a significar
+«no quedó nada sin atar»: ni un fichero sin leer ni una referencia sin atar a
+una declaración. Las dos estrategias de build publican la MISMA pérdida, porque
+las dos resuelven contra el mismo índice del proyecto.
 
-**La forma de la resolución queda fijada, y por eso no es una preferencia.**
-`TargetResolution` tiene TRES variantes: sólo `Resolved` nombra un destino, y
-`Ambiguous` CONSERVA los candidatos para que un consumidor pueda surfurar el
-hueco. El `match` del contrato no tiene brazo `_`: una cuarta variante rompe
-la COMPILACIÓN. Y el fichero dice por qué no hay una cuarta —no hay tabla de
-símbolos externos, y una variante que nadie puede construir es una hipótesis
-que sobrevive más que el código que debería haberla llenado—. El poder
-discriminante está medido sobre el camino malo: con el resolvedor mutado para
-que elija un candidato arbitrario, el contrato falla con rc=101 —6 pasaron y 3
-fallaron—; restaurado byte a byte, pasa con 9.
+**La forma del dominio no cambia, y por eso no es una preferencia.**
+`TargetResolution` sigue TENIENDO TRES variantes: una cuarta rompería el
+`match` exhaustivo que el contrato de la unidad anterior fijó, y exigiría una
+tabla de símbolos externos que el producto no tiene. La negativa se modela
+donde ya había forma para ella —`PendingClass` y `PendingReference`—, y lo que
+faltaba era el TRANSPORTE, no la forma: la arista descartada no dejaba sitio
+donde escribir su motivo porque la arista no existe. El motivo lo produce la
+resolución y lo decide el dominio (`PendingReference::of_call`), de modo que
+ninguna ruta lo decide por su cuenta, y un valor de dominio nuevo transporta la
+línea donde la llamada está escrita. No se creó ningún campo nuevo en ningún
+contrato público: lo que cambia es que se llena lo que ya existía.
 
-**Lo que este cierre no arregla, y por eso lo nombra.** La pérdida de una
-relación no se publica: lo que se pierde es su IDENTIDAD y su motivo, el
-recuento sólo aparece en la estrategia `full` y la ruta por fichero dice
-`Complete`. Eso contradice K-REL-02 y K-REL-07 del contrato de Kotlin, y es
-cross-language —ocho ficheros de test de integración dependen de la semántica
-de `BuildStatus::Complete`—, así que queda enrutado a una tarea propia en la
-bandeja local. El overload correcto tampoco es implementable hoy: el pipeline
-sólo transporta el NOMBRE del callee (`FileFacts.calls` es
-`Vec<(Symbol, String)>`), así que la aridad que distinguiría los dos `invoke`
-no llega al resolvedor; está declarado, no fingido. Y la equivalencia CLI/MCP
-medida hasta hoy cubre Terraform, no este corpus.
+**Lo que este cierre no arregla, y por eso lo nombra.** La llamada sin
+candidato —el nombre que el proyecto no declara— sigue siendo un número, y es
+una decisión de alcance, no una omisión: publicar todos los nombres de
+biblioteca llenaría la lista de huecos de ruido y la volvería inútil. El
+overload correcto tampoco es implementable hoy: el pipeline sólo transporta el
+NOMBRE del callee (`FileFacts.calls` es `Vec<(Symbol, String)>`), así que la
+aridad que distinguiría los dos `invoke` no llega al resolvedor; está
+declarado, no fingido. La equivalencia CLI/MCP medida hasta hoy cubre
+Terraform, no este corpus. Y la ruta semántica —la que usa un lector con
+dominio, como Terraform o Ansible— sigue sin publicar sus llamadas no
+resueltas: su lector no tiene índice del proyecto, así que no puede distinguir
+una llamada ambigua de una que vive fuera del proyecto.
+
+**Y lo que este cierre le da a `C23`, sin cerrarla.** El primer criterio de
+cierre de `C23` pide que las TRES rutas que construyen el grafo publiquen la
+misma cobertura, las mismas relaciones y los mismos huecos sobre el mismo
+corpus, y que un test lo verifique. `TASK-14` da el primer par medido de esa
+clase —completa y per-file, con un test que las compara y que no puede pasar
+por vacío—, pero `C23` exige las tres rutas por donde el grafo entra en
+producción y además el corte del fichero de 4.369 líneas: `C23` sigue
+bloqueada por el operador, y esta unidad no la desplaza.
 
 La puerta que queda abierta es la de la cola:
 
@@ -129,9 +142,9 @@ La puerta que queda abierta es la de la cola:
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
 
-Y, con `M2.T03` cerrado, la cola viva se queda **sin ninguna unidad sin
-bloqueo**: `C13` sale de `goal-compass.json` al cerrarse, y lo que queda es
-`C23`, que espera una decisión del operador. Las vecinas del entorno siguen
+Y, con `TASK-14` cerrado, la cola viva se queda **sin ninguna unidad sin
+bloqueo** otra vez: `TASK-14` era el residuo que el cierre de `M2.T03` dejó
+medido y con dueño, y ya está hecha. Las vecinas del entorno siguen
 igualmente atadas: `TASK-5` por una decisión de alcance del operador y
 `TASK-4` por `C23`. La siguiente unidad, por tanto, **no la decide este
 documento**: la desbloquea el operador, y hasta entonces el trabajo de este
