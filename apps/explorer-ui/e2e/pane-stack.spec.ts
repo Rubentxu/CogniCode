@@ -19,6 +19,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 /**
  * Helper: open a Spotter result and select it to create a new pane.
@@ -206,6 +207,11 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
 
     const viewTabs = page.getByTestId("view-tabs");
     const tabs = viewTabs.getByRole("tab");
+
+    // The tabs land after the inspector shell. The probe below has to
+    // measure them once they are there, or it decides that the tab is
+    // absent and takes the fallback branch for a tab that does exist.
+    await waitForViewTabs(page);
 
     // If there's a call-graph tab, click it and verify the graph view
     const callGraphTab = page.getByTestId("view-tab-call-graph");

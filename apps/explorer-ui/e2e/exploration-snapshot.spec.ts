@@ -15,6 +15,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 async function openSpotterAndSelect(page: import("@playwright/test").Page, query: string, resultIndex = 0) {
   await waitForGlobalShortcut(page);
@@ -25,6 +26,10 @@ async function openSpotterAndSelect(page: import("@playwright/test").Page, query
   await expect(results.nth(resultIndex)).toBeVisible({ timeout: 5_000 });
   await results.nth(resultIndex).click();
   await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });
+  // The tabs land after the inspector shell. A probe for a tab that
+  // runs in that gap finds nothing and silently takes the other
+  // branch, so the helper waits for them to be rendered.
+  await waitForViewTabs(page);
 }
 
 const SPOTTER_QUERY = "build";

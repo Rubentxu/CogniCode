@@ -11,6 +11,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
   test.beforeEach(async ({ page }) => {
@@ -107,8 +108,7 @@ test.describe("e15.5 Protocol edges in call-graph (2 tests)", () => {
     await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });
 
     // View tabs should be visible
-    const viewTabs = page.getByTestId("view-tabs");
-    await expect(viewTabs).toBeVisible();
+    await waitForViewTabs(page);
 
     // Switch to call-graph view
     const callGraphTab = page.getByTestId("view-tab-call-graph");

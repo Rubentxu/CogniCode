@@ -17,6 +17,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 test.describe("Explorer smoke flow — Visual Regression", () => {
   test("boots, opens Spotter, and inspects an object", async ({
@@ -199,6 +200,11 @@ test.describe("Explorer call-graph view — Visual Regression", () => {
       .getByTestId("spotter-results")
       .getByTestId(/^spotter-item-/);
     await firstResult.first().click();
+
+    // The tabs land after the inspector shell. The probe below has to
+    // measure them once they are there, or it decides that the tab is
+    // absent and the test asserts nothing while still passing.
+    await waitForViewTabs(page);
 
     // Switch to the "quality" view — the fixture has a hotspots
     // block. Each hotspot row is interactive.

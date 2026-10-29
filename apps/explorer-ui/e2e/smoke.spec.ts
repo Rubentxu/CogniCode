@@ -20,6 +20,7 @@
  */
 import { test, expect } from "@playwright/test";
 import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 const VISUAL = process.env.PW_VISUAL === "true";
 
@@ -61,7 +62,7 @@ test.describe("Explorer smoke flow", () => {
     //    Using getByTestId("view-tabs") instead of getByRole+regex for robustness
     //    (see ADR-040 / moldable-view-call-graph fix in v0.8.0).
     const viewTabs = page.getByTestId("view-tabs");
-    await expect(viewTabs).toBeVisible();
+    await waitForViewTabs(page);
     const tabs = viewTabs.getByRole("tab");
     await expect(tabs.first()).toBeVisible();
 
