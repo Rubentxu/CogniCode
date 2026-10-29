@@ -16,8 +16,8 @@ de Kotlin, **byte a byte idéntico** a
 `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md` —la copia
 canónica, que es la que manda y que sigue en el árbol. Nada se pierde al
 sustituirlo: la línea Kotlin ya está integrada en el roadmap vivo. K0 y K1
-están cerradas con veredicto propio, K2 es `C13` en la cola, y K3 no está
-abierta.
+están cerradas con veredicto propio, K2 es `C13` y ya está cerrada, y K3 no
+está abierta.
 
 ## Qué hay ahora
 
@@ -30,7 +30,7 @@ auditoría, es lo que se decide con ella. El enrutado:
 |---|---|
 | H2 — el escaneo confunde un fallo de lectura con «no ha cambiado» | **`C49`**, cerrada el 2026-10-28 (`5c63e949`) |
 | H4, H5, H6, H7a, H7b | `C23` (PR #464, bloqueada por el operador) |
-| H3 — la resolución se decide por proximidad de ficheros | `C13` |
+| H3 — la resolución se decide por proximidad de ficheros | **`C13`** (`H4.4`), cerrada el 2026-10-29 (`d9bf2b45`) |
 | H1 — ventana entre verificar y publicar | declarado, sin unidad: pide una decisión de alcance |
 | H8 — el refactor construye grafos temporales | declarado, sin unidad: pide una decisión de alcance |
 | H7c — el presenter reconstruye datos parseando texto | residuo dentro del bloque de `C23` |
@@ -85,48 +85,54 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M2.T02 está cerrado en el remoto.** El pull request `#488` —la
-publicación de la rama `fix/m2-t02-explorer-e2e-disabled-cases`— se fusionó
-por squash como `9f8b2181`, con el `merge-gate` verde sobre `e6728def`:
-`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La suite E2E de Explorer ya no
-tiene casos desactivados sin dueño: cada desactivación dice su motivo y
-nombra la tarea que lo toma —`TASK-9` a `TASK-12`—, el registro publicado
-(`apps/explorer-ui/e2e/DEBT.md`) dice qué carga cada dueño, y un contrato
-nuevo pone en rojo la desactivación que se esconde detrás de un alias o
-detrás de un dueño que nadie publica. El número de casos desactivados **no
-crece**: 17 antes y 17 después.
+**El ciclo de M2.T03 está cerrado en el remoto.** El pull request `#490` —la
+publicación de la rama `feature/m2-t03-c13-corpus-kotlin-java`— se fusionó por
+squash como `d9bf2b45`, con el `merge-gate` verde sobre `8102f082`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El grafo ya no publica una
+arista por coincidencia de nombre: hay un corpus versionado,
+`sandbox/fixtures/kotlin-java/`, con doce ficheros —ocho en Kotlin y cuatro en
+Java, en seis paquetes— que declara un homónimo (`run`, declarado tres veces
+en dos paquetes y dos lenguajes, y llamado sin import a propósito) y un par de
+overloads (`invoke()` e `invoke(int)` en el mismo fichero Java), y un contrato
+permanente que mide qué se publica y qué no. MEDIDO: el extractor lee SEIS
+llamadas y el grafo publica CUATRO relaciones; las dos que no publica son
+exactamente las dos que no se pueden probar. Las otras cuatro —Kotlin→Java,
+Java→Kotlin, Kotlin→Kotlin y fichero a fichero— sí se publican, y son las que
+hacen que la negativa no sea un PASS vacío.
 
-**Lo que este cierre no arregla, y por eso lo nombra.** Los goldens de la
-suite de Explorer están obsoletos respecto a la UI actual: los 35 fallos sin
-`PW_VISUAL` y los 40 con son todos `toHaveScreenshot`, y son los mismos
-antes y después del corte. La suite no puede quedar verde en este entorno, y
-esa mitad del cuarto criterio de aceptación no se cumple aquí. Regenerar los
-goldens es trabajo con dueño propio, y no es de esta unidad. Y la suite de
-navegador no está en el `merge-gate`: lo que el gate vigila es que no vuelva
-una desactivación sin dueño, no que las specs sigan verdes.
+**La forma de la resolución queda fijada, y por eso no es una preferencia.**
+`TargetResolution` tiene TRES variantes: sólo `Resolved` nombra un destino, y
+`Ambiguous` CONSERVA los candidatos para que un consumidor pueda surfurar el
+hueco. El `match` del contrato no tiene brazo `_`: una cuarta variante rompe
+la COMPILACIÓN. Y el fichero dice por qué no hay una cuarta —no hay tabla de
+símbolos externos, y una variante que nadie puede construir es una hipótesis
+que sobrevive más que el código que debería haberla llenado—. El poder
+discriminante está medido sobre el camino malo: con el resolvedor mutado para
+que elija un candidato arbitrario, el contrato falla con rc=101 —6 pasaron y 3
+fallaron—; restaurado byte a byte, pasa con 9.
 
-**El recuento que la auditoría no vio.** El hallazgo se enrutó como «16 casos
-en 13 ficheros», y esa cifra era una cota inferior, no un inventario: contaba
-llamadas a `test.skip`, y hay un `test.fixme` condicional en
-`responsive-full.spec.ts` que desactiva el viewport de 320 px. Ese caso
-**ya existía** antes de este corte, escondido detrás de un alias
-(`const testFn = isKnownBroken ? test.fixme : test;`), de modo que ni un
-contador de llamadas ni una búsqueda de texto lo veían, y su motivo vivía
-sólo en un comentario. La línea base real eran **17 en 14 ficheros**, y el
-contrato la acota por API —`test.skip` ≤ 16 y `test.fixme` ≤ 1—, para que
-ninguna categoría crezca y ninguna tome prestada de la otra.
+**Lo que este cierre no arregla, y por eso lo nombra.** La pérdida de una
+relación no se publica: lo que se pierde es su IDENTIDAD y su motivo, el
+recuento sólo aparece en la estrategia `full` y la ruta por fichero dice
+`Complete`. Eso contradice K-REL-02 y K-REL-07 del contrato de Kotlin, y es
+cross-language —ocho ficheros de test de integración dependen de la semántica
+de `BuildStatus::Complete`—, así que queda enrutado a una tarea propia en la
+bandeja local. El overload correcto tampoco es implementable hoy: el pipeline
+sólo transporta el NOMBRE del callee (`FileFacts.calls` es
+`Vec<(Symbol, String)>`), así que la aridad que distinguiría los dos `invoke`
+no llega al resolvedor; está declarado, no fingido. Y la equivalencia CLI/MCP
+medida hasta hoy cubre Terraform, no este corpus.
 
 La puerta que queda abierta es la de la cola:
 
 - **`C23`** — la unidad de mayor retorno de todo lo que propone la auditoría
   externa. Sigue bloqueada por el operador: su pull request `#464` es la
   única de las siete que aún lleva trabajo íntegro.
-- **`C13`** — las relaciones Kotlin↔Java sólo cuando se pueden probar, con un
-  corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
-  Prioridad 10, sin bloqueo.
 
-Y, con `M2.T02` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
-una decisión de alcance del operador, `TASK-4` por `C23`—, la siguiente
-unidad sin bloqueo es **`M2.T03`** (`C13`): las relaciones Kotlin↔Java sólo
-cuando se pueden probar, con un corpus de homónimos y sin ninguna arista
-bornada por coincidencia de nombre.
+Y, con `M2.T03` cerrado, la cola viva se queda **sin ninguna unidad sin
+bloqueo**: `C13` sale de `goal-compass.json` al cerrarse, y lo que queda es
+`C23`, que espera una decisión del operador. Las vecinas del entorno siguen
+igualmente atadas: `TASK-5` por una decisión de alcance del operador y
+`TASK-4` por `C23`. La siguiente unidad, por tanto, **no la decide este
+documento**: la desbloquea el operador, y hasta entonces el trabajo de este
+ciclo es el que queda medido y enrutado.
