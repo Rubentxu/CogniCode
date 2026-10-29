@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `40d43b013bf0a6fcf18e1bfc75385769dc9f503b` (la
+> **Snapshot**: 2026-10-29, sobre `9e1d36d722a8ddd5bfd259a9b8b7ab74a61571c0` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -53,8 +53,8 @@
 > llamada, en qué fichero y en qué línea— y un motivo —cuántos candidatos
 > llevan el nombre— que las dos superficies tienen que publicar IGUALES;
 > medido: las dos publican las mismas dos negativas
-> —`demo/gamma/Caller.kt:3 → run [ambiguo: 3]` y
-> `demo/gamma/UseHandler.kt:6 → invoke [ambiguo: 2]`—, el mismo veredicto
+> —`demo/gamma/Caller.kt:3 → run [calls, ambiguous, 3]` y
+> `demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo veredicto
 > (`partial`) y el mismo grafo no vacío —29 símbolos y 4 relaciones—; la
 > equivalencia SOSTENÍA, así que el residuo era la MEDICIÓN y no un defecto:
 > esta unidad no toca el código de producción).

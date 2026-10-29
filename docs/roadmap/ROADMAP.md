@@ -439,12 +439,15 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     Una referencia sin resolver se publica con su fichero, su línea, su
 >     motivo y su clase, y `complete` no se dice si queda alguna pendiente:
 >     cerrado para la ambigua por `TASK-14` (`00169311`); la que no tiene
->     candidato sigue sin identidad (alcance, Journal). Queda el error del
->     recorrido, aparte de la exclusión legítima; el vigilante, que nombra un
->     conjunto de ficheros propio; y la cobertura en caché, que no es la
->     cobertura: un fichero recuperado de la caché no cuenta como analizado.
->     Cerrado además: la lista de lenguajes sale del registro de parsers y la
->     matriz ya no declara lista propia.
+>     candidato sigue sin identidad (alcance, Journal). Las dos superficies
+>     que la publican dicen lo mismo del mismo proyecto: sobre el corpus de
+>     Kotlin, la CLI y el MCP publican la misma negativa con su identidad y
+>     su motivo (`TASK-15`). Queda el error del recorrido, aparte de la
+>     exclusión legítima; el vigilante, que nombra un conjunto de ficheros
+>     propio; y la cobertura en caché, que no es la cobertura: un fichero
+>     recuperado de la caché no cuenta como analizado. Cerrado además: la
+>     lista de lenguajes sale del registro de parsers y la matriz ya no
+>     declara lista propia.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -461,10 +464,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
 >     dos rutas y silencio en la tercera, un directorio que no existe se
 >     rechaza en una sola, y el orden de los resultados no lo fija la
->     asíncrona. La forma, en
->     `docs/adr/ADR-056-the-routes-say-the-same.md`. Medido el primer par:
->     completa y per-file publican la misma pérdida con su motivo
->     (`TASK-14`); faltan la asíncrona y la semántica, que exige `C23`.
+>     asíncrona. La forma, en `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     Medido el primer par: completa y per-file publican la misma pérdida con
+>     su motivo (`TASK-14`); faltan la asíncrona y la semántica, que exige `C23`.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se

@@ -30164,3 +30164,121 @@ rodeos: `TASK-15` nunca fue candidata de esa cola —nació como el residuo que
 el cierre de `TASK-14` dejó medido y con dueño, en la bandeja local—, así que
 no hay ficha que sacar. La cola viva sigue con `C23` (bloqueada por el
 operador) y nada más.
+
+## 2026-10-29 — El ciclo de TASK-15 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `9f7f15e4`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en el pull request `#495`. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+`.pipelinek/merge-gate.db`, con su identificador de corrida
+`b9ca56e9-b19a-4e6c-a9d9-fc86f0c0bd31`, los 58 `StageFinished` en `success` y el
+`RunFinished` en `success`. El gate corrió sobre el árbol exacto que GitHub
+iba a proteger, que es el mismo árbol que `full` midió.
+
+**La fusión.** El pull request `#495` —la publicación de la rama
+`fix/task-15-cli-mcp-equivalence-kotlin-corpus`— se fusionó por squash como
+`9e1d36d7`.
+
+**Lo que queda en el árbol, después del cierre.** La equivalencia entre las dos
+superficies está MEDIDA, no afirmada. Lo que entra es un fichero de test —
+`crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`, 249 líneas— y la
+documentación de la unidad. NO entra código de producción: la forma de la
+negativa ya estaba escrita por `TASK-14` —`PendingClass`/`PendingReference`,
+`TargetResolution` con tres variantes— y el TRANSPORTE ya existía, porque las
+dos superficies proyectan la misma pérdida con la MISMA función,
+`PendingReferenceInfo::from_reference`. Lo que faltaba era la MEDICIÓN, y una
+medición se añade con una prueba. Lo medido, sobre
+`sandbox/fixtures/kotlin-java/`: la CLI y el MCP publican las MISMAS dos
+negativas campo por campo —`demo/gamma/Caller.kt:3 → run [calls, ambiguous,
+3]` y `demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo
+veredicto (`partial`) y el mismo grafo no vacío: 29 símbolos y 4 relaciones. La
+equivalencia SOSTENÍA: el residuo era la medición que faltaba, no un defecto
+del producto.
+
+**El poder discriminante del test, medido.** El test no puede pasar por vacío:
+exige, ANTES de comparar, que ambas superficies publiquen la negativa del
+corpus y que el grafo no esté vacío, y exige que la negativa sea LA que el
+corpus declara —`run` con tres candidatos e `invoke` con dos, con su fichero y
+su línea—. El RED se midió con dos mutaciones focales, cada una revertida: el
+MCP deja de publicar la negativa —el test cae con «the MCP publishes the
+negative the corpus declares: got []»— y la proyección compartida pierde la
+línea —el test cae con `line: None` contra `line: Some(3)`—.
+
+**El inventario del harness, medido antes y después.** Ficheros de test en
+`crates/`: 235 antes y 235 después. Contratos de CI (`scripts/ci/test_*.py`):
+59 y 59. Ficheros en `scripts/ci/`: 88 y 88. Directorios en
+`sandbox/fixtures/`: 46 y 46. Ficheros en `sandbox/fixtures/`: 48 002 y
+48 002. Cero fixtures nuevos, cero contratos nuevos, cero ficheros de test
+nuevos: el corpus `sandbox/fixtures/kotlin-java/` y el contrato de Kotlin ya
+existían y se reutilizan tal cual.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La equivalencia se mide sobre UN corpus y sobre UNA forma de pérdida.** La
+  prueba compara la negativa AMBIGUA sobre Kotlin/Java. No mide la negativa
+  sin candidato —que sigue siendo sólo un número, por la decisión de alcance
+  que `TASK-14` escribió— ni ninguna otra forma de pérdida.
+- **La medición es de una sola llamada por superficie.** El camino de caché
+  del MCP queda FUERA de la comparación, y eso lo declara el código: un build
+  `Partial` no persiste manifiesto, así que la segunda llamada vuelve a
+  construir. Una equivalencia medida sobre la caché sería otra medición.
+- **La ruta semántica sigue fuera.** La que usa un lector con dominio —
+  Terraform, Ansible— no tiene índice del proyecto y no puede distinguir una
+  llamada ambigua de una que vive fuera del proyecto.
+- **`C23` no se desplaza.** Sigue esperando la decisión del operador sobre el
+  pull request `#464`, y esta unidad no la toma por su cuenta.
+
+**Y lo que este corte NO cierra: `C23`.** El primer criterio de cierre de
+`C23` pide que las TRES rutas que construyen el grafo publiquen la misma
+cobertura, las mismas relaciones y los mismos huecos sobre el mismo corpus, y
+que un test lo verifique. Este corte da el par de las dos SUPERFICIES sobre el
+mismo corpus —con un test que compara la negativa campo por campo y que no
+puede pasar por vacío—; `C23` exige las tres rutas por donde el grafo entra
+en producción y además el corte del fichero de 4.369 líneas. `C23` sigue
+bloqueada por el operador y esta unidad no la desplaza.
+
+**La tarea en la bandeja.** `TASK-15` queda cerrada en la bandeja local de
+Backlog.md con el SHA `9e1d36d7`, que es el de la implementación en `main`: los
+cuatro criterios de aceptación y los tres puntos de la Definition of Done
+tienen evidencia real —la equivalencia medida campo por campo sobre las dos
+superficies, la negativa con su identidad y su motivo, las precondiciones que
+impiden que la comparación pase por vacío, y la reutilización del corpus, del
+contrato y del fichero de test existentes sin ningún fichero nuevo—. El RED
+está medido sobre el camino malo con las dos mutaciones focales de arriba.
+`bash scripts/test-fast.sh` dio `rc=0` con el selector CR-08 en
+`strategy=changed`, `suites=[cli,ladybug]`: 85 pasados, 0 fallidos.
+`bash scripts/test-full.sh` dio `rc=0` en las siete etapas: `fmt --check`,
+clippy con `-D warnings`, `cargo test --workspace` con 6490 pasados, 0
+fallidos y 22 ignorados, doc-tests con 8 pasados y 12 ignorados —6498
+pasados y 34 ignorados contando los doc-tests—, explorer multimodal con 4
+pasados, 454 comprobaciones de contrato en 0 fallos y `known_failures
+(core/lib)` sin diferencias. La PRIMERA pasada de `full` —la de la
+implementación— dio `rc=1` sólo en `fmt --check` —el fichero de test no
+estaba formateado con `rustfmt`— y en ninguna otra etapa; la corrección fue
+del formato, no del comportamiento.
+
+**La cola.** `goal-compass.json` NO cambia en este ciclo, y hay que decirlo sin
+rodeos: `TASK-15` nunca fue candidata de esa cola —nació como el residuo que
+el cierre de `TASK-14` dejó medido y con dueño, en la bandeja local—, así que
+no hay ficha que sacar. La cola viva sigue con `C23` (50, bloqueada por el
+operador) y nada más.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador). En la
+agenda privada, `M1.T01` (`TASK-5`) y `M1.T02` (`TASK-4`) siguen bloqueadas —la
+primera por una decisión de alcance del operador, la segunda por `C23`—, y
+`TASK-15` sale de ella al cerrarse. Con esto la cola se queda **sin ninguna
+unidad sin bloqueo**: la siguiente la desbloquea el operador, y no este
+documento. Las dos decisiones que el operador tiene sobre la mesa, y que este
+ciclo NO toma por su cuenta, son:
+
+1. **`C23`** — si el pull request `#464` entra, y en qué forma. Es la unidad
+   de mayor retorno de la auditoría externa y la única de las siete que aún
+   lleva trabajo íntegro.
+2. **El alcance de `M1.T01` (`TASK-5`)** — qué significa «una sola variable
+   sostiene el grafo del workspace»: cuál de las dos copias sobrevive (la del
+   servicio, que escriben todos los caminos de construcción y los handlers
+   MCP, o la de la sesión, que es una segunda copia con 14 lecturas y 7
+   escrituras), y si la segunda dueña del estado del fichero —la caché de
+   incrementalidad, `infrastructure/graph/file_manifest.rs`— entra en el mismo
+   alcance o se declara aparte.
