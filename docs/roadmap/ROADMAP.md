@@ -442,12 +442,13 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     candidato sigue sin identidad (alcance, Journal). Las dos superficies
 >     que la publican dicen lo mismo del mismo proyecto: sobre el corpus de
 >     Kotlin, la CLI y el MCP publican la misma negativa con su identidad y
->     su motivo (`TASK-15`). Queda el error del recorrido, aparte de la
->     exclusión legítima; el vigilante, que nombra un conjunto de ficheros
->     propio; y la cobertura en caché, que no es la cobertura: un fichero
->     recuperado de la caché no cuenta como analizado. Cerrado además: la
->     lista de lenguajes sale del registro de parsers y la matriz ya no
->     declara lista propia.
+>     su motivo (`TASK-15`); y la que el MCP sirve desde la caché declara los
+>     huecos del árbol y el veredicto de una construcción en frío
+>     (`TASK-16`, `323abe72`). Cerrado además: el error del recorrido se
+>     cuenta aparte de la exclusión legítima (`b2634ed6`), un fichero
+>     recuperado de la caché cuenta como cubierto (`e6820982`), el vigilante
+>     ya no tiene lista propia (`34c2b750`), y la lista de lenguajes sale
+>     del registro de parsers.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -484,10 +485,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   edición. La forma, en `docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
->   backlog de la misión (`goal-compass.json`).
->
->   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
->   poda documental están en el Journal: este bloque es estado, no historia.
+>   backlog de la misión (`goal-compass.json`). **Lo ya cerrado no se
+>   reescribe aquí**: H0, H1, H2, H4, H17-H22 y la poda documental están en
+>   el Journal, porque este bloque es estado, no historia.
 >
 >   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag anotado. Una PR fusionada no es una release.
