@@ -8,6 +8,8 @@
  * updates.
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 test.describe("Explorer call-graph view", () => {
   test("navigates to the call-graph view and the SVG renders", async ({
@@ -17,7 +19,7 @@ test.describe("Explorer call-graph view", () => {
     await expect(page.getByTestId("shell")).toBeVisible();
 
     // Pick an object via the Spotter.
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const input = page.getByTestId("spotter-input");
     await expect(input).toBeVisible({ timeout: 5_000 });
@@ -45,7 +47,7 @@ test.describe("Explorer call-graph view", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter-input")).toBeVisible({ timeout: 5_000 });
     await page.getByTestId("spotter-input").fill("build");
@@ -53,6 +55,11 @@ test.describe("Explorer call-graph view", () => {
       .getByTestId("spotter-results")
       .getByTestId(/^spotter-item-/);
     await firstResult.first().click();
+
+    // The tabs land after the inspector shell. The probe below has to
+    // measure them once they are there, or it decides that the tab is
+    // absent and the test asserts nothing while still passing.
+    await waitForViewTabs(page);
 
     // Switch to the "quality" view — the fixture has a hotspots
     // block. Each hotspot row is interactive.

@@ -18,6 +18,8 @@
  *   P3.8 Switch view updates inspector body
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 /**
  * Helper: open a Spotter result and select it to create a new pane.
@@ -27,7 +29,9 @@ async function openSpotterResult(
   page: import("@playwright/test").Page,
   resultIndex = 0,
 ) {
-  await page.waitForTimeout(1500); // wait for keyboard listener
+  const panesBefore = await page.locator("[data-pane-id]").count();
+
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
 
@@ -39,7 +43,15 @@ async function openSpotterResult(
   await expect(firstResult.first()).toBeVisible({ timeout: 5_000 });
   await firstResult.nth(resultIndex).click();
   await expect(page.getByTestId("spotter")).toBeHidden();
-  await expect(page.getByTestId("object-inspector")).toBeVisible({ timeout: 5_000 });
+
+  // The selection opened a pane, and every open pane shows an object
+  // inspector. The count is the condition, not a clock: the app
+  // renders one inspector per pane, so an unscoped
+  // `getByTestId("object-inspector")` names one element per pane and
+  // stops naming a single element as soon as a second pane exists.
+  await expect(
+    page.locator("[data-pane-id] [data-testid='object-inspector']"),
+  ).toHaveCount(panesBefore + 1, { timeout: 5_000 });
 }
 
 /**
@@ -195,6 +207,11 @@ test.describe("Phase 3: Pane-Stack (8 tests)", () => {
 
     const viewTabs = page.getByTestId("view-tabs");
     const tabs = viewTabs.getByRole("tab");
+
+    // The tabs land after the inspector shell. The probe below has to
+    // measure them once they are there, or it decides that the tab is
+    // absent and takes the fallback branch for a tab that does exist.
+    await waitForViewTabs(page);
 
     // If there's a call-graph tab, click it and verify the graph view
     const callGraphTab = page.getByTestId("view-tab-call-graph");

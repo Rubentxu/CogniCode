@@ -17,13 +17,15 @@
  */
 import { test, expect } from "@playwright/test";
 
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 /**
  * Helper: open app → Spotter → select first symbol → wait for inspector.
  */
 async function openSymbolTab(page: import("@playwright/test").Page) {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
 
   const modifier = process.platform === "linux" ? "Control" : "Meta";
   await page.keyboard.press(`${modifier}+k`);
@@ -31,7 +33,6 @@ async function openSymbolTab(page: import("@playwright/test").Page) {
   const input = page.getByTestId("spotter-input");
   await expect(input).toBeVisible({ timeout: 5_000 });
   await input.fill("build");
-  await page.waitForTimeout(800);
 
   const firstResult = page
     .getByTestId("spotter-results")
@@ -122,12 +123,13 @@ test.describe("G1: usage_examples (e12a)", () => {
     await expect(callerButton).toBeVisible();
     await callerButton.click();
 
-    // After clicking, a new pane should open (GtPager behavior)
-    // Verify at least 2 pane tabs now exist
-    await page.waitForTimeout(500);
+    // After clicking, a new pane should open (GtPager behavior).
+    // Poll the pane stack until it shows the original pane plus the
+    // one that was pushed — the fact, not a clock.
     const paneTabs = page.locator("[data-testid^='pane-tab-']");
-    const tabCount = await paneTabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(1); // at least the original + new pane
+    await expect
+      .poll(async () => await paneTabs.count(), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(2);
   });
 
   test("usage_examples screenshot", async ({ page }) => {

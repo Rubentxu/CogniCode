@@ -3,9 +3,10 @@
  *
  * Built on `cmdk` (a Radix Dialog-based command menu). The component
  * is fully controlled by `AppContext.spotterOpen` — the keyboard
- * shortcut lives in `SpotterHost` (mounted by Shell) and dispatches
- * `TOGGLE_SPOTTER` / `SET_SPOTTER`. The Spotter itself focuses the
- * search input on open and renders results grouped by `kind`.
+ * shortcut is installed by `./Spotter/globalShortcut` (the single
+ * owner of the rule) and dispatches `TOGGLE_SPOTTER` / `SET_SPOTTER`.
+ * The Spotter itself focuses the search input on open and renders
+ * results grouped by `kind`.
  *
  * Selection flow:
  *   user types  → 200ms debounce → useSpotter (SWR) → results
@@ -25,6 +26,7 @@ import { useWorkspaceList } from "../hooks/useWorkspace";
 import type { SpotterResult, SpotterSearchResult } from "../api/schemas";
 import { kindDefaultView } from "../api/kindDefaultView";
 import { IntentFooter, chipsFromResult } from "./Spotter/IntentFooter";
+import { installGlobalShortcut } from "./Spotter/globalShortcut";
 import type { ViewSpecSummary } from "../api/schemas";
 
 /** Debounce window for the search input. Tuned for ~50 WPM typing. */
@@ -86,10 +88,11 @@ function kindsFromResults(
  * we additionally filter the rendered list by the local `kind`
  * chips above the results.
  *
- * The keyboard listener (Cmd/Ctrl+K, `/`) lives inside the same
- * component so the wiring is co-located with the UI. It registers
- * for the lifetime of the component — typically the lifetime of
- * the Shell. Removing the component automatically un-registers.
+ * The keyboard listener (Cmd/Ctrl+K, `/`) is installed by
+ * `./Spotter/globalShortcut` for the lifetime of this component —
+ * typically the lifetime of the Shell. Removing the component
+ * automatically un-registers the listener and retracts the
+ * availability signal the E2E suite waits for.
  */
 export function Spotter() {
   const { state } = useApp();
@@ -99,30 +102,19 @@ export function Spotter() {
   // -----------------------------------------------------------------
   // Global keyboard shortcuts
   // -----------------------------------------------------------------
-  useEffect(() => {
-    function onKey(event: globalThis.KeyboardEvent) {
-      const isModifier = event.metaKey || event.ctrlKey;
-      // Cmd+K (mac) / Ctrl+K (everything else). We also support
-      // `/` as a quick alternative for users who do not reach for
-      // the modifier — the convention popularized by GitHub.
-      if (isModifier && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        dispatch({ type: "TOGGLE_SPOTTER" });
-        return;
-      }
-      if (
-        event.key === "/" &&
-        !isModifier &&
-        !(event.target instanceof HTMLInputElement) &&
-        !(event.target instanceof HTMLTextAreaElement)
-      ) {
-        event.preventDefault();
-        dispatch({ type: "SET_SPOTTER", payload: { open: true } });
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dispatch]);
+  // `installGlobalShortcut` owns the rule (what a keystroke means)
+  // and publishes the availability signal the E2E suite waits for.
+  // The callbacks are created inside the effect so the effect still
+  // depends on `dispatch` alone.
+  useEffect(
+    () =>
+      installGlobalShortcut({
+        onToggle: () => dispatch({ type: "TOGGLE_SPOTTER" }),
+        onOpen: () =>
+          dispatch({ type: "SET_SPOTTER", payload: { open: true } }),
+      }),
+    [dispatch],
+  );
 
   // Resolve the workspace id once — the first entry from the
   // workspace list is the active one in this MVP. When the user

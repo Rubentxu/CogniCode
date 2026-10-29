@@ -16,6 +16,7 @@
  *   P5.6 >8 panes drops oldest (FIFO)
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
   test("P5.1 Connection gate: backend unreachable", async ({ page }) => {
@@ -147,7 +148,7 @@ test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open the Spotter
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
 
@@ -169,7 +170,7 @@ test.describe("Phase 5: Error & Edge Cases (6 tests)", () => {
     // Opening 9+ panes via Spotter should keep the count at 8 max.
     // This test opens 8 panes and verifies the cap is enforced.
     for (let i = 0; i < 8; i++) {
-      await page.waitForTimeout(300);
+      await waitForGlobalShortcut(page);
       await page.keyboard.press("Meta+k");
       await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
       const input = page.getByTestId("spotter-input");

@@ -19,6 +19,8 @@
  * free E2E suite that runs in CI.
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 const VISUAL = process.env.PW_VISUAL === "true";
 
@@ -38,8 +40,7 @@ test.describe("Explorer smoke flow", () => {
     const shell = page.getByTestId("shell");
     await expect(shell).toBeVisible();
 
-    // 2. Open the Spotter via Cmd+K (wait 1500ms for keyboard listener mount).
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible();
@@ -61,7 +62,7 @@ test.describe("Explorer smoke flow", () => {
     //    Using getByTestId("view-tabs") instead of getByRole+regex for robustness
     //    (see ADR-040 / moldable-view-call-graph fix in v0.8.0).
     const viewTabs = page.getByTestId("view-tabs");
-    await expect(viewTabs).toBeVisible();
+    await waitForViewTabs(page);
     const tabs = viewTabs.getByRole("tab");
     await expect(tabs.first()).toBeVisible();
 

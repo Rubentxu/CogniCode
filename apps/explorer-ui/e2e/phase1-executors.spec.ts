@@ -15,12 +15,14 @@
  */
 import { test, expect } from "@playwright/test";
 
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 test.describe("Phase 1 executors (e12a–e12e)", () => {
   // Shared navigation: open app → spotter → select symbol
   async function openSymbol(page: any) {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
 
     // Linux headless uses Control, not Meta
     const modifier = process.platform === "linux" ? "Control" : "Meta";
@@ -29,8 +31,6 @@ test.describe("Phase 1 executors (e12a–e12e)", () => {
     const input = page.getByTestId("spotter-input");
     await expect(input).toBeVisible({ timeout: 5_000 });
     await input.fill("build");
-    // Wait for debounce + network
-    await page.waitForTimeout(800);
 
     const firstResult = page
       .getByTestId("spotter-results")
@@ -65,7 +65,7 @@ test.describe("Phase 1 executors (e12a–e12e)", () => {
   }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible();
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
 
     // Open Spotter and search for "cogni" — only matches the scope label
     // "cognicode-explorer", not the symbol "build_overview" or "build_callgraph"
@@ -74,8 +74,6 @@ test.describe("Phase 1 executors (e12a–e12e)", () => {
     const input = page.getByTestId("spotter-input");
     await expect(input).toBeVisible({ timeout: 5_000 });
     await input.fill("cogni");
-    // Wait for debounce + network
-    await page.waitForTimeout(800);
 
     // The scope result should be the first (and only) match
     const results = page.getByTestId("spotter-results");

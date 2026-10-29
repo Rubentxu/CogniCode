@@ -16,13 +16,19 @@
  */
 import { test, expect } from "@playwright/test";
 
+import {
+  GLOBAL_SHORTCUT_ATTRIBUTE,
+  GLOBAL_SHORTCUT_READY,
+} from "../src/components/Spotter/globalShortcut";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 test.describe("Phase 4: Spotter (5 tests)", () => {
   test("P4.1 Open via Cmd+K", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
-    // Wait for the keyboard listener to mount
-    await page.waitForTimeout(1500);
+    // The application reports the shortcut as registered.
+    await waitForGlobalShortcut(page);
 
     // Press Cmd+K
     await page.keyboard.press("Meta+k");
@@ -50,7 +56,7 @@ test.describe("Phase 4: Spotter (5 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open the Spotter
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
 
@@ -77,7 +83,7 @@ test.describe("Phase 4: Spotter (5 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open the Spotter
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
 
@@ -93,7 +99,7 @@ test.describe("Phase 4: Spotter (5 tests)", () => {
     await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
 
     // Open the Spotter
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
 
@@ -107,5 +113,60 @@ test.describe("Phase 4: Spotter (5 tests)", () => {
     // No result items are shown
     const items = page.locator("[data-testid^='spotter-item-']");
     expect(await items.count()).toBe(0);
+  });
+});
+
+/**
+ * The availability signal of the global shortcut.
+ *
+ * The suite used to wait for the keyboard listener with a fixed
+ * clock, which is a guess about how long the application takes. The
+ * application now publishes a fact — an attribute on `<html>` that is
+ * present exactly while the listener is registered — and the suite
+ * waits for that fact.
+ */
+test.describe("Global shortcut availability signal", () => {
+  test("the signal is published and the shortcut then opens the palette", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("shell")).toBeVisible({ timeout: 10_000 });
+
+    // The application reports the shortcut as registered.
+    await waitForGlobalShortcut(page);
+    await expect(page.locator("html")).toHaveAttribute(
+      GLOBAL_SHORTCUT_ATTRIBUTE,
+      GLOBAL_SHORTCUT_READY,
+    );
+
+    // And the shortcut really answers.
+    await page.keyboard.press("Meta+k");
+    await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("the wait fails when the signal arrives later than the deadline", async ({
+    page,
+  }) => {
+    // The application boots late: the signal cannot exist before the
+    // deadline the wait is given, so the wait must fail — because the
+    // signal is missing, not because a clock ran out.
+    await page.route("**/src/main.tsx", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.continue();
+    });
+
+    await page.goto("/", { waitUntil: "commit" });
+
+    await expect(waitForGlobalShortcut(page, 1_000)).rejects.toThrow();
+
+    // The signal was genuinely absent — the wait did not pass on a
+    // missing assertion.
+    expect(
+      await page.locator("html").getAttribute(GLOBAL_SHORTCUT_ATTRIBUTE),
+    ).toBeNull();
+
+    // The same page satisfies the same wait once the deadline allows
+    // for the late arrival.
+    await waitForGlobalShortcut(page, 15_000);
   });
 });

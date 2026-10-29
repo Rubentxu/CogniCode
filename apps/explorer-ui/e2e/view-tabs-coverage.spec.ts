@@ -22,6 +22,8 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+import { waitForViewTabs } from "./utils/viewTabs";
 
 // Canonical 15-executors list. Mirrors crates/cognicode-explorer/src/registry.rs:335-413.
 const EXECUTORS: ReadonlyArray<{
@@ -52,7 +54,7 @@ const EXECUTORS: ReadonlyArray<{
  */
 async function openSymbolInInspector(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/");
-  await page.waitForTimeout(500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   const spotter = page.getByTestId("spotter");
   await expect(spotter).toBeVisible();
@@ -66,6 +68,11 @@ async function openSymbolInInspector(page: import("@playwright/test").Page): Pro
   await firstHit.click();
   await expect(spotter).toBeHidden();
   await expect(page.getByTestId("object-inspector")).toBeVisible();
+
+  // The tabs land after the inspector shell. Without this wait, the
+  // probe below can run in that gap and decide — wrongly — that the
+  // tab is not in the fixture, skipping the assertion.
+  await waitForViewTabs(page);
 }
 
 test.describe("View executor coverage (15 wired)", () => {

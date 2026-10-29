@@ -11,6 +11,7 @@
  * MSW mocks handle all /api/* traffic (VITE_USE_MOCKS=true).
  */
 import { test, expect } from "@playwright/test";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 test.describe("Explorer exploration flows — Visual Regression", () => {
   test("Perspective toggle switches between Graph and C4 views", async ({
@@ -42,7 +43,11 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     // Click back to Graph
     await graphBtn.click();
     await expect(graphBtn).toHaveAttribute("aria-pressed", "true");
-    await page.waitForTimeout(300);
+    // The overlay controls belong to the context perspective; their
+    // disappearance is the fact that the graph perspective took over.
+    await expect(page.getByTestId("c4-overlay-toggles")).toBeHidden({
+      timeout: 10_000,
+    });
 
     // Golden image de vuelta a Graph
     await expect(page.getByTestId("shell")).toHaveScreenshot("exploration-graph-perspective.png", {
@@ -64,8 +69,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
       maxDiffPixels: 100,
     });
 
-    // Open Spotter via Cmd+K — wait for listener to mount
-    await page.waitForTimeout(1500); // Wait for keyboard listener to mount
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     const spotter = page.getByTestId("spotter");
     await expect(spotter).toBeVisible({ timeout: 10_000 });
@@ -129,8 +133,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
       animations: "disabled",
     });
 
-    // Open Spotter — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 10_000 });
     
@@ -173,7 +176,11 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
     // Switch back to Graph
     await page.getByTestId("perspective-toggle").getByTestId("perspective-graph").click();
     await expect(page.getByTestId("perspective-toggle").getByTestId("perspective-graph")).toHaveAttribute("aria-pressed", "true");
-    await page.waitForTimeout(300);
+    // The overlay controls belong to the context perspective; their
+    // disappearance is the fact that the graph perspective took over.
+    await expect(page.getByTestId("c4-overlay-toggles")).toBeHidden({
+      timeout: 10_000,
+    });
 
     // Golden image después de switch a Graph
     await expect(page.getByTestId("shell")).toHaveScreenshot("exploration-full-graph.png", {
@@ -182,8 +189,7 @@ test.describe("Explorer exploration flows — Visual Regression", () => {
       maxDiffPixels: 26000,
     });
 
-    // Spotter → inspect — wait for listener to mount
-    await page.waitForTimeout(1500);
+    await waitForGlobalShortcut(page);
     await page.keyboard.press("Meta+k");
     
     const input = page.getByTestId("spotter-input");

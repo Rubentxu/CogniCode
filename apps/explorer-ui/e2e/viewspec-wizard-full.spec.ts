@@ -20,10 +20,11 @@
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 async function openSymbolInInspector(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/");
-  await page.waitForTimeout(500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   const spotter = page.getByTestId("spotter");
   await expect(spotter).toBeVisible();

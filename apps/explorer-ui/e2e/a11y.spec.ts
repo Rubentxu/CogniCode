@@ -13,6 +13,7 @@
  */
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
 
 const VISUAL = process.env.PW_VISUAL === "true";
 
@@ -33,7 +34,7 @@ async function expectNoCriticalViolations(builder: AxeBuilder) {
 }
 
 async function openSpotter(page: import("@playwright/test").Page) {
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
   await page.keyboard.press("Meta+k");
   await expect(page.getByTestId("spotter")).toBeVisible({ timeout: 5_000 });
 }

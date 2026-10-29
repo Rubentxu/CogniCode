@@ -15,6 +15,8 @@
  */
 import { test, expect } from "@playwright/test";
 
+import { waitForGlobalShortcut } from "./utils/globalShortcut";
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -22,7 +24,7 @@ import { test, expect } from "@playwright/test";
 async function openSymbolTab(page: import("@playwright/test").Page) {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
 
   const modifier = process.platform === "linux" ? "Control" : "Meta";
   await page.keyboard.press(`${modifier}+k`);
@@ -30,7 +32,6 @@ async function openSymbolTab(page: import("@playwright/test").Page) {
   const input = page.getByTestId("spotter-input");
   await expect(input).toBeVisible({ timeout: 5_000 });
   await input.fill("build");
-  await page.waitForTimeout(800);
 
   const firstResult = page
     .getByTestId("spotter-results")
@@ -46,7 +47,7 @@ async function openSymbolTab(page: import("@playwright/test").Page) {
 async function openScopeTab(page: import("@playwright/test").Page) {
   await page.goto("/");
   await expect(page.getByTestId("shell")).toBeVisible();
-  await page.waitForTimeout(1500);
+  await waitForGlobalShortcut(page);
 
   const modifier = process.platform === "linux" ? "Control" : "Meta";
   await page.keyboard.press(`${modifier}+k`);
@@ -54,7 +55,6 @@ async function openScopeTab(page: import("@playwright/test").Page) {
   const input = page.getByTestId("spotter-input");
   await expect(input).toBeVisible({ timeout: 5_000 });
   await input.fill("cogni");
-  await page.waitForTimeout(800);
 
   const scopeResult = page
     .getByTestId("spotter-results")

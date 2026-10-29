@@ -61,6 +61,9 @@ Los snapshots usan opciones consistentes:
 
 ### Capturas inconsistentes (flaky)
 
-- Aumentar `page.waitForTimeout()` para permitir más estabilización
+- Esperar por una **condición** (un `expect` sobre el estado que la
+  captura debe mostrar), no por un reloj: la suite no usa
+  `page.waitForTimeout()`; un reloj es una suposición sobre cuánto
+  tarda la aplicación y por eso se eliminó
 - Verificar que MSW fixtures sean determinísticos
 - Usar `animations: 'disabled'` para evitar diferencias por timing de animaciones
