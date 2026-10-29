@@ -1052,6 +1052,41 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
     }
 }
 
+/// The published shape of one hole in the coverage.
+///
+/// One mapping for both routes that publish holes: the one that built
+/// the graph and the one that served it from the cache. Two mappings
+/// would be two answers waiting to drift, and the drift would land
+/// exactly where it hurts most — a consumer that cannot tell whether
+/// the skip it is reading came from the build or from the cache.
+fn skipped_file_dto(
+    sf: &crate::infrastructure::graph::per_file_graph::SkippedFile,
+) -> SkippedFileDto {
+    SkippedFileDto {
+        path: sf.path.clone(),
+        reason_kind: match &sf.reason {
+            crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
+            crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
+            crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => {
+                "unsupported_extension"
+            }
+            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
+            crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
+            crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
+        },
+        reason: match &sf.reason {
+            crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
+            | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
+            | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
+            | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
+            | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
+            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
+                format!("symlink to {target}, not followed")
+            }
+        },
+    }
+}
+
 /// Checks whether any source file has changed since the manifest was saved.
 ///
 /// Staleness is decided on three independent signals, in order of cost:
@@ -1072,9 +1107,14 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
 ///
 /// New files not in the manifest and files in the manifest but absent
 /// from disk also invalidate the snapshot.
+///
+/// The inventory is passed in rather than walked here: the walk is the
+/// cost the cache exists to avoid paying twice, and the same walk also
+/// says what holes the tree has right now.
 fn is_manifest_stale(
     manifest: &crate::domain::value_objects::file_manifest::FileManifest,
     project_dir: &Path,
+    inventory: &crate::infrastructure::graph::source_files::SourceInventory,
 ) -> bool {
     use sha2::{Digest, Sha256};
 
@@ -1083,8 +1123,6 @@ fn is_manifest_stale(
     // would miss the files it does not know about, and a change in one
     // of those would leave the cached graph in place while the product
     // reported a complete build over sources that no longer exist.
-    let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
-
     let mut checked = 0usize;
     for file in inventory.source_files() {
         let path = &file.path;
@@ -1198,27 +1236,35 @@ pub struct BuildGraphOutput {
     /// Explicit build outcome surfaced to the caller so
     /// consumers (LLM, CI, alert) can branch on it without parsing
     /// `skipped_files`. Values:
-    ///   - `"complete"`: walk happened, no file was dropped and no
-    ///     reference was left without a declaration.
-    ///   - `"partial"`: walk happened, and something is missing: a file
-    ///     was dropped (I/O or parsing failure), a reference could not
-    ///     be tied to a declaration, or the repository refused a
-    ///     relation.
-    ///   - `"unknown"`: served from the in-memory graph cache, no
-    ///     walk happened on this call.
+    ///   - `"complete"`: the answer describes the whole tree: no file was
+    ///     dropped and no reference was left without a declaration.
+    ///   - `"partial"`: something is missing: a file was dropped (I/O or
+    ///     parsing failure), a reference could not be tied to a
+    ///     declaration, or the repository refused a relation.
+    ///   - `"unknown"`: the answer carries no verdict about the coverage
+    ///     of the tree.
     ///   - `"unsupported"`: the walk happened and the tree holds no
     ///     source this product can read. Nothing was dropped, but there
     ///     is nothing to be complete about.
+    ///
+    /// The verdict is the tree's, not the build's: an answer served from
+    /// the cache says what the tree looks like NOW, which is the same
+    /// thing a fresh walk of it would say.
     pub status: String,
     pub symbols_found: usize,
     pub relationships_found: usize,
     pub edges: Vec<EdgeInfo>,
     pub message: String,
-    /// Files that could not be processed during the walk.
-    /// `None` when the graph was served from cache (no walk happened
-    /// on this call); `Some([])` when the walk finished with no
-    /// omissions; `Some([..])` when one or more files were dropped
-    /// because of I/O / parsing failures.
+    /// The holes of the tree, as it is now.
+    /// `Some([])` when the walk left nothing out; `Some([..])` when one
+    /// or more paths were dropped —because of I/O / parsing failures,
+    /// because the walk declined them, or because their language is one
+    /// nobody supports yet.
+    ///
+    /// The list belongs to the tree and not to the build that produced
+    /// the graph: an answer served from the cache publishes the holes of
+    /// the tree as it is NOW, so that no consumer can be told `complete`
+    /// about a tree the walk does not read whole.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_files: Option<Vec<SkippedFileDto>>,
     /// The references the graph could not tie to a declaration.
@@ -1229,8 +1275,9 @@ pub struct BuildGraphOutput {
     /// Those are facts about the code, and they travel with the answer
     /// next to the relations that were resolved.
     ///
-    /// `None` when the graph was served from cache (no walk happened on
-    /// this call); `Some([])` when every reference was tied.
+    /// `Some([])` when every reference was tied. An answer served from
+    /// the cache publishes the references of the graph it serves, and a
+    /// graph is only persisted when it was built with none of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pending_references: Option<Vec<PendingReferenceInfo>>,
     /// The relations the repository refused.
@@ -1240,8 +1287,9 @@ pub struct BuildGraphOutput {
     /// the refused ones is what keeps that number and the graph in
     /// agreement.
     ///
-    /// `None` when the graph was served from cache (no walk happened on
-    /// this call); `Some([])` when every relation was taken.
+    /// `Some([])` when every relation was taken. An answer served from
+    /// the cache publishes the relations of the graph it serves, and a
+    /// graph is only persisted when it was built with none of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected_relationships: Option<Vec<RejectedRelationInfo>>,
     /// Identity of what the graph was built from.
@@ -1331,6 +1379,19 @@ pub async fn handle_build_graph(
     // --- In-memory store for current session (no persistence across restarts) ---
     let db_path = graph_db_path(&directory);
     let mut loaded_from_cache = false;
+    // The holes the tree has RIGHT NOW: what the walk declines, what it
+    // cannot do and what it cannot read yet.
+    //
+    // The persisted graph cannot know about them. A hole is not one of
+    // the files the graph is built from, so it is not in the manifest,
+    // and the freshness check cannot see it — a symlink that appears
+    // after the snapshot was taken leaves the cached answer claiming
+    // `complete` over a tree a fresh walk would call `partial`. The
+    // holes are therefore taken from the current tree, and the verdict
+    // of a cached answer is computed against the tree the consumer is
+    // asking about, not against the tree the snapshot was taken from.
+    let mut current_holes: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
+        Vec::new();
 
     // Only hydrate from the durable snapshot when this process has not
     // already built a graph (fresh session / restart). Repeated calls in
@@ -1366,8 +1427,14 @@ pub async fn handle_build_graph(
                     );
                     true
                 } else {
-                    // Scan source files and compare hashes
-                    is_manifest_stale(manifest, &directory)
+                    // Scan source files and compare hashes. The walk
+                    // that decides the freshness also says what holes
+                    // the tree has now, so it is done once.
+                    let inventory =
+                        crate::infrastructure::graph::source_files::inventory(&directory);
+                    let stale = is_manifest_stale(manifest, &directory, &inventory);
+                    current_holes = inventory.coverage_holes();
+                    stale
                 }
             }
             None => true, // No/corrupt snapshot → stale (rebuild)
@@ -1388,14 +1455,12 @@ pub async fn handle_build_graph(
     // full rebuild below. The stored manifest is updated on every build.
     if !loaded_from_cache {
         let store = ctx.get_graph_store();
-        if let Some(manifest) = store
-            .load_manifest()
-            .ok()
-            .flatten()
-            .filter(|m| !is_manifest_stale(m, &directory))
-        {
-            loaded_from_cache = true;
-            let _ = manifest; // freshness only; the cached graph is already live
+        if let Some(manifest) = store.load_manifest().ok().flatten() {
+            let inventory = crate::infrastructure::graph::source_files::inventory(&directory);
+            if !is_manifest_stale(&manifest, &directory, &inventory) {
+                loaded_from_cache = true;
+                current_holes = inventory.coverage_holes();
+            }
         }
     }
 
@@ -1481,9 +1546,9 @@ pub async fn handle_build_graph(
     let elapsed = start.elapsed().as_millis() as u64;
 
     // Surface the BuildReport through build_graph so that
-    // silent file drops are visible to clients. Cache hits report
-    // `None` (no walk happened in this call) — re-running build_graph
-    // after a source change will reflect the new walk's outcome.
+    // silent file drops are visible to clients. A cached answer publishes
+    // the holes of the tree as it is NOW — re-running build_graph after a
+    // source change reflects the new walk's outcome.
     //
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
@@ -1491,16 +1556,30 @@ pub async fn handle_build_graph(
     let (skipped_files, pending_references, rejected_relationships, status) = if loaded_from_cache {
         // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
-        // unreadable-file detection). Coverage of the restored graph is
-        // therefore verified against the current tree: report it as
-        // `complete` with an empty skip list, exactly like a fresh
-        // walk with no omissions. The old `unknown` verdict was correct
-        // only when no validation existed (pre-persistence).
+        // unreadable-file detection), so the FILES the graph is built from
+        // are the ones on disk. The holes of the tree are a different
+        // question: a path the walk DECLINES is not one of those files, so
+        // the manifest never knew about it and the freshness check cannot
+        // see it. The holes are therefore taken from the tree as it is now,
+        // and a tree with a hole is `partial` — the same verdict a fresh
+        // walk of it would give.
+        //
+        // The pending and the rejected references are the graph's, and the
+        // graph is the persisted one: a snapshot only exists for a build
+        // that had none of them, and the files that decided them have not
+        // changed. Publishing them empty is publishing the truth about
+        // that graph.
+        let mapped: Vec<SkippedFileDto> = current_holes.iter().map(skipped_file_dto).collect();
+        let status = if mapped.is_empty() {
+            "complete"
+        } else {
+            "partial"
+        };
         (
+            Some(mapped),
             Some(Vec::new()),
             Some(Vec::new()),
-            Some(Vec::new()),
-            "complete".to_string(),
+            status.to_string(),
         )
     } else {
         let report = ctx.analysis_service.get_last_build_report();
@@ -1516,30 +1595,7 @@ pub async fn handle_build_graph(
                 pending,
                 rejected,
             }) => {
-                let mapped: Vec<SkippedFileDto> = skipped
-                    .iter()
-                    .map(|sf| SkippedFileDto {
-                        path: sf.path.clone(),
-                        reason_kind: match &sf.reason {
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
-                            crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
-                        },
-                        reason: match &sf.reason {
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
-                            | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
-                            | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
-                            | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
-                            | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
-                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
-                                format!("symlink to {target}, not followed")
-                            }
-                        },
-                    })
-                    .collect();
+                let mapped: Vec<SkippedFileDto> = skipped.iter().map(skipped_file_dto).collect();
                 let pending: Vec<PendingReferenceInfo> = pending
                     .iter()
                     .map(PendingReferenceInfo::from_reference)
@@ -4432,6 +4488,18 @@ pub mod program_analysis_handlers;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// El inventario de un árbol TAL COMO ESTÁ AHORA.
+    ///
+    /// La comprobación de frescura de una instantánea y la lista de
+    /// huecos del árbol son la misma pasada: el recorrido que decide si
+    /// la instantánea sigue siendo válida dice también qué huecos tiene
+    /// el árbol ahora. El test la toma del árbol, no de un manifiesto.
+    fn tree_inventory(
+        project: &Path,
+    ) -> crate::infrastructure::graph::source_files::SourceInventory {
+        crate::infrastructure::graph::source_files::inventory(project)
+    }
 
     /// La clave que llevan los snapshots de prueba: la del analizador de
     /// ahora, sobre un workspace cualquiera.
@@ -8123,7 +8191,7 @@ mod tests {
             // Sanity: before rewriting, the snapshot must be considered
             // FRESH (file content unchanged, mtime matches, hash matches).
             assert!(
-                !is_manifest_stale(&manifest, project),
+                !is_manifest_stale(&manifest, project, &tree_inventory(project)),
                 "baseline check: freshly-built manifest must NOT be stale \
                  (mtime={}, file content matches manifest)",
                 pinned_millis
@@ -8147,7 +8215,7 @@ mod tests {
             // the actual bytes against the hash). After the fix it MUST
             // return `true`.
             assert!(
-                is_manifest_stale(&manifest, project),
+                is_manifest_stale(&manifest, project, &tree_inventory(project)),
                 "snapshot must be stale when on-disk content differs \
                  from manifest content_hash, even if mtime matches"
             );
@@ -8195,7 +8263,7 @@ mod tests {
             {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
-                let stale = is_manifest_stale(&manifest, project);
+                let stale = is_manifest_stale(&manifest, project, &tree_inventory(project));
                 // Restore so the tempdir cleanup works.
                 std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
                 assert!(
@@ -8208,7 +8276,7 @@ mod tests {
                 // Non-unix platforms: just exercise the read-error branch
                 // by deleting the file mid-snapshot. Coverage is best-effort.
                 std::fs::remove_file(&file).unwrap();
-                let stale = is_manifest_stale(&manifest, project);
+                let stale = is_manifest_stale(&manifest, project, &tree_inventory(project));
                 assert!(
                     stale,
                     "snapshot must be stale when a source file is removed"
@@ -8252,7 +8320,7 @@ mod tests {
             std::fs::write(project.join("src").join("b.rs"), b"fn b() {}\n").unwrap();
 
             assert!(
-                is_manifest_stale(&manifest, project),
+                is_manifest_stale(&manifest, project, &tree_inventory(project)),
                 "snapshot must be stale when a new file appears"
             );
         }
@@ -8295,7 +8363,7 @@ mod tests {
             std::fs::rename(&original, &renamed).unwrap();
 
             assert!(
-                is_manifest_stale(&manifest, project),
+                is_manifest_stale(&manifest, project, &tree_inventory(project)),
                 "snapshot must be stale when a tracked file is renamed"
             );
         }

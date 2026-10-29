@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `9e1d36d722a8ddd5bfd259a9b8b7ab74a61571c0` (la
+> **Snapshot**: 2026-10-29, sobre `b769802df4abc9440bcbb0dcf9084fb58af58e10` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -57,7 +57,17 @@
 > `demo/gamma/UseHandler.kt:6 → invoke [calls, ambiguous, 2]`—, el mismo veredicto
 > (`partial`) y el mismo grafo no vacío —29 símbolos y 4 relaciones—; la
 > equivalencia SOSTENÍA, así que el residuo era la MEDICIÓN y no un defecto:
-> esta unidad no toca el código de producción).
+> esta unidad no toca el código de producción; y la respuesta que el MCP publica
+> cuando sirve el grafo desde la caché ya no es un veredicto hueco: el manifiesto
+> sólo cubre los ficheros de los que se construye el grafo, de modo que una
+> entrada que el recorrido DECLINA —un enlace simbólico que no sigue— era
+> invisible para la comprobación de frescura, y la caché respondía `complete`
+> sobre un árbol que una construcción en frío del MISMO árbol declara `partial`;
+> medido: el grafo era el mismo —3 símbolos y 0 relaciones— y lo que mentía era
+> el veredicto; ahora la respuesta servida de la caché declara los huecos del
+> árbol TAL COMO ESTÁ AHORA y lleva el veredicto que una construcción en frío
+> daría —`partial`, con `src/link.rs` declarado como `symlink`—, y los huecos
+> tienen un solo dueño: `SourceInventory::coverage_holes`).
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -687,6 +697,50 @@ cero ficheros de test nuevos, cero contratos nuevos, cero fixtures nuevos —el
 corpus `sandbox/fixtures/kotlin-java/` y el contrato de Kotlin ya existen, y la
 medición vive en el fichero que ya sabía lanzar la CLI y el MCP sobre el mismo
 árbol—.
+
+**La respuesta que el MCP sirve desde la caché ya no es un veredicto hueco.**
+El cierre de `TASK-15` declaró un residuo con sus palabras: «el camino de caché
+descarta: el MCP tiene un camino de CACHÉ que responde `complete` con la lista
+de pendientes VACÍA». Ese residuo hablaba de la lista de PENDIENTES, y la
+superficie a medir era el VEREDICTO entero de la respuesta.
+MEDIDO: la rama `loaded_from_cache` de `handle_build_graph` respondía
+`(Some([]), Some([]), Some([]), "complete")` —la lista de omitidos, la de
+pendientes y la de rechazadas vacías, y `complete`—. El GRAFO que acompañaba a
+ese veredicto era real y no estaba vacío: 3 símbolos y 0 relaciones, los mismos
+que daba una construcción en frío del mismo árbol. El hueco no estaba en el
+grafo: estaba en el VEREDICTO, que afirmaba de un árbol algo que la caché no
+podía saber.
+Y no podía saberlo por una razón concreta: el manifiesto que decide si la
+instantánea sigue siendo fresca cubre los FICHEROS de los que se construye el
+grafo —los que el registro de lenguajes reconoce—, y una entrada que el
+recorrido DECLINA —un enlace simbólico que no sigue— no es uno de esos
+ficheros, así que no está en el manifiesto, así que la comprobación de frescura
+no puede verlo. Un árbol al que se le añade un enlace simbólico después de la
+instantánea es un árbol que una construcción en frío declara `partial` y que la
+caché servía como `complete`.
+MEDIDO, sobre el corpus de tres ficheros Rust que el repo ya versiona: con un
+enlace simbólico declinado en `src/`, la respuesta EN FRÍO del árbol publicaba
+`partial` con `src/link.rs` declarado como `symlink`, y la respuesta SERVIDA DE
+LA CACHÉ publicaba `complete` con la lista de omitidos VACÍA. El mismo grafo —
+3 símbolos, 0 relaciones— con dos veredictos distintos.
+La corrección no cuesta un recorrido nuevo: la comprobación de frescura ya
+recorría el árbol, así que el hueco del árbol sale de la MISMA pasada. Y los
+huecos tienen ahora un solo dueño —`SourceInventory::coverage_holes`—, que es
+la composición de lo que el recorrido declined, lo que no pudo hacer y lo que
+todavía no sabe leer; las tres rutas que publicaban esa lista por su cuenta ahora
+la piden. La respuesta servida de la caché publica los huecos del árbol tal
+como está AHORA y lleva el veredicto que una construcción en frío daría. La CLI
+no tiene camino de caché —siempre recorre y publica los huecos actuales—, así
+que la corrección CIERRA una diferencia de paridad entre las dos superficies en
+vez de abrirla.
+La prueba vive en el fichero que ya medía la cobertura en caliente y en frío
+(`crates/cognicode-core/tests/cached_coverage_is_honest.rs`): cero ficheros de
+test nuevos, cero contratos nuevos, cero fixtures nuevos. Y no puede pasar por
+vacío: exige que la respuesta EN CALIENTE venga de la caché —su mensaje lo
+dice—, que el grafo no esté vacío y que el hueco sea el que el árbol declara —
+`src/link.rs` como `symlink`—, porque dos respuestas vacías son iguales en el
+vacío. El RED se midió con dos mutaciones focales, cada una revertida: sin el
+veredicto honesto y sin el motivo del hueco.
 
 ## La misión
 
