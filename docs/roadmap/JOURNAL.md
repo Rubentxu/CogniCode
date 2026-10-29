@@ -30698,3 +30698,96 @@ Conventional Commit—, y el fallo es del entorno, no del contrato.
 cola —nació como el residuo que el cierre de `TASK-16` dejó medido y con
 dueño, en la bandeja local—, así que no hay ficha que sacar. La cola viva
 sigue con `C23` (50, bloqueada por el operador) y nada más.
+
+## 2026-10-29 — El ciclo de TASK-17 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `dcfdedb`: 58 etapas, ninguna en
+rojo, y el estado `merge-gate=success` publicado en el pull request `#499`. La
+corrida es comprobable después del hecho: queda en la base de eventos del gate,
+`.pipelinek/merge-gate.db`, con su identificador de corrida
+`1045a1a3-1669-4e5c-9f6f-aa3d59bfb073`, los 58 `StageFinished` en `success` —el
+primero `build-isolation`, el último `merge-gate`— y el `RunFinished` en
+`success` (`outcome: success`, `diagnostics: []`). El gate corrió sobre el árbol
+exacto que GitHub iba a proteger, que es el mismo árbol que `full` midió.
+
+**La fusión.** El pull request `#499` —la publicación de la rama
+`fix/fast-fallback-runs-touched-target`— se fusionó por squash como `6404a84b`.
+
+**Lo que queda en el árbol, después del cierre.** El wrapper del modo rápido
+tiene dos caminos y ahora los dos corren el target de integración que los paths
+tocan. Lo que entra NO es un fichero de test nuevo ni un contrato nuevo: es el
+`run_suite()` que ya existía, con un segundo argumento —`touched-only`— que
+corre los targets tocados de esa suite sin repetir su biblioteca, porque el
+`fallback` ya corre la biblioteca entera con `--workspace`. Y el bloque de
+`fallback` se mueve DEBAJO de `run_suite()`: mientras vivía arriba, la función
+todavía no estaba registrada en ese punto del script, así que la llamada no
+podía existir. El mapa suite->crate NO se mueve ni se duplica —sigue viviendo, y
+sólo, dentro del `case` de `run_suite()`, que es lo que el contrato
+`test_the_selector_doc_and_the_runner_agree` pina—. Y el `fallback` cuenta los
+targets que ha ejecutado: si no ha corrido ninguno, lo dice, porque un wrapper
+que no puede decir que no, aquí, no puede decir nada.
+
+**El poder discriminante del contrato, medido.** El contrato nuevo (`M17`, en
+`scripts/ci/test_fast_full_wrappers.py`) no lee el código: EJECUTA el wrapper de
+verdad en un árbol git de laboratorio, con un `cargo` falso que anota los
+argumentos que recibe, y mira la lista. El laboratorio se monta con dos paths:
+`crates/cognicode-core/tests/prf_demo.rs` —un target de integración— y
+`product/tools.json` —un path que el selector no conoce, y por eso el caso cae
+en `fallback`—. Antes de la corrección el inventario era `test --workspace --lib
+--quiet` y clippy, y `--test prf_demo` no estaba porque nadie lo había pedido;
+el RED fue literal: «FAIL: el camino de fallback no ejecuto el target de
+integracion que se toco…». Después de la corrección, el inventario del mismo
+caso es `test --workspace --lib --quiet`, `test -p cognicode-core --test
+prf_demo` y clippy. El camino `changed` no cambia. Y el `fallback` que no toca
+ningún test de integración corre exactamente lo que corría antes: la
+corrección es POR TARGET TOCADO, no por suite.
+
+**El hueco del que el `fallback` no puede salir, declarado.** MEDIDO sobre
+`cargo metadata --format-version 1 --no-deps`: 11 miembros, 213 targets de
+integración; el selector mapea 197 —`core` (131), `cli` (33), `mcp` (17),
+`explorer` (16) y `ladybug` (0)—, y quedan 16 sin mapear: `cognicode` (7),
+`cognicode-runtime` (5), `cognicode-graph-algos` (2), `cognicode-graph-wasm`
+(1), `cognicode-macros` (1) y `cognicode-sandbox` (0). El `full` sí los corre —
+`cargo test --workspace` los incluye—, salvo `spike-ladybug`, que está excluido
+del workspace y por tanto no lo corre ningún carril de cargo: 9 targets de
+integración sin carril en ninguna parte. Esta unidad los DECLARA, no los
+arregla: ampliar el radio de acción del selector para ellos es un corte
+distinto, con su propio criterio de cierre.
+
+**Lo que este corte NO arregla.** El `merge-gate` nunca estuvo mal —corre
+`test-full.sh`, que corre `cargo test --workspace`—: el defecto era del lazo de
+feedback del developer, y por eso la corrección toca el wrapper y no el gate.
+
+**La deriva que este cierre corrige en el ROADMAP §11.** El bullet de H23
+publicaba como verdad una afirmación que era media: el modo rápido corría el
+target de integración que se tocó SÓLO en el camino `changed`, y el `fallback`
+—que es el camino que se toma cuando el selector no clasifica el cambio— se lo
+saltaba entero. El bullet se corrige: dice que los dos caminos lo corren, con
+la unidad que lo cierra, y delega en el Journal la lista de los crates que
+`fast` no mapea. La comprobación del contrato que cuenta las líneas de cita del
+bloque —`scripts/ci/test_roadmap_authority_attribution.py`, techo de 80— se usó
+como restricción de DISEÑO, no como obstáculo: la redacción nueva ocupa las
+mismas seis líneas que la vieja, y el bloque sigue en 80 de 80.
+
+**La cola.** `goal-compass.json` NO cambia: `TASK-17` nunca fue candidata de esa
+cola —nació como el residuo que el cierre de `TASK-16` dejó medido y con
+dueño, en la bandeja local—, así que no hay ficha que sacar. La cola viva
+sigue con `C23` (50, bloqueada por el operador) y nada más, y la cola local
+queda sin ninguna unidad sin bloqueo: `TASK-5` sigue atada por una decisión de
+alcance del operador y `TASK-4` por `C23`.
+
+**Gates.** `fast` rc=0; `full` rc=0 —6504 pasados, 0 fallidos y 34 ignorados
+contando los doc-tests; `fmt --check` y `clippy -D warnings` en verde; 455
+comprobaciones de contrato en 0 fallos; el contrato de wrappers pasa 20 de 20
+—19 antes de este cambio, más el `M17` nuevo—. Y el `merge-gate` sobre
+`dcfdedb`: 58 etapas, ninguna en rojo.
+
+## 2026-10-29 — Corrección del recibo de TASK-17: una palabra truncada
+
+El recibo de implementación de `TASK-17` —la entrada «El lazo de feedback da
+verde sin correr el test que se ha escrito»— dice «Derivar el crate del path
+tocad». La palabra es «tocado». La entrada no se reescribe: el Journal es
+append-only, y una corrección se hace hacia adelante, con su propia entrada. La
+forma que se quiso decir es la que está en el cierre: el crate se deriva del
+path TOCADO —el binario que cargo declara por cada fichero de integración bajo
+`crates/<crate>/tests/`—.
