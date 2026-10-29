@@ -57,7 +57,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 | Errores de arista descartados con `.ok()` | **`TASK-3`**, cerrada el 2026-10-28 (`b75d2028`) |
 | La PR #464 sube la deuda CR-06 de producción de 28 a 35 pares | **`TASK-4`** — puerta medible de `C23` |
 | Dos propietarios potenciales del estado del grafo | **`TASK-5`** |
-| Esperas fijas en la suite E2E de Explorer (59 en 24 ficheros) | **`TASK-6`** |
+| Esperas fijas en la suite E2E de Explorer (59 en 24 ficheros) | **`TASK-6`**, cerrada el 2026-10-29 (`14a67d7f`) |
 | Casos desactivados en la suite E2E de Explorer (16 en 13 ficheros) | **`TASK-7`** |
 | Catálogo público desactualizado | **`C44`**, cerrada el 2026-10-29 (`cf8ad557`) |
 | Acoplamiento aplicación↔infraestructura, `views.rs` (9 669 líneas), `AnalysisService` (4 517) | `C23` |
@@ -85,18 +85,25 @@ autoridad de agenda en `docs/roadmap/ROADMAP.md` §11.
 
 ## La puerta que queda abierta
 
-**El ciclo de M1.T03 está cerrado en el remoto.** El pull request `#484` —la
-publicación de la rama `fix/m1-t03-catalog-describes-its-runtime`— se fusionó
-por squash como `cf8ad557`, con el `merge-gate` verde sobre `afe5d52c`:
-`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. El catálogo publicado ya no
-dice de su runtime una versión que no es la: el `runtime_metadata` del maestro
-es el espejo de lo que el runtime publica. Y la sincronización es una
-**fusión**, no una copia: las claves que el runtime no publica —`gate_authority`
-y `produces_observations_only` de `check_architecture`— siguen curadas a mano
-en el maestro, porque una copia se las llevaría. El contrato del consumidor
-compara el metadato entero y no sólo el esquema de entrada, así que la deriva
-se ve en vez de ser silenciosa: por eso se ve, por eso la puerta se puede
-abrir otra vez.
+**El ciclo de M2.T01 está cerrado en el remoto.** El pull request `#486` —la
+publicación de la rama `fix/m2-t01-explorer-e2e-waits-on-a-signal`— se fusionó
+por squash como `14a67d7f`, con el `merge-gate` verde sobre `ff564779`:
+`merge-gate.pipeline.kts`, 58 etapas, 0 rojas. La suite E2E de Explorer ya no
+espera con reloj: la aplicación publica una señal observable de que el atajo
+global está registrado —un atributo en `<html>` que aparece exactamente
+mientras el listener está vivo— y las specs esperan esa condición con
+`expect(...)`. Las **59** llamadas a `page.waitForTimeout` han desaparecido de
+`apps/explorer-ui/e2e/`, y un contrato nuevo pone en rojo cualquier reloj fijo
+que vuelva. La duración medida de la suite **baja** (156 s → 124 s sin
+`PW_VISUAL`; 157 s → 129 s con) y el conjunto de fallos es idéntico antes y
+después.
+
+**Lo que este cierre no arregla, y por eso lo nombra.** Los goldens de la
+suite de Explorer están obsoletos respecto a la UI actual: los 35 fallos sin
+`PW_VISUAL` y los 40 con son todos `toHaveScreenshot`, y son los mismos
+antes y después del corte. La suite no puede quedar verde en este entorno, y
+esa mitad del cuarto criterio de aceptación no se cumple aquí. Regenerar los
+goldens es trabajo con dueño propio, y no es de esta unidad.
 
 La puerta que queda abierta es la de la cola:
 
@@ -107,7 +114,7 @@ La puerta que queda abierta es la de la cola:
   corpus de homónimos y sin ninguna arista bornada por coincidencia de nombre.
   Prioridad 10, sin bloqueo.
 
-Y, con `M1.T03` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
+Y, con `M2.T01` cerrado —y sus dos vecinas todavía bloqueadas: `TASK-5` por
 una decisión de alcance del operador, `TASK-4` por `C23`—, la siguiente
-unidad sin bloqueo es **`M2.T01`** (`TASK-6`): la suite E2E de Explorer espera
-con reloj donde la aplicación no expone señal.
+unidad sin bloqueo es **`M2.T02`** (`TASK-7`): la suite E2E de Explorer tiene
+dieciséis casos desactivados y ninguno nombra un dueño.

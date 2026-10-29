@@ -29077,3 +29077,92 @@ es candidata de esa cola, así que no sale de ella. En la agenda privada, `M1.T0
 de alcance del operador, la segunda por `C23`—, y `M2.T03` es `C13`. La
 siguiente unidad sin bloqueo es **`M2.T02`** (`TASK-7`): la suite E2E de
 Explorer tiene dieciséis casos desactivados y ninguno nombra un dueño.
+
+## 2026-10-29 — El ciclo de M2.T01 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `ff564779`: 58 etapas, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request `#486`.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate, con su identificador de corrida `3fd2205e-b66d-4ca6-a2b0-98fbeb3e8b05`
+y las 58 etapas en `success`. El gate corrió con su propio directorio de
+compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#486` se fusionó por squash como `14a67d7f`.
+El `merge-gate` es la autoridad y estaba verde sobre `ff564779`, que es
+exactamente la cabeza que GitHub iba a proteger y la misma sobre la que corrió
+la batería completa: el squash cambia el SHA, no el árbol.
+
+**Lo que queda en el árbol, después del cierre.** La suite E2E de Explorer
+espera por condición, no por reloj. El atajo global tiene un dueño
+(`apps/explorer-ui/src/components/Spotter/globalShortcut.ts`):
+`decideShortcut` **decide** —función pura: la misma entrada devuelve siempre la
+misma salida y no toca nada— e `installGlobalShortcut` registra el **efecto**
+en el borde, donde publica la señal `data-cognicode-global-shortcut="ready"`
+en `<html>`, presente **exactamente** mientras el listener está registrado. Las
+specs esperan esa señal con `expect(...)`, y sus helpers importan las
+constantes del módulo de la aplicación en vez de repetirlas —una regla que
+vive en dos sitios es una regla que se puede separar—. Un contrato nuevo,
+`scripts/ci/test_explorer_e2e_waits_on_conditions.py`, pone en rojo cualquier
+`waitForTimeout` que vuelva a `apps/explorer-ui/e2e/`, y un segundo helper
+(`e2e/utils/viewTabs.ts`) cubre el otro hueco de señal: las pestañas de vista
+no renderizan hasta que hay vistas, y se duplican una por pane, así que un
+sondeo sin acotar encuentra varios elementos y una espera que se salta ese
+hueco no falla —toma la otra rama—.
+
+**Lo que este corte NO cubre.** Cuatro cosas quedan fuera, y las cuatro están
+medidas:
+
+- **La suite de Explorer no puede estar verde en este entorno, y no es de este
+  corte.** Los goldens del repositorio están obsoletos respecto a la UI
+  actual: los 35 fallos sin `PW_VISUAL` y los 40 con son **todos**
+  `toHaveScreenshot` —cero bloques de fallo sin golden—, y son los mismos
+  antes y después. La mitad del cuarto criterio —que la suite «siga verde»—
+  no se puede satisfacer aquí, y la razón es ajena a la unidad. La otra mitad
+  —que la duración medida no aumente— está medida, y baja.
+- **Un fallo que se movió.** En una corrida sin `PW_VISUAL`, `lens-panel` falló
+  donde antes pasaba. Aislado, ese spec **falla igual en el árbol anterior y en
+  el de este corte**, y no por su golden sino en
+  `expect(lens-sidebar-toggle).toBeVisible()`: el toggle del sidebar de lente
+  no renderiza. Es un defecto preexistente, y el veredicto que cambia dentro de
+  la suite completa depende del estado compartido del mock y del orden de los
+  workers, que este corte cambia al cambiar la duración de las esperas. La
+  segunda corrida del mismo árbol lo pone verde otra vez. Se declara, no se
+  maquilla.
+- **La suite de navegador no está en el `merge-gate`.** Ningún `.kts` del
+  repositorio menciona `explorer-ui`, `playwright` ni `PW_VISUAL`: la
+  evidencia de esta unidad es la medición local, no el veredicto del gate. El
+  contrato nuevo sí entra en el `merge-gate`, porque `run-all-contracts.sh` lo
+  descubre por glob; lo que el gate vigila es que **no vuelva** un reloj fijo,
+  no que las specs sigan verdes.
+- **El reloj no desaparece de la suite: lo que desaparece es la espera.** Las
+  aserciones siguen llevando plazo (`toBeVisible({ timeout })`), y un plazo
+  dentro de una aserción es un presupuesto de fallo —cuánto se espera antes de
+  declarar que la condición no llegó—, no una espera ciega. La diferencia es
+  que la espera ciega no mira nada y la aserción con plazo mira la condición y
+  además dice qué condición.
+
+**La tarea en la bandeja.** `TASK-6` (`M2.T01`) queda cerrada en la bandeja
+local de Backlog.md con el SHA `14a67d7f`, que es el de la implementación en
+`main`: tres de los cuatro criterios de aceptación tienen evidencia real —el
+RED medido contra el código anterior (el contrato nuevo en rojo con las 59
+llamadas enumeradas, y una spec que falla de forma determinista cuando la
+señal llega más tarde del plazo), el verde de `fast` y `full`, y este recibo,
+que cita el SHA—. **El cuarto queda sin marcar**, y el motivo está escrito en
+la tarjeta: la suite E2E de Explorer no está verde en este entorno porque los
+goldens del repositorio están obsoletos respecto a la UI actual —35 fallos sin
+`PW_VISUAL` y 40 con, todos `toHaveScreenshot`, los mismos antes y después—,
+y esa condición es preexistente y ajena a la unidad. Su otra mitad —que la
+duración medida no aumente— sí está medida, y baja: 156 s → 124 s sin
+`PW_VISUAL`, 157 s → 129 s con. Un criterio a medias no se presenta como
+cumplido: el que decide si los goldens se regeneran es el operador, y esa
+decisión no se toma aquí.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador) y `C13`
+(10, sin bloqueo): esta unidad no es candidata de esa cola, así que no sale de
+ella. En la agenda privada, `M1.T01` (`TASK-5`) y `M1.T02` (`TASK-4`) siguen
+bloqueadas —la primera por una decisión de alcance del operador, la segunda
+por `C23`—, y `M2.T03` es `C13`. La siguiente unidad sin bloqueo es
+**`M2.T02`** (`TASK-7`): la suite E2E de Explorer tiene dieciséis casos
+desactivados y ninguno nombra un dueño.
