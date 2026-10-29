@@ -29520,3 +29520,127 @@ esta unidad.
   medición de equivalencia que hoy existe cubre Terraform; este contrato
   llama a los servicios del dominio, no a la CLI ni al MCP. No se afirma
   paridad que no se ha medido.
+
+## 2026-10-29 — El ciclo de M2.T03 queda cerrado en el remoto
+
+**El veredicto del `merge-gate`.** rc=0 sobre `8102f082`: **58 etapas**, ninguna
+en rojo, y el estado `merge-gate=success` publicado en el pull request `#490`.
+La corrida es comprobable después del hecho: queda en la base de eventos del
+gate —`.pipelinek/merge-gate.db`—, con su identificador de corrida
+`79b5ae56-929c-4bb9-b9ee-b2c3462c5ee9` y su `correlationId`
+`5d2540b2-01d2-421b-96c7-be1a48dc697c`. El gate corrió con su propio directorio
+de compilación aislado, así que su veredicto es atribuible al árbol exacto que
+GitHub iba a proteger.
+
+**La fusión.** El pull request `#490` se fusionó por squash como `d9bf2b45`.
+El `merge-gate` es la autoridad y estaba verde sobre `8102f082`, que es
+exactamente la cabeza que GitHub iba a proteger y la misma sobre la que corrió
+la batería completa: el squash cambia el SHA, no el árbol.
+
+**Lo que queda en el árbol, después del cierre.** El corpus
+`sandbox/fixtures/kotlin-java/` —doce ficheros, ocho en Kotlin y cuatro en Java,
+en seis paquetes— y el contrato
+`crates/cognicode-core/tests/c13_kotlin_java_relation_contract.rs`, con nueve
+tests. El corpus declara un homónimo (`run`, declarado tres veces, en dos
+paquetes y dos lenguajes, y llamado **sin import** a propósito), un par de
+overloads (`invoke()` e `invoke(int)` en el mismo fichero Java) y las cuatro
+relaciones que sí se pueden probar: de Kotlin a Java, de Java a Kotlin, de
+Kotlin a Kotlin y de fichero a fichero. La contraparte positiva es lo que
+impide que el contrato sea un PASS vacío: sin esas cuatro relaciones,
+«no sale ninguna arista» se cumpliría igual con un corpus que no se lee.
+
+**Lo medido sobre ese corpus:** el extractor lee **SEIS** llamadas y el grafo
+publica **CUATRO** relaciones; las dos que no publica son exactamente las dos
+que no se pueden probar.
+
+**El poder discriminante, medido.** Un contrato que no puede fallar no mide
+nada. Se comprobó con una perturbación focalizada del resolvedor: la rama
+ambigua pasa a devolver la primera coincidencia por nombre. El contrato pasa a
+**rc=101**, con **6 pasados y 3 fallidos** —`no_relation_is_born_for_a_homonym`,
+`no_relation_is_born_for_an_overload` y
+`the_graph_publishes_no_relation_beyond_the_ones_it_can_prove`—, que son
+exactamente las tres negativas que el contrato existe para fijar. Restaurado el
+fichero byte a byte, el contrato vuelve a `rc=0` con 9 pasados.
+
+**Los gates, medidos.**
+
+- `bash scripts/test-fast.sh`: **rc=0**. El selector CR-08 chose
+  `strategy=changed`, `suites=[core,ladybug]`: el contrato nuevo vive en
+  `crates/cognicode-core/**`, el corpus vive en `sandbox/**` —que la lane de
+  certificación cubre y que no añade suite de cargo— y los documentos de este
+  corte en `docs/**`, que traen la suite de ladybug. En verde: **2416** pasados
+  del core (2 ignorados), **9** del contrato nuevo y **66** de ladybug —
+  **2491** pasados, 0 fallidos.
+- `bash scripts/test-full.sh`: **rc=0**. `fmt --check` sin cambios, clippy con
+  `-D warnings` limpio, `cargo test --workspace` con **6498** pasados, 0
+  fallidos y 34 ignorados, doc-tests con **8** pasados, 12 ignorados y 0
+  fallidos, explorer multimodal en verde (**4** pasados), **454 contratos** en
+  63 ficheros con 0 fallos, y `known_failures (core/lib)` sin diferencias.
+
+**Una corrección de un número.** El recibo de la implementación —el que entró
+en `main` con el squash `d9bf2b45`— cita `cargo test --workspace` con 6486
+pasados y 22 ignorados. Ese par no corresponde a ninguna de las dos corridas
+completas de este ciclo: las dos —la del árbol de la implementación y la del
+cierre documental— miden **6498** pasados, 0 fallidos y 34 ignorados, y sus
+logs dan el mismo total. El journal es append-only, así que aquel recibo no se
+reescribe: la corrección vive aquí, y el número que se publica es el medido.
+
+**El inventario del harness, medido antes y después.**
+
+| | antes | después |
+|---|---|---|
+| ficheros de test en `crates/` | 234 | **235** (+1) |
+| contratos de CI (`scripts/ci/*.py`) | 62 | **62** (0) |
+| ficheros versionados en `sandbox/fixtures/` | 973 | **985** (+12) |
+
+El gate no crece: un fichero de test y doce ficheros de corpus. Los doce son
+datos, no comprobaciones, y el único fichero de test nuevo es el contrato de
+esta unidad.
+
+**Lo que este corte NO cubre, y queda declarado.**
+
+- **La pérdida de una relación no se reporta.** MEDIDO: las dos referencias
+  refusadas no aparecen ni como arista ni como pendiente, y el estado del
+  build dice `Complete`. Lo que se pierde es su IDENTIDAD —qué llamada, en
+  qué fichero y por qué motivo: ambigua con N candidatos, o sin candidato—,
+  y con ella la razón por la que el build dice `Complete`. El RECUENTO sí se
+  publica, pero sólo en la estrategia `full`
+  (`GraphCoverageMetrics.unresolved_edges: 2`); en `per_file` no aparece en
+  ninguna parte. Eso contradice K-REL-02 MUST —«cada arista almacena […]
+  `to TargetResolution` […] y `reason` si no pudo resolverse»— y K-REL-07 MUST
+  —«cualquier pérdida de relaciones debe aparecer en cobertura»— de
+  `docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-RELATIONS.md`,
+  y es la casilla que K2 tiene abierta en `MILESTONES.md`. Es cross-language:
+  cambiar la semántica de `BuildStatus::Complete` toca ocho ficheros de test
+  de integración. **Esta unidad no lo arregla; lo enrutó a una unidad propia,
+  con su tarea, en la bandeja local de Backlog.md.**
+- **El overload correcto no se resuelve**, y no por falta de esfuerzo: la
+  aridad no viaja por el pipeline. `FileFacts.calls` es
+  `Vec<(Symbol, String)>`, es decir, el NOMBRE del callee y nada más.
+- **La equivalencia CLI/MCP no se ha ejercido sobre este corpus.** La
+  medición de equivalencia que hoy existe cubre Terraform; este contrato
+  llama a los servicios del dominio, no a la CLI ni al MCP. No se afirma
+  paridad que no se ha medido.
+
+**La tarea en la bandeja.** `TASK-13` (M2.T03) queda cerrada en la bandeja
+local de Backlog.md con el SHA `d9bf2b45`, que es el de la implementación en
+`main`: los **dos** criterios de aceptación y los **dos** de Definition of Done
+tienen evidencia real —el RED medido sobre el camino malo (rc=101 con el
+resolvedor mutado), el verde de `fast` y de `full`, el `merge-gate` con 58
+etapas en verde, y este recibo, que cita el SHA—. La tarea que este corte abre
+es `TASK-14`: la pérdida de una relación no se publica, y por eso necesita
+dueño propio.
+
+**La puerta que queda abierta.** La cola viva del proyecto
+(`goal-compass.json`) queda con `C23` (50, bloqueada por el operador): la
+ficha `C13` sale de la cola al cerrarse, porque la cola enumera lo que está
+por hacer y esta unidad ya está hecha. En la agenda privada, `M1.T01`
+(`TASK-5`) y `M1.T02` (`TASK-4`) siguen bloqueadas —la primera por una
+decisión de alcance del operador, la segunda por `C23`—.
+
+**H4.4 cycle 1 closed.** H4.4 acceptance: PASS (el RED medido sobre el
+resolvedor mutado, el verde de `fast` y de `full`, el `merge-gate` con 58
+etapas sin una roja, y este recibo).
+
+Con esto la cola se queda **sin ninguna unidad sin bloqueo**: la siguiente la
+desbloquea el operador, y no este documento.

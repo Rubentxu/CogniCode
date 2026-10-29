@@ -414,17 +414,17 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   cerró H0.1..H0.5 en `bc3733a`. Las unidades realmente abiertas son
 >   las que el Journal había seguido por nombre de H-unit, sin el
 >   nombre de spec con el que se escribieron:
->   **H4.4** (relaciones Kotlin↔Java, sólo cuando se pueden probar) y
 >   **H5** (incremental/distribución: `SnapshotKey`, identidades de caché por
 >   ruta y corte de release; la identidad del snapshot ya se declara).
->   **Sí tienen spec propio**, aunque no con
->   esos nombres: H4 es **K2** en
->   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y tiene
->   **su propio ADR de autoridad normativa** —
->   `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
->   (K2). H5 tiene la suya en
+>   **Sí tiene spec propio**, aunque no con
+>   ese nombre: H5 tiene la suya en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md`
 >   y `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
+>   La unidad de relaciones Kotlin↔Java, ya cerrada, tenía la suya en
+>   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md` y su ADR
+>   normativo en
+>   `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
+>   (K2).
 >
 >   **H23** — la poda por obligaciones y el coste de la fase de tests: las
 >   superficies que ningún gate ejecuta y el tiempo de gate que no compra

@@ -29,24 +29,6 @@
       "risk": "high",
       "priority": 50,
       "source": "roadmap"
-    },
-    {
-      "candidateId": "C13",
-      "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
-      "unit": "H4.4",
-      "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
-      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. C12 esta cerrada: el corpus Kotlin que esta unidad necesita ya tiene lector, gramática y contrato permanente, asi que lo que falta aqui es el lado Java y la prueba de que no sale ninguna arista sin evidencia.",
-      "evidenceRefs": [
-        "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md"
-      ],
-      "doneWhen": [
-        "existe un corpus `.kt`/`.java` con homonimos y un test que demuestra que no sale ninguna arista cuando el objetivo no se puede probar",
-        "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
-      ],
-      "scope": "H4.4",
-      "risk": "high",
-      "priority": 10,
-      "source": "roadmap"
     }
   ]
 }

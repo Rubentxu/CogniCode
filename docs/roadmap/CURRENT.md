@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `565b14598a87f386ce31a807f23c17e4f0cefdcc` (la
+> **Snapshot**: 2026-10-29, sobre `d9bf2b4588a590e8ff9f602abe0e2e798cb449b9` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -194,7 +194,6 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
-| **H4.4** (`C13`) | relaciones Kotlin↔Java, sólo cuando se pueden probar | `ROADMAP.md` §11 |
 
 **El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
 La identidad vive ahora en el dominio, en un valor con constructor puro: `SnapshotKey` dice qué se miró (el workspace), quién lo miró (el analizador: su versión, su commit y sus capacidades) y con qué forma se escribió (el esquema). El snapshot la guarda y se decide con ella, y la primera pregunta al cargar es sobre el productor, que no cuesta nada porque se responde sin leer el árbol. Si lo produjo otro analizador, no se sirve: el producto reconstruye y el motivo queda en el log. La base publicada gana cuatro campos que salen de la misma clave con la que se escribe el snapshot, y el catálogo publicado declara los mismos.
@@ -542,6 +541,42 @@ incremental 2 en vez de 1—. El GREEN está medido: `test-fast` rc=0
 pruebas del workspace, 8 doc-tests, 439 contratos en 61 ficheros, `known_failures`
 sin diferencias). La herramienta MCP y la sesión de workspace publican la misma
 medida.
+
+**Las relaciones Kotlin↔Java se publican sólo cuando se pueden probar, está
+cerrada.** El grafo publicaba una arista cada vez que el nombre del callee
+encontraba *alguna* declaración, y en un corpus donde ese nombre está declarado
+varias veces eso es elegir un homónimo sin decirlo. La arista nacía, y el
+consumidor recibía una relación que el producto no había probado: el nombre
+`run` está declarado tres veces —dos en Kotlin y una en Java, en dos paquetes— y
+el grafo no puede decir cuál sin inventarlo.
+Ahora hay un corpus versionado, `sandbox/fixtures/kotlin-java/`, con doce
+ficheros —ocho en Kotlin y cuatro en Java, en seis paquetes— que declara los
+homónimos y los overloads que **no** se pueden probar, y un contrato
+permanente que lo comprueba. MEDIDO: el extractor lee SEIS llamadas y el grafo
+publica CUATRO relaciones; las dos que no publica son exactamente las dos que no
+se pueden probar. Las otras cuatro sí se publican —Kotlin→Java, Java→Kotlin,
+Kotlin→Kotlin y fichero a fichero—, y son las que hacen que la negativa no sea
+un PASS vacío: sin ellas, «no sale ninguna arista» se cumpliría igual con un
+corpus que no se lee.
+La forma de la resolución queda fijada por el mismo contrato: `TargetResolution`
+tiene TRES variantes, sólo `Resolved` nombra un destino, y el fichero dice por
+qué la cuarta —`External`— no existe: no hay tabla de símbolos externos, y una
+variante que nadie puede construir es una hipótesis que sobrevive más que el
+código que debería haberla llenado. El `match` del contrato no tiene brazo `_`:
+una cuarta variante rompe la COMPILACIÓN, que es un fallo que ni el CI puede
+dejar pasar por alto. El RED está medido sobre el camino malo: con el
+resolvedor mutado para que elija un candidato arbitrario, el contrato falla con
+rc=101 (6 pasaron, 3 fallaron); restaurado, pasa con 9.
+Lo que este corte NO cubre, y queda declarado: la pérdida de una relación no se
+publica. MEDIDO: las dos referencias refusadas no aparecen ni como arista ni
+como pendiente, y la ruta por fichero dice `Complete`. Eso contradice K-REL-02 y
+K-REL-07, y está enrutado a su propia tarea —`TASK-14`, que vive en la bandeja
+local de Backlog.md, fuera de Git por la política de documentos privados—,
+fuera del alcance de esta unidad. El caso del overload que sí se podría elegir —el que ADR-K003 pide—
+tampoco es implementable hoy: el pipeline sólo transporta el NOMBRE del callee
+(`FileFacts.calls` es `Vec<(Symbol, String)>`), así que la aridad que
+distinguiría los dos `invoke` no llega al resolvedor. Y la equivalencia
+CLI/MCP medida hasta hoy cubre Terraform, no este corpus.
 
 ## La misión
 
