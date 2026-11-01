@@ -458,22 +458,10 @@ pipeline {
 
         // ---------------------------------------------------------------- test-pr
         stage("test-pr") {
-            // core (pr-ci.yml:291-300)
-            stage("core-lib") {
-                sh("$cd && cargo test -p cognicode-core --lib --quiet")
-            }
-
-            // One cargo invocation for the three named core contracts: the
-            // adversarial campaign, product asset resolution and the regression
-            // budget. Same suites, same order.
-            stage("core-named-contracts") {
-                sh("$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --test a014_product_asset_resolution --test e91_w7_regression_budget --quiet")
-            }
-
-            stage("core-prf-mcp-05") {
-                sh("$cd && cargo test -p cognicode-core --lib prf_mcp_05 --quiet")
-            }
-
+            // core: the unit tests, the three named contracts and the prf_mcp_05
+            // subset run inside core-unrestricted-evidence-kernel, which runs
+            // every core test target with the evidence-kernel feature on.
+            // Compared by test name with --list: nothing was dropped.
             stage("core-adversarial-e2e") {
                 // MEDIDO 2026-10-15. This suite spawns `cognicode-mcp` and resolves
                 // it by walking the target directory itself; `cargo test` does not
