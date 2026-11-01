@@ -695,7 +695,6 @@ dependencies = [
  "axum",
  "clap",
  "cognicode-core",
- "cognicode-runtime",
  "http",
  "http-body-util",
  "opentelemetry",
