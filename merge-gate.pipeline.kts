@@ -463,9 +463,9 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-core --lib --quiet")
             }
 
-            // One cargo invocation for the three named core contracts (TASK-36):
-            // PRF-SEC-07 adversarial campaign, A-014 product asset resolution and
-            // the CR-05 e91.W7 regression budget. Same suites, same order.
+            // One cargo invocation for the three named core contracts: the
+            // adversarial campaign, product asset resolution and the regression
+            // budget. Same suites, same order.
             stage("core-named-contracts") {
                 sh("$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --test a014_product_asset_resolution --test e91_w7_regression_budget --quiet")
             }
@@ -612,7 +612,7 @@ pipeline {
             // advisory without still exposing the endpoint is the regression
             // this pins.
             // cli named contracts (pr-ci.yml:408-528)
-            // One cargo invocation per crate: every separate `cargo test --test` pays ~50 s of fixed cost (TASK-36). Same suites, same order; the first failing one stops the run.
+            // One cargo invocation per crate: every separate `cargo test --test` pays ~50 s of fixed cost. Same suites, same order; the first failing one stops the run.
             stage("cli-named-contracts") {
                 sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --test qw04_preflight_contract --test a013_lifecycle_gate_contract --test a014_capabilities_json --test a015_licenses_gate --test a015_onboarding_gate --test action_register_identity_contract --quiet")
             }
@@ -701,7 +701,9 @@ pipeline {
             // stage cli-gate-coverage-contract removed 2026-10-18 (W0.1 unblock; sign-off operador)
 
             // mcp (pr-ci.yml:453-501)
-            // One cargo invocation per crate (TASK-36). Includes CR-07 (/metrics exposition), A-009/010/012/016 and PRF F4.W3/F5.W3.
+            // One cargo invocation per crate: metrics exposition, agent-safe profile,
+            // tool authority audit, structured output, tools/runtime consistency,
+            // corrupt-cache recovery and signal cancellation.
             stage("mcp-named-contracts") {
                 sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --test a009_agent_safe_profile --test a010_tool_authority_audit --test a012_structured_output --test a016_tools_runtime_consistency --test prf_f4_w3_corrupt_cache_recovery --test prf_f5_w3_signal_cancel --quiet")
             }
