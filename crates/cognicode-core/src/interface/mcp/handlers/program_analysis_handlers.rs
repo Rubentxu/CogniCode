@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::program_analysis::ProgramAnalysisService;
 use crate::domain::analytics::descriptor::{AlgorithmId, AnalyticsError, RunOutput};
-use crate::domain::plan::limits::PlanLimits;
 use crate::domain::findings::sha256_hex;
+use crate::domain::plan::limits::PlanLimits;
 
 // ---------------------------------------------------------------------------
 // Input shapes
