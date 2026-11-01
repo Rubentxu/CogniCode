@@ -54,9 +54,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # `cargo test -p cognicode-cli --test a015_onboarding_gate`, con los
 # argumentos en el orden que escribe la gente. El crate puede ir antes o
 # despues del selector de target.
-INVOCATION = re.compile(
-    r"-p\s+(\S+)[^\n]*?--test\s+([A-Za-z0-9_]+)"
-)
+INVOCATION = re.compile(r"-p\s+(\S+)([^\n]*--test\s[^\n]*)")
+TEST_FLAG = re.compile(r"--test\s+([A-Za-z0-9_]+)")
 
 failures: list[str] = []
 
@@ -77,9 +76,34 @@ def suites_of(path: Path) -> set[tuple[str, str]]:
         line = raw.strip()
         if line.startswith("//") or line.startswith("#"):
             continue
-        for crate, suite in INVOCATION.findall(line):
-            out.add((crate, suite))
+        for crate, rest in INVOCATION.findall(line):
+            # Una invocacion puede llevar varios `--test`: todos se comprueban.
+            for suite in TEST_FLAG.findall(rest):
+                out.add((crate, suite))
     return out
+
+
+def test_every_test_flag_of_one_invocation_is_seen() -> None:
+    """`cargo test -p X --test a --test b` nombra DOS suites, no una.
+
+    Agrupar las suites de un crate en una sola invocacion es lo que abarata el
+    gate; si el extractor solo viera la primera, las demas dejarian de
+    comprobarse y una errata en `b` volveria a ser portadora durante meses.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp) / "x.pipeline.kts"
+        fixture.write_text(
+            'sh("$cd && cargo test -p cognicode-cli --test a --test b --quiet")\n'
+            "// cargo test -p cognicode-cli --test comentada\n",
+            encoding="utf-8",
+        )
+        got = suites_of(fixture)
+    check(
+        got == {("cognicode-cli", "a"), ("cognicode-cli", "b")},
+        f"una invocacion con dos --test debe dar las dos suites; dio {sorted(got)}",
+    )
 
 
 def test_every_named_suite_exists_under_the_crate_it_names() -> None:
