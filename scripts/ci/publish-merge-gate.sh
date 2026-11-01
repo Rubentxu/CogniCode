@@ -63,6 +63,7 @@ MERGE_GATE_CONTEXT="merge-gate"
 # Kept in the repository so the verdict is auditable after the fact, which is
 # the only thing that makes a posted status worth anything.
 PIPELINE_DB=".pipelinek/merge-gate.db"
+LANE="merge-gate.pipeline.kts"
 
 sha="${1:-HEAD}"
 repo="${2:-}"
@@ -106,6 +107,19 @@ if [ "$subject_rc" -ne 0 ]; then
     echo "==> the header of this merge is not admitted; the gate did not run and nothing was published" >&2
     exit "$subject_rc"
 fi
+
+# Which lane backs the status. A change that touches documentation only
+# (`change-class.sh` fails closed: any doubt is `code`) is judged by
+# `docs-gate.pipeline.kts`, which runs every contract and every Rust test that
+# reads repository documents, and compiles nothing new. Any other change runs
+# the full merge gate. The description below names the lane, so a documentation
+# verdict can never be read as a full one.
+change_class="$(bash "$REPO_ROOT/scripts/ci/change-class.sh" "$resolved" origin/main)"
+if [ "$change_class" = "docs" ]; then
+    LANE="docs-gate.pipeline.kts"
+    PIPELINE_DB=".pipelinek/docs-gate.db"
+fi
+echo "==> change class: $change_class -> $LANE"
 
 echo "==> running the merge authority for $resolved"
 echo "    database: $PIPELINE_DB"
@@ -160,16 +174,16 @@ set +e
 # invoked; caching on top of that is the one saving that turns it into a
 # rubber stamp. `--rerun` pays the full price and means the published
 # status corresponds to the SHA in its own description.
-pipelinek run --rerun --db "$PIPELINE_DB" merge-gate.pipeline.kts
+pipelinek run --rerun --db "$PIPELINE_DB" "$LANE"
 lane_rc=$?
 set -e
 
 if [ "$lane_rc" -eq 0 ]; then
     state="success"
-    description="merge-gate.pipeline.kts passed on $resolved (pipelinek, db: $PIPELINE_DB)"
+    description="$LANE passed on $resolved (pipelinek, db: $PIPELINE_DB)"
 else
     state="failure"
-    description="merge-gate.pipeline.kts failed with exit $lane_rc on $resolved (pipelinek, db: $PIPELINE_DB)"
+    description="$LANE failed with exit $lane_rc on $resolved (pipelinek, db: $PIPELINE_DB)"
 fi
 
 echo "==> publishing $MERGE_GATE_CONTEXT=$state to $repo@$resolved"
