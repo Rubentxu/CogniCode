@@ -514,7 +514,7 @@ export const handlers = [
   // -----------------------------------------------------------------------
   // 9. Apply lens
   // -----------------------------------------------------------------------
-  http.get("/api/objects/:object_id/lenses/:lens_id/apply", async ({ params }) => {
+  http.get("/api/objects/:object_id/lenses/:lens_id", async ({ params }) => {
     await delay(LATENCY_MS);
     const lensId = params["lens_id"] as string;
     return HttpResponse.json({
