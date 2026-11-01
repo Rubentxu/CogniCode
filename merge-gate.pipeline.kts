@@ -614,7 +614,13 @@ pipeline {
             // cli named contracts (pr-ci.yml:408-528)
             // One cargo invocation per crate: every separate `cargo test --test` pays ~50 s of fixed cost. Same suites, same order; the first failing one stops the run.
             stage("cli-named-contracts") {
-                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --test qw04_preflight_contract --test a013_lifecycle_gate_contract --test a014_capabilities_json --test a015_licenses_gate --test a015_onboarding_gate --test action_register_identity_contract --quiet")
+                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --test qw04_preflight_contract --test a013_lifecycle_gate_contract --test a014_capabilities_json --test a015_licenses_gate --test action_register_identity_contract --quiet")
+            }
+
+            // Kept apart on purpose: A-015 names two gates and the contract
+            // requires the stage that runs onboarding to say so in its name.
+            stage("cli-a015-onboarding-gate") {
+                sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
             }
 
             // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
