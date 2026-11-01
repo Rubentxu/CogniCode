@@ -932,3 +932,31 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+def test_fallback_clippy_is_scoped_to_the_touched_crates() -> None:
+    """TASK-24: en fallback, clippy recibe `-p` de los crates tocados.
+
+    `crates/cognicode-graph-algos/` no lo conoce ninguna regla de CR-08, asi
+    que fuerza el fallback con un solo crate tocado. `--workspace` encarecia
+    cada iteracion. Si un path cae fuera de `crates/<crate>/`, no se sabe a
+    que crate acotar y el workspace entero se conserva.
+    """
+    def clippy_calls(paths: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            done, recorded = fast_run_in_a_lab(Path(directory), paths)
+        assert done.returncode == 0, done.stderr
+        assert "fallback" in done.stdout, done.stdout
+        return [l for l in recorded.splitlines() if l.startswith("clippy")]
+
+    scoped = clippy_calls("crates/cognicode-graph-algos/src/lib.rs")
+    assert scoped and all("--workspace" not in l for l in scoped), (
+        f"FAIL: clippy en fallback uso --workspace con un solo crate: {scoped}"
+    )
+    assert any("-p cognicode-graph-algos" in l for l in scoped), scoped
+
+    blind = clippy_calls(
+        "crates/cognicode-graph-algos/src/lib.rs product/tools.json"
+    )
+    assert blind and all("--workspace" in l for l in blind), (
+        f"FAIL: con un path fuera de crates/ debe conservarse --workspace: {blind}"
+    )
