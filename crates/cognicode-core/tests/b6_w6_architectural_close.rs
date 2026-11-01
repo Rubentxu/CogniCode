@@ -198,6 +198,29 @@ fn mcp_does_not_depend_on_cli_runtime() {
 }
 
 // =============================================================================
+// Test 2b — mcp_does_not_depend_on_cognicode_runtime
+// =============================================================================
+
+/// `cognicode-mcp` never calls into `cognicode-runtime`. Declaring it
+/// anyway pulls `cognicode-explorer`, `cognicode-ladybug` and `lbug`
+/// (a C++ build) into every build of the stdio MCP server.
+///
+/// `cognicode-mcp` no llama nunca a `cognicode-runtime`. Declararlo
+/// igualmente arrastra `cognicode-explorer`, `cognicode-ladybug` y
+/// `lbug` (un build de C++) a cada build del servidor MCP stdio.
+#[test]
+fn mcp_does_not_depend_on_cognicode_runtime() {
+    let cargo = repo_root().join("crates/cognicode-mcp/Cargo.toml");
+    let deps = workspace_path_deps(&cargo);
+    assert!(
+        !deps.iter().any(|d| d == "cognicode-runtime"),
+        "cognicode-mcp must NOT depend on cognicode-runtime — it has no \
+         use for it and it drags explorer, ladybug and lbug into every \
+         MCP build. Found: {deps:?}"
+    );
+}
+
+// =============================================================================
 // Test 3 — large_coordinators_have_a_size_ratchet
 // =============================================================================
 
