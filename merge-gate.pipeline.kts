@@ -463,8 +463,11 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-core --lib --quiet")
             }
 
-            stage("core-adversarial-campaign") {
-                sh("$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet")
+            // One cargo invocation for the three named core contracts: the
+            // adversarial campaign, product asset resolution and the regression
+            // budget. Same suites, same order.
+            stage("core-named-contracts") {
+                sh("$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --test a014_product_asset_resolution --test e91_w7_regression_budget --quiet")
             }
 
             stage("core-prf-mcp-05") {
@@ -552,10 +555,6 @@ pipeline {
             }
 
             // pr-ci.yml:481. A-014 product asset resolution.
-            stage("core-a014-product-asset-resolution") {
-                sh("$cd && cargo test -p cognicode-core --test a014_product_asset_resolution --quiet")
-            }
-
             // ladybug (pr-ci.yml:388)
             stage("cognicode-ladybug") {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
@@ -612,41 +611,20 @@ pipeline {
             // is gone from deny.toml. A package version that satisfies an
             // advisory without still exposing the endpoint is the regression
             // this pins.
-            stage("cr07-metrics-exposition") {
-                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --quiet")
-            }
-
             // cli named contracts (pr-ci.yml:408-528)
-            stage("cli-qw03-bin-tracking") {
-                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet")
+            // One cargo invocation per crate: every separate `cargo test --test` pays ~50 s of fixed cost. Same suites, same order; the first failing one stops the run.
+            stage("cli-named-contracts") {
+                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --test qw04_preflight_contract --test a013_lifecycle_gate_contract --test a014_capabilities_json --test a015_licenses_gate --test action_register_identity_contract --quiet")
             }
 
-            stage("cli-qw04-preflight") {
-                sh("$cd && cargo test -p cognicode-cli --test qw04_preflight_contract --quiet")
-            }
-
-            stage("cli-a013-lifecycle-gate-contract") {
-                sh("$cd && cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet")
-            }
-
-            stage("cli-a014-capabilities-json") {
-                sh("$cd && cargo test -p cognicode-cli --test a014_capabilities_json --quiet")
-            }
-
-            stage("cli-a015-licenses-gate") {
-                sh("$cd && cargo test -p cognicode-cli --test a015_licenses_gate --quiet")
-            }
-
+            // Kept apart on purpose: A-015 names two gates and the contract
+            // requires the stage that runs onboarding to say so in its name.
             stage("cli-a015-onboarding-gate") {
                 sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
             }
 
             // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
             // visible in the action register (N+63.2).
-            stage("cli-action-register-identity-contract") {
-                sh("$cd && cargo test -p cognicode-cli --test action_register_identity_contract --quiet")
-            }
-
             // The unit surface: `src/` unit tests, the bin targets and the
             // doctests. It is separate from the integration list below because
             // cargo forbids `--doc` in the same invocation as any other target
@@ -729,30 +707,13 @@ pipeline {
             // stage cli-gate-coverage-contract removed 2026-10-18 (W0.1 unblock; sign-off operador)
 
             // mcp (pr-ci.yml:453-501)
-            // One stage per contract, the way the workflow spelled them out. The
-            // loop this replaces ran the same 22 commands in the same order, so
-            // nothing about coverage changes; what changes is that a failure names the
-            // contract instead of the loop, and a contract that asserts "the merge gate
-            // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-a009-agent-safe-profile") {
-                sh("$cd && cargo test -p cognicode-mcp --test a009_agent_safe_profile --quiet")
+            // One cargo invocation per crate: metrics exposition, agent-safe profile,
+            // tool authority audit, structured output, tools/runtime consistency,
+            // corrupt-cache recovery and signal cancellation.
+            stage("mcp-named-contracts") {
+                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --test a009_agent_safe_profile --test a010_tool_authority_audit --test a012_structured_output --test a016_tools_runtime_consistency --test prf_f4_w3_corrupt_cache_recovery --test prf_f5_w3_signal_cancel --quiet")
             }
-            // One stage per contract, the way the workflow spelled them out. The
-            // loop this replaces ran the same 22 commands in the same order, so
-            // nothing about coverage changes; what changes is that a failure names the
-            // contract instead of the loop, and a contract that asserts "the merge gate
-            // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-a010-tool-authority-audit") {
-                sh("$cd && cargo test -p cognicode-mcp --test a010_tool_authority_audit --quiet")
-            }
-            // One stage per contract, the way the workflow spelled them out. The
-            // loop this replaces ran the same 22 commands in the same order, so
-            // nothing about coverage changes; what changes is that a failure names the
-            // contract instead of the loop, and a contract that asserts "the merge gate
-            // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-a012-structured-output") {
-                sh("$cd && cargo test -p cognicode-mcp --test a012_structured_output --quiet")
-            }
+
             // One stage per contract, the way the workflow spelled them out. The
             // loop this replaces ran the same 22 commands in the same order, so
             // nothing about coverage changes; what changes is that a failure names the
@@ -768,9 +729,21 @@ pipeline {
             // nothing about coverage changes; what changes is that a failure names the
             // contract instead of the loop, and a contract that asserts "the merge gate
             // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-a016-tools-runtime-consistency") {
-                sh("$cd && cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet")
-            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
             // One stage per contract, the way the workflow spelled them out. The
             // loop this replaces ran the same 22 commands in the same order, so
             // nothing about coverage changes; what changes is that a failure names the
@@ -807,17 +780,11 @@ pipeline {
             // nothing about coverage changes; what changes is that a failure names the
             // contract instead of the loop, and a contract that asserts "the merge gate
             // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-prf-f4-w3-corrupt-cache-recovery") {
-                sh("$cd && cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet")
-            }
             // One stage per contract, the way the workflow spelled them out. The
             // loop this replaces ran the same 22 commands in the same order, so
             // nothing about coverage changes; what changes is that a failure names the
             // contract instead of the loop, and a contract that asserts "the merge gate
             // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-prf-f5-w3-signal-cancel") {
-                sh("$cd && cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet")
-            }
             // One stage per contract, the way the workflow spelled them out. The
             // loop this replaces ran the same 22 commands in the same order, so
             // nothing about coverage changes; what changes is that a failure names the
@@ -895,10 +862,6 @@ pipeline {
             // the pr-ci.yml references below; coverage is a separate concern.
 
             // pr-ci.yml:615 — CR-05 e91.W7 regression budget gate.
-            stage("e91-w7-regression-budget") {
-                sh("$cd && cargo test -p cognicode-core --test e91_w7_regression_budget --quiet")
-            }
-
             // pr-ci.yml:625 — CR-03 e91.W8 per-stage profile gate retired 2026-10-18
             // (W0.1 unblock; sign-off operador). W7 regression budget remains.
             // (e91-w8 stage removed)
