@@ -329,6 +329,29 @@ run_suite() {
   return $rc
 }
 
+# Alcance de clippy en el fallback: `-p <crate>` por cada crate tocado, o
+# `--workspace` si algun path no vive bajo `crates/<crate>/` (o no hay paths).
+touched_crate_scope() {
+  local path crate crates="" outside=0
+  for path in ${PATHS:-}; do
+    case "$path" in
+      crates/*/*)
+        crate="${path#crates/}"
+        crate="${crate%%/*}"
+        case " ${crates} " in *" ${crate} "*) ;; *) crates="${crates} ${crate}" ;; esac
+        ;;
+      *) outside=1 ;;
+    esac
+  done
+  if [ "$outside" -eq 1 ] || [ -z "$crates" ]; then
+    printf '%s' "--workspace"
+    return 0
+  fi
+  for crate in $crates; do
+    printf -- '-p %s ' "$crate"
+  done
+}
+
 # ---------- camino de fallback ----------
 # MEDIDO 2026-10-29, en el cierre de TASK-16. Este bloque estaba mas arriba,
 # antes de `run_suite`, y por eso no podia llamar a `run_suite`: se saltaba
@@ -364,7 +387,14 @@ if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
     printf '\n=== suite: %s (solo el target tocado) ===\n' "$s"
     run_suite "$s" touched-only || fallback_rc=1
   done
-  cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
+  # TASK-24: clippy solo sobre los crates que el diff toca. Si algun path
+  # queda fuera de `crates/<crate>/`, no se sabe que crate lo recibe y se
+  # conserva el workspace entero: acotar a ciegas esconderia lints.
+  # El camino `changed` (abajo) sigue con --workspace: ahi la leccion del
+  # 2026-10-19 manda, un dependiente puede romper por una API cambiada.
+  clippy_scope=$(touched_crate_scope)
+  # shellcheck disable=SC2086
+  cargo clippy $clippy_scope --all-targets --quiet -- -D warnings >/dev/null 2>&1
   clippy_rc=$?
   if [ "$TOUCHED_RAN" -eq 0 ]; then
     echo "  AVISO: ningun target de integracion se ha corrido. Los paths tocados"
