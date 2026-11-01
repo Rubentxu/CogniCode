@@ -29,7 +29,7 @@ dos modos contractuales:
 | Modo | Comando | Cuándo |
 |---|---|---|
 | **fast** | `bash scripts/test-fast.sh` | Durante un evolutivo, tras cada cambio de comportamiento. Detecta `git diff` vs `HEAD`, delega en `scripts/ci/select-suites.sh` (CR-08) y corre solo las suites afectadas. Aplica `known_failures.yaml` sobre `cognicode-core/lib` para distinguir regresiones reales del ruido conocido. |
-| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
+| **full** | `bash scripts/test-full.sh` | Antes de tag anotado y de bump SemVer, y en `main` cada noche (regla 1); no antes de cada PR. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
 
 **Reglas duras**:
 
@@ -85,21 +85,24 @@ dos modos contractuales:
    un solo ciclo de compilación—. Un filtro que no selecciona ninguna
    prueba **falla**, para que un nombre mal escrito no se lea como un
    verde. Un run filtrado **no es evidencia de gate** y se declara en
-   pantalla: el gate es `bash scripts/test-full.sh`, sin filtro.
+   pantalla: el gate es el estado `merge-gate` que publica
+   `bash scripts/ci/publish-merge-gate.sh` (regla 1).
 
 **Disciplina diaria**:
 
 - TDD red → green → refactor: `bash scripts/test-fast.sh` entre
   iteraciones, con `--filter` mientras la unidad sea una sola. El
   sub-segundo de feedback es del subset acotado, no de la batería.
-- Antes de pedir review: `bash scripts/test-full.sh` debe terminar
-  con `rc=0`.
+- Antes de pedir review: `python3 scripts/ci/impact.py plan` para ver
+  el carril, y `bash scripts/ci/publish-merge-gate.sh` en verde. Un PR
+  paga un solo veredicto: no se pasa además `test-full.sh`.
 - Antes de tag: `bash scripts/test-full.sh` con `git status` limpio
   y `merge-gate` verde en el PR que introduce el cambio.
 - **Cada ciclo termina integrado en el remoto.** El operador autoriza
   el `push` de la rama de trabajo y la fusión de su PR al cierre de cada
-  ciclo, una vez que `fast` y `full` están verdes, el `merge-gate` ha
-  pasado y el recibo de la unidad está escrito. El `merge-gate` sigue
+  ciclo, una vez que `fast` está verde, el `merge-gate` ha pasado y el
+  recibo de la unidad está escrito (en el cuerpo del squash, o por el
+  carril `docs` si va aparte). El `merge-gate` sigue
   siendo la autoridad: subir la rama no sustituye al gate, publica el
   veredicto que GitHub exige para dejar fusionar. Un tag o una release
   siguen exigiendo su propio gate de candidato y su propia autorización.

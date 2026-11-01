@@ -49,6 +49,10 @@ def test_it_fails_closed() -> None:
         (["rust-toolchain.toml"], "toolchain"),
         (["sandbox/fixtures/x.json"], "fixtures que leen los tests de core"),
         (["algo/nuevo/que/nadie/conoce.rs"], "ruta sin clasificar"),
+        (["scripts/ci/impact.py"], "el propio selector"),
+        (["scripts/ci/publish-merge-gate.sh"], "quien elige el carril"),
+        (["impact-gate.pipeline.kts"], "el carril acotado"),
+        (["docs-gate.pipeline.kts"], "el carril de documentacion"),
     ):
         got = impact.plan(files)["tier"]
         check(got == "full", f"{why} ({files}) debe ser 'full' y es '{got}'")

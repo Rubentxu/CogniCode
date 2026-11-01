@@ -64,7 +64,13 @@ CORE_TESTS = REPO / "crates" / CORE / "tests"
 
 DOCS = re.compile(r"^(docs/|odd/|evidence/|plans/|sdd/|sddk/|openspec/|goal-compass\.json$|[^/]*\.md$)")
 # Cambian lo que se compila en todo el workspace: aqui no hay radio que acotar.
-FULL = re.compile(r"^(Cargo\.toml$|\.cargo/|rust-toolchain|sandbox/)")
+FULL = re.compile(
+    r"^(Cargo\.toml$|\.cargo/|rust-toolchain|sandbox/|"
+    # La maquinaria que decide el carril no se juzga con su propio veredicto
+    # acotado: si cambia, el gate completo demuestra que sigue funcionando.
+    r"scripts/ci/(impact\.py|change-class\.sh|docs-readers\.sh|publish-merge-gate\.sh|run-all-contracts\.sh)$|"
+    r"(docs|impact)-gate\.pipeline\.kts$)"
+)
 # Solo los leen los contratos: el anillo 0 basta.
 CONTRACTS_ONLY = re.compile(
     r"^(scripts/ci/test_[^/]+\.py$|scripts/product/|\.gitignore$|deny\.toml$|"
