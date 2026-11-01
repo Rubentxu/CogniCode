@@ -50,12 +50,10 @@ pub fn digest_of(envelope: &EvidenceExport) -> String {
 }
 
 /// SHA-256 hex de un buffer. Usado por golden tests y por la verificación
-/// del golden en scripts/ci/test_assurance_export_golden.py.
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hex::encode(hasher.finalize())
-}
+/// del golden en scripts/ci/test_assurance_export_golden.py. La
+/// implementación vive en `domain::findings::digest`; se reexporta aquí
+/// para que la ruta publicada no cambie.
+pub use crate::domain::findings::sha256_hex;
 
 /// Asigna el digest correcto al envelope y devuelve una copia lista para
 /// serializar. Helper de `serialize_to_cbor_with_digest` para que la

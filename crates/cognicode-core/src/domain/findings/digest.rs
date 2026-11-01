@@ -114,6 +114,17 @@ mod tests {
     }
 
     #[test]
+    fn sha256_abc_vector_is_lowercase_64_hex() {
+        let hex = sha256_hex(b"abc");
+        assert_eq!(
+            hex,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(hex.len(), 64);
+        assert!(hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+    }
+
+    #[test]
     fn digest_is_stable_and_prefixed() {
         let a = DetectorDigest::from_content("hello");
         let b = DetectorDigest::from_content("hello");

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::application::program_analysis::ProgramAnalysisService;
 use crate::domain::analytics::descriptor::{AlgorithmId, AnalyticsError, RunOutput};
 use crate::domain::plan::limits::PlanLimits;
+use crate::domain::findings::sha256_hex;
 
 // ---------------------------------------------------------------------------
 // Input shapes
@@ -70,17 +71,6 @@ fn dispatch_to_tool_output(
         value,
         digest,
     })
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 /// Extract a [`serde_json::Value`] view from a [`RunOutput`].
