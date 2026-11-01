@@ -193,8 +193,8 @@ docs-check:
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
-# Run all tests (unit + e2e)
-test: test-unit test-e2e
+# Run all tests
+test: test-unit
 
 # Run all unit tests
 test-unit:
@@ -241,15 +241,7 @@ test-lifecycle-e2e:
 test-crate crate:
     cargo test -p {{ crate }} --no-fail-fast
 
-# Run end-to-end tests with Playwright
-test-e2e: start-server
-    @echo "🎭 Running e2e tests..."
-    npx playwright test --config=tests/e2e/playwright.config.js --reporter=list
 
-# Run e2e tests (reuse existing server)
-test-e2e-quick:
-    @echo "🎭 Running e2e tests (quick)..."
-    npx playwright test --config=tests/e2e/playwright.config.js --reporter=list
 
 # Start server for tests
 start-server:
@@ -262,21 +254,8 @@ start-server:
         echo "Server started"; \
     fi
 
-# Run e2e tests with Playwright UI (headed mode)
-test-e2e-headed:
-    @echo "🎭 Running e2e tests (headed)..."
-    npx playwright test --config=tests/e2e/playwright.config.js --headed
 
-# Run e2e test suite (Node.js independent)
-test-e2e-suite:
-    @echo "🎭 Running e2e suite (standalone)..."
-    node tests/e2e/suite.js
 
-# Show Playwright test report
-test-report:
-    @echo "📊 Opening test report..."
-    npx playwright show-report tests/e2e/report/html 2>/dev/null || \
-    echo "No HTML report found. Run 'just test-e2e' first."
 
 # ─── API ───────────────────────────────────────────────────────────────────────
 
@@ -320,12 +299,8 @@ api-history project_path:
 doc:
     @echo "📖 Opening documentation..."
     @test -f docs/dashboard/README.md && echo "Documentation: docs/dashboard/README.md" || \
-        echo "Documentation not found. Run 'just docs-screenshots' first."
+        echo "Documentation not found."
 
-# Take screenshots for documentation
-docs-screenshots:
-    @echo "📸 Taking screenshots..."
-    @test -f tests/e2e/screenshots.js && node tests/e2e/screenshots.js || echo "Create tests/e2e/screenshots.js first"
 
 # ─── Docker ────────────────────────────────────────────────────────────────────
 
