@@ -279,7 +279,7 @@ describe("useLensResult", () => {
     let sawTarget: string | null = null;
     server.use(
       http.get(
-        "/api/objects/:object_id/lenses/:lens_id/apply",
+        "/api/objects/:object_id/lenses/:lens_id",
         ({ request }) => {
           const url = new URL(request.url);
           sawTarget = url.searchParams.get("target");

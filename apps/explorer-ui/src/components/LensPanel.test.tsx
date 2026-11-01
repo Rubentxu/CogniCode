@@ -137,7 +137,7 @@ describe("LensPanel — applying a lens", () => {
       },
     ];
     server.use(
-      http.get("/api/objects/:object_id/lenses/:lens_id/apply", async () => {
+      http.get("/api/objects/:object_id/lenses/:lens_id", async () => {
         await delay(10);
         return HttpResponse.json({
           lens_id: "lens.quality",
@@ -209,7 +209,7 @@ describe("LensPanel — blockers-only filter", () => {
 
   it("filters out non-blocker findings when toggled", async () => {
     server.use(
-      http.get("/api/objects/:object_id/lenses/:lens_id/apply", async () => {
+      http.get("/api/objects/:object_id/lenses/:lens_id", async () => {
         await delay(10);
         return HttpResponse.json(MULTI_FINDINGS);
       }),
@@ -256,7 +256,7 @@ describe("LensPanel — error + empty states", () => {
     // previous tests does not short-circuit our override.
     const uniqueObject = `${ACTIVE_OBJECT_ID}-error-test`;
     server.use(
-      http.get("/api/objects/:object_id/lenses/lens.callgraph/apply", async () => {
+      http.get("/api/objects/:object_id/lenses/lens.callgraph", async () => {
         await delay(10);
         return HttpResponse.json(
           { error: "Server on fire" },
@@ -276,7 +276,7 @@ describe("LensPanel — error + empty states", () => {
   it("shows an empty state when the lens returns zero findings", async () => {
     const uniqueObject = `${ACTIVE_OBJECT_ID}-empty-test`;
     server.use(
-      http.get("/api/objects/:object_id/lenses/lens.hotspots/apply", async () => {
+      http.get("/api/objects/:object_id/lenses/lens.hotspots", async () => {
         await delay(10);
         return HttpResponse.json({
           lens_id: "lens.hotspots",

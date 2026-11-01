@@ -31,7 +31,7 @@ export function useLensResult({
   return useSWR<LensResult, ApiError>(
     objectId && lensId
       ? [
-          `/objects/${encodeURIComponent(objectId)}/lenses/${encodeURIComponent(lensId)}/apply`,
+          `/objects/${encodeURIComponent(objectId)}/lenses/${encodeURIComponent(lensId)}`,
           target ? { target } : undefined,
         ]
       : null,
