@@ -108,17 +108,28 @@ if [ "$subject_rc" -ne 0 ]; then
     exit "$subject_rc"
 fi
 
-# Which lane backs the status. A change that touches documentation only
-# (`change-class.sh` fails closed: any doubt is `code`) is judged by
-# `docs-gate.pipeline.kts`, which runs every contract and every Rust test that
-# reads repository documents, and compiles nothing new. Any other change runs
-# the full merge gate. The description below names the lane, so a documentation
-# verdict can never be read as a full one.
-change_class="$(bash "$REPO_ROOT/scripts/ci/change-class.sh" "$resolved" origin/main)"
-if [ "$change_class" = "docs" ]; then
-    LANE="docs-gate.pipeline.kts"
-    PIPELINE_DB=".pipelinek/docs-gate.db"
-fi
+# Which lane backs the status, proportional to what the change can break
+# (`scripts/ci/impact.py`; it fails closed, so any doubt is `full`):
+#   docs    documentation only  -> docs-gate.pipeline.kts
+#   impact  bounded blast radius -> impact-gate.pipeline.kts
+#   full    anything else        -> merge-gate.pipeline.kts
+# The description below names the lane, so a documentation or bounded verdict
+# can never be read as a full one.
+change_class="$(python3 "$REPO_ROOT/scripts/ci/impact.py" tier --sha "$resolved" --base origin/main 2>/dev/null)" || change_class="full"
+case "$change_class" in
+    docs)
+        LANE="docs-gate.pipeline.kts"
+        PIPELINE_DB=".pipelinek/docs-gate.db"
+        ;;
+    impact)
+        LANE="impact-gate.pipeline.kts"
+        PIPELINE_DB=".pipelinek/impact-gate.db"
+        python3 "$REPO_ROOT/scripts/ci/impact.py" plan --sha "$resolved" --base origin/main || true
+        ;;
+    *)
+        change_class="full"
+        ;;
+esac
 echo "==> change class: $change_class -> $LANE"
 
 echo "==> running the merge authority for $resolved"

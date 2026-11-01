@@ -116,7 +116,7 @@ def test_the_docs_lane_runs_the_tests_that_read_docs() -> None:
 
 def test_the_status_names_the_lane() -> None:
     text = PUBLISH.read_text(encoding="utf-8")
-    check("change-class.sh" in text, "publish-merge-gate.sh no consulta el clasificador")
+    check("impact.py" in text and "tier" in text, "publish-merge-gate.sh no consulta el clasificador (impact.py tier)")
     check('description="$LANE passed' in text,
           "la descripcion del estado no dice que carril lo produjo: un verde de docs se leeria como uno completo")
 

@@ -33,15 +33,23 @@ dos modos contractuales:
 
 **Reglas duras**:
 
-1. **`fast` no sustituye a `full`**. Un `full` verde es prerequisito
-   para cualquier merge a `main` (vía `merge-gate`) y para cualquier
-   bump SemVer. El `fast` solo acelera el feedback loop; no exonera
-   del gate. Y `full` es ahora un **superconjunto** de `merge-gate` en
-   lo que importa: desde 2026-10-18 incluye `run-all-contracts.sh`,
-   sin el cual un `full` verde podía coexistir con un rojo de
-   `merge-gate` (medido: siete superficies públicas declarando la
-   versión anterior). Si añades un stage a `merge-gate.pipeline.kts`,
-   ese stage o su equivalente pertenece también a `full`.
+1. **La prueba es proporcional al cambio.** El estado `merge-gate` que
+   exige `main` lo publica `bash scripts/ci/publish-merge-gate.sh`, que
+   pregunta a `scripts/ci/impact.py` qué puede romper el diff y elige el
+   carril (la descripción del estado lo nombra):
+
+   | Nivel | Cuándo | Carril |
+   |---|---|---|
+   | `docs` | solo documentación | `docs-gate.pipeline.kts`: contratos + tests que leen documentos |
+   | `impact` | radio acotado | `impact-gate.pipeline.kts`: las etapas de `merge-gate` que el cambio alcanza, en anillos (0: fmt, clippy de lo afectado, contratos; 1: lo que cambió; 2: sus dependientes) |
+   | `full` | manifiesto raíz, toolchain, `sandbox/`, o cualquier duda | `merge-gate.pipeline.kts` entero |
+
+   **`full` ya no se pasa antes de cada PR.** Se pasa en `main` cada noche,
+   antes de un tag anotado y antes de un bump SemVer. Esa corrida es la red
+   del selector: si sale un rojo que un PR dio por no afectado, la regla que
+   falló se corrige en `impact.py` con su caso en `test_impact.py`.
+   `python3 scripts/ci/impact.py plan` muestra, antes de gastar un ciclo, qué
+   correrá y por qué.
 2. **El selector CR-08 manda**. `scripts/test-fast.sh` consume la
    salida JSON de `scripts/ci/select-suites.sh` y no la recalcula.
    Si una suite cae en `fallback` (cambio en `Cargo.toml`,
