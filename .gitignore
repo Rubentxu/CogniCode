@@ -61,7 +61,6 @@ AGENTS.local.md
 node_modules/
 *.png
 !apps/explorer-ui/e2e/*.ts-snapshots/*.png
-!tests/e2e/__snapshots__/*.png
 # Criticas y análisis (no comittear)
 critica-constructiva*.md
 
@@ -176,8 +175,6 @@ sandbox/fixtures/tier-c/
 
 # Playwright test artifacts (screenshots, traces, videos from test runs)
 # These are generated each test run and should NOT be committed
-tests/e2e/report/screenshots/
-tests/e2e/report/html/
 apps/explorer-ui/test-results/screenshots/
 apps/explorer-ui/test-results/traces/
 apps/explorer-ui/test-results/videos/

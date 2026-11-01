@@ -6,7 +6,6 @@ echo "🔍 EJECUCIÓN COMPLETA DE TESTS E2E CON VALIDACIÓN VISUAL"
 echo "============================================================"
 echo ""
 
-DASHBOARD_DIR="tests/e2e"
 EXPLORER_DIR="apps/explorer-ui"
 
 # Contadores

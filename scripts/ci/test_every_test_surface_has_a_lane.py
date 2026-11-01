@@ -17,8 +17,7 @@ Measured in this tree, with the rule this contract applies:
       6 contracts under `scripts/product`      run by the contract runner
      83 unit tests under the explorer         no lane runs them
      41 browser tests under the explorer       no lane runs them
-      4 browser tests under `tests/e2e`        no lane runs them
-      8 python tests under the sandbox         no lane runs them
+           8 python tests under the sandbox         no lane runs them
       3 unit tests under the backstage plugin  no lane runs them
 
 The ones on the bottom are not deleted. They stay, and this contract
@@ -129,13 +128,6 @@ WITHOUT_LANE = {
         "specs stay as reference material and are not presented as a "
         "guarantee",
         41,
-    ),
-    "tests/e2e/": (
-        "the browser suite at the root of the repository needs a running "
-        "dev server and a browser, and no pipeline in this repository "
-        "installs or drives either; the specs stay as reference material "
-        "and are not presented as a guarantee",
-        4,
     ),
     "sandbox/scripts/tests/": (
         "these python checks assert against a sandbox that only the "
