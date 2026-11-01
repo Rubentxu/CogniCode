@@ -164,8 +164,6 @@ pub struct WorkspaceSession {
     semantic_index_ready: Arc<RwLock<bool>>,
     /// Symbol code extraction service
     symbol_code: Arc<dyn SymbolSource>,
-    /// Cached call graph (built on demand)
-    graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
     /// Code intelligence provider for document symbols
     intelligence: Arc<dyn CodeIntelligenceProvider>,
     /// Complexity measurement (the tree walk lives in the adapter)
@@ -220,7 +218,6 @@ impl WorkspaceSession {
         // index stays lazy because populating it walks the workspace.
         let semantic_index_ready = Arc::new(RwLock::new(false));
         let symbol_code = capabilities.symbol_source;
-        let graph = Arc::new(RwLock::new(None));
         let intelligence = capabilities.intelligence;
         let complexity = capabilities.complexity;
         let symbol_search = capabilities.symbol_search;
@@ -236,7 +233,6 @@ impl WorkspaceSession {
             symbol_search,
             semantic_index_ready,
             symbol_code,
-            graph,
             intelligence,
             complexity,
             #[cfg(feature = "persistence")]
@@ -277,23 +273,26 @@ impl WorkspaceSession {
         &self.workspace_root
     }
 
+    /// The graph the analysis service holds, or `None` while nothing has
+    /// been published. An empty graph is still a graph: presence is the
+    /// publication, not the symbol count.
+    fn held_graph(&self) -> Option<Arc<CallGraph>> {
+        self.analysis
+            .graph_cache()
+            .current_id()
+            .map(|_| self.analysis.get_project_graph())
+    }
+
+    /// The held graph, or `GraphNotBuilt` when none was published.
+    fn require_graph(&self) -> WorkspaceResult<Arc<CallGraph>> {
+        self.held_graph()
+            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))
+    }
+
     /// Ensures the graph is built, building it on demand if necessary
     async fn ensure_graph_built(&self) -> WorkspaceResult<()> {
-        // Fast path: check AnalysisService's shared graph cache first
-        let shared_graph = self.analysis.get_project_graph();
-        if shared_graph.symbol_count() > 0 {
-            // Update our local cache to point to the shared graph
-            let mut graph_guard = self.graph.write().await;
-            *graph_guard = Some(shared_graph);
+        if self.held_graph().is_some() {
             return Ok(());
-        }
-
-        // Check local cache
-        {
-            let graph_guard = self.graph.read().await;
-            if graph_guard.is_some() {
-                return Ok(());
-            }
         }
 
         // Try to load from persistence store
@@ -304,30 +303,19 @@ impl WorkspaceSession {
                 && let Ok(Some(graph)) = store.load_graph()
                 && graph.symbol_count() > 0
             {
-                let mut graph_guard = self.graph.write().await;
-                *graph_guard = Some(Arc::new(graph));
+                self.analysis.graph_cache().replace(graph);
                 return Ok(());
             }
         }
 
         // Build fresh — build_project_graph is CPU-bound + blocking I/O; use spawn_blocking
         // to avoid starving the tokio thread pool.
-        {
-            let graph_guard = self.graph.read().await;
-            if graph_guard.is_some() {
-                return Ok(());
-            }
-        }
         let analysis = Arc::clone(&self.analysis);
         let workspace_root = self.workspace_root.clone();
         tokio::task::spawn_blocking(move || analysis.build_project_graph(&workspace_root))
             .await
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
             .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-        let mut graph_guard = self.graph.write().await;
-        if graph_guard.is_none() {
-            *graph_guard = Some(self.analysis.get_project_graph());
-        }
         Ok(())
     }
 
@@ -356,8 +344,7 @@ impl WorkspaceSession {
         match store.load_graph() {
             Ok(Some(graph)) => {
                 if graph.symbol_count() > 0 {
-                    let mut graph_guard = self.graph.write().await;
-                    *graph_guard = Some(Arc::new(graph));
+                    self.analysis.graph_cache().replace(graph);
                     Ok(true)
                 } else {
                     Ok(false)
@@ -377,9 +364,8 @@ impl WorkspaceSession {
         use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
+        let graph = self
+            .held_graph()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("No graph to save".to_string()))?;
 
         let store_guard = self.graph_store.read().await;
@@ -388,7 +374,7 @@ impl WorkspaceSession {
         })?;
 
         // Save the graph
-        store.save_graph(graph).map_err(|e| {
+        store.save_graph(&graph).map_err(|e| {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to save graph: {}", e))
         })?;
 
@@ -511,14 +497,7 @@ impl WorkspaceSession {
         // Verify graph exists (read lock, then IMMEDIATELY drop it before any await)
         // The graph as it stands now is the baseline the symbol counts are
         // measured against: it is what the workspace held before this pass.
-        let baseline_graph = {
-            let graph_guard = self.graph.read().await;
-            match graph_guard.as_ref() {
-                Some(graph) => Arc::clone(graph),
-                None => return Err(WorkspaceError::GraphNotBuilt("Graph not built".to_string())),
-            }
-            // graph_guard dropped here — MUST be dropped before spawn_blocking + write lock
-        };
+        let baseline_graph = self.require_graph()?;
 
         // Count files that will be skipped (not in new/modified/deleted)
         let total_files = current_files.len();
@@ -560,10 +539,6 @@ impl WorkspaceSession {
 
         // Update local graph cache to point to the rebuilt graph
         let new_graph = self.analysis.get_project_graph();
-        {
-            let mut graph_guard = self.graph.write().await;
-            *graph_guard = Some(Arc::clone(&new_graph));
-        }
 
         result.graph_updated = true;
 
@@ -873,10 +848,6 @@ impl WorkspaceSession {
         .await
         .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
         .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-
-        // Update local graph cache from the shared analysis cache
-        let mut graph_guard = self.graph.write().await;
-        *graph_guard = Some(self.analysis.get_project_graph());
         Ok(())
     }
 
@@ -898,10 +869,7 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<GetCallHierarchyResult> {
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
         let direction = match direction {
             "incoming" | "callers" => TraversalDirection::Callers,
@@ -909,7 +877,7 @@ impl WorkspaceSession {
             _ => TraversalDirection::Both,
         };
 
-        let index = self.build_symbol_name_index(graph);
+        let index = self.build_symbol_name_index(&graph);
         let search_name = symbol.to_lowercase();
 
         let symbol_ids: Vec<_> = index
@@ -982,12 +950,9 @@ impl WorkspaceSession {
 
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
-        let index = self.build_symbol_name_index(graph);
+        let index = self.build_symbol_name_index(&graph);
         let search_name = symbol.to_lowercase();
         let symbol_ids: Vec<_> = index
             .get(&search_name)
@@ -1054,10 +1019,7 @@ impl WorkspaceSession {
 
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
         // A score over a graph with no symbols is a perfect score over
         // nothing. The workspace has no analyzable material, and saying so
@@ -1070,7 +1032,7 @@ impl WorkspaceSession {
         }
 
         let cycle_detector = CycleDetector::new();
-        let cycle_result = cycle_detector.detect_cycles(graph);
+        let cycle_result = cycle_detector.detect_cycles(&graph);
 
         let cycles: Vec<crate::application::dto::CycleInfo> = cycle_result
             .cycles
@@ -1158,10 +1120,7 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<String> {
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
         let options = crate::domain::aggregates::call_graph::MermaidOptions {
             root: root.map(|s| s.to_string()),
@@ -1223,10 +1182,7 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<crate::application::dto::BuildIndexResult> {
         // Check if graph is already built (idempotency guard)
         {
-            let graph_guard = self.graph.read().await;
-            if let Some(ref graph) = *graph_guard
-                && graph.symbol_count() > 0
-            {
+            if let Some(graph) = self.held_graph() {
                 return Ok(crate::application::dto::BuildIndexResult {
                     success: true,
                     strategy: strategy.to_string(),
@@ -1249,10 +1205,6 @@ impl WorkspaceSession {
         let symbols = graph.symbol_count();
         let edges = graph.edge_count();
 
-        // Store the built graph for future cached access
-        let mut graph_guard = self.graph.write().await;
-        *graph_guard = Some(graph.clone());
-
         Ok(crate::application::dto::BuildIndexResult {
             success: true,
             strategy: strategy.to_string(),
@@ -1267,10 +1219,8 @@ impl WorkspaceSession {
         use crate::domain::value_objects::Language;
         use std::collections::HashMap;
 
-        let graph_guard = self.graph.read().await;
-        let graph = match graph_guard.as_ref() {
-            Some(g) => g,
-            None => return Ok(None),
+        let Some(graph) = self.held_graph() else {
+            return Ok(None);
         };
 
         let symbol_count = graph.symbol_count();
@@ -1315,10 +1265,7 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<Vec<SymbolDto>> {
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
         // Collect all symbols and sort by (file_path, line)
         let mut symbols: Vec<SymbolDto> = graph.symbols().map(SymbolDto::from_symbol).collect();
@@ -1387,13 +1334,10 @@ impl WorkspaceSession {
 
         self.ensure_graph_built().await?;
 
-        let graph_guard = self.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        let graph = self.require_graph()?;
 
         let analyzer = CallGraphAnalyzer::new();
-        let hot_paths = analyzer.find_hot_paths(graph, limit);
+        let hot_paths = analyzer.find_hot_paths(&graph, limit);
 
         // Filter by min_fan_in and convert to DTO
         let filtered: Vec<HotPathDto> = hot_paths
@@ -1435,10 +1379,9 @@ impl WorkspaceSession {
 
         // Try to compute complexity
         let complexity = {
-            let graph_guard = self.graph.read().await;
-            if let Some(graph) = graph_guard.as_ref() {
+            if let Some(graph) = self.held_graph() {
                 let analyzer = CallGraphAnalyzer::new();
-                let report = analyzer.calculate_complexity(graph);
+                let report = analyzer.calculate_complexity(&graph);
                 let average = if report.total_symbols > 0 {
                     report.cyclomatic_complexity as f64 / report.total_symbols as f64
                 } else {
@@ -1974,10 +1917,7 @@ impl WorkspaceSession {
     /// Answer natural language questions about the codebase using call graph analysis.
     pub async fn ask_about_code(&self, question: &str) -> WorkspaceResult<serde_json::Value> {
         self.ensure_graph_built().await?;
-        let _graph = self.graph.read().await;
-        let _ = _graph
-            .as_ref()
-            .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
+        self.require_graph()?;
 
         let words: Vec<&str> = question.split_whitespace().collect();
         let mut answers: Vec<serde_json::Value> = Vec::new();
@@ -3018,6 +2958,86 @@ pub struct PublicStruct {}
     }
 
     // =========================================================================
+    // The session reads the graph its service owns
+    // =========================================================================
+
+    fn graph_with_symbols(names: &[&str]) -> crate::domain::aggregates::CallGraph {
+        use crate::domain::aggregates::symbol::Symbol;
+        use crate::domain::value_objects::SymbolKind;
+
+        let mut graph = crate::domain::aggregates::CallGraph::new();
+        for name in names {
+            graph.add_symbol(Symbol::new(
+                *name,
+                SymbolKind::Function,
+                Location::new("lib.rs", 0, 0),
+            ));
+        }
+        graph
+    }
+
+    /// A handler publishes a new graph through `graph_cache().replace(..)`.
+    /// A session method that reads the graph without going through
+    /// `ensure_graph_built` must see it, not the copy the session took earlier.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_graph_stats_follow_a_replace_made_by_another_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        session
+            .analysis
+            .graph_cache()
+            .replace(graph_with_symbols(&["one"]));
+        // Reading through `ensure_graph_built` makes the session take its copy.
+        session.get_all_symbols(None, None).await.unwrap();
+
+        session
+            .analysis
+            .graph_cache()
+            .replace(graph_with_symbols(&["one", "two"]));
+
+        let stats = session
+            .get_graph_stats()
+            .await
+            .unwrap()
+            .expect("the service holds a graph");
+        assert_eq!(
+            stats.symbol_count, 2,
+            "the session answered from a graph its service no longer holds"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_a_project_without_symbols_is_built_once() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        session.get_all_symbols(None, None).await.unwrap();
+        let first = session.analysis.graph_cache().current_id();
+        assert!(first.is_some(), "an empty project still publishes a graph");
+
+        session.get_all_symbols(None, None).await.unwrap();
+        assert_eq!(
+            session.analysis.graph_cache().current_id(),
+            first,
+            "the second call rebuilt a graph that was already there"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_a_graph_emptied_of_symbols_still_counts_as_present() {
+        let temp_dir = TempDir::new().unwrap();
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session
+            .analysis
+            .graph_cache()
+            .replace(graph_with_symbols(&[]));
+
+        let stats = session.get_graph_stats().await.unwrap();
+        assert_eq!(stats.expect("the service holds a graph").symbol_count, 0);
+    }
+
+    // =========================================================================
     // Tests for subscribe_graph_events
     // =========================================================================
 
@@ -3952,8 +3972,7 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("full").await.unwrap();
 
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set");
+        let graph = session.held_graph().expect("Graph should be set");
         assert!(
             graph.symbol_count() >= 2,
             "Full strategy should find both functions, got {}",
@@ -3973,8 +3992,7 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("lightweight").await.unwrap();
 
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set");
+        let graph = session.held_graph().expect("Graph should be set");
         assert!(
             graph.symbol_count() >= 2,
             "Lightweight strategy should find functions, got {}",
@@ -3991,8 +4009,7 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("per_file").await.unwrap();
 
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set");
+        let graph = session.held_graph().expect("Graph should be set");
         assert!(
             graph.symbol_count() >= 2,
             "Per-file strategy should find symbols from both files, got {}",
@@ -4008,9 +4025,8 @@ pub const MY_CONST: i32 = 42;
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session.build_graph("on_demand").await.unwrap();
 
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
+        let graph = session
+            .held_graph()
             .expect("Graph should be set after on_demand");
         assert!(
             graph.symbol_count() > 0,
@@ -4027,9 +4043,8 @@ pub const MY_CONST: i32 = 42;
         // Unknown strategy should not panic and should fall back to full build
         session.build_graph("unknown_strategy_xyz").await.unwrap();
 
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard
-            .as_ref()
+        let graph = session
+            .held_graph()
             .expect("Graph should be set even for unknown strategy");
         assert!(
             graph.symbol_count() > 0,
@@ -4051,18 +4066,12 @@ pub const MY_CONST: i32 = 42;
         // Build with full strategy
         let session_full = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session_full.build_graph("full").await.unwrap();
-        let full_edges = {
-            let g = session_full.graph.read().await;
-            g.as_ref().unwrap().edge_count()
-        };
+        let full_edges = { session_full.held_graph().unwrap().edge_count() };
 
         // Build with lightweight strategy
         let session_lw = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         session_lw.build_graph("lightweight").await.unwrap();
-        let lw_edges = {
-            let g = session_lw.graph.read().await;
-            g.as_ref().unwrap().edge_count()
-        };
+        let lw_edges = { session_lw.held_graph().unwrap().edge_count() };
 
         // Lightweight should have ≤ edges than full (it has 0 by design)
         assert!(
@@ -4108,8 +4117,7 @@ pub const MY_CONST: i32 = 42;
         }
 
         // Final graph should be valid with symbols
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set");
+        let graph = session.held_graph().expect("Graph should be set");
         assert!(
             graph.symbol_count() >= 5,
             "Graph should have at least 5 symbols, got {}",
@@ -4185,8 +4193,7 @@ pub const MY_CONST: i32 = 42;
         assert!(r3.unwrap().is_ok(), "Second lightweight should succeed");
 
         // Graph should be in consistent state
-        let graph_guard = session.graph.read().await;
-        let graph = graph_guard.as_ref().expect("Graph should be set");
+        let graph = session.held_graph().expect("Graph should be set");
         assert!(graph.symbol_count() > 0, "Graph should have symbols");
     }
 
