@@ -30825,3 +30825,41 @@ recuento de tests ejecutados. AC2 cumplido. AC3 PASS. AC4 (un fallo agrupado
 corta y nombra el test) NO probado: no se provocó ningún fallo agrupado.
 
 **SHA citable.** `ed959fb2` (PR #505, squash).
+
+## 2026-11-01 — TASK-37: el kernel de evidencia ya corría lo que tres etapas repetían
+
+**Cambio.** `merge-gate.pipeline.kts` retira `core-lib`, `core-named-contracts` y
+`core-prf-mcp-05`. Las tres quedan contenidas en
+`core-unrestricted-evidence-kernel`, que corre todos los targets de test de core
+con la feature `evidence-kernel`. Un comentario sin identificadores explica por
+qué. Diff: 4 inserciones, 16 eliminaciones.
+
+**Contención.** Comparada por nombre con `cargo test -p cognicode-core ... --
+--list`, sin ejecutar tests: lib por defecto 2421 nombres únicos, los tres tests
+nombrados 15, kernel 3859. `comm -23` de cada lista frente al kernel: 0. Límites:
+es por nombre y no por binario, y `--list` no prueba que los tests pasen. Que
+pasen lo prueba el gate: la etapa del kernel terminó en verde.
+
+**Medición.** Antes: run `b741db1b` (gate de #506), 27,33 min y 45 etapas.
+Después: run `40645980` sobre `791eaed5` (`.pipelinek/merge-gate.db` en solo
+lectura), 25,37 min y 42 etapas, `rc=0`, `merge-gate=success`. Delta: −1,96 min
+(−7,2 %) y −3 etapas, frente a ~3,3 min esperados. Es una medición por lado, sin
+parear: los dos gates corrieron sobre árboles distintos y con carga de máquina no
+controlada.
+
+**Verificación previa.** `test_comment_standard.py` y los cinco tests Rust que
+leen el pipeline pasaron antes y después de la edición (la lección de TASK-36).
+
+**Salvedad.** `test_build_isolation_check.py` falla 3 casos con
+`CalledProcessError` en el `git commit` de sondeo: el hook git-control del
+entorno lo deniega (`GCTL-CONV-001`, `GCTL-ID-002`). Falla igual en el checkout
+principal, así que no viene de esta edición, pero tampoco se arregló ni se
+ocultó. Su referencia a `core-lib` tolera que la etapa falte.
+
+**Riesgo declarado.** Se pierde el fallo rápido de las tres etapas (un fallo en
+core tarda ahora hasta el kernel en aparecer) y la cobertura sin la feature
+`evidence-kernel`. Medido antes: no hay tests que solo existan sin la feature.
+
+**NOT_RUN.** `test-full`.
+
+**SHA citable.** `7c40fa29` (PR #508, squash).
