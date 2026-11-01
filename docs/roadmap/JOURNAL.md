@@ -30791,3 +30791,37 @@ append-only, y una corrección se hace hacia adelante, con su propia entrada. La
 forma que se quiso decir es la que está en el cierre: el crate se deriva del
 path TOCADO —el binario que cargo declara por cada fichero de integración bajo
 `crates/<crate>/tests/`—.
+
+## 2026-11-01 — TASK-36: el merge-gate paga una vez por crate, no una por suite
+
+**Cambio.** `merge-gate.pipeline.kts` pasa de 31 a 18 invocaciones
+`cargo test -p`: `cli-named-contracts` (6 suites), `mcp-named-contracts` (7,
+incluye `cr07`) y `core-named-contracts` (3). `a015_onboarding_gate` queda en su
+propia etapa (`cli-a015-onboarding-gate`) porque su contrato fija la cadena
+exacta y el nombre de la etapa. Cada `cargo test --test` separado pagaba ~50 s
+de coste fijo. El conjunto de 22 pares (crate, suite) es idéntico al de `main`.
+No se agruparon `qw08` del selector, el bloque multilínea de integración de cli,
+explorer ni `find_usages_compat_0_97`.
+
+**RED.** `test_pipeline_named_suites_exist.py` no veía dos `--test` en una misma
+invocación: dio `[('cognicode-cli', 'a')]` donde esperaba `a` y `b`. Se corrigió
+el extractor antes de tocar el pipeline.
+
+**Dos gates en rojo, ambos por mi cambio.** El gate 1 (run `e05249ee`) falló en
+`contracts`: `test_comment_standard` pasó de 26 a 29 líneas con identificador.
+El gate 2 (run `42897ae5`) falló en `cli-named-contracts` (exit 101):
+`a015_onboarding_gate` exige la cadena exacta y una etapa propia. Se corrigieron
+en `85170510` y `280e79e1`. Lección: antes de tocar `*.pipeline.kts` hay que
+correr `test_comment_standard.py` y TAMBIÉN los cinco tests Rust que leen el
+pipeline.
+
+**Medición.** Antes (TASK-5): ~41,8 min hasta el paso 45 de 58, una cota
+inferior. Después (run `7e0a4cdb` sobre `280e79e1`, `.pipelinek/merge-gate.db`
+en solo lectura): 21,5 min, 45 etapas, `merge-gate=success`. Reducción: ~20 min
+frente al umbral de 15. Son dos gates completos distintos, no el mismo run.
+
+**Criterios.** AC1 cumplido por CONJUNTO de pares (crate, suite), no por
+recuento de tests ejecutados. AC2 cumplido. AC3 PASS. AC4 (un fallo agrupado
+corta y nombra el test) NO probado: no se provocó ningún fallo agrupado.
+
+**SHA citable.** `ed959fb2` (PR #505, squash).
