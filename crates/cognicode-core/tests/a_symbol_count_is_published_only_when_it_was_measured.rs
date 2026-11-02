@@ -32,6 +32,50 @@ use cognicode_core::interface::mcp::schemas::ReparseOnEditInput;
 use std::path::Path;
 use std::time::Duration;
 
+#[cfg(unix)]
+#[tokio::test]
+async fn an_inaccessible_file_refuses_reparse_without_changing_the_graph_or_manifest() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct RestorePermissions(std::path::PathBuf, std::fs::Permissions);
+    impl Drop for RestorePermissions {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.0, self.1.clone());
+        }
+    }
+
+    let (workspace, ctx) = analysed_workspace(2).await;
+    let parent = workspace.path().join("src");
+    let original = std::fs::metadata(&parent).unwrap().permissions();
+    let guard = RestorePermissions(parent.clone(), original);
+    let graph_before = symbols_in_graph(&ctx, "src/main.rs");
+    let manifest_before =
+        serde_json::to_value(ctx.get_graph_store().load_manifest().unwrap()).unwrap();
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o0)).unwrap();
+    let error = std::fs::metadata(parent.join("main.rs")).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    let result = handle_reparse_on_edit(
+        &ctx,
+        ReparseOnEditInput {
+            file_paths: vec!["src/main.rs".to_owned()],
+            edit_ranges: None,
+        },
+    )
+    .await;
+    drop(guard);
+
+    assert!(
+        result.is_err(),
+        "an inaccessible file must not be reported as deleted"
+    );
+    assert_eq!(symbols_in_graph(&ctx, "src/main.rs"), graph_before);
+    assert_eq!(
+        serde_json::to_value(ctx.get_graph_store().load_manifest().unwrap()).unwrap(),
+        manifest_before
+    );
+}
+
 /// Un contexto con el workspace en un directorio temporal.
 fn ctx_for(workspace: &Path) -> HandlerContext {
     HandlerContext::builder()

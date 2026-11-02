@@ -68,6 +68,21 @@ pub fn measured_millis(instant: Option<SystemTime>) -> Option<i64> {
     instant.map(epoch_millis)
 }
 
+/// Si el fichero existe y cuando se escribio, segun lo que dijo el `stat`.
+///
+/// Solo `NotFound` es ausencia. Cualquier otro error (permisos, E/S) es que
+/// no se pudo observar, y se propaga: llamarlo borrado haria que quien
+/// consume la medida descartara un fichero que sigue ahi.
+pub fn observed_mtime(
+    stat: std::io::Result<std::fs::Metadata>,
+) -> std::io::Result<(bool, Option<i64>)> {
+    match stat {
+        Ok(meta) => Ok((true, measured_millis(meta.modified().ok()))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok((false, None)),
+        Err(error) => Err(error),
+    }
+}
+
 /// La medida de una fecha en nanosegundos, o ninguna si no hay fecha que
 /// medir.
 pub fn measured_nanos(instant: Option<SystemTime>) -> Option<i64> {
@@ -140,5 +155,22 @@ mod tests {
             measured_seconds(Some(before)),
             "las dos rutas que llevan la medida tienen que decir lo mismo"
         );
+    }
+
+    #[test]
+    fn an_unobservable_file_is_an_error_not_an_absence() {
+        use std::io::{Error, ErrorKind};
+        assert_eq!(
+            observed_mtime(Err(Error::from(ErrorKind::NotFound))).unwrap(),
+            (false, None)
+        );
+        for kind in [ErrorKind::PermissionDenied, ErrorKind::Other] {
+            assert!(
+                observed_mtime(Err(Error::from(kind))).is_err(),
+                "{kind:?} must not become a deletion"
+            );
+        }
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(observed_mtime(file.path().metadata()).unwrap().0);
     }
 }
