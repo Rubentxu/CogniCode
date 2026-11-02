@@ -2516,7 +2516,7 @@ fn calculate_function_complexity(
             &tree,
             source,
             function_name,
-            parser.language().function_node_type(),
+            parser.language().symbols().function_types,
         ),
         Err(_) => (1, 1, 0, 0, 0),
     }

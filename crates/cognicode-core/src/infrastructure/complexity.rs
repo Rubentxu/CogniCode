@@ -49,7 +49,7 @@ impl ComplexityAnalysis for TreeSitterComplexity {
             .map_err(|e| AppError::AnalysisError(format!("Parse error: {e}")))?;
 
         let (cyclomatic, cognitive, max_nesting, param_count, lines_of_code) =
-            function_metrics(&tree, source, function, lang.function_node_type());
+            function_metrics(&tree, source, function, lang.symbols().function_types);
 
         Ok(ComplexityResult {
             cyclomatic,
@@ -64,12 +64,14 @@ impl ComplexityAnalysis for TreeSitterComplexity {
 
 /// The one measurement of a function: `(cyclomatic, cognitive, nesting_depth,
 /// parameter_count, lines_of_code)`. The CLI/rig port and the MCP handler both
-/// call this, so they cannot disagree about the same source (TASK-39).
+/// call this, so they cannot disagree about the same source (TASK-39). A
+/// language declares several function kinds (methods, constructors, arrows);
+/// all of them are looked up, not only the first (TASK-42).
 pub(crate) fn function_metrics(
     tree: &tree_sitter::Tree,
     source: &str,
     function_name: Option<&str>,
-    function_type: &str,
+    function_types: &[&str],
 ) -> (u32, u32, u32, u32, u32) {
     let calculator = ComplexityCalculator::new();
     let mut max_nesting = 0u32;
@@ -82,7 +84,7 @@ pub(crate) fn function_metrics(
         tree.root_node(),
         source,
         function_name,
-        function_type,
+        function_types,
         &mut max_nesting,
         &mut decision_points,
         &mut param_count,
@@ -113,7 +115,7 @@ fn find_function_metrics(
     node: tree_sitter::Node,
     source: &str,
     target_name: Option<&str>,
-    function_type: &str,
+    function_types: &[&str],
     max_nesting: &mut u32,
     decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
     param_count: &mut u32,
@@ -122,9 +124,9 @@ fn find_function_metrics(
     current_nesting: u32,
 ) {
     // Check if this is a function definition
-    if node.kind() == function_type {
+    if function_types.contains(&node.kind()) {
         // Get function name
-        if let Some(name) = naming::identifier_text(&node, source.as_bytes()) {
+        if let Some(name) = function_name(node, source) {
             // If we have a target name, only process that function
             // Otherwise, process the first/only function
             let should_process = match target_name {
@@ -158,7 +160,7 @@ fn find_function_metrics(
                 child,
                 source,
                 target_name,
-                function_type,
+                function_types,
                 max_nesting,
                 decision_points,
                 param_count,
@@ -168,6 +170,25 @@ fn find_function_metrics(
             );
         }
     }
+}
+
+/// The declared name of a function node. The `name` field comes first: the
+/// first identifier found by walking the node is the receiver of a Go method
+/// or a parameter. An arrow function has no name of its own; it takes the one
+/// of the variable it is bound to.
+fn function_name(node: tree_sitter::Node, source: &str) -> Option<String> {
+    let named = |n: tree_sitter::Node| {
+        n.child_by_field_name("name")
+            .and_then(|id| id.utf8_text(source.as_bytes()).ok())
+            .map(String::from)
+    };
+    named(node)
+        .or_else(|| {
+            node.parent()
+                .filter(|p| p.kind() == "variable_declarator")
+                .and_then(named)
+        })
+        .or_else(|| naming::identifier_text(&node, source.as_bytes()))
 }
 
 /// Counts parameters in a function definition.
@@ -180,8 +201,13 @@ fn find_function_metrics(
 /// per `name` field.
 fn count_parameters(node: tree_sitter::Node) -> u32 {
     let mut count = 0u32;
+    // A Go method has two `parameter_list`s; the first is its receiver.
+    let receiver = node.child_by_field_name("receiver");
     for i in 0..node.child_count() {
         let Some(list) = node.child(i) else { continue };
+        if Some(list) == receiver {
+            continue;
+        }
         if !matches!(
             list.kind(),
             "parameters" | "formal_parameters" | "parameter_list" | "method_parameters"
@@ -371,5 +397,82 @@ mod tests {
             "parameter counts disagree:\n{}",
             wrong.join("\n")
         );
+    }
+
+    #[test]
+    fn a_function_of_any_declared_function_type_is_measured() {
+        // (language, source, function, parameters): each function's node kind is
+        // NOT the first entry of `function_types`, so a lookup that keeps only
+        // the first kind never finds it and reports the defaults (1 line, 0
+        // parameters) as if they had been measured.
+        let cases = [
+            (
+                "go",
+                "package main\nfunc (r R) f(a, b int) {\n\tif a > 0 {\n\t}\n}\n",
+                "f",
+                2,
+            ),
+            (
+                "javascript",
+                "class C {\n  f(a, b) {\n    if (a) {}\n  }\n}\n",
+                "f",
+                2,
+            ),
+            (
+                "typescript",
+                "class C {\n  f(a: number, b: number) {\n    if (a) {}\n  }\n}\n",
+                "f",
+                2,
+            ),
+            (
+                "javascript",
+                "const h = (a, b) => {\n  if (a) {}\n};\n",
+                "h",
+                2,
+            ),
+            (
+                "ruby",
+                "class C\n  def self.f(a, b)\n    if a\n    end\n  end\nend\n",
+                "f",
+                2,
+            ),
+            (
+                "java",
+                "class C {\n  C(int a, int b) {\n    if (a > 0) {}\n  }\n}\n",
+                "C",
+                2,
+            ),
+            (
+                "php",
+                "<?php\nclass C {\n  function f($a, $b) {\n    if ($a) {}\n  }\n}\n",
+                "f",
+                2,
+            ),
+        ];
+        for (language, source, function, parameters) in cases {
+            let m = TreeSitterComplexity
+                .measure(language, source, Some(function))
+                .unwrap_or_else(|e| panic!("{language}: measure failed: {e}"));
+            assert_eq!(
+                m.parameter_count, parameters,
+                "{language} {function}: parameters"
+            );
+            assert!(
+                m.lines_of_code > 1,
+                "{language} {function}: the function was not found"
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_function_type_keeps_its_measurement() {
+        let m = TreeSitterComplexity
+            .measure(
+                "go",
+                "package main\nfunc f(a, b int) {\n\tif a > 0 {\n\t}\n}\n",
+                Some("f"),
+            )
+            .unwrap();
+        assert_eq!((m.parameter_count, m.cyclomatic), (2, 2));
     }
 }
