@@ -480,10 +480,11 @@ ALWAYS = {"build-isolation", "toolchain", "repo-contract", "fmt", "contract-tool
           "build-cognicode-for-contracts", "install-cosign", "contracts",
           "select-suites-script", "bin-tracking", "capabilities-drift-lint"}
 FULL_ONLY = {"install-cargo-deny", "advisories", "licenses"}   # solo cambian con el lockfile
-BY_STAGE = {"build-control-plane-debug": {"cognicode-explorer"},
-            "install-rust-analyzer": {CORE}, "rust-analyzer-answers": {CORE},
+BY_STAGE = {"install-rust-analyzer": {CORE}, "rust-analyzer-answers": {CORE},
             "skills-validate": {"cognicode-cli"}, "skills-bundles": {"cognicode-cli"}}
-BUILDS = {"build-cognicode-mcp-debug", "build-cognicode-cli-debug", "verify-debug-binaries"}
+# verify-debug-binaries exige los tres binarios: sus constructores viajan juntos
+BUILDS = {"build-cognicode-mcp-debug", "build-cognicode-cli-debug", "build-control-plane-debug",
+          "verify-debug-binaries"}
 CORE_EK = re.compile(r"cargo test -p cognicode-core --features evidence-kernel --quiet\s*\\\s*\n\s*-- --skip release_binary_stdio_round_trip_smoke")
 SKIP = "--skip release_binary_stdio_round_trip_smoke"
 
