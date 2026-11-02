@@ -41,37 +41,10 @@
 //!     `CapabilityCompleteness` propio: la conversion entre ese
 //!     y `AnalysisOutcome` ocurre en el adapter, no aqui.
 
+use crate::domain::value_objects::lexical_path::normalize_path;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-
-/// Normalizacion sintactica: resuelve `.` y `..` por componente
-/// sin tocar el disco. Esta es la unica normalizacion que el
-/// pipeline `AnalysisBasis::for_workspace` puede aplicar a paths
-/// que aun no existen (e.g. el directorio de un workspace que se
-/// va a indexar por primera vez).
-///
-/// Mantener este normalizador en un sitio y pequeno evita
-/// introducir una dependencia nueva (`path-clean` o similar)
-/// solo para resolver `..` en paths nuevos.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for comp in path.components() {
-        match comp {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !out.pop() {
-                    // Ya estamos en la raiz; mantenemos `..` para
-                    // no perderlo (preserva el caso de paths
-                    // absolutos que escapan del cwd).
-                    out.push("..");
-                }
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
 
 /// Parametros de entrada normalizados para cualquier operacion
 /// de analisis. La idea es que CLI y MCP produzcan el mismo
