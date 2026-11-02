@@ -324,12 +324,12 @@ impl WorkspaceSession {
     // =========================================================================
 
     /// Enable persistence with a GraphStore.
+    ///
+    /// Waits for in-flight loads and saves to release the store instead of
+    /// giving up, so the store is always applied once this returns.
     #[cfg(feature = "persistence")]
-    pub fn set_graph_store(&self, store: Arc<dyn GraphStore>) {
-        let guard = self.graph_store.try_write();
-        if let Ok(mut guard) = guard {
-            *guard = Some(store);
-        }
+    pub async fn set_graph_store(&self, store: Arc<dyn GraphStore>) {
+        *self.graph_store.write().await = Some(store);
     }
 
     /// Try to load graph from persistence store.
@@ -2858,7 +2858,7 @@ pub struct PublicStruct {}
         store.save_graph(&graph).unwrap();
 
         // Set the store and load
-        session.set_graph_store(store);
+        session.set_graph_store(store).await;
         let loaded = session.load_from_store().await.unwrap();
 
         assert!(loaded, "Should return true when graph is loaded from store");
@@ -2879,11 +2879,39 @@ pub struct PublicStruct {}
 
         // Create an empty in-memory store (no data)
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store);
+        session.set_graph_store(store).await;
 
         let loaded = session.load_from_store().await.unwrap();
 
         assert!(!loaded, "Should return false when store is empty");
+    }
+
+    #[cfg(feature = "persistence")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn set_graph_store_under_a_held_lock_is_not_silently_dropped() {
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+
+        let temp_dir = TempDir::new().unwrap();
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        // A reader holds the lock while the store is configured.
+        let reader = session.graph_store.read().await;
+        let set = session.set_graph_store(Arc::new(InMemoryGraphStore::new()));
+        tokio::pin!(set);
+
+        let waited = tokio::time::timeout(std::time::Duration::from_millis(20), &mut set).await;
+        assert!(
+            waited.is_err(),
+            "must wait for the contended lock, not skip it"
+        );
+
+        drop(reader);
+        set.await;
+        assert!(
+            session.graph_store.read().await.is_some(),
+            "a store set while the lock was contended must still be applied"
+        );
     }
 
     #[cfg(feature = "persistence")]
@@ -2906,7 +2934,7 @@ pub struct PublicStruct {}
 
         // Create and set an empty store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save to store
         session.save_to_store().await.unwrap();
@@ -2944,7 +2972,7 @@ pub struct PublicStruct {}
         );
         graph.add_symbol(symbol);
         store.save_graph(&graph).unwrap();
-        session.set_graph_store(store);
+        session.set_graph_store(store).await;
 
         // Call ensure_graph_built - it should load from store
         session
@@ -3265,7 +3293,7 @@ pub struct PublicStruct {}
 
         // Create and set a store with current manifest
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save current state to store
         session.save_to_store().await.unwrap();
@@ -3299,7 +3327,7 @@ pub struct PublicStruct {}
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save current state
         session.save_to_store().await.unwrap();
@@ -3336,7 +3364,7 @@ pub struct PublicStruct {}
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save current state
         session.save_to_store().await.unwrap();
@@ -3376,7 +3404,7 @@ pub struct PublicStruct {}
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save current state
         session.save_to_store().await.unwrap();
@@ -3415,7 +3443,7 @@ pub struct PublicStruct {}
 
         // Create and set a store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Save current state
         session.save_to_store().await.unwrap();
@@ -3635,7 +3663,7 @@ pub const MY_CONST: i32 = 42;
 
         // Set up in-memory graph store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Build initial graph
         session
@@ -3698,7 +3726,7 @@ pub const MY_CONST: i32 = 42;
 
         // Set up in-memory graph store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Build initial graph
         session
@@ -3739,7 +3767,7 @@ pub const MY_CONST: i32 = 42;
 
         // Set up in-memory graph store
         let store = Arc::new(InMemoryGraphStore::new());
-        session.set_graph_store(store.clone());
+        session.set_graph_store(store.clone()).await;
 
         // Build initial graph
         session
