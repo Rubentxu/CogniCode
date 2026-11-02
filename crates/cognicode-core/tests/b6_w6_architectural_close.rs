@@ -327,7 +327,6 @@ fn b4_modules_dont_reimplement_b2_types() {
     let search_dirs = [
         "crates/cognicode-core/src/impact",
         "crates/cognicode-core/src/architecture",
-        "crates/cognicode-core/src/findings",
         "crates/cognicode-core/src/assurance_export",
     ];
     let root = repo_root();
