@@ -2490,7 +2490,7 @@ pub async fn handle_get_complexity(
 
     // Find the function and calculate complexity
     let (cyclomatic, cognitive, nesting_depth, parameter_count, lines_of_code) =
-        calculate_function_complexity(&parser, &source, input.function_name.as_deref());
+        calculate_function_complexity(&parser, &source, input.function_name.as_deref())?;
 
     Ok(GetComplexityOutput {
         file_path: input.file_path,
@@ -2505,21 +2505,31 @@ pub async fn handle_get_complexity(
     })
 }
 
-/// Calculates complexity metrics for a function
+/// Calculates complexity metrics for a function. A parse failure is an error
+/// and a function that does not exist is `NotFound`: neither is reported as a
+/// measurement.
 fn calculate_function_complexity(
     parser: &crate::infrastructure::parser::TreeSitterParser,
     source: &str,
     function_name: Option<&str>,
-) -> (u32, u32, u32, u32, u32) {
-    match parser.parse_tree(source) {
-        Ok(tree) => crate::infrastructure::complexity::function_metrics(
-            &tree,
-            source,
-            function_name,
-            parser.language().symbols().function_types,
-        ),
-        Err(_) => (1, 1, 0, 0, 0),
-    }
+) -> HandlerResult<(u32, u32, u32, u32, u32)> {
+    let tree = parser.parse_tree(source).map_err(|e| {
+        HandlerError::App(crate::application::error::AppError::AnalysisError(format!(
+            "Parse error: {e}"
+        )))
+    })?;
+    crate::infrastructure::complexity::function_metrics(
+        &tree,
+        source,
+        function_name,
+        parser.language().symbols().function_types,
+    )
+    .ok_or_else(|| {
+        HandlerError::NotFound(format!(
+            "Function not found: {}",
+            function_name.unwrap_or("<first function>")
+        ))
+    })
 }
 
 /// Handler for get_entry_points tool
