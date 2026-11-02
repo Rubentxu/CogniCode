@@ -76,18 +76,6 @@ pub fn hash_file(path: &Path) -> std::io::Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Compute SHA256 for many files in parallel (rayon).
-/// Files that fail to read are logged and skipped.
-pub fn hash_files_parallel(paths: &[PathBuf]) -> Vec<(PathBuf, Option<String>)> {
-    paths
-        .par_iter()
-        .map(|p| {
-            let hash = hash_file(p).ok();
-            (p.clone(), hash)
-        })
-        .collect()
-}
-
 /// The extensions that make a file a document.
 const DOCUMENT_EXTENSIONS: &[&str] = &["md", "mdx", "qmd", "txt", "rst"];
 
