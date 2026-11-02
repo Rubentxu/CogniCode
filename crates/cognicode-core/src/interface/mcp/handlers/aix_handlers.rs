@@ -1670,10 +1670,7 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
 // AVC Tool Handlers
 // ============================================================================
 
-// `AvcGenerator` is still used by S7000 (drift) inference and a few
-// other code paths. The `AvcContract` type remains in the public
-// surface so `handle_generate_contract` / `handle_validate_contract`
-// keep their declared signatures.
+// `AvcGenerator` is still used by S7000 (drift) inference and other code paths.
 use crate::infrastructure::avc::AvcGenerator;
 #[cfg(feature = "contract-store")]
 use crate::infrastructure::avc::{AvcContract, AvcValidationResult};

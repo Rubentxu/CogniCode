@@ -88,6 +88,9 @@ impl AnalyzerBuild {
 /// capacidad no se puede identificar—.
 fn enabled_features() -> Vec<String> {
     let mut features: Vec<String> = Vec::new();
+    if cfg!(feature = "contract-store") {
+        features.push("contract-store".to_string());
+    }
     if cfg!(feature = "evidence-cli-ladybug") {
         features.push("evidence-cli-ladybug".to_string());
     }
