@@ -533,30 +533,29 @@ fn simple_function() {
         async fn a_single_branch_is_measured_the_same_by_both() {
             let (port, mcp) = both("rust", "a.rs", RUST_IF, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (2, 2, 4, 1, 1));
+            assert_eq!(port, (2, 2, 4, 0, 1));
         }
 
         #[tokio::test]
         async fn short_circuit_operators_count_on_both_paths() {
             let (port, mcp) = both("rust", "b.rs", RUST_AND, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (3, 4, 4, 1, 1), "`&&` is a decision");
+            assert_eq!(port, (3, 4, 4, 0, 1), "`&&` is a decision");
         }
 
         #[tokio::test]
         async fn nesting_depth_grows_on_both_paths() {
             let (port, mcp) = both("rust", "c.rs", RUST_NESTED, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (3, 6, 6, 1, 2), "one level per nested branch");
+            assert_eq!(port, (3, 6, 6, 0, 2), "one level per nested branch");
         }
 
         #[tokio::test]
         async fn else_if_and_catch_count_on_both_paths() {
-            // 3 parameters for `def f(a, b)`: the function name identifier is
-            // counted too. A shared defect, left pinned as found.
+            // `def f(a, b)` has 2 parameters: the function name is not one.
             let (port, mcp) = both("python", "d.py", PY_BRANCHES, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (4, 6, 8, 3, 1), "elif and except are decisions");
+            assert_eq!(port, (4, 6, 8, 2, 1), "elif and except are decisions");
         }
     }
 

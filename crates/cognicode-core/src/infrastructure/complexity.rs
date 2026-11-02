@@ -185,10 +185,6 @@ fn count_parameters(node: tree_sitter::Node) -> u32 {
                     }
                 }
             }
-            // Handle Rust/JS parameters (identifier list)
-            if child.kind() == "identifier" {
-                count += 1;
-            }
         }
     }
     count
@@ -269,6 +265,48 @@ fn process_decision_points(
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             process_decision_points(child, source, max_nesting, decision_points, child_nesting);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parameter_count(language: &str, source: &str, function: &str) -> u32 {
+        TreeSitterComplexity
+            .measure(language, source, Some(function))
+            .unwrap_or_else(|e| panic!("{language}: measure failed: {e}"))
+            .parameter_count
+    }
+
+    #[test]
+    fn python_parameter_count_excludes_the_function_name() {
+        assert_eq!(
+            parameter_count("python", "def f(a, b):\n    pass\n", "f"),
+            2
+        );
+    }
+
+    #[test]
+    fn a_function_without_parameters_reports_zero_in_every_language() {
+        // The name of a function is never one of its parameters. With no
+        // parameters declared, any non-zero count is the name being counted.
+        let cases = [
+            ("rust", "fn f() {}\n"),
+            ("python", "def f():\n    pass\n"),
+            ("javascript", "function f() {}\n"),
+            ("typescript", "function f() {}\n"),
+            ("go", "package main\nfunc f() {}\n"),
+            ("java", "class C { void f() {} }\n"),
+            ("ruby", "def f\nend\n"),
+        ];
+        for (language, source) in cases {
+            assert_eq!(
+                parameter_count(language, source, "f"),
+                0,
+                "{language}: the function name was counted as a parameter"
+            );
         }
     }
 }
