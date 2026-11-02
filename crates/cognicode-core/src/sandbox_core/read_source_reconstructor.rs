@@ -41,6 +41,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::domain::findings::sha256_hex;
 use crate::sandbox_core::manifest::Manifest;
 
 /// Sentinel emitted by the sandbox orchestrator when it refuses to issue
@@ -664,23 +665,6 @@ fn extract_page_meta(response: &Value) -> Result<PageMeta, String> {
         has_more,
         next_token,
     })
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    // Avoid pulling a SHA-2 crate into the dependency tree of `cognicode-core`
-    // (which already has one transitively via tokio/sha2, but explicit
-    // dependency is cleaner). We use `std::process::Command` for portability
-    // — wait, that would be slow in tight loops. Instead, use the SHA-2
-    // crate directly since it's already in the workspace.
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let out = hasher.finalize();
-    let mut hex = String::with_capacity(64);
-    for b in out {
-        hex.push_str(&format!("{:02x}", b));
-    }
-    hex
 }
 
 // ---------- the manifest opt-in is on ScenarioDef; this module exposes the

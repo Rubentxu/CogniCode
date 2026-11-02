@@ -96,6 +96,20 @@ def test_every_gate_stage_has_a_decided_attribution() -> None:
           f"pero alguien tiene que decidirlo): {undecided}")
 
 
+def test_verify_debug_binaries_never_runs_without_the_binaries_it_verifies() -> None:
+    """Un cambio en core alcanza a verify-debug-binaries, que exige los tres
+    binarios; la etapa que construye cada uno tiene que correr antes, aunque su
+    crate caiga en un anillo posterior (el gate lo vio fallar con
+    cognicode-control-plane ausente)."""
+    rows = impact.schedule(impact.plan(["crates/cognicode-core/src/lib.rs"]))
+    order = [stage for _, stage, _, _ in rows]
+    check("verify-debug-binaries" in order, "core debe alcanzar verify-debug-binaries")
+    verify = order.index("verify-debug-binaries")
+    for builder in ("build-cognicode-mcp-debug", "build-cognicode-cli-debug", "build-control-plane-debug"):
+        check(builder in order and order.index(builder) < verify,
+              f"{builder} debe correr antes de verify-debug-binaries (orden: {order})")
+
+
 def test_the_core_filter_finds_its_stage() -> None:
     hits = [s for s, b in impact.gate_stages() if impact.CORE_EK.search(b)]
     check(hits == ["core-unrestricted-evidence-kernel"],
