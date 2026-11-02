@@ -466,6 +466,101 @@ fn simple_function() {
     }
 
     // ==========================================================================
+    // TASK-39: the CLI/rig port and the MCP handler share one measurement.
+    // Same source, both paths, side by side.
+    // ==========================================================================
+
+    mod complexity_two_copies {
+        use super::*;
+        use crate::application::ports::ComplexityAnalysis;
+        use crate::infrastructure::complexity::TreeSitterComplexity;
+        use crate::interface::mcp::handlers::handle_get_complexity;
+
+        /// (cyclomatic, cognitive, lines_of_code, parameter_count, nesting_depth)
+        type Metrics = (u32, u32, u32, u32, u32);
+
+        async fn both(
+            language: &str,
+            file: &str,
+            source: &str,
+            function: &str,
+        ) -> (Metrics, Metrics) {
+            let port = TreeSitterComplexity
+                .measure(language, source, Some(function))
+                .unwrap();
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let path = temp_dir.path().join(file);
+            std::fs::write(&path, source).unwrap();
+            let mcp = handle_get_complexity(
+                &ctx,
+                GetComplexityInput {
+                    file_path: path.to_str().unwrap().to_string(),
+                    function_name: Some(function.to_string()),
+                },
+            )
+            .await
+            .unwrap()
+            .complexity;
+            (
+                (
+                    port.cyclomatic,
+                    port.cognitive,
+                    port.lines_of_code,
+                    port.parameter_count,
+                    port.nesting_depth,
+                ),
+                (
+                    mcp.cyclomatic,
+                    mcp.cognitive,
+                    mcp.lines_of_code,
+                    mcp.parameter_count,
+                    mcp.nesting_depth,
+                ),
+            )
+        }
+
+        const RUST_IF: &str = "fn f(a: i32) {\n    if a > 0 {\n        do_it();\n    }\n}\n";
+        const RUST_AND: &str =
+            "fn f(a: i32, b: i32) {\n    if a > 0 && b > 0 {\n        do_it();\n    }\n}\n";
+        const RUST_NESTED: &str = "fn f(a: i32) {\n    if a > 0 {\n        while a > 1 {\n            do_it();\n        }\n    }\n}\n";
+        const PY_BRANCHES: &str = "def f(a, b):\n    if a:\n        pass\n    elif b:\n        pass\n    try:\n        pass\n    except E:\n        pass\n";
+
+        // One implementation (`infrastructure::complexity::function_metrics`):
+        // the CLI/rig port and the MCP handler must report the same numbers.
+
+        #[tokio::test]
+        async fn a_single_branch_is_measured_the_same_by_both() {
+            let (port, mcp) = both("rust", "a.rs", RUST_IF, "f").await;
+            assert_eq!(port, mcp);
+            assert_eq!(port, (2, 2, 4, 1, 1));
+        }
+
+        #[tokio::test]
+        async fn short_circuit_operators_count_on_both_paths() {
+            let (port, mcp) = both("rust", "b.rs", RUST_AND, "f").await;
+            assert_eq!(port, mcp);
+            assert_eq!(port, (3, 4, 4, 1, 1), "`&&` is a decision");
+        }
+
+        #[tokio::test]
+        async fn nesting_depth_grows_on_both_paths() {
+            let (port, mcp) = both("rust", "c.rs", RUST_NESTED, "f").await;
+            assert_eq!(port, mcp);
+            assert_eq!(port, (3, 6, 6, 1, 2), "one level per nested branch");
+        }
+
+        #[tokio::test]
+        async fn else_if_and_catch_count_on_both_paths() {
+            // 3 parameters for `def f(a, b)`: the function name identifier is
+            // counted too. A shared defect, left pinned as found.
+            let (port, mcp) = both("python", "d.py", PY_BRANCHES, "f").await;
+            assert_eq!(port, mcp);
+            assert_eq!(port, (4, 6, 8, 3, 1), "elif and except are decisions");
+        }
+    }
+
+    // ==========================================================================
     // Entry Points Roundtrip Tests
     // ==========================================================================
 

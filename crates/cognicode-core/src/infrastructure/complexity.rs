@@ -48,33 +48,8 @@ impl ComplexityAnalysis for TreeSitterComplexity {
             .parse_tree(source)
             .map_err(|e| AppError::AnalysisError(format!("Parse error: {e}")))?;
 
-        let calculator = ComplexityCalculator::new();
-        let mut max_nesting = 0u32;
-        let mut decision_points = Vec::new();
-        let mut param_count = 0u32;
-        let mut func_start_line = 0u32;
-        let mut func_end_line = 0u32;
-
-        find_function_metrics(
-            tree.root_node(),
-            source,
-            function,
-            lang.function_node_type(),
-            &mut max_nesting,
-            &mut decision_points,
-            &mut param_count,
-            &mut func_start_line,
-            &mut func_end_line,
-            0,
-        );
-
-        let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
-        let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
-        let lines_of_code = if func_end_line > func_start_line {
-            func_end_line - func_start_line
-        } else {
-            1
-        };
+        let (cyclomatic, cognitive, max_nesting, param_count, lines_of_code) =
+            function_metrics(&tree, source, function, lang.function_node_type());
 
         Ok(ComplexityResult {
             cyclomatic,
@@ -87,6 +62,52 @@ impl ComplexityAnalysis for TreeSitterComplexity {
     }
 }
 
+/// The one measurement of a function: `(cyclomatic, cognitive, nesting_depth,
+/// parameter_count, lines_of_code)`. The CLI/rig port and the MCP handler both
+/// call this, so they cannot disagree about the same source (TASK-39).
+pub(crate) fn function_metrics(
+    tree: &tree_sitter::Tree,
+    source: &str,
+    function_name: Option<&str>,
+    function_type: &str,
+) -> (u32, u32, u32, u32, u32) {
+    let calculator = ComplexityCalculator::new();
+    let mut max_nesting = 0u32;
+    let mut decision_points = Vec::new();
+    let mut param_count = 0u32;
+    let mut func_start_line = 0u32;
+    let mut func_end_line = 0u32;
+
+    find_function_metrics(
+        tree.root_node(),
+        source,
+        function_name,
+        function_type,
+        &mut max_nesting,
+        &mut decision_points,
+        &mut param_count,
+        &mut func_start_line,
+        &mut func_end_line,
+        0,
+    );
+
+    let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
+    let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
+    let lines_of_code = if func_end_line > func_start_line {
+        func_end_line - func_start_line
+    } else {
+        1
+    };
+    (
+        cyclomatic,
+        cognitive,
+        max_nesting,
+        param_count,
+        lines_of_code,
+    )
+}
+
+/// Recursively finds a function and its metrics
 #[allow(clippy::too_many_arguments)]
 fn find_function_metrics(
     node: tree_sitter::Node,
@@ -100,22 +121,37 @@ fn find_function_metrics(
     func_end_line: &mut u32,
     current_nesting: u32,
 ) {
-    if node.kind() == function_type
-        && let Some(name) = naming::identifier_text(&node, source.as_bytes())
-    {
-        let should_process = match target_name {
-            Some(target) => name == target,
-            None => *func_start_line == 0,
-        };
+    // Check if this is a function definition
+    if node.kind() == function_type {
+        // Get function name
+        if let Some(name) = naming::identifier_text(&node, source.as_bytes()) {
+            // If we have a target name, only process that function
+            // Otherwise, process the first/only function
+            let should_process = match target_name {
+                Some(target) => name == target,
+                None => *func_start_line == 0, // Process first function if no target
+            };
 
-        if should_process {
-            *func_start_line = node.start_position().row as u32;
-            *func_end_line = node.end_position().row as u32;
-            *param_count = count_parameters(node);
-            process_decision_points(node, max_nesting, decision_points, current_nesting);
+            if should_process {
+                *func_start_line = node.start_position().row as u32;
+                *func_end_line = node.end_position().row as u32;
+
+                // Count parameters
+                *param_count = count_parameters(node);
+
+                // Process function body for decision points
+                process_decision_points(
+                    node,
+                    source,
+                    max_nesting,
+                    decision_points,
+                    current_nesting,
+                );
+            }
         }
     }
 
+    // Recurse into children
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             find_function_metrics(
@@ -134,10 +170,12 @@ fn find_function_metrics(
     }
 }
 
+/// Counts parameters in a function definition
 fn count_parameters(node: tree_sitter::Node) -> u32 {
     let mut count = 0u32;
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
+            // Handle Python parameters (within parentheses after function name)
             if child.kind() == "parameters" {
                 for j in 0..child.child_count() {
                     if let Some(param) = child.child(j)
@@ -147,6 +185,7 @@ fn count_parameters(node: tree_sitter::Node) -> u32 {
                     }
                 }
             }
+            // Handle Rust/JS parameters (identifier list)
             if child.kind() == "identifier" {
                 count += 1;
             }
@@ -155,37 +194,81 @@ fn count_parameters(node: tree_sitter::Node) -> u32 {
     count
 }
 
+/// Processes a node tree to find decision points
 fn process_decision_points(
     node: tree_sitter::Node,
+    source: &str,
     max_nesting: &mut u32,
     decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
     current_nesting: u32,
 ) {
     let kind = node.kind();
 
+    // Check for decision points
     match kind {
         "if_statement" | "if_expression" => {
             decision_points.push(crate::domain::services::DecisionPoint::If);
             *max_nesting = (*max_nesting).max(current_nesting + 1);
         }
+        "elif_clause" | "else_if_clause" => {
+            decision_points.push(crate::domain::services::DecisionPoint::ElseIf);
+        }
         "while_statement" | "while_expression" => {
             decision_points.push(crate::domain::services::DecisionPoint::While);
             *max_nesting = (*max_nesting).max(current_nesting + 1);
         }
-        "for_statement" | "for_in_statement" => {
+        "for_statement" | "for_expression" | "for_in_statement" => {
             decision_points.push(crate::domain::services::DecisionPoint::For);
             *max_nesting = (*max_nesting).max(current_nesting + 1);
         }
-        "case_clause" | "match_expression" => {
+        "match_expression" | "match_statement" | "switch_statement" => {
             decision_points.push(crate::domain::services::DecisionPoint::Match);
             *max_nesting = (*max_nesting).max(current_nesting + 1);
+        }
+        "binary_expression" => {
+            // Check for && or ||
+            if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                if text.contains("&&") {
+                    decision_points.push(crate::domain::services::DecisionPoint::And);
+                }
+                if text.contains("||") {
+                    decision_points.push(crate::domain::services::DecisionPoint::Or);
+                }
+            }
+        }
+        "conditional_expression" | "ternary_expression" => {
+            decision_points.push(crate::domain::services::DecisionPoint::Ternary);
+        }
+        "catch_clause" | "except_clause" => {
+            decision_points.push(crate::domain::services::DecisionPoint::Catch);
         }
         _ => {}
     }
 
+    // Recurse into children with updated nesting
+    let child_nesting = if matches!(
+        kind,
+        "if_statement"
+            | "if_expression"
+            | "elif_clause"
+            | "else_if_clause"
+            | "while_statement"
+            | "while_expression"
+            | "for_statement"
+            | "for_expression"
+            | "for_in_statement"
+            | "match_expression"
+            | "match_statement"
+            | "switch_statement"
+    ) {
+        current_nesting + 1
+    } else {
+        current_nesting
+    };
+
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
-            process_decision_points(child, max_nesting, decision_points, current_nesting);
+            process_decision_points(child, source, max_nesting, decision_points, child_nesting);
         }
     }
 }
