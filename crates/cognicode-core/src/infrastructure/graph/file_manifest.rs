@@ -693,4 +693,51 @@ mod tests {
         manifest.apply_delta(dir.path(), &delta.changed);
         assert_ne!(manifest.get(&rel).unwrap().content_hash, before);
     }
+
+    #[test]
+    fn same_size_with_a_new_mtime_and_different_bytes_is_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&path, b"fn a() { 2 }").unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            manifest.get(&rel).unwrap().size
+        );
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(delta.changed, vec![rel]);
+        assert!(delta.unchanged.is_empty());
+    }
+
+    #[test]
+    fn matching_size_and_mtime_take_the_fastpath_without_reading_the_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+        let recorded_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+
+        fs::write(&path, b"fn a() { 2 }").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(recorded_mtime)
+            .unwrap();
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(
+            delta.unchanged,
+            vec![rel],
+            "size and mtime are the whole fastpath contract; bytes are read only when either differs"
+        );
+    }
 }
