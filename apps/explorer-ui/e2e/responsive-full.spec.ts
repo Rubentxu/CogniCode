@@ -17,10 +17,6 @@ const VIEWPORTS: ReadonlyArray<{ name: string; width: number; height: number }> 
 
 test.describe("Responsive layout (GT resize parity)", () => {
   for (const vp of VIEWPORTS) {
-    // Mobile viewport is known-broken (debt bug #5). Mark with .fixme so
-    // it appears as "expected failure" in reports rather than a blocker.
-    // The marker names who takes it: apps/explorer-ui/e2e/DEBT.md.
-    const isKnownBroken = vp.width <= 320;
     const title = `renders at ${vp.name} (${vp.width}x${vp.height}) without horizontal scroll`;
 
     const body = async ({ page }: { page: Page }) => {
@@ -39,13 +35,6 @@ test.describe("Responsive layout (GT resize parity)", () => {
       expect(scrollWidth).toBeLessThanOrEqual(vp.width + 5); // 5px tolerance for scrollbar
     };
 
-    if (isKnownBroken) {
-      test.fixme(
-        `${title} [DEBT: the 320 px layout overflows horizontally — owner: TASK-12]`,
-        body,
-      );
-    } else {
-      test(title, body);
-    }
+    test(title, body);
   }
 });

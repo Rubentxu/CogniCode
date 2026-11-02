@@ -21,13 +21,13 @@ export function TopBar({ onSpotterOpen, onMcpToolsOpen }: TopBarProps) {
   return (
     <header
       data-testid="topbar"
-      className="flex items-center justify-between gap-4 px-4 py-2.5"
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5"
       style={{
         backgroundColor: "var(--color-surface-raised)",
         borderBottom: "1px solid var(--color-border)",
       }}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
         <div className="min-w-0">
           <h1
             data-testid="topbar-brand"
@@ -44,13 +44,13 @@ export function TopBar({ onSpotterOpen, onMcpToolsOpen }: TopBarProps) {
             Moldable exploration workbench
           </p>
         </div>
-        <div data-testid="topbar-status" className="flex items-center gap-3">
+        <div data-testid="topbar-status" className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <HealthProbe showFullScreenOnError={false} />
           <ScanBar />
           <PerspectiveToggle />
         </div>
       </div>
-      <div data-testid="topbar-actions" className="flex items-center gap-2">
+      <div data-testid="topbar-actions" className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onSpotterOpen}
