@@ -170,21 +170,36 @@ fn find_function_metrics(
     }
 }
 
-/// Counts parameters in a function definition
+/// Counts parameters in a function definition.
+///
+/// Each grammar wraps its parameters in a list node and emits one named child per
+/// parameter, under a different kind (`parameter`, `typed_parameter`,
+/// `formal_parameter`, ...), so the list is counted by its named children rather
+/// than by one kind. Comments and the Python `/` and `*` separators are not
+/// parameters. A Go `parameter_declaration` such as `a, b int` declares one name
+/// per `name` field.
 fn count_parameters(node: tree_sitter::Node) -> u32 {
     let mut count = 0u32;
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            // Handle Python parameters (within parentheses after function name)
-            if child.kind() == "parameters" {
-                for j in 0..child.child_count() {
-                    if let Some(param) = child.child(j)
-                        && param.kind() == "identifier"
-                    {
-                        count += 1;
-                    }
-                }
-            }
+        let Some(list) = node.child(i) else { continue };
+        if !matches!(
+            list.kind(),
+            "parameters" | "formal_parameters" | "parameter_list" | "method_parameters"
+        ) {
+            continue;
+        }
+        let mut cursor = list.walk();
+        for param in list.named_children(&mut cursor) {
+            count += match param.kind() {
+                "comment" | "line_comment" | "block_comment" => 0,
+                "positional_separator" | "keyword_separator" => 0,
+                "parameter_declaration" | "variadic_parameter_declaration" => (param
+                    .children_by_field_name("name", &mut param.walk())
+                    .count()
+                    as u32)
+                    .max(1),
+                _ => 1,
+            };
         }
     }
     count
@@ -308,5 +323,53 @@ mod tests {
                 "{language}: the function name was counted as a parameter"
             );
         }
+    }
+
+    #[test]
+    fn every_declared_parameter_is_counted_whatever_its_grammar_node() {
+        // One row per parameter node kind each grammar emits (read off the
+        // tree, not assumed): Rust `parameter`/`self_parameter`, Python
+        // `typed_parameter`/`default_parameter`/`typed_default_parameter`/
+        // `list_splat_pattern`, TS `required_parameter`/`optional_parameter`,
+        // Go `parameter_declaration` (one node may declare several names),
+        // Java `formal_parameter`, Ruby `optional_parameter`/`splat_parameter`/
+        // `keyword_parameter`/`block_parameter`. Separators are not parameters.
+        let cases = [
+            ("rust", "fn f(a: i32, b: i32) {}\n", 2),
+            (
+                "rust",
+                "struct S;\nimpl S { fn f(&self, a: i32, mut b: i32) {} }\n",
+                3,
+            ),
+            ("python", "def f(a: int, b):\n    pass\n", 2),
+            (
+                "python",
+                "def f(a, b=1, c: int = 2, *args, **kw):\n    pass\n",
+                5,
+            ),
+            ("python", "def f(a, /, b, *, c):\n    pass\n", 3),
+            ("javascript", "function f(a, b = 1, ...r) {}\n", 3),
+            (
+                "typescript",
+                "function f(a: number, b?: string, ...r: number[]) {}\n",
+                3,
+            ),
+            ("go", "package main\nfunc f(a, b int, c string) {}\n", 3),
+            ("java", "class C { void f(int a, String b) {} }\n", 2),
+            ("ruby", "def f(a, b = 1, *r, k:, &blk)\nend\n", 5),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(language, source, expected)| {
+                let got = parameter_count(language, source, "f");
+                (got != *expected)
+                    .then(|| format!("{language}: expected {expected}, got {got} for {source:?}"))
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "parameter counts disagree:\n{}",
+            wrong.join("\n")
+        );
     }
 }
