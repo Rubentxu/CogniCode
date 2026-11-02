@@ -1526,14 +1526,8 @@ fn get_symbol_complexity(graph: &CallGraph, symbol_id: &SymbolId) -> Option<u32>
 
 /// Size proxy for a symbol derived from its file's byte length. Not a line count.
 fn get_symbol_lines(symbol: &Symbol) -> usize {
-    // Use a heuristic: file size / estimated symbols per file
-    let file = symbol.location().file();
-    if let Ok(metadata) = std::fs::metadata(file) {
-        // Rough estimate: assume avg 50 lines per symbol in file
-        (metadata.len() / 2000) as usize
-    } else {
-        10 // default estimate
-    }
+    // Rough estimate: assume 2000 bytes per symbol, 10 when the file is unreadable.
+    std::fs::metadata(symbol.location().file()).map_or(10, |m| (m.len() / 2000) as usize)
 }
 
 // ============================================================================
