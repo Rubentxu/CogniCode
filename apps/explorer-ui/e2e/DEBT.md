@@ -26,17 +26,16 @@ segundo argumento en `test.skip(true, "…")`.
 | `TASK-9` | Los mocks de MSW no exponen el endpoint, la bandera o el dato que el caso necesita | 11 |
 | `TASK-10` | La aplicación no expone una señal observable del cambio que el caso quiere comprobar | 4 |
 | `TASK-11` | El modal construido con `div` no atrapa el foco y `Escape` no llega al manejador | 1 |
-| `TASK-12` | El layout de 320 px desborda en horizontal | 1 |
 
-Once más cuatro más uno más uno son **17** casos desactivados en 14 ficheros
-de spec.
+Once más cuatro más uno son **16** casos desactivados en 13 ficheros de
+spec, todos con `test.skip`. `TASK-12` cerró el único `test.fixme`: el viewport
+de 320 px de `responsive-full.spec.ts` ya no desborda y el caso corre. El
+contrato fija el tope de cada API por separado —16 `test.skip` y 0
+`test.fixme`— para que ninguna crezca tomando prestada la otra.
 
-La auditoría externa del 2026-10-28 contó **16 en 13 ficheros**: contaba
-llamadas a `test.skip` y no vio el `test.fixme` condicional de
-`responsive-full.spec.ts`, que desactiva el viewport de 320 px. El
-recuento de este fichero es el medido, y el contrato fija el tope de cada
-API por separado —16 `test.skip` y 1 `test.fixme`— para que ninguna crezca
-tomando prestada la otra.
+La auditoría externa del 2026-10-28 contó 16 en 13 ficheros; su recuento
+coincide hoy con el medido, pero entonces no vio el `test.fixme` condicional
+que desactivaba ese viewport.
 
 ## Qué lo vigila
 

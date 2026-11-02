@@ -24,7 +24,7 @@ export function PerspectiveToggle() {
       role="group"
       aria-label="Graph perspective"
       data-testid="perspective-toggle"
-      className="flex items-center rounded-md p-0.5"
+      className="flex max-w-full flex-wrap items-center rounded-md p-0.5"
       style={{
         backgroundColor: "var(--color-surface-overlay)",
         border: "1px solid var(--color-border)",

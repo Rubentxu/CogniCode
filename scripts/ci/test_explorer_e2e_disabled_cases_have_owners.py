@@ -79,9 +79,9 @@ DEACTIVATING = (
 # The measured baseline, per API. The audit of 2026-10-28 counted sixteen
 # `test.skip` calls in thirteen files. This contract measured one more
 # deactivating point that the audit did not see: a conditional `test.fixme`
-# in `responsive-full.spec.ts`. Each API is capped at what it measured, so
-# neither can grow by borrowing from the other, and neither grows here.
-BASELINE = {"test.skip": 16, "test.fixme": 1}
+# in `responsive-full.spec.ts`, which TASK-12 closed. Each API is capped at
+# what it measured, so neither can grow by borrowing from the other.
+BASELINE = {"test.skip": 16, "test.fixme": 0}
 
 # The marker. The reason and the owner share one bracket on purpose: a
 # reason without an owner is exactly the debt this contract exists to
