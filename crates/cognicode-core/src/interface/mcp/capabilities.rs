@@ -209,7 +209,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // Contract (composite sobre AST)
         // ----------------------------------------------------------------
-        "generate_contract" | "validate_contract" | "retrieve_and_verify" => ToolCapabilities {
+        "retrieve_and_verify" => ToolCapabilities {
             langs: tree_sitter_langs(),
             precision: "compuesto",
         },
@@ -309,7 +309,6 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "edit_file",
         "list_files",
         // Contract stable
-        "validate_contract",
         "retrieve_and_verify",
     ]
 }

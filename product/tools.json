@@ -1478,6 +1478,7 @@
     },
     {
       "name": "generate_contract",
+      "feature": "contract-store",
       "title": "Generate an AVC truth contract from an existing function",
       "description": "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
       "category": "composite",
@@ -5152,6 +5153,7 @@
     },
     {
       "name": "validate_contract",
+      "feature": "contract-store",
       "title": "Validate generated code against an AVC truth contract",
       "description": "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
       "category": "composite",

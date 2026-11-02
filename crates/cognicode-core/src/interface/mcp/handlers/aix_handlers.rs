@@ -1674,19 +1674,20 @@ fn build_review_plan(_ctx: &HandlerContext) -> HandlerResult<Vec<OnboardingStep>
 // other code paths. The `AvcContract` type remains in the public
 // surface so `handle_generate_contract` / `handle_validate_contract`
 // keep their declared signatures.
-use crate::infrastructure::avc::{AvcContract, AvcGenerator, AvcValidationResult};
+use crate::infrastructure::avc::AvcGenerator;
+#[cfg(feature = "contract-store")]
+use crate::infrastructure::avc::{AvcContract, AvcValidationResult};
 use crate::interface::mcp::schemas::{
-    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity, GenerateContractInput,
-    ValidateContractInput,
+    DetectDriftInput, DetectDriftOutput, DriftFinding, DriftSeverity,
 };
+#[cfg(feature = "contract-store")]
+use crate::interface::mcp::schemas::{GenerateContractInput, ValidateContractInput};
 
 /// Handler for generate_contract tool (AVC-1)
 ///
-/// Contract persistence was tied to SQLite, which was removed in the
-/// Graph Intelligence v2 cleanup. The handler is kept as a stable
-/// dispatch surface so existing MCP tool wiring still links, but
-/// contract generation is no longer available until a PostgreSQL
-/// adapter lands.
+/// Compiled only with the `contract-store` feature: without a store to
+/// persist contracts the tool is neither published nor dispatched.
+#[cfg(feature = "contract-store")]
 #[cognicode_macros::aix_tool(
     name = "generate_contract",
     description = "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
@@ -1705,6 +1706,7 @@ pub async fn handle_generate_contract(
 ///
 /// See `handle_generate_contract` — validation is unavailable without
 /// a persistence layer to load the contract from.
+#[cfg(feature = "contract-store")]
 #[cognicode_macros::aix_tool(
     name = "validate_contract",
     description = "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",

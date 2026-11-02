@@ -223,6 +223,7 @@ fn catalog_active_is_a_strict_subset_of_catalog_full() {
 /// loader does).
 fn cfg_match(feature: &str) -> bool {
     match feature {
+        "contract-store" => cfg!(feature = "contract-store"),
         "persistence" => cfg!(feature = "persistence"),
         "program-analysis-server" => cfg!(feature = "program-analysis-server"),
         "evidence-cli-ladybug" => cfg!(feature = "evidence-cli-ladybug"),
