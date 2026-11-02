@@ -67,6 +67,7 @@ VERIFIER = REPO_ROOT / "scripts" / "verify-skills.sh"
 SKILLS_DIR = REPO_ROOT / "skills"
 CATALOG = REPO_ROOT / "product" / "tools.json"
 PROFILES = REPO_ROOT / "product" / "profiles.json"
+CORE_MANIFEST = REPO_ROOT / "crates" / "cognicode-core" / "Cargo.toml"
 
 # Floors, not exact counts. The point is to catch the gate checking
 # nothing, not to fail every time a skill is edited. Measured
@@ -140,6 +141,8 @@ def stage_tree(tmp: Path, product: dict[str, dict] | None) -> Path:
     (root / "scripts").mkdir(parents=True, exist_ok=True)
     shutil.copy(VALIDATOR, root / "scripts" / "validate_skills.py")
     shutil.copytree(SKILLS_DIR, root / "skills")
+    (root / "crates" / "cognicode-core").mkdir(parents=True, exist_ok=True)
+    shutil.copy(CORE_MANIFEST, root / "crates" / "cognicode-core" / "Cargo.toml")
     if product is not None:
         (root / "product").mkdir(parents=True, exist_ok=True)
         for name, document in product.items():
@@ -269,6 +272,42 @@ def test_the_gate_still_detects_a_tool_name_that_does_not_exist() -> None:
         "graph_query_tier2" in proc.stdout,
         "the failure must name the offending tool, not just count errors; "
         f"stdout was:\n{proc.stdout}",
+    )
+
+
+def test_a_skill_cannot_teach_a_tool_the_default_build_does_not_serve() -> None:
+    """A catalog entry gated behind an off-by-default feature is not served.
+
+    `tools/list` omits it and a call answers ToolNotFound, so a skill that
+    teaches it sends the agent into a JSON-RPC error. Staged copy with one
+    skill citing `generate_contract` (feature `contract-store`).
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = stage_tree(Path(tmp), published())
+        for md in (root / "skills").rglob("*.md"):
+            text = md.read_text(encoding="utf-8")
+            md.write_text(
+                re.sub(r"`?\b(generate|validate)_contract\b`?", "`list_files`", text),
+                encoding="utf-8",
+            )
+        clean = run_validator(root)
+        target = root / "skills" / "cognicode" / "SKILL.md"
+        target.write_text(
+            target.read_text(encoding="utf-8")
+            + "\nUse the `generate_contract` tool before refactoring.\n",
+            encoding="utf-8",
+        )
+        proc = run_validator(root)
+
+    check(
+        clean.returncode == 0,
+        f"the staged tree without the gated tools must pass; stdout:\n{clean.stdout}",
+    )
+    check(
+        proc.returncode != 0 and "generate_contract" in proc.stdout,
+        "a skill citing a tool gated behind a feature the default build leaves "
+        f"off must fail the gate and name it; exit {proc.returncode}, "
+        f"stdout:\n{proc.stdout}",
     )
 
 

@@ -6,7 +6,7 @@ description: >
   error recovery. Trigger: When an agent is doing multi-step graph
   exploration, impact analysis, quality audits, or safe refactoring
   on a codebase through CogniCode. Applies to: architecture deep
-  dives, change-impact scoping, refactor + contract validation,
+  dives, change-impact scoping, safe refactor,
   cross-module navigation.
 license: MIT
 metadata:
@@ -40,7 +40,7 @@ intent is what matters.
 | **GRAPH** | "How do modules depend on each other?" | `build_graph`, `graph_insights`, `graph_communities`, `graph_community_detail`, `graph_pagerank`, `graph_god_nodes`, `graph_surprising_connections`, `graph_all_paths`, `graph_query`, `graph_query_filtered`, `check_architecture`, `export_mermaid`, `export_callflow` |
 | **IMPACT** | "What breaks if I change this?" | `analyze_impact`, `trace_path`, `get_call_hierarchy`, `get_hot_paths`, `review_pr` |
 | **QUALITY** | "Where is the code smelly?" | `solid_audit`, `detect_drift`, `detect_god_functions`, `detect_long_parameter_lists`, `get_complexity` |
-| **SAFE CHANGE** | "Mutate safely with guardrails" | `safe_refactor`, `generate_contract`, `validate_contract`, `retrieve_and_verify`, `reparse_on_edit` |
+| **SAFE CHANGE** | "Mutate safely with guardrails" | `safe_refactor`, `retrieve_and_verify`, `reparse_on_edit` |
 | **CODE IO** | "Read or write code" | `read_file`, `edit_file`, `write_file`, `list_files`, `get_file_symbols` |
 | **INFRASTRUCTURE** | "Query IaC" | `iac_query` |
 
@@ -55,7 +55,7 @@ that no stable tool covers.
 | Effect | Tools |
 |--------|-------|
 | **READ / ANALYZE** | everything in DISCOVER, NAVIGATE, GRAPH, IMPACT, QUALITY, INFRASTRUCTURE |
-| **MUTATE** | `edit_file`, `write_file`, `safe_refactor`, `generate_contract` |
+| **MUTATE** | `edit_file`, `write_file`, `safe_refactor` |
 
 Default to READ. Only mutate when the user's request explicitly
 requires a code change. After any mutation, run
@@ -111,13 +111,8 @@ review_pr(changed_files=...)        ← when reviewing a PR
 ```text
 analyze_impact                      ← scope the change
    ↓
-generate_contract(file_path=..., function_name=...)
-                                    ← capture current behaviour
-   ↓
 safe_refactor(action=..., target=...)
                                     ← preview + apply
-   ↓
-validate_contract                   ← verify post-conditions
    ↓
 reparse_on_edit(file_paths=[...])   ← reindex incrementally
 ```
