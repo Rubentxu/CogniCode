@@ -56,6 +56,8 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::domain::value_objects::lexical_path::normalize_path;
+
 use super::apply::compute_workspace_state_digest;
 use super::plan::{PlannedEdit, Precondition, RefactorPlan, Risk};
 
@@ -415,24 +417,6 @@ fn rel_from_abs(root: &Path, abs: &Path) -> PathBuf {
         Ok(r) => r.to_path_buf(),
         Err(_) => abs.to_path_buf(),
     }
-}
-
-/// Normaliza un path (best-effort, sin `canonicalize` para no fallar
-/// si el path no existe). Maneja `.` y `..` lexicamente.
-fn normalize_path(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for comp in p.components() {
-        match comp {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                if !out.pop() {
-                    out.push(comp);
-                }
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 /// Si `abs` es un symlink, devuelve `SymlinkEscape`. Simetria con

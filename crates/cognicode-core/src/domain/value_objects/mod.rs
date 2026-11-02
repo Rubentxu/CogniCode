@@ -12,6 +12,7 @@ pub mod edge_metadata;
 pub mod file_manifest;
 pub mod file_time;
 pub mod language;
+pub mod lexical_path;
 pub mod location;
 pub mod node_kind;
 pub mod pending_reference;
