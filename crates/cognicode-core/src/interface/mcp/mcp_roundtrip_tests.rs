@@ -466,8 +466,8 @@ fn simple_function() {
     }
 
     // ==========================================================================
-    // TASK-39: the CLI/rig port and the MCP handler each carry their own
-    // `find_function_metrics`. Same source, both paths, side by side.
+    // TASK-39: the CLI/rig port and the MCP handler share one measurement.
+    // Same source, both paths, side by side.
     // ==========================================================================
 
     mod complexity_two_copies {
@@ -526,8 +526,8 @@ fn simple_function() {
         const RUST_NESTED: &str = "fn f(a: i32) {\n    if a > 0 {\n        while a > 1 {\n            do_it();\n        }\n    }\n}\n";
         const PY_BRANCHES: &str = "def f(a, b):\n    if a:\n        pass\n    elif b:\n        pass\n    try:\n        pass\n    except E:\n        pass\n";
 
-        // Characterization, not endorsement: these pin what each path does TODAY
-        // so that unifying them is a visible, deliberate change of published output.
+        // One implementation (`infrastructure::complexity::function_metrics`):
+        // the CLI/rig port and the MCP handler must report the same numbers.
 
         #[tokio::test]
         async fn a_single_branch_is_measured_the_same_by_both() {
@@ -537,34 +537,26 @@ fn simple_function() {
         }
 
         #[tokio::test]
-        async fn short_circuit_operators_count_only_on_the_mcp_path() {
+        async fn short_circuit_operators_count_on_both_paths() {
             let (port, mcp) = both("rust", "b.rs", RUST_AND, "f").await;
-            assert_eq!(port, (2, 2, 4, 1, 1), "port ignores `&&`");
-            assert_eq!(mcp, (3, 4, 4, 1, 1), "handler counts `&&` as a decision");
+            assert_eq!(port, mcp);
+            assert_eq!(port, (3, 4, 4, 1, 1), "`&&` is a decision");
         }
 
         #[tokio::test]
-        async fn nesting_depth_grows_only_on_the_mcp_path() {
+        async fn nesting_depth_grows_on_both_paths() {
             let (port, mcp) = both("rust", "c.rs", RUST_NESTED, "f").await;
-            assert_eq!(
-                port,
-                (3, 4, 6, 1, 1),
-                "port never increments the nesting level"
-            );
-            assert_eq!(
-                mcp,
-                (3, 6, 6, 1, 2),
-                "handler descends one level per branch"
-            );
+            assert_eq!(port, mcp);
+            assert_eq!(port, (3, 6, 6, 1, 2), "one level per nested branch");
         }
 
         #[tokio::test]
-        async fn else_if_and_catch_count_only_on_the_mcp_path() {
-            // Both paths report 3 parameters for `def f(a, b)`: the function name
-            // identifier is counted too. A shared defect, left pinned as found.
+        async fn else_if_and_catch_count_on_both_paths() {
+            // 3 parameters for `def f(a, b)`: the function name identifier is
+            // counted too. A shared defect, left pinned as found.
             let (port, mcp) = both("python", "d.py", PY_BRANCHES, "f").await;
-            assert_eq!(port, (2, 2, 8, 3, 1), "port has no elif/except");
-            assert_eq!(mcp, (4, 6, 8, 3, 1), "handler counts elif and except");
+            assert_eq!(port, mcp);
+            assert_eq!(port, (4, 6, 8, 3, 1), "elif and except are decisions");
         }
     }
 
