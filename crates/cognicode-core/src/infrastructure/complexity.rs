@@ -139,7 +139,7 @@ fn find_function_metrics(
                 *func_end_line = node.end_position().row as u32;
 
                 // Count parameters
-                *param_count = count_parameters(node);
+                *param_count = count_parameters(node, source);
 
                 // Process function body for decision points
                 process_decision_points(
@@ -191,6 +191,18 @@ fn function_name(node: tree_sitter::Node, source: &str) -> Option<String> {
         .or_else(|| naming::identifier_text(&node, source.as_bytes()))
 }
 
+/// The node whose children hold the parameter list.
+fn parameter_owner(node: tree_sitter::Node) -> tree_sitter::Node {
+    let mut current = node;
+    while let Some(declarator) = current.child_by_field_name("declarator") {
+        if declarator.kind() == "function_declarator" {
+            return declarator;
+        }
+        current = declarator;
+    }
+    node
+}
+
 /// Counts parameters in a function definition.
 ///
 /// Each grammar wraps its parameters in a list node and emits one named child per
@@ -199,13 +211,21 @@ fn function_name(node: tree_sitter::Node, source: &str) -> Option<String> {
 /// than by one kind. Comments and the Python `/` and `*` separators are not
 /// parameters. A Go `parameter_declaration` such as `a, b int` declares one name
 /// per `name` field.
-fn count_parameters(node: tree_sitter::Node) -> u32 {
+fn count_parameters(node: tree_sitter::Node, source: &str) -> u32 {
     let mut count = 0u32;
+    // C and C++ hang the list off the `function_declarator`, below any pointer
+    // declarator; every other grammar keeps it under the function node.
+    let owner = parameter_owner(node);
     // A Go method has two `parameter_list`s; the first is its receiver.
     let receiver = node.child_by_field_name("receiver");
-    for i in 0..node.child_count() {
-        let Some(list) = node.child(i) else { continue };
+    for i in 0..owner.child_count() {
+        let Some(list) = owner.child(i) else { continue };
         if Some(list) == receiver {
+            continue;
+        }
+        // Swift puts each `parameter` directly under the function.
+        if list.kind() == "parameter" {
+            count += 1;
             continue;
         }
         if !matches!(
@@ -219,6 +239,13 @@ fn count_parameters(node: tree_sitter::Node) -> u32 {
             count += match param.kind() {
                 "comment" | "line_comment" | "block_comment" => 0,
                 "positional_separator" | "keyword_separator" => 0,
+                // `f(void)` declares no parameter: the type stands alone.
+                "parameter_declaration"
+                    if param.child_by_field_name("declarator").is_none()
+                        && param.utf8_text(source.as_bytes()) == Ok("void") =>
+                {
+                    0
+                }
                 "parameter_declaration" | "variadic_parameter_declaration" => (param
                     .children_by_field_name("name", &mut param.walk())
                     .count()
@@ -474,5 +501,31 @@ mod tests {
             )
             .unwrap();
         assert_eq!((m.parameter_count, m.cyclomatic), (2, 2));
+    }
+
+    #[test]
+    fn parameters_not_hanging_from_the_function_node_are_counted() {
+        // C and C++ nest the list under `function_declarator`; Swift puts each
+        // `parameter` directly under the function. A count that only looks at
+        // known list children under the function reports 0 as if measured.
+        let cases = [
+            ("c", "int f(int a, int b) {\n  return a;\n}\n", 2),
+            ("c++", "int f(int a, int b) {\n  return a;\n}\n", 2),
+            (
+                "swift",
+                "func f(a: Int, b: Int) -> Int {\n  return a\n}\n",
+                2,
+            ),
+            ("c", "int f(void) {\n  return 0;\n}\n", 0),
+            ("c", "int f() {\n  return 0;\n}\n", 0),
+            ("swift", "func f() {\n}\n", 0),
+        ];
+        for (language, source, parameters) in cases {
+            assert_eq!(
+                parameter_count(language, source, "f"),
+                parameters,
+                "{language}: {source}"
+            );
+        }
     }
 }
