@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::findings::Finding;
+use crate::domain::findings::Finding;
 use crate::interface::catalog::load_tool_catalog;
 use crate::interface::intent::ToolRef;
 use crate::interface::symbol_identity::SymbolId;

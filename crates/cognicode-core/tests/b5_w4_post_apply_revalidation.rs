@@ -279,3 +279,24 @@ fn incremental_analysis_variants_carry_b4_types() {
     // Si los tipos B4 cambian, este import rompe: pin estructural.
     let _impact: Option<IncrementalAnalysis> = None;
 }
+
+/// TASK-22 — la forma publicada del bloque `findings` del reporte no
+/// cambia al unificar `Finding`: un reporte sin hallazgos serializa los
+/// mismos cuatro campos.
+#[test]
+fn revalidation_report_findings_block_keeps_its_published_shape() {
+    let plan = stub_plan();
+    let outcome = stub_outcome(plan.id, vec![PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
+    let rp = build_revalidation_plan(&plan, &outcome);
+    let r = run_revalidation(&rp, PathBuf::from(".").as_path());
+    let json = serde_json::to_value(&r).expect("report serializable");
+    assert_eq!(
+        json["findings"],
+        serde_json::json!({
+            "findings": [],
+            "total_files_scanned": 2,
+            "language_breakdown": {},
+            "truncated": false,
+        })
+    );
+}

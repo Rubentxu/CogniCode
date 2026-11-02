@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::architecture::diagnostic::ArchitectureDiagnostic;
-use crate::findings::{Finding, FindingsReport};
+use crate::domain::findings::Finding;
 use crate::impact::graph::ImpactResult;
 
 use super::apply::ApplyOutcome;
@@ -119,6 +119,29 @@ impl RevalidationVerdict {
     }
 }
 
+/// Quality findings block of a [`RevalidationReport`]. Same four fields
+/// the report has always published; the element type is the domain
+/// [`Finding`], the only one in the crate.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RevalidationFindings {
+    pub findings: Vec<Finding>,
+    pub total_files_scanned: usize,
+    /// Empty until a producer wires the extractor (see `run_revalidation`).
+    pub language_breakdown: std::collections::BTreeMap<String, usize>,
+    pub truncated: bool,
+}
+
+impl RevalidationFindings {
+    fn none_found(total_files_scanned: usize) -> Self {
+        Self {
+            findings: Vec::new(),
+            total_files_scanned,
+            language_breakdown: std::collections::BTreeMap::new(),
+            truncated: false,
+        }
+    }
+}
+
 /// Post-apply revalidation report. Aggregates the three B4
 /// evidence types and a verdict (default: `VerdictRefused`).
 #[derive(Debug, Clone, Serialize)]
@@ -131,7 +154,7 @@ pub struct RevalidationReport {
     /// Count of files in `what_changed`.
     pub analyzed_files: usize,
     /// B4.W3 findings over the changed files.
-    pub findings: FindingsReport,
+    pub findings: RevalidationFindings,
     /// B4.W2 diagnostic over the changed files. `None` if not run.
     pub diagnostics: Option<ArchitectureDiagnostic>,
     /// B4.W1 impact result over the changed files. `None` if not run.
@@ -213,7 +236,7 @@ pub fn run_revalidation(rp: &RevalidationPlan, workspace_root: &Path) -> Revalid
         plan_id: rp.plan_id,
         plan_digest,
         analyzed_files: rp.what_changed.len(),
-        findings: FindingsReport::with_truncation(Vec::new(), rp.what_changed.len(), false),
+        findings: RevalidationFindings::none_found(rp.what_changed.len()),
         diagnostics: None,
         impact: None,
         verdict: RevalidationVerdict::refused(),

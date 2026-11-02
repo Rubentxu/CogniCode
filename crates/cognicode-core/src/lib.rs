@@ -6,10 +6,6 @@ pub mod architecture;
 pub mod application;
 pub mod assurance_export;
 pub mod domain;
-// B4.W3 — normalized quality finding representation across the 5
-// quality tools (complexity, long_parameter_lists, god_functions,
-// solid_audit, relationship_cycle). Pure data; no I/O.
-pub mod findings;
 // B4.W5 — Composite impact query for agents (evidence, not verdict).
 pub mod impact;
 pub mod incremental;
