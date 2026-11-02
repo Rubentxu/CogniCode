@@ -26,7 +26,7 @@
 
 use super::*;
 
-use crate::domain::value_objects::file_time::measured_millis;
+use crate::domain::value_objects::file_time::observed_mtime;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
 // AIX Tool Handlers
@@ -1889,22 +1889,20 @@ pub async fn handle_reparse_on_edit(
     // rather than zero.
     let baseline_graph = ctx.analysis_service.get_project_graph();
 
-    for file_path in &input.file_paths {
-        let full_path = if Path::new(file_path).is_absolute() {
-            PathBuf::from(file_path)
-        } else {
-            ctx.working_dir.join(file_path)
-        };
+    let observed = input
+        .file_paths
+        .iter()
+        .map(|file_path| {
+            // `join` keeps an absolute path as it is.
+            let full_path = ctx.working_dir.join(file_path);
+            let (exists, mtime) = observed_mtime(std::fs::metadata(&full_path)).map_err(|e| {
+                HandlerError::Internal(format!("Cannot observe file metadata: {e}"))
+            })?;
+            Ok((full_path, exists, mtime))
+        })
+        .collect::<HandlerResult<Vec<_>>>()?;
 
-        // If the file exists, and when it was written. A file without a
-        // date still exists: that is what the stat says, not what the
-        // clock says. And a date before the epoch is a date, with a
-        // negative sign.
-        let (file_exists, file_mtime) = match std::fs::metadata(&full_path) {
-            Ok(meta) => (true, measured_millis(meta.modified().ok())),
-            Err(_) => (false, None),
-        };
-
+    for (full_path, file_exists, file_mtime) in observed {
         let rel_path = full_path
             .strip_prefix(&ctx.working_dir)
             .unwrap_or(&full_path)
