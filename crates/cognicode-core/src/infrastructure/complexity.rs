@@ -49,7 +49,9 @@ impl ComplexityAnalysis for TreeSitterComplexity {
             .map_err(|e| AppError::AnalysisError(format!("Parse error: {e}")))?;
 
         let (cyclomatic, cognitive, max_nesting, param_count, lines_of_code) =
-            function_metrics(&tree, source, function, lang.symbols().function_types);
+            function_metrics(&tree, source, function, lang.symbols().function_types).ok_or_else(
+                || AppError::SymbolNotFound(function.unwrap_or("<first function>").to_string()),
+            )?;
 
         Ok(ComplexityResult {
             cyclomatic,
@@ -67,18 +69,22 @@ impl ComplexityAnalysis for TreeSitterComplexity {
 /// call this, so they cannot disagree about the same source (TASK-39). A
 /// language declares several function kinds (methods, constructors, arrows);
 /// all of them are looked up, not only the first (TASK-42).
+///
+/// `None` means no such function exists in the tree: nothing was measured, so
+/// no figure is made up for it.
 pub(crate) fn function_metrics(
     tree: &tree_sitter::Tree,
     source: &str,
     function_name: Option<&str>,
     function_types: &[&str],
-) -> (u32, u32, u32, u32, u32) {
+) -> Option<(u32, u32, u32, u32, u32)> {
     let calculator = ComplexityCalculator::new();
     let mut max_nesting = 0u32;
     let mut decision_points = Vec::new();
     let mut param_count = 0u32;
     let mut func_start_line = 0u32;
     let mut func_end_line = 0u32;
+    let mut found = false;
 
     find_function_metrics(
         tree.root_node(),
@@ -90,8 +96,12 @@ pub(crate) fn function_metrics(
         &mut param_count,
         &mut func_start_line,
         &mut func_end_line,
+        &mut found,
         0,
     );
+    if !found {
+        return None;
+    }
 
     let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
     let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
@@ -100,13 +110,13 @@ pub(crate) fn function_metrics(
     } else {
         1
     };
-    (
+    Some((
         cyclomatic,
         cognitive,
         max_nesting,
         param_count,
         lines_of_code,
-    )
+    ))
 }
 
 /// Recursively finds a function and its metrics
@@ -121,6 +131,7 @@ fn find_function_metrics(
     param_count: &mut u32,
     func_start_line: &mut u32,
     func_end_line: &mut u32,
+    found: &mut bool,
     current_nesting: u32,
 ) {
     // Check if this is a function definition
@@ -131,10 +142,11 @@ fn find_function_metrics(
             // Otherwise, process the first/only function
             let should_process = match target_name {
                 Some(target) => name == target,
-                None => *func_start_line == 0, // Process first function if no target
+                None => !*found, // Process first function if no target
             };
 
             if should_process {
+                *found = true;
                 *func_start_line = node.start_position().row as u32;
                 *func_end_line = node.end_position().row as u32;
 
@@ -166,6 +178,7 @@ fn find_function_metrics(
                 param_count,
                 func_start_line,
                 func_end_line,
+                found,
                 current_nesting,
             );
         }
@@ -527,5 +540,66 @@ mod tests {
                 "{language}: {source}"
             );
         }
+    }
+
+    fn measure_rust(source: &str, function: Option<&str>) -> AppResult<ComplexityResult> {
+        TreeSitterComplexity.measure("rust", source, function)
+    }
+
+    #[test]
+    fn a_function_that_does_not_exist_is_not_found_instead_of_measured() {
+        let err = measure_rust("fn f() {}\n", Some("missing")).unwrap_err();
+        assert!(
+            matches!(err, AppError::SymbolNotFound(_)),
+            "expected SymbolNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_source_without_functions_is_not_found_when_no_name_is_given() {
+        let err = measure_rust("struct S;\n", None).unwrap_err();
+        assert!(matches!(err, AppError::SymbolNotFound(_)), "{err:?}");
+    }
+
+    #[test]
+    fn an_empty_function_is_measured_with_the_minimum_complexity() {
+        let m = measure_rust("fn f() {}\n", Some("f")).unwrap();
+        assert_eq!(
+            (
+                m.cyclomatic,
+                m.cognitive,
+                m.nesting_depth,
+                m.parameter_count
+            ),
+            (1, 1, 0, 0)
+        );
+    }
+
+    #[test]
+    fn calls_without_decisions_do_not_raise_complexity() {
+        let m = measure_rust("fn f() {\n    a();\n    b();\n    c();\n}\n", Some("f")).unwrap();
+        assert_eq!((m.cyclomatic, m.cognitive, m.nesting_depth), (1, 1, 0));
+    }
+
+    #[test]
+    fn decisions_without_calls_raise_complexity() {
+        let m = measure_rust(
+            "fn f(a: i32) {\n    if a > 0 {}\n    if a > 1 {}\n}\n",
+            Some("f"),
+        )
+        .unwrap();
+        assert_eq!(m.cyclomatic, 3);
+    }
+
+    #[test]
+    fn without_a_name_only_the_first_function_is_measured() {
+        // The first function starts on row 0; a start-row sentinel of 0 made
+        // every later function look "not yet found" and accumulate into it.
+        let m = measure_rust(
+            "fn first() {}\nfn second(a: i32, b: i32) {\n    if a > b {}\n}\n",
+            None,
+        )
+        .unwrap();
+        assert_eq!((m.cyclomatic, m.parameter_count), (1, 0));
     }
 }

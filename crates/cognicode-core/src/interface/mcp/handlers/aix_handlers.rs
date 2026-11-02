@@ -1129,11 +1129,13 @@ pub async fn handle_detect_god_functions(
                 symbol: symbol.name().to_string(),
                 file: symbol.location().file().to_string(),
                 line: symbol.location().line() + 1,
-                lines,
-                complexity,
+                size_proxy: lines,
+                fan_out_proxy: complexity,
                 fan_in,
                 fan_out,
                 god_score,
+                provenance: "heuristic".to_string(),
+                confidence: "low".to_string(),
                 suggestion: "Consider extracting smaller functions".to_string(),
             });
         }
@@ -1516,13 +1518,13 @@ fn extract_keywords(query: &str) -> Vec<String> {
         .collect()
 }
 
-/// Get symbol complexity (simplified)
+/// Call-graph proxy for complexity: callees plus one. Not cyclomatic complexity.
 fn get_symbol_complexity(graph: &CallGraph, symbol_id: &SymbolId) -> Option<u32> {
     let callees = graph.callees(symbol_id);
     Some(callees.len() as u32 + 1)
 }
 
-/// Get approximate lines for a symbol (file-based heuristic)
+/// Size proxy for a symbol derived from its file's byte length. Not a line count.
 fn get_symbol_lines(symbol: &Symbol) -> usize {
     // Use a heuristic: file size / estimated symbols per file
     let file = symbol.location().file();
@@ -2831,6 +2833,50 @@ fn main() { f15(); }
         let output = result.unwrap();
         // Should find at least f15 which has high complexity due to many callees
         assert!(output.god_functions.len() >= 1 || output.total_analyzed >= 15);
+    }
+
+    #[tokio::test]
+    async fn god_functions_label_graph_and_file_figures_as_low_confidence_proxies() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file_path,
+            "fn a() {}\nfn b() {}\nfn c() {}\nfn hub() { a(); b(); c(); }\nfn main() { hub(); }\n",
+        )
+        .unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
+        let _ = handle_build_graph(&ctx, BuildGraphInput { directory: None }).await;
+
+        let out = handle_detect_god_functions(
+            &ctx,
+            DetectGodFunctionsInput {
+                min_lines: 0,
+                min_complexity: 0,
+                min_fan_in: 0,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!out.god_functions.is_empty());
+        for g in &out.god_functions {
+            let v = serde_json::to_value(g).unwrap();
+            assert!(
+                v.get("complexity").is_none() && v.get("lines").is_none(),
+                "a heuristic must not be published as a measured figure: {v}"
+            );
+            assert!(v.get("fan_out_proxy").is_some() && v.get("size_proxy").is_some());
+            assert_eq!(v["provenance"], "heuristic");
+            assert_eq!(v["confidence"], "low");
+        }
+        let hub = out
+            .god_functions
+            .iter()
+            .find(|g| g.symbol == "hub")
+            .unwrap();
+        assert_eq!(hub.fan_out_proxy, 4, "three callees plus one");
     }
 
     #[tokio::test]
