@@ -680,6 +680,35 @@ fn simple_function() {
         }
     }
 
+    mod analyze_impact_absent_symbol {
+        use super::*;
+        use crate::interface::mcp::handlers::{HandlerError, handle_analyze_impact};
+
+        #[tokio::test]
+        async fn a_symbol_the_graph_does_not_contain_is_not_found_rather_than_low_risk() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let src_dir = temp_dir.path().join("src");
+            std::fs::create_dir_all(&src_dir).unwrap();
+            std::fs::write(src_dir.join("lib.rs"), "pub fn present() {}\n").unwrap();
+            let build_input = BuildGraphInput {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            };
+            let _ = handle_build_graph(&ctx, build_input).await;
+
+            let input = AnalyzeImpactInput {
+                symbol_name: "never_defined_anywhere".to_string(),
+                compressed: false,
+            };
+            let result = handle_analyze_impact(&ctx, input).await;
+
+            assert!(
+                matches!(result, Err(HandlerError::NotFound(_))),
+                "an absent symbol must not read as 'no impact': {result:?}"
+            );
+        }
+    }
+
     // ==========================================================================
     // Schema Validation Tests - Ensure Serialization Doesn't Corrupt Data
     // ==========================================================================

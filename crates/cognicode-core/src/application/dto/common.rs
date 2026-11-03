@@ -176,6 +176,18 @@ pub enum RiskLevel {
     Critical,
 }
 
+impl RiskLevel {
+    /// Risk of changing a symbol that this many other symbols depend on.
+    pub fn from_impacted_symbols(count: usize) -> Self {
+        match count {
+            11.. => Self::Critical,
+            6..=10 => Self::High,
+            3..=5 => Self::Medium,
+            _ => Self::Low,
+        }
+    }
+}
+
 /// Kind of symbol in source code.
 ///
 /// Re-export of the canonical [`crate::domain::value_objects::SymbolKind`]
@@ -217,5 +229,30 @@ impl SymbolSummary {
     pub fn with_signature(mut self, signature: Option<String>) -> Self {
         self.signature = signature;
         self
+    }
+}
+
+#[cfg(test)]
+mod risk_level_tests {
+    use super::RiskLevel;
+
+    #[test]
+    fn risk_grows_with_the_number_of_impacted_symbols() {
+        let cases = [
+            (0, RiskLevel::Low),
+            (2, RiskLevel::Low),
+            (3, RiskLevel::Medium),
+            (5, RiskLevel::Medium),
+            (6, RiskLevel::High),
+            (10, RiskLevel::High),
+            (11, RiskLevel::Critical),
+        ];
+        for (count, expected) in cases {
+            assert_eq!(
+                RiskLevel::from_impacted_symbols(count),
+                expected,
+                "count={count}"
+            );
+        }
     }
 }

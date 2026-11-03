@@ -2180,6 +2180,14 @@ pub async fn handle_analyze_impact(
         })
         .unwrap_or_default();
 
+    // Absent from the graph means unknown impact, never "0 impacted, low risk".
+    if symbol_ids.is_empty() {
+        return Err(HandlerError::NotFound(format!(
+            "Symbol '{}' is not in the project graph; its impact is unknown.",
+            input.symbol_name
+        )));
+    }
+
     let mut impacted_symbols_set: HashSet<String> = HashSet::new();
     let mut impacted_files_set: HashSet<String> = HashSet::new();
 
@@ -2201,15 +2209,7 @@ pub async fn handle_analyze_impact(
     let files_count = impacted_files.len();
 
     // Calculate risk level based on impact scope
-    let risk_level = if symbols_count > 10 {
-        RiskLevel::Critical
-    } else if symbols_count > 5 {
-        RiskLevel::High
-    } else if symbols_count > 2 {
-        RiskLevel::Medium
-    } else {
-        RiskLevel::Low
-    };
+    let risk_level = RiskLevel::from_impacted_symbols(symbols_count);
 
     let auto_note = if ensure.auto_built {
         ensure.message.clone()
