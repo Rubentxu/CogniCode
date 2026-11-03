@@ -532,8 +532,21 @@ pipeline {
                     # MEDIDO también por qué el rojo aparecía ahora y no antes:
                     # ese test imprimía `SKIP:` y hacía `return`. Con aserción
                     # dura, el gate que decía medir release no lo medía.
-                    if ! cargo test -p cognicode-core --features evidence-kernel --quiet \
-                        -- --skip release_binary_stdio_round_trip_smoke \
+                    #
+                    # MEDIDO. Esta etapa ejecutaba 3874 tests de core
+                    # en un solo proceso por binario: 261 s con `cargo test`
+                    # contra 26 s de tests con `cargo nextest` (un proceso por
+                    # test, en paralelo). nextest no ejecuta doctests, asi que
+                    # van aparte con `cargo test --doc`; sin esa segunda mitad
+                    # los doctests dejarian de correr sin que nada lo dijera.
+                    cargo nextest --version >/dev/null 2>&1 || {
+                        echo "cargo-nextest no esta instalado: cargo install cargo-nextest --locked"
+                        exit 1
+                    }
+                    if ! { cargo nextest run -p cognicode-core --features evidence-kernel \
+                        --no-fail-fast --status-level fail --final-status-level fail \
+                        -E 'not test(release_binary_stdio_round_trip_smoke)' \
+                        && cargo test -p cognicode-core --features evidence-kernel --doc --quiet; } \
                         > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1; then
                         tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
                         echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
