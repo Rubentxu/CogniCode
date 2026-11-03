@@ -488,8 +488,10 @@ BY_STAGE = {"install-rust-analyzer": {CORE}, "rust-analyzer-answers": {CORE},
 # verify-debug-binaries exige los tres binarios: sus constructores viajan juntos
 BUILDS = {"build-cognicode-mcp-debug", "build-cognicode-cli-debug", "build-control-plane-debug",
           "verify-debug-binaries"}
-CORE_EK = re.compile(r"cargo test -p cognicode-core --features evidence-kernel --quiet\s*\\\s*\n\s*-- --skip release_binary_stdio_round_trip_smoke")
+CORE_EK = re.compile(r"cargo test -p cognicode-core --features evidence-kernel,multimodal --quiet\s*\\\s*\n\s*-- --skip release_binary_stdio_round_trip_smoke")
 SKIP = "--skip release_binary_stdio_round_trip_smoke"
+# una etapa que exporta la ruta de un binario exige que su constructor haya corrido
+BIN_ENV = re.compile(r"COGNICODE_(?:MCP|CLI)_BIN=")
 
 
 def gate_stages(text: str | None = None) -> list[tuple[str, str]]:
@@ -534,7 +536,7 @@ def stage_crates(stage: str, body: str) -> set[str] | str:
 def core_command(core: dict) -> str | None:
     if core.get("mode") != "modules":
         return None
-    base = "cargo test -p cognicode-core --features evidence-kernel --quiet"
+    base = "cargo test -p cognicode-core --features evidence-kernel,multimodal --quiet"
     parts = []
     if core["affected_modules"]:
         filters = " ".join(f"'{m}::'" for m in core["affected_modules"] if m)
@@ -622,6 +624,7 @@ def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, st
         r = subprocess.run(["git", "show", f"{base}:{GATE.name}"], cwd=REPO, capture_output=True, text=True)
         previous = dict(gate_stages(r.stdout)) if r.returncode == 0 else {}
     rows = []
+    builders: list[tuple[int, tuple[int, str, str, str]]] = []
     for stage, body in gate_stages():
         who = stage_crates(stage, body)
         touched = [sc for sc in scripts if sc in body or Path(sc).name in body]
@@ -640,8 +643,7 @@ def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, st
                 rows.append((0, stage, f"solo crates afectados", f'cd "{REPO}" && cargo clippy {pkgs} --all-targets -- -D warnings'))
             continue
         if who == "builds":
-            if affected:
-                rows.append((1, stage, "los tests de los crates afectados lanzan estos binarios", body))
+            builders.append((len(rows), (1, stage, "los tests de los crates afectados lanzan estos binarios", body)))
             continue
         hit = who & affected
         if not hit:
@@ -659,6 +661,10 @@ def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, st
                     rows.append((ring, stage, why, new_body)); continue
                 # la etapa del gate cambio de forma: sin filtro, entera (falla cerrado)
         rows.append((ring, stage, f"afecta a {sorted(hit)}", body))
+    needs_binaries = bool(affected) or any(BIN_ENV.search(r[3]) for r in rows)
+    if needs_binaries:
+        for at, row in reversed(builders):  # en su sitio del gate: antes de la etapa que los usa
+            rows.insert(at, row)
     return sorted(rows, key=lambda r: r[0])  # sort estable: dentro del anillo, orden del gate
 
 
