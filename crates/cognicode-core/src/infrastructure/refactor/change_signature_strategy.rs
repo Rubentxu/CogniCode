@@ -190,11 +190,11 @@ impl ChangeSignatureStrategy {
             .parse_tree(source)
             .map_err(|e| RefactorError::PreparationFailed(format!("Parse failed: {}", e)))?;
 
-        let function_type = self.parser.language().function_node_type();
+        let language = self.parser.language();
         let source_bytes = source.as_bytes();
 
         // Find the function definition
-        self.find_function_definition(tree.root_node(), source_bytes, function_name, function_type)
+        self.find_function_definition(tree.root_node(), source_bytes, function_name, language)
     }
 
     /// Finds a function definition and extracts its signature info
@@ -203,9 +203,9 @@ impl ChangeSignatureStrategy {
         node: tree_sitter::Node,
         source_bytes: &[u8],
         function_name: &str,
-        function_type: &str,
+        language: Language,
     ) -> Result<Option<ParsedFunctionInfo>, RefactorError> {
-        if node.kind() == function_type
+        if language.is_function_kind(node.kind())
             && let Some(name) = naming::identifier_text(&node, source_bytes)
             && name == function_name
         {
@@ -228,12 +228,8 @@ impl ChangeSignatureStrategy {
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i)
-                && let Some(result) = self.find_function_definition(
-                    child,
-                    source_bytes,
-                    function_name,
-                    function_type,
-                )?
+                && let Some(result) =
+                    self.find_function_definition(child, source_bytes, function_name, language)?
             {
                 return Ok(Some(result));
             }

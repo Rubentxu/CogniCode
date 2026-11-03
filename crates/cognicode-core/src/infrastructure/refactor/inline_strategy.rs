@@ -157,14 +157,14 @@ impl InlineStrategy {
             .parse_tree(source)
             .map_err(|e| RefactorError::PreparationFailed(format!("Parse failed: {}", e)))?;
 
-        let function_type = self.parser.language().function_node_type();
+        let language = self.parser.language();
         let source_bytes = source.as_bytes();
         let mut result = None;
         self.find_function_recursive(
             tree.root_node(),
             source_bytes,
             function_name,
-            function_type,
+            language,
             &mut result,
         );
         Ok(result)
@@ -176,10 +176,10 @@ impl InlineStrategy {
         node: tree_sitter::Node,
         source_bytes: &[u8],
         target_name: &str,
-        function_type: &str,
+        language: crate::domain::value_objects::language::Language,
         result: &mut Option<FunctionDefinition>,
     ) {
-        if node.kind() == function_type
+        if language.is_function_kind(node.kind())
             && let Some(name) = self.find_function_name(node, source_bytes)
             && name == target_name
         {
@@ -206,13 +206,7 @@ impl InlineStrategy {
 
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
-                self.find_function_recursive(
-                    child,
-                    source_bytes,
-                    target_name,
-                    function_type,
-                    result,
-                );
+                self.find_function_recursive(child, source_bytes, target_name, language, result);
             }
         }
     }

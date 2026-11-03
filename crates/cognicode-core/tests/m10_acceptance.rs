@@ -100,22 +100,20 @@ fn m10_acceptance_swift_class_with_inheritance_extracted_as_symbol() {
 
 #[test]
 fn m10_acceptance_php_method_node_type_corrected() {
-    // After the M0.10 fix, PHP's `function_node_type` returns
+    // After the M0.10 fix, PHP's declared function kinds include
     // `function_definition` (the kind emitted by tree-sitter-php 0.24.2
     // for free functions). This test pins the corrected value so
     // regressions are caught early.
-    assert_eq!(
-        Language::Php.function_node_type(),
-        "function_definition",
+    assert!(
+        Language::Php.is_function_kind("function_definition"),
         "PHP global function node kind"
     );
 }
 
 #[test]
 fn m10_acceptance_swift_function_node_type_corrected() {
-    assert_eq!(
-        Language::Swift.function_node_type(),
-        "function_declaration",
+    assert!(
+        Language::Swift.is_function_kind("function_declaration"),
         "Swift global function node kind"
     );
 }
