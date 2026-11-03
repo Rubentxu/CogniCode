@@ -2180,6 +2180,16 @@ pub async fn handle_analyze_impact(
         })
         .unwrap_or_default();
 
+    // A symbol the graph does not contain has no known dependents; reporting
+    // "0 impacted, low risk" would read as a verified absence of impact.
+    if symbol_ids.is_empty() {
+        return Err(HandlerError::NotFound(format!(
+            "Symbol '{}' is not in the project graph, so its impact is unknown. \
+             Check the name or rebuild the graph.",
+            input.symbol_name
+        )));
+    }
+
     let mut impacted_symbols_set: HashSet<String> = HashSet::new();
     let mut impacted_files_set: HashSet<String> = HashSet::new();
 
