@@ -1986,10 +1986,10 @@ fn default_god_min_fan_in() -> usize {
 /// Input for detect_god_functions tool
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DetectGodFunctionsInput {
-    /// Minimum lines of code threshold
+    /// Minimum size-proxy threshold (file-size estimate, not measured lines)
     #[serde(default = "default_god_min_lines")]
     pub min_lines: usize,
-    /// Minimum cyclomatic complexity threshold
+    /// Minimum fan-out-proxy threshold (callees plus one, not cyclomatic)
     #[serde(default = "default_god_min_complexity")]
     pub min_complexity: u32,
     /// Minimum fan-in threshold

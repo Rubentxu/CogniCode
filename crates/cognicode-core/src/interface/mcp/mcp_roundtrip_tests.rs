@@ -557,6 +557,31 @@ fn simple_function() {
             assert_eq!(port, mcp);
             assert_eq!(port, (4, 6, 8, 2, 1), "elif and except are decisions");
         }
+
+        #[tokio::test]
+        async fn a_function_that_does_not_exist_is_not_found_on_both() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let path = temp_dir.path().join("e.rs");
+            std::fs::write(&path, RUST_IF).unwrap();
+            let mcp = handle_get_complexity(
+                &ctx,
+                GetComplexityInput {
+                    file_path: path.to_str().unwrap().to_string(),
+                    function_name: Some("missing".to_string()),
+                },
+            )
+            .await;
+            assert!(
+                matches!(
+                    mcp,
+                    Err(crate::interface::mcp::handlers::HandlerError::NotFound(_))
+                ),
+                "expected NotFound, got {mcp:?}"
+            );
+            let port = TreeSitterComplexity.measure("rust", RUST_IF, Some("missing"));
+            assert!(port.is_err(), "the port must not invent metrics either");
+        }
     }
 
     // ==========================================================================

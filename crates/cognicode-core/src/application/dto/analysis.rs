@@ -1082,16 +1082,23 @@ pub struct GodFunctionDto {
     pub symbol: String,
     pub file: String,
     pub line: u32,
-    /// Lines of code
-    pub lines: usize,
-    /// Cyclomatic complexity
-    pub complexity: u32,
+    /// Size estimate derived from the file's byte length, not a measured
+    /// line count of this function.
+    pub size_proxy: usize,
+    /// Number of callees plus one, a call-graph proxy. It is not cyclomatic
+    /// complexity: it ignores every branch the function contains.
+    pub fan_out_proxy: u32,
     /// Number of callers
     pub fan_in: usize,
     /// Number of callees
     pub fan_out: usize,
-    /// God score (0-100): higher = more problematic
+    /// God score (0-100) ranked from the proxies above: higher = more
+    /// problematic
     pub god_score: f64,
+    /// How `size_proxy`, `fan_out_proxy` and `god_score` were obtained
+    pub provenance: String,
+    /// Confidence in those figures
+    pub confidence: String,
     /// Recommendation
     pub suggestion: String,
 }

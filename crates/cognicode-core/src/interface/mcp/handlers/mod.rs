@@ -2450,6 +2450,7 @@ pub async fn handle_check_architecture(
     })
 }
 
+mod complexity_handlers;
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -2490,7 +2491,11 @@ pub async fn handle_get_complexity(
 
     // Find the function and calculate complexity
     let (cyclomatic, cognitive, nesting_depth, parameter_count, lines_of_code) =
-        calculate_function_complexity(&parser, &source, input.function_name.as_deref());
+        complexity_handlers::calculate_function_complexity(
+            &parser,
+            &source,
+            input.function_name.as_deref(),
+        )?;
 
     Ok(GetComplexityOutput {
         file_path: input.file_path,
@@ -2503,23 +2508,6 @@ pub async fn handle_get_complexity(
             function_name: input.function_name,
         },
     })
-}
-
-/// Calculates complexity metrics for a function
-fn calculate_function_complexity(
-    parser: &crate::infrastructure::parser::TreeSitterParser,
-    source: &str,
-    function_name: Option<&str>,
-) -> (u32, u32, u32, u32, u32) {
-    match parser.parse_tree(source) {
-        Ok(tree) => crate::infrastructure::complexity::function_metrics(
-            &tree,
-            source,
-            function_name,
-            parser.language().symbols().function_types,
-        ),
-        Err(_) => (1, 1, 0, 0, 0),
-    }
 }
 
 /// Handler for get_entry_points tool
