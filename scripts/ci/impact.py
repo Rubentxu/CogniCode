@@ -55,6 +55,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import time
 import tomllib
 from pathlib import Path
 
@@ -661,6 +662,21 @@ def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, st
     return sorted(rows, key=lambda r: r[0])  # sort estable: dentro del anillo, orden del gate
 
 
+def fmt_duration(seconds: float) -> str:
+    whole = int(round(seconds))
+    return f"{whole // 60}m{whole % 60:02d}s" if whole >= 60 else f"{whole}s"
+
+
+def timing_report(rows: list[tuple[int, str, float, bool]]) -> str:
+    """Tabla de (anillo, etapa, segundos, reutilizada), la mas lenta primero."""
+    out = ["==> tiempo por etapa"]
+    for ring, stage, secs, reused_ in sorted(rows, key=lambda r: -r[2]):
+        note = "reutilizada" if reused_ else fmt_duration(secs)
+        out.append(f"  anillo {ring}  {stage:40} {note}")
+    out.append(f"  total ejecutado: {fmt_duration(sum(r[2] for r in rows))}")
+    return "\n".join(out)
+
+
 # --------------------------------------------------------------------- cli
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -694,21 +710,27 @@ def main() -> int:
     reuse = not (a.no_reuse or os.environ.get("COGNI_NO_REUSE"))
     linted = set(p.get("affected_crates", [])) - GATE_EXCLUDED
     skipped = 0
+    timings: list[tuple[int, str, float, bool]] = []
     for ring, stage, why, body in schedule(p, a.base):
         crates = linted if stage == "clippy" else stage_crates(stage, body)
         key = evidence_key(stage, body, crates, full_sha, dirs, dependents) if reuse else None
         prior = reused(key) if key else None
         if prior:
             skipped += 1
+            timings.append((ring, stage, 0.0, True))
             print(f"\n==> anillo {ring} · {stage} · REUTILIZADA: paso sobre las mismas entradas en {prior['sha'][:8]} ({prior['at'][:19]})", flush=True)
             continue
         print(f"\n==> anillo {ring} · {stage} · {why}", flush=True)
+        started = time.monotonic()
         rc = subprocess.run(["bash", "-c", "set -eo pipefail\n" + body], cwd=REPO).returncode
+        timings.append((ring, stage, time.monotonic() - started, False))
         if rc != 0:
+            print("\n" + timing_report(timings))
             print(f"\n==> FAIL en {stage} (rc={rc}); las etapas siguientes no corren.")
             return rc
         if key:
             record(key, stage, full_sha)
+    print("\n" + timing_report(timings))
     print(f"\n==> todas las etapas del plan en verde ({skipped} reutilizadas por evidencia previa de las mismas entradas)")
     return 0
 

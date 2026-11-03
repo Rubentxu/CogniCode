@@ -116,6 +116,17 @@ def test_the_core_filter_finds_its_stage() -> None:
           f"el filtro por modulo de core no encuentra su etapa ({hits}); sin el, core corre entero")
 
 
+def test_the_gate_reports_where_the_time_went() -> None:
+    check(impact.fmt_duration(0.4) == "0s" and impact.fmt_duration(83) == "1m23s"
+          and impact.fmt_duration(3600) == "60m00s", "fmt_duration debe dar 0s, 1m23s y 60m00s")
+    rows = [(0, "fmt", 2.0, False), (1, "core", 300.0, False), (2, "qw08", 0.0, True)]
+    lines = impact.timing_report(rows).splitlines()
+    check(lines[0].startswith("==> tiempo por etapa"), "la tabla abre con su titulo")
+    check("core" in lines[1], "la etapa mas lenta va primero")
+    check(any("qw08" in l and "reutilizada" in l for l in lines), "una etapa reutilizada se marca como tal")
+    check("5m02s" in lines[-1] and "total" in lines[-1], "la ultima linea suma las etapas ejecutadas")
+
+
 def test_core_graph_sees_what_an_independent_oracle_sees() -> None:
     """Oraculo: un nombre de tipo que define UN solo modulo y que otro modulo
     menciona (fuera de comentarios y strings) es una dependencia real casi
