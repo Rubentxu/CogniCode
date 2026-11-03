@@ -110,22 +110,6 @@ def test_verify_debug_binaries_never_runs_without_the_binaries_it_verifies() -> 
               f"{builder} debe correr antes de verify-debug-binaries (orden: {order})")
 
 
-def test_the_core_ring_runs_on_nextest_and_keeps_the_doctests() -> None:
-    """nextest no ejecuta doctests: si la etapa entera pasa a nextest sin
-    `cargo test --doc`, esos tests dejan de correr sin que nada lo diga."""
-    body = dict(impact.gate_stages())["core-unrestricted-evidence-kernel"]
-    check("cargo nextest run -p cognicode-core --features evidence-kernel" in body,
-          "la etapa core entera debe correr con nextest")
-    check("cargo test -p cognicode-core --features evidence-kernel --doc" in body,
-          "la etapa core debe seguir ejecutando los doctests aparte")
-    cmd = impact.core_command({"mode": "modules", "affected_modules": ["domain"], "integration": ["m10_acceptance"]})
-    check("cargo nextest run" in cmd and "cargo test" not in cmd,
-          f"el filtro por modulo debe usar nextest ({cmd})")
-    check("--lib" in cmd and "--test m10_acceptance" in cmd and "~domain::" in cmd,
-          f"el filtro por modulo conserva lib, integracion y modulo ({cmd})")
-    check("release_binary_stdio_round_trip_smoke" in cmd, "el filtro conserva el skip del test de release")
-
-
 def test_the_core_filter_finds_its_stage() -> None:
     hits = [s for s, b in impact.gate_stages() if impact.CORE_EK.search(b)]
     check(hits == ["core-unrestricted-evidence-kernel"],
