@@ -2053,19 +2053,9 @@ pub async fn handle_detect_drift(
     input: DetectDriftInput,
 ) -> HandlerResult<DetectDriftOutput> {
     use crate::infrastructure::parser::{Language, TreeSitterParser};
-    use std::path::Path;
 
-    // Validate file path (security check only - does NOT return resolved path)
-    ctx.validator
-        .validate_file_path(&input.file_path)
+    let file_path = authorise_file_path(ctx, &input.file_path)
         .map_err(|e| HandlerError::InvalidInput(format!("Invalid file path: {}", e)))?;
-
-    // Resolve the file path against working directory (like other handlers do)
-    let file_path = if Path::new(&input.file_path).is_absolute() {
-        PathBuf::from(&input.file_path)
-    } else {
-        ctx.working_dir.join(&input.file_path)
-    };
 
     // Read file content
     let source = std::fs::read_to_string(&file_path)

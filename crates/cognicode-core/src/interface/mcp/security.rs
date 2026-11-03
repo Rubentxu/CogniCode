@@ -307,7 +307,7 @@ impl InputValidator {
             }
         }
 
-        Ok(path_buf)
+        Ok(canonical)
     }
 
     /// Validates a path for path traversal and workspace boundaries.
@@ -1561,6 +1561,38 @@ mod tests {
     }
 
     #[test]
+    fn validated_relative_path_comes_back_absolute_inside_the_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace = std::fs::canonicalize(temp_dir.path()).unwrap();
+        std::fs::write(workspace.join("a.rs"), "fn a() {}").unwrap();
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500)
+            .with_workspace(vec![workspace.clone()]);
+
+        let authorised = validator.validate_file_path("a.rs").unwrap();
+
+        assert_eq!(authorised, workspace.join("a.rs"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validated_path_through_a_parent_symlink_comes_back_as_its_real_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace = std::fs::canonicalize(temp_dir.path()).unwrap();
+        let real_dir = workspace.join("real_dir");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::write(real_dir.join("file.txt"), "data").unwrap();
+        std::os::unix::fs::symlink(&real_dir, workspace.join("link_dir")).unwrap();
+        let validator = InputValidator::with_limits(1024 * 1024, 1000, 500)
+            .with_workspace(vec![workspace.clone()]);
+
+        let authorised = validator
+            .validate_file_path(workspace.join("link_dir/file.txt").to_str().unwrap())
+            .unwrap();
+
+        assert_eq!(authorised, real_dir.join("file.txt"));
+    }
+
+    #[test]
     fn test_symlink_inside_workspace_pointing_outside_is_rejected() {
         // Regression test for DEBT-SDDK-007 / e93. After removing the
         // parent-symlink walk from `validate_file_path`, the canonical-form
@@ -2065,7 +2097,8 @@ mod tests {
         // and falls back through `canonicalize_with_fallback` to the
         // current directory. With no workspace configured there is no
         // boundary left to reject it, so it returns `Ok` carrying the
-        // empty path it was handed.
+        // canonical current directory, which is what the validator
+        // authorised.
         //
         // This is pinned deliberately, including the part that is not
         // great: the validator accepts an empty path. Emptiness is
@@ -2081,7 +2114,7 @@ mod tests {
         let result = validator.validate_file_path("");
         assert_eq!(
             result,
-            Ok(PathBuf::new()),
+            Ok(std::fs::canonicalize(".").unwrap()),
             "validate_file_path(\"\") must be a decided answer, not a \
              no-op; got: {result:?}"
         );

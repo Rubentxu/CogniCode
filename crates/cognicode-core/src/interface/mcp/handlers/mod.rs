@@ -1038,6 +1038,29 @@ pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> Pa
     }
 }
 
+/// Anchors `raw` on the session working directory, validates the anchored
+/// path and returns the canonical path the validator authorised.
+///
+/// Anchoring comes first: the validator resolves a bare relative path
+/// against the workspace roots, which need not be the session directory, so
+/// validating the raw string and then joining it would authorise one file
+/// and read another.
+fn anchor_and_validate(
+    validator: &InputValidator,
+    working_dir: &Path,
+    raw: &str,
+) -> Result<PathBuf, crate::interface::mcp::security::SecurityError> {
+    let anchored = resolve_file_path(raw, working_dir);
+    validator.validate_file_path(&anchored.to_string_lossy())
+}
+
+fn authorise_file_path(
+    ctx: &HandlerContext,
+    raw: &str,
+) -> Result<PathBuf, crate::interface::mcp::security::SecurityError> {
+    anchor_and_validate(&ctx.validator, &ctx.working_dir, raw)
+}
+
 /// Resolves a file path relative to a working directory.
 ///
 /// - If `input_path` is absolute, returns it unchanged.
@@ -1850,18 +1873,11 @@ pub async fn handle_get_file_symbols(
     ctx: &HandlerContext,
     input: GetFileSymbolsInput,
 ) -> HandlerResult<serde_json::Value> {
-    // Validate file path
-    ctx.validator.validate_file_path(&input.file_path)?;
+    // The path that is read is the path that was authorised.
+    let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Ensure graph is built for compressed output
     let _ensure = ensure_graph_built(ctx)?;
-
-    // Resolve the file path
-    let file_path = if Path::new(&input.file_path).is_absolute() {
-        PathBuf::from(&input.file_path)
-    } else {
-        ctx.working_dir.join(&input.file_path)
-    };
 
     // Call the analysis service to get symbols
     let symbol_dtos = ctx
@@ -2465,12 +2481,7 @@ pub async fn handle_get_complexity(
     ctx: &HandlerContext,
     input: GetComplexityInput,
 ) -> HandlerResult<GetComplexityOutput> {
-    // Resolve the file path relative to working directory
-    let file_path = resolve_file_path(&input.file_path, &ctx.working_dir);
-
-    // Validate file path
-    ctx.validator
-        .validate_file_path(&file_path.to_string_lossy())?;
+    let file_path = authorise_file_path(ctx, &input.file_path)?;
     if let Some(function_name) = &input.function_name {
         ctx.validator.validate_query(function_name)?;
     }
@@ -3524,14 +3535,7 @@ pub async fn handle_get_per_file_graph(
     ctx: &HandlerContext,
     input: GetPerFileGraphInput,
 ) -> HandlerResult<GetPerFileGraphOutput> {
-    // Validate file path
-    ctx.validator.validate_file_path(&input.file_path)?;
-
-    let file_path = if Path::new(&input.file_path).is_absolute() {
-        PathBuf::from(&input.file_path)
-    } else {
-        ctx.working_dir.join(&input.file_path)
-    };
+    let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Use per-file strategy
     let strategy = PerFileStrategy::new();
@@ -3738,15 +3742,7 @@ pub async fn handle_get_outline(
 ) -> HandlerResult<OutlineOutput> {
     let start = Instant::now();
 
-    // Validate file path
-    ctx.validator.validate_file_path(&input.file_path)?;
-
-    // Resolve the file path
-    let file_path = if Path::new(&input.file_path).is_absolute() {
-        PathBuf::from(&input.file_path)
-    } else {
-        ctx.working_dir.join(&input.file_path)
-    };
+    let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Read the source file
     let source = std::fs::read_to_string(&file_path)
@@ -3802,15 +3798,7 @@ pub async fn handle_get_symbol_code(
     working_dir: PathBuf,
     input: SymbolCodeInput,
 ) -> HandlerResult<SymbolCodeOutput> {
-    // Validate file path
-    validator.validate_file_path(&input.file)?;
-
-    // Resolve the file path
-    let file_path = if Path::new(&input.file).is_absolute() {
-        PathBuf::from(&input.file)
-    } else {
-        working_dir.join(&input.file)
-    };
+    let file_path = anchor_and_validate(&validator, &working_dir, &input.file)?;
 
     // Check cache first
     let cache_key = crate::infrastructure::semantic::SymbolCodeKey::new(
