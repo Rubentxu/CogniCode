@@ -29,7 +29,7 @@ dos modos contractuales:
 | Modo | Comando | Cuándo |
 |---|---|---|
 | **fast** | `bash scripts/test-fast.sh` | Durante un evolutivo, tras cada cambio de comportamiento. Detecta `git diff` vs `HEAD`, delega en `scripts/ci/select-suites.sh` (CR-08) y corre solo las suites afectadas. Aplica `known_failures.yaml` sobre `cognicode-core/lib` para distinguir regresiones reales del ruido conocido. |
-| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
+| **full** | `bash scripts/test-full.sh` | Antes de tag anotado y antes de bump SemVer; no antes de cada PR (lo que el PR necesita lo prueba `publish-merge-gate.sh`). Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
 
 **Reglas duras**:
 
@@ -48,6 +48,9 @@ dos modos contractuales:
    antes de un tag anotado y antes de un bump SemVer. Esa corrida es la red
    del selector: si sale un rojo que un PR dio por no afectado, la regla que
    falló se corrige en `impact.py` con su caso en `test_impact.py`.
+   Hoy no hay automatización nocturna configurada (ni workflow ni cron):
+   hasta que exista, la red es el `full` previo a tag o bump y el que lance
+   el operador; no se declara una cobertura nocturna que nadie ejecuta.
    `python3 scripts/ci/impact.py plan` muestra, antes de gastar un ciclo, qué
    correrá y por qué.
 2. **El selector CR-08 manda**. `scripts/test-fast.sh` consume la
@@ -85,21 +88,25 @@ dos modos contractuales:
    un solo ciclo de compilación—. Un filtro que no selecciona ninguna
    prueba **falla**, para que un nombre mal escrito no se lea como un
    verde. Un run filtrado **no es evidencia de gate** y se declara en
-   pantalla: el gate es `bash scripts/test-full.sh`, sin filtro.
+   pantalla: el veredicto del PR es el estado `merge-gate` que publica
+   `publish-merge-gate.sh`.
 
 **Disciplina diaria**:
 
 - TDD red → green → refactor: `bash scripts/test-fast.sh` entre
   iteraciones, con `--filter` mientras la unidad sea una sola. El
   sub-segundo de feedback es del subset acotado, no de la batería.
-- Antes de pedir review: `bash scripts/test-full.sh` debe terminar
-  con `rc=0`.
+- Antes de pedir review: `bash scripts/test-fast.sh --filter <unidad>`
+  en verde y `python3 scripts/ci/impact.py plan` revisado. No se corre
+  `test-full.sh` ni `pipelinek run merge-gate.pipeline.kts` en local antes
+  de publicar: `publish-merge-gate.sh` ejecuta el carril que le toca al
+  diff y es el único veredicto que paga el PR.
 - Antes de tag: `bash scripts/test-full.sh` con `git status` limpio
   y `merge-gate` verde en el PR que introduce el cambio.
 - **Cada ciclo termina integrado en el remoto.** El operador autoriza
   el `push` de la rama de trabajo y la fusión de su PR al cierre de cada
-  ciclo, una vez que `fast` y `full` están verdes, el `merge-gate` ha
-  pasado y el recibo de la unidad está escrito. El `merge-gate` sigue
+  ciclo, una vez que `fast` está verde, el estado `merge-gate` publicado
+  por `publish-merge-gate.sh` es success y el recibo de la unidad está escrito. El `merge-gate` sigue
   siendo la autoridad: subir la rama no sustituye al gate, publica el
   veredicto que GitHub exige para dejar fusionar. Un tag o una release
   siguen exigiendo su propio gate de candidato y su propia autorización.

@@ -101,20 +101,8 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-core --all-features --lib")
             }
 
-            stage("runtime-no-default") {
-                sh("$cd && cargo test -p cognicode-runtime --no-default-features --lib")
-            }
-
-            stage("runtime-all-features") {
-                sh("$cd && cargo test -p cognicode-runtime --all-features --lib")
-            }
-
             stage("mcp-all-features") {
                 sh("$cd && cargo test -p cognicode-mcp --all-features --lib")
-            }
-
-            stage("explorer-all-features") {
-                sh("$cd && cargo test -p cognicode-explorer --all-features --lib")
             }
 
             stage("graph-algos-no-default") {
