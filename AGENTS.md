@@ -103,13 +103,36 @@ dos modos contractuales:
   diff y es el único veredicto que paga el PR.
 - Antes de tag: `bash scripts/test-full.sh` con `git status` limpio
   y `merge-gate` verde en el PR que introduce el cambio.
-- **Cada ciclo termina integrado en el remoto.** El operador autoriza
-  el `push` de la rama de trabajo y la fusión de su PR al cierre de cada
-  ciclo, una vez que `fast` está verde, el estado `merge-gate` publicado
-  por `publish-merge-gate.sh` es success y el recibo de la unidad está escrito. El `merge-gate` sigue
-  siendo la autoridad: subir la rama no sustituye al gate, publica el
-  veredicto que GitHub exige para dejar fusionar. Un tag o una release
-  siguen exigiendo su propio gate de candidato y su propia autorización.
+- **Los gates se lanzan por lote de 10 tareas, nunca por tarea.** Regla
+  del operador, vigente hasta que el operador la revoque por escrito:
+  1. **Prohibido** lanzar `scripts/ci/publish-merge-gate.sh`,
+     `python3 scripts/ci/impact.py run`, `bash scripts/test-full.sh` o
+     cualquier equivalente (incluido `pipelinek run` de un pipeline de
+     gate) al cerrar una unidad o tarea individual. Tampoco se espera a un
+     gate en curso para continuar: no se arranca.
+  2. Cada tarea se implementa y se cierra con su ciclo corto: test RED
+     antes y GREEN después, `bash scripts/test-fast.sh --filter <substr>`,
+     ratchet de tamaño si procede, commit en su rama y recibo (nota de la
+     tarea y `JOURNAL`/ROADMAP privado según corresponda). El resultado de
+     `fast` se declara como lo que es: evidencia acotada, nunca `PASS` de
+     gate (`NOT_RUN` para el gate).
+  3. Un **lote** son 10 tareas del backlog cerradas, cada una con su
+     rama y su commit. Solo cuando el lote está completo el agente lanza
+     **un único** gate sobre el lote integrado; antes, ni siquiera con
+     menos de 10 tareas porque "ya es la última".
+  4. Si el gate del lote falla, se corrige y se relanza sobre el lote;
+     no se vuelve a gate por tarea. Si hay que bisectar, se hace con
+     `fast` acotado, no con gates.
+  5. `push`, PR y fusión: siguen autorizados por el operador, pero la
+     fusión a `main` exige el `merge-gate` verde del lote (`main` sigue
+     con `strict:true, contexts:[merge-gate]`), así que las ramas de un
+     lote se acumulan sin fusionar hasta ese gate. Un tag o una release
+     siguen exigiendo su propio gate de candidato y su propia
+     autorización.
+  6. Esta regla no relaja nada de la disciplina de calidad: un cambio sin
+     test que falle antes y pase después no cuenta como tarea cerrada, y
+     una tarea no cuenta para el lote si su único respaldo es
+     "compila".
 
 **Fallo de suite por binario release ausente**: si `fast` o `full`
 muestra `missing release binary cogh at /var/home/rubentxu/cargo-targets/release/cogh`,
