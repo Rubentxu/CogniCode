@@ -52,6 +52,9 @@ AUTHORITY = "merge-gate.pipeline.kts"
 REQUIRED_CONTEXT = "merge-gate"
 REQUIRED_STRICT = True
 
+# The only way to publish a lane that exceeded the budget as a success.
+BUDGET_EXCEPTION_VAR = "COGNI_GATE_BUDGET_EXCEPTION"
+
 failures: list[str] = []
 
 
@@ -462,6 +465,115 @@ def test_the_bridge_runs_with_explicit_owner_name() -> None:
                 f"the explicit-args path did not post to the given "
                 f"owner/name: {posted.strip()[:200]}",
             )
+
+
+def run_with_a_lane_that_took(seconds: int, lane_rc: int = 0, exception: str | None = None):
+    """Run the bridge against a stand-in lane whose wall clock reads `seconds`.
+
+    `date +%s` is replaced: it reads 1000 until the stand-in `pipelinek` has run
+    and `1000 + seconds` afterwards, so the test does not sleep. Returns the
+    exit code and the status the bridge tried to post.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        ran = Path(tmp) / "lane-ran"
+        posted = Path(tmp) / "posted.txt"
+        real_date = subprocess.run(
+            ["bash", "-c", "command -v date"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        (bindir / "pipelinek").write_text(
+            f"#!/usr/bin/env bash\ntouch {ran}\nexit {lane_rc}\n", encoding="utf-8"
+        )
+        (bindir / "date").write_text(
+            "#!/usr/bin/env bash\n"
+            'if [ "$1" = "+%s" ]; then\n'
+            f"  if [ -e {ran} ]; then echo {1000 + seconds}; else echo 1000; fi\n"
+            "  exit 0\n"
+            "fi\n"
+            f'exec {real_date} "$@"\n',
+            encoding="utf-8",
+        )
+        (bindir / "gh").write_text(
+            f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {posted}\nexit 0\n',
+            encoding="utf-8",
+        )
+        for name in ("pipelinek", "date", "gh"):
+            os.chmod(bindir / name, 0o755)
+        env = dict(os.environ)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+        env.pop(BUDGET_EXCEPTION_VAR, None)
+        if exception is not None:
+            env[BUDGET_EXCEPTION_VAR] = exception
+        proc = subprocess.run(
+            ["bash", str(SCRIPT)], capture_output=True, text=True, env=env,
+            cwd=REPO_ROOT, check=False,
+        )
+        lines = posted.read_text(encoding="utf-8").splitlines() if posted.is_file() else []
+        status = [l for l in lines if "/statuses/" in l]
+        return proc.returncode, (status[-1] if status else ""), proc.stderr
+
+
+def budget_seconds() -> int:
+    m = re.search(r"^GATE_BUDGET_SECONDS=(\d+)\s*$", script_text(), re.MULTILINE)
+    check(
+        m is not None,
+        f"{SCRIPT_REL} does not declare GATE_BUDGET_SECONDS as a plain number, "
+        f"so the per-PR budget has no single owner",
+    )
+    return int(m.group(1)) if m else 1200
+
+
+def test_the_budget_has_one_owner_and_is_twenty_minutes() -> None:
+    check(budget_seconds() == 1200, "the per-PR budget is not 1200 s (20 min)")
+    check(
+        len(re.findall(r"\b1200\b", script_text())) == 1,
+        f"{SCRIPT_REL} spells the budget more than once; it has to be one constant",
+    )
+
+
+def test_a_lane_over_budget_is_published_as_failure() -> None:
+    """A green lane that took 21 minutes is a red verdict: the budget is enforced."""
+    rc, status, _ = run_with_a_lane_that_took(budget_seconds() + 60)
+    check("state=failure" in status, f"over budget but posted: {status[:240]}")
+    check(".pipeline.kts" in status, f"the description does not name the lane: {status[:240]}")
+    check(
+        re.search(r"21\.\d min|21 min", status) is not None,
+        f"the description does not say how many minutes it took: {status[:240]}",
+    )
+    check(rc != 0, f"the bridge exited {rc} after publishing a budget failure")
+
+
+def test_a_lane_within_budget_publishes_as_before() -> None:
+    rc, status, _ = run_with_a_lane_that_took(budget_seconds())
+    check("state=success" in status, f"at the limit but posted: {status[:240]}")
+    check(rc == 0, f"the bridge exited {rc} for a lane inside the budget")
+    check("budget" not in status.lower(), f"an in-budget status mentions the budget: {status[:240]}")
+
+
+def test_an_explicit_exception_with_a_reason_is_written_in_the_status() -> None:
+    reason = "cold cache after toolchain bump"
+    rc, status, _ = run_with_a_lane_that_took(budget_seconds() + 60, exception=reason)
+    check("state=success" in status, f"a stated exception did not publish success: {status[:240]}")
+    check(reason in status, f"the exception reason is not in the status: {status[:240]}")
+    check(rc == 0, f"the bridge exited {rc} with a stated exception")
+
+
+def test_an_empty_exception_is_not_an_exception() -> None:
+    for blank in ("", "   "):
+        rc, status, _ = run_with_a_lane_that_took(budget_seconds() + 60, exception=blank)
+        check("state=failure" in status, f"blank exception {blank!r} was honoured: {status[:240]}")
+        check(rc != 0, f"blank exception {blank!r} exited 0")
+
+
+def test_an_exception_never_turns_a_red_lane_green() -> None:
+    rc, status, _ = run_with_a_lane_that_took(
+        budget_seconds() + 60, lane_rc=7, exception="whatever"
+    )
+    check("state=failure" in status, f"a red lane with an exception posted: {status[:240]}")
+    check(rc == 7, f"the lane's own exit code was replaced: {rc}")
 
 
 def main() -> int:

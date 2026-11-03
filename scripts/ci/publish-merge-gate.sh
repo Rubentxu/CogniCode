@@ -65,6 +65,14 @@ MERGE_GATE_CONTEXT="merge-gate"
 PIPELINE_DB=".pipelinek/merge-gate.db"
 LANE="merge-gate.pipeline.kts"
 
+# Wall-clock budget for one pull request's verdict, in seconds (20 min). A lane
+# that passes but takes longer is published as a failure: the budget is a
+# property of the verdict, not a wish. The one way past it is a stated reason in
+# COGNI_GATE_BUDGET_EXCEPTION, which is written into the status description so
+# the exception is visible to whoever reads the check.
+GATE_BUDGET_SECONDS=1200
+BUDGET_EXCEPTION_VAR="COGNI_GATE_BUDGET_EXCEPTION"
+
 sha="${1:-HEAD}"
 repo="${2:-}"
 
@@ -174,6 +182,7 @@ if [ -z "${CARGO_TARGET_DIR:-}" ]; then
     echo "    target dir: $CARGO_TARGET_DIR (per-checkout isolation)"
 fi
 
+lane_started="$(date +%s)"
 set +e
 # MEDIDO 2026-10-15. Without `--rerun` the runtime serves stages from the
 # SQLite journal. Measured on a real run: 30 stages — clippy, four release
@@ -188,13 +197,34 @@ set +e
 pipelinek run --rerun --db "$PIPELINE_DB" "$LANE"
 lane_rc=$?
 set -e
+lane_seconds=$(( $(date +%s) - lane_started ))
+lane_minutes="$(awk -v s="$lane_seconds" 'BEGIN { printf "%.1f", s / 60 }')"
+budget_minutes=$(( GATE_BUDGET_SECONDS / 60 ))
+budget_exception="$(printf '%s' "${!BUDGET_EXCEPTION_VAR:-}" | tr -s '[:space:]' ' ' | sed -E 's/^ +| +$//g')"
 
-if [ "$lane_rc" -eq 0 ]; then
+over_budget=0
+if [ "$lane_seconds" -gt "$GATE_BUDGET_SECONDS" ]; then
+    over_budget=1
+fi
+
+if [ "$lane_rc" -eq 0 ] && [ "$over_budget" -eq 0 ]; then
     state="success"
-    description="$LANE passed on $resolved (pipelinek, db: $PIPELINE_DB)"
+    description="$LANE passed on $resolved in $lane_minutes min (pipelinek, db: $PIPELINE_DB)"
 else
-    state="failure"
-    description="$LANE failed with exit $lane_rc on $resolved (pipelinek, db: $PIPELINE_DB)"
+    if [ "$lane_rc" -eq 0 ] && [ -n "$budget_exception" ]; then
+        # Stated exception: the lane passed, the budget was exceeded, and the
+        # reason travels with the status.
+        state="success"
+        description="$LANE passed on $resolved in $lane_minutes min, over the $budget_minutes min budget; exception: $budget_exception"
+    elif [ "$lane_rc" -eq 0 ]; then
+        state="failure"
+        lane_rc=1
+        description="$LANE passed but took $lane_minutes min, over the $budget_minutes min budget, on $resolved"
+        echo "==> $LANE took $lane_minutes min, over the $budget_minutes min budget; set $BUDGET_EXCEPTION_VAR=<reason> to publish anyway" >&2
+    else
+        state="failure"
+        description="$LANE failed with exit $lane_rc on $resolved (pipelinek, db: $PIPELINE_DB)"
+    fi
 fi
 
 echo "==> publishing $MERGE_GATE_CONTEXT=$state to $repo@$resolved"
