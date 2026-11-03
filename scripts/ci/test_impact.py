@@ -110,6 +110,30 @@ def test_verify_debug_binaries_never_runs_without_the_binaries_it_verifies() -> 
               f"{builder} debe correr antes de verify-debug-binaries (orden: {order})")
 
 
+def test_a_stage_that_exports_a_binary_path_gets_that_binary_built_first() -> None:
+    """Un PR que solo cambia la etapa core no afecta a ningun crate, pero la
+    etapa exporta COGNICODE_MCP_BIN y sus tests exigen que el binario exista:
+    los constructores corren antes que ella."""
+    stage = "core-unrestricted-evidence-kernel"
+    real = impact.gate_stages
+
+    def with_old_core(text=None):
+        stages = real()
+        return [(s, b + " # anterior" if s == stage else b) for s, b in stages] if text else stages
+
+    impact.gate_stages = with_old_core
+    try:
+        p = {"tier": "impact", "affected_crates": [], "changed_crates": [], "changed_scripts": [],
+             "gate_changed": True}
+        order = [s for _, s, _, _ in impact.schedule(p, base="HEAD")]
+    finally:
+        impact.gate_stages = real
+    check(stage in order, f"la etapa cambiada debe correr (orden: {order})")
+    for builder in ("build-cognicode-mcp-debug", "build-cognicode-cli-debug"):
+        check(builder in order and order.index(builder) < order.index(stage),
+              f"{builder} debe correr antes de {stage} (orden: {order})")
+
+
 def test_the_core_filter_finds_its_stage() -> None:
     hits = [s for s, b in impact.gate_stages() if impact.CORE_EK.search(b)]
     check(hits == ["core-unrestricted-evidence-kernel"],
