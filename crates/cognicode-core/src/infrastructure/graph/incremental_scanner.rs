@@ -21,6 +21,9 @@ pub struct IncrementalScanResult {
     pub files_processed: usize,
     /// Number of files skipped (unchanged).
     pub files_skipped: usize,
+    /// Files that could not be observed (unread, not "unchanged"), with the
+    /// reason. They are excluded from `files_processed` and `files_skipped`.
+    pub files_unreadable: Vec<(PathBuf, std::io::ErrorKind)>,
     /// Number of files removed from the graph (deleted).
     pub files_removed: usize,
     /// Total files in manifest after scan.
@@ -79,16 +82,22 @@ impl IncrementalScanner {
     pub fn scan(&mut self, current_files: &[PathBuf]) -> (ScanDelta, IncrementalScanResult) {
         let was_first_scan = self.manifest.is_empty();
 
-        let delta = self
+        let mut delta = self
             .manifest
             .compute_delta(&self.project_dir, current_files);
 
-        let files_processed = delta.changed.len();
         let files_skipped = delta.unchanged.len();
         let files_removed = delta.deleted.len();
 
         // Update manifest with changes
-        self.manifest.apply_delta(&self.project_dir, &delta.changed);
+        let failed_to_apply = self.manifest.apply_delta(&self.project_dir, &delta.changed);
+        if !failed_to_apply.is_empty() {
+            delta
+                .changed
+                .retain(|p| !failed_to_apply.iter().any(|(f, _)| f == p));
+            delta.unreadable.extend(failed_to_apply);
+        }
+        let files_processed = delta.changed.len();
         // Refresh mtime/size on unchanged files that had a false-positive
         // mtime change (so the next delta takes the fastpath for them).
         self.manifest
@@ -98,6 +107,7 @@ impl IncrementalScanner {
         let result = IncrementalScanResult {
             files_processed,
             files_skipped,
+            files_unreadable: delta.unreadable.clone(),
             files_removed,
             total_tracked: self.manifest.len(),
             was_first_scan,

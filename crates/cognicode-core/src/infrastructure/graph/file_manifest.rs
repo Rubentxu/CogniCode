@@ -48,6 +48,10 @@ pub struct ScanDelta {
     pub deleted: Vec<PathBuf>,
     /// Files that are unchanged (same hash, skipped).
     pub unchanged: Vec<PathBuf>,
+    /// Files whose state could not be observed (metadata or content could
+    /// not be read), with the reason. They are neither changed nor
+    /// unchanged: nothing is known about them.
+    pub unreadable: Vec<(PathBuf, std::io::ErrorKind)>,
 }
 
 impl FileManifest {
@@ -94,6 +98,7 @@ impl FileManifest {
         let mut changed = Vec::new();
         let mut deleted = Vec::new();
         let mut unchanged = Vec::new();
+        let mut unreadable = Vec::new();
 
         // Detect deleted files: anything in the manifest that isn't in the
         // current file list.
@@ -109,11 +114,8 @@ impl FileManifest {
             let abs_path = project_dir.join(rel_path);
             let metadata = match std::fs::metadata(&abs_path) {
                 Ok(m) => m,
-                Err(_) => {
-                    // File missing or unreadable — treat as changed so the
-                    // caller can decide what to do (the apply step will
-                    // re-skip it if it's still unreachable).
-                    changed.push(rel_path.clone());
+                Err(e) => {
+                    unreadable.push((rel_path.clone(), e.kind()));
                     continue;
                 }
             };
@@ -132,7 +134,13 @@ impl FileManifest {
                 }
 
                 // Mtime or size changed — verify with content hash
-                let content_hash = Self::hash_file(&abs_path).unwrap_or_default();
+                let content_hash = match Self::hash_file(&abs_path) {
+                    Ok(hash) => hash,
+                    Err(e) => {
+                        unreadable.push((rel_path.clone(), e.kind()));
+                        continue;
+                    }
+                };
                 if content_hash == record.content_hash {
                     // False positive — content is the same. We don't push to
                     // `unchanged` for the caller's re-parse accounting, but
@@ -152,12 +160,21 @@ impl FileManifest {
             changed,
             deleted,
             unchanged,
+            unreadable,
         }
     }
 
     /// Update manifest with scan results. Hashes and records metadata for
     /// every path in `changed` and inserts the new `FileRecord`.
-    pub fn apply_delta(&mut self, project_dir: &Path, changed: &[PathBuf]) {
+    ///
+    /// A path whose metadata or content cannot be read is not recorded; it
+    /// is returned with the reason so the caller can report it.
+    pub fn apply_delta(
+        &mut self,
+        project_dir: &Path,
+        changed: &[PathBuf],
+    ) -> Vec<(PathBuf, std::io::ErrorKind)> {
+        let mut unreadable = Vec::new();
         let now_ns = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
@@ -167,10 +184,19 @@ impl FileManifest {
             let abs_path = project_dir.join(rel_path);
             let metadata = match std::fs::metadata(&abs_path) {
                 Ok(m) => m,
-                Err(_) => continue,
+                Err(e) => {
+                    unreadable.push((rel_path.clone(), e.kind()));
+                    continue;
+                }
             };
 
-            let content_hash = Self::hash_file(&abs_path).unwrap_or_default();
+            let content_hash = match Self::hash_file(&abs_path) {
+                Ok(hash) => hash,
+                Err(e) => {
+                    unreadable.push((rel_path.clone(), e.kind()));
+                    continue;
+                }
+            };
             let mtime_ns = measured_nanos(metadata.modified().ok());
 
             self.upsert(FileRecord {
@@ -181,6 +207,7 @@ impl FileManifest {
                 scanned_at_ns: now_ns,
             });
         }
+        unreadable
     }
 
     /// Refresh mtime/size for files in `unchanged` where the fastpath missed
@@ -207,10 +234,9 @@ impl FileManifest {
     }
 
     /// Hash a file using blake3.
-    fn hash_file(path: &Path) -> Option<String> {
-        let bytes = std::fs::read(path).ok()?;
-        let hash = blake3::hash(&bytes);
-        Some(hash.to_hex().to_string())
+    fn hash_file(path: &Path) -> std::io::Result<String> {
+        let bytes = std::fs::read(path)?;
+        Ok(blake3::hash(&bytes).to_hex().to_string())
     }
 
     /// Serialize manifest to JSON bytes.
@@ -537,5 +563,181 @@ mod tests {
             .content_hash
             .clone();
         assert_ne!(hash_v1, hash_v2);
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn permissions_are_enforced(dir: &Path) -> bool {
+        let probe = create_temp_file(dir, ".probe", b"x");
+        set_mode(&probe, 0o000);
+        let denied = fs::read(&probe).is_err();
+        set_mode(&probe, 0o644);
+        denied
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_file_never_gets_an_empty_hash_record() {
+        let dir = tempfile::tempdir().unwrap();
+        if !permissions_are_enforced(dir.path()) {
+            return;
+        }
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() {}");
+        set_mode(&path, 0o000);
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs")]);
+        set_mode(&path, 0o644);
+
+        assert!(
+            manifest.get(Path::new("a.rs")).is_none(),
+            "a file that could not be read must not be recorded with a made-up hash"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_file_with_a_new_mtime_is_not_reported_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        if !permissions_are_enforced(dir.path()) {
+            return;
+        }
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() {}");
+        let rel = PathBuf::from("a.rs");
+
+        set_mode(&path, 0o000);
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+        set_mode(&path, 0o644);
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&path, b"fn a() { different() }").unwrap();
+        set_mode(&path, 0o000);
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        set_mode(&path, 0o644);
+
+        assert!(
+            !delta.unchanged.contains(&rel),
+            "bytes that were never read cannot be called unchanged"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_known_file_that_becomes_unreadable_is_reported_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        if !permissions_are_enforced(dir.path()) {
+            return;
+        }
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() {}");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+        let before = manifest.get(&rel).unwrap().content_hash.clone();
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&path, b"fn a() { different() }").unwrap();
+        set_mode(&path, 0o000);
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        set_mode(&path, 0o644);
+
+        assert!(delta.unreadable.iter().any(|(p, _)| p == &rel));
+        assert!(!delta.unchanged.contains(&rel));
+        assert!(!delta.changed.contains(&rel));
+        assert_eq!(manifest.get(&rel).unwrap().content_hash, before);
+    }
+
+    #[test]
+    fn a_file_deleted_between_delta_and_apply_is_reported_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        create_temp_file(dir.path(), "a.rs", b"fn a() {}");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(delta.changed, vec![rel.clone()]);
+
+        fs::remove_file(dir.path().join("a.rs")).unwrap();
+        let unreadable = manifest.apply_delta(dir.path(), &delta.changed);
+
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].0, rel);
+        assert_eq!(unreadable[0].1, std::io::ErrorKind::NotFound);
+        assert!(manifest.get(Path::new("a.rs")).is_none());
+    }
+
+    #[test]
+    fn a_new_mtime_with_different_bytes_is_changed_with_its_new_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() {}");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+        let before = manifest.get(&rel).unwrap().content_hash.clone();
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&path, b"fn a() { other() }").unwrap();
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(delta.changed, vec![rel.clone()]);
+        assert!(delta.unreadable.is_empty());
+        manifest.apply_delta(dir.path(), &delta.changed);
+        assert_ne!(manifest.get(&rel).unwrap().content_hash, before);
+    }
+
+    #[test]
+    fn same_size_with_a_new_mtime_and_different_bytes_is_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&path, b"fn a() { 2 }").unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            manifest.get(&rel).unwrap().size
+        );
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(delta.changed, vec![rel]);
+        assert!(delta.unchanged.is_empty());
+    }
+
+    #[test]
+    fn matching_size_and_mtime_take_the_fastpath_without_reading_the_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        let rel = PathBuf::from("a.rs");
+
+        let mut manifest = FileManifest::new();
+        manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
+        let recorded_mtime = fs::metadata(&path).unwrap().modified().unwrap();
+
+        fs::write(&path, b"fn a() { 2 }").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(recorded_mtime)
+            .unwrap();
+
+        let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
+        assert_eq!(
+            delta.unchanged,
+            vec![rel],
+            "size and mtime are the whole fastpath contract; bytes are read only when either differs"
+        );
     }
 }
