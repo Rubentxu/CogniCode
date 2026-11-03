@@ -5,7 +5,6 @@
 use clap::Parser;
 use cognicode_core::interface::cli::commands::CliCommand;
 use cognicode_core::{Cli, CommandExecutor};
-use rayon::ThreadPoolBuilder;
 use tracing::info;
 
 // E1.W3 — Evidence CLI adapter for the LadybugDB-backed
@@ -60,23 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Initialize Rayon global thread pool with 8 MB stack size
-    match ThreadPoolBuilder::new()
-        .stack_size(8 * 1024 * 1024) // 8 MB per thread
-        .build_global()
-    {
-        Ok(_) => info!("Rayon global thread pool initialized with 8 MB stack size"),
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("already been initialized") {
-                tracing::warn!(
-                    "Rayon global thread pool already initialized; using existing configuration"
-                );
-            } else {
-                panic!("Failed to initialize Rayon global thread pool: {}", e);
-            }
-        }
-    }
+    cognicode_core::infrastructure::rayon_pool::init_rayon();
 
     // T1-5.5e: the lib's executor returns `CommandOutput` (an
     // `IndexResult`, `GraphResult`, or `Other`). The bin is now

@@ -19,6 +19,7 @@ pub mod robustness;
 pub mod schemas;
 pub mod security;
 pub mod status;
+mod workspace_context;
 
 pub use error::{InterfaceError, InterfaceResult};
 pub use rmcp_adapter::CogniCodeHandler;

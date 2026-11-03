@@ -60,7 +60,6 @@ opentelemetry-prometheus.workspace = true
 # the `PrometheusExporter` and the `/metrics` handler.
 prometheus.workspace = true
 clap.workspace = true
-rayon.workspace = true
 axum = { workspace = true }
 tower = { workspace = true }
 http = "1"

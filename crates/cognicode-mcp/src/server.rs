@@ -50,6 +50,9 @@ struct Args {
     cwd: PathBuf,
     #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
+    /// Hide and refuse the tools that change the workspace.
+    #[arg(long)]
+    read_only: bool,
 }
 
 /// Handler for `/health` — process alive, always 200 OK.
@@ -177,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+    cognicode_core::infrastructure::rayon_pool::init_rayon();
 
     tracing::info!("Standalone in-memory handler");
 
@@ -219,11 +223,8 @@ async fn main() -> anyhow::Result<()> {
     // `graph_loaded` flag is set by `call_tool_handler` after a
     // successful `build_graph` and read by `ready_handler` via the
     // shared Arc<HandlerContext>.
-    let shared_ctx: Arc<HandlerContext> = Arc::new(
-        HandlerContext::builder()
-            .with_working_dir(cwd.clone())
-            .build(),
-    );
+    let shared_ctx: Arc<HandlerContext> =
+        Arc::new(HandlerContext::for_workspace(cwd.clone(), args.read_only));
 
     // Prometheus wiring (fix for bug-prometheus-027).
     //

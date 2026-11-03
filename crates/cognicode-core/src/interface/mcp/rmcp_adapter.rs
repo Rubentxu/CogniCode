@@ -5,9 +5,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::collapsible_if, clippy::manual_async_fn)]
 
-use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::get_global_metrics;
-use crate::infrastructure::verification::RustVerifier;
 use crate::interface::mcp::cancellation::CancellationRegistry;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
@@ -21,7 +19,7 @@ use rmcp::service::RoleServer;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 /// CogniCodeHandler implements the rmcp ServerHandler trait
@@ -58,10 +56,8 @@ impl CogniCodeHandler {
     /// is the property PRF-SEC-02 exists to deny. Fixing it by adding a
     /// setter would have preserved the hole and dressed it up as an API.
     pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = Self::build_ctx(project_root, Some(read_only), Some(cancellation_token));
         Self {
-            ctx: Arc::new(ctx),
+            ctx: Arc::new(HandlerContext::for_workspace(project_root, read_only)),
             cancellations: CancellationRegistry::new(),
         }
     }
@@ -134,11 +130,8 @@ impl CogniCodeHandler {
         project_root: PathBuf,
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = HandlerContext::builder()
-            .with_working_dir(project_root)
+        let ctx = HandlerContext::workspace_builder(project_root, false)
             .with_graph_store_arc(store)
-            .with_cancellation_token(cancellation_token)
             .build();
         Self {
             ctx: Arc::new(ctx),
@@ -155,11 +148,8 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
-        let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = HandlerContext::builder()
-            .with_working_dir(project_root)
-            .with_graph_store_arc(store)
-            .with_cancellation_token(cancellation_token);
+        let ctx =
+            HandlerContext::workspace_builder(project_root, false).with_graph_store_arc(store);
         let ctx = match iac_repo {
             Some(repo) => ctx.with_iac_repo(repo),
             None => ctx,
@@ -169,54 +159,6 @@ impl CogniCodeHandler {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),
         }
-    }
-
-    /// ST-04: read-only and cancellation are configured here, through the
-    /// builder, instead of being reassigned onto the finished context. Both
-    /// used to be `pub` fields patched from outside, which is only possible
-    /// while the field is public — and a public `Arc` field also allows
-    /// swapping it later, letting a live handler be flipped into read-only
-    /// (or out of it) after a client connected. Denying that is the point of
-    /// PRF-SEC-02; adding a setter would have kept the hole and renamed it.
-    fn build_ctx(
-        project_root: PathBuf,
-        read_only: Option<bool>,
-        cancellation_token: Option<Arc<AtomicBool>>,
-    ) -> HandlerContext {
-        let canonical_root =
-            std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
-
-        // The workspace is where the analysis happens, not where the product
-        // lives. The catalogue that says which tools exist, and which of them
-        // change something, is the product's own — the copy inside this binary
-        // or the one next to it in its installation. Reading it from the
-        // workspace would let the tree under analysis declare a mutating tool
-        // read-only, and the read-only posture would believe it.
-
-        // Create validator and FileOperationsService for shared use across handlers
-        let validator = Arc::new(
-            crate::interface::mcp::security::InputValidator::new()
-                .with_workspace(vec![canonical_root.clone()]),
-        );
-        let file_ops_service = Arc::new(FileOperationsService::new(
-            canonical_root.to_string_lossy().as_ref(),
-            validator,
-            Arc::new(RustVerifier::new()),
-            Arc::new(
-                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
-            ),
-        ));
-
-        let mut builder = HandlerContext::builder()
-            .with_working_dir(canonical_root)
-            .with_file_ops_service(file_ops_service);
-        if let Some(read_only) = read_only {
-            builder = builder.with_read_only(read_only);
-        }
-        if let Some(token) = cancellation_token {
-            builder = builder.with_cancellation_token(token);
-        }
-        builder.build()
     }
 
     /// Get the current CallGraph from the store

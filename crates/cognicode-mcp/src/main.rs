@@ -5,7 +5,6 @@ use cognicode_core::interface::mcp::CogniCodeHandler;
 use opentelemetry::global;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
-use rayon::ThreadPoolBuilder;
 use rmcp::transport::io::stdio;
 use std::path::PathBuf;
 use tracing::info;
@@ -71,23 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!("Failed to initialize global metrics: {}", e);
     }
 
-    // Initialize Rayon global thread pool with 8 MB stack size
-    match ThreadPoolBuilder::new()
-        .stack_size(8 * 1024 * 1024) // 8 MB per thread
-        .build_global()
-    {
-        Ok(_) => info!("Rayon global thread pool initialized with 8 MB stack size"),
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("already been initialized") {
-                tracing::warn!(
-                    "Rayon global thread pool already initialized; using existing configuration"
-                );
-            } else {
-                panic!("Failed to initialize Rayon global thread pool: {}", e);
-            }
-        }
-    }
+    cognicode_core::infrastructure::rayon_pool::init_rayon();
 
     info!(
         "Starting CogniCode MCP Server v{}",
