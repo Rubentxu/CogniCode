@@ -13,10 +13,14 @@ const STUB_TOOLS: &[&str] = &[];
 /// Tools that return gated errors when capability is not configured.
 /// The PG-backed tools (graph_diff, graph_timeline, compare_graph,
 /// ingest) were removed with the full postgres removal (e29-7).
-const GATED_TOOLS: &[&str] = &["generate_contract"];
+const GATED_TOOLS: &[&str] = &["generate_contract", "validate_contract"];
 
 /// Gated error message patterns indicating capability not configured.
-const GATED_PATTERNS: &[&str] = &["not configured", "requires persistence"];
+const GATED_PATTERNS: &[&str] = &[
+    "not configured",
+    "requires persistence",
+    "requires a persistence layer",
+];
 
 /// Classifies a tool call result into a status label.
 ///

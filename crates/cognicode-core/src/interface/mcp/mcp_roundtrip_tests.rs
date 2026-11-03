@@ -1243,8 +1243,11 @@ fn simple_function() {
                     continue;
                 }
                 let args = sample_arguments(&descriptor.input_schema);
-                if let Err(InterfaceError::Internal(msg)) = call(&ctx, &descriptor.name, args).await
+                let outcome = call(&ctx, &descriptor.name, args).await;
+                if let Err(InterfaceError::Internal(msg)) = &outcome
                     && msg.contains("requires a persistence layer")
+                    && crate::interface::mcp::status::classify_status(&descriptor.name, &outcome)
+                        != "gated"
                 {
                     unavailable.push(descriptor.name.clone());
                 }
@@ -1257,6 +1260,32 @@ fn simple_function() {
             );
         }
 
+        #[cfg(feature = "contract-store")]
+        #[tokio::test]
+        async fn a_listed_tool_without_a_store_answers_gated_not_error() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let listed: std::collections::HashSet<String> = build_all_tools()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            let catalog = crate::interface::catalog::load_tool_catalog_active();
+            for name in ["generate_contract", "validate_contract"] {
+                assert!(
+                    listed.contains(name),
+                    "`{name}` must be listed with the feature on"
+                );
+                let descriptor = catalog.iter().find(|d| d.name == name).expect("in catalog");
+                let outcome = call(&ctx, name, sample_arguments(&descriptor.input_schema)).await;
+                assert_eq!(
+                    crate::interface::mcp::status::classify_status(name, &outcome),
+                    "gated",
+                    "`{name}` is listed but has no store: it must say so as gated, got {outcome:?}"
+                );
+            }
+        }
+
+        #[cfg(not(feature = "contract-store"))]
         #[tokio::test]
         async fn a_tool_without_its_capability_is_neither_listed_nor_dispatched() {
             let temp_dir = tempfile::tempdir().unwrap();
