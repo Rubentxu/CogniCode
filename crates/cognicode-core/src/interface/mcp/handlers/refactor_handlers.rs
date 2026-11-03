@@ -371,12 +371,7 @@ pub async fn handle_validate_syntax(
     ctx: &HandlerContext,
     input: ValidateSyntaxInput,
 ) -> HandlerResult<ValidateSyntaxOutput> {
-    // Resolve the file path relative to working directory
-    let file_path = resolve_file_path(&input.file_path, &ctx.working_dir);
-
-    // Validate file path
-    ctx.validator
-        .validate_file_path(&file_path.to_string_lossy())?;
+    let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Use VFS-based tree-sitter validation
     match ctx
