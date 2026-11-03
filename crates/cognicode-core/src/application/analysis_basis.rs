@@ -169,6 +169,36 @@ pub enum OutcomeState {
     Failed,
 }
 
+/// A name the graph does not hold. Impact and call queries on it have no
+/// answer: reporting "no impact" or "no calls" would pass the absence off as a
+/// finding, so every interface fails with this message instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolNotInGraph {
+    pub name: String,
+}
+
+impl std::fmt::Display for SymbolNotInGraph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Symbol '{}' is not in the project graph; its result is unknown.",
+            self.name
+        )
+    }
+}
+
+impl std::error::Error for SymbolNotInGraph {}
+
+/// The symbols a query found, or [`SymbolNotInGraph`] when there are none.
+pub fn require_present<T>(found: Vec<T>, name: &str) -> Result<Vec<T>, SymbolNotInGraph> {
+    if found.is_empty() {
+        return Err(SymbolNotInGraph {
+            name: name.to_string(),
+        });
+    }
+    Ok(found)
+}
+
 /// Resultado tipado de una operacion de analisis.
 ///
 /// Pineamos constructores que assertan invariantes (gaps no

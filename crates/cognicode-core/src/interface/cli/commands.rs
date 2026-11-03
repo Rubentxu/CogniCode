@@ -1603,25 +1603,11 @@ impl CommandExecutor {
                         )
                     })
                     .collect();
+                let symbol_ids =
+                    crate::application::analysis_basis::require_present(symbol_ids, symbol)
+                        .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
                 let elapsed = start.elapsed().as_millis();
-
-                if symbol_ids.is_empty() {
-                    // Empty case: the presenter renders the
-                    // 'No symbols found' message + summary
-                    // based on direct_dependents == 0.
-                    let result = GR::Impact {
-                        symbol: symbol.clone(),
-                        risk_level: "NONE".to_string(),
-                        direct_dependents: 0,
-                        total_impacted_symbols: 0,
-                        impacted_files_count: 0,
-                        impacted_symbols: vec![],
-                        impacted_files: vec![],
-                        elapsed_ms: elapsed,
-                    };
-                    return Ok(result);
-                }
 
                 let mut impacted_symbols_set = std::collections::HashSet::new();
                 let mut impacted_files_set = std::collections::HashSet::new();

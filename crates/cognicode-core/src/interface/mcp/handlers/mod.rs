@@ -3106,12 +3106,8 @@ fn present_symbol_ids(graph: &CallGraph, name: &str) -> HandlerResult<Vec<Symbol
                 .collect()
         })
         .unwrap_or_default();
-    if ids.is_empty() {
-        return Err(HandlerError::NotFound(format!(
-            "Symbol '{name}' is not in the project graph; its result is unknown."
-        )));
-    }
-    Ok(ids)
+    crate::application::analysis_basis::require_present(ids, name)
+        .map_err(|absent| HandlerError::NotFound(absent.to_string()))
 }
 
 fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Symbol)>> {
