@@ -115,18 +115,18 @@ fn qw08_crate_selector_returns_changed_for_core_path() {
 }
 
 #[test]
-fn qw08_crate_selector_returns_explorer_and_core_for_explorer_path() {
+fn qw08_crate_selector_explorer_path_is_noop_and_selects_no_suite() {
     let (code, stdout) = run_select("crates/cognicode-explorer/src/architecture.rs");
     assert_eq!(code, 0);
-    assert_eq!(extract_json_field(&stdout, "strategy"), Some("changed"));
+    assert_eq!(
+        extract_json_field(&stdout, "strategy"),
+        Some("noop"),
+        "explorer lives outside the gates, so touching it must be noop; got: {stdout}"
+    );
     let suites = extract_suites(&stdout);
     assert!(
-        suites.contains(&"explorer".to_string()),
-        "explorer suite must be present: {suites:?}"
-    );
-    assert!(
-        suites.contains(&"core".to_string()),
-        "core suite must be present (arch codegen): {suites:?}"
+        suites.is_empty(),
+        "an explorer path must select no suite, core included; got {suites:?}"
     );
 }
 
