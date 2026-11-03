@@ -488,7 +488,7 @@ BY_STAGE = {"install-rust-analyzer": {CORE}, "rust-analyzer-answers": {CORE},
 # verify-debug-binaries exige los tres binarios: sus constructores viajan juntos
 BUILDS = {"build-cognicode-mcp-debug", "build-cognicode-cli-debug", "build-control-plane-debug",
           "verify-debug-binaries"}
-CORE_EK = re.compile(r"cargo test -p cognicode-core --features evidence-kernel --quiet\s*\\\s*\n\s*-- --skip release_binary_stdio_round_trip_smoke")
+CORE_EK = re.compile(r"cargo test -p cognicode-core --features evidence-kernel,multimodal --quiet\s*\\\s*\n\s*-- --skip release_binary_stdio_round_trip_smoke")
 SKIP = "--skip release_binary_stdio_round_trip_smoke"
 
 
@@ -534,7 +534,7 @@ def stage_crates(stage: str, body: str) -> set[str] | str:
 def core_command(core: dict) -> str | None:
     if core.get("mode") != "modules":
         return None
-    base = "cargo test -p cognicode-core --features evidence-kernel --quiet"
+    base = "cargo test -p cognicode-core --features evidence-kernel,multimodal --quiet"
     parts = []
     if core["affected_modules"]:
         filters = " ".join(f"'{m}::'" for m in core["affected_modules"] if m)

@@ -529,10 +529,15 @@ pipeline {
                     # es una cobertura que falte: es una cobertura que ya tiene
                     # casa.
                     #
+                    # MEDIDO. Con `multimodal` se ejecutan 227 tests más de core
+                    # (3868 -> 4095) que antes solo se compilaban; la ejecución sube
+                    # ~50 s. Se pierde la rama multimodal apagado de dos aserciones
+                    # (node_kind.rs y edge_kind.rs).
+                    #
                     # MEDIDO también por qué el rojo aparecía ahora y no antes:
                     # ese test imprimía `SKIP:` y hacía `return`. Con aserción
                     # dura, el gate que decía medir release no lo medía.
-                    if ! cargo test -p cognicode-core --features evidence-kernel --quiet \
+                    if ! cargo test -p cognicode-core --features evidence-kernel,multimodal --quiet \
                         -- --skip release_binary_stdio_round_trip_smoke \
                         > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1; then
                         tail -40 "$logDir/core-unrestricted-evidence-kernel.log"

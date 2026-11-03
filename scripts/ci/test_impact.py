@@ -116,6 +116,16 @@ def test_the_core_filter_finds_its_stage() -> None:
           f"el filtro por modulo de core no encuentra su etapa ({hits}); sin el, core corre entero")
 
 
+def test_the_core_ring_runs_the_multimodal_tests() -> None:
+    body = next(b for s, b in impact.gate_stages() if s == "core-unrestricted-evidence-kernel")
+    feats = "--features evidence-kernel,multimodal"
+    check(feats in body, "la etapa entera de core debe correr con multimodal: sus tests no se ejecutaban en el gate")
+    cmd = impact.core_command({"mode": "modules", "affected_modules": ["domain"], "integration": ["m10_acceptance"]})
+    check(cmd is not None and cmd.count(feats) == 2,
+          f"el filtro por modulo debe usar los mismos features que la etapa entera ({cmd})")
+    check(impact.CORE_EK.search(body) is not None, "el filtro por modulo debe seguir encontrando la etapa")
+
+
 def test_the_gate_reports_where_the_time_went() -> None:
     check(impact.fmt_duration(0.4) == "0s" and impact.fmt_duration(83) == "1m23s"
           and impact.fmt_duration(3600) == "60m00s", "fmt_duration debe dar 0s, 1m23s y 60m00s")
