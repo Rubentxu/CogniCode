@@ -923,96 +923,6 @@ fn graph_db_path(directory: &Path) -> PathBuf {
     canonical_dir.join(".cognicode").join("graph.cache")
 }
 
-/// Atomically persist the graph + manifest snapshot to
-/// `db_path` (temp file + rename, so an interrupted write never leaves a
-/// half-written snapshot that could be mistaken for valid evidence).
-///
-/// The temp file uses a per-process unique name
-/// (`cache.tmp.<pid>.<seq>`), not a fixed slot. Two writers on the same
-/// workspace never share a temp path; an interrupted writer leaves a
-/// file whose name identifies the dying process for post-mortem.
-///
-/// The snapshot carries the **key** —who produced it, over what, and with
-/// which shape— next to the graph and the manifest. Without it, a snapshot
-/// is a graph with no author, and any other build would serve it as its own.
-fn save_durable_snapshot(
-    db_path: &Path,
-    key: &SnapshotKey,
-    graph: &crate::domain::aggregates::call_graph::CallGraph,
-    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
-) -> std::io::Result<()> {
-    use bincode::config::standard;
-    use bincode::serde::encode_to_vec;
-
-    // The version says what the snapshot means, and the meaning of a
-    // snapshot changed three times: a graph is now only "complete" when its
-    // references are tied too, and a snapshot written before that says
-    // complete about a graph that had holes in it; the manifest now records
-    // a modification time that can be absent, a shape the previous layout
-    // cannot hold; and the snapshot now names the analyzer that produced
-    // it, a shape the previous layout cannot hold either. A snapshot of an
-    // older version is therefore not evidence of anything: it is rebuilt.
-    let snapshot = (SNAPSHOT_SCHEMA, key, graph, manifest);
-    let bytes = encode_to_vec(snapshot, standard())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = tmp_path_for(db_path);
-    std::fs::write(&tmp, &bytes)?;
-    std::fs::rename(&tmp, db_path)
-}
-
-/// Returns a unique tmp path for `db_path`.
-///
-/// Each call appends `<pid>.<seq>` so concurrent writers on the same
-/// workspace never collide on the temp slot. The sequence counter is
-/// an atomic monotonic per-process counter (no two consecutive calls
-/// from the same process produce the same path even after many
-/// snapshots).
-fn tmp_path_for(db_path: &Path) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let file_name = format!(
-        "{}.tmp.{}.{}",
-        db_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("graph.cache"),
-        pid,
-        seq
-    );
-    db_path.with_file_name(file_name)
-}
-
-/// Load a durable snapshot. Returns `None` on any
-/// parse failure — a corrupt snapshot is treated as absent (rebuild),
-/// never as valid evidence.
-///
-/// The key comes back with the graph: who produced it is part of what the
-/// snapshot says, and the caller decides whether that producer is the one
-/// standing here.
-fn load_durable_snapshot(
-    db_path: &Path,
-) -> Option<(
-    SnapshotKey,
-    crate::domain::aggregates::call_graph::CallGraph,
-    crate::domain::value_objects::file_manifest::FileManifest,
-)> {
-    use bincode::config::standard;
-    use bincode::serde::decode_from_slice;
-
-    let bytes = std::fs::read(db_path).ok()?;
-    let (snapshot, _): ((String, _, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != SNAPSHOT_SCHEMA {
-        return None;
-    }
-    Some((snapshot.1, snapshot.2, snapshot.3))
-}
-
 /// El workspace canónico: el mismo string en la clave y en la base.
 ///
 /// Un solo sitio lo decide, para que la clave que se guarda y la que se
@@ -2374,6 +2284,10 @@ pub async fn handle_check_architecture(
 }
 
 mod complexity_handlers;
+mod graph_snapshot;
+use graph_snapshot::{load_durable_snapshot, save_durable_snapshot};
+#[cfg(test)]
+use graph_snapshot::{load_durable_snapshot_capped, tmp_path_for};
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -4007,6 +3921,45 @@ mod tests {
     /// se ocupa el test de la superficie publicada.
     fn test_snapshot_key() -> SnapshotKey {
         SnapshotKey::for_current_analyzer("/tmp/cognicode-test-workspace")
+    }
+
+    /// A snapshot lives inside the analysed tree, so whoever controls the
+    /// tree controls its bytes. A valid prefix followed by a container that
+    /// claims 2^64 elements must come back as "absent", not as an allocation.
+    #[test]
+    fn a_snapshot_claiming_a_huge_container_is_refused() {
+        use bincode::config::standard;
+        use bincode::serde::encode_to_vec;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        let mut bytes = encode_to_vec((SNAPSHOT_SCHEMA, test_snapshot_key()), standard()).unwrap();
+        // bincode varint marker 253 introduces a u64; the rest is a length no
+        // file could back.
+        bytes.push(253);
+        bytes.extend_from_slice(&[0xFF; 8]);
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(&db, &bytes).unwrap();
+
+        assert!(load_durable_snapshot(&db).is_none());
+    }
+
+    /// The reader decides from the file length before it reads: a snapshot
+    /// above the cap is never pulled into memory.
+    #[test]
+    fn a_snapshot_above_the_size_cap_is_not_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest).unwrap();
+        let len = std::fs::metadata(&db).unwrap().len();
+
+        assert!(load_durable_snapshot_capped(&db, len).is_some());
+        assert!(load_durable_snapshot_capped(&db, len - 1).is_none());
     }
 
     /// Un snapshot con versión de esquema desconocida
