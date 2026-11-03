@@ -278,7 +278,6 @@ run_suite() {
   local crate
   case "$suite" in
     core)     crate=cognicode-core ;;
-    explorer) crate=cognicode-explorer ;;
     mcp)      crate=cognicode-mcp ;;
     cli)      crate=cognicode-cli ;;
     ladybug)  crate=cognicode-ladybug ;;

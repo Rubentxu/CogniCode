@@ -17,8 +17,6 @@
 # Estrategia:
 #   - "core"     : cargo test -p cognicode-core --lib, mas el target de
 #                  integracion que se haya tocado (crates/cognicode-core/tests/)
-#   - "explorer" : cargo test -p cognicode-explorer --lib, mas el target de
-#                  integracion que se haya tocado
 #   - "mcp"      : cargo test -p cognicode-mcp --lib, mas el target de
 #                  integracion que se haya tocado
 #   - "cli"      : cargo test -p cognicode-cli --lib (no integration tests separados)
@@ -66,9 +64,8 @@
 #   3. Touch en `scripts/ci/**` -> fallback ALL.
 #      (Lo nuevo es infraestructura de CI).
 #   4. Touch en `crates/cognicode-core/**` -> ['core'].
-#   5. Touch en `crates/cognicode-explorer/**` -> ['explorer', 'core']
-#      (cognicode-explorer tiene codegen de arquitectura que recalibra
-#       constraints en core; ambos deben validarse juntos).
+#   5. Touch en `crates/cognicode-explorer/**` -> [] (noop: explorer se
+#      desarrolla en su propio proyecto y ningun gate lo corre).
 #   6. Touch en `crates/cognicode-mcp/**` -> ['mcp', 'core'].
 #      (mcp consume core; cambios rompen compat del contrato MCP).
 #   7. Touch en `crates/cognicode-cli/**` -> ['cli'].
@@ -173,7 +170,7 @@ emit_json() {
 fallback() {
   local reason="$1"
   emit_json "fallback" "$reason" \
-    "core" "explorer" "mcp" "cli" "ladybug" "merge"
+    "core" "mcp" "cli" "ladybug" "merge"
 }
 
 noop() {
@@ -238,17 +235,9 @@ for p in $PATHS; do
       esac
       [ -z "$reason" ] && reason="core_changed($p)"
       ;;
-    # Regla 5: explorer (también dispara core por codegen arquitectura)
+    # Regla 5: explorer se desarrolla en su propio proyecto; ningun gate lo corre
     crates/cognicode-explorer/*|crates/cognicode-explorer)
-      case " $suites " in
-        *" explorer "*) ;;
-        *) suites="$suites explorer" ;;
-      esac
-      case " $suites " in
-        *" core "*) ;;
-        *) suites="$suites core" ;;
-      esac
-      [ -z "$reason" ] && reason="explorer_changed($p)"
+      noop "no_cargo_suite($p); explorer fuera de los gates"
       ;;
     # Regla 6: mcp
     crates/cognicode-mcp/*|crates/cognicode-mcp)
