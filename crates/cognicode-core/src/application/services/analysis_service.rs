@@ -22,7 +22,7 @@ use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{
-    ComplexityCalculator, CycleDetector, ImpactAnalyzer, attach_relations, resolve_target,
+    ComplexityCalculator, CycleDetector, attach_relations, resolve_target,
 };
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{RejectedRelation, TargetResolution, WalkFilter};
@@ -52,7 +52,6 @@ fn default_repository_factory() -> RepositoryFactory {
 pub struct AnalysisService {
     complexity_calculator: ComplexityCalculator,
     cycle_detector: CycleDetector,
-    impact_analyzer: ImpactAnalyzer,
     graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     /// File cache: maps file path to (mtime, size, content_hash,
@@ -155,7 +154,6 @@ impl AnalysisService {
         Self {
             complexity_calculator: ComplexityCalculator::new(),
             cycle_detector: CycleDetector::new(),
-            impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: Arc::new(GraphCache::new()),
             symbol_index: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -174,7 +172,6 @@ impl AnalysisService {
         Self {
             complexity_calculator: ComplexityCalculator::new(),
             cycle_detector: CycleDetector::new(),
-            impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: cache,
             symbol_index: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -1740,16 +1737,16 @@ impl AnalysisService {
         self.cycle_detector.detect_cycles(graph)
     }
 
-    /// Analyzes the impact of changing a symbol
+    /// What depends on the symbols called `name`.
     ///
-    /// Returns an impact report detailing direct and transitive dependents,
-    /// as well as files that would be affected by changing this symbol.
-    pub fn analyze_impact(
-        &self,
-        symbol: &crate::domain::aggregates::Symbol,
+    /// The single implementation of the impact question: every surface that
+    /// asks it calls this one.
+    pub fn impact_of(
         graph: &CallGraph,
-    ) -> crate::domain::services::ImpactReport {
-        self.impact_analyzer.calculate_impact(symbol, graph)
+        name: &str,
+    ) -> Result<super::impact_of::ImpactOf, crate::application::analysis_basis::SymbolNotInGraph>
+    {
+        super::impact_of::impact_of(graph, name)
     }
 
     /// Calculates the cyclomatic complexity based on decision points
@@ -1775,17 +1772,6 @@ impl AnalysisService {
             exit_point_count: exit_points,
             risk,
         }
-    }
-
-    /// Checks if it's safe to change a symbol based on impact thresholds
-    pub fn is_safe_to_change(
-        &self,
-        symbol: &crate::domain::aggregates::Symbol,
-        graph: &CallGraph,
-        threshold: crate::domain::services::ImpactThreshold,
-    ) -> bool {
-        self.impact_analyzer
-            .is_safe_to_change(symbol, graph, threshold)
     }
 
     /// Finds minimal set of symbols that need to be removed to break all cycles
@@ -2475,62 +2461,6 @@ def d():
     }
 
     #[test]
-    fn test_analyze_impact_no_dependents() {
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::value_objects::{Location, SymbolKind};
-
-        let service = AnalysisService::new();
-        let graph = CallGraph::new();
-
-        let symbol = Symbol::new(
-            "orphan",
-            SymbolKind::Function,
-            Location::new("test.rs", 1, 1),
-        );
-        let report = service.analyze_impact(&symbol, &graph);
-
-        assert_eq!(report.direct_dependents, 0);
-        assert_eq!(report.transitive_dependents, 0);
-        assert_eq!(
-            report.impact_level,
-            crate::domain::services::ImpactLevel::Minimal
-        );
-    }
-
-    #[test]
-    fn test_analyze_impact_with_dependents() {
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
-
-        let service = AnalysisService::new();
-        let mut graph = CallGraph::new();
-
-        let main = Symbol::new("main", SymbolKind::Function, Location::new("main.rs", 1, 1));
-        let helper = Symbol::new(
-            "helper",
-            SymbolKind::Function,
-            Location::new("helper.rs", 5, 1),
-        );
-
-        let main_id = graph.add_symbol(main);
-        let helper_id = graph.add_symbol(helper);
-
-        graph
-            .add_dependency(&main_id, &helper_id, DependencyType::Calls)
-            .unwrap();
-
-        let helper_symbol = Symbol::new(
-            "helper",
-            SymbolKind::Function,
-            Location::new("helper.rs", 5, 1),
-        );
-        let report = service.analyze_impact(&helper_symbol, &graph);
-
-        assert_eq!(report.direct_dependents, 1);
-        assert!(report.impact_level <= crate::domain::services::ImpactLevel::Medium);
-    }
-
-    #[test]
     fn test_calculate_complexity_simple() {
         let service = AnalysisService::new();
 
@@ -2552,49 +2482,6 @@ def d():
 
         assert_eq!(report.cyclomatic, 4); // 1 base + 3 decision points
         assert_eq!(report.decision_point_count, 3);
-    }
-
-    #[test]
-    fn test_is_safe_to_change() {
-        use crate::domain::aggregates::Symbol;
-        use crate::domain::services::ImpactThreshold;
-        use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
-
-        let service = AnalysisService::new();
-        let mut graph = CallGraph::new();
-
-        let main = Symbol::new("main", SymbolKind::Function, Location::new("main.rs", 1, 1));
-        let helper = Symbol::new(
-            "helper",
-            SymbolKind::Function,
-            Location::new("helper.rs", 5, 1),
-        );
-
-        let main_id = graph.add_symbol(main);
-        let helper_id = graph.add_symbol(helper);
-
-        graph
-            .add_dependency(&main_id, &helper_id, DependencyType::Calls)
-            .unwrap();
-
-        let helper_symbol = Symbol::new(
-            "helper",
-            SymbolKind::Function,
-            Location::new("helper.rs", 5, 1),
-        );
-
-        // With moderate threshold, should be safe
-        let is_safe =
-            service.is_safe_to_change(&helper_symbol, &graph, ImpactThreshold::moderate());
-        assert!(is_safe);
-
-        // With very strict threshold, may not be safe
-        let strict = ImpactThreshold {
-            max_level: crate::domain::services::ImpactLevel::Minimal,
-            max_dependents: 0,
-        };
-        let is_safe_strict = service.is_safe_to_change(&helper_symbol, &graph, strict);
-        assert!(!is_safe_strict);
     }
 
     #[test]
@@ -2703,33 +2590,16 @@ def d():
             "Simple linear calls should not have cycles"
         );
 
-        // 4. TEST: analyze_impact - analyze impact of changing a symbol
+        // 4. TEST: impact_of - what depends on a symbol
         //
         // Use the symbol the graph holds rather than constructing one by hand.
-        // FQN is the key analyze_impact looks up, and the graph records the
-        // absolute path and a 0-indexed line: this fixture's helper_function
-        // is keyed `/tmp/.../test_lib.rs:helper_function:0`, while a hand-built
-        // `Symbol::new("helper_function", ..., "test_lib.rs", 1, 4)` produces
-        // `test_lib.rs:helper_function:1` and matches nothing. The edge itself
-        // is fine -- the lookup key was wrong, which is why the old `>= 0`
-        // assertion hid it: it passed on a report that found no dependents at
-        // all, under a comment asserting the opposite.
-        let helper_symbol = graph
-            .symbols()
-            .find(|s| s.name() == "helper_function")
-            .cloned()
+        // The impact question is asked by name, as every surface asks it.
+        let impact = AnalysisService::impact_of(&graph, "helper_function")
             .expect("the graph must contain helper_function");
-        let impact_report = service.analyze_impact(&helper_symbol, &graph);
         assert_eq!(
-            impact_report.direct_dependents, 1,
+            impact.symbols,
+            vec!["main_function".to_string()],
             "main_function is the only caller of helper_function in this fixture"
-        );
-        assert!(
-            impact_report.transitive_dependents >= impact_report.direct_dependents,
-            "a direct dependent is also a transitive dependent; got transitive={} \
-             direct={}",
-            impact_report.transitive_dependents,
-            impact_report.direct_dependents
         );
 
         // 5. TEST: calculate_complexity - calculate cyclomatic complexity
@@ -2747,15 +2617,7 @@ def d():
             crate::domain::services::ComplexityRisk::Low
         );
 
-        // 6. TEST: is_safe_to_change - check if it's safe to refactor
-        let threshold = crate::domain::services::ImpactThreshold::conservative();
-        let is_safe = service.is_safe_to_change(&helper_symbol, &graph, threshold);
-        // With low impact, should be safe
-        assert!(
-            impact_report.impact_level <= crate::domain::services::ImpactLevel::Medium || is_safe
-        );
-
-        // 7. TEST: find_minimal_feedback_set - find symbols to break cycles
+        // 6. TEST: find_minimal_feedback_set - find symbols to break cycles
         let feedback_set = service.find_minimal_feedback_set(&graph);
         // Without cycles, feedback set should be empty
         assert!(
@@ -2814,64 +2676,32 @@ def d():
             cycle_result.has_cycles, cycle_result.total_sccs
         );
 
-        // 4. Analyze impact of a real symbol
+        // 4. Analyze impact of a real symbol, by name
         //
-        // Take the symbol from the graph, not one rebuilt from the file-scan
-        // record. FQN is the key analyze_impact looks up, and it is assembled
-        // from the exact path and line the graph recorded; a symbol rebuilt
-        // from a separately-parsed location can key differently and silently
-        // match nothing, which is what the old `>= 0` assertion permitted.
-        let symbol_for_impact = graph
-            .symbols()
-            .find(|s| s.name() == "build_project_graph")
-            .cloned()
-            .expect("the project graph must contain build_project_graph");
-        let impact_report = service.analyze_impact(&symbol_for_impact, &graph);
-        println!(
-            "[REAL CODE] Impact analysis: direct={}, transitive={}, level={:?}",
-            impact_report.direct_dependents,
-            impact_report.transitive_dependents,
-            impact_report.impact_level
-        );
-
         // Whether this real symbol has dependents depends on the real code, so
-        // pinning a count here would pin nothing. Two things must hold: the
-        // graph really is queryable by this symbol, and the transitive set
-        // contains the direct one. `>= 0` was true of every usize and held
-        // even if impact analysis returned an empty, incoherent report.
-        assert!(
-            graph
-                .get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(
-                    symbol_for_impact.fully_qualified_name()
-                ))
-                .is_some(),
-            "a symbol taken from the graph must be resolvable in that graph; \
-             otherwise impact analysis is reporting on nothing"
-        );
-        assert!(
-            impact_report.transitive_dependents >= impact_report.direct_dependents,
-            "a direct dependent is also a transitive dependent, so the transitive \
-             count cannot be lower; got transitive={} direct={}",
-            impact_report.transitive_dependents,
-            impact_report.direct_dependents
-        );
-
-        // 5. Test safety check
-        let threshold = crate::domain::services::ImpactThreshold::conservative();
-        let is_safe = service.is_safe_to_change(&symbol_for_impact, &graph, threshold.clone());
+        // pinning a count here would pin nothing. What must hold is that the
+        // graph answers for a name it holds, and says how many symbols carry it.
+        let impact = AnalysisService::impact_of(&graph, "build_project_graph")
+            .expect("the project graph must contain build_project_graph");
         println!(
-            "[REAL CODE] Safety check: is_safe={} (threshold={:?})",
-            is_safe, threshold.max_level
+            "[REAL CODE] Impact analysis: matched={}, dependents={}, risk={:?}",
+            impact.matched,
+            impact.symbols.len(),
+            impact.risk
+        );
+        assert!(
+            impact.matched >= 1,
+            "a name the graph holds must match at least one symbol"
         );
 
-        // 6. Find feedback set (for breaking cycles if any)
+        // 5. Find feedback set (for breaking cycles if any)
         let feedback_set = service.find_minimal_feedback_set(&graph);
         println!(
             "[REAL CODE] Minimal feedback set size: {}",
             feedback_set.len()
         );
 
-        // 7. Test call graph traversal - find a symbol with callers
+        // 6. Test call graph traversal - find a symbol with callers
         let symbols_with_callers: Vec<_> = graph
             .symbols()
             .filter(|s| {

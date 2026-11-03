@@ -16,7 +16,7 @@ use tokio::sync::{RwLock, broadcast};
 use crate::application::commands::MoveSymbolCommand;
 use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
-    ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
+    ProjectDiagnosticsDto, RefactorResult, SourceLocation, SymbolDto, ValidationResult,
 };
 use crate::application::ports::{
     ComplexityAnalysis, PathPolicy, SharedGraph, SymbolSearch, SymbolSource, SyntaxAnalysis,
@@ -946,65 +946,26 @@ impl WorkspaceSession {
 
     /// Analyze the impact of changing a symbol
     pub async fn analyze_impact(&self, symbol: &str) -> WorkspaceResult<AnalyzeImpactResult> {
-        use std::collections::HashSet;
-
         self.ensure_graph_built().await?;
 
         let graph = self.require_graph()?;
 
-        let index = self.build_symbol_name_index(&graph);
-        let search_name = symbol.to_lowercase();
-        let symbol_ids: Vec<_> = index
-            .get(&search_name)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .map(|(_, s)| {
-                        crate::domain::aggregates::call_graph::SymbolId::new(
-                            s.fully_qualified_name(),
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let impact = crate::application::services::analysis_service::AnalysisService::impact_of(
+            &graph, symbol,
+        )
+        .map_err(|absent| WorkspaceError::SymbolNotFound(absent.to_string()))?;
 
-        let mut impacted_symbols_set: HashSet<String> = HashSet::new();
-        let mut impacted_files_set: HashSet<String> = HashSet::new();
-
-        for symbol_id in &symbol_ids {
-            let dependents = graph.find_all_dependents(symbol_id);
-            for dep_id in dependents {
-                if let Some(sym) = graph.get_symbol(&dep_id) {
-                    impacted_symbols_set.insert(sym.name().to_string());
-                    impacted_files_set.insert(sym.location().file().to_string());
-                }
-            }
-        }
-
-        let impacted_symbols: Vec<String> = impacted_symbols_set.into_iter().collect();
-        let impacted_files: Vec<String> = impacted_files_set.into_iter().collect();
-        let symbols_count = impacted_symbols.len();
-        let files_count = impacted_files.len();
-
-        let risk_level = if symbols_count > 10 {
-            RiskLevel::Critical
-        } else if symbols_count > 5 {
-            RiskLevel::High
-        } else if symbols_count > 2 {
-            RiskLevel::Medium
-        } else {
-            RiskLevel::Low
-        };
-
+        let summary = format!(
+            "{} symbols across {} files would be affected.",
+            impact.symbols.len(),
+            impact.files.len()
+        );
         Ok(AnalyzeImpactResult {
             symbol: symbol.to_string(),
-            impacted_files,
-            impacted_symbols,
-            risk_level,
-            summary: format!(
-                "{} symbols across {} files would be affected.",
-                symbols_count, files_count
-            ),
+            impacted_files: impact.files,
+            impacted_symbols: impact.symbols,
+            risk_level: impact.risk,
+            summary,
         })
     }
 

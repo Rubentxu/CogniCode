@@ -172,7 +172,6 @@ use crate::interface::mcp::schemas::{
     RejectedRelationInfo,
     ReparseOnEditInput,
     ReparseOnEditOutput,
-    RiskLevel,
     SafeRefactorInput,
     SafeRefactorOutput,
     SafeRefactorPreviewInput,
@@ -2134,30 +2133,12 @@ pub async fn handle_analyze_impact(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    let symbol_ids = present_symbol_ids(&graph, &input.symbol_name)?;
-
-    let mut impacted_symbols_set: HashSet<String> = HashSet::new();
-    let mut impacted_files_set: HashSet<String> = HashSet::new();
-
-    for symbol_id in symbol_ids {
-        // Find all dependents (transitive)
-        let dependents = graph.find_all_dependents(&symbol_id);
-
-        for dep_id in dependents {
-            if let Some(symbol) = graph.get_symbol(&dep_id) {
-                impacted_symbols_set.insert(symbol.name().to_string());
-                impacted_files_set.insert(symbol.location().file().to_string());
-            }
-        }
-    }
-
-    let impacted_symbols: Vec<String> = impacted_symbols_set.into_iter().collect();
-    let impacted_files: Vec<String> = impacted_files_set.into_iter().collect();
+    let impact = AnalysisService::impact_of(&graph, &input.symbol_name)
+        .map_err(|absent| HandlerError::NotFound(absent.to_string()))?;
+    let (impacted_symbols, impacted_files, risk_level) =
+        (impact.symbols, impact.files, impact.risk);
     let symbols_count = impacted_symbols.len();
     let files_count = impacted_files.len();
-
-    // Calculate risk level based on impact scope
-    let risk_level = RiskLevel::from_impacted_symbols(symbols_count);
 
     let auto_note = if ensure.auto_built {
         ensure.message.clone()
