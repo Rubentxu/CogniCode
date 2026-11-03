@@ -88,6 +88,16 @@ impl RefactorService {
             ));
         }
 
+        // A rename edits one file: a use elsewhere would be left behind
+        if let Some(other) =
+            self.first_use_outside(project_dir, &command.file_path, &command.old_name)
+        {
+            return Err(AppError::InvalidParameter(format!(
+                "rename of '{}' refused: it is also used in {}, and rename only edits one file",
+                command.old_name, other
+            )));
+        }
+
         // Find all occurrences and generate edits
         let occurrences = self.find_all_occurrences(&command.file_path, &command.old_name)?;
 
@@ -629,6 +639,36 @@ impl RefactorService {
         Ok(occurrences)
     }
 
+    /// The first file under `project_dir`, other than `file_path`, that uses `name`.
+    fn first_use_outside(&self, project_dir: &Path, file_path: &str, name: &str) -> Option<String> {
+        let own = Path::new(file_path);
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) || path == own {
+                continue;
+            }
+            let Some(language) = Language::from_extension(path.extension()) else {
+                continue;
+            };
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(parser) = TreeSitterParser::new(language) else {
+                continue;
+            };
+            if parser
+                .find_all_occurrences_of_identifier(&source, name)
+                .is_ok_and(|found| !found.is_empty())
+            {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+        None
+    }
+
     /// Builds a minimal graph focused on a specific symbol
     fn build_minimal_graph(
         &self,
@@ -936,6 +976,39 @@ mod tests {
             result.is_err(),
             "Rename should fail for non-existent symbol"
         );
+    }
+
+    #[test]
+    fn rename_with_uses_in_other_files_is_refused() {
+        let dir = TempDir::with_suffix("rename_other_files").unwrap();
+        let file_path = dir.path().join("sample.py");
+        std::fs::write(&file_path, "def foo():\n    pass\n").unwrap();
+        std::fs::write(dir.path().join("other.py"), "foo()\n").unwrap();
+
+        let err = RefactorService::new()
+            .rename_symbol(RenameSymbolCommand::new(
+                "foo",
+                "baz",
+                file_path.to_str().unwrap(),
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("other.py"), "{err}");
+    }
+
+    #[test]
+    fn kotlin_rename_counts_the_simple_identifier_uses() {
+        let dir = TempDir::with_suffix("rename_kotlin").unwrap();
+        let file_path = dir.path().join("Sample.kt");
+        std::fs::write(&file_path, "fun foo() {}\nfun main() { foo() }\n").unwrap();
+
+        let preview = RefactorService::new()
+            .rename_symbol(RenameSymbolCommand::new(
+                "foo",
+                "baz",
+                file_path.to_str().unwrap(),
+            ))
+            .unwrap();
+        assert_eq!(preview.change_count, 2);
     }
 
     #[test]

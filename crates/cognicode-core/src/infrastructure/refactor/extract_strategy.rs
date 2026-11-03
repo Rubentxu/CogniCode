@@ -622,6 +622,12 @@ impl ExtractStrategy {
         plan: ExtractionPlan,
     ) -> Result<String, RefactorError> {
         let _language = self.parser.language();
+        if !_language.has_refactor_templates() {
+            return Err(RefactorError::PreparationFailed(format!(
+                "extract is not supported for {:?}: no source templates for that language",
+                _language
+            )));
+        }
         let mut result = source.to_string();
 
         // Step 1: Generate the new function body
@@ -832,6 +838,16 @@ impl RefactorStrategy for ExtractStrategy {
             ));
         }
 
+        if !self.parser.language().has_refactor_templates() {
+            errors.push(ValidationError::new(
+                ValidationErrorCode::InvalidParameters,
+                format!(
+                    "extract is not supported for {:?}: no source templates for that language",
+                    self.parser.language()
+                ),
+            ));
+        }
+
         // Check for valid identifier pattern
         if !is_valid_identifier(extraction_target) {
             errors.push(ValidationError::new(
@@ -1019,6 +1035,27 @@ fn is_valid_identifier(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extract_refuses_languages_without_templates() {
+        for lang in [Language::Kotlin, Language::Groovy, Language::CSharp] {
+            let strategy = ExtractStrategy::new(
+                Arc::new(TreeSitterParser::new(lang).unwrap()),
+                SafetyGate::new(),
+            );
+            let plan = ExtractionPlan {
+                block_range: SourceRange::new(Location::new("f", 0, 0), Location::new("f", 0, 3)),
+                new_function_name: "extracted".to_string(),
+                free_variables: vec![],
+                return_variable: None,
+                has_return_value: false,
+                block_body: "x".to_string(),
+                return_type_hint: None,
+            };
+            let err = strategy.apply_extraction("x\n", plan).unwrap_err();
+            assert!(err.to_string().contains("not supported"), "{lang:?}: {err}");
+        }
+    }
 
     #[test]
     fn test_is_valid_identifier() {

@@ -596,6 +596,15 @@ impl Language {
         }
     }
 
+    /// Whether the extract and change-signature strategies carry source
+    /// templates written for this language.
+    ///
+    /// Kotlin, Groovy and C# have none: asking them to generate code would
+    /// emit another language's syntax, so those operations refuse instead.
+    pub const fn has_refactor_templates(self) -> bool {
+        !matches!(self, Language::Kotlin | Language::Groovy | Language::CSharp)
+    }
+
     /// The node kinds that declare the package a file belongs to.
     ///
     /// The taxonomy has always known what a package IS —`SymbolKind::
