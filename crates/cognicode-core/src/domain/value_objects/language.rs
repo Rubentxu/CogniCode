@@ -775,19 +775,22 @@ impl Language {
         }
     }
 
-    /// Returns the node type for function definitions in this language.
+    /// Whether `kind` is one of the node kinds this language declares for
+    /// functions.
     ///
-    /// An empty string means the language declares no such thing: no
-    /// grammar produces a node kind named "", so the comparison never
-    /// matches and the graph stays empty instead of inventing a symbol.
-    pub fn function_node_type(self) -> &'static str {
-        self.symbols().function_types.first().copied().unwrap_or("")
+    /// Every reader asks here instead of comparing against the first
+    /// declared kind: a language declares several (Go methods, Java
+    /// constructors, Kotlin secondary constructors) and a reader that kept
+    /// only the first would not see the rest. A language that declares none
+    /// answers `false` for every kind, so nothing is invented.
+    pub fn is_function_kind(self, kind: &str) -> bool {
+        self.symbols().function_types.contains(&kind)
     }
 
     /// Returns the node type for class definitions in this language.
     ///
     /// An empty string means the language declares no such thing, with the
-    /// same reasoning as [`Self::function_node_type`].
+    /// same reasoning as [`Self::is_function_kind`].
     pub fn class_node_type(self) -> &'static str {
         self.symbols().class_types.first().copied().unwrap_or("")
     }
@@ -795,7 +798,7 @@ impl Language {
     /// Returns the node type for variable declarations in this language.
     ///
     /// An empty string means the language declares no such thing, with the
-    /// same reasoning as [`Self::function_node_type`].
+    /// same reasoning as [`Self::is_function_kind`].
     pub fn variable_node_type(self) -> &'static str {
         self.symbols().variable_types.first().copied().unwrap_or("")
     }
@@ -803,7 +806,7 @@ impl Language {
     /// Returns the node type for call expressions in this language.
     ///
     /// An empty string means the language declares no such thing, with the
-    /// same reasoning as [`Self::function_node_type`].
+    /// same reasoning as [`Self::is_function_kind`].
     pub fn call_node_type(self) -> &'static str {
         self.symbols().call_types.first().copied().unwrap_or("")
     }

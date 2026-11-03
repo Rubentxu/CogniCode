@@ -192,7 +192,7 @@ impl OutlineBuilder {
         // Map node kind to symbol kind
         let (symbol_kind, name_opt) = match kind {
             // Functions
-            k if k == self.language.function_node_type() => (
+            k if self.language.is_function_kind(k) => (
                 SymbolKind::Function,
                 self.find_name_in_node(node, "identifier"),
             ),

@@ -70,18 +70,15 @@ impl MoveStrategy {
         symbol_name: &str,
     ) -> Option<(tree_sitter::Point, tree_sitter::Point)> {
         // Check if this node is a definition matching our symbol
-        let node_types = [
-            self.parser.language().function_node_type(),
-            self.parser.language().class_node_type(),
-        ];
+        let language = self.parser.language();
+        let node_is_definition =
+            |kind: &str| language.is_function_kind(kind) || kind == language.class_node_type();
 
-        for node_type in &node_types {
-            if node.kind() == *node_type
-                && let Some(name) = self.extract_definition_name(node, source_bytes)
-                && name == symbol_name
-            {
-                return Some((node.start_position(), node.end_position()));
-            }
+        if node_is_definition(node.kind())
+            && let Some(name) = self.extract_definition_name(node, source_bytes)
+            && name == symbol_name
+        {
+            return Some((node.start_position(), node.end_position()));
         }
 
         // Recurse into children

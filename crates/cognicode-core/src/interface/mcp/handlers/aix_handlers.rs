@@ -2076,16 +2076,9 @@ pub async fn handle_detect_drift(
 
     // Collect all findings
     let mut findings = Vec::new();
-    let function_node_type = language.function_node_type();
 
     // Walk the tree to find functions
-    walk_function_nodes(
-        tree.root_node(),
-        &source,
-        function_node_type,
-        &input,
-        &mut findings,
-    );
+    walk_function_nodes(tree.root_node(), &source, language, &input, &mut findings);
 
     // Filter by threshold
     let threshold = input.threshold;
@@ -2117,12 +2110,12 @@ pub async fn handle_detect_drift(
 fn walk_function_nodes(
     node: tree_sitter::Node,
     source: &str,
-    function_type: &str,
+    language: crate::domain::value_objects::language::Language,
     input: &DetectDriftInput,
     findings: &mut Vec<DriftFinding>,
 ) {
     // Check if this is a function definition
-    if node.kind() == function_type {
+    if language.is_function_kind(node.kind()) {
         // Get function name
         if let Some(name) = get_function_name(node, source) {
             // If function_name filter is specified, skip non-matching functions
@@ -2132,7 +2125,7 @@ fn walk_function_nodes(
                 // Visit children anyway to find nested functions
                 for i in 0..node.child_count() {
                     if let Some(child) = node.child(i) {
-                        walk_function_nodes(child, source, function_type, input, findings);
+                        walk_function_nodes(child, source, language, input, findings);
                     }
                 }
                 return;
@@ -2173,7 +2166,7 @@ fn walk_function_nodes(
     // Recurse into children
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
-            walk_function_nodes(child, source, function_type, input, findings);
+            walk_function_nodes(child, source, language, input, findings);
         }
     }
 }

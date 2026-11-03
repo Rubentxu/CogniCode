@@ -144,8 +144,8 @@ impl Parser for TreeSitterParser {
     fn find_function_definitions(&self, source: &str) -> ParseResult<Vec<Symbol>> {
         let tree = self.parse_tree(source)?;
         let mut symbols = Vec::new();
-        let function_type = self.language.function_node_type();
-        self.find_nodes_recursive(tree.root_node(), source, function_type, &mut symbols);
+        let language = self.language;
+        self.find_nodes_recursive(tree.root_node(), source, language, &mut symbols);
         Ok(symbols)
     }
 
@@ -164,10 +164,10 @@ impl TreeSitterParser {
         &self,
         node: tree_sitter::Node,
         source: &str,
-        target_type: &str,
+        language: Language,
         symbols: &mut Vec<Symbol>,
     ) {
-        self.find_nodes_recursive_with_path(node, source, "source", target_type, symbols);
+        self.find_nodes_recursive_with_path(node, source, "source", language, symbols);
     }
 
     /// Finds all symbols with a specific file path (single-pass iterative DFS)
@@ -193,7 +193,7 @@ impl TreeSitterParser {
     ) -> ParseResult<Vec<Symbol>> {
         let mut symbols = Vec::new();
 
-        let function_type = self.language.function_node_type();
+        let language = self.language;
         let class_type = self.language.class_node_type();
 
         let mut stack = Vec::new();
@@ -211,11 +211,7 @@ impl TreeSitterParser {
             let declared = self.language.symbols();
             let by_sets = self.language.reads_declared_symbol_sets();
 
-            let is_function = if by_sets {
-                declared.function_types.contains(&kind)
-            } else {
-                kind == function_type
-            };
+            let is_function = language.is_function_kind(kind);
             let is_class = if by_sets {
                 declared.class_types.contains(&kind)
             } else {
@@ -266,14 +262,14 @@ impl TreeSitterParser {
         node: tree_sitter::Node,
         source: &str,
         file_path: &str,
-        target_type: &str,
+        language: Language,
         symbols: &mut Vec<Symbol>,
     ) {
         let mut stack = Vec::new();
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == target_type
+            if language.is_function_kind(current.kind())
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
@@ -315,6 +311,8 @@ impl TreeSitterParser {
                 &self.language.name_rule(),
                 declared.class_types,
             )?
+        } else if self.language.is_function_kind(node.kind()) {
+            self.function_name(node, source)?
         } else {
             self.find_identifier_name(node, source)?
         };
@@ -338,7 +336,7 @@ impl TreeSitterParser {
         } else {
             match node.kind() {
                 "const_item" | "static_item" => SymbolKind::Constant,
-                f if f == self.language.function_node_type() => SymbolKind::Function,
+                f if self.language.is_function_kind(f) => SymbolKind::Function,
                 c if c == self.language.class_node_type() => SymbolKind::Class,
                 v if v == self.language.variable_node_type() => SymbolKind::Variable,
                 _ => SymbolKind::Unknown,
@@ -352,6 +350,41 @@ impl TreeSitterParser {
         // trailing segment (the fact side re-bases to `start.row + 1`).
         let location = Location::new(file_path, start.row as u32, start.column as u32);
         Some(Symbol::new(name, kind, location))
+    }
+
+    /// The name of a function node.
+    ///
+    /// The grammar's own `name` field wins: the first identifier found by a
+    /// walk can be a receiver or a parameter (`func (p P) Hello()` would be
+    /// named `p`). A kind without a `name` field that is not the first one
+    /// the language declares (an arrow function) is anonymous, and stays
+    /// unnamed instead of borrowing the name of one of its parameters.
+    fn function_name(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
+        if let Some(name) = node.child_by_field_name("name") {
+            return name.utf8_text(source.as_bytes()).ok().map(str::to_string);
+        }
+        // C and C++ put the name at the end of a `declarator` chain, and a
+        // method declared inside a class names itself with a
+        // `field_identifier`, which the generic walk does not look for.
+        let mut declarator = node.child_by_field_name("declarator");
+        while let Some(d) = declarator {
+            match d.kind() {
+                "identifier" | "field_identifier" => {
+                    return d.utf8_text(source.as_bytes()).ok().map(str::to_string);
+                }
+                "qualified_identifier" => {
+                    let name = d.child_by_field_name("name")?;
+                    return name.utf8_text(source.as_bytes()).ok().map(str::to_string);
+                }
+                _ => declarator = d.child_by_field_name("declarator"),
+            }
+        }
+        let first_declared = self.language.symbols().function_types.first().copied();
+        if first_declared == Some(node.kind()) {
+            self.find_identifier_name(node, source)
+        } else {
+            None
+        }
     }
 
     /// Searches for an identifier name in a node tree (two-phase iterative DFS)
@@ -497,14 +530,8 @@ impl TreeSitterParser {
         let mut calls = Vec::new();
 
         // Find all function definitions
-        let function_type = self.language.function_node_type();
-        self.find_function_calls(
-            tree.root_node(),
-            source,
-            file_path,
-            function_type,
-            &mut calls,
-        );
+        let language = self.language;
+        self.find_function_calls(tree.root_node(), source, file_path, language, &mut calls);
 
         Ok(calls)
     }
@@ -515,14 +542,14 @@ impl TreeSitterParser {
         node: tree_sitter::Node,
         source: &str,
         file_path: &str,
-        function_type: &str,
+        language: Language,
         relationships: &mut Vec<(Symbol, String, u32)>,
     ) {
         let mut stack = Vec::new();
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == function_type {
+            if language.is_function_kind(current.kind()) {
                 if let Some(caller_symbol) =
                     self.node_to_symbol_with_path(current, source, file_path)
                 {
@@ -852,24 +879,59 @@ class User {
         assert_eq!(Language::TypeScript.name(), "TypeScript");
 
         // Python uses different node naming conventions
-        assert_eq!(Language::Python.function_node_type(), "function_definition");
+        assert!(Language::Python.is_function_kind("function_definition"));
         assert_eq!(Language::Python.class_node_type(), "class_definition");
 
         // Rust uses function_item and struct_item
-        assert_eq!(Language::Rust.function_node_type(), "function_item");
+        assert!(Language::Rust.is_function_kind("function_item"));
         assert_eq!(Language::Rust.class_node_type(), "struct_item");
         assert_eq!(Language::Rust.variable_node_type(), "let_declaration");
 
         // JavaScript/TypeScript share the same grammar
-        assert_eq!(
-            Language::JavaScript.function_node_type(),
-            "function_declaration"
-        );
+        assert!(Language::JavaScript.is_function_kind("function_declaration"));
         assert_eq!(Language::JavaScript.class_node_type(), "class_declaration");
-        assert_eq!(
-            Language::TypeScript.function_node_type(),
-            "function_declaration"
-        );
+        assert!(Language::TypeScript.is_function_kind("function_declaration"));
+    }
+
+    #[test]
+    fn every_declared_function_kind_is_read_as_a_function() {
+        let cases: [(Language, &str, &str); 5] = [
+            (
+                Language::Go,
+                "package p\ntype P struct{}\nfunc (p P) Hello() {}\n",
+                "Hello",
+            ),
+            (
+                Language::JavaScript,
+                "class A {\n  run() { return 1; }\n}\n",
+                "run",
+            ),
+            (Language::Java, "class A {\n  A() {}\n}\n", "A"),
+            (
+                Language::Kotlin,
+                "class A(val x: Int) {\n  constructor() : this(1)\n}\n",
+                "A",
+            ),
+            (
+                Language::Cpp,
+                "class A {\n public:\n  void run() {}\n};\n",
+                "run",
+            ),
+        ];
+        for (language, source, expected) in cases {
+            let parser = TreeSitterParser::new(language).unwrap();
+            let names: Vec<String> = parser
+                .find_function_definitions(source)
+                .unwrap()
+                .iter()
+                .map(|s| s.name().to_string())
+                .collect();
+            assert!(
+                names.iter().any(|n| n == expected),
+                "{}: expected a function named {expected}, read {names:?}",
+                language.name()
+            );
+        }
     }
 
     #[test]

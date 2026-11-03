@@ -211,7 +211,7 @@ impl ExtractStrategy {
         }
 
         // Check if this is a function definition - don't look inside for variables
-        if node.kind() == language.function_node_type() {
+        if language.is_function_kind(node.kind()) {
             return;
         }
 
@@ -729,10 +729,10 @@ impl ExtractStrategy {
             .parse_tree(source)
             .map_err(|e| RefactorError::PreparationFailed(format!("Parse failed: {}", e)))?;
 
-        let function_type = self.parser.language().function_node_type();
+        let language = self.parser.language();
 
         // Find the outermost function node's end byte offset
-        let end_byte = self.find_function_end_byte(tree.root_node(), function_type, 0);
+        let end_byte = self.find_function_end_byte(tree.root_node(), language, 0);
 
         if end_byte > 0 {
             return Ok(end_byte);
@@ -752,18 +752,16 @@ impl ExtractStrategy {
     fn find_function_end_byte(
         &self,
         node: tree_sitter::Node,
-        function_type: &str,
+        language: Language,
         current_end: usize,
     ) -> usize {
         let mut max_end = current_end;
 
-        if node.kind() == function_type {
+        if language.is_function_kind(node.kind()) {
             let start_row = node.start_position().row;
 
             // Check if this is outermost (or if current_end is 0)
-            if current_end == 0
-                || start_row < self.find_node_start_row(node.parent(), function_type)
-            {
+            if current_end == 0 || start_row < self.find_node_start_row(node.parent(), language) {
                 // Calculate byte offset for end position
                 // This is a simplification - we use the node's byte extent directly
                 return node.byte_range().end;
@@ -773,7 +771,7 @@ impl ExtractStrategy {
         // Check children
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
-                let child_end = self.find_function_end_byte(child, function_type, max_end);
+                let child_end = self.find_function_end_byte(child, language, max_end);
                 if child_end > max_end {
                     max_end = child_end;
                 }
@@ -784,12 +782,12 @@ impl ExtractStrategy {
     }
 
     /// Helper to get start row of a node's parent function
-    fn find_node_start_row(&self, node: Option<tree_sitter::Node>, function_type: &str) -> usize {
+    fn find_node_start_row(&self, node: Option<tree_sitter::Node>, language: Language) -> usize {
         if let Some(n) = node {
-            if n.kind() == function_type {
+            if language.is_function_kind(n.kind()) {
                 return n.start_position().row;
             }
-            return self.find_node_start_row(n.parent(), function_type);
+            return self.find_node_start_row(n.parent(), language);
         }
         usize::MAX
     }
