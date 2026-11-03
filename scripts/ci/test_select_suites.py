@@ -51,6 +51,8 @@ CASES: list[tuple[str, str, str]] = [
     ("crates/cognicode-core/src/lib.rs", "changed", "core"),
     ("crates/cognicode-cli/src/main.rs", "changed", "cli"),
     ("crates/cognicode-ladybug/src/lib.rs", "changed", "ladybug"),
+    # Explorer lives in its own project: no gate runs it, so a touch selects nothing.
+    ("crates/cognicode-explorer/src/lib.rs", "noop", ""),
     # Unknown path: the documented safe default is the full battery.
     ("scripts/product/some_new_script.py", "fallback", ""),
     # Cargo manifests and CI wiring force the full battery.
@@ -69,7 +71,7 @@ CASES: list[tuple[str, str, str]] = [
     ("   ", "fallback", ""),
 ]
 
-FULL_BATTERY = {"core", "explorer", "mcp", "cli", "ladybug", "merge"}
+FULL_BATTERY = {"core", "mcp", "cli", "ladybug", "merge"}
 
 failures: list[str] = []
 
