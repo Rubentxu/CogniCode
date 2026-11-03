@@ -164,7 +164,7 @@ pipeline {
                 // pre-existing errors in rig/tools.rs that no longer exist (cargo clippy
                 // reports 0 on the current tree). The baseline was dead and the pipeline
                 // permitted more than CI; restored to the bare assertion CI runs.
-                sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
+                sh("$cd && cargo clippy --workspace --exclude cognicode-explorer --exclude cognicode-runtime --all-targets -- -D warnings")
             }
 
             // El gate de rustdoc (M0.11) vivía aquí y se pagaba **dos veces** por
@@ -546,29 +546,6 @@ pipeline {
             // ladybug (pr-ci.yml:388)
             stage("cognicode-ladybug") {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
-            }
-
-            // El puerto `RouteStore` y la oferta de la capacidad OpenAPI
-            // viven en el explorer, y el build `multimodal` no lo ejercia
-            // ninguna puerta: `cargo test
-            // --workspace` compila con las features por defecto, asi que
-            // los tests que viven detras de `#[cfg(feature = "multimodal")]`
-            // no se ejecutan. Sin esta stage, el arreglo del puerto y de la
-            // oferta no lo vigilaria nadie.
-            //
-            // El precedente es la stage de `evidence-kernel` de mas arriba,
-            // que tambien construye con una feature activada. La garantia
-            // se mide en los dos builds: el puerto vive en el de por
-            // defecto, y la oferta de la capacidad en el multimodal.
-            stage("explorer-route-capability") {
-                sh(
-                    """
-                    set -eo pipefail
-                    $cd || exit 1
-                    cargo test -p cognicode-explorer --test h26_route_batch_is_all_or_nothing --quiet
-                    cargo test -p cognicode-explorer --features multimodal --test h26_openapi_tool_is_offered_only_when_wired --quiet
-                    """
-                )
             }
 
             // PR-SEC reachability: every release-artifact path the pipeline

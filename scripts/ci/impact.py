@@ -542,6 +542,10 @@ def core_command(core: dict) -> str | None:
     return "( " + " && ".join(parts) + " )" if parts else "true"
 
 
+# Fuera de los gates: se desarrollan en su propio proyecto.
+GATE_EXCLUDED = {"cognicode-explorer", "cognicode-runtime"}
+
+
 def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, str]]:
     """(anillo, etapa, por que, cuerpo) en el orden en que se ejecutan."""
     affected = set(p.get("affected_crates", []))
@@ -564,8 +568,9 @@ def schedule(p: dict, base: str = "origin/main") -> list[tuple[int, str, str, st
         if who == "always":
             rows.append((0, stage, "siempre: barato o protege el propio repo", body)); continue
         if who == "clippy":
-            if affected:
-                pkgs = " ".join(f"-p {c}" for c in sorted(affected))
+            linted = affected - GATE_EXCLUDED
+            if linted:
+                pkgs = " ".join(f"-p {c}" for c in sorted(linted))
                 rows.append((0, stage, f"solo crates afectados", f'cd "{REPO}" && cargo clippy {pkgs} --all-targets -- -D warnings'))
             continue
         if who == "builds":

@@ -157,6 +157,15 @@ def test_inline_test_modules_do_not_widen_the_radius() -> None:
           "el resolvedor vuelve a confundir super:: dentro de un mod en linea")
 
 
+def test_explorer_and_runtime_never_reach_the_clippy_stage() -> None:
+    p = impact.plan(["crates/cognicode-core/src/domain/naming.rs"])
+    clippy = [body for _, stage, _, body in impact.schedule(p) if stage == "clippy"]
+    check(len(clippy) == 1 and "-p cognicode-cli" in clippy[0],
+          f"un cambio en core sigue lintando a sus dependientes: {clippy}")
+    check(all(c not in clippy[0] for c in ("cognicode-explorer", "cognicode-runtime")),
+          f"explorer y runtime estan fuera de los gates: {clippy}")
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
