@@ -1,5 +1,22 @@
 use super::*;
 
+/// The path a refactor param names, authorised before any command is built
+/// from it. `None` when the param is absent.
+fn param_path(
+    ctx: &HandlerContext,
+    params: &Option<serde_json::Value>,
+    key: &str,
+) -> Result<Option<PathBuf>, HandlerError> {
+    match params
+        .as_ref()
+        .and_then(|p| p.get(key))
+        .and_then(|v| v.as_str())
+    {
+        Some(raw) => Ok(Some(authorise_file_path(ctx, raw)?)),
+        None => Ok(None),
+    }
+}
+
 #[cognicode_macros::aix_tool(
     name = "safe_refactor",
     description = "Perform safe refactoring with validation and preview.",
@@ -32,13 +49,10 @@ pub async fn handle_safe_refactor(
                 .to_string();
 
             // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = match param_path(ctx, &input.params, "file_path")? {
+                Some(path) => path,
+                None => ctx.working_dir.join(&input.target),
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -116,13 +130,10 @@ pub async fn handle_safe_refactor(
                 .to_string();
 
             // Get the file path from params or use working_dir/target, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = match param_path(ctx, &input.params, "file_path")? {
+                Some(path) => path,
+                None => ctx.working_dir.join(&input.target),
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -168,13 +179,10 @@ pub async fn handle_safe_refactor(
         }
         RefactorAction::Inline => {
             // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = match param_path(ctx, &input.params, "file_path")? {
+                Some(path) => path,
+                None => ctx.working_dir.join(&input.target),
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -223,32 +231,26 @@ pub async fn handle_safe_refactor(
                 .as_ref()
                 .and_then(|p| p.get("source_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| {
-                    resolve_file_path(s, &ctx.working_dir)
-                        .to_string_lossy()
-                        .to_string()
-                })
                 .ok_or_else(|| {
                     HandlerError::InvalidInput(
                         "Missing 'source_path' parameter for move".to_string(),
                     )
-                })?;
+                })
+                .and_then(|raw| Ok(authorise_file_path(ctx, raw)?))
+                .map(|path| path.to_string_lossy().to_string())?;
 
             let target_path = input
                 .params
                 .as_ref()
                 .and_then(|p| p.get("target_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| {
-                    resolve_file_path(s, &ctx.working_dir)
-                        .to_string_lossy()
-                        .to_string()
-                })
                 .ok_or_else(|| {
                     HandlerError::InvalidInput(
                         "Missing 'target_path' parameter for move".to_string(),
                     )
-                })?;
+                })
+                .and_then(|raw| Ok(authorise_file_path(ctx, raw)?))
+                .map(|path| path.to_string_lossy().to_string())?;
 
             // Create move command
             let command = MoveSymbolCommand::new(&input.target, &source_path, &target_path);
@@ -306,13 +308,10 @@ pub async fn handle_safe_refactor(
                 })?;
 
             // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = match param_path(ctx, &input.params, "file_path")? {
+                Some(path) => path,
+                None => ctx.working_dir.join(&input.target),
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -837,7 +836,7 @@ fn process(x: i32, y: i32) -> i32 {
             action: RefactorAction::Move,
             target: "SomeStruct".to_string(),
             params: Some(serde_json::json!({
-                "source_path": "/some/source.rs"
+                "source_path": "source.rs"
                 // Missing target_path
             })),
         };
@@ -1079,6 +1078,57 @@ main()
         let output = result.unwrap();
         // Python files should be valid
         assert!(output.is_valid);
+    }
+
+    // =========================================================================
+    // path confinement
+    // =========================================================================
+
+    #[tokio::test]
+    async fn every_action_refuses_a_path_outside_the_workspace() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside = outside_dir.path().join("other.rs");
+        std::fs::write(&outside, "fn foo() {}\n").unwrap();
+        let outside = outside.to_string_lossy().into_owned();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(ws.path().to_path_buf())
+            .build();
+
+        let cases = [
+            (
+                RefactorAction::Rename,
+                serde_json::json!({"new_name": "bar", "file_path": outside}),
+            ),
+            (
+                RefactorAction::Extract,
+                serde_json::json!({"new_name": "bar", "file_path": outside}),
+            ),
+            (
+                RefactorAction::Inline,
+                serde_json::json!({"file_path": outside}),
+            ),
+            (
+                RefactorAction::Move,
+                serde_json::json!({"source_path": outside, "target_path": "moved.rs"}),
+            ),
+            (
+                RefactorAction::ChangeSignature,
+                serde_json::json!({"new_parameters": [], "file_path": outside}),
+            ),
+        ];
+        for (action, params) in cases {
+            let input = SafeRefactorInput {
+                action: action.clone(),
+                target: "foo".to_string(),
+                params: Some(params),
+            };
+            let result = handle_safe_refactor(&ctx, input).await;
+            assert!(
+                matches!(result, Err(HandlerError::Security(_))),
+                "{action:?} must refuse a path outside the workspace: {result:?}"
+            );
+        }
     }
 }
 
