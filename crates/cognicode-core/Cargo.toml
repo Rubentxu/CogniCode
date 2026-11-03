@@ -39,6 +39,11 @@ evidence-kernel = []
 # CFG / dominators / slicing remain on the default build (WASM-clean).
 # Off by default.
 program-analysis-server = []
+# `contract-store` gates `generate_contract` and `validate_contract`. Both need
+# a store to persist and load truth contracts, and no adapter provides one, so
+# the tools are neither published nor dispatched until a store lands behind this
+# feature. Off by default.
+contract-store = []
 # `test-support` enables test utilities that need to be compiled into the
 # library even when running integration tests (where cfg(test) is not active
 # for the library itself). Currently gates `MockClock`.

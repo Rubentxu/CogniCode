@@ -35,6 +35,7 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +57,7 @@ SKILLS_DIR = REPO_ROOT / "skills"
 # same shape as the `EvidenceStore` lesson: resolve against the
 # published authority so the two cannot drift apart unnoticed.
 PUBLISHED_CATALOG = REPO_ROOT / "product/tools.json"
+CORE_MANIFEST = REPO_ROOT / "crates/cognicode-core/Cargo.toml"
 
 # The published profile document, for the same reason: a profile id is
 # a legitimate backticked identifier that the runtime does not expose
@@ -363,15 +365,24 @@ def load_catalog() -> set[str] | None:
     harness error that says the gate could not run — the same shape as
     a missing `skills/` directory.
     """
-    if not PUBLISHED_CATALOG.exists():
+    if not PUBLISHED_CATALOG.exists() or not CORE_MANIFEST.exists():
         return None
+    default_features = set(
+        tomllib.loads(CORE_MANIFEST.read_text())["features"].get("default", [])
+    )
     data = json.loads(PUBLISHED_CATALOG.read_text())
     # `product/tools.json` is a document with a `tools` array; the
     # archived runtime capture it replaces was a bare list. Accept both
     # so the shape difference between the two eras is explicit here
     # rather than a latent AttributeError in a CI job.
     tools = data["tools"] if isinstance(data, dict) else data
-    return {tool["name"] for tool in tools}
+    # A tool gated behind a feature the default build leaves off is not
+    # served: `tools/list` omits it and a call answers ToolNotFound.
+    return {
+        tool["name"]
+        for tool in tools
+        if tool.get("feature") is None or tool["feature"] in default_features
+    }
 
 
 def load_profile_ids() -> frozenset[str] | None:

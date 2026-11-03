@@ -788,7 +788,7 @@ impl ServerHandler for CogniCodeHandler {
 /// M1.1: All tool calls flow through this single instrumentation boundary.
 /// Timing, call count, and error classification are recorded here — no
 /// per-handler timing or record_tool_usage calls needed.
-async fn call_tool_handler(
+pub(crate) async fn call_tool_handler(
     ctx: &HandlerContext,
     request: CallToolRequestParams,
 ) -> InterfaceResult<String> {
@@ -1278,6 +1278,7 @@ async fn call_tool_handler(
             // PL3: Symbol Hotness Tracking
 
             // AVC: Agent-Verifiable Context tools
+            #[cfg(feature = "contract-store")]
             "generate_contract" => {
                 let input: crate::interface::mcp::schemas::GenerateContractInput =
                     serde_json::from_value(arguments.into())?;
@@ -1288,6 +1289,7 @@ async fn call_tool_handler(
                     .await?;
                 Ok(serde_json::to_string(&output)?)
             }
+            #[cfg(feature = "contract-store")]
             "validate_contract" => {
                 let input: crate::interface::mcp::schemas::ValidateContractInput =
                     serde_json::from_value(arguments.into())?;

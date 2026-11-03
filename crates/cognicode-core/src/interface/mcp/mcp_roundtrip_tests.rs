@@ -1186,6 +1186,129 @@ fn simple_function() {
     }
 
     // ==========================================================================
+    // A published tool can be executed: the catalogue, `tools/list` and the
+    // dispatch agree on what is available in the current build.
+    // ==========================================================================
+    mod published_tools_are_executable {
+        use super::*;
+        use crate::interface::mcp::error::InterfaceError;
+        use crate::interface::mcp::rmcp_adapter::{build_all_tools, call_tool_handler};
+        use rmcp::model::CallToolRequestParams;
+
+        /// A minimal argument object that satisfies the required fields of a
+        /// tool's input schema, so the call reaches the handler instead of
+        /// stopping at argument parsing.
+        fn sample_arguments(
+            schema: &serde_json::Value,
+        ) -> serde_json::Map<String, serde_json::Value> {
+            let mut args = serde_json::Map::new();
+            let required = schema
+                .get("required")
+                .and_then(|r| r.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for name in required.iter().filter_map(|n| n.as_str()) {
+                let ty = schema
+                    .pointer(&format!("/properties/{name}/type"))
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("string");
+                let value = match ty {
+                    "integer" | "number" => serde_json::json!(1),
+                    "boolean" => serde_json::json!(false),
+                    "array" => serde_json::json!([]),
+                    "object" => serde_json::json!({}),
+                    _ => serde_json::json!("x"),
+                };
+                args.insert(name.to_string(), value);
+            }
+            args
+        }
+
+        async fn call(
+            ctx: &HandlerContext,
+            name: &str,
+            arguments: serde_json::Map<String, serde_json::Value>,
+        ) -> Result<String, InterfaceError> {
+            let request = CallToolRequestParams::new(name.to_string()).with_arguments(arguments);
+            call_tool_handler(ctx, request).await
+        }
+
+        #[tokio::test]
+        async fn no_published_read_tool_answers_that_it_has_no_persistence_layer() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let mut unavailable = Vec::new();
+            for descriptor in crate::interface::catalog::load_tool_catalog_active() {
+                if descriptor.authority != "read" {
+                    continue;
+                }
+                let args = sample_arguments(&descriptor.input_schema);
+                let outcome = call(&ctx, &descriptor.name, args).await;
+                if let Err(InterfaceError::Internal(msg)) = &outcome
+                    && msg.contains("requires a persistence layer")
+                    && crate::interface::mcp::status::classify_status(&descriptor.name, &outcome)
+                        != "gated"
+                {
+                    unavailable.push(descriptor.name.clone());
+                }
+            }
+            assert!(
+                unavailable.is_empty(),
+                "tools/list publishes tool(s) whose call answers Internal because the \
+                 capability behind them does not exist in this build: {}",
+                unavailable.join(", ")
+            );
+        }
+
+        #[cfg(feature = "contract-store")]
+        #[tokio::test]
+        async fn a_listed_tool_without_a_store_answers_gated_not_error() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let listed: std::collections::HashSet<String> = build_all_tools()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            let catalog = crate::interface::catalog::load_tool_catalog_active();
+            for name in ["generate_contract", "validate_contract"] {
+                assert!(
+                    listed.contains(name),
+                    "`{name}` must be listed with the feature on"
+                );
+                let descriptor = catalog.iter().find(|d| d.name == name).expect("in catalog");
+                let outcome = call(&ctx, name, sample_arguments(&descriptor.input_schema)).await;
+                assert_eq!(
+                    crate::interface::mcp::status::classify_status(name, &outcome),
+                    "gated",
+                    "`{name}` is listed but has no store: it must say so as gated, got {outcome:?}"
+                );
+            }
+        }
+
+        #[cfg(not(feature = "contract-store"))]
+        #[tokio::test]
+        async fn a_tool_without_its_capability_is_neither_listed_nor_dispatched() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let listed: std::collections::HashSet<String> = build_all_tools()
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect();
+            for name in ["generate_contract", "validate_contract"] {
+                assert!(
+                    !listed.contains(name),
+                    "`{name}` is listed although nothing can execute it"
+                );
+                let outcome = call(&ctx, name, serde_json::Map::new()).await;
+                assert!(
+                    matches!(outcome, Err(InterfaceError::ToolNotFound(_))),
+                    "`{name}` must answer ToolNotFound, got {outcome:?}"
+                );
+            }
+        }
+    }
+
+    // ==========================================================================
     // M5.2 WU3: M5 program-analysis tools round-trip — verifies the MCP
     // surface for the M5 algorithm IDs (REQ-MCP-01, REQ-MCP-02, REQ-MCP-04).
     // ==========================================================================

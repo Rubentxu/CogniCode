@@ -156,6 +156,7 @@ pub fn tool_feature_enabled(feature: &Option<String>) -> bool {
         None => true,
         Some("persistence") => cfg!(feature = "persistence"),
         Some("program-analysis-server") => cfg!(feature = "program-analysis-server"),
+        Some("contract-store") => cfg!(feature = "contract-store"),
         Some("evidence-cli-ladybug") => cfg!(feature = "evidence-cli-ladybug"),
         Some(_) => false,
     }

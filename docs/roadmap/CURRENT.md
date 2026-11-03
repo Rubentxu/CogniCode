@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-29, sobre `6404a84bd0b1a73431dfab492f9eba4e97b73aeb` (la
+> **Snapshot**: 2026-11-03, sobre `39beacb617ae434fac167d984b50fd5b48dfd6a7` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -78,6 +78,10 @@
 > cualquier cambio que lo tocara; ahora el `fallback` corre también el target
 > de integración que los paths tocan —y dice que no ha corrido ninguno cuando
 > no los tocan—, sin dejar de correr el subconjunto conservador;
+> y desde entonces: el carril de gate se elige por el radio del cambio y falla
+> si supera 20 minutos; la complejidad y el conteo de parámetros tienen una sola
+> medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
+> servidor real exige el token en `/mcp` y `/watch`;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
