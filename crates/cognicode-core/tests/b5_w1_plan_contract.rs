@@ -177,7 +177,7 @@ fn cli_refactor_without_plan_file_errors_cleanly() {
             apply,
             plan_file,
             authorization_token,
-            format: _,
+            ..
         }) => {
             assert_eq!(symbol, "foo");
             assert_eq!(new_name.as_deref(), Some("bar"));

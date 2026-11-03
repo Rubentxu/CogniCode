@@ -1030,25 +1030,14 @@ fn authorise_directory(
     ctx: &HandlerContext,
     input: Option<String>,
 ) -> Result<PathBuf, HandlerError> {
-    let directory = resolve_directory(input, &ctx.working_dir);
+    let directory = match input {
+        Some(raw) => resolve_file_path(&raw, &ctx.working_dir),
+        None => ctx.working_dir.clone(),
+    };
     ctx.validator
         .validate_path(&directory)
         .map_err(|e| HandlerError::InvalidInput(format!("Path rejected: {}", e)))?;
     Ok(directory)
-}
-
-fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
-    match input {
-        None => working_dir.to_path_buf(),
-        Some(s) => {
-            let p = PathBuf::from(&s);
-            if p.is_absolute() {
-                p
-            } else {
-                working_dir.join(p)
-            }
-        }
-    }
 }
 
 /// Anchors `raw` on the session working directory, validates the anchored
@@ -5234,7 +5223,7 @@ mod tests {
     //
     // This test pins that contract from the handler side: `directory="."`
     // must produce a successful build equivalent to `directory=None`,
-    // because `resolve_directory()` joins a relative path (including ".")
+    // because `authorise_directory()` joins a relative path (including ".")
     // onto the working directory.
     #[tokio::test]
     async fn test_handle_build_graph_directory_dot_resolves_to_working_dir() {
@@ -5270,7 +5259,7 @@ mod tests {
         assert_eq!(with_dot.relationships_found, baseline.relationships_found);
     }
 
-    // Regression test for the absolute-path branch of resolve_directory.
+    // Regression test for the absolute-path branch of authorise_directory.
     // `directory=/tmp/foo` (absolute) must bypass the working_dir join and
     // hit the supplied directory directly. Mirrors the . case so a future
     // refactor that breaks one is caught here.
