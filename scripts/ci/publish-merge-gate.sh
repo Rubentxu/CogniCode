@@ -140,6 +140,19 @@ case "$change_class" in
 esac
 echo "==> change class: $change_class -> $LANE"
 
+# The roadmap snapshot is judged the same way. The ratchet that owns the rule
+# takes well under a second, but inside the gate it only runs after the tree
+# has been linted and `cognicode` compiled; measured on a real run, a snapshot
+# that `main` had left behind cost a whole gate. The window of drift lives in
+# the ratchet and is not repeated here.
+snapshot_rc=0
+python3 -I "$REPO_ROOT/scripts/ci/test_roadmap_version_ratchet.py" || snapshot_rc=$?
+if [ "$snapshot_rc" -ne 0 ]; then
+    echo "==> the roadmap snapshot is stale; the gate did not run and nothing was published" >&2
+    echo "    regenerate docs/roadmap/CURRENT.md against main and try again" >&2
+    exit "$snapshot_rc"
+fi
+
 echo "==> running the merge authority for $resolved"
 echo "    database: $PIPELINE_DB"
 mkdir -p "$(dirname "$PIPELINE_DB")"
