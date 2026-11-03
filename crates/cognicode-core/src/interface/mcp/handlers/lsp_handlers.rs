@@ -24,15 +24,21 @@ pub async fn handle_go_to_definition(
     input: GoToDefinitionInput,
 ) -> HandlerResult<GoToDefinitionOutput> {
     let provider = get_provider(ctx);
+    // The path that reaches the provider is the path that was authorised.
+    let authorised = authorise_file_path(ctx, &input.file_path)?;
     let location = crate::domain::value_objects::Location::new(
-        input.file_path.clone(),
+        authorised.to_string_lossy().into_owned(),
         input.line,
         input.column,
     );
 
     match provider.get_definition(&location).await {
         Ok(Some(def_loc)) => {
-            let source = std::fs::read_to_string(def_loc.file()).ok();
+            // A definition the provider places outside the workspace is reported
+            // but its source is never read.
+            let source = authorise_file_path(ctx, def_loc.file())
+                .ok()
+                .and_then(|path| std::fs::read_to_string(path).ok());
             let context = source.as_ref().map(|s| {
                 let lines: Vec<&str> = s.lines().collect();
                 let line_idx = (def_loc.line() as usize).saturating_sub(1);
@@ -84,8 +90,10 @@ pub async fn handle_go_to_definition(
 )]
 pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerResult<HoverOutput> {
     let provider = get_provider(ctx);
+    // The path that reaches the provider is the path that was authorised.
+    let authorised = authorise_file_path(ctx, &input.file_path)?;
     let location = crate::domain::value_objects::Location::new(
-        input.file_path.clone(),
+        authorised.to_string_lossy().into_owned(),
         input.line,
         input.column,
     );
@@ -123,8 +131,10 @@ pub async fn handle_find_references(
     input: FindReferencesInput,
 ) -> HandlerResult<FindReferencesOutput> {
     let provider = get_provider(ctx);
+    // The path that reaches the provider is the path that was authorised.
+    let authorised = authorise_file_path(ctx, &input.file_path)?;
     let location = crate::domain::value_objects::Location::new(
-        input.file_path.clone(),
+        authorised.to_string_lossy().into_owned(),
         input.line,
         input.column,
     );
@@ -744,5 +754,96 @@ mod tests {
         // Error returns empty results but still succeeds
         assert_eq!(result.total, 0);
         assert!(result.symbols.is_empty());
+    }
+    // ========================================================================
+    // path confinement
+    // ========================================================================
+
+    fn outside_file() -> tempfile::NamedTempFile {
+        let outside = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(outside.path(), "secret line\n").unwrap();
+        outside
+    }
+
+    fn confined_ctx(workspace: &tempfile::TempDir, provider: MockLspProvider) -> HandlerContext {
+        HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(Arc::new(provider))
+            .build()
+    }
+
+    #[tokio::test]
+    async fn hover_rejects_a_file_outside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = outside_file();
+        let ctx = confined_ctx(&workspace, MockLspProvider::new());
+        let input = HoverInput {
+            file_path: outside.path().to_string_lossy().into_owned(),
+            line: 1,
+            column: 1,
+        };
+        let result = handle_hover(&ctx, input).await;
+        assert!(
+            matches!(result, Err(HandlerError::Security(_))),
+            "a path outside the workspace must be refused: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn go_to_definition_rejects_a_file_outside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = outside_file();
+        let ctx = confined_ctx(&workspace, MockLspProvider::new());
+        let input = GoToDefinitionInput {
+            file_path: outside.path().to_string_lossy().into_owned(),
+            line: 1,
+            column: 1,
+        };
+        let result = handle_go_to_definition(&ctx, input).await;
+        assert!(
+            matches!(result, Err(HandlerError::Security(_))),
+            "a path outside the workspace must be refused: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn find_references_rejects_a_file_outside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = outside_file();
+        let ctx = confined_ctx(&workspace, MockLspProvider::new());
+        let input = FindReferencesInput {
+            file_path: outside.path().to_string_lossy().into_owned(),
+            line: 1,
+            column: 1,
+            include_declaration: true,
+        };
+        let result = handle_find_references(&ctx, input).await;
+        assert!(
+            matches!(result, Err(HandlerError::Security(_))),
+            "a path outside the workspace must be refused: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_definition_outside_the_workspace_is_not_read() {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::write(workspace.path().join("a.rs"), "fn a() {}\n").unwrap();
+        let outside = outside_file();
+        let target = Location::new(outside.path().to_string_lossy().into_owned(), 1, 1);
+        let ctx = confined_ctx(
+            &workspace,
+            MockLspProvider::new().with_definition(Ok(Some(target))),
+        );
+        let input = GoToDefinitionInput {
+            file_path: "a.rs".to_string(),
+            line: 1,
+            column: 4,
+        };
+        let out = handle_go_to_definition(&ctx, input).await.unwrap();
+        assert!(
+            out.context.is_none(),
+            "the source of a file outside the workspace must not be returned: {:?}",
+            out.context
+        );
     }
 }
