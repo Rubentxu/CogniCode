@@ -166,6 +166,46 @@ def test_explorer_and_runtime_never_reach_the_clippy_stage() -> None:
           f"explorer y runtime estan fuera de los gates: {clippy}")
 
 
+def test_prior_evidence_is_keyed_by_content_not_by_command() -> None:
+    dirs, dependents = impact.workspace()
+    ids = {"crates/cognicode-cli": "cli-1", "crates/cognicode-core": "core-1", "crates/cognicode-mcp": "mcp-1"}
+    real = impact.git_id
+    impact.git_id = lambda sha, path: ids.get(path, "same")
+    try:
+        body = "cargo test -p cognicode-cli --quiet"
+        key = lambda: impact.evidence_key("cli-unit-tests", body, {"cognicode-cli"}, "x", dirs, dependents)
+        base = key()
+        ids["crates/cognicode-mcp"] = "mcp-2"   # no es dependencia de la CLI
+        check(key() == base, "un cambio en un crate del que la etapa no depende no puede invalidar su evidencia")
+        ids["crates/cognicode-core"] = "core-2"  # la CLI depende de core
+        check(key() != base, "un cambio en una dependencia de la etapa tiene que invalidar su evidencia")
+        ids["crates/cognicode-core"] = "core-1"
+        check(key() == base, "las mismas entradas dan la misma clave")
+        check(impact.evidence_key("cli-unit-tests", body + " --extra", {"cognicode-cli"}, "x", dirs, dependents) != base,
+              "cambiar el cuerpo de la etapa invalida su evidencia")
+        for producer in ("build-cognicode-for-contracts", "install-cosign", "toolchain"):
+            check(impact.evidence_key(producer, "x", "always", "x", dirs, dependents) is None,
+                  f"{producer} prepara entorno o produce binarios: nunca se reutiliza")
+        check(impact.evidence_key("fmt", "cargo fmt", "always", "x", dirs, dependents) is not None,
+              "un veredicto sobre el arbol entero se reutiliza si el arbol es el mismo")
+    finally:
+        impact.git_id = real
+
+
+def test_only_a_recorded_pass_is_reused() -> None:
+    import tempfile
+    real = impact.ledger_dir
+    with tempfile.TemporaryDirectory() as d:
+        impact.ledger_dir = lambda: Path(d) / "ledger"
+        try:
+            check(impact.reused("k") is None, "sin PASS registrado no hay nada que reutilizar")
+            impact.record("k", "clippy", "abc1234")
+            got = impact.reused("k")
+            check(bool(got) and got["sha"] == "abc1234", f"el PASS registrado se recupera: {got}")
+        finally:
+            impact.ledger_dir = real
+
+
 def main() -> int:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

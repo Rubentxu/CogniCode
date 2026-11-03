@@ -47,6 +47,8 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime
+import hashlib
 import json
 import os
 import re
@@ -542,6 +544,69 @@ def core_command(core: dict) -> str | None:
     return "( " + " && ".join(parts) + " )" if parts else "true"
 
 
+# ----------------------------------------------------------- evidencia previa
+# Una etapa que ya paso sobre exactamente las mismas entradas no se vuelve a
+# pagar: ni en el siguiente rebase de la rama (`strict:true` obliga a repetir
+# el gate aunque lo fusionado no toque nada de lo que la etapa mira), ni en el
+# reintento tras un fallo posterior. La clave es el CONTENIDO (arboles de git),
+# nunca el comando: cachear por comando es lo que convirtio en sello de goma al
+# runtime de pipelinek. Solo se guarda un PASS real; un fallo no escribe nada.
+VERDICT_WHOLE_TREE = {"fmt", "contracts", "select-suites-script", "bin-tracking", "capabilities-drift-lint"}
+SHARED_INPUTS = ("Cargo.lock", ".cargo", "product", "skills", "bundles", "rust-toolchain.toml")
+
+
+def git_id(sha: str, path: str) -> str:
+    r = subprocess.run(["git", "rev-parse", "--verify", "-q", f"{sha}:{path}" if path else f"{sha}^{{tree}}"],
+                       cwd=REPO, capture_output=True, text=True)
+    return r.stdout.strip() or "absent"
+
+
+def dependencies_closure(crates: set[str], dependents: dict[str, set[str]]) -> set[str]:
+    deps: dict[str, set[str]] = collections.defaultdict(set)
+    for dep, users in dependents.items():
+        for user in users:
+            deps[user].add(dep)
+    return closure(crates, deps)
+
+
+def evidence_key(stage: str, body: str, crates: set[str] | str, sha: str,
+                 dirs: dict[str, str], dependents: dict[str, set[str]]) -> str | None:
+    """None: la etapa prepara entorno o produce binarios y no se reutiliza."""
+    if crates == "always":
+        if stage not in VERDICT_WHOLE_TREE:
+            return None
+        inputs = [("tree", git_id(sha, ""))]
+    elif isinstance(crates, set):
+        by_name = {c: d for d, c in dirs.items()}
+        needed = dependencies_closure(crates, dependents)
+        inputs = [(c, git_id(sha, by_name[c].rstrip("/"))) for c in sorted(needed) if c in by_name]
+        inputs += [(x, git_id(sha, x)) for x in SHARED_INPUTS]
+        inputs += [(m, git_id(sha, m)) for m in sorted(set(re.findall(r"scripts/[\w./-]+", body)))]
+    else:
+        return None
+    rustc = subprocess.run(["rustc", "-V"], capture_output=True, text=True).stdout.strip()
+    return hashlib.sha256(json.dumps([stage, body, inputs, rustc], sort_keys=True).encode()).hexdigest()
+
+
+def ledger_dir() -> Path:
+    r = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=REPO, capture_output=True, text=True)
+    return (REPO / r.stdout.strip()).resolve() / "cognicode-evidence"
+
+
+def reused(key: str) -> dict | None:
+    f = ledger_dir() / key
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def record(key: str, stage: str, sha: str) -> None:
+    d = ledger_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / key).write_text(json.dumps({"stage": stage, "sha": sha, "at": datetime.datetime.now(datetime.timezone.utc).isoformat()}), encoding="utf-8")
+
+
 # Fuera de los gates: se desarrollan en su propio proyecto.
 GATE_EXCLUDED = {"cognicode-explorer", "cognicode-runtime"}
 
@@ -604,6 +669,7 @@ def main() -> int:
     ap.add_argument("--sha", default="HEAD")
     ap.add_argument("--files", nargs="*")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-reuse", action="store_true", help="paga todas las etapas aunque haya evidencia previa")
     a = ap.parse_args()
     files = a.files if a.files is not None else changed_files(a.base, a.sha)
     p = plan(files, a.base, a.sha)
@@ -623,13 +689,27 @@ def main() -> int:
         print(f"FAIL: tier '{p['tier']}' ({p['reason']}); impact-gate solo juzga cambios de impacto acotado.")
         return 1
     print(f"==> {p['reason']}")
+    dirs, dependents = workspace()
+    full_sha = subprocess.run(["git", "rev-parse", a.sha], cwd=REPO, capture_output=True, text=True).stdout.strip()
+    reuse = not (a.no_reuse or os.environ.get("COGNI_NO_REUSE"))
+    linted = set(p.get("affected_crates", [])) - GATE_EXCLUDED
+    skipped = 0
     for ring, stage, why, body in schedule(p, a.base):
+        crates = linted if stage == "clippy" else stage_crates(stage, body)
+        key = evidence_key(stage, body, crates, full_sha, dirs, dependents) if reuse else None
+        prior = reused(key) if key else None
+        if prior:
+            skipped += 1
+            print(f"\n==> anillo {ring} · {stage} · REUTILIZADA: paso sobre las mismas entradas en {prior['sha'][:8]} ({prior['at'][:19]})", flush=True)
+            continue
         print(f"\n==> anillo {ring} · {stage} · {why}", flush=True)
         rc = subprocess.run(["bash", "-c", "set -eo pipefail\n" + body], cwd=REPO).returncode
         if rc != 0:
             print(f"\n==> FAIL en {stage} (rc={rc}); las etapas siguientes no corren.")
             return rc
-    print("\n==> todas las etapas del plan en verde")
+        if key:
+            record(key, stage, full_sha)
+    print(f"\n==> todas las etapas del plan en verde ({skipped} reutilizadas por evidencia previa de las mismas entradas)")
     return 0
 
 
