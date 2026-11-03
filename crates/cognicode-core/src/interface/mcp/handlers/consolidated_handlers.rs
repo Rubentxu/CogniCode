@@ -299,7 +299,7 @@ pub async fn handle_project_overview(
     input: ProjectOverviewInput,
 ) -> HandlerResult<ProjectOverviewOutput> {
     // Ensure graph is built (auto-build if empty)
-    let _ensure = super::ensure_graph_built(ctx)?;
+    let _ensure = super::ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -882,9 +882,7 @@ pub async fn handle_graph_checkpoint(
     match op {
         "create" => {
             let start = std::time::Instant::now();
-            ctx.analysis_service
-                .build_project_graph(&ctx.working_dir)
-                .map_err(HandlerError::App)?;
+            ctx.build_graph(&ctx.working_dir).await?;
             let graph = ctx.analysis_service.get_project_graph();
             let elapsed = start.elapsed().as_millis() as u64;
 

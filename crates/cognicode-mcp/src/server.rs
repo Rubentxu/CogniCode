@@ -36,6 +36,7 @@ use axum::{
 use clap::Parser;
 use cognicode_core::interface::mcp::CogniCodeHandler;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
+use cognicode_core::interface::mcp::security::InputValidator;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry};
@@ -50,6 +51,17 @@ struct Args {
     cwd: PathBuf,
     #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
+    /// Calls allowed per tool every 60 seconds; 0 removes the limit.
+    #[arg(long, default_value_t = 100)]
+    rate_limit: usize,
+}
+
+fn http_validator(cwd: &std::path::Path, rate_limit: usize) -> InputValidator {
+    let validator = InputValidator::new().with_workspace(vec![cwd.to_path_buf()]);
+    match rate_limit {
+        0 => validator.without_rate_limit(),
+        n => validator.with_strict_rate_limit(n, 60),
+    }
 }
 
 /// Handler for `/health` — process alive, always 200 OK.
@@ -222,6 +234,7 @@ async fn main() -> anyhow::Result<()> {
     let shared_ctx: Arc<HandlerContext> = Arc::new(
         HandlerContext::builder()
             .with_working_dir(cwd.clone())
+            .with_validator(http_validator(&cwd, args.rate_limit))
             .build(),
     );
 
@@ -348,4 +361,22 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_http_rate_limit_is_configurable_and_zero_removes_it() {
+        let cwd = std::path::Path::new(".");
+        let limited = http_validator(cwd, 3);
+        let results: Vec<bool> = (0..5)
+            .map(|_| limited.rate_limiter().check_with_key("tool:x"))
+            .collect();
+        assert_eq!(results, [true, true, true, false, false]);
+
+        let open = http_validator(cwd, 0);
+        assert!((0..500).all(|_| open.rate_limiter().check_with_key("tool:x")));
+    }
 }

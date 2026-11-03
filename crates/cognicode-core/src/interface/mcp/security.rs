@@ -154,6 +154,13 @@ impl InputValidator {
         self
     }
 
+    /// Removes the call budget. A stdio server has exactly one client, the
+    /// process that spawned it, so a budget protects nobody and only turns
+    /// a legitimate burst of tool calls into `rate_limit_exceeded`.
+    pub fn without_rate_limit(self) -> Self {
+        self.with_strict_rate_limit(usize::MAX, 1)
+    }
+
     /// M3.3: Access the rate limiter for direct checks (e.g., per-tool
     /// rate limiting at the dispatch boundary).
     pub fn rate_limiter(&self) -> &RateLimiter {
@@ -1143,6 +1150,18 @@ impl PathPolicy for InputValidator {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn a_validator_without_rate_limit_never_refuses_a_call() {
+        let v = InputValidator::new().without_rate_limit();
+        assert!((0..1000).all(|_| v.rate_limiter().check_with_key("tool:x")));
+    }
+
+    #[test]
+    fn the_default_validator_still_limits_calls() {
+        let v = InputValidator::new();
+        assert!(!(0..1000).all(|_| v.rate_limiter().check_with_key("tool:x")));
+    }
 
     fn create_test_validator() -> InputValidator {
         InputValidator::with_limits(

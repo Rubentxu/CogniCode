@@ -208,7 +208,12 @@ impl CogniCodeHandler {
         ));
 
         let mut builder = HandlerContext::builder()
-            .with_working_dir(canonical_root)
+            .with_working_dir(canonical_root.clone())
+            .with_validator(
+                crate::interface::mcp::security::InputValidator::new()
+                    .with_workspace(vec![canonical_root])
+                    .without_rate_limit(),
+            )
             .with_file_ops_service(file_ops_service);
         if let Some(read_only) = read_only {
             builder = builder.with_read_only(read_only);
@@ -1788,6 +1793,13 @@ mod tests {
     use super::*;
 
     use std::sync::Arc;
+
+    #[test]
+    fn the_stdio_context_does_not_rate_limit_its_one_local_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = CogniCodeHandler::build_ctx(dir.path().to_path_buf(), None, None);
+        assert!((0..500).all(|_| ctx.rate_limiter().check_with_key("tool:x")));
+    }
 
     // ============================================================================
     // Concurrent Request Tests

@@ -1497,9 +1497,7 @@ pub async fn handle_build_graph(
         // graph, so anything that changes in between invalidates it.
         let manifest = build_manifest(&directory).ok();
 
-        if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
-            return Err(HandlerError::App(e));
-        }
+        ctx.build_graph(&directory).await?;
         // build_project_graph() already updates analysis_service.graph_cache()
         // (which CachedGraphStore reads from). The dual-write
         // to the inner InMemoryGraphStore is no longer needed.
@@ -1815,7 +1813,7 @@ pub async fn handle_get_call_hierarchy(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1867,7 +1865,7 @@ pub async fn handle_get_file_symbols(
     let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Ensure graph is built for compressed output
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Call the analysis service to get symbols
     let symbol_dtos = ctx
@@ -2153,7 +2151,7 @@ pub async fn handle_analyze_impact(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying dependents
-    let ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2234,7 +2232,7 @@ impl EnsureResult {
 
 /// Ensures the project graph is built, building it on-demand if empty.
 /// This prevents empty callgraph results from being returned as "success with no data".
-fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
+async fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
     if count > 0 {
@@ -2250,9 +2248,7 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
         ctx.working_dir
     );
     let start = std::time::Instant::now();
-    ctx.analysis_service
-        .build_project_graph(&ctx.working_dir)
-        .map_err(HandlerError::App)?;
+    ctx.build_graph(&ctx.working_dir).await?;
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
     let elapsed = start.elapsed().as_millis() as u64;
@@ -2319,7 +2315,7 @@ pub async fn handle_check_architecture(
     }
 
     // Ensure graph is built before querying
-    let ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2439,6 +2435,7 @@ pub async fn handle_check_architecture(
 }
 
 mod complexity_handlers;
+mod graph_build;
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -2506,7 +2503,7 @@ pub async fn handle_get_entry_points(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2563,7 +2560,7 @@ pub async fn handle_get_leaf_functions(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2625,7 +2622,7 @@ pub async fn handle_trace_path(
     ctx.validator.validate_query(&input.target)?;
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2733,7 +2730,7 @@ pub async fn handle_export_mermaid(
     let start = Instant::now();
 
     // Ensure the project graph is built before exporting
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2862,7 +2859,7 @@ pub async fn handle_get_hot_paths(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2968,7 +2965,7 @@ pub async fn handle_find_dead_code(
     ctx: &HandlerContext,
     input: FindDeadCodeInput,
 ) -> HandlerResult<FindDeadCodeOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let result = ctx.analysis_service.detect_dead_code();
 
@@ -3010,7 +3007,7 @@ pub async fn handle_get_module_dependencies(
     ctx: &HandlerContext,
     input: GetModuleDependenciesInput,
 ) -> HandlerResult<GetModuleDependenciesOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let result = ctx.analysis_service.detect_module_dependencies();
 
@@ -3055,7 +3052,7 @@ pub async fn handle_get_all_symbols(
     ctx: &HandlerContext,
     input: GetAllSymbolsInput,
 ) -> HandlerResult<GetAllSymbolsOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let all_symbols = ctx
         .analysis_service
@@ -5679,6 +5676,20 @@ mod tests {
     // =============================================================================
 
     #[tokio::test]
+    async fn a_cancelled_request_does_not_auto_build_the_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("main.rs"), "fn main() {}").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
+        ctx.cancellation_token()
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        assert!(ensure_graph_built(&ctx).await.is_err());
+        assert_eq!(ctx.analysis_service.get_project_graph().symbol_count(), 0);
+    }
+
+    #[tokio::test]
     async fn test_ensure_graph_built_auto_resolves() {
         // Create a temp dir with a Rust file
         let temp = tempfile::tempdir().unwrap();
@@ -5691,7 +5702,7 @@ mod tests {
             .build();
 
         // Call ensure_graph_built on empty state — should auto-build
-        let result = ensure_graph_built(&ctx).unwrap();
+        let result = ensure_graph_built(&ctx).await.unwrap();
         assert!(result.auto_built);
         assert!(result.count > 0);
         assert!(result.message.contains("auto-built"));
@@ -5714,7 +5725,7 @@ mod tests {
             .unwrap();
 
         // Now ensure should not auto-build
-        let result = ensure_graph_built(&ctx).unwrap();
+        let result = ensure_graph_built(&ctx).await.unwrap();
         assert!(!result.auto_built);
     }
 

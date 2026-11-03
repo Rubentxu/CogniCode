@@ -267,7 +267,22 @@ impl AnalysisService {
     }
 
     pub fn build_project_graph(&self, project_dir: &Path) -> AppResult<()> {
+        self.build_project_graph_cancellable(
+            project_dir,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+    }
+
+    /// Like [`Self::build_project_graph`], but stops as soon as `cancel` is
+    /// set: files not yet parsed are skipped and no graph is published, so a
+    /// cancelled or timed-out request stops consuming CPU.
+    pub fn build_project_graph_cancellable(
+        &self,
+        project_dir: &Path,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> AppResult<()> {
         use rayon::prelude::*;
+        use std::sync::atomic::Ordering;
 
         info!("Building project graph for directory: {:?}", project_dir);
 
@@ -405,6 +420,9 @@ impl AnalysisService {
         let results: Vec<_> = files
             .into_par_iter()
             .filter_map(|(path, language, file_path, mtime, size)| {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
                 let language = language.unwrap();
                 let path_for_skip = file_path.clone();
                 let skipped = skipped_files.clone();
@@ -477,6 +495,10 @@ impl AnalysisService {
                 }
             })
             .collect();
+
+        if cancel.load(Ordering::Relaxed) {
+            return Err(AppError::AnalysisError("graph build cancelled".into()));
+        }
 
         // Stage: parse — count what we got from the parallel extraction
         let files_cached = results
@@ -2078,12 +2100,8 @@ pub struct UsageResult {
     pub context_lines: Option<ContextData>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ContextData {
-    pub before: Vec<String>,
-    pub current: String,
-    pub after: Vec<String>,
-}
+pub use super::usage_context::ContextData;
+use super::usage_context::context_data;
 
 // H1.3 (delivery-first-radical, package integration): the
 // usage-search walk used to consult a local `USAGE_SKIP_DIRS` const
@@ -2093,30 +2111,6 @@ pub struct ContextData {
 // carry credentials). The const is gone; the canonical
 // `WalkFilter::default()` (security + performance) is the single
 // source of truth.
-
-/// Gets surrounding context lines for a given 0-indexed line
-fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
-    let lines: Vec<&str> = source.lines().collect();
-
-    let before_start = line.saturating_sub(context_size);
-    let after_end = (line + 1 + context_size).min(lines.len());
-
-    let before: Vec<String> = (before_start..line)
-        .map(|i| lines.get(i).unwrap_or(&"").to_string())
-        .collect();
-
-    let current = lines.get(line).unwrap_or(&"").to_string();
-
-    let after: Vec<String> = ((line + 1)..after_end)
-        .map(|i| lines.get(i).unwrap_or(&"").to_string())
-        .collect();
-
-    ContextData {
-        before,
-        current,
-        after,
-    }
-}
 
 /// PRF audit H-01 (F2.W9): SHA-256 of the file bytes, used as a
 /// cache-invalidation key when (mtime, size) match but bytes may have
@@ -2290,6 +2284,56 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
+
+    fn project_with_sources(n: usize) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..n {
+            std::fs::write(
+                dir.path().join(format!("m{i}.rs")),
+                format!("pub fn f{i}() {{}}"),
+            )
+            .unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn a_cancelled_build_stops_and_publishes_no_graph() {
+        let dir = project_with_sources(20);
+        let service = AnalysisService::new();
+        let cancel = std::sync::atomic::AtomicBool::new(true);
+
+        let err = service
+            .build_project_graph_cancellable(dir.path(), &cancel)
+            .expect_err("a build whose flag is already set must not complete");
+
+        assert!(
+            matches!(&err, AppError::AnalysisError(m) if m.contains("cancelled")),
+            "{err:?}"
+        );
+        assert_eq!(service.get_project_graph().symbol_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_blocking_build_runs_off_the_async_thread_and_honours_the_flag() {
+        let dir = project_with_sources(5);
+        let service = Arc::new(AnalysisService::new());
+
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        assert!(
+            service
+                .build_project_graph_blocking(dir.path(), cancelled)
+                .await
+                .is_err()
+        );
+
+        let live = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        service
+            .build_project_graph_blocking(dir.path(), live)
+            .await
+            .unwrap();
+        assert_eq!(service.get_project_graph().symbol_count(), 5);
+    }
 
     #[test]
     fn test_get_file_symbols_python() {
