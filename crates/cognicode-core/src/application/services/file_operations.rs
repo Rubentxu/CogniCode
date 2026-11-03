@@ -32,6 +32,7 @@ use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::file_time::measured_seconds;
+use crate::infrastructure::walk_policy::{contained_ignore_walk, ignore_is_readable_file};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
@@ -1531,8 +1532,7 @@ impl FileOperationsService {
             )));
         }
 
-        // Build walker with gitignore awareness
-        let mut walker = WalkBuilder::new(&search_path);
+        let mut walker = contained_ignore_walk(&search_path);
         walker
             .hidden(true)
             .git_ignore(true)
@@ -1553,7 +1553,7 @@ impl FileOperationsService {
             };
 
             let path = entry.path();
-            if !path.is_file() {
+            if !ignore_is_readable_file(&entry) {
                 continue;
             }
 
@@ -2519,6 +2519,56 @@ mod tests {
         let output = result.unwrap();
         assert!(!output.applied);
         assert!(output.preview.as_ref().unwrap().contains("No matches"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_content_does_not_read_through_a_symlink_to_outside_the_workspace() {
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("secret"), "needle in the credentials").unwrap();
+        let workspace = TempDir::new().unwrap();
+        fs::write(workspace.path().join("own.txt"), "needle in my own file").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret"),
+            workspace.path().join("link.txt"),
+        )
+        .unwrap();
+
+        let result = test_service_in_temp_dir(&workspace)
+            .search_content(search_request("needle"))
+            .unwrap();
+
+        let files: Vec<_> = result.matches.iter().map(|m| m.file.clone()).collect();
+        assert_eq!(files.len(), 1, "only the real file matches: {files:?}");
+        assert!(files[0].ends_with("own.txt"));
+    }
+
+    #[test]
+    fn search_content_skips_files_above_the_size_limit() {
+        let workspace = TempDir::new().unwrap();
+        let mut big = "needle\n".to_string();
+        big.push_str(&"x".repeat(crate::infrastructure::walk_policy::MAX_READ_FILE_BYTES as usize));
+        fs::write(workspace.path().join("big.txt"), big).unwrap();
+        fs::write(workspace.path().join("small.txt"), "needle").unwrap();
+
+        let result = test_service_in_temp_dir(&workspace)
+            .search_content(search_request("needle"))
+            .unwrap();
+
+        assert_eq!(result.total, 1);
+        assert!(result.matches[0].file.ends_with("small.txt"));
+    }
+
+    fn search_request(pattern: &str) -> SearchContentRequest {
+        SearchContentRequest {
+            pattern: pattern.to_string(),
+            path: None,
+            file_glob: None,
+            regex: Some(false),
+            case_insensitive: Some(false),
+            max_results: Some(50),
+            context_lines: Some(0),
+        }
     }
 
     #[test]

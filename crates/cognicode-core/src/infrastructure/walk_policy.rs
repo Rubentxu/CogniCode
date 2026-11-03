@@ -87,6 +87,20 @@ pub fn ignore_is_real_file(entry: &ignore::DirEntry) -> bool {
     entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
 }
 
+/// Largest file a content scan reads; the MCP validator's file limit.
+pub const MAX_READ_FILE_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Whether an `ignore` entry is a real file small enough to read whole.
+///
+/// A file whose size cannot be read is not readable: the scan skips it
+/// rather than guess.
+pub fn ignore_is_readable_file(entry: &ignore::DirEntry) -> bool {
+    ignore_is_real_file(entry)
+        && entry
+            .metadata()
+            .is_ok_and(|m| m.len() <= MAX_READ_FILE_BYTES)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
