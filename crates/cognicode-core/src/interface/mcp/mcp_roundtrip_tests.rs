@@ -680,9 +680,11 @@ fn simple_function() {
         }
     }
 
-    mod analyze_impact_absent_symbol {
+    mod absent_symbol {
         use super::*;
-        use crate::interface::mcp::handlers::{HandlerError, handle_analyze_impact};
+        use crate::interface::mcp::handlers::{
+            HandlerError, handle_analyze_impact, handle_get_call_hierarchy,
+        };
 
         #[tokio::test]
         async fn a_symbol_the_graph_does_not_contain_is_not_found_rather_than_low_risk() {
@@ -705,6 +707,36 @@ fn simple_function() {
             assert!(
                 matches!(result, Err(HandlerError::NotFound(_))),
                 "an absent symbol must not read as 'no impact': {result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_hierarchy_of_an_absent_symbol_is_not_found_rather_than_no_calls() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let ctx = create_test_context(&temp_dir);
+            let src_dir = temp_dir.path().join("src");
+            std::fs::create_dir_all(&src_dir).unwrap();
+            std::fs::write(src_dir.join("lib.rs"), "pub fn present() {}\n").unwrap();
+            let build_input = BuildGraphInput {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            };
+            let _ = handle_build_graph(&ctx, build_input).await;
+
+            let result = handle_get_call_hierarchy(
+                &ctx,
+                GetCallHierarchyInput {
+                    symbol_name: "never_defined_anywhere".to_string(),
+                    direction: CallDirection::Outgoing,
+                    depth: 1,
+                    include_external: false,
+                    compressed: false,
+                },
+            )
+            .await;
+
+            assert!(
+                matches!(result, Err(HandlerError::NotFound(_))),
+                "an absent symbol must not read as 'no calls': {result:?}"
             );
         }
     }

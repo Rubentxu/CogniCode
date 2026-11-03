@@ -1820,17 +1820,7 @@ pub async fn handle_get_call_hierarchy(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    let index = build_symbol_name_index(&graph);
-    let search_name = input.symbol_name.to_lowercase();
-    let symbol_ids: Vec<SymbolId> = index
-        .get(&search_name)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let symbol_ids = present_symbol_ids(&graph, &input.symbol_name)?;
 
     let mut all_calls = Vec::new();
 
@@ -2168,25 +2158,7 @@ pub async fn handle_analyze_impact(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    let index = build_symbol_name_index(&graph);
-    let search_name = input.symbol_name.to_lowercase();
-    let symbol_ids: Vec<SymbolId> = index
-        .get(&search_name)
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // Absent from the graph means unknown impact, never "0 impacted, low risk".
-    if symbol_ids.is_empty() {
-        return Err(HandlerError::NotFound(format!(
-            "Symbol '{}' is not in the project graph; its impact is unknown.",
-            input.symbol_name
-        )));
-    }
+    let symbol_ids = present_symbol_ids(&graph, &input.symbol_name)?;
 
     let mut impacted_symbols_set: HashSet<String> = HashSet::new();
     let mut impacted_files_set: HashSet<String> = HashSet::new();
@@ -3120,6 +3092,26 @@ pub async fn handle_get_all_symbols(
         total,
         has_more,
     })
+}
+
+/// Ids of every symbol called `name`. A name the graph does not hold is
+/// `NotFound`: an empty answer would read as "no calls / no impact".
+fn present_symbol_ids(graph: &CallGraph, name: &str) -> HandlerResult<Vec<SymbolId>> {
+    let ids: Vec<SymbolId> = build_symbol_name_index(graph)
+        .get(&name.to_lowercase())
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return Err(HandlerError::NotFound(format!(
+            "Symbol '{name}' is not in the project graph; its result is unknown."
+        )));
+    }
+    Ok(ids)
 }
 
 fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Symbol)>> {
