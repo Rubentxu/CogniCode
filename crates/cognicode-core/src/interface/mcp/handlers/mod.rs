@@ -1024,7 +1024,20 @@ fn canonical_workspace(project_dir: &Path) -> String {
         .unwrap_or_else(|_| project_dir.to_string_lossy().to_string())
 }
 
-pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
+/// Resolves the directory a tool will walk and refuses it unless the
+/// validator authorises it, so no walk starts outside the workspace.
+fn authorise_directory(
+    ctx: &HandlerContext,
+    input: Option<String>,
+) -> Result<PathBuf, HandlerError> {
+    let directory = resolve_directory(input, &ctx.working_dir);
+    ctx.validator
+        .validate_path(&directory)
+        .map_err(|e| HandlerError::InvalidInput(format!("Path rejected: {}", e)))?;
+    Ok(directory)
+}
+
+fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
     match input {
         None => working_dir.to_path_buf(),
         Some(s) => {
@@ -1376,15 +1389,10 @@ pub async fn handle_build_graph(
 
     let start = Instant::now();
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
-
-    // The build directory is a path surface. Enforce the
-    // workspace allowlist (traversal, absolute escapes, symlinked
-    // components, canonical boundary) through the same InputValidator
-    // every other path-bearing handler uses.
-    ctx.validator
-        .validate_path(&directory)
-        .map_err(|e| HandlerError::InvalidInput(format!("Path rejected: {}", e)))?;
+    // The build directory is a path surface: the workspace allowlist
+    // (traversal, absolute escapes, symlinked components, canonical
+    // boundary) applies to it like to every other path-bearing handler.
+    let directory = authorise_directory(ctx, input.directory)?;
 
     // Validate directory
     if !directory.exists() {
@@ -3288,7 +3296,7 @@ pub async fn handle_build_lightweight_index(
 
     let start = Instant::now();
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
+    let directory = authorise_directory(ctx, input.directory)?;
 
     if !directory.exists() {
         return Err(HandlerError::InvalidInput(format!(
@@ -3396,7 +3404,7 @@ pub async fn handle_query_symbol_index(
         ctx.analysis_service.find_symbol(&input.symbol_name)
     } else {
         // Cache miss: build the index and store it for next time
-        let directory = resolve_directory(input.directory, &ctx.working_dir);
+        let directory = authorise_directory(ctx, input.directory)?;
         let index = tokio::task::spawn_blocking({
             let dir = directory.clone();
             move || {
@@ -3453,7 +3461,7 @@ pub async fn handle_build_call_subgraph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
+    let directory = authorise_directory(ctx, input.directory)?;
 
     // Create on-demand strategy
     let mut strategy = OnDemandStrategy::new();
@@ -8286,6 +8294,64 @@ mod tests {
             assert_eq!(
                 bytes_b_after, bytes_b_before,
                 "workspace B snapshot must be unchanged after restart in A"
+            );
+        }
+    }
+
+    mod directory_confinement {
+        use super::*;
+
+        fn ctx_in(dir: &tempfile::TempDir) -> HandlerContext {
+            HandlerContext::builder()
+                .with_working_dir(dir.path().to_path_buf())
+                .build()
+        }
+
+        fn escape() -> Option<String> {
+            Some("/".to_string())
+        }
+
+        #[tokio::test]
+        async fn build_lightweight_index_refuses_a_directory_outside_the_workspace() {
+            let ws = tempfile::tempdir().unwrap();
+            let input = BuildIndexInput {
+                directory: escape(),
+                strategy: "lightweight".to_string(),
+            };
+            let result = handle_build_lightweight_index(&ctx_in(&ws), input).await;
+            assert!(
+                matches!(result, Err(HandlerError::InvalidInput(_))),
+                "directory=/ must be rejected before any walk: {result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn query_symbol_index_refuses_a_directory_outside_the_workspace() {
+            let ws = tempfile::tempdir().unwrap();
+            let input = QuerySymbolInput {
+                symbol_name: "main".to_string(),
+                directory: escape(),
+            };
+            let result = handle_query_symbol_index(&ctx_in(&ws), input).await;
+            assert!(
+                matches!(result, Err(HandlerError::InvalidInput(_))),
+                "directory=/ must be rejected before any walk: {result:?}"
+            );
+        }
+
+        #[tokio::test]
+        async fn build_call_subgraph_refuses_a_directory_outside_the_workspace() {
+            let ws = tempfile::tempdir().unwrap();
+            let input = BuildSubgraphInput {
+                symbol_name: "main".to_string(),
+                depth: 1,
+                direction: SubgraphDirection::Out,
+                directory: escape(),
+            };
+            let result = handle_build_call_subgraph(&ctx_in(&ws), input).await;
+            assert!(
+                matches!(result, Err(HandlerError::InvalidInput(_))),
+                "directory=/ must be rejected before any walk: {result:?}"
             );
         }
     }
