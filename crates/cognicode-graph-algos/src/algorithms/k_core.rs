@@ -22,8 +22,23 @@ pub fn k_core(adj: &[Vec<usize>], n: usize, k: u32) -> Vec<(usize, u32)> {
     result
 }
 
+/// Whether `v` is peeled at `threshold`: still in the graph and with fewer than
+/// `threshold` neighbours left.
+fn is_peelable(removed: bool, degree: usize, threshold: u32) -> bool {
+    !removed && degree < threshold as usize
+}
+
 /// Compute core number for each node.
 /// Core number = highest k at which the node survives the peeling process.
+///
+/// Known limitation: when the graph has cores of different levels, the nodes
+/// left at the stopping threshold all receive that threshold, which can be
+/// lower than their true core number. Membership of the `k`-core (`core >= k`)
+/// is not affected; the reported level of the surviving nodes can be.
+///
+/// Both loops are bounded by construction: every productive pass peels at
+/// least one node (so `n + 1` passes suffice), and the threshold never needs to
+/// exceed the largest degree plus one, where every node is peeled.
 fn compute_core_numbers(adj: &[Vec<usize>], n: usize, k: u32) -> Vec<u32> {
     if n == 0 {
         return Vec::new();
@@ -32,20 +47,15 @@ fn compute_core_numbers(adj: &[Vec<usize>], n: usize, k: u32) -> Vec<u32> {
     let mut degree: Vec<usize> = adj.iter().map(|nbrs| nbrs.len()).collect();
     let mut core_num: Vec<u32> = vec![0; n];
     let mut removed: Vec<bool> = vec![false; n];
+    let max_threshold = degree.iter().copied().max().unwrap_or(0) as u32 + 1;
 
     // Peel at threshold 1, 2, 3, ...
-    let mut threshold: u32 = 1;
-
-    loop {
-        // Peel all nodes with degree < threshold (in the current graph)
-        let mut changed = true;
-
-        // Keep peeling until no change in this threshold
-        while changed {
-            changed = false;
+    for threshold in 1..=max_threshold {
+        // Peel all nodes with degree < threshold, until a pass changes nothing.
+        for _ in 0..=n {
+            let mut changed = false;
             for v in 0..n {
-                if !removed[v] && degree[v] < threshold as usize {
-                    // Peel v
+                if is_peelable(removed[v], degree[v], threshold) {
                     core_num[v] = threshold - 1;
                     removed[v] = true;
                     changed = true;
@@ -58,29 +68,25 @@ fn compute_core_numbers(adj: &[Vec<usize>], n: usize, k: u32) -> Vec<u32> {
                     }
                 }
             }
+            if !changed {
+                break;
+            }
         }
 
-        // After no more peeling at this threshold, check remaining graph
+        // Every remaining node has degree >= threshold now.
         let remaining: Vec<usize> = (0..n).filter(|&v| !removed[v]).collect();
-
         if remaining.is_empty() {
             break;
         }
 
         let min_deg = remaining.iter().map(|&v| degree[v]).min().unwrap();
-
-        if min_deg >= threshold as usize && min_deg == threshold as usize && threshold >= k {
-            // Remaining graph is a k-core (where k = min_deg = threshold)
+        if min_deg == threshold as usize && threshold >= k {
+            // The remaining graph is a core at this threshold.
             for &v in &remaining {
-                if core_num[v] == 0 {
-                    core_num[v] = threshold;
-                }
+                core_num[v] = threshold;
             }
             break;
         }
-
-        // min_deg > threshold or threshold < k: increase threshold and continue
-        threshold += 1;
     }
 
     core_num
@@ -194,5 +200,100 @@ mod tests {
         let r1 = k_core(&adj, 3, 2);
         let r2 = k_core(&adj, 3, 2);
         assert_eq!(r1, r2);
+    }
+
+    /// Runs `f` on a thread so a hanging mutant fails the test instead of
+    /// hanging the suite.
+    fn with_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("k_core did not finish within 5s (or panicked)")
+    }
+
+    fn run(adj: Vec<Vec<usize>>, k: u32) -> Vec<(usize, u32)> {
+        let n = adj.len();
+        with_deadline(move || k_core(&adj, n, k))
+    }
+
+    /// Builds an undirected adjacency list from an edge list.
+    fn undirected(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
+        let mut adj = vec![Vec::new(); n];
+        for &(a, b) in edges {
+            adj[a].push(b);
+            adj[b].push(a);
+        }
+        adj
+    }
+
+    #[test]
+    fn is_peelable_pins_its_boundary() {
+        assert!(is_peelable(false, 0, 1));
+        assert!(is_peelable(false, 1, 2));
+        assert!(!is_peelable(false, 2, 2), "degree == threshold survives");
+        assert!(!is_peelable(false, 3, 2));
+        assert!(
+            !is_peelable(true, 0, 5),
+            "a removed node is never peeled again"
+        );
+    }
+
+    /// K4: every node has degree 3, so the core number is 3 for all.
+    #[test]
+    fn clique_k4_k3_keeps_everyone_at_core_3() {
+        let g = undirected(4, &[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]);
+        assert_eq!(run(g, 3), vec![(0, 3), (1, 3), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn clique_k4_k4_is_empty() {
+        let g = undirected(4, &[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]);
+        assert_eq!(run(g, 4), Vec::<(usize, u32)>::new());
+    }
+
+    /// Path 0-1-2-3: the 1-core is everything (core 1), the 2-core is empty
+    /// (peeling the endpoints cascades through the whole path).
+    #[test]
+    fn path_has_core_1_and_no_2_core() {
+        let g = undirected(4, &[(0, 1), (1, 2), (2, 3)]);
+        assert_eq!(run(g.clone(), 1), vec![(0, 1), (1, 1), (2, 1), (3, 1)]);
+        assert_eq!(run(g, 2), Vec::<(usize, u32)>::new());
+    }
+
+    /// Star with centre 0 and leaves 1..=3: everyone is in the 1-core, none in
+    /// the 2-core (the leaves go, and the centre is left with degree 0).
+    #[test]
+    fn star_has_core_1_and_no_2_core() {
+        let g = undirected(4, &[(0, 1), (0, 2), (0, 3)]);
+        assert_eq!(run(g.clone(), 1), vec![(0, 1), (1, 1), (2, 1), (3, 1)]);
+        assert_eq!(run(g, 2), Vec::<(usize, u32)>::new());
+    }
+
+    /// Triangle {0,1,2} plus the separate edge {3,4}: the 2-core is the triangle.
+    #[test]
+    fn disconnected_triangle_and_edge_k2_keeps_only_the_triangle() {
+        let g = undirected(5, &[(0, 1), (1, 2), (2, 0), (3, 4)]);
+        assert_eq!(run(g, 2), vec![(0, 2), (1, 2), (2, 2)]);
+    }
+
+    /// Isolated nodes have core number 0: kept for k = 0, dropped for k = 1.
+    #[test]
+    fn isolated_nodes_have_core_0() {
+        let g: Vec<Vec<usize>> = vec![Vec::new(), Vec::new()];
+        assert_eq!(run(g.clone(), 0), vec![(0, 0), (1, 0)]);
+        assert_eq!(run(g, 1), Vec::<(usize, u32)>::new());
+    }
+
+    /// With `k` above the largest degree the public filter hides the levels, but
+    /// the core numbers themselves must still be the true ones: K4 is a 3-core.
+    #[test]
+    fn core_numbers_are_reported_even_when_k_exceeds_every_degree() {
+        let g = undirected(4, &[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]);
+        assert_eq!(
+            with_deadline(move || compute_core_numbers(&g, 4, 4)),
+            vec![3, 3, 3, 3]
+        );
     }
 }

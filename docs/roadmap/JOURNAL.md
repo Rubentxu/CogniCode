@@ -31044,3 +31044,36 @@ vivos; después 22 mutantes, 22 atrapados, 0 vivos, 0 timeouts (2 min). Lib
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-104: k_core, timeouts de mutación
+
+**Hueco.** La tarea registraba 4 timeouts en la línea 47. La re-medición real (28
+mutantes, 14 min) dio 1 vivo y 6 timeouts: 47 (×4), 64 `delete !` y 83 `+=`→`*=`
+(el umbral no avanza) más el vivo 72 `>=`→`<`. Los timeouts eran bucles que no
+terminan bajo mutación: los tests no fallaban, se colgaban.
+
+**Tests.** Valores calculados a mano: K4 con k=3 (core 3 para los cuatro) y k=4
+(vacío), camino (core 1, sin 2-core), estrella (core 1, sin 2-core), triángulo +
+arista con k=2 (solo el triángulo), nodos aislados (core 0), el contrato de
+`is_peelable` y los core numbers de K4 con k=4 llamando a `compute_core_numbers`.
+Todos con plazo de 5 s (hilo + `mpsc` + `recv_timeout`).
+
+**Diagnóstico.** Bucles acotados por construcción: pasadas de pelado `0..=n` (cada
+pasada productiva quita ≥1 nodo) y umbral `1..=grado_máximo+1` (ahí todo nodo se
+pela). Extraída `is_peelable`. Eliminado código redundante demostrable:
+`min_deg >= threshold` (siempre cierto tras el pelado) y `core_num[v] == 0` (los
+restantes nunca fueron pelados). Sin equivalentes declarados.
+
+**Limitación conocida, NO corregida.** Con núcleos de distinto nivel, los nodos que
+quedan en el umbral de parada reciben ese umbral aunque su core real sea mayor
+(p. ej. triángulo con cola y k=1 da core 1 al triángulo, el real es 2). La
+pertenencia al k-core (`core >= k`) no se ve afectada; el nivel reportado sí. No
+se fija en tests. Un vecino fuera de rango (`>= n`) provoca panic; no se fija como
+contrato. Ambos quedan para decisión del maintainer.
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: 28 mutantes, 28
+atrapados, 0 vivos, 0 timeouts (2 min). Lib `cognicode-graph-algos`: 225 en verde
+; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
