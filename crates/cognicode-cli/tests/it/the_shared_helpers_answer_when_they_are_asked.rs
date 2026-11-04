@@ -11,8 +11,7 @@
 //! helper that is also a test is two things in one place, and the second
 //! one gets paid for by everyone.
 
-#[path = "common/mod.rs"]
-mod common;
+use crate::common;
 
 use common::{binary_path, invocations, reaches_stage_exit, sh_bodies_with_offsets};
 

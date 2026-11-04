@@ -32,7 +32,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 use common::{release_bin_path, repo_root, workspace_tag, workspace_version};
 

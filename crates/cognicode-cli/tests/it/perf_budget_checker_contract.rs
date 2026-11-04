@@ -51,7 +51,7 @@
 //! | 1    | a measured operation exceeded its budget          |
 //! | 3    | a budgeted operation was never measured           |
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

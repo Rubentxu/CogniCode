@@ -74,15 +74,15 @@ pipeline {
         }
 
         stage("a014-capabilities-json") {
-            sh("$cd && cargo test -p cognicode-cli --test a014_capabilities_json --quiet")
+            sh("$cd && cargo test -p cognicode-cli --test it --quiet -- a014_capabilities_json::")
         }
 
         stage("a015-licenses-gate") {
-            sh("$cd && cargo test -p cognicode-cli --test a015_licenses_gate --quiet")
+            sh("$cd && cargo test -p cognicode-cli --test it --quiet -- a015_licenses_gate::")
         }
 
         stage("a013-lifecycle-gate-contract") {
-            sh("$cd && cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet")
+            sh("$cd && cargo test -p cognicode-cli --test it --quiet -- a013_lifecycle_gate_contract::")
         }
 
         // stage cli-gate-coverage-contract removed 2026-10-18 (W0.1 unblock; sign-off operador)

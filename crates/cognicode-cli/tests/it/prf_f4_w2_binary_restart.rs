@@ -18,7 +18,7 @@
 //! actually produces a result, so a "matches itself trivially"
 //! assertion would never pass on an empty corpus).
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::Path;

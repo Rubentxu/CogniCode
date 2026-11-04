@@ -31,7 +31,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 use common::repo_root;
 

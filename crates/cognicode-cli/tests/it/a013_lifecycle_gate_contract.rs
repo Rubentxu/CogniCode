@@ -33,7 +33,7 @@
 // about intent: a renamed suite would be caught here, a re-indented step
 // would not.
 
-mod common;
+use crate::common;
 
 use common::{merge_authority_lines, merge_authority_runs, not_run_message};
 

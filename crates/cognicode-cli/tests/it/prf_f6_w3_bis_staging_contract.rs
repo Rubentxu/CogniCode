@@ -47,7 +47,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
