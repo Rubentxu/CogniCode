@@ -31954,3 +31954,89 @@ se reporta este hallazgo?». **TASK-111**. El snapshot `CURRENT.md` está 40 com
 contrato del ratchet lo dice. **TASK-113**.
 
 **NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
+
+## 2026-11-04 — TASK-78: las preguntas del grafo tienen un dueño, y las copias que no tenían llamador se van
+
+**Qué.** El CLI y el MCP son adaptadores sobre un servicio, y las preguntas que ponen son las mismas:
+los hot paths, los entry points, las leaf functions, el camino entre dos nombres, la jerarquía y el
+diagrama. Cada superficie las contestaba por su cuenta, y las respuestas divergían. Medido sobre el
+árbol de antes de esta unidad:
+
+- **hot paths.** El CLI recortaba al límite **antes** de aplicar el umbral de fan-in, y el analizador
+  que usaba tenía una regla extra —descartar todo lo que nadie llama— que el umbral no pedía. Con
+  `--min-fan-in 0` el CLI publicaba los símbolos que alguien llama y el MCP publicaba todos.
+- **entry points y leaf functions.** El CLI los cortaba a veinte sin decirlo, y `total` mentía: decía
+  el tamaño de la lista recortada, no el del grafo.
+- **trazo.** El CLI construía el `SymbolId` con el nombre tal cual, así que exigía el nombre completo
+  y contestaba «not found» para el nombre simple que el MCP contesta. No tenía límite de profundidad.
+- **jerarquía.** El CLI caminaba un grafo de otro (`OnDemandStrategy`), cortaba cada cubo a cinco, y
+  el MCP ignoraba la `direction` y la `depth` que su propia tool declara, y contestaba por todos los
+  homónimos a la vez.
+- **diagrama.** Tres renderizadores (`CallGraph::to_mermaid`, el del MCP y el del CLI), dos documentos
+  distintos entre el CLI y el MCP, y un orden que salía del `HashMap` de símbolos: dos corridas sobre
+  el mismo proyecto publicaban tablas distintas.
+
+**El dueño.** Las preguntas viven ahora en `crates/cognicode-core/src/application/services/graph_queries.rs`
+—fichero nuevo— y `AnalysisService` las expone como métodos, el mismo patrón que `impact_of` dejó
+TASK-77. El CLI, el MCP y la sesión del workspace las llaman ahí. El nombre se resuelve con la regla
+del dominio (`resolve_target`): un nombre que un símbolo lleva resuelve a él, un nombre que varios
+llevan es una ambigüedad que **se dice** (con sus candidatos), y un nombre que ninguno lleva es
+«not found». El umbral de los hot paths se aplica **antes** del corte, y el orden de la tabla es una
+promesa: fan-in, y entre fan-ins iguales nombre, fichero y línea.
+
+**Las copias que se van.** `find_path_bfs`, `find_all_paths_bfs`, `collect_edges_recursive`,
+`sanitize_mermaid_id`, `present_symbol_ids`, `build_symbol_name_index` (la del handler y la que la
+sesión del workspace llevaba para resolver nombres por su cuenta) y el renderizador
+`CallGraph::to_mermaid`. `AnalysisService` ya no implementa por su cuenta `get_entry_points`,
+`get_leaf_functions` ni `trace_path`: delegan.
+
+**Salida publicada, cambios declarados.** El MCP ahora **honra la `direction` y la `depth` que su
+propia tool declara** (antes las ignoraba: contestaba siempre los callees directos), y se niega a
+contestar por un homónimo en vez de contestarlo por todos. El diagrama sale del renderizador único:
+identificadores por nombre cualificado, etiquetas «nombre (Kind)», aristas con etiqueta y título
+«%% Call Graph», en orden determinista. El `export_mermaid` del MCP con `root_symbol` publica ahora
+el subgrafo que el renderizador define —el raíz y los símbolos anidados bajo él, con sus aristas— y
+no el vecindario de llamadas con nodos no declarados que publicaba antes; es el mismo documento que
+publica la tool del rig, que ya usaba el renderizador del dominio.
+
+**RED medido.** El RED se midió revirtiendo el parche de fuentes sobre el árbol de la unidad (parche
+guardado en `/tmp` y copia de seguridad aparte, porque el hook `reference-transaction` de
+`git-control` deniega `git stash` y `git fetch` en esta máquina): **6 de los 11 tests nuevos fallan**
+contra el árbol previo. Restaurado, 11/11 GREEN.
+
+**Ratchet.** `crates/cognicode-core/tests/it/one_owner_for_the_graph_questions.rs` (8 tests): las
+cuatro superficies (CLI, handler del MCP, handler AIX y sesión del workspace) llaman al dueño; las
+copias muertas no vuelven; y el dueño contesta el umbral, el orden de la tabla, el rechazo de un
+homónimo y de un nombre ausente, el camino por nombre simple y la jerarquía por el lado que se pide.
+El escaneo del árbol —que busca **declaraciones**, no menciones— pasa a un módulo compartido,
+`crates/cognicode-core/tests/it/source_scan.rs`, que el test de TASK-77 ya usa: dos escáneres con el
+mismo nombre se separan sin borrarse la mitad.
+
+**Verificación.** SHA base `bf707ee9`, rama `feature/task-78-cli-graph-same-service`, commit
+`06c894c1`. `cargo test --workspace --lib --tests` en verde: `cognicode-core` `--lib` 3299 OK y 2
+ignorados, `--test it` 1005 OK y 2 ignorados (997 + los 8 nuevos); `cognicode-cli` 332 + 212 + 44 +
+15 + 10 + 80 OK (212 = 201 + los 11 de la equivalencia); `cognicode-mcp` 78 OK y 5 ignorados;
+`cognicode-explorer` 956 OK; `cognicode-graph-algos` 244 OK. Clippy del workspace con `-D warnings`
+(rc=0) y `cargo fmt --all --check` limpios. Ratchet de tamaño de fichero PASS: `interface/mcp/handlers/mod.rs`
+4195 → 4008, `interface/cli/commands.rs` 3156 → 3109, `application/services/analysis_service.rs` 2273 →
+2239, `interface/mcp/handlers/aix_handlers.rs` 2568 → 2565. `npm test --prefix apps/explorer-ui` rc=0
+(86 ficheros, 944 tests).
+
+**Contratos: rojo heredado, no regresión.** `bash scripts/ci/run-all-contracts.sh` da rc=1 con los
+dos fallos de `scripts/ci/test_roadmap_version_ratchet.py::test_current_sha_matches_head`
+(`docs/roadmap/CURRENT.md` declara el snapshot sobre `39beacb617ae`, 40 commits por detrás de la
+punta). El rojo es idéntico en `main` y en esta rama: no lo causa esta unidad. Ya enrutado y medido
+en TASK-77 como **TASK-113**.
+
+**Lo que queda fuera, y por qué.** El CLI sigue escribiendo su línea de progreso en **stdout** antes
+del documento JSON, así que un consumidor tiene que leer el documento «desde su primera llave»: es
+una deuda real, medida, y enrutada como **TASK-114** (mover la observabilidad a stderr es una decisión
+de contrato de formato, no un arreglo de una línea). Las penalizaciones de puntuación del comando
+`analyze` que la descripción de la tarea menciona son una pregunta distinta —«qué tan sano está el
+proyecto»— y no entran en los criterios de aceptación de esta unidad. Y la equivalencia probada es
+CLI↔MCP: la sesión del workspace está cubierta **estructuralmente** (el ratchet comprueba que llama
+al dueño) y por el comportamiento del dueño, no de punta a punta, porque construir un
+`WorkspaceSession` exige un `WorkspaceCapabilities` completo y ningún test del repositorio construye
+uno.
+
+**NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
