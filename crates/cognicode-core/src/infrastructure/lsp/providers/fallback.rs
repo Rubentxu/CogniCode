@@ -1,7 +1,8 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind, HoverInfo,
-    HoverKind, Reference, ReferenceKind, TypeHierarchy,
+    CallHierarchyCall, CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol,
+    DocumentSymbolKind, HoverInfo, HoverKind, PrepareRename, Reference, ReferenceKind, RenameEdits,
+    TypeHierarchy,
 };
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::graph::LightweightIndex;
@@ -143,6 +144,43 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
     ) -> Result<TypeHierarchy, CodeIntelligenceError> {
         Err(CodeIntelligenceError::Internal(
             "Type hierarchy not supported in tree-sitter fallback".to_string(),
+        ))
+    }
+
+    async fn prepare_rename(
+        &self,
+        _location: &Location,
+    ) -> Result<Option<PrepareRename>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "prepareRename not supported in tree-sitter fallback".to_string(),
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _location: &Location,
+        _new_name: &str,
+    ) -> Result<Option<RenameEdits>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "rename not supported in tree-sitter fallback".to_string(),
+        ))
+    }
+
+    async fn incoming_calls(
+        &self,
+        _location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "incomingCalls not supported in tree-sitter fallback".to_string(),
+        ))
+    }
+
+    async fn outgoing_calls(
+        &self,
+        _location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "outgoingCalls not supported in tree-sitter fallback".to_string(),
         ))
     }
 
@@ -306,6 +344,27 @@ mod tests {
             TreesitterFallbackProvider::extract_identifier_at_position("    ", 0, 2),
             None
         );
+    }
+
+    /// The fallback has no rename or call hierarchy: it says so, rather than
+    /// answering "nothing to rename" or "no callers".
+    #[tokio::test]
+    async fn rename_and_call_hierarchy_are_declared_unsupported() {
+        let provider = TreesitterFallbackProvider::new();
+        let location = Location::new("/tmp/test.rs", 1, 1);
+        let errors = [
+            provider.prepare_rename(&location).await.unwrap_err(),
+            provider.rename(&location, "x").await.unwrap_err(),
+            provider.incoming_calls(&location).await.unwrap_err(),
+            provider.outgoing_calls(&location).await.unwrap_err(),
+        ];
+        for error in errors {
+            let message = error.to_string();
+            assert!(
+                message.contains("tree-sitter fallback"),
+                "the reason must name the fallback: {message}"
+            );
+        }
     }
 
     #[tokio::test]
