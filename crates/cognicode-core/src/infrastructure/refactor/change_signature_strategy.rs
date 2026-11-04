@@ -421,6 +421,16 @@ impl RefactorStrategy for ChangeSignatureStrategy {
             ));
         }
 
+        if !self.parser.language().has_refactor_templates() {
+            errors.push(ValidationError::new(
+                ValidationErrorCode::InvalidParameters,
+                format!(
+                    "change-signature is not supported for {:?}: no source templates for that language",
+                    self.parser.language()
+                ),
+            ));
+        }
+
         // Validate new signature has at least one parameter (can't have zero params for most funcs)
         if new_signature.parameters().is_empty() && !target_symbol.has_signature() {
             warnings.push("New signature has no parameters".to_string());
@@ -765,12 +775,18 @@ impl ChangeSignatureStrategy {
         old_signature: &ParsedFunctionInfo,
         new_params: &[(String, Option<String>)],
     ) -> Result<SignatureChangeResult, RefactorError> {
+        let language = self.parser.language();
+        if !language.has_refactor_templates() {
+            return Err(RefactorError::PreparationFailed(format!(
+                "change-signature is not supported for {:?}: no source templates for that language",
+                language
+            )));
+        }
+
         // Read the source file
         let source = std::fs::read_to_string(file_path).map_err(|e| {
             RefactorError::IoError(format!("Failed to read file {}: {}", file_path, e))
         })?;
-
-        let language = self.parser.language();
 
         // Generate the new signature text
         let new_signature_text =
@@ -889,6 +905,26 @@ pub struct SignatureChangeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn change_signature_refuses_languages_without_templates() {
+        for lang in [Language::Kotlin, Language::Groovy, Language::CSharp] {
+            let strategy = ChangeSignatureStrategy::new(
+                Arc::new(TreeSitterParser::new(lang).unwrap()),
+                SafetyGate::new(),
+            );
+            let info = ParsedFunctionInfo {
+                name: "foo".to_string(),
+                location: Location::new("f", 0, 0),
+                range: SourceRange::new(Location::new("f", 0, 0), Location::new("f", 0, 3)),
+                parameters: vec![],
+            };
+            let err = strategy
+                .apply_signature_change("/nonexistent/f", "foo", &info, &[])
+                .unwrap_err();
+            assert!(err.to_string().contains("not supported"), "{lang:?}: {err}");
+        }
+    }
     use crate::domain::aggregates::symbol::Parameter;
 
     #[test]

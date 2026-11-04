@@ -31371,3 +31371,21 @@ mensaje de `check-build-isolation.sh:163` que cita el publisher retirado.
 «selección de tests en sombra» y «SLOs nocturnos»; hay que revisarlas.
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 8/10).
+
+## 2026-11-04 — TASK-67: Kotlin, Groovy y C#: dejar de dar respuestas incorrectas
+
+**Qué:** rename busca ocurrencias con la `NameRule` del lenguaje (`simple_identifier`
+en Kotlin) y se niega si el símbolo se usa en otros ficheros; extract y
+change-signature se niegan en Kotlin, Groovy y C#, que no tienen plantillas (antes
+emitían sintaxis de Go).
+
+**RED:** 5/5 tests fallaban con las correcciones neutralizadas. **GREEN:** restauradas.
+**Verificación:** `cargo test -p cognicode-core --lib refactor`: 131 pasan; clippy
+`-D warnings` y `cargo fmt --all --check` limpios; rama rebasada sin conflictos sobre
+origin/main.
+
+**AC4 abierto (decisión del operador):** bajar C# a experimental exige cambiar
+`product/languages.json`, contrato publicado. Residuo: Ruby, PHP, Swift y Scala siguen
+con la plantilla tipo Go.
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote).

@@ -682,9 +682,14 @@ impl TreeSitterParser {
     ) {
         let mut stack = Vec::new();
         stack.push(node);
+        let rule = self.language.name_rule();
+        let declared = rule != crate::domain::value_objects::NameRule::DEFAULT;
 
         while let Some(current) = stack.pop() {
-            if (current.kind() == "identifier" || current.kind() == "type_identifier")
+            let kind = current.kind();
+            if (kind == "identifier"
+                || kind == "type_identifier"
+                || (declared && rule.kinds.contains(&kind)))
                 && let Ok(text) = current.utf8_text(source.as_bytes())
                 && text == target_identifier
             {
@@ -712,6 +717,16 @@ impl TreeSitterParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kotlin_occurrences_follow_the_language_name_rule() {
+        let parser = TreeSitterParser::new(Language::Kotlin).unwrap();
+        let source = "fun foo() {}\nfun main() { foo() }\n";
+        let found = parser
+            .find_all_occurrences_of_identifier(source, "foo")
+            .unwrap();
+        assert_eq!(found.len(), 2, "declaration and call: {found:?}");
+    }
 
     #[test]
     fn test_python_function_parsing() {
