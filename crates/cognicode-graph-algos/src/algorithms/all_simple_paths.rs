@@ -145,4 +145,20 @@ mod tests {
         let result = all_simple_paths(&out_n, 0, 99, 5);
         assert!(result.is_empty());
     }
+
+    /// A neighbour index that is not a declared node does not make the
+    /// target known: `out_neighbors` has one slot, so node 99 does not
+    /// exist, and the answer stays empty.
+    ///
+    /// The mutation gate showed the hole this closes: the endpoint guard
+    /// read `from >= len || to >= len`, and a test that only missed the
+    /// target did not notice it become `&&`, because the search then
+    /// reached node 99 through the neighbour list and reported a path to
+    /// a node that does not exist.
+    #[test]
+    fn missing_target_listed_as_a_neighbour_is_still_missing() {
+        let out_n = vec![vec![99]];
+        let result = all_simple_paths(&out_n, 0, 99, 5);
+        assert!(result.is_empty(), "node 99 is not a declared node");
+    }
 }

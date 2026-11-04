@@ -31,6 +31,5 @@ mod prf_f6_w3_bis_sbom_contract;
 mod prf_f6_w3_bis_staging_contract;
 mod qw03_bin_tracking_guard;
 mod qw04_preflight_contract;
-mod qw08_crate_selector;
 mod t1_5_5_json_dispatch;
-mod the_shared_helpers_answer_when_they_are_asked;
+mod test_taxonomy_contract;

@@ -84,7 +84,7 @@ The viewport state `{ x, y, scale }` is stored in the `Pane` state and included 
 ## Testing
 
 - **Unit tests**: `GraphViewRenderer.test.tsx` — rendering, empty state, node selection
-- **E2E tests**: `exploration-snapshot.spec.ts` — multi-pane, viewport capture, session persistence
+- **Not covered**: multi-pane layout, viewport capture and session persistence were covered by the browser e2e suite (`exploration-snapshot.spec.ts`), which was retired on 2026-11-04. Those behaviours are **unverified** today, not verified elsewhere.
 
 ## File Structure
 

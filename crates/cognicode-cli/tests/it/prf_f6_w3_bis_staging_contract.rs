@@ -47,8 +47,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::common;
-
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop();
@@ -122,57 +120,6 @@ fn run_flatten(staging: &Path) -> std::process::ExitStatus {
         .arg(staging)
         .status()
         .unwrap()
-}
-
-// -------------------------------------------------------------------
-// Layer 1: lane contract
-// -------------------------------------------------------------------
-
-/// The candidate lane must build its staging tree with the shared flatten
-/// script, and the release lane must verify that same tree before publishing
-/// it.
-///
-/// This layer used to assert that `release.yml#build` and
-/// `release-validate.yml#build` uploaded under the same artifact name and that
-/// both downloaded with the same pattern. Run #35991553492 failed because the
-/// two had silently diverged, and the contract existed to stop exactly that.
-///
-/// It is retired because the divergence it watched for is no longer
-/// expressible. Measured under `pipelinek` 0.46.0: stages share a filesystem,
-/// so there is no transfer between the build and the flatten step for two
-/// lanes to disagree about. The candidate is a directory,
-/// `stage-platform-payloads.sh` writes it, and `release.pipeline.kts` reads
-/// `release/` — it has no way to reconstruct a candidate it did not receive,
-/// and so no way to validate one artifact and publish another.
-///
-/// What replaces it is the wiring itself. See
-/// `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
-#[test]
-fn prf_f6_w3_bis_candidate_lane_stages_through_the_shared_flatten_script() {
-    const STAGE: &str = "scripts/ci/stage-platform-payloads.sh";
-    assert!(
-        common::pipeline_runs(common::RELEASE_CANDIDATE_AUTHORITY, STAGE),
-        "{}",
-        common::pipeline_not_run_message(
-            common::RELEASE_CANDIDATE_AUTHORITY,
-            STAGE,
-            "the staging tree the candidate is verified against and published \
-             from is the one this script builds. Assembling it any other way \
-             makes the canonical payload and SBOM names the orchestrator's \
-             claim rather than the script's output",
-        )
-    );
-    assert!(
-        common::pipeline_runs("release.pipeline.kts", "verify --staging release"),
-        "{}",
-        common::pipeline_not_run_message(
-            "release.pipeline.kts",
-            "verify --staging release",
-            "the release lane must verify the candidate directory before it \
-             publishes it. A release that does not re-check what it is about to \
-             ship has no evidence beyond the build that produced it",
-        )
-    );
 }
 
 // -------------------------------------------------------------------

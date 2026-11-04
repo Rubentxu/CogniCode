@@ -245,6 +245,105 @@ mod tests {
         assert_eq!(reaches, vec![0, 1, 2], "x flows from 0 to 1 and 2 only");
     }
 
+    /// `reaching_uses` must only follow edges that match **both** the
+    /// requested `variable` **and** start at `definition_site`.
+    ///
+    /// A `&&` weakened into `||` admits two kinds of foreign edge:
+    /// an edge that starts at `definition_site` but carries another
+    /// variable, and an edge that carries the variable but starts
+    /// somewhere else. Both leak statements into the answer that the
+    /// requested definition does not reach.
+    #[test]
+    fn reaching_uses_ignores_edges_of_other_variables_at_the_same_site() {
+        // x = 1; y = 2; a = x; b = y;
+        let stmts = vec![s(0, &["x", "y"], &[]), s(1, &[], &["x"]), s(2, &[], &["y"])];
+        let edges = dfg_edges(&stmts);
+        assert_eq!(
+            edges,
+            vec![
+                DefUseEdge {
+                    from: 0,
+                    to: 1,
+                    variable: "x".into()
+                },
+                DefUseEdge {
+                    from: 0,
+                    to: 2,
+                    variable: "y".into()
+                },
+            ],
+            "both `x` and `y` are defined at site 0"
+        );
+
+        let reaches = reaching_uses(&edges, 0, "x");
+
+        // The use of `x` IS reached; the use of `y` is NOT — even though
+        // it hangs off the very same definition site.
+        assert!(reaches.contains(&1), "the use of `x` is reached");
+        assert!(
+            !reaches.contains(&2),
+            "the use of `y` must not be reached by the definition of `x`"
+        );
+        assert_eq!(reaches, vec![0, 1]);
+    }
+
+    /// The mirror image: an edge that carries the right variable but
+    /// starts at another site belongs to another definition and must not
+    /// be followed.
+    #[test]
+    fn reaching_uses_ignores_edges_of_the_variable_from_other_sites() {
+        // x = 1; x = x + 1; a = x; b = x;
+        // Site 1 re-defines `x`, so the uses at 2 and 3 belong to the
+        // definition at site 1, not to the definition at site 0.
+        let stmts = vec![
+            s(0, &["x"], &[]),
+            s(1, &["x"], &["x"]),
+            s(2, &[], &["x"]),
+            s(3, &[], &["x"]),
+        ];
+        let edges = dfg_edges(&stmts);
+        assert_eq!(
+            edges,
+            vec![
+                DefUseEdge {
+                    from: 0,
+                    to: 1,
+                    variable: "x".into()
+                },
+                DefUseEdge {
+                    from: 1,
+                    to: 2,
+                    variable: "x".into()
+                },
+                DefUseEdge {
+                    from: 1,
+                    to: 3,
+                    variable: "x".into()
+                },
+            ],
+            "the second definition of `x` shadows the first one"
+        );
+
+        let reaches = reaching_uses(&edges, 0, "x");
+
+        // Only the use at the re-definition site is reached by the
+        // definition at site 0; the uses fed by the *other* definition
+        // are not.
+        assert!(
+            reaches.contains(&1),
+            "the use at the re-definition is reached"
+        );
+        assert!(
+            !reaches.contains(&2),
+            "a use fed by the definition at site 1 is not reached by site 0"
+        );
+        assert!(
+            !reaches.contains(&3),
+            "a use fed by the definition at site 1 is not reached by site 0"
+        );
+        assert_eq!(reaches, vec![0, 1]);
+    }
+
     #[test]
     fn empty_input_yields_no_edges() {
         assert!(dfg_edges(&[]).is_empty());

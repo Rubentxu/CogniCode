@@ -489,21 +489,14 @@ def check_gate_is_wired() -> None:
     invokes is the same defect wearing a better name, and it is the most likely
     way for this work to be worthless.
 
-    The chain has three links and the last one is the one that is easy to lose:
-    the merge authority invokes the runner, the runner discovers this file by
-    glob, and the glob still matches. A rename or a move turns this contract
-    into something nothing runs while every other assertion here still passes.
+    The chain had three links and the last one is the one that is easy to lose:
+    the merge authority invoked the runner, the runner discovered this file by
+    glob, and the glob still matched. The merge gate is gone (retired
+    2026-11-04), so the first link is gone with it. The link that survives —
+    and the one that still catches a rename or a move — is the glob: a file
+    that moves out of it turns this contract into something nothing runs while
+    every other assertion here still passes.
     """
-    import pipeline_authority as authority
-
-    hosts = authority.invoked_by(RUNNER)
-    check(
-        authority.MERGE_AUTHORITY in hosts,
-        f"{RUNNER} is not invoked by {authority.MERGE_AUTHORITY} "
-        f"(found in: {sorted(hosts) or 'no pipeline at all'}). A ratchet that "
-        f"nothing runs is the CP5 failure again: correct, tested, and invisible",
-    )
-
     matched = sorted(REPO_ROOT.glob(DISCOVERY_GLOB))
     check(
         SELF_NAME in [p.name for p in matched],

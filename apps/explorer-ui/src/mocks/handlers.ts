@@ -35,6 +35,7 @@ import {
   smallSubgraphFixture,
 } from "./subgraphFixtures";
 import { architectureFixture } from "./architectureFixtures";
+import { hasScenario } from "./scenario";
 
 const LATENCY_MS = 8;
 
@@ -790,11 +791,15 @@ export const handlers = [
   // -----------------------------------------------------------------------
   http.get("/api/workspaces/:workspace_id/landing", async ({ params }) => {
     await delay(LATENCY_MS);
+    if (hasScenario("error")) {
+      return HttpResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
     const workspaceId = params["workspace_id"] as string | undefined;
     if (!workspaceId) {
       return HttpResponse.json({ error: "workspace_id required" }, { status: 400 });
     }
     const { landingFixture } = await import("./landingFixtures");
+    const isTruncated = hasScenario("truncated");
 
     // e15.5: include ingested Route nodes as graph nodes + edges
     const routeNodes = Array.from(routeStore.values()).map((route) => ({
@@ -816,6 +821,8 @@ export const handlers = [
 
     return HttpResponse.json({
       ...landingFixture,
+      truncated: isTruncated || landingFixture.truncated,
+      truncated_reason: isTruncated ? "max_nodes_exceeded" : landingFixture.truncated_reason,
       workspace: {
         ...landingFixture.workspace,
         id: workspaceId,

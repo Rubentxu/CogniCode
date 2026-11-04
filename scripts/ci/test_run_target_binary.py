@@ -34,6 +34,7 @@ es un contrato que no se esta ejecutando.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "scripts" / "ci" / "run-target-binary.sh"
-CANDIDATE = REPO_ROOT / "release-candidate.pipeline.kts"
 
 HOST = "x86_64-unknown-linux-gnu"
 FOREIGN = "aarch64-unknown-linux-gnu"
@@ -101,6 +101,20 @@ def run_runner(args: list[str], **env_extra: str) -> subprocess.CompletedProcess
             timeout=120,
             env=env,
         )
+
+
+def _repo_scripts() -> list[Path]:
+    """Every shell script that belongs to THIS repository.
+
+    `rglob` over the repository root also walks `.claude/worktrees/`, where an
+    agent's checkout holds its own copy of every script.
+    """
+    skip = {".git", "node_modules", "target", ".claude", "leases", "staging"}
+    return [
+        path
+        for path in REPO_ROOT.rglob("*.sh")
+        if not any(part in skip for part in path.relative_to(REPO_ROOT).parts)
+    ]
 
 
 def test_the_runner_script_exists_and_is_executable() -> None:
@@ -177,17 +191,45 @@ def test_a_foreign_target_without_a_runner_says_what_is_missing() -> None:
     assert "aarch64" in combined, f"debe nombrar el target: {combined!r}"
 
 
-def test_both_stages_that_execute_binaries_use_the_runner() -> None:
-    """Si la stage ejecuta el binario por su cuenta, el arreglo no sirve."""
-    text = CANDIDATE.read_text(encoding="utf-8")
-    for stage in ("binary-smoke-$target", "archive-standalone-$target"):
-        start = text.index(f'stage("{stage}")')
-        nxt = text.find('stage("', start + 10)
-        body = text[start : nxt if nxt != -1 else len(text)]
-        assert "run-target-binary.sh" in body, (
-            f"la stage {stage} ejecuta un binario de {FOREIGN}: tiene que decir "
-            f"como, no esperar que binfmt_misc lo resuelva por ella"
+def test_the_runner_is_the_only_way_to_execute_a_foreign_binary() -> None:
+    """Un binario de otro target no se ejecuta solo: hay que decir como.
+
+    Antes de 2026-11-04 esto exigia que dos stages de la lane del candidato
+    usaran `run-target-binary.sh`. Las lanes se retiraron; el runner se queda,
+    y la propiedad que queda —la que este contrato sigue vigilando— es que no
+    haya otra via de ejecutar un binario de un target extranjero que dependa
+    de que `binfmt_misc` lo resuelva por su cuenta.
+
+    Un binario que se ejecuta sin decir como es un binario que funciona en la
+    maquina del que lo probo y falla en otra, sin decir por que.
+    """
+    # NOMBRAR el target no es ejecutar un binario de ese target: `install.sh`
+    # mapea `aarch64` a su triple, `stage-platform-payloads.sh` lo declara
+    # en una tabla y `check-cross-toolchain.sh` lo cita en un mensaje de error.
+    # Ninguno de los tres ejecuta un binario foreign.
+    #
+    # Lo que si es un defecto es EJECUTAR un binario de otro target sin decir
+    # como: un binario que se ejecuta sin saber quien lo ejecuta es un binario
+    # que funciona en la maquina del que lo probo y falla en otra.
+    offenders = []
+    for path in _repo_scripts():
+        if path.name == "run-target-binary.sh":
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        # Una invocacion directa de un binario del target: el path del
+        # binario con el triple en el, ejecutado sin el runner.
+        direct = re.search(
+            r"^\s*(?:exec\s+)?[\w./${}-]*" + re.escape(FOREIGN) + r"[\w./${}-]*",
+            text,
+            re.MULTILINE,
         )
+        if direct and "run-target-binary.sh" not in text:
+            offenders.append(path)
+    assert not offenders, (
+        f"hay scripts que ejecutan un binario de {FOREIGN} sin pasar por "
+        f"run-target-binary.sh: {offenders}. Un binario de otro target tiene "
+        f"que decir como se ejecuta, no esperar que binfmt_misc lo resuelva."
+    )
 
 
 def main() -> int:

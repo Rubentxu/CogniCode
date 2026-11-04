@@ -378,7 +378,7 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
 
       {Boolean((data as { truncated?: boolean }).truncated) && (
         <div
-          data-testid="graph-landing-warning"
+          data-testid="landing-truncation-banner"
           className="px-4 py-2 text-xs"
           style={{
             backgroundColor: "rgba(210, 153, 34, 0.12)",
@@ -386,10 +386,12 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
             borderBottom: "1px solid var(--color-border)",
           }}
         >
-          Showing a truncated landing graph{(data as { truncated_reason?: string | null }).truncated_reason
-            ? ` (${(data as { truncated_reason?: string | null }).truncated_reason})`
-            : ""}
-          . Refine the focus to inspect the full graph.
+          <span data-testid="graph-landing-warning">
+            Showing a truncated landing graph{(data as { truncated_reason?: string | null }).truncated_reason
+              ? ` (${(data as { truncated_reason?: string | null }).truncated_reason})`
+              : ""}
+            . Refine the focus to inspect the full graph.
+          </span>
         </div>
       )}
 

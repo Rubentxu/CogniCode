@@ -30960,3 +30960,351 @@ adyacencia cruda porque `build_out_neighbors` descarta destinos fuera de rango.
 `-D warnings` y fmt rc=0. Base 661a486c.
 
 **NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+## 2026-11-04 — TASK-95: la conductancia deja de confundir una arista con ninguna, y la mutación recibe techo de memoria
+
+**El defecto.** `conductance.rs` calculaba `m = total_volume.saturating_sub(1) / 2`.
+Con volumen 2 —una arista mutua— `m` valía 0 y el grafo entero entraba por la rama
+temprana de «no hay aristas», que reporta 1.0 en todas las comunidades. El testigo:
+`0→1` y `2→3` con comunidades `{0,1}` y `{2,3}`; ninguna arista sale de ninguna, así
+que la conductancia es 0.0, y el código decía 1.0. La corrección es `total_volume / 2`;
+la rama temprana sigue entrando sólo con volumen 0. El test nuevo
+`closed_communities_of_a_two_edge_graph_have_zero_conductance` falló antes
+(`got 1`) y pasa después.
+
+**Lo que la corrección destapó.** `two_communities_with_cut` pasaba por accidente,
+a través de la misma rama temprana. Se reescribió con el contrato real
+(comunidad 0 = 1.0, comunidad 1 = 0.0). La conductancia de este crate usa volumen de
+grado de salida y corte saliente, mientras que la documentación describe una versión
+no dirigida: esa decisión es de producto y queda en `TASK-96`, no se resolvió aquí.
+
+**Código muerto en `dominators.rs`.** El bloque «tighten» y la variable `bucket` no
+tenían efecto (`idom[v]` ya se inicializa a `semi[v]`); se borraron, con un digest
+FNV-1a sobre 263 714 casos (todos los grafos de 1 a 4 nodos, todos los subconjuntos
+de aristas, todas las raíces) que demuestra que el resultado no cambió. Tres
+mutantes `< → <=` (líneas 83, 97, 105) son equivalentes y están declarados en
+`.cargo/mutants.toml` con su motivo. **El algoritmo sigue siendo incorrecto**:
+`semi` se indexa por id de nodo y no por número DFS. Está marcado como KNOWN DEFECT
+y fijado por caracterización; no tiene tarea todavía.
+
+**El OOM.** La corrida de mutantes se comió 71, 25 y 19 GB: el mutante
+`head += 1 → *=` hace crecer un `Vec` sin tope. `scripts/mem-capped-runner.sh` aplica
+`ulimit -v` (6 GiB por defecto, `MUTANT_TEST_VMEM_KB`) sólo a los binarios de test,
+vía `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER`, y `scripts/test-gate.sh` lo pasa
+al paso de mutación. El mutante que colgaba ahora muere por SIGABRT, que cuenta como
+atrapado. Los tests nuevos de `dominators.rs` llevan plazo de 5 s, pero el techo de
+memoria es la protección real: un hilo no se puede matar.
+
+**Evidencia.** Base `7a35a077`. `cognicode-graph-algos` lib: 181 en verde.
+`cognicode-core` lib `conductance`: 6 en verde; `analytics_registry_cohort_3`: 34 en
+verde. Mutación serial (`-j 1`, con el runner) sobre `dominators.rs`: 39 mutantes,
+38 atrapados, 1 inviable, 0 supervivientes, 0 timeouts, rc=0.
+
+**NOT_RUN.** La mutación completa de `cognicode-graph-algos` (577 mutantes, `-j 4`)
+seguía en curso al escribir este recibo: su resultado no se afirma aquí. El gate
+entero (`bash scripts/test-gate.sh`) tampoco se corrió: se pasa por lote de 10
+tareas.
+
+## TASK-97 — dominators.rs: Lengauer-Tarjan en números DFS (2026-11-04)
+
+**Defecto.** `semi`, `best` y los buckets se indexaban por id de nodo y no por número
+DFS. Un test contra una referencia por conjuntos (un dominador estricto `d` de `v`
+es aquel cuya retirada deja a `v` inalcanzable) lo mostró con el testigo
+`0→2→1` y también con raíz distinta de 0, más amplio que el KNOWN DEFECT anotado en
+el recibo de TASK-95.
+
+**Corrección.** `dominators()` traduce de forma explícita nodo↔DFS (`vertex[dfn]`,
+`num[node]`); `semi`, `ancestor`, `label`, los buckets e `idom_dfn` viven en espacio
+DFS, y el resultado se traduce de vuelta a ids. La profundidad se calcula en orden
+DFS. Se retiraron los tests de caracterización (digest FNV-1a) que fijaban el
+resultado incorrecto.
+
+**Evidencia.** RED medido antes de tocar el algoritmo; GREEN después:
+`a_node_reached_through_a_higher_id_is_dominated_by_it` y
+`every_small_graph_matches_the_set_based_reference` (263 714 casos: grafos de 1 a 4
+nodos, todos los subconjuntos de aristas, todas las raíces). `cognicode-graph-algos`
+lib: 182 en verde; `cognicode-core` lib `dominator`: 1; `analytics_registry_cohort_2`:
+33. Mutación serial (`-j 1`, con el runner de memoria) sobre `dominators.rs`: 38
+mutantes, 38 atrapados, 0 supervivientes, rc=0. Dos `< → <=` (líneas 105 y 121) son
+equivalentes (sólo difieren en igualdad y el valor resultante es el mismo) y están
+declarados en `.cargo/mutants.toml` con su motivo.
+
+**Mutación completa de `cognicode-graph-algos`** (NOT_RUN en el recibo de TASK-95;
+corrida antes de esta reescritura): 577 mutantes, 509 atrapados, 56 supervivientes,
+4 inviables, 8 timeouts, 16 min, pico ≈34,5 GB, 0 abortos del vigilante, rc=3. Los
+supervivientes están en `interproc_summary`, `modularity`,
+`multi_source_reachability_helper`, `page_rank`, `personalized_pagerank`, `slicing`
+y `k_core`; ninguno en `dominators.rs`. Quedan sin tarea.
+
+**NOT_RUN.** El gate entero (por lote de 10 tareas) y las pruebas del
+`cognicode-explorer` (el filtro `dominator` no selecciona nada allí).
+
+## 2026-11-04 — graph-algos: tests de mutación conservados y clippy en verde
+
+Los 10 ficheros de `cognicode-graph-algos` con tests de mutación sin commitear se
+conservan: existían (mtime 10:25–10:33) antes de la mutación completa de las 11:53,
+y ninguno de ellos tiene supervivientes ni timeouts en esa corrida. El único fallo de
+`cargo clippy -p cognicode-graph-algos --all-targets -- -D warnings` era
+`single_element_loop` en `graph_builder.rs:90` (un `for` sobre un array de un
+elemento en el fixture `SingleEdge`); se sustituye por asignaciones directas.
+
+**Evidencia.** clippy rc=0; `cargo fmt --all --check` rc=0; `cargo test -p
+cognicode-graph-algos --lib`: 182 en verde.
+
+**Mutación completa (577 mutantes, `-j 4`, runner de memoria).** 509 atrapados, 56
+supervivientes, 4 inviables, 8 timeouts, 16 min, pico ≈34,5 GB, rc=3. Supervivientes
+y timeouts por módulo, ahora con tarea: `interproc_summary` 16+4 (TASK-98),
+`modularity` 4 (TASK-99), `multi_source_reachability_helper` 4 (TASK-100),
+`page_rank` 6 (TASK-101), `personalized_pagerank` 19 (TASK-102), `slicing` 7
+(TASK-103), `k_core` 4 timeouts (TASK-104).
+
+**NOT_RUN.** `just verify` no existe en el `justfile` (sólo `verify-version-sync`,
+`release-verify`), así que no se pudo ejecutar; el gate entero se pasa por lote de 10
+tareas.
+
+## 2026-11-04 — TASK-102: personalized_pagerank deja de tener mutantes vivos
+
+**Hueco.** La mutación completa dejó 19 supervivientes en `personalized_pagerank.rs`,
+incluido el reemplazo de la función entera: ningún test comprobaba un valor de salida.
+
+**Tests.** Valores calculados a mano (alpha 0,85) sobre grafos de 1 a 3 nodos: una
+iteración y dos iteraciones con nodos colgantes, normalización de la personalización
+`[2,0,6]`, vector de suma 0 o infinita, punto estacionario de un ciclo de dos nodos
+(`x = 0,15 / (1 − 0,85²)`), conservación de masa, reparto por grado de salida,
+arista de entrada con grado 0 y presupuesto `usize::MAX` con un ciclo estacionario
+(la tolerancia debe cortar el bucle). Cada llamada corre en un hilo con plazo de 5 s.
+El umbral y el saneado de rango pasaron a `has_converged` y `sanitize_rank`, con
+test de frontera propio, para poder fijar `<` frente a `<=` y `-0.0`.
+
+**Evidencia.** Primera corrida serial con los tests nuevos (55 mutantes): 48
+atrapados, 7 vivos (95, 96 ×2, 101 ×2, 103, 110); tras los tests de reparto, de
+grado 0 y de frontera: 60 mutantes, 59 atrapados, 1 vivo (115, `delta > max_delta`
+→ `>=`). Ese es equivalente (con igualdad asigna el valor que ya tiene) y está
+declarado en `.cargo/mutants.toml`. Corrida final `-j 1` con el runner de memoria:
+59 mutantes, 59 atrapados, rc=0. `cognicode-graph-algos` lib: 193 en verde;
+`cognicode-core` lib `analytics`/`graph_analytics`: 94; clippy `-D warnings` y
+`fmt --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo no se pasa
+por tarea sino por lote de 10 tareas del tablero (regla fija).
+
+## 2026-11-04 — TASK-98: interproc_summary sin mutantes vivos ni colgados
+
+**Hueco.** La mutación completa dejó 16 supervivientes y 4 timeouts en
+`interproc_summary.rs`. Los timeouts eran el bucle de punto fijo por SCC: con
+`!=`→`==` o `delete !` nunca terminaba.
+
+**Diagnóstico.** Ese bucle era código muerto: los acumuladores del SCC ya nacen con
+los datos locales de todos los miembros, y los miembros de un SCC se alcanzan entre
+sí, así que la semilla ya es el punto fijo y `changed` nunca valía `true`. Se
+eliminó (con su `||` y su `!`). Lo mismo con el relleno de `call_graph` (la
+condensación ya trata filas ausentes como vacías) y los guardas `node < n` / `m < n`,
+que `condensation` ya garantiza tras el `retain`.
+
+**Tests.** Valores a mano: llamadas locales fuera de rango (`== n` y `> n`), grafo
+corto, aristas fuera de rango en `call_graph`, SCC independientes (el callee no hereda
+del caller), SCC recursivo con callee hoja (unión exacta de reads/writes/calls) y
+`summary_id` fijado con el SHA-256 de `{"function_id":1,"kind":"leaf",...}` calculado
+con `sha256sum`. Cada llamada corre en un hilo con plazo de 5 s.
+
+**Evidencia.** Corrida con los tests nuevos y el bucle aún presente: 31 mutantes, 22
+atrapados, 7 vivos, 2 inviables. Tras la simplificación: 18 mutantes, 16 atrapados,
+2 inviables, 0 vivos, 0 timeouts (`-j 1`, runner de memoria, 82 s). Un equivalente
+declarado en `.cargo/mutants.toml`: `scc_pos[&callee_scc] > my_pos` → `>=` (con
+SCC igual ya se hizo `continue`). `cognicode-graph-algos` lib: 199 en verde; clippy
+`-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-99: modularity sin mutantes vivos
+
+**Hueco.** Sobrevivían 4 mutantes en `modularity.rs` (línea 98 `node < n` →
+`==`/`<=`/`>`, línea 99 `+=` → `-=`): los tests existentes sólo comprobaban `q > 0`
+o `q = 0,5` en un caso donde el término de pares sin arista vale 0, así que la suma
+de grado por comunidad no cambiaba el resultado.
+
+**Tests.** Valores a mano, con plazo de 5 s en un hilo: par mutuo 0↔1 en una
+comunidad (m=2, aristas 2·0,75 = 1,5, pares −0,25, Q = 0,3125); dos pares mutuos, uno
+por comunidad (m=4, Q = (3,5 − 0,25)/8 = 0,40625); y entradas de asignación con
+`node == n` y `node > n`, que deben ignorarse (mismo Q = 0,3125).
+
+**Evidencia.** `cargo mutants -j 1` con el runner de memoria: 51 mutantes, 51
+atrapados, 0 vivos, 0 timeouts, rc=0 (4 min). Sin cambios de código de producción ni
+equivalentes declarados. `cognicode-graph-algos` lib en verde; clippy `-D warnings` y
+`fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-100: multi_source_reachability sin mutantes vivos
+
+**Hueco.** Sobrevivían 4 mutantes en `multi_source_reachability_helper.rs` (líneas 55,
+61 y 65): los límites de índice y de profundidad. Ningún test probaba una fuente o un
+vecino con índice `== n`, ni un límite de profundidad intermedio.
+
+**Tests.** Con plazo de 5 s en un hilo: cadena 0→1→2→3 con profundidad 1, 2, 3 y 100
+(resultados `[1]`, `[1,2]`, `[1,2,3]`, `[1,2,3]`); fuentes `== n` y `> n` (vacío) y
+mezcladas con una válida (`[1,2]`); vecinos `== n` y `> n` ignorados (`[1]`).
+
+**Diagnóstico.** La corrida con los tests nuevos dejó un único vivo, `||`→`&&` en la
+guarda inicial `sources.is_empty() || max_depth == 0`: era una guarda redundante, pues
+sin fuentes la cola queda vacía y con profundidad 0 cada semilla se salta por
+`depth >= max_depth`. Se eliminó (los tests de fuentes vacías y profundidad 0 siguen
+fijando el comportamiento).
+
+**Evidencia.** Primera corrida `-j 1` con runner de memoria: 16 mutantes, 15
+atrapados, 1 vivo. Tras eliminar la guarda: 14 mutantes, 14 atrapados, 0 vivos, 0
+timeouts (71 s). Sin equivalentes declarados. Lib `cognicode-graph-algos`: 205 en
+verde; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**Observación (fuera de alcance).** Con un ciclo que vuelve a la fuente (0→1→0) la
+fuente entra en `visited` y se devuelve, aunque la documentación dice que se excluyen.
+No se ha cambiado ni fijado; queda para decisión del maintainer.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-101: page_rank, supervivientes de mutación
+
+**Hueco.** 6 mutantes vivos en `page_rank.rs`: la comparación `>`/`<` de la
+convergencia, la división por `out_degree`, la saneación `is_finite() && r > 0.0` y
+el signo de la diferencia `new - old`.
+
+**Tests.** Valores calculados a mano: cadena 0→1 con cola colgante (punto fijo
+20/57 y 37/57), una sola iteración (0,2875 / 0,7125), reparto por grado de salida
+0→{1,2} (43/180 y 137/360), llamador con grado 0 (sin aportación), umbral de
+convergencia estricto, y fronteras de `sanitize_rank` (NaN, ±inf, negativo, 0.0,
+−0.0 con signo positivo) y `rank_delta`. El helper `run` lleva plazo de 5 s.
+
+**Diagnóstico.** Extraídas `has_converged`, `sanitize_rank` y `rank_delta` como
+funciones puras para fijar sus fronteras; `TOLERANCE` pasa a nivel de módulo. Un
+equivalente declarado en `.cargo/mutants.toml`: `delta > max_delta` → `>=` (asigna
+el mismo valor).
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: 53 mutantes, 53
+atrapados, 0 vivos, 0 timeouts (4 min). Lib `cognicode-graph-algos`: 212 en verde;
+clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-103: slicing, supervivientes de mutación
+
+**Hueco.** La tarea registraba 7 supervivientes (`forward_slice` → `vec![]`/`vec![0]`/
+`vec![1]`, `delete !` en 88/92, `<` → `>`/`<=` en 79). Re-medidos en el árbol
+actual, esos 7 ya estaban muertos por los tests existentes; el registro estaba
+desfasado. La medición real dio 5 vivos, todos en el manejo de índices fuera de
+rango: `v < n && !visited` (48, `&&`→`||` y `<`→`<=`), `is_empty() || is_empty()`
+(64), `s < n` (70) y `v < n` (79).
+
+**Tests.** Aristas a `n` y más allá en ambos recortes (0→{1, 2==n, 9}), sitio igual a
+`n` descartado sin indexar, grafo vacío y criterio vacío. Los casos `<=` hacen
+panic por índice, así que cada test lleva plazo de 5 s (hilo + `mpsc` +
+`recv_timeout`).
+
+**Diagnóstico.** La guarda inicial de `backward_slice` era código muerto: con grafo
+o criterio vacío, `valid_sites` queda vacío y devuelve lo mismo. Eliminada (sustituida
+por un comentario). Sin equivalentes declarados.
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: antes 23 mutantes, 5
+vivos; después 22 mutantes, 22 atrapados, 0 vivos, 0 timeouts (2 min). Lib
+`cognicode-graph-algos`: 217 en verde; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-104: k_core, timeouts de mutación
+
+**Hueco.** La tarea registraba 4 timeouts en la línea 47. La re-medición real (28
+mutantes, 14 min) dio 1 vivo y 6 timeouts: 47 (×4), 64 `delete !` y 83 `+=`→`*=`
+(el umbral no avanza) más el vivo 72 `>=`→`<`. Los timeouts eran bucles que no
+terminan bajo mutación: los tests no fallaban, se colgaban.
+
+**Tests.** Valores calculados a mano: K4 con k=3 (core 3 para los cuatro) y k=4
+(vacío), camino (core 1, sin 2-core), estrella (core 1, sin 2-core), triángulo +
+arista con k=2 (solo el triángulo), nodos aislados (core 0), el contrato de
+`is_peelable` y los core numbers de K4 con k=4 llamando a `compute_core_numbers`.
+Todos con plazo de 5 s (hilo + `mpsc` + `recv_timeout`).
+
+**Diagnóstico.** Bucles acotados por construcción: pasadas de pelado `0..=n` (cada
+pasada productiva quita ≥1 nodo) y umbral `1..=grado_máximo+1` (ahí todo nodo se
+pela). Extraída `is_peelable`. Eliminado código redundante demostrable:
+`min_deg >= threshold` (siempre cierto tras el pelado) y `core_num[v] == 0` (los
+restantes nunca fueron pelados). Sin equivalentes declarados.
+
+**Limitación conocida, NO corregida.** Con núcleos de distinto nivel, los nodos que
+quedan en el umbral de parada reciben ese umbral aunque su core real sea mayor
+(p. ej. triángulo con cola y k=1 da core 1 al triángulo, el real es 2). La
+pertenencia al k-core (`core >= k`) no se ve afectada; el nivel reportado sí. No
+se fija en tests. Un vecino fuera de rango (`>= n`) provoca panic; no se fija como
+contrato. Ambos quedan para decisión del maintainer.
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: 28 mutantes, 28
+atrapados, 0 vivos, 0 timeouts (2 min). Lib `cognicode-graph-algos`: 225 en verde
+; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-61: hover, go_to_definition y find_references confinan la ruta
+
+**Hueco.** Los tres handlers LSP del MCP aceptaban una ruta fuera del workspace y
+leían la definición resultante aunque cayera fuera de él.
+
+**Tests.** `go_to_definition_rejects_a_file_outside_the_workspace`,
+`find_references_rejects_a_file_outside_the_workspace` y
+`a_definition_outside_the_workspace_is_not_read`, más los de hover ya existentes.
+
+**Diagnóstico.** La confinación se aplica antes de cualquier lectura, en los tres
+handlers, y también a la ruta de la definición devuelta.
+
+**Evidencia.** PR #545 → `e7a33c2f`. `cognicode-core --lib lsp_handlers`: 17 ok,
+0 fallos (worktree aislado, `CARGO_TARGET_DIR` propio).
+
+**NOT_RUN.** Gate completo (`bash scripts/test-gate.sh`): se pasa por lote de 10
+tareas. `just verify` no existe en el `justfile`.
+
+## 2026-11-04 — TASK-71: tests de integración consolidados en un binario por crate
+
+**Hueco.** Cada fichero de `tests/` compilaba y enlazaba su propio binario.
+
+**Tests.** Suites `it` de `cognicode-core`, `cognicode-mcp` y `cognicode-cli`;
+verificadores de contrato Python (suites que un pipeline nombra, ratchet de tamaño).
+
+**Evidencia.** PR #546 → `b0d3926b`. `core it`: 940 ok, 1 fallo, 2 ignorados; el
+fallo es `release_binary_stdio_round_trip_smoke` (falta el binario release de
+`cognicode-mcp`, infraestructura local, igual en la base). `mcp it`: 77 ok.
+`cli it`: 222 ok. Ambos verificadores Python: PASS.
+
+**Limitación conocida, SIN atribuir.** La primera corrida de `core it` dio 9 fallos
+(8 de `b6_w1_mcp_robustness` y `b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`).
+No se reprodujo en dos reruns. También falló `merge-gate` en el PR; su causa no se
+conoce. No se afirma que esté resuelto.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+
+## 2026-11-04 — Medición de `cognicode-graph-algos` completa
+
+`cargo mutants -j 1`, 564 mutantes, 50 min: 546 atrapados, 9 inviables, 8 vivos,
+1 timeout (`taint.rs:153`). Derivados: TASK-96 (conductance, bloqueada por decisión
+de producto), TASK-105 (feedback_arc_set), TASK-106 (taint), TASK-107
+(transitive_reduction).
+
+## 2026-11-04 — Integración de chore/remove-gates-uat-e2e en main
+
+**Cambio.** Se funde la rama que retira UAT, e2e de navegador, lanes de CI y puertas
+de merge. El gate queda en tres pasos (`scripts/test-gate.sh`). Conflictos resueltos:
+las eliminaciones de la rama prevalecen sobre las ediciones de main a los pipelines y
+scripts retirados; `conductance.rs` conserva la versión de main (TASK-96); el
+JOURNAL conserva ambos lados; los contratos `a013`/`a015` toman la versión de la rama
+adaptada al binario único `tests/it/` (TASK-71). `test_taxonomy_contract` y
+`telemetry_is_opt_in` pasan a `tests/it/` para respetar un binario por crate.
+
+**Evidencia.** `cargo test -p cognicode-graph-algos -p cognicode-cli -p cognicode-mcp
+-p cognicode-core --tests`: todo verde salvo `-p cognicode-cli --test release` (8 casos,
+falta `target/release`) y `release_binary_stdio_round_trip_smoke` (falta el binario
+release de `cognicode-mcp`): infraestructura local, no regresión. `cargo fmt --all
+--check` y `cargo clippy --all-targets -D warnings` limpios en cli, mcp y graph-algos.
+
+**NOT_RUN.** `bash scripts/test-gate.sh` completo, mutantes, `npm test --prefix
+apps/explorer-ui`, contratos Python de `scripts/ci`.

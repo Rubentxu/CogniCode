@@ -1,11 +1,7 @@
 {
   "name": "cognicode",
   "license": "MIT OR Apache-2.0",
-  "dependencies": {
-    "playwright": "^1.59.1"
-  },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
     "vite-plugin-wasm": "^3.6.0"
   }
 }

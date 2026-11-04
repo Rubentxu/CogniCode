@@ -339,12 +339,12 @@ def test_the_checksum_lookup_matches_the_asset_name() -> None:
 # exactamente para esto, "so a local fake release can drive the checksum/tamper
 # tests" — no lo usa nadie en el repo. `scripts/e88-entry-gates.sh` si ejecuta
 # install.sh, pero esta clavado en la release publica v0.97.0, vive fuera de
-# scripts/ci/ y por tanto fuera del merge gate, y solo prueba el camino feliz.
+# scripts/ci/ y por tanto fuera del gate, y solo prueba el camino feliz.
 #
 # Con COGNICODE_VERSION y COGNICODE_RELEASE_BASE fijos, install.sh no hace
 # ninguna llamada a GitHub: el tag ya esta resuelto y la base es la que le
 # damos. Con `file://` el stage entero es hermetico —sin red y sin release
-# publicada— asi que estas posturas se comprueban en el merge gate y no en la
+# publicada— asi que estas posturas se comprueban en el gate y no en la
 # proxima release que salga por la puerta.
 #
 # Los tests viven aqui y no en un fichero nuevo porque este ya es el dueno del

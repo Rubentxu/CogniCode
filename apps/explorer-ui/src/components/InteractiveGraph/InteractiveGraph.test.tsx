@@ -351,9 +351,12 @@ describe("InteractiveGraph", () => {
   });
 
   // ---- E7 / ADR-042: WebGL selective adoption ----
-  // The preferWebgl prop is verified via integration tests (e2e/bench-renderer.spec.ts).
-  // Unit-test coverage here would require mocking Web Workers + DOM Canvas
-  // which is disproportionate. The logic is: data.nodes.length >= 500 → webgl: true.
+  // The preferWebgl prop is NOT verified beyond "it renders". The test that
+  // used to cover it lived in the browser e2e suite, which was retired on
+  // 2026-11-04, and unit coverage here would require mocking Web Workers +
+  // DOM Canvas. The threshold it applies is: data.nodes.length >= 500 →
+  // webgl: true. That threshold is therefore an UNVERIFIED behaviour, and
+  // it is declared here as such rather than left to look covered.
   it("renders with preferWebgl=false prop without crashing", () => {
     render(
       <InteractiveGraph

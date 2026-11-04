@@ -336,23 +336,16 @@ def test_the_scanner_sees_a_contamination_and_spares_greek() -> None:
     )
 
 
-def test_the_guard_is_run_by_the_merge_authority() -> None:
-    """A guard nothing runs is correct, tested, and invisible."""
-    sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
-    try:
-        import pipeline_authority as authority
-    except ImportError:
-        check(False, f"scripts/ci/pipeline_authority.py could not be imported")
-        return
+def test_the_guard_is_discovered_by_the_contract_runner() -> None:
+    """A guard nothing runs is correct, tested, and invisible.
 
-    hosts = authority.invoked_by(RUNNER)
-    check(
-        authority.MERGE_AUTHORITY in hosts,
-        f"{RUNNER} is not invoked by {authority.MERGE_AUTHORITY} "
-        f"(found in: {sorted(hosts) or 'no pipeline at all'}). A guard that "
-        f"nothing runs is the CP5 failure again: correct, tested, and invisible",
-    )
-
+    It used to assert that the merge gate invoked the runner. There is no
+    merge gate any more (retired 2026-11-04), so that link of the chain is
+    gone. The link that survives — and the one that catches the failure this
+    contract exists to catch — is that the runner's discovery glob still
+    matches this file: a rename or a move would otherwise leave every other
+    assertion here passing while the contract itself never runs.
+    """
     matched = sorted(REPO_ROOT.glob(DISCOVERY_GLOB))
     check(
         SELF_NAME in [p.name for p in matched],

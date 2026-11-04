@@ -114,7 +114,11 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
-# Pin vigente: 26e280d9634d7ef5496f2488c2289a9ec5952d4dcdff2e7acb718f5f296920b4
+# Pin vigente: ba7e5d90a746ef1fe706fcc3789ff7d92abb37bf13022ace0549f7d0cde9426b
+# (regenerado 2026-11-04 al retirar `m011_rustdoc_gate.rs`: el target no
+# aparecía en el envelope por su nombre de fichero sino por sus ficheros
+# fuente, así que al borrarlo cambian las entidades y el pin cambia con
+# ellas. 1245994 bytes frente a los 1265xxx del pin anterior.)
 # (v0.101.30, regenerate 2026-10-23 al bump 0.101.29 → 0.101.30; corte de release
 # de la ontologia —el campo que el consumidor lee. 953565 bytes frente a 990842
 # del pin anterior: el envelope SHRINK, y la medicion dice por qué. MEDIDO
@@ -167,7 +171,7 @@ def workspace_version() -> str:
 # no el encoding del producer. El consumer (pipelinek-assurance) debe actualizar
 # su pin tras esta regeneracion.)
 GOLDEN_SHA256 = (
-    "26e280d9634d7ef5496f2488c2289a9ec5952d4dcdff2e7acb718f5f296920b4"
+    "ba7e5d90a746ef1fe706fcc3789ff7d92abb37bf13022ace0549f7d0cde9426b"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"

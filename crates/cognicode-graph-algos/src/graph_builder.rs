@@ -73,3 +73,61 @@ pub trait GraphBuilder {
         out_neighbors
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A two-node graph with a single edge `0 → 1`, expressed the way the
+    /// trait's own documentation does.
+    struct SingleEdge;
+
+    impl GraphBuilder for SingleEdge {
+        fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
+            let n = 2;
+            let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+            let mut out_degree: Vec<usize> = vec![0; n];
+            let (u, v) = (0usize, 1usize);
+            in_neighbors[v].push(u);
+            out_degree[u] += 1;
+            (in_neighbors, out_degree)
+        }
+    }
+
+    /// The default `build_directed_adjacency` reverses the incoming lists:
+    /// `out_neighbors[u]` holds every `v` such that `u → v`.
+    ///
+    /// Without this test the default implementation had no coverage at all,
+    /// and the mutation gate showed it: four mutations of the default body
+    /// survived, because nothing ever called it.
+    #[test]
+    fn default_directed_adjacency_reverses_the_incoming_lists() {
+        let out_neighbors = SingleEdge.build_directed_adjacency();
+        assert_eq!(out_neighbors.len(), 2, "one slot per node");
+        assert_eq!(out_neighbors[0], vec![1], "0 → 1");
+        assert_eq!(out_neighbors[1], Vec::<usize>::new(), "1 has no callees");
+    }
+
+    /// A node with two callees keeps both of them, in the order the
+    /// incoming lists give them.
+    #[test]
+    fn default_directed_adjacency_keeps_every_callee() {
+        struct FanOut;
+        impl GraphBuilder for FanOut {
+            fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
+                let n = 3;
+                let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+                let mut out_degree: Vec<usize> = vec![0; n];
+                for &(u, v) in &[(0usize, 1usize), (0usize, 2usize)] {
+                    in_neighbors[v].push(u);
+                    out_degree[u] += 1;
+                }
+                (in_neighbors, out_degree)
+            }
+        }
+        let out_neighbors = FanOut.build_directed_adjacency();
+        assert_eq!(out_neighbors[0], vec![1, 2]);
+        assert_eq!(out_neighbors[1], Vec::<usize>::new());
+        assert_eq!(out_neighbors[2], Vec::<usize>::new());
+    }
+}

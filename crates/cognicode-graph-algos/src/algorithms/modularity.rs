@@ -248,6 +248,55 @@ mod tests {
         // (accounting for the fact that each has 2 nodes, 1 edge)
     }
 
+    /// Runs `modularity` on a thread so a hanging mutant fails the test
+    /// instead of hanging the suite.
+    fn run(assignment: Vec<(usize, usize)>, out_neighbors: Vec<Vec<usize>>) -> (f64, usize) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(modularity(&assignment, &out_neighbors));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("modularity did not finish within 5s")
+    }
+
+    /// 0↔1 in one community. m=2, k=[1,1], 2m=4.
+    /// Edges: 2 × (1 − 1·1/4) = 1.5. Non-edge: D=2, Σk²=2, (4−2)/2 = 1 → −1/4.
+    /// Q = (1.5 − 0.25) / 4 = 0.3125.
+    #[test]
+    fn mutual_pair_in_one_community_has_exact_value() {
+        let (q, count) = run(
+            vec![(0, 0), (1, 0)],
+            build_out_neighbors(2, &[(0, 1), (1, 0)]),
+        );
+        assert_eq!(count, 1);
+        assert!((q - 0.3125).abs() < 1e-12, "got {q}");
+    }
+
+    /// Two mutual pairs, one per community. m=4, k=[1;4], 2m=8.
+    /// Edges: 4 × (1 − 1/8) = 3.5. Non-edge: 2 × (1 · 1/8) = 0.25.
+    /// Q = (3.5 − 0.25) / 8 = 0.40625.
+    #[test]
+    fn two_mutual_pairs_have_exact_value() {
+        let (q, count) = run(
+            vec![(0, 0), (1, 0), (2, 1), (3, 1)],
+            build_out_neighbors(4, &[(0, 1), (1, 0), (2, 3), (3, 2)]),
+        );
+        assert_eq!(count, 2);
+        assert!((q - 0.40625).abs() < 1e-12, "got {q}");
+    }
+
+    /// Assignment entries for nodes outside the graph (`node == n`, `node > n`)
+    /// are ignored: same result as without them.
+    #[test]
+    fn nodes_outside_the_graph_are_ignored() {
+        let (q, count) = run(
+            vec![(0, 0), (1, 0), (2, 0), (9, 0)],
+            build_out_neighbors(2, &[(0, 1), (1, 0)]),
+        );
+        assert_eq!(count, 1);
+        assert!((q - 0.3125).abs() < 1e-12, "got {q}");
+    }
+
     /// Modularity range is within [-1, 1].
     #[test]
     fn modularity_in_range() {
