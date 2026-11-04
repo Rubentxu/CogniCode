@@ -30995,3 +30995,27 @@ No se ha cambiado ni fijado; queda para decisión del maintainer.
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-101: page_rank, supervivientes de mutación
+
+**Hueco.** 6 mutantes vivos en `page_rank.rs`: la comparación `>`/`<` de la
+convergencia, la división por `out_degree`, la saneación `is_finite() && r > 0.0` y
+el signo de la diferencia `new - old`.
+
+**Tests.** Valores calculados a mano: cadena 0→1 con cola colgante (punto fijo
+20/57 y 37/57), una sola iteración (0,2875 / 0,7125), reparto por grado de salida
+0→{1,2} (43/180 y 137/360), llamador con grado 0 (sin aportación), umbral de
+convergencia estricto, y fronteras de `sanitize_rank` (NaN, ±inf, negativo, 0.0,
+−0.0 con signo positivo) y `rank_delta`. El helper `run` lleva plazo de 5 s.
+
+**Diagnóstico.** Extraídas `has_converged`, `sanitize_rank` y `rank_delta` como
+funciones puras para fijar sus fronteras; `TOLERANCE` pasa a nivel de módulo. Un
+equivalente declarado en `.cargo/mutants.toml`: `delta > max_delta` → `>=` (asigna
+el mismo valor).
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: 53 mutantes, 53
+atrapados, 0 vivos, 0 timeouts (4 min). Lib `cognicode-graph-algos`: 212 en verde;
+clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.

@@ -9,6 +9,26 @@
 
 use std::collections::HashMap;
 
+/// Largest per-node change below which the power method stops.
+const TOLERANCE: f64 = 1e-6;
+
+/// `true` when the largest per-node change of an iteration is strictly below
+/// [`TOLERANCE`]. A change exactly equal to the tolerance is NOT converged.
+fn has_converged(max_delta: f64) -> bool {
+    max_delta < TOLERANCE
+}
+
+/// Clamp a freshly computed rank: NaN, infinities, negatives and `-0.0` all
+/// become a positive `0.0`.
+fn sanitize_rank(r: f64) -> f64 {
+    if r.is_finite() && r > 0.0 { r } else { 0.0 }
+}
+
+/// Absolute change of one node's rank between two iterations.
+fn rank_delta(new_rank: f64, old_rank: f64) -> f64 {
+    (new_rank - old_rank).abs()
+}
+
 /// Run PageRank on a pre-built adjacency structure.
 ///
 /// # Arguments
@@ -50,8 +70,6 @@ pub fn page_rank(
     let inv_n = 1.0 / n as f64;
     let mut ranks: Vec<f64> = vec![inv_n; n];
 
-    const TOLERANCE: f64 = 1e-6;
-
     for _ in 0..max_iterations.max(1) {
         // Dangling-node mass: nodes with no outgoing edges contribute rank
         // uniformly to all nodes (avoids "black hole" accumulation).
@@ -75,15 +93,15 @@ pub fn page_rank(
                 }
             }
             let r = base + dangling_contrib + alpha * incoming;
-            let new_v = if r.is_finite() && r > 0.0 { r } else { 0.0 };
-            let delta = (new_v - ranks[v]).abs();
+            let new_v = sanitize_rank(r);
+            let delta = rank_delta(new_v, ranks[v]);
             if delta > max_delta {
                 max_delta = delta;
             }
             new_ranks[v] = new_v;
         }
         ranks = new_ranks;
-        if max_delta < TOLERANCE {
+        if has_converged(max_delta) {
             break;
         }
     }
@@ -190,6 +208,95 @@ mod tests {
                 leaf
             );
         }
+    }
+
+    /// Runs `page_rank` on a thread so a hanging mutant fails the test
+    /// instead of hanging the suite.
+    fn run(
+        in_neighbors: Vec<Vec<usize>>,
+        out_degree: Vec<usize>,
+        max_iterations: usize,
+    ) -> HashMap<usize, f64> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let n = out_degree.len();
+            let _ = tx.send(page_rank(
+                &in_neighbors,
+                &out_degree,
+                n,
+                0.85,
+                max_iterations,
+            ));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("page_rank did not finish within 5s")
+    }
+
+    /// Chain 0→1 with 1 dangling, alpha 0.85. Fixed point by hand:
+    /// r0 = 0.075 + 0.425·r1, r1 = 0.075 + 0.425·r1 + 0.85·r0
+    /// → r1 = 0.13875 / 0.21375 = 37/57, r0 = 20/57.
+    #[test]
+    fn chain_with_dangling_tail_reaches_the_fixed_point() {
+        let r = run(vec![vec![], vec![0]], vec![1, 0], 1000);
+        assert!((r[&0] - 20.0 / 57.0).abs() < 1e-4, "r0 = {}", r[&0]);
+        assert!((r[&1] - 37.0 / 57.0).abs() < 1e-4, "r1 = {}", r[&1]);
+    }
+
+    /// One iteration from the uniform start (0.5, 0.5): the dangling mass is
+    /// 0.5, so r0 = 0.075 + 0.85·0.5·0.5 = 0.2875 and
+    /// r1 = 0.075 + 0.2125 + 0.85·0.5 = 0.7125.
+    #[test]
+    fn a_single_iteration_gives_the_hand_computed_values() {
+        let r = run(vec![vec![], vec![0]], vec![1, 0], 1);
+        assert!((r[&0] - 0.2875).abs() < 1e-12, "r0 = {}", r[&0]);
+        assert!((r[&1] - 0.7125).abs() < 1e-12, "r1 = {}", r[&1]);
+    }
+
+    /// The tolerance is strict: a change equal to it has NOT converged.
+    #[test]
+    fn convergence_threshold_is_strict() {
+        assert!(has_converged(0.0));
+        assert!(has_converged(TOLERANCE / 2.0));
+        assert!(!has_converged(TOLERANCE));
+        assert!(!has_converged(TOLERANCE * 2.0));
+    }
+
+    #[test]
+    fn sanitize_rank_clamps_everything_but_positive_finite() {
+        assert_eq!(sanitize_rank(0.25), 0.25);
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.5, 0.0, -0.0] {
+            let s = sanitize_rank(bad);
+            assert_eq!(s, 0.0, "{bad}");
+            assert!(s.is_sign_positive(), "{bad} must become +0.0");
+        }
+    }
+
+    #[test]
+    fn rank_delta_is_the_absolute_difference() {
+        assert!((rank_delta(0.3, 0.5) - 0.2).abs() < 1e-12);
+        assert!((rank_delta(0.5, 0.3) - 0.2).abs() < 1e-12);
+        assert_eq!(rank_delta(0.4, 0.4), 0.0);
+    }
+
+    /// 0 → {1, 2}; 1 and 2 dangling; one iteration from 1/3 each.
+    /// dangling = 2/3, base = 0.05, dangling_contrib = 0.85·(2/3)/3 = 17/90.
+    /// r0 = 0.05 + 17/90 = 43/180; r1 = r2 = 43/180 + 0.85·(1/3)/2 = 137/360.
+    #[test]
+    fn rank_is_split_by_out_degree() {
+        let r = run(vec![vec![], vec![0], vec![0]], vec![2, 0, 0], 1);
+        assert!((r[&0] - 43.0 / 180.0).abs() < 1e-12, "r0 = {}", r[&0]);
+        assert!((r[&1] - 137.0 / 360.0).abs() < 1e-12, "r1 = {}", r[&1]);
+        assert!((r[&2] - 137.0 / 360.0).abs() < 1e-12, "r2 = {}", r[&2]);
+    }
+
+    /// Inconsistent input: node 0 lists 1 as a caller but 1's out-degree is 0.
+    /// Such an edge contributes nothing (no division by zero): both nodes are
+    /// dangling and stay at 0.5.
+    #[test]
+    fn caller_with_zero_out_degree_contributes_nothing() {
+        let r = run(vec![vec![1], vec![]], vec![0, 0], 5);
+        assert!((r[&0] - 0.5).abs() < 1e-12, "r0 = {}", r[&0]);
+        assert!((r[&1] - 0.5).abs() < 1e-12, "r1 = {}", r[&1]);
     }
 
     /// Determinism: same input → same output across runs (within tolerance).
