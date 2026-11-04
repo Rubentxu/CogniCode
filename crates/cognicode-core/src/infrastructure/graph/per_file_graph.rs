@@ -498,12 +498,13 @@ impl PerFileGraphCache {
 
             // Get from cache or build. Cache hit does not produce skipped
             // entries; only actual build failures do.
-            let built: Result<BuildFileResult, std::io::Error> = match self.get_cached(path) {
-                Some((graph, pending)) => Ok(((*graph).clone(), Vec::new(), pending)),
-                None => self.build_file_graph(&path_str, Some(&global_index)),
+            let built: Result<(BuildFileResult, bool), std::io::Error> = match self.get_cached(path)
+            {
+                Some((graph, pending)) => Ok((((*graph).clone(), Vec::new(), pending), false)),
+                None => self.build_file_graph_partial(&path_str, Some(&global_index)),
             };
-            let (graph, cross_file, pending) = match built {
-                Ok(triple) => triple,
+            let ((graph, cross_file, pending), has_syntax_errors) = match built {
+                Ok(parts) => parts,
                 Err(e) => {
                     skipped.push(SkippedFile {
                         path: path_str,
@@ -512,6 +513,15 @@ impl PerFileGraphCache {
                     continue;
                 }
             };
+            // The file is merged with what parsed, and named as partial: the
+            // declarations beside its errors are real, the ones inside them
+            // are not in the graph.
+            if has_syntax_errors {
+                skipped.push(SkippedFile {
+                    path: path_str.clone(),
+                    reason: SkipReason::Parse(format!("Syntax errors in {path_str}")),
+                });
+            }
             for symbol in graph.symbols() {
                 // Fusionar no renombra. La identidad de un símbolo es su
                 // nombre completo, y una declaración que vino de un handler
@@ -625,7 +635,7 @@ impl PerFileGraphCache {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let language = match Language::from_extension(path.extension()) {
+            let language = match Language::from_path(path) {
                 Some(l) => l,
                 None => continue,
             };
@@ -662,10 +672,8 @@ impl PerFileGraphCache {
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            // Mirror F2.W2: skip files with parse errors.
-            if TreeSitterParser::has_error_nodes(&tree) {
-                continue;
-            }
+            // A file with parse errors stays in the index with what parsed:
+            // its own graph keeps the same symbols, and the two must agree.
             // The tree is already built, and the symbols are read from it:
             // asking the parser to parse the file again would cost a second
             // tree to learn what the first one already holds.
@@ -711,16 +719,33 @@ impl PerFileGraphCache {
         file_path: &str,
         global_index: Option<&GlobalSymbolIndex>,
     ) -> std::io::Result<BuildFileResult> {
-        let language =
-            Language::from_extension(Path::new(file_path).extension()).ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("Unsupported file type: {}", file_path),
-                )
-            })?;
+        let language = Language::from_path(Path::new(file_path)).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Unsupported file type: {}", file_path),
+            )
+        })?;
         let config =
             crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
         self.build_file_graph_reading(file_path, global_index, config)
+    }
+
+    /// [`Self::build_file_graph`] that keeps the valid subtrees of a file
+    /// with syntax errors and says it had them.
+    fn build_file_graph_partial(
+        &self,
+        file_path: &str,
+        global_index: Option<&GlobalSymbolIndex>,
+    ) -> std::io::Result<(BuildFileResult, bool)> {
+        let language = Language::from_path(Path::new(file_path)).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Unsupported file type: {}", file_path),
+            )
+        })?;
+        let config =
+            crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
+        self.build_file_graph_tolerant(file_path, global_index, config)
     }
 
     /// Builds the graph of one file, read by the reader it is handed.
@@ -733,6 +758,30 @@ impl PerFileGraphCache {
         global_index: Option<&GlobalSymbolIndex>,
         config: &crate::infrastructure::parser::language_config::LanguageConfig,
     ) -> std::io::Result<BuildFileResult> {
+        let (built, has_syntax_errors) =
+            self.build_file_graph_tolerant(file_path, global_index, config)?;
+        if has_syntax_errors {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Syntax errors in {}", file_path),
+            ));
+        }
+        Ok(built)
+    }
+
+    /// Builds the graph of one file and keeps what parsed, even when the
+    /// file has syntax errors.
+    ///
+    /// The flag says whether the tree held error nodes. Tree-sitter recovers
+    /// around an error, so the subtrees beside it are real declarations; the
+    /// caller decides what the flag means (the merge reports the file as
+    /// partial, the strict route refuses it).
+    fn build_file_graph_tolerant(
+        &self,
+        file_path: &str,
+        global_index: Option<&GlobalSymbolIndex>,
+        config: &crate::infrastructure::parser::language_config::LanguageConfig,
+    ) -> std::io::Result<(BuildFileResult, bool)> {
         let source = std::fs::read_to_string(file_path)?;
         let language = config.language;
 
@@ -743,7 +792,7 @@ impl PerFileGraphCache {
         // to tie them to a declaration in another of the merged files.
         match semantic_facts_of(config, &source, file_path) {
             SemanticOutcome::Handled(facts) => {
-                return Ok((call_graph_from(&facts), Vec::new(), facts.pending));
+                return Ok(((call_graph_from(&facts), Vec::new(), facts.pending), false));
             }
             // The reader does not apply to this file: the generic reader
             // answers it.
@@ -763,20 +812,14 @@ impl PerFileGraphCache {
         let parser =
             TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        // PRF F2.W2 (R3): if the file parses but the tree contains
-        // error nodes, the source is syntactically invalid. Returning
-        // an empty graph here would silently mis-represent coverage,
-        // so we surface this as an I/O error with a message that
-        // `merge_with_report` classifies as `SkipReason::Parse`.
+        // A tree with error nodes is syntactically invalid. What parsed
+        // beside the error is kept, and the flag tells the caller the
+        // coverage of this file is partial: an empty graph would
+        // mis-represent it, and a complete one would lie.
         let tree = parser
             .parse_tree(&source)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
-        if TreeSitterParser::has_error_nodes(&tree) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Syntax errors in {}", file_path),
-            ));
-        }
+        let has_syntax_errors = TreeSitterParser::has_error_nodes(&tree);
 
         let symbols = parser
             .find_all_symbols_in_tree(&tree, &source, file_path)
@@ -886,7 +929,7 @@ impl PerFileGraphCache {
             }
         }
 
-        Ok((graph, cross_file_edges, pending))
+        Ok(((graph, cross_file_edges, pending), has_syntax_errors))
     }
 
     /// Returns the number of cached files
@@ -1315,6 +1358,15 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
         }
         _ => WalkClassification::LegitExclusion,
     }
+}
+
+/// Clasifica un archivo de walk por su ruta: como [`classify_walk_extension`],
+/// salvo los ficheros cuyo NOMBRE es la convención (`Jenkinsfile`).
+pub fn classify_walk_path(path: &Path) -> WalkClassification {
+    if crate::infrastructure::parser::Language::from_path(path).is_some() {
+        return WalkClassification::Analyze;
+    }
+    classify_walk_extension(path.extension().and_then(|e| e.to_str()))
 }
 
 /// Overall status of a `merge_with_report` operation.
@@ -2025,5 +2077,92 @@ mod one_tree_per_file_tests {
             paths.len(),
             "each file is read into one tree, no matter which reader reads it"
         );
+    }
+}
+
+#[cfg(test)]
+mod jenkinsfile_tests {
+    use super::*;
+
+    #[test]
+    fn the_walk_analyzes_a_jenkinsfile_and_still_excludes_a_readme() {
+        assert_eq!(
+            classify_walk_path(Path::new("ci/Jenkinsfile")),
+            WalkClassification::Analyze
+        );
+        assert_eq!(
+            classify_walk_path(Path::new("Jenkinsfile.prod")),
+            WalkClassification::Analyze
+        );
+        assert_eq!(
+            classify_walk_path(Path::new("README.md")),
+            WalkClassification::LegitExclusion
+        );
+    }
+
+    #[test]
+    fn a_jenkinsfile_builds_a_graph_owned_by_its_script_symbol() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Jenkinsfile");
+        std::fs::write(&path, "def helper() { inner() }\nbuild()\n").unwrap();
+
+        let cache = PerFileGraphCache::new();
+        let (graph, _pending) = cache.get_or_build(&path).unwrap();
+
+        let names: Vec<String> = graph.symbols().map(|s| s.name().to_string()).collect();
+        assert!(names.iter().any(|n| n == "<script>"), "{names:?}");
+        assert!(names.iter().any(|n| n == "helper"), "{names:?}");
+    }
+}
+
+#[cfg(test)]
+mod partial_parse_tests {
+    //! A file with syntax errors keeps the subtrees that parsed and is
+    //! reported as partial; it is neither dropped whole nor called complete.
+    use super::*;
+
+    fn within_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the merge did not return within 5s")
+    }
+
+    #[test]
+    fn a_groovy_file_with_errors_keeps_its_valid_symbols_and_is_partial() {
+        let (names, status) = within_deadline(|| {
+            let dir = tempfile::tempdir().expect("a temporary directory");
+            let file = dir.path().join("broken.groovy");
+            std::fs::write(&file, "def ok() { 1 }\ndef broken( {\ndef ok2() { 2 }\n")
+                .expect("the file is written");
+            let report = PerFileGraphCache::new().merge_with_report(&[file.as_path()]);
+            let names: Vec<String> = report
+                .graph
+                .symbols()
+                .map(|s| s.name().to_string())
+                .collect();
+            (names, report.status)
+        });
+
+        assert!(
+            names.iter().any(|n| n == "ok"),
+            "the valid subtree must survive the error next to it: {names:?}"
+        );
+        match status {
+            BuildStatus::Partial { skipped, .. } => {
+                let entry = skipped
+                    .iter()
+                    .find(|s| s.path.ends_with("broken.groovy"))
+                    .unwrap_or_else(|| panic!("the file must be named as partial: {skipped:?}"));
+                assert!(
+                    matches!(entry.reason, SkipReason::Parse(_)),
+                    "the reason is a parse failure, got {:?}",
+                    entry.reason
+                );
+            }
+            BuildStatus::Complete => panic!("a file with syntax errors was called complete"),
+        }
     }
 }

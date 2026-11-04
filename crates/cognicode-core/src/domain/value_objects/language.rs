@@ -644,7 +644,22 @@ impl Language {
     /// called. Two readers answering differently is the drift this
     /// project already paid for once.
     pub const fn reads_declared_symbol_sets(self) -> bool {
-        matches!(self, Language::Kotlin)
+        matches!(self, Language::Kotlin | Language::CSharp | Language::Groovy)
+    }
+
+    /// Whether a file of this language can be a script: calls written at
+    /// the top level, outside any function, that do something when the
+    /// file runs.
+    ///
+    /// Groovy is always one (a Jenkinsfile has no other shape). Kotlin is
+    /// only when the file is a `.kts`: in a `.kt` a top-level call can only
+    /// be an initializer, not a statement of its own.
+    pub fn is_script_file(self, file_path: &str) -> bool {
+        match self {
+            Language::Groovy => true,
+            Language::Kotlin => file_path.ends_with(".kts"),
+            _ => false,
+        }
     }
 }
 
@@ -702,6 +717,21 @@ impl Language {
             .iter()
             .copied()
             .find(|language| language.extensions().iter().any(|e| *e == extension))
+    }
+
+    /// Detect language from a file path.
+    ///
+    /// The extension decides, except for the files whose NAME is the
+    /// convention: a `Jenkinsfile`, or a `Jenkinsfile.<anything>`, is
+    /// Groovy, and it has no extension that says so. The match is exact
+    /// and case-sensitive, as Jenkins itself reads it: `MyJenkinsfile` and
+    /// `Jenkinsfiles` are not pipelines.
+    pub fn from_path(path: &std::path::Path) -> Option<Self> {
+        let name = path.file_name()?.to_str()?;
+        if name == "Jenkinsfile" || name.starts_with("Jenkinsfile.") {
+            return Some(Language::Groovy);
+        }
+        Self::from_extension(path.extension())
     }
 
     /// The public identifier of this language.
@@ -918,5 +948,52 @@ impl Language {
             Language::SystemVerilog,
             Language::Kotlin,
         ]
+    }
+}
+
+#[cfg(test)]
+mod from_path_tests {
+    use super::Language;
+    use std::path::Path;
+
+    #[test]
+    fn a_jenkinsfile_is_groovy_whatever_its_suffix() {
+        for name in [
+            "Jenkinsfile",
+            "Jenkinsfile.prod",
+            "ci/Jenkinsfile",
+            "a/b/Jenkinsfile.release",
+        ] {
+            assert_eq!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Groovy),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_exact_name_is_a_jenkinsfile() {
+        for name in [
+            "Jenkinsfiles",
+            "MyJenkinsfile",
+            "jenkinsfile",
+            "Jenkinsfile-notes",
+            "README.md",
+        ] {
+            assert_eq!(Language::from_path(Path::new(name)), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_path_with_a_known_extension_keeps_its_language() {
+        assert_eq!(
+            Language::from_path(Path::new("src/a.rs")),
+            Some(Language::Rust)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("build.gradle")),
+            Some(Language::Groovy)
+        );
     }
 }

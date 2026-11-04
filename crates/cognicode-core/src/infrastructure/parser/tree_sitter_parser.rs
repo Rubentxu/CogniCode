@@ -253,7 +253,55 @@ impl TreeSitterParser {
             }
         }
 
+        if !self.top_level_calls(tree, source, file_path).is_empty() {
+            symbols.push(Self::script_symbol(file_path));
+        }
+
         Ok(symbols)
+    }
+
+    /// The synthetic symbol that owns the calls a script writes outside any
+    /// function: a Jenkinsfile or a `build.gradle.kts` is all top-level
+    /// calls, and without an owner they have no caller and no edge.
+    fn script_symbol(file_path: &str) -> Symbol {
+        Symbol::new(
+            SCRIPT_SYMBOL,
+            SymbolKind::Function,
+            Location::new(file_path, 0, 0),
+        )
+    }
+
+    /// The calls a script file writes outside any function or class, as
+    /// `(callee, line)`. Empty for a language or file that is not a script.
+    fn top_level_calls(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+    ) -> Vec<(String, u32)> {
+        if !self.language.is_script_file(file_path) {
+            return Vec::new();
+        }
+        let declared = self.language.symbols();
+        let mut found = Vec::new();
+        let mut stack = vec![tree.root_node()];
+        while let Some(current) = stack.pop() {
+            let kind = current.kind();
+            if self.language.is_function_kind(kind) || declared.class_types.contains(&kind) {
+                continue;
+            }
+            if declared.call_types.contains(&kind)
+                && let Some(callee) = self.extract_callee_name(current, source)
+            {
+                found.push((callee, current.start_position().row as u32 + 1));
+            }
+            for i in (0..current.child_count()).rev() {
+                if let Some(child) = current.child(i) {
+                    stack.push(child);
+                }
+            }
+        }
+        found
     }
 
     /// Helper to iteratively find nodes of a specific type with file path (iterative DFS)
@@ -533,6 +581,14 @@ impl TreeSitterParser {
         let language = self.language;
         self.find_function_calls(tree.root_node(), source, file_path, language, &mut calls);
 
+        let top_level = self.top_level_calls(tree, source, file_path);
+        if !top_level.is_empty() {
+            let script = Self::script_symbol(file_path);
+            for (callee, line) in top_level {
+                calls.push((script.clone(), callee, line));
+            }
+        }
+
         Ok(calls)
     }
 
@@ -575,14 +631,19 @@ impl TreeSitterParser {
         caller_symbol: &Symbol,
         relationships: &mut Vec<(Symbol, String, u32)>,
     ) {
+        let call_types = self.language.symbols().call_types;
         let call_type = self.language.call_node_type();
+        let by_sets = self.language.reads_declared_symbol_sets();
         let mut stack = Vec::new();
         stack.push(node);
 
         while let Some(current) = stack.pop() {
-            if current.kind() == call_type
-                && let Some(callee_name) = self.extract_callee_name(current, source)
-            {
+            let is_call = if by_sets {
+                call_types.contains(&current.kind())
+            } else {
+                current.kind() == call_type
+            };
+            if is_call && let Some(callee_name) = self.extract_callee_name(current, source) {
                 // The tree counts rows from zero; the world counts lines
                 // from one, and so does every place a line is published.
                 let line = current.start_position().row as u32 + 1;
@@ -713,6 +774,9 @@ impl TreeSitterParser {
         }
     }
 }
+
+/// The name of the symbol that owns a script's top-level calls.
+pub const SCRIPT_SYMBOL: &str = "<script>";
 
 #[cfg(test)]
 mod tests {
@@ -1568,6 +1632,96 @@ mod w4_h_r4_1_tests {
             r.iter().any(|n| n == "method"),
             "method call should resolve to 'method', got {:?}",
             r
+        );
+    }
+}
+
+#[cfg(test)]
+mod csharp_groovy_reading {
+    use super::*;
+
+    fn names(language: Language, source: &str) -> Vec<String> {
+        let parser = TreeSitterParser::new(language).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        parser
+            .find_all_symbols_in_tree(&tree, source, "f")
+            .unwrap()
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect()
+    }
+
+    fn calls(language: Language, source: &str) -> Vec<(String, String)> {
+        let parser = TreeSitterParser::new(language).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        parser
+            .find_call_sites_in_tree(&tree, source, "f")
+            .unwrap()
+            .iter()
+            .map(|c| (c.source.as_str().to_string(), c.target.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn csharp_reads_interfaces_records_structs_and_properties() {
+        let source = "interface IA { void M(); }\nrecord R(int X);\nstruct S { public int P { get; set; } }\nclass C { void F() { Foo(); } }\n";
+        let found = names(Language::CSharp, source);
+        for expected in ["IA", "R", "S", "P", "C", "F"] {
+            assert!(
+                found.iter().any(|n| n == expected),
+                "{expected} in {found:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn groovy_reads_interfaces_and_calls_written_without_parentheses() {
+        // MEDIDO: la gramática solo produce `juxt_function_call` en un
+        // `def f() {..}` o a nivel de script; dentro de un método con tipo
+        // devuelto el bloque es un ERROR.
+        let source = "interface I { void m() }\ndef f() { foo \"a\" }\n";
+        let found = names(Language::Groovy, source);
+        assert!(found.iter().any(|n| n == "I"), "interface in {found:?}");
+        let made = calls(Language::Groovy, source);
+        assert!(
+            made.iter().any(|(_, target)| target == "foo"),
+            "juxtaposed call in {made:?}"
+        );
+    }
+
+    #[test]
+    fn a_script_symbol_owns_the_top_level_calls_of_a_groovy_file() {
+        let source = "def g() { inner() }\nfoo \"a\"\nbuild()\n";
+        assert!(
+            names(Language::Groovy, source)
+                .iter()
+                .any(|n| n == "<script>")
+        );
+        let made = calls(Language::Groovy, source);
+        let script: Vec<&str> = made
+            .iter()
+            .filter(|(caller, _)| caller.contains("<script>"))
+            .map(|(_, t)| t.as_str())
+            .collect();
+        assert_eq!(script, ["foo", "build"], "all calls: {made:?}");
+        assert!(
+            made.iter()
+                .any(|(c, t)| !c.contains("<script>") && t == "inner"),
+            "a call inside a function stays with the function: {made:?}"
+        );
+    }
+
+    #[test]
+    fn a_file_without_top_level_calls_has_no_script_symbol() {
+        assert!(
+            !names(Language::Groovy, "def g() { inner() }\n")
+                .iter()
+                .any(|n| n == "<script>")
+        );
+        assert!(
+            !names(Language::Java, "class A { void m() { x(); } }")
+                .iter()
+                .any(|n| n == "<script>")
         );
     }
 }
