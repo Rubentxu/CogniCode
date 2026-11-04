@@ -12,7 +12,9 @@ pub mod analyze;
 pub mod context_compressor;
 pub mod file_operations;
 pub mod graph_analytics;
+// Las preguntas del grafo, contestadas una vez (TASK-78).
 pub mod graph_insights;
+pub mod graph_queries;
 pub mod impact_analysis;
 pub mod impact_of;
 pub mod lsp_proxy_service;

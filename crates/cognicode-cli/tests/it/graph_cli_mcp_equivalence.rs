@@ -27,9 +27,16 @@ use crate::common;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::interface::coverage::{PendingReason, PendingReferenceInfo};
 use cognicode_core::interface::mcp::handlers::{
-    BuildGraphInput, HandlerContext, handle_build_graph,
+    BuildGraphInput, HandlerContext, handle_analyze_impact, handle_build_graph,
+    handle_export_mermaid, handle_get_call_hierarchy, handle_get_entry_points,
+    handle_get_hot_paths, handle_get_leaf_functions, handle_trace_path,
+};
+use cognicode_core::interface::mcp::schemas::{
+    AnalyzeImpactInput, CallDirection, ExportMermaidInput, GetCallHierarchyInput,
+    GetEntryPointsInput, GetHotPathsInput, GetLeafFunctionsInput, TracePathInput,
 };
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -106,11 +113,15 @@ async fn mcp_graph(dir: &Path) -> Arc<CallGraph> {
 }
 
 /// The leaves of a graph, as the CLI reports them: name, file, line.
+///
+/// Every one of them. The list used to be cut at twenty here as well as
+/// in the command, and two cuts that happen to agree hide the difference
+/// between two surfaces: the command publishes every leaf, so this
+/// reference has to publish every leaf too.
 fn leaves(graph: &CallGraph) -> Vec<(String, String, u64)> {
     graph
         .leaves()
         .iter()
-        .take(20)
         .filter_map(|id| {
             let symbol = graph.get_symbol(id)?;
             Some((
@@ -511,4 +522,479 @@ async fn the_cli_and_the_mcp_publish_the_same_negative_on_the_kotlin_corpus() {
         from_mcp.symbols > 0 && from_mcp.relations > 0,
         "the MCP publishes the same non-empty graph the CLI publishes"
     );
+}
+
+// ─── The questions themselves ──────────────────────────────────────────
+//
+// The tests above measure the GRAPH the two surfaces build. These
+// measure the ANSWERS: the hot paths, the entry points, the leaves, the
+// path between two symbols, the diagram and the hierarchy. A question
+// that has two owners has two answers, and the reader gets whichever one
+// it happened to ask — so the question has to have one owner, and both
+// surfaces have to ask it.
+//
+// The project holds a small call graph — two leaves, a middle that calls
+// them, a top that calls the middle, and a caller of the top — so every
+// question has something to say.
+
+/// The project the two surfaces are asked about.
+fn rust_project() -> PathBuf {
+    let dir = fresh_dir("graph-parity");
+    std::fs::create_dir_all(dir.join("src")).expect("create the project");
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn leaf_a() -> u32 { 1 }\n\
+         pub fn leaf_b() -> u32 { 2 }\n\
+         pub fn middle() -> u32 { leaf_a() + leaf_b() }\n\
+         pub fn top() -> u32 { middle() }\n\
+         pub fn caller_of_top() -> u32 { top() }\n",
+    )
+    .expect("write the source");
+    dir
+}
+
+/// The project whose names share a prefix.
+///
+/// A name means the symbol that carries it, not every symbol that
+/// contains it as a substring.
+fn homonyms_project() -> PathBuf {
+    let dir = fresh_dir("graph-parity-homonyms");
+    std::fs::create_dir_all(dir.join("src")).expect("create the project");
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn foo() -> u32 { 1 }\n\
+         pub fn foo_bar() -> u32 { 2 }\n\
+         pub fn uses_foo() -> u32 { foo() }\n\
+         pub fn uses_bar() -> u32 { foo_bar() }\n",
+    )
+    .expect("write the source");
+    dir
+}
+
+/// A project with `count` symbols that nothing calls.
+fn many_entry_points_project(count: usize) -> PathBuf {
+    let dir = fresh_dir("graph-parity-entry-points");
+    std::fs::create_dir_all(dir.join("src")).expect("create the project");
+    let mut source = String::new();
+    for index in 0..count {
+        source.push_str(&format!("pub fn lonely_{index}() -> u32 {{ {index} }}\n"));
+    }
+    std::fs::write(dir.join("src/lib.rs"), source).expect("write the source");
+    dir
+}
+
+/// A directory of its own: the tests run in parallel, and one test's
+/// copy would land on top of another's.
+fn fresh_dir(label: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "cognicode-cli-{label}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&dir).expect("create the directory");
+    dir
+}
+
+/// The real binary, as a sub-process.
+///
+/// Some commands print a progress line before the document, so the
+/// document is read from its first brace. The line is on the standard
+/// output: the JSON contract of the CLI is "a document", not "a
+/// document and something else", and that is worth a task of its own.
+fn run_cli_json(args: &[&str]) -> Value {
+    let binary = common::binary_path("cognicode");
+    let output = Command::new(&binary)
+        .args(["--format", "json"])
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));
+    assert!(
+        output.status.success(),
+        "the CLI exited with {}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let start = stdout
+        .find('{')
+        .expect("the CLI answers with a JSON object");
+    serde_json::from_str(&stdout[start..]).expect("the CLI answer parses")
+}
+
+/// The rows of a hot-paths answer, in the order they were published.
+///
+/// The order is part of the answer: a table whose rows move between two
+/// runs over the same project is a table nobody can read twice.
+fn hot_path_rows(answer: &Value, key: &str, name: &str) -> Vec<(String, usize, usize)> {
+    answer[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{key}` is a list: {answer}"))
+        .iter()
+        .map(|row| {
+            (
+                row[name].as_str().expect("a name").to_string(),
+                row["fan_in"].as_u64().expect("a fan-in") as usize,
+                row["fan_out"].as_u64().expect("a fan-out") as usize,
+            )
+        })
+        .collect()
+}
+
+/// The symbols of an answer, as (name, file, line).
+fn symbol_rows(
+    answer: &Value,
+    key: &str,
+    name: &str,
+    location: Option<&str>,
+) -> BTreeSet<(String, String, u64)> {
+    answer[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{key}` is a list: {answer}"))
+        .iter()
+        .map(|row| {
+            let (file, line) = match location {
+                Some(key) => (
+                    row[key]["file"].as_str().expect("a file").to_string(),
+                    row[key]["line"].as_u64().expect("a line"),
+                ),
+                None => (
+                    row["file"].as_str().expect("a file").to_string(),
+                    row["line"].as_u64().expect("a line"),
+                ),
+            };
+            (row[name].as_str().expect("a name").to_string(), file, line)
+        })
+        .collect()
+}
+
+/// The names of a path, in order.
+fn path_names(answer: &Value, key: &str, name: &str) -> Vec<String> {
+    answer[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{key}` is a list: {answer}"))
+        .iter()
+        .map(|row| row[name].as_str().expect("a name").to_string())
+        .collect()
+}
+
+async fn mcp_hot_paths(dir: &Path, limit: usize, min_fan_in: usize) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_get_hot_paths(&ctx, GetHotPathsInput { limit, min_fan_in })
+        .await
+        .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_entry_points(dir: &Path) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_get_entry_points(&ctx, GetEntryPointsInput { compressed: false })
+        .await
+        .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_leaf_functions(dir: &Path) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_get_leaf_functions(&ctx, GetLeafFunctionsInput { compressed: false })
+        .await
+        .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_trace(dir: &Path, source: &str, target: &str, max_depth: u8) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_trace_path(
+        &ctx,
+        TracePathInput {
+            source: source.to_string(),
+            target: target.to_string(),
+            max_depth,
+            all: false,
+        },
+    )
+    .await
+    .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_mermaid(dir: &Path) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_export_mermaid(
+        &ctx,
+        ExportMermaidInput {
+            root_symbol: None,
+            max_depth: 3,
+            include_external: false,
+            theme: None,
+            format: Some("code".to_string()),
+            module_filter: None,
+        },
+    )
+    .await
+    .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_hierarchy(dir: &Path, symbol: &str, depth: u8, direction: CallDirection) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_get_call_hierarchy(
+        &ctx,
+        GetCallHierarchyInput {
+            symbol_name: symbol.to_string(),
+            direction,
+            depth,
+            include_external: false,
+            compressed: false,
+        },
+    )
+    .await
+    .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+async fn mcp_impact(dir: &Path, symbol: &str) -> Value {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let out = handle_analyze_impact(
+        &ctx,
+        AnalyzeImpactInput {
+            symbol_name: symbol.to_string(),
+            compressed: false,
+        },
+    )
+    .await
+    .expect("the MCP answers");
+    serde_json::to_value(&out).expect("the MCP output serializes")
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_hot_paths() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&[
+        "graph",
+        "hot-paths",
+        "--limit",
+        "10",
+        "--min-fan-in",
+        "1",
+        path,
+    ]);
+    let mcp = mcp_hot_paths(&dir, 10, 1).await;
+
+    assert_eq!(
+        hot_path_rows(&cli, "entries", "name"),
+        hot_path_rows(&mcp, "hot_paths", "symbol"),
+        "the hot paths differ.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_threshold_is_the_only_rule_of_the_hot_paths() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    // A threshold of zero asks for every symbol, including the ones
+    // nothing calls. The CLI used to answer with the symbols somebody
+    // calls whatever the threshold said.
+    let cli = run_cli_json(&[
+        "graph",
+        "hot-paths",
+        "--limit",
+        "10",
+        "--min-fan-in",
+        "0",
+        path,
+    ]);
+    let mcp = mcp_hot_paths(&dir, 10, 0).await;
+
+    assert_eq!(
+        hot_path_rows(&cli, "entries", "name"),
+        hot_path_rows(&mcp, "hot_paths", "symbol"),
+        "the hot paths differ.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_entry_points() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "entry-points", path]);
+    let mcp = mcp_entry_points(&dir).await;
+
+    assert_eq!(
+        symbol_rows(&cli, "symbols", "name", None),
+        symbol_rows(&mcp, "entry_points", "name", Some("location")),
+        "the entry points differ.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_leaf_functions() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "leaf-functions", path]);
+    let mcp = mcp_leaf_functions(&dir).await;
+
+    assert_eq!(
+        symbol_rows(&cli, "symbols", "name", None),
+        symbol_rows(&mcp, "leaf_functions", "name", Some("location")),
+        "the leaf functions differ.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_path() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "trace-path", "middle", "leaf_a", path]);
+    let mcp = mcp_trace(&dir, "middle", "leaf_a", 10).await;
+
+    assert_eq!(
+        path_names(&cli, "hops", "name"),
+        path_names(&mcp, "path", "symbol"),
+        "the path differs.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_diagram() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "mermaid", path]);
+    let mcp = mcp_mermaid(&dir).await;
+
+    assert_eq!(
+        cli["diagram"].as_str(),
+        mcp["mermaid_code"].as_str(),
+        "the diagram differs.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_hierarchy() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&[
+        "graph",
+        "hierarchy",
+        "middle",
+        "--depth",
+        "1",
+        "--direction",
+        "out",
+        path,
+    ]);
+    let mcp = mcp_hierarchy(&dir, "middle", 1, CallDirection::Outgoing).await;
+
+    let cli_entries: BTreeSet<(String, String, u64)> = cli["buckets"]
+        .as_array()
+        .expect("buckets")
+        .iter()
+        .flat_map(|bucket| {
+            bucket["entries"]
+                .as_array()
+                .expect("entries")
+                .iter()
+                .map(|entry| {
+                    (
+                        entry["name"].as_str().expect("a name").to_string(),
+                        entry["file"].as_str().expect("a file").to_string(),
+                        entry["line"].as_u64().expect("a line"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    assert_eq!(
+        cli_entries,
+        symbol_rows(&mcp, "calls", "symbol", None),
+        "the hierarchy differs.\ncli: {cli}\nmcp: {mcp}"
+    );
+}
+
+#[tokio::test]
+async fn the_entry_points_are_not_cut_in_silence() {
+    let dir = many_entry_points_project(25);
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "entry-points", path]);
+
+    assert_eq!(
+        cli["symbols"].as_array().expect("symbols").len(),
+        25,
+        "the list used to stop at twenty without saying so: {cli}"
+    );
+    assert_eq!(cli["total"].as_u64(), Some(25), "the count lies: {cli}");
+}
+
+#[tokio::test]
+async fn the_trace_answers_the_simple_name_the_mcp_answers() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "trace-path", "middle", "leaf_a", path]);
+
+    assert_eq!(
+        path_names(&cli, "hops", "name"),
+        vec!["middle".to_string(), "leaf_a".to_string()],
+        "the trace used to demand a fully qualified name: {cli}"
+    );
+}
+
+#[tokio::test]
+async fn a_name_does_not_match_the_symbols_that_merely_contain_it() {
+    let dir = homonyms_project();
+    let path = dir.to_str().expect("a path");
+    let cli = run_cli_json(&["graph", "impact", "foo", path]);
+
+    let impacted: BTreeSet<String> = cli["impacted_symbols"]
+        .as_array()
+        .expect("impacted symbols")
+        .iter()
+        .map(|value| value.as_str().expect("a name").to_string())
+        .collect();
+
+    assert_eq!(
+        impacted,
+        BTreeSet::from(["uses_foo".to_string()]),
+        "the dependents of `foo_bar` are not dependents of `foo`: {cli}"
+    );
+    assert_eq!(
+        cli["direct_dependents"], 1,
+        "only `foo` itself carries the name: {cli}"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_agree_on_the_same_name() {
+    let dir = homonyms_project();
+    let path = dir.to_str().expect("a path");
+    for symbol in ["foo", "foo_bar"] {
+        let cli = run_cli_json(&["graph", "impact", symbol, path]);
+        let mcp = mcp_impact(&dir, symbol).await;
+
+        let cli_symbols: BTreeSet<String> = cli["impacted_symbols"]
+            .as_array()
+            .expect("impacted symbols")
+            .iter()
+            .map(|value| value.as_str().expect("a name").to_string())
+            .collect();
+        let mcp_symbols: BTreeSet<String> = mcp["impacted_symbols"]
+            .as_array()
+            .expect("impacted symbols")
+            .iter()
+            .map(|value| value.as_str().expect("a name").to_string())
+            .collect();
+
+        assert_eq!(
+            cli_symbols, mcp_symbols,
+            "impacted symbols of `{symbol}` differ.\ncli: {cli}\nmcp: {mcp}"
+        );
+        assert_eq!(
+            cli["risk_level"].as_str().map(str::to_lowercase),
+            mcp["risk_level"].as_str().map(str::to_string),
+            "risk of `{symbol}` differs.\ncli: {cli}\nmcp: {mcp}"
+        );
+    }
 }

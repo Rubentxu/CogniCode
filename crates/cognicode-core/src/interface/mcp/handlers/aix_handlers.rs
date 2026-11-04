@@ -604,36 +604,33 @@ pub async fn handle_ask_about_code(
     let mut answers = Vec::new();
 
     if let (Some(src), Some(tgt)) = (source, target) {
-        let src_id = symbol_or_ambiguity(&graph, &src)?;
-        let tgt_id = symbol_or_ambiguity(&graph, &tgt)?;
+        // The same owner the CLI and the trace tool ask.
+        let source_id = AnalysisService::resolve_symbol(&graph, &src)?;
+        let target_id = AnalysisService::resolve_symbol(&graph, &tgt)?;
+        let path = AnalysisService::trace_path_between(&graph, &source_id, &target_id, 10)
+            .unwrap_or_default();
 
-        if let (Some(sid), Some(tid)) = (src_id, tgt_id) {
-            let path = find_path_bfs(&graph, &sid, &tid, 10);
+        if !path.is_empty() {
+            let path_steps: Vec<CodePathStep> = path
+                .iter()
+                .map(|s| CodePathStep {
+                    symbol: s.name().to_string(),
+                    file: s.location().file().to_string(),
+                    line: s.location().line() + 1,
+                    kind: format!("{:?}", s.kind()).to_lowercase(),
+                    role: "intermediate".to_string(),
+                    snippet: None,
+                })
+                .collect();
 
-            if !path.is_empty() {
-                let path_steps: Vec<CodePathStep> = path
-                    .iter()
-                    .filter_map(|sp| {
-                        graph.get_symbol(sp).map(|s| CodePathStep {
-                            symbol: s.name().to_string(),
-                            file: s.location().file().to_string(),
-                            line: s.location().line() + 1,
-                            kind: format!("{:?}", s.kind()).to_lowercase(),
-                            role: "intermediate".to_string(),
-                            snippet: None,
-                        })
-                    })
-                    .collect();
-
-                answers.push(CodeAnswer {
-                    explanation: format!("Path from {} to {} found", src, tgt),
-                    path: path_steps,
-                    from: src,
-                    to: tgt,
-                    path_length: path.len(),
-                    confidence: 0.9,
-                });
-            }
+            answers.push(CodeAnswer {
+                explanation: format!("Path from {} to {} found", src, tgt),
+                path: path_steps,
+                from: src,
+                to: tgt,
+                path_length: path.len(),
+                confidence: 0.9,
+            });
         }
     }
 

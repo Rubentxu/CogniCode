@@ -47,6 +47,9 @@ pub struct MermaidOptions {
     pub theme: Option<String>,
     /// Output format: "code" or "svg" (default: "code")
     pub format: Option<String>,
+    /// Only the symbols whose file path contains this substring are
+    /// exported. `None` exports every symbol.
+    pub module_filter: Option<String>,
 }
 
 /// A directed graph representing call dependencies between symbols
@@ -659,53 +662,6 @@ impl CallGraph {
         self.edges.get(id).map(|e| e.len()).unwrap_or(0)
     }
 
-    /// Exports the call graph as a Mermaid flowchart
-    ///
-    /// Generates a directed graph representation suitable for Mermaid flowchart syntax.
-    pub fn to_mermaid(&self, title: &str) -> String {
-        let mut mermaid = String::from("flowchart TD\n");
-        mermaid.push_str(&format!("    %% {}\n", title));
-
-        // Add node declarations
-        for symbol in self.symbols() {
-            let id = SymbolId::new(symbol.fully_qualified_name());
-            let safe_id = id
-                .as_str()
-                .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            let name = symbol.name();
-            let kind = format!("{:?}", symbol.kind());
-            mermaid.push_str(&format!("    {}[{} ({})]\n", safe_id, name, kind));
-        }
-
-        // Add edges
-        for (source_id, edges) in &self.edges {
-            let safe_source = source_id
-                .as_str()
-                .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for (target_id, dep_type) in edges.keys() {
-                let safe_target = target_id
-                    .as_str()
-                    .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-                let edge_label = match dep_type {
-                    DependencyType::Calls => "calls",
-                    DependencyType::Imports => "imports",
-                    DependencyType::Inherits => "inherits",
-                    DependencyType::UsesGeneric => "uses_generic",
-                    DependencyType::References => "references",
-                    DependencyType::Defines => "defines",
-                    DependencyType::AnnotatedBy => "annotated_by",
-                    DependencyType::Contains => "contains",
-                };
-                mermaid.push_str(&format!(
-                    "    {} -->|{}| {}\n",
-                    safe_source, edge_label, safe_target
-                ));
-            }
-        }
-
-        mermaid
-    }
-
     /// Exports the call graph as a Mermaid flowchart with options
     ///
     /// When root is provided, exports only the subgraph rooted at that symbol.
@@ -733,6 +689,20 @@ impl CallGraph {
         } else {
             self.symbols.values().cloned().collect()
         };
+
+        // The diagram is published, so its order has to be a promise: the
+        // graph holds its symbols in a map, and a map's order is not one.
+        // The symbols are sorted by their identity, and the filter (when
+        // there is one) decides which of them the diagram holds.
+        let module_filter = options.module_filter.as_deref().filter(|f| !f.is_empty());
+        let mut symbols_to_export: Vec<Symbol> = symbols_to_export
+            .into_iter()
+            .filter(|symbol| match module_filter {
+                Some(filter) => symbol.location().file().contains(filter),
+                None => true,
+            })
+            .collect();
+        symbols_to_export.sort_by(|a, b| a.fully_qualified_name().cmp(b.fully_qualified_name()));
 
         // Build node declarations
         mermaid.push_str("flowchart TD\n");
@@ -775,7 +745,11 @@ impl CallGraph {
                 );
             }
         } else {
-            // For full graph, add all edges between exported symbols
+            // For full graph, add all edges between exported symbols.
+            // The edges are sorted for the same reason the symbols are:
+            // the document is published, and its order has to be a
+            // promise rather than an accident of the map.
+            let mut edges_to_draw: Vec<(String, String, &'static str)> = Vec::new();
             for (source_id, edges) in &self.edges {
                 if !symbol_ids.contains(source_id) {
                     continue;
@@ -790,21 +764,16 @@ impl CallGraph {
                     let safe_target = target_id
                         .as_str()
                         .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-                    let edge_label = match dep_type {
-                        DependencyType::Calls => "calls",
-                        DependencyType::Imports => "imports",
-                        DependencyType::Inherits => "inherits",
-                        DependencyType::UsesGeneric => "uses_generic",
-                        DependencyType::References => "references",
-                        DependencyType::Defines => "defines",
-                        DependencyType::AnnotatedBy => "annotated_by",
-                        DependencyType::Contains => "contains",
-                    };
-                    mermaid.push_str(&format!(
-                        "    {} -->|{}| {}\n",
-                        safe_source, edge_label, safe_target
+                    edges_to_draw.push((
+                        safe_source.clone(),
+                        safe_target.clone(),
+                        mermaid_edge_label(dep_type),
                     ));
                 }
+            }
+            edges_to_draw.sort();
+            for (source, target, label) in edges_to_draw {
+                mermaid.push_str(&format!("    {} -->|{}| {}\n", source, label, target));
             }
         }
 
@@ -830,26 +799,20 @@ impl CallGraph {
             let safe_source = symbol_id
                 .as_str()
                 .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-            for (target_id, dep_type) in dependencies.keys() {
+            let mut targets: Vec<&(SymbolId, DependencyType)> = dependencies.keys().collect();
+            targets.sort_by_key(|(target_id, _)| target_id.clone());
+            for (target_id, dep_type) in targets {
                 if !allowed_symbols.contains(target_id) {
                     continue;
                 }
                 let safe_target = target_id
                     .as_str()
                     .replace([':', '(', ')', '<', '>', '{', '}'], "_");
-                let edge_label = match dep_type {
-                    DependencyType::Calls => "calls",
-                    DependencyType::Imports => "imports",
-                    DependencyType::Inherits => "inherits",
-                    DependencyType::UsesGeneric => "uses_generic",
-                    DependencyType::References => "references",
-                    DependencyType::Defines => "defines",
-                    DependencyType::AnnotatedBy => "annotated_by",
-                    DependencyType::Contains => "contains",
-                };
                 mermaid.push_str(&format!(
                     "    {} -->|{}| {}\n",
-                    safe_source, edge_label, safe_target
+                    safe_source,
+                    mermaid_edge_label(dep_type),
+                    safe_target
                 ));
                 self.collect_mermaid_edges_recursive(
                     target_id,
@@ -1330,6 +1293,24 @@ impl CallGraphV1 {
 }
 
 use std::fmt;
+
+/// The label a Mermaid edge carries.
+///
+/// One table for the three renderers that used to carry their own: a
+/// diagram whose edges say "calls" in one place and "Calls" in another
+/// is two diagrams.
+fn mermaid_edge_label(dep_type: &DependencyType) -> &'static str {
+    match dep_type {
+        DependencyType::Calls => "calls",
+        DependencyType::Imports => "imports",
+        DependencyType::Inherits => "inherits",
+        DependencyType::UsesGeneric => "uses_generic",
+        DependencyType::References => "references",
+        DependencyType::Defines => "defines",
+        DependencyType::AnnotatedBy => "annotated_by",
+        DependencyType::Contains => "contains",
+    }
+}
 
 #[cfg(test)]
 mod tests {

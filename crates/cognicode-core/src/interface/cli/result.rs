@@ -278,8 +278,8 @@ pub struct PathHop {
 }
 
 /// A bucket of entries at a given traversal depth, used by
-/// `Hierarchy`. `entries` is truncated to 5 by the presenter
-/// (matches the pre-migration `iter().take(5)` slice).
+/// `Hierarchy`. Every entry of the depth is published: the bucket used
+/// to stop at five without saying so.
 #[derive(Debug, Clone, Serialize)]
 pub struct DepthBucket {
     pub depth: u32,

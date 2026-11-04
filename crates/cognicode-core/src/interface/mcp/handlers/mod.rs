@@ -59,6 +59,7 @@ use crate::application::dto::{
 use crate::application::error::AppError;
 use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use crate::application::services::context_compressor::ContextCompressorService;
+use crate::application::services::graph_queries::GraphQueryError;
 use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::{CallGraph, Symbol};
@@ -1818,24 +1819,42 @@ pub async fn handle_get_call_hierarchy(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    let symbol_ids = present_symbol_ids(&graph, &input.symbol_name)?;
-
-    let mut all_calls = Vec::new();
-
-    for symbol_id in symbol_ids {
-        // Get direct callees
-        for (callee_id, _dep_type) in graph.callees(&symbol_id) {
-            if let Some(callee) = graph.get_symbol(&callee_id) {
-                all_calls.push(crate::interface::mcp::schemas::CallEntry {
-                    symbol: callee.name().to_string(),
-                    file: callee.location().file().to_string(),
-                    line: callee.location().line(),
-                    column: callee.location().column(),
-                    confidence: 1.0,
-                });
-            }
+    // The question has one owner, and the CLI asks it too. The tool's own
+    // input declares a direction and a depth, and this handler used to
+    // answer with the direct callees whatever they said: the depth was
+    // dropped and the direction was ignored. A name that several symbols
+    // carry is ambiguous, and this surface says so instead of answering
+    // for all of them at once.
+    let direction = match input.direction {
+        crate::interface::mcp::schemas::CallDirection::Incoming => {
+            crate::application::services::graph_queries::Direction::Callers
         }
-    }
+        crate::interface::mcp::schemas::CallDirection::Outgoing => {
+            crate::application::services::graph_queries::Direction::Callees
+        }
+    };
+    let all_calls: Vec<crate::interface::mcp::schemas::CallEntry> =
+        crate::application::services::analysis_service::AnalysisService::call_hierarchy(
+            &graph,
+            &input.symbol_name,
+            input.depth as u32,
+            direction,
+        )
+        .map_err(|error| match error {
+            GraphQueryError::Ambiguous { name, candidates } => {
+                HandlerError::Ambiguous { name, candidates }
+            }
+            GraphQueryError::NotFound { name } => HandlerError::NotFound(error_text(&name)),
+        })?
+        .into_iter()
+        .map(|entry| crate::interface::mcp::schemas::CallEntry {
+            symbol: entry.name,
+            file: entry.file,
+            line: entry.line,
+            column: entry.column,
+            confidence: 1.0,
+        })
+        .collect();
 
     let total_calls = all_calls.len();
 
@@ -2462,21 +2481,12 @@ pub async fn handle_get_entry_points(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    // Check if graph is empty after build attempt
-    let root_ids = graph.roots();
-
-    // If still empty, return a helpful message
-    if root_ids.is_empty() && graph.symbol_count() == 0 {
-        return Err(HandlerError::NotFound(
-            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
-        ));
-    }
-
-    let mut entry_points = Vec::new();
-
-    for symbol_id in root_ids {
-        if let Some(symbol) = graph.get_symbol(&symbol_id) {
-            entry_points.push(SymbolInfo {
+    // The question has one owner, and the CLI asks it too: every symbol
+    // that starts the graph, and none of them dropped in silence.
+    let entry_points: Vec<SymbolInfo> =
+        crate::application::services::analysis_service::AnalysisService::entry_points(&graph)
+            .into_iter()
+            .map(|symbol| SymbolInfo {
                 name: symbol.name().to_string(),
                 kind: (*symbol.kind()).into(),
                 location: SourceLocation {
@@ -2485,8 +2495,14 @@ pub async fn handle_get_entry_points(
                     column: symbol.location().column(),
                 },
                 signature: None,
-            });
-        }
+            })
+            .collect();
+
+    // If still empty, return a helpful message
+    if entry_points.is_empty() && graph.symbol_count() == 0 {
+        return Err(HandlerError::NotFound(
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
+        ));
     }
 
     let total = entry_points.len();
@@ -2519,22 +2535,12 @@ pub async fn handle_get_leaf_functions(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    // Check if graph is empty after build attempt
-    let leaf_ids = graph.leaves();
-
-    // If still empty, return a helpful message
-    if leaf_ids.is_empty() && graph.symbol_count() == 0 {
-        return Err(HandlerError::NotFound(
-            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
-        ));
-    }
-
-    // Leaf functions are symbols with no outgoing edges (leaves)
-    let mut leaf_functions = Vec::new();
-
-    for symbol_id in leaf_ids {
-        if let Some(symbol) = graph.get_symbol(&symbol_id) {
-            leaf_functions.push(SymbolInfo {
+    // Leaf functions are symbols with no outgoing edges (leaves). The
+    // question has one owner, and the CLI asks it too.
+    let leaf_functions: Vec<SymbolInfo> =
+        crate::application::services::analysis_service::AnalysisService::leaf_functions(&graph)
+            .into_iter()
+            .map(|symbol| SymbolInfo {
                 name: symbol.name().to_string(),
                 kind: (*symbol.kind()).into(),
                 location: SourceLocation {
@@ -2543,8 +2549,14 @@ pub async fn handle_get_leaf_functions(
                     column: symbol.location().column(),
                 },
                 signature: None,
-            });
-        }
+            })
+            .collect();
+
+    // If still empty, return a helpful message
+    if leaf_functions.is_empty() && graph.symbol_count() == 0 {
+        return Err(HandlerError::NotFound(
+            "No source code found in the project directory. Ensure the directory contains supported source files (.rs, .py, .ts, .js, .go, .java).".into()
+        ));
     }
 
     let total = leaf_functions.len();
@@ -2581,94 +2593,103 @@ pub async fn handle_trace_path(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    // Find source and target symbols
-    let source_id = symbol_or_ambiguity(&graph, &input.source)?;
-    let target_id = symbol_or_ambiguity(&graph, &input.target)?;
-
-    match (source_id, target_id) {
-        (Some(source), Some(target)) => {
-            let path_entries: Vec<PathEntry>;
-            let all_paths: Vec<Vec<PathEntry>>;
-            let path_length: usize;
-
-            if input.all {
-                // Find ALL paths (BFS exhaustive)
-                let paths = find_all_paths_bfs(&graph, &source, &target, input.max_depth);
-                path_length = paths.len();
-
-                all_paths = paths
-                    .into_iter()
-                    .map(|path| {
-                        path.iter()
-                            .filter_map(|sid| {
-                                graph.get_symbol(sid).map(|s| PathEntry {
-                                    symbol: s.name().to_string(),
-                                    file: s.location().file().to_string(),
-                                    line: s.location().line(),
-                                    column: s.location().column(),
-                                })
-                            })
-                            .collect()
-                    })
-                    .collect();
-
-                path_entries = all_paths.first().cloned().unwrap_or_default();
-                let path_found = !all_paths.is_empty();
-
-                Ok(TracePathOutput {
-                    source: input.source,
-                    target: input.target,
-                    path_found,
-                    path: path_entries,
-                    path_length,
-                    metadata: AnalysisMetadata {
-                        total_calls: path_length,
-                        analysis_time_ms: start.elapsed().as_millis() as u64,
-                    },
-                    all_paths,
-                })
-            } else {
-                // Find shortest path only (original behavior)
-                let path = find_path_bfs(&graph, &source, &target, input.max_depth);
-
-                path_entries = path
-                    .iter()
-                    .filter_map(|sid| {
-                        graph.get_symbol(sid).map(|s| PathEntry {
-                            symbol: s.name().to_string(),
-                            file: s.location().file().to_string(),
-                            line: s.location().line(),
-                            column: s.location().column(),
-                        })
-                    })
-                    .collect();
-
-                path_length = path_entries.len();
-                let path_found = !path.is_empty();
-
-                Ok(TracePathOutput {
-                    source: input.source,
-                    target: input.target,
-                    path_found,
-                    path: path_entries,
-                    path_length,
-                    metadata: AnalysisMetadata {
-                        total_calls: path_length,
-                        analysis_time_ms: start.elapsed().as_millis() as u64,
-                    },
-                    all_paths: Vec::new(),
-                })
-            }
+    // The question has one owner, and the CLI asks it too: a name means
+    // the symbol that carries it — and a name that several carry is
+    // ambiguous, not a question about all of them.
+    let source = crate::application::services::analysis_service::AnalysisService::resolve_symbol(
+        &graph,
+        &input.source,
+    )
+    .map_err(|error| match error {
+        GraphQueryError::Ambiguous { name, candidates } => {
+            HandlerError::Ambiguous { name, candidates }
         }
-        (None, _) => Err(HandlerError::NotFound(format!(
-            "Source symbol '{}' not found",
-            input.source
-        ))),
-        (_, None) => Err(HandlerError::NotFound(format!(
-            "Target symbol '{}' not found",
-            input.target
-        ))),
+        GraphQueryError::NotFound { name } => {
+            HandlerError::NotFound(format!("Source symbol '{name}' not found"))
+        }
+    })?;
+    let target = crate::application::services::analysis_service::AnalysisService::resolve_symbol(
+        &graph,
+        &input.target,
+    )
+    .map_err(|error| match error {
+        GraphQueryError::Ambiguous { name, candidates } => {
+            HandlerError::Ambiguous { name, candidates }
+        }
+        GraphQueryError::NotFound { name } => {
+            HandlerError::NotFound(format!("Target symbol '{name}' not found"))
+        }
+    })?;
+
+    if input.all {
+        // Find ALL paths (BFS exhaustive)
+        let all_paths: Vec<Vec<PathEntry>> =
+            crate::application::services::analysis_service::AnalysisService::trace_paths_between(
+                &graph,
+                &source,
+                &target,
+                input.max_depth as usize,
+            )
+            .iter()
+            .map(|path| path_entries(path))
+            .collect();
+        let path_length = all_paths.len();
+
+        let path_entries = all_paths.first().cloned().unwrap_or_default();
+        let path_found = !all_paths.is_empty();
+
+        Ok(TracePathOutput {
+            source: input.source,
+            target: input.target,
+            path_found,
+            path: path_entries,
+            path_length,
+            metadata: AnalysisMetadata {
+                total_calls: path_length,
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+            all_paths,
+        })
+    } else {
+        // Find shortest path only (original behavior)
+        let path =
+            crate::application::services::analysis_service::AnalysisService::trace_path_between(
+                &graph,
+                &source,
+                &target,
+                input.max_depth as usize,
+            )
+            .unwrap_or_default();
+
+        let path_entries = path_entries(&path);
+        let path_length = path_entries.len();
+        let path_found = !path.is_empty();
+
+        Ok(TracePathOutput {
+            source: input.source,
+            target: input.target,
+            path_found,
+            path: path_entries,
+            path_length,
+            metadata: AnalysisMetadata {
+                total_calls: path_length,
+                analysis_time_ms: start.elapsed().as_millis() as u64,
+            },
+            all_paths: Vec::new(),
+        })
     }
+}
+
+/// The steps of a path, in the words this surface publishes.
+fn path_entries(path: &[crate::domain::aggregates::Symbol]) -> Vec<PathEntry> {
+    path.iter()
+        .map(|symbol| PathEntry {
+            symbol: symbol.name().to_string(),
+            file: symbol.location().file().to_string(),
+            line: symbol.location().line(),
+            column: symbol.location().column(),
+        })
+        .collect()
 }
 
 /// Handler for export_mermaid tool
@@ -2689,95 +2710,38 @@ pub async fn handle_export_mermaid(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    // Generate Mermaid flowchart
-    let mut mermaid_lines = vec!["flowchart TD".to_string()];
-    let mut node_count = 0;
-    let mut edge_count = 0;
-
-    // If a root symbol is provided, export subgraph around it
-    let symbols_to_export: Box<dyn Iterator<Item = _>> =
-        if let Some(ref root_name) = input.root_symbol {
-            if let Some(root_id) = symbol_or_ambiguity(&graph, root_name)? {
-                Box::new(std::iter::once(root_id))
-            } else {
-                return Err(HandlerError::NotFound(format!(
-                    "Root symbol '{}' not found",
-                    root_name
-                )));
+    // A root that the graph does not hold is a refusal, not a diagram
+    // that says "root symbol not found" in a comment.
+    if let Some(ref root_name) = input.root_symbol {
+        crate::application::services::analysis_service::AnalysisService::resolve_symbol(
+            &graph, root_name,
+        )
+        .map_err(|error| match error {
+            GraphQueryError::Ambiguous { name, candidates } => {
+                HandlerError::Ambiguous { name, candidates }
             }
-        } else {
-            Box::new(
-                graph
-                    .symbols()
-                    .map(|s| SymbolId::new(s.fully_qualified_name())),
-            )
-        };
-
-    // Collect symbols to process
-    let symbol_ids: Vec<SymbolId> = symbols_to_export.collect();
-
-    // Determine filter - empty string behaves same as None
-    let module_filter: Option<&str> = input.module_filter.as_deref().filter(|s| !s.is_empty());
-
-    // Add nodes (filtered by module_filter)
-    for symbol_id in &symbol_ids {
-        if let Some(symbol) = graph.get_symbol(symbol_id) {
-            // Apply module filter - skip symbols whose file path doesn't contain the filter string
-            if let Some(filter_str) = module_filter
-                && !symbol.location().file().contains(filter_str)
-            {
-                continue;
+            GraphQueryError::NotFound { name } => {
+                HandlerError::NotFound(format!("Root symbol '{name}' not found"))
             }
-            let node_id = sanitize_mermaid_id(symbol.name());
-            mermaid_lines.push(format!("    {}[{}]", node_id, symbol.name()));
-            node_count += 1;
-        }
+        })?;
     }
 
-    // Add edges (respecting max_depth if root_symbol provided)
-    if input.root_symbol.is_some() {
-        // For subgraph, traverse up to max_depth
-        let mut visited = std::collections::HashSet::new();
-        for symbol_id in &symbol_ids {
-            collect_edges_recursive(
-                &graph,
-                symbol_id,
-                &mut visited,
-                input.max_depth,
-                &mut mermaid_lines,
-                &mut edge_count,
-                module_filter,
-            );
-        }
-    } else {
-        // For full graph, add all edges (filtered by module_filter)
-        for symbol_id in &symbol_ids {
-            if let Some(symbol) = graph.get_symbol(symbol_id) {
-                // Skip source symbol if it doesn't match filter
-                if let Some(filter_str) = module_filter
-                    && !symbol.location().file().contains(filter_str)
-                {
-                    continue;
-                }
-                for (callee_id, _) in graph.callees(symbol_id) {
-                    if let Some(callee) = graph.get_symbol(&callee_id) {
-                        // Skip callee if it doesn't match module filter
-                        if let Some(filter_str) = module_filter
-                            && !callee.location().file().contains(filter_str)
-                        {
-                            continue;
-                        }
-                        let from_id = sanitize_mermaid_id(symbol.name());
-                        let to_id = sanitize_mermaid_id(callee.name());
-                        mermaid_lines.push(format!("    {} --> {}", from_id, to_id));
-                        edge_count += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    let mermaid_code = mermaid_lines.join("\n");
+    // There is one renderer and this is it: the diagram this surface
+    // publishes is the diagram the graph renders, so the CLI publishes
+    // the same document for the same project.
+    let options = crate::domain::aggregates::call_graph::MermaidOptions {
+        root: input.root_symbol.clone(),
+        max_depth: input.max_depth,
+        theme: input.theme.clone(),
+        format: input.format.clone(),
+        module_filter: input.module_filter.clone(),
+    };
+    let diagram = crate::application::services::analysis_service::AnalysisService::mermaid_diagram(
+        &graph, &options,
+    );
+    let mermaid_code = diagram.code;
+    let node_count = diagram.node_count;
+    let edge_count = diagram.edge_count;
 
     let svg = if input.format.as_deref() == Some("svg")
         || (input.format.is_none() && input.theme.is_some())
@@ -2798,6 +2762,23 @@ pub async fn handle_export_mermaid(
         },
         svg,
     })
+}
+
+/// What this surface says about a name the graph does not hold.
+fn error_text(name: &str) -> String {
+    format!("Symbol '{name}' is not in the project graph; its result is unknown.")
+}
+
+/// The refusal of a graph question, in the words this surface uses.
+impl From<GraphQueryError> for HandlerError {
+    fn from(error: GraphQueryError) -> Self {
+        match error {
+            GraphQueryError::Ambiguous { name, candidates } => {
+                HandlerError::Ambiguous { name, candidates }
+            }
+            GraphQueryError::NotFound { name } => HandlerError::NotFound(error_text(&name)),
+        }
+    }
 }
 
 /// Handler for get_hot_paths tool
@@ -2825,30 +2806,25 @@ pub async fn handle_get_hot_paths(
         ));
     }
 
-    // Calculate fan-in and fan-out for each symbol
-    let mut hot_paths: Vec<HotPathEntry> = Vec::new();
-
-    for symbol in graph.symbols() {
-        let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-        let fan_in = graph.callers(&symbol_id).len();
-        let fan_out = graph.callees(&symbol_id).len();
-
-        // Filter by minimum fan-in threshold
-        if fan_in >= input.min_fan_in {
-            hot_paths.push(HotPathEntry {
-                symbol: symbol.name().to_string(),
-                file: symbol.location().file().to_string(),
-                line: symbol.location().line(),
-                column: symbol.location().column(),
-                fan_in,
-                fan_out,
-            });
-        }
-    }
-
-    // Sort by fan-in descending and limit
-    hot_paths.sort_by(|a, b| b.fan_in.cmp(&a.fan_in));
-    hot_paths.truncate(input.limit);
+    // The question has one owner, and the CLI asks it too: the threshold
+    // is applied BEFORE the cut, so a project with twenty hot functions
+    // and one cold one publishes the twenty.
+    let hot_paths: Vec<HotPathEntry> =
+        crate::application::services::analysis_service::AnalysisService::hot_paths(
+            &graph,
+            input.limit,
+            input.min_fan_in,
+        )
+        .into_iter()
+        .map(|hp| HotPathEntry {
+            symbol: hp.name,
+            file: hp.file,
+            line: hp.line,
+            column: hp.column,
+            fan_in: hp.fan_in,
+            fan_out: hp.fan_out,
+        })
+        .collect();
 
     let total = hot_paths.len();
 
@@ -3047,32 +3023,6 @@ pub async fn handle_get_all_symbols(
 
 /// Ids of every symbol called `name`. A name the graph does not hold is
 /// `NotFound`: an empty answer would read as "no calls / no impact".
-fn present_symbol_ids(graph: &CallGraph, name: &str) -> HandlerResult<Vec<SymbolId>> {
-    let ids: Vec<SymbolId> = build_symbol_name_index(graph)
-        .get(&name.to_lowercase())
-        .map(|entries| {
-            entries
-                .iter()
-                .map(|(_, symbol)| SymbolId::new(symbol.fully_qualified_name()))
-                .collect()
-        })
-        .unwrap_or_default();
-    crate::application::analysis_basis::require_present(ids, name)
-        .map_err(|absent| HandlerError::NotFound(absent.to_string()))
-}
-
-fn build_symbol_name_index(graph: &CallGraph) -> HashMap<String, Vec<(&str, &Symbol)>> {
-    let mut index: HashMap<String, Vec<(&str, &Symbol)>> = HashMap::new();
-    for (id, symbol) in graph.symbol_ids() {
-        let name_lower = symbol.name().to_lowercase();
-        index
-            .entry(name_lower)
-            .or_default()
-            .push((id.as_str(), symbol));
-    }
-    index
-}
-
 /// The symbol a name means, or the refusal to guess between homonyms.
 ///
 /// The rule is the domain's — `resolve_target` — so the MCP surface and the
@@ -3091,136 +3041,6 @@ fn symbol_or_ambiguity(graph: &CallGraph, name: &str) -> Result<Option<SymbolId>
                 .collect(),
         }),
         TargetResolution::Unresolved(_) => Ok(None),
-    }
-}
-
-// BFS path finding algorithm
-
-fn find_path_bfs(
-    graph: &CallGraph,
-    source: &SymbolId,
-    target: &SymbolId,
-    max_depth: u8,
-) -> Vec<SymbolId> {
-    use std::collections::VecDeque;
-
-    let mut queue: VecDeque<(SymbolId, Vec<SymbolId>)> = VecDeque::new();
-    let mut visited: std::collections::HashSet<SymbolId> = std::collections::HashSet::new();
-
-    queue.push_back((source.clone(), vec![source.clone()]));
-    visited.insert(source.clone());
-
-    while let Some((current, path)) = queue.pop_front() {
-        if current == *target {
-            return path;
-        }
-
-        if path.len() >= max_depth as usize {
-            continue;
-        }
-
-        for (callee_id, _) in graph.callees(&current) {
-            if !visited.contains(&callee_id) {
-                visited.insert(callee_id.clone());
-                let mut new_path = path.clone();
-                new_path.push(callee_id.clone());
-                queue.push_back((callee_id.clone(), new_path));
-            }
-        }
-    }
-
-    Vec::new() // No path found
-}
-
-/// BFS path finding algorithm - finds ALL simple paths up to max_depth
-fn find_all_paths_bfs(
-    graph: &CallGraph,
-    source: &SymbolId,
-    target: &SymbolId,
-    max_depth: u8,
-) -> Vec<Vec<SymbolId>> {
-    use std::collections::VecDeque;
-
-    let mut all_paths: Vec<Vec<SymbolId>> = Vec::new();
-    let mut queue: VecDeque<(SymbolId, Vec<SymbolId>)> = VecDeque::new();
-    let mut visited: std::collections::HashMap<SymbolId, usize> = std::collections::HashMap::new();
-
-    queue.push_back((source.clone(), vec![source.clone()]));
-    *visited.entry(source.clone()).or_insert(0) += 1;
-
-    while let Some((current, path)) = queue.pop_front() {
-        if current == *target {
-            all_paths.push(path);
-            continue;
-        }
-
-        if path.len() >= max_depth as usize {
-            continue;
-        }
-
-        for (callee_id, _) in graph.callees(&current) {
-            let visit_count = *visited.get(&callee_id).unwrap_or(&0);
-            if visit_count < 3 {
-                *visited.entry(callee_id.clone()).or_insert(0) += 1;
-                let mut new_path = path.clone();
-                new_path.push(callee_id.clone());
-                queue.push_back((callee_id.clone(), new_path));
-            }
-        }
-    }
-
-    all_paths
-}
-
-// Collect edges recursively up to max_depth
-fn collect_edges_recursive(
-    graph: &CallGraph,
-    symbol_id: &SymbolId,
-    visited: &mut std::collections::HashSet<SymbolId>,
-    remaining_depth: u8,
-    lines: &mut Vec<String>,
-    edge_count: &mut usize,
-    module_filter: Option<&str>,
-) {
-    if remaining_depth == 0 || visited.contains(symbol_id) {
-        return;
-    }
-
-    visited.insert(symbol_id.clone());
-
-    if let Some(symbol) = graph.get_symbol(symbol_id) {
-        // Skip if symbol doesn't match module filter
-        if let Some(filter_str) = module_filter
-            && !symbol.location().file().contains(filter_str)
-        {
-            return;
-        }
-
-        for (callee_id, _) in graph.callees(symbol_id) {
-            if !visited.contains(&callee_id)
-                && let Some(callee) = graph.get_symbol(&callee_id)
-            {
-                // Skip callee if it doesn't match module filter
-                if let Some(filter_str) = module_filter
-                    && !callee.location().file().contains(filter_str)
-                {
-                    continue;
-                }
-                let from_id = sanitize_mermaid_id(symbol.name());
-                let to_id = sanitize_mermaid_id(callee.name());
-                lines.push(format!("    {} --> {}", from_id, to_id));
-                *edge_count += 1;
-                collect_edges_recursive(
-                    graph,
-                    &callee_id,
-                    visited,
-                    remaining_depth - 1,
-                    lines,
-                    edge_count,
-                    module_filter,
-                );
-            }
-        }
     }
 }
 
@@ -3894,13 +3714,6 @@ pub async fn handle_find_usages_with_context(
         usages: usage_entries,
         total,
     })
-}
-
-// Sanitize a name for use as a Mermaid node ID
-fn sanitize_mermaid_id(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect()
 }
 
 fn render_mermaid_to_svg(mermaid_code: &str, theme: &str) -> Option<String> {
