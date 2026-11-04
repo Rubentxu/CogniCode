@@ -313,8 +313,20 @@ impl TreeSitterParser {
         found
     }
 
+    /// The step a shared-library file implements: `vars/<step>.groovy` is the
+    /// step `<step>`. Only a file directly under a directory named `vars`.
+    fn shared_library_step(file_path: &str) -> Option<String> {
+        let path = std::path::Path::new(file_path);
+        if path.extension()? != "groovy" || path.parent()?.file_name()? != "vars" {
+            return None;
+        }
+        Some(path.file_stem()?.to_str()?.to_string())
+    }
+
     /// The symbol a Jenkins `stage('Label') { ... }` declares, named by its
-    /// label.
+    /// label. It is a `Declaration`, not a function: a stage is run by its
+    /// pipeline and nothing calls it, so a step that happens to share its
+    /// name (`deploy(...)` inside `stage('Deploy')`) must not resolve to it.
     ///
     /// A stage is the unit a pipeline is read by, and what it calls is what
     /// the stage does; without it every call of a pipeline belongs to the
@@ -354,7 +366,7 @@ impl TreeSitterParser {
         let start = node.start_position();
         Some(Symbol::new(
             label,
-            SymbolKind::Function,
+            SymbolKind::Declaration,
             Location::new(file_path, start.row as u32, start.column as u32),
         ))
     }
@@ -444,6 +456,21 @@ impl TreeSitterParser {
                 v if v == self.language.variable_node_type() => SymbolKind::Variable,
                 _ => SymbolKind::Unknown,
             }
+        };
+
+        // The file of a shared library's `vars/` directory names the step its
+        // top-level `call` implements: Jenkins runs `deploy(...)` by invoking
+        // `call` in `vars/deploy.groovy`.
+        let name = match Self::shared_library_step(file_path) {
+            Some(step)
+                if self.language == Language::Groovy
+                    && name == "call"
+                    && kind == SymbolKind::Function
+                    && node.parent().is_some_and(|p| p.parent().is_none()) =>
+            {
+                step
+            }
+            _ => name,
         };
 
         // A callable the grammar swallowed into the declaration before it is
@@ -1866,6 +1893,54 @@ mod csharp_groovy_reading {
             .iter()
             .map(|c| (c.source.as_str().to_string(), c.target.clone()))
             .collect()
+    }
+
+    fn symbols_of(source: &str, path: &str) -> Vec<(String, SymbolKind)> {
+        let parser = TreeSitterParser::new(Language::Groovy).unwrap();
+        parser
+            .find_all_symbols_with_path(source, path)
+            .unwrap()
+            .iter()
+            .map(|s| (s.name().to_string(), *s.kind()))
+            .collect()
+    }
+
+    #[test]
+    fn the_call_of_a_shared_library_file_is_the_step_named_by_the_file() {
+        let step = "def call(Map config = [:]) {\n    config.manifest\n}\ndef helper() {\n}\n";
+        let found = symbols_of(step, "vars/deploy.groovy");
+        assert!(
+            found.contains(&("deploy".to_string(), SymbolKind::Function)),
+            "{found:?}"
+        );
+        assert!(!found.iter().any(|(n, _)| n == "call"), "{found:?}");
+        assert!(found.iter().any(|(n, _)| n == "helper"), "{found:?}");
+    }
+
+    #[test]
+    fn a_call_method_outside_vars_or_inside_a_class_keeps_its_name() {
+        let step = "def call(Map config = [:]) {\n}\n";
+        for path in [
+            "src/deploy.groovy",
+            "vars/nested/deploy.groovy",
+            "deploy.groovy",
+        ] {
+            let found = symbols_of(step, path);
+            assert!(found.iter().any(|(n, _)| n == "call"), "{path}: {found:?}");
+        }
+        let in_class = "class Kube {\n  def call() {\n  }\n}\n";
+        let found = symbols_of(in_class, "vars/deploy.groovy");
+        assert!(found.iter().any(|(n, _)| n == "call"), "{found:?}");
+        assert!(!found.iter().any(|(n, _)| n == "deploy"), "{found:?}");
+    }
+
+    #[test]
+    fn a_stage_is_a_declaration_that_nothing_can_call() {
+        let found = symbols_of(JENKINSFILE, "Jenkinsfile");
+        assert!(
+            found.contains(&("Deploy".to_string(), SymbolKind::Declaration)),
+            "{found:?}"
+        );
     }
 
     #[test]

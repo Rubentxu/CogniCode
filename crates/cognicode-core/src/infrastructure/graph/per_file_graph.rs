@@ -681,6 +681,10 @@ impl PerFileGraphCache {
                 Err(_) => continue,
             };
             for symbol in symbols {
+                // A declaration (a Jenkins stage) is run, never called.
+                if symbol.kind() == &crate::domain::value_objects::SymbolKind::Declaration {
+                    continue;
+                }
                 let sid = SymbolId::new(symbol.fully_qualified_name());
                 idx.insert(sid, path.to_path_buf(), symbol.name());
             }
@@ -850,6 +854,9 @@ impl PerFileGraphCache {
         // Add symbols to graph
         for symbol in symbols {
             let symbol_id = graph.add_symbol(symbol.clone());
+            if symbol.kind() == &crate::domain::value_objects::SymbolKind::Declaration {
+                continue;
+            }
             name_to_symbol
                 .entry(symbol.name().to_lowercase())
                 .or_default()
@@ -1525,41 +1532,74 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn the_callers_of_a_shared_library_step_include_the_jenkins_stage_that_runs_it() {
+    fn the_impact_of_a_shared_library_step_lists_the_pipelines_that_run_it() {
         let dir = tempfile::tempdir().unwrap();
-        let vars = dir.path().join("vars");
-        std::fs::create_dir(&vars).unwrap();
-        let step = vars.join("deploy.groovy");
-        std::fs::write(&step, "def call(Map args) {\n  echo args.manifest\n}\n").unwrap();
-        let pipeline = dir.path().join("Jenkinsfile");
-        std::fs::write(
-            &pipeline,
-            "pipeline {\n  stages {\n    stage('Deploy') {\n      steps {\n        deploy(manifest: 'k8s/app.yaml')\n      }\n    }\n  }\n}\n",
-        )
-        .unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, body).unwrap();
+            path
+        };
+        let step = write("vars/deploy.groovy", "def call(Map config = [:]) {\n}\n");
+        let other = write("vars/notify.groovy", "def call(String text) {\n}\n");
+        let ci = write(
+            "ci/Jenkinsfile",
+            "pipeline {\n  stages {\n    stage('Deploy') {\n      steps {\n        deploy(manifest: 'a')\n        notify('x')\n      }\n    }\n  }\n}\n",
+        );
+        let release = write(
+            "release/Jenkinsfile",
+            "pipeline {\n  stages {\n    stage('Ship') {\n      steps {\n        deploy(manifest: 'b')\n      }\n    }\n  }\n}\n",
+        );
+        let unrelated = write(
+            "docs/Jenkinsfile",
+            "pipeline {\n  stages {\n    stage('Lint') {\n      steps {\n        sh 'make lint'\n      }\n    }\n  }\n}\n",
+        );
 
-        let graph = PerFileGraphCache::new().merge(&[step.as_path(), pipeline.as_path()]);
+        let graph = PerFileGraphCache::new().merge(&[
+            step.as_path(),
+            other.as_path(),
+            ci.as_path(),
+            release.as_path(),
+            unrelated.as_path(),
+        ]);
 
-        let callee = graph
-            .find_by_name("deploy")
-            .into_iter()
-            .chain(graph.find_by_name("call"))
-            .next()
-            .expect("the step is in the graph");
-        let callee_id = graph
+        let step_id = graph
             .symbol_ids()
             .find(|(_, s)| {
-                s.name() == callee.name() && s.location().file() == callee.location().file()
+                s.name() == "deploy" && s.location().file().ends_with("vars/deploy.groovy")
             })
             .map(|(id, _)| id.clone())
-            .unwrap();
-        let callers: Vec<String> = graph
-            .callers(&callee_id)
+            .expect("the step is published under its name");
+        let mut users: Vec<String> = graph
+            .find_all_dependents(&step_id)
             .iter()
             .filter_map(|id| graph.get_symbol(id))
-            .map(|s| s.name().to_string())
+            .map(|s| {
+                format!(
+                    "{}@{}",
+                    s.name(),
+                    s.location().file().rsplit('/').nth(1).unwrap_or("")
+                )
+            })
             .collect();
-        assert_eq!(callers, vec!["Deploy".to_string()], "got {callers:?}");
+        users.sort();
+        assert_eq!(
+            users,
+            vec!["Deploy@ci".to_string(), "Ship@release".to_string()]
+        );
+
+        // A stage is never the target of a call: `deploy(...)` inside the
+        // stage `Deploy` is the step, not a call from the stage to itself.
+        let stage_id = graph
+            .symbol_ids()
+            .find(|(_, s)| s.name() == "Deploy")
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        assert!(
+            graph.callers(&stage_id).is_empty(),
+            "{:?}",
+            graph.callers(&stage_id)
+        );
     }
 
     #[test]
