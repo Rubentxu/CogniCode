@@ -123,6 +123,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         "go_to_definition"
         | "hover"
         | "find_references"
+        | "rename_preview"
         | "get_implementors"
         | "get_type_references"
         | "trace_path" => ToolCapabilities {
@@ -273,6 +274,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "go_to_definition",
         "hover",
         "find_references",
+        "rename_preview",
         "get_implementors",
         "get_type_references",
         "trace_path",

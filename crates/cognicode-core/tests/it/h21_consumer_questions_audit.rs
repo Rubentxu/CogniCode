@@ -95,7 +95,7 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
          a drift means the catalog the operator maintains is no longer the catalog the MCP \
          server ships"
     );
-    assert_eq!(hand_names.len(), 78, "H2.1 audit pins the 78-tool surface");
+    assert_eq!(hand_names.len(), 79, "H2.1 audit pins the 79-tool surface");
 }
 
 #[test]

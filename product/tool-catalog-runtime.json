@@ -895,6 +895,46 @@
     }
   },
   {
+    "name": "rename_preview",
+    "description": "Preview the edits an LSP rename would make, without applying them.",
+    "inputSchema": {
+      "properties": {
+        "column": {
+          "type": "integer"
+        },
+        "file_path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "new_name": {
+          "description": "Name the symbol would take. The preview never applies it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path",
+        "line",
+        "column",
+        "new_name"
+      ],
+      "type": "object"
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
     "name": "find_usages",
     "description": "Find all usages of a symbol across the project.",
     "inputSchema": {

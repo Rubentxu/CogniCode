@@ -31767,3 +31767,26 @@ simula con `Attempt::Served` porque `lsp` es un tipo concreto del Composite, no 
 inyectable; no hay versión `*_tiered` de estas operaciones, así que el tier que sirvió solo se ve
 en los contadores de `status()`; CLI y MCP siguen sin exponer las capacidades.
 **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-110: tool MCP `rename_preview` (previsualización de rename LSP, solo lectura)
+
+**Qué.** Nueva tool `rename_preview` (`file_path`, `line`, `column`, `new_name`): llama a
+`prepare_rename` y después a `rename` del proveedor y devuelve las ediciones con `provider`
+(`provider_for_tier(S2)` = `lsp`) y `precision`; nunca escribe. «Nada renombrable» es una
+respuesta (`renamable: false`, sin llamar a `rename`); un servidor ausente u operación no
+soportada es un error `Internal`, no ese estado. Operaciones de fichero del servidor no
+representadas marcan `partial: true`. La ruta se confina con `authorise_file_path`; `new_name`
+vacío es `InvalidInput`. Registro: `schemas.rs`, `lsp_handlers.rs`, `rmcp_adapter.rs`,
+`capabilities.rs`, `symbol_identity.rs`, `product/tools.json` (a mano) y
+`product/tool-catalog-runtime.json` (entrada fusionada a mano, NO capturada). El recuento
+publicado pasa de 78 a 79 (tools.json, READMEs, dos SKILL.md, pin de `h21_consumer_questions_audit`).
+
+**Verificación.** SHA base 13b5ca02. RED: los 7 tests nuevos no compilaban (faltaban handler y
+tipos); GREEN 7/7. `--lib` de `cognicode-core` 2532 OK; `--test it` 950 OK con el binario
+release de `cognicode-mcp` construido (incluye `wire_tools_list_matches_hand_authored_catalog`);
+1 fallo de infraestructura: falta el binario `cognicode` (`b3_w2_progressive_context::inspect_…`).
+`cognicode-mcp` 78 OK; `run-all-contracts.sh` rc=0; clippy `-D warnings` del crate y fmt limpios.
+**Sin cubrir:** respuesta de un servidor LSP real (NOT_RUN: el proveedor se simula); la captura
+de `tools/list` no se regeneró; CLI y call hierarchy LSP fuera de alcance (hay
+`get_call_hierarchy` por grafo: no se crea segunda fuente). **NOT_RUN:** mutantes,
+`npm test --prefix apps/explorer-ui`, gate (lote 11: 7/10 al cerrar).

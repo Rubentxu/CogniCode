@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 78,
+  "runtime_tool_count": 79,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1413,6 +1413,76 @@
       "limitations": [
         "requires build to be current",
         "may miss dynamic dispatch"
+      ]
+    },
+    {
+      "name": "rename_preview",
+      "title": "Preview the edits an LSP rename would make, without applying them",
+      "description": "Preview the edits an LSP rename would make, without applying them.",
+      "category": "navigation",
+      "authority": "read",
+      "stability": "stable",
+      "precision_floor": "lsp",
+      "input_schema": {
+        "properties": {
+          "column": {
+            "type": "integer"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          },
+          "new_name": {
+            "description": "Name the symbol would take. The preview never applies it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path",
+          "line",
+          "column",
+          "new_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 200,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      },
+      "required_args": [
+        "file_path",
+        "line",
+        "column",
+        "new_name"
+      ],
+      "follow_ups": [
+        "find_references"
+      ],
+      "limitations": [
+        "requires a language server for the file's language; without one it answers an error, not 'not renamable'",
+        "returns edits only; it never writes files",
+        "file create/rename/delete operations are not represented and mark the result partial"
       ]
     },
     {

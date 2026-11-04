@@ -164,7 +164,7 @@ pub fn precision_floor_for_tool(tool: &str) -> Precision {
         // pipeline falls through to tree-sitter and the handler must
         // demote the precision to `AstHeuristic` — never silently claim
         // LSP. This default is the documented ceiling, not a guarantee.
-        "go_to_definition" | "find_references" => Precision::Lsp,
+        "go_to_definition" | "find_references" | "rename_preview" => Precision::Lsp,
         // LSP-backed, but the result is recomputed from the project graph;
         // the precision floor stays LSP because the LSP doc-symbols op is the
         // entry point. (B3.W1 keeps the floor as the catalog declared.)
