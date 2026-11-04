@@ -74,7 +74,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATE = REPO_ROOT / "scripts" / "ci" / "verify-provenance.sh"
-PIPELINE = REPO_ROOT / "release.pipeline.kts"
 
 # `gh` de mentira. Reproduce lo medido el 2026-10-03 — exit 1 y el 404 que
 # devuelve la API cuando el repositorio no tiene atestationes.
@@ -175,6 +174,21 @@ def run_gate(
             env=env,
         )
 # --- Tests ------------------------------------------------------------------
+
+
+def _repo_scripts() -> list[Path]:
+    """Every shell script that belongs to THIS repository.
+
+    `rglob` over the repository root also walks `.claude/worktrees/`, where an
+    agent's checkout holds its own copy of every script. A copy is not a second
+    policy: it is the same file in another working tree.
+    """
+    skip = {".git", "node_modules", "target", ".claude", "leases", "staging"}
+    return [
+        path
+        for path in REPO_ROOT.rglob("*.sh")
+        if not any(part in skip for part in path.relative_to(REPO_ROOT).parts)
+    ]
 
 
 def test_the_gate_exists_and_is_executable() -> None:
@@ -301,36 +315,41 @@ def test_no_arguments_is_a_usage_error() -> None:
 # --- La forma del gate, que es donde estaba el defecto ------------------------
 
 
-def test_the_pipeline_calls_the_gate() -> None:
-    text = PIPELINE.read_text(encoding="utf-8")
-    assert "verify-provenance.sh" in text, (
-        "release.pipeline.kts debe delegar la politica en el script; la stage ya "
-        "no la implementa por su cuenta"
-    )
+def test_the_verifier_is_the_only_implementation_of_the_policy() -> None:
+    """La politica vive en el script, y en ningun otro sitio.
 
-
-def test_the_pipeline_has_no_unconditional_verification() -> None:
-    """La forma exacta del defecto: verificar sin switch."""
-    text = PIPELINE.read_text(encoding="utf-8")
-    assert "gh attestation verify" not in text, (
-        "release.pipeline.kts no debe verificar atestaciones directamente: esa "
-        "era la stage que fallaba siempre y que el header describia como "
-        "condicional"
-    )
-
-
-def test_the_policy_lives_in_exactly_one_place() -> None:
-    """Dos etapas leyendo la variable es como empezo la discrepancia.
-
-    Lo prohibido es *evaluar* la variable, no *documentarla*: el header debe
-    poder decir que `RELEASE_REQUIRE_PROVENANCE=1` endurece el gate, porque eso
-    es la politica que el script implementa. Lo que no puede volver a aparecer
-    es una expansion de shell dentro de la lane.
+    Antes de 2026-11-04 estos tres tests leian `release.pipeline.kts`: que
+    delegase en el script, que no verificase atestaciones por su cuenta, y que
+    no expandiese la variable de politica. Las lanes se retiraron, asi que las
+    tres preguntas se hacen ahora del script y del resto del arbol: el
+    verificador tiene que ser el unico que implementa la politica, y nadie mas
+    puede abrir una segunda.
     """
-    text = PIPELINE.read_text(encoding="utf-8")
-    assert "${RELEASE_REQUIRE_PROVENANCE" not in text, (
-        "la politica debe vivir solo en verify-provenance.sh; si la lane vuelve "
-        "a expandir la variable, hay dos fuentes de verdad"
+    verifier_text = GATE.read_text(encoding="utf-8")
+    assert "verify-provenance.sh" in str(GATE), "el verificador no esta donde se espera"
+
+    # Nadie mas implementa la verificacion. `gh attestation verify` en otro
+    # fichero seria una segunda implementacion con la misma palabra.
+    others = [
+        path
+        for path in _repo_scripts()
+        if path != GATE and "gh attestation verify" in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert not others, (
+        f"la verificacion de atestaciones esta implementada tambien en {others}; "
+        f"la politica tiene un solo sitio: {GATE.name}"
+    )
+
+    # Y nadie mas expande la variable de politica.
+    readers = [
+        path
+        for path in _repo_scripts()
+        if "${RELEASE_REQUIRE_PROVENANCE" in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert readers == [GATE], (
+        f"la politica se expande en {readers}; deberia expandirse solo en "
+        f"{GATE.name}. Dos fuentes de verdad son un desacuerdo esperando a "
+        f"ocurrir."
     )
 
 

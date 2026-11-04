@@ -370,10 +370,16 @@ def test_the_measurement_and_the_scanner_agree_on_the_whole_tree() -> None:
     )
 
 
-def test_the_guard_is_run_by_the_merge_authority() -> None:
-    """The merge gate has to run this contract, or it is a wish."""
-    authority = REPO_ROOT / "scripts/ci/pipeline_authority.py"
-    check(authority.is_file(), "scripts/ci/pipeline_authority.py is missing")
+def test_the_guard_is_discovered_by_the_contract_runner() -> None:
+    """The runner has to discover this contract, or it is a wish.
+
+    It used to also assert that the merge gate invoked the runner. There is no
+    merge gate any more (retired 2026-11-04), so that link of the chain is
+    gone. The link that survives is the one that catches the failure this
+    contract exists to catch: a rename or a move that takes this file out of
+    the runner's discovery glob, leaving every other assertion here passing
+    while the contract itself never runs.
+    """
     runner = REPO_ROOT / "scripts/ci/run-all-contracts.sh"
     check(runner.is_file(), "scripts/ci/run-all-contracts.sh is missing")
     if not runner.is_file():
@@ -382,7 +388,7 @@ def test_the_guard_is_run_by_the_merge_authority() -> None:
     check(
         "test_" in text and ".py" in text,
         "the contract runner does not discover python contracts by name, so "
-        "this contract would never run in the merge gate",
+        "this contract would never run",
     )
 
 

@@ -478,8 +478,8 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md).
 
 The product is in active community-productization phase. Releases are
-derived from `Cargo.toml` `[workspace.package] version` and gated by the
-tag/workspace coherence check in `release-candidate.pipeline.kts` (R8).
+derived from `Cargo.toml` `[workspace.package] version` and checked by the
+tag/workspace coherence check in `scripts/ci/release-tag-coherence.sh` (R8).
 
 ## License
 

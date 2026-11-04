@@ -7,10 +7,9 @@
 #   just build            → Build completo (server + WASM)
 #   just run              → Build y arranca el dashboard
 #   just test             → Ejecuta todos los tests
-#   just e2e              → Tests end-to-end con Playwright
 #   just doc              → Abre la documentación
-#   just fmt-check        → CI gate check: cargo fmt --all --check (M0.7)
-#   just docs-check       → CI gate check: cargo doc --no-deps (M0.8 audit)
+#   just fmt-check        → Formato: cargo fmt --all --check (M0.7)
+#   just docs-check       → Auditoría de rustdoc: cargo doc --no-deps (M0.8 audit)
 #
 # ============================================================================
 
@@ -193,25 +192,30 @@ docs-check:
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
-# Run all tests
-test: test-unit
+# Run all tests (unit + integration)
+test: test-unit test-integration
 
 # Run all unit tests
 test-unit:
     @echo "🧪 Running unit tests..."
-    cargo test --workspace --no-fail-fast
+    cargo test --workspace --lib
 
-# Guard against known-failure noise in cognicode-core lib tests.
-# Fails if a new failure appears OR a baseline failure unexpectedly passes.
-# See scripts/known_failures.yaml.
-check-known-failures:
-    @echo "🔎 Checking known-failure baseline..."
-    python3 scripts/check_known_failures.py
+# Run all integration tests (with mocks)
+test-integration:
+    @echo "🧪 Running integration tests..."
+    cargo test --workspace --tests
 
-# Regenerate the known-failure baseline after reviewing the drift.
-update-known-failures:
-    @echo "📝 Regenerating known-failure baseline..."
-    python3 scripts/check_known_failures.py --update
+# The gate: unit tests + integration tests + mutants. All three, or it is red.
+gate:
+    @echo "🛡️  The gate..."
+    bash scripts/test-gate.sh
+
+# Mutation testing only. The scope lives in scripts/test-gate.sh, and this
+# recipe calls that script rather than repeating the scope: two files naming
+# the same crates is two sources of truth, and the second one rots.
+mutants:
+    @echo "🧬 Running mutants..."
+    bash scripts/test-gate.sh --mutants
 
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
@@ -224,26 +228,6 @@ test-lifecycle:
     @echo "🧪 Running lifecycle tests..."
     cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1
 
-# Run E2E lifecycle tests (requires real install in temp HOME)
-test-lifecycle-e2e:
-    #!/usr/bin/env bash
-    set -e
-    export HOME=/tmp/cognicode-lifecycle-$$
-    mkdir -p "$HOME"
-    cargo run --release --bin cogh -- init
-    cargo run --release --bin cogh -- list
-    cargo run --release --bin cogh -- current
-    cargo run --release --bin cogh -- doctor
-    rm -rf "$HOME"
-    echo "✅ Lifecycle E2E passed"
-
-# Run unit tests for a specific crate
-test-crate crate:
-    cargo test -p {{ crate }} --no-fail-fast
-
-
-
-# Start server for tests
 start-server:
     @if curl -s --max-time 2 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
         echo "🔄 Server already running"; \
@@ -253,9 +237,6 @@ start-server:
         sleep 2; \
         echo "Server started"; \
     fi
-
-
-
 
 # ─── API ───────────────────────────────────────────────────────────────────────
 
@@ -301,6 +282,10 @@ doc:
     @test -f docs/dashboard/README.md && echo "Documentation: docs/dashboard/README.md" || \
         echo "Documentation not found."
 
+# Take screenshots for documentation
+docs-screenshots:
+    @echo "📸 Taking screenshots..."
+    @echo "Screenshot capture is manual: run 'just explorer-dev' and capture with playwright-cli."
 
 # ─── Docker ────────────────────────────────────────────────────────────────────
 
@@ -326,92 +311,6 @@ commit msg:
 # Push current branch
 push:
     git push
-
-# ─── CI ───────────────────────────────────────────────────────────────────────
-#
-# CI runs locally through PipelineK, the one execution authority. There are no
-# GitHub Actions workflows left to run: they used to be executed here with `act`
-# plus podman, which meant the repository shipped a second orchestrator whose
-# behaviour was a container image's behaviour rather than the machine's. See
-# `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
-#
-# Requirements:
-#   - pipelinek on PATH (asdf; `command -v pipelinek` if a lane and a validation
-#     ever disagree, the cause is a version mismatch and not the script)
-#   - podman rootless, for the sandbox stages in `certification.pipeline.kts`
-#
-# Each recipe names one lane. There is no "run everything" recipe on purpose:
-# `ci-local` used to fire two `act` invocations, and the second one's failures
-# were the first one's noise. Which lane you want is a decision worth making
-# explicitly.
-
-# T6 — fix(*) commits must include a regression test
-ci-t6:
-    @echo "🛡️  T6 regression test check..."
-    @test -x scripts/ci/check_regression_test.sh || chmod +x scripts/ci/check_regression_test.sh
-    pipelinek run --db .pipelinek/ci-t6.db certification.pipeline.kts
-
-# Validate the lanes without running them. This is what `act -n` was for, and
-# unlike it this compiles the actual script, so a stage that cannot be built is
-# caught here rather than at the first expensive command.
-ci-validate:
-    @echo "🛡️  Validating every lane..."
-    @for lane in *.pipeline.kts; do echo "==> $$lane"; pipelinek validate $$lane || exit 1; done
-
-# The gate a change must pass to merge.
-ci-merge-gate:
-    @echo "🛡️  merge-gate lane..."
-    pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts
-
-# The full matrix: cross-platform builds, adversarial corpora, musl, coverage.
-ci-integration:
-    @echo "🛡️  integration lane (expensive)..."
-    pipelinek run --db .pipelinek/integration.db integration.pipeline.kts
-
-# Everything the merge gate and the integration lane run, in that order.
-ci-local: ci-merge-gate ci-integration
-    @echo "✅  change-fast and integration lanes green"
-
-# T7 — regenerate the per-scenario flaky log (sandbox/results/flaky_scenarios.{md,json})
-scorecard-stability window_days="30":
-    @echo "📊 T7 flaky-scenarios log (rolling window: {{window_days}} days)..."
-    python3 sandbox/scripts/build_flaky_log.py --window-days {{window_days}}
-    @echo "==> Inspect: sandbox/results/flaky_scenarios.md"
-    @grep -E "Total scenarios|Passing|Failing|Quarantined" sandbox/results/flaky_scenarios.md | head -5
-
-# T7 nightly cadence — regenerate the log, archive snapshot, score the gates
-scorecard-nightly:
-    @echo "📊 T7 nightly (log + archive + G6/G7 alert)..."
-    python3 sandbox/scripts/build_flaky_log.py --window-days 30 --archive
-    @echo "==> Running G6 (per-tool CV < 10%)..."
-    @test -f sandbox/results/stability.json || { echo "ERROR: sandbox/results/stability.json missing"; exit 1; }
-    python3 -c "import json; d=json.load(open('sandbox/results/stability.json')); cvs=[f.get('mean_cv') for f in d.get('families_runtorun',d.get('families',{})).values() if f.get('mean_cv') is not None]; max_cv=max(cvs) if cvs else 0; print(f'G6 max family CV = {max_cv*100:.2f}% (budget <10%)'); import sys; sys.exit(1 if max_cv>=0.10 else 0)"
-    @echo "==> Inspect: sandbox/results/flaky_scenarios.md"
-    @grep -E "Total scenarios|Passing|Failing|Quarantined" sandbox/results/flaky_scenarios.md | head -5
-
-# E31-G — 3-consecutive-scorecard-runs counter (per ADR-031 §3)
-scorecard-streak runs="sandbox/results/ci_smoke,sandbox/results/quality,sandbox/results/full_run":
-    @echo "📈 E31-G scorecard streak — fresh run + counter update..."
-    @python3 sandbox/scripts/release_scorecard.py \
-        --runs "{{runs}}" \
-        --stability sandbox/results/stability.json \
-        --coverage-matrix sandbox/reports/coverage_matrix.yaml \
-        --output sandbox/results/scorecard_run
-    @python3 sandbox/scripts/scorecard_streak.py \
-        --record sandbox/results/scorecard_run.json \
-        --purpose nightly || true
-    @echo "==> Current streak:"
-    @python3 -c "import json; d=json.load(open('sandbox/results/scorecard_streak.json')); print(f'  {d[\"current_streak\"]}/{d[\"goal\"]} ({d[\"verdict\"]})')"
-
-# E31-G status — show current streak state
-scorecard-streak-status:
-    @test -f sandbox/results/scorecard_streak.json || { echo "No streak recorded yet. Run: just scorecard-streak"; exit 0; }
-    @echo "==> Current streak:"
-    @python3 -c "import json; d=json.load(open('sandbox/results/scorecard_streak.json')); print(f'  {d[\"current_streak\"]}/{d[\"goal\"]} ({d[\"verdict\"]})'); h=d.get('history',[]); print(f'  Last {min(5,len(h))} of {len(h)} runs:'); [print(f'    {x[\"at\"][:19]}  {x[\"purpose\"]:15s}  {x[\"verdict\"]:6s}  @{x[\"streak_after\"]}') for x in h[-5:]]"
-
-# E31 audit — verify E31 program deliverables + tag chain integrity
-post-e31-audit:
-    @bash sandbox/scripts/post_e31_audit.sh
 
 # ─── Utils ─────────────────────────────────────────────────────────────────────
 
@@ -535,31 +434,12 @@ explorer-test:
     @echo "🧪 Running Explorer UI tests..."
     cd {{ EXPLORER_UI_DIR }} && npm test
 
-# Run Explorer E2E tests
-explorer-e2e:
-    @echo "🎭 Running Explorer E2E tests..."
-    cd {{ EXPLORER_UI_DIR }} && npm run test:e2e
-
-# Run Explorer E2E N times with flakiness report (default: 3 repeats)
-# Usage: just explorer-e2e-stability 3
-explorer-e2e-stability repeat="3":
-    @echo "🔁 Explorer E2E stability run ({{ repeat }} repeats)..."
-    bash {{ EXPLORER_UI_DIR }}/scripts/run_e2e_campaign.sh {{ repeat }}
-
-# Generate HTML report from the latest Explorer E2E campaign
-# Usage: just explorer-e2e-report [/path/to/output.html]
-explorer-e2e-report output="{{ EXPLORER_UI_DIR }}/e2e-runs/latest/report.html":
-    @echo "📊 Generating Explorer E2E HTML report..."
-    python3 {{ EXPLORER_UI_DIR }}/scripts/generate_e2e_report.py --output {{ output }}
-    @echo "✅ Report: {{ output }}"
-
-# Run Explorer lint
 explorer-lint:
     @echo "🔍 Linting Explorer UI..."
     cd {{ EXPLORER_UI_DIR }} && npm run lint
 
-# Explorer: run all checks (lint + unit + e2e)
-explorer-check: explorer-lint explorer-test explorer-e2e
+# Explorer: run all checks (lint + unit)
+explorer-check: explorer-lint explorer-test
 
 # Explorer: capture screenshots for docs
 explorer-screenshots:

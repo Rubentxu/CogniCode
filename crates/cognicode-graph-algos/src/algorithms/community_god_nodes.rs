@@ -113,4 +113,85 @@ mod tests {
         let r2 = community_god_nodes(&communities, &scores, 0.0);
         assert_eq!(r1, r2);
     }
+
+    /// The threshold index is `len * percentile` into the ASCENDING-sorted
+    /// community scores. A mid percentile must land in the MIDDLE of the
+    /// community, not at the top: with 10 nodes and p = 0.5 the index is 5,
+    /// so the threshold is the 6th-lowest score and the top 5 nodes qualify.
+    ///
+    /// A `+`/`/` instead of `*` computes a different index (10 for `+`,
+    /// 20 for `/`), both clamped to the last element, which would collapse
+    /// the result to the single highest-scoring node. The assertion pins the
+    /// exact members, so it fails on both mutations.
+    #[test]
+    fn mid_percentile_selects_the_threshold_at_that_index_of_the_community() {
+        // Node i has score i+1, so the ascending order is the node order.
+        let community: Vec<usize> = (0..10).collect();
+        let scores = score_map(&[
+            (0, 1.0),
+            (1, 2.0),
+            (2, 3.0),
+            (3, 4.0),
+            (4, 5.0),
+            (5, 6.0),
+            (6, 7.0),
+            (7, 8.0),
+            (8, 9.0),
+            (9, 10.0),
+        ]);
+
+        let result = community_god_nodes(&[community], &scores, 0.5);
+
+        // len * 0.5 = 5 -> threshold = community_scores[5].1 = 6.0.
+        // Every node whose score is >= 6.0 qualifies: nodes 5..=9.
+        assert_eq!(
+            result,
+            vec![(9, 10.0), (8, 9.0), (7, 8.0), (6, 7.0), (5, 6.0)]
+        );
+    }
+
+    /// The threshold is computed PER COMMUNITY, with each community's own
+    /// length. Two communities of different sizes at the same percentile must
+    /// select different slices: 10 nodes at p = 0.5 keep the top 5, while
+    /// 4 nodes at p = 0.5 keep the top 2.
+    #[test]
+    fn threshold_is_computed_per_community_with_its_own_length() {
+        let big: Vec<usize> = (0..10).collect();
+        let small: Vec<usize> = (10..14).collect();
+        let mut pairs: Vec<(usize, f64)> = (0..10).map(|i| (i, (i + 1) as f64)).collect();
+        pairs.extend((10..14).map(|i| (i, (i + 1) as f64)));
+        let scores = score_map(&pairs);
+
+        let result = community_god_nodes(&[big, small], &scores, 0.5);
+
+        // Big community: index 5 -> threshold 6.0 -> nodes 5..=9.
+        // Small community: index 2 -> threshold 13.0 -> nodes 12..=13.
+        // The global result is sorted by score descending.
+        assert_eq!(
+            result,
+            vec![
+                (13, 14.0),
+                (12, 13.0),
+                (9, 10.0),
+                (8, 9.0),
+                (7, 8.0),
+                (6, 7.0),
+                (5, 6.0),
+            ]
+        );
+    }
+
+    /// p = 0.0 puts the threshold index at 0, i.e. the LOWEST score of the
+    /// community, so every node qualifies. `len + 0` and `len / 0` would both
+    /// clamp to the last element and return only the highest-scoring node.
+    #[test]
+    fn zero_percentile_keeps_the_whole_community() {
+        let community: Vec<usize> = (0..4).collect();
+        let scores = score_map(&[(0, 4.0), (1, 3.0), (2, 2.0), (3, 1.0)]);
+
+        let result = community_god_nodes(&[community], &scores, 0.0);
+
+        // Index 0 -> threshold = 1.0 (the lowest score) -> all four nodes.
+        assert_eq!(result, vec![(0, 4.0), (1, 3.0), (2, 2.0), (3, 1.0)]);
+    }
 }

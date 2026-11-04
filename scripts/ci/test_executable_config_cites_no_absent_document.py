@@ -3,22 +3,27 @@
 
 ## El hueco
 
-La poda documental se llevó `docs/inventory/`. Lo que dejó detrás son
-configuraciones ejecutables que apuntan allí:
+La poda documental se llevó `docs/inventory/`. Lo que dejó detrás eran
+configuraciones ejecutables que apuntaban allí:
 
-  - `apps/explorer-ui/playwright.config.ts` declara
+  - `apps/explorer-ui/playwright.config.ts` declaraba
     `coverageMatrix: "docs/inventory/e17-coverage-matrix.md"`;
-  - `apps/explorer-ui/scripts/coverage-matrix.ts` dice producir ese mismo
-    fichero, y lo escribe con `writeFileSync` en un directorio que ya no
+  - `apps/explorer-ui/scripts/coverage-matrix.ts` decía producir ese mismo
+    fichero, y lo escribía con `writeFileSync` en un directorio que ya no
     existe;
-  - dos specs de `apps/explorer-ui/e2e/` citan
+  - dos specs de `apps/explorer-ui/e2e/` citaban
     `docs/inventory/e17-deferred-bugs.md`.
 
-El daño no es que el documento falte. El daño es que una configuración que
-apunta a un documento ausente describe mal lo que ejecuta: el generador
-levanta, recorre el árbol, y falla al escribir en un directorio que no está.
-El fallo aparece tarde y habla de permisos o de rutas, no del documento que
-faltaba.
+Las tres se retiraron el 2026-11-04, con la suite de navegador y su
+configuración. Los globs de `CONFIG_GLOBS` siguen nombrándolas: un glob que
+no casa ningún fichero no falla, y un fichero que vuelve tiene que volver
+sometido a la misma regla.
+
+El daño que este contrato evita no es que el documento falte. El daño es que
+una configuración que apunta a un documento ausente describe mal lo que
+ejecuta: el generador levanta, recorre el árbol, y falla al escribir en un
+directorio que no está. El fallo aparece tarde y habla de permisos o de
+rutas, no del documento que faltaba.
 
 ## Lo que se comprueba
 

@@ -22,13 +22,15 @@
 //! retired names would be wrong the day the next journal entry
 //! is written.
 //!
-//! The test scans ONLY the active pipeline kts. A `cargo test`
-//! invocation whose argument includes a retired basename is the
-//! failure mode the cleanup was designed to prevent; comment-only
-//! references like `// (was core_gate_coverage_contract::...; contract
-//! retired 2026-10-18)` are the right shape and are skipped.
+//! The test checks the two ends of the poda: the retired paths are gone
+//! and the protected paths are still on disk. The third check it used to
+//! have — that no active scope invoked a retired test — went with the
+//! scopes on 2026-11-04: with no pipeline kts left, there is no active
+//! scope to scan. The guarantee it protected (a retired test that nothing
+//! runs) is now covered where the taxonomy lives, in
+//! `crates/cognicode-cli/tests/it/test_taxonomy_contract.rs`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const RETIRED: &[&str] = &[
     "crates/cognicode-cli/tests/t1_5_3d_index_presenter_snapshot.rs",
@@ -62,15 +64,6 @@ const PROTECTED: &[&str] = &[
     "crates/cognicode-mcp/tests/a009_agent_safe_profile.rs",
     "crates/cognicode-mcp/tests/a010_tool_authority_audit.rs",
     "crates/cognicode-mcp/tests/prf_h06_adversarial_e2e.rs",
-];
-
-const ACTIVE_SCOPES: &[&str] = &[
-    "merge-gate.pipeline.kts",
-    "product-fast.pipeline.kts",
-    "integration.pipeline.kts",
-    "release-candidate.pipeline.kts",
-    "release.pipeline.kts",
-    "certification.pipeline.kts",
 ];
 
 /// Workspace root from a test crate manifest. cargo runs integration
@@ -138,66 +131,5 @@ fn protected_test_paths_are_still_on_disk() {
             "manifest KEEP set path missing: {rel} (expected at {})",
             path.display()
         );
-    }
-}
-
-// ===========================================================================
-// Test 3 — no active pipeline invokes a retired test
-// ===========================================================================
-
-/// Active scopes (PipelineK kts) MUST NOT contain a `cargo test`
-/// invocation whose argument references a retired test basename.
-/// Comment-only references like
-/// `// (was core_gate_coverage_contract::...; contract retired ...)`
-/// are the right shape and are skipped. A line that contains
-/// `cargo test` AND a retired basename is the failure mode the
-/// c8a96e64 commit closed; the test pins that closure.
-#[test]
-fn no_active_pipeline_invokes_a_retired_test() {
-    for scope in ACTIVE_SCOPES {
-        let path = abs(scope);
-        if !path.exists() {
-            // A scope file can be added or removed by an unrelated
-            // change; the test skips silently so the suite does
-            // not become brittle to optional pipeline files.
-            continue;
-        }
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        for (line_no, line) in text.lines().enumerate() {
-            let trimmed = line.trim_start();
-            // Comment line: skip. This includes `//`, `// ...`,
-            // and the block-comment opener `/*` followed by text on
-            // the same line. We do not parse nested block comments;
-            // the pipeline kts in this repo do not nest.
-            if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") {
-                continue;
-            }
-            // The failure mode is `cargo test ... <basename>`. A
-            // line that does not call cargo test cannot invoke a
-            // retired test by definition.
-            if !line.contains("cargo test") {
-                continue;
-            }
-            for retired in RETIRED {
-                let basename = Path::new(retired)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .and_then(|s| s.strip_suffix(".rs"))
-                    .unwrap_or(retired);
-                if line.contains(basename) {
-                    panic!(
-                        "{scope}:{}: active invocation of retired test \
-                         `{basename}` (full path: {retired}). A `cargo test` \
-                         line in an active scope must not reference a \
-                         retired test; remove the invocation, or — if \
-                         the reintroduction is intentional — update the \
-                         manifest and this test in the same diff.\n\
-                         offending line: {line}",
-                        line_no + 1
-                    );
-                }
-            }
-        }
     }
 }

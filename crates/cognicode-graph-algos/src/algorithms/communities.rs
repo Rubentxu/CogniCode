@@ -193,6 +193,31 @@ mod tests {
         assert!(meta.iterations <= 100);
     }
 
+    /// A chain A→B→C: the end nodes have neighbours on one side only.
+    ///
+    /// A node's label is decided by its neighbours, in AND out. A node
+    /// with only one kind of neighbour still takes part in the
+    /// propagation, and the end nodes are exactly where that shows: A and
+    /// C end up together, B apart. A variant that skipped a node as soon
+    /// as one of its two neighbour lists was empty would put A and B
+    /// together instead — the same number of communities, a different
+    /// partition.
+    #[test]
+    fn chain_end_nodes_take_part_in_the_propagation() {
+        let in_neighbors = vec![
+            vec![],  // A is called by nobody
+            vec![0], // B is called by A
+            vec![1], // C is called by B
+        ];
+        let out_neighbors = vec![
+            vec![1], // A calls B
+            vec![2], // B calls C
+            vec![],  // C calls nobody
+        ];
+        let (result, _meta) = communities(&in_neighbors, &out_neighbors, 3, 100);
+        assert_eq!(result, vec![vec![0, 2], vec![1]]);
+    }
+
     /// Two disconnected 2-cycles: oscillates between 2 and 4 communities.
     /// With max_iter=100 (even), ends on 4 singleton communities due to
     /// label oscillation in symmetric 2-cycles (proven behavior).

@@ -28,15 +28,15 @@
 # have read as "the lanes drifted" and failed a check that had nothing to say
 # about the platforms.
 #
-# The lanes now come from `release-candidate.pipeline.kts`, through the same
+# The lanes now come from `product/platforms.json`, through the same
 # reader both product generators use, and the runner allowlist is gone: there
 # is no runner label in a PipelineK lane, so an allowlist over labels that no
 # longer exist is a list of permissions over nothing. Which runners a release
 # builds on is a provisioning question, not a coherence one.
 #
 # Two authorities remain, deliberately: the release contract says what the
-# *product* supports, and the lane says what is *built*. R9 is the check that
-# they agree, which is only meaningful while they are separate.
+# *product* supports, and the platform matrix says what is *published*. R9 is
+# the check that they agree, which is only meaningful while they are separate.
 #
 # Exit codes: 0 in sync, 1 mismatch.
 
@@ -64,14 +64,14 @@ fi
 # --- what the contract publishes ------------------------------------------------
 mapfile -t TIER1_TOKENS < <("$RELEASE_BIN" platforms | sort -u)
 
-# --- what the release lane builds ----------------------------------------------
-# `<platform-id> <target>`, from the lane's `val targets` and its `platformOf`
-# mapping, read through the shared reader rather than by a third parse. The
-# reader also refuses to answer if the two declarations disagree, which is the
-# failure this check would otherwise report as a lane mismatch with the wrong
+# --- what the product publishes ------------------------------------------------
+# `<platform-id> <target>`, from the platform matrix, read through the shared
+# reader rather than by a third parse. The reader refuses to answer if the
+# matrix declares a published platform without both names, which is the
+# failure this check would otherwise report as a mismatch with the wrong
 # target named.
 if ! LANE_PAIRS=$(python3 scripts/product/release_lane.py); then
-    echo "FAIL: could not read the release lane's platform declarations."
+    echo "FAIL: could not read the platform matrix's published platforms."
     exit 1
 fi
 mapfile -t LANE_PLATFORMS < <(printf '%s\n' "$LANE_PAIRS" | cut -f1 | sort -u)
@@ -84,7 +84,7 @@ echo
 echo "Tier-1 tokens published by the contract:"
 printf '  %s\n' "${TIER1_TOKENS[@]}"
 echo
-echo "Lanes declared in release-candidate.pipeline.kts:"
+echo "Platforms published by product/platforms.json:"
 for platform in "${LANE_PLATFORMS[@]}"; do
     printf '  %s -> %s\n' "$platform" "$("$RELEASE_BIN" platform-token --platform "$platform" 2>/dev/null || echo '?')"
 done

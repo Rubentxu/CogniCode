@@ -367,12 +367,16 @@ def test_suite_runs_without_pytest_installed() -> None:
         f"guarantee would be vacuous. stderr was: {probe.stderr.strip()}",
     )
 
-    # Second: the real suites must pass under it.
+    # Second: the real suites must pass under it. It used to name
+    # `test_select_suites.py`, which no longer exists (the CR-08 selector it
+    # covered is gone with the CI lanes). The property is about the harness,
+    # not about that one contract, so it is measured on a contract that is
+    # still here.
     proc = subprocess.run(
         [
             sys.executable,
             str(REPO_ROOT / "scripts" / "run_contract_tests.py"),
-            str(REPO_ROOT / "scripts" / "ci" / "test_select_suites.py"),
+            str(REPO_ROOT / "scripts" / "ci" / "test_no_conflict_markers.py"),
         ],
         capture_output=True,
         text=True,

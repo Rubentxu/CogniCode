@@ -57,7 +57,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GUARD = REPO_ROOT / "scripts" / "ci" / "check-cross-toolchain.sh"
-CANDIDATE = REPO_ROOT / "release-candidate.pipeline.kts"
 
 # Compilador de mentira que ACCEPTa el triple: escribe un objeto y sale 0.
 CC_OK = """#!/usr/bin/env bash
@@ -425,19 +424,25 @@ def test_the_guard_resolves_the_host_when_it_is_not_given() -> None:
     )
 
 
-def test_the_candidate_stage_actually_calls_the_guard() -> None:
-    """La guarda tiene que estar donde se anuncia, o no es una guarda."""
-    text = CANDIDATE.read_text(encoding="utf-8")
-    start = text.index('stage("toolchain-for-$target")')
-    end = text.index('stage("binaries-$target")', start)
-    body = text[start:end]
-    assert "check-cross-toolchain.sh" in body, (
-        "la stage toolchain-for-$target debe llamar a la guarda: el target "
-        "instalado por rustup no demuestra que el target compile codigo nativo"
-    )
-    assert "rustup target list --installed" in body, (
-        "la comprobacion de rustup se queda: solo comprobaba una mitad de la "
-        "precondicion, no la sustituye"
+def test_the_guard_is_where_it_is_announced() -> None:
+    """La guarda tiene que existir y ser ejecutable, o no es una guarda.
+
+    Antes de 2026-11-04 esto exigia que una stage de la lane del candidato la
+    invocara. Las lanes se retiraron; la guarda se queda, porque es lo que
+    sabe decir si un target cruzado compila codigo nativo o solo esta instalado.
+
+    Sin lane que la invoque, la guarda se usa a mano antes de una
+    compilacion cruzada, y lo que este contrato sigue exigiendo es que exista,
+    sea ejecutable, y no haya sido degradada a un aviso.
+    """
+    guard = REPO_ROOT / "scripts" / "ci" / "check-cross-toolchain.sh"
+    assert guard.is_file(), f"no existe {guard}"
+    assert os.access(guard, os.X_OK), f"{guard} no es ejecutable"
+    text = guard.read_text(encoding="utf-8")
+    assert "rustup target list --installed" in text, (
+        "la comprobacion de rustup se queda: el target instalado por rustup no "
+        "demuestra que el target compile codigo nativo, y quitarla deja la "
+        "guarda sin la mitad que si es la importante"
     )
 
 

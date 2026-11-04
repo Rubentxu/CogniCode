@@ -213,6 +213,56 @@ mod tests {
     }
 
     #[test]
+    fn build_cfg_drops_self_loop_successors() {
+        // Block 0 lists *itself* as a successor. A self-loop is not a CFG
+        // edge: the successor list of a block names *other* blocks, so
+        // `to == from` is dropped, not emitted.
+        let adj = vec![vec![0, 1], vec![2], vec![]];
+        let cfg = build_cfg(&adj, 0, &[2]);
+        let pairs: Vec<(usize, usize)> = cfg.edges.iter().map(|e| (e.from, e.to)).collect();
+        assert_eq!(pairs, vec![(0, 1), (1, 2)]);
+        assert_eq!(edge_count(&cfg), 2);
+        // The dropped self-loop leaves no trace at all: block 0 has exactly
+        // one outgoing edge, and it points forward.
+        assert_eq!(cfg.edges.iter().filter(|e| e.from == 0).count(), 1);
+    }
+
+    #[test]
+    fn build_cfg_drops_out_of_range_successors() {
+        // bb_count = 3, so successor index 3 is out of range. Malformed
+        // successors are silently dropped (see the comment in `build_cfg`),
+        // never emitted as an edge.
+        let adj = vec![vec![1, 3], vec![2], vec![]];
+        let cfg = build_cfg(&adj, 0, &[2]);
+        let pairs: Vec<(usize, usize)> = cfg.edges.iter().map(|e| (e.from, e.to)).collect();
+        assert_eq!(pairs, vec![(0, 1), (1, 2)]);
+        assert_eq!(edge_count(&cfg), 2);
+        assert!(cfg.edges.iter().all(|e| e.to < 3));
+    }
+
+    #[test]
+    fn reachable_blocks_ignores_out_of_range_successors() {
+        // n = 3, so successor 3 is out of range. Only the entry block is
+        // reachable: the malformed successor must be dropped, not followed.
+        let adj = vec![vec![3], vec![], vec![]];
+        assert_eq!(reachable_blocks(&adj, 0), 1);
+
+        // The malformed successor does not make the rest of the graph
+        // unreachable either.
+        let adj = vec![vec![1, 3], vec![2], vec![]];
+        assert_eq!(reachable_blocks(&adj, 0), 3);
+    }
+
+    #[test]
+    fn reachable_blocks_counts_a_repeated_successor_once() {
+        // Block 0 names block 1 twice. Block 1 is still one reachable
+        // block, not two: the second sighting is a visit of an already
+        // visited block and must not be counted again.
+        let adj = vec![vec![1, 1], vec![], vec![]];
+        assert_eq!(reachable_blocks(&adj, 0), 2);
+    }
+
+    #[test]
     fn edge_count_matches_dedup() {
         let (adj, entry, exits) = branch();
         let cfg = build_cfg(&adj, entry, &exits);

@@ -7,8 +7,24 @@ use serde_json::{Value, json};
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
+
+/// How long the harness waits for one line from the server before it
+/// gives up on it.
+///
+/// A round trip over a local pipe takes milliseconds. A server that never
+/// answers — because it is broken, or because a mutation made it behave
+/// differently — used to leave the test waiting forever, and a suite that
+/// waits forever is a suite that never finishes: it holds the gate, it
+/// holds every mutation run of the gate, and it hides the failure behind
+/// a timeout that says nothing about what went wrong.
+///
+/// The deadline turns "the server stopped answering" into a red test with
+/// a message that says so. It is not a wait: in a green run it is never
+/// reached.
+const RESPONSE_DEADLINE: Duration = Duration::from_secs(60);
 
 /// Resolve the absolute path to the `cognicode-mcp` binary under test.
 ///
@@ -167,11 +183,7 @@ impl McpSession {
             next_id: 1,
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat","version":"0"}}})).await?;
-        let mut line = String::new();
-        s.stdout
-            .read_line(&mut line)
-            .await
-            .map_err(|e| e.to_string())?;
+        let line = s.read_line_within("la respuesta a initialize").await?;
         if line.is_empty() {
             return Err("sin respuesta a initialize".into());
         }
@@ -189,20 +201,27 @@ impl McpSession {
         self.stdin.flush().await.map_err(|e| e.to_string())
     }
 
+    /// Read one line from the server, giving up after [`RESPONSE_DEADLINE`].
+    ///
+    /// `what` names what was being waited for, so a failure says which
+    /// round trip ran out of time instead of just "timeout".
+    async fn read_line_within(&mut self, what: &str) -> Result<String, String> {
+        let mut line = String::new();
+        let read = tokio::time::timeout(RESPONSE_DEADLINE, self.stdout.read_line(&mut line))
+            .await
+            .map_err(|_| format!("timeout esperando {what}"))?;
+        read.map_err(|e| e.to_string())?;
+        Ok(line)
+    }
+
     /// tools/call + lectura de la respuesta con el id esperado.
     pub async fn call_tool(&mut self, name: &str, args: Value) -> Result<Value, String> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}})).await?;
-        let mut resp = String::new();
         loop {
-            resp.clear();
-            let n = self
-                .stdout
-                .read_line(&mut resp)
-                .await
-                .map_err(|e| e.to_string())?;
-            if n == 0 {
+            let resp = self.read_line_within("la respuesta a tools/call").await?;
+            if resp.is_empty() {
                 return Err("server cerró stdout".into());
             }
             let m: Value = serde_json::from_str(resp.trim()).map_err(|e| e.to_string())?;
@@ -219,7 +238,10 @@ impl McpSession {
     pub async fn shutdown(mut self) {
         let _ = self.stdin.shutdown().await;
         let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
+        // The wait is bounded: a child that does not die after the kill
+        // would otherwise keep the test — and every mutation run of the
+        // test — waiting for something that is never going to happen.
+        let _ = tokio::time::timeout(RESPONSE_DEADLINE, self.child.wait()).await;
     }
 
     /// Send any JSON-RPC request and return the raw response value.
@@ -273,15 +295,9 @@ impl McpSession {
     /// Answers to other requests are read and discarded: the caller asked
     /// for one id and gets that one.
     pub async fn await_response(&mut self, id: u64) -> Result<Value, String> {
-        let mut resp = String::new();
         loop {
-            resp.clear();
-            let n = self
-                .stdout
-                .read_line(&mut resp)
-                .await
-                .map_err(|e| e.to_string())?;
-            if n == 0 {
+            let resp = self.read_line_within("la respuesta a la petición").await?;
+            if resp.is_empty() {
                 return Err("server cerró stdout".into());
             }
             let m: Value = serde_json::from_str(resp.trim()).map_err(|e| e.to_string())?;
@@ -422,11 +438,7 @@ impl McpSession {
             next_id: 1,
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"a013","version":"0"}}})).await?;
-        let mut line = String::new();
-        s.stdout
-            .read_line(&mut line)
-            .await
-            .map_err(|e| e.to_string())?;
+        let line = s.read_line_within("la respuesta a initialize").await?;
         if line.is_empty() {
             return Err("sin respuesta a initialize".into());
         }
@@ -466,7 +478,13 @@ impl McpSession {
         if !status.success() {
             return Err(format!("kill falló con {status}"));
         }
-        self.child.wait().await.map_err(|e| e.to_string())
+        // Bounded for the same reason as every other wait in this
+        // harness: a server that does not react to the signal must fail
+        // the test, not hold it open.
+        tokio::time::timeout(RESPONSE_DEADLINE, self.child.wait())
+            .await
+            .map_err(|_| "el servidor no terminó tras la señal".to_string())?
+            .map_err(|e| e.to_string())
     }
 }
 

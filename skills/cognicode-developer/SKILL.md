@@ -45,11 +45,11 @@ A change of meaningful scope is a **work unit**: one contract, one
 test that fails before and passes after, one receipt.
 
 ```text
-read the agenda → write the failing test → fix it → run the gates → write the receipt
+read the agenda → write the failing test → fix it → run the gate → write the receipt
 ```
 
 The unit's contract is stated before the code, and the receipt lands in
-`docs/roadmap/JOURNAL.md` with the SHA, the gates that ran and the
+`docs/roadmap/JOURNAL.md` with the SHA, the gate that ran and the
 measurement that closed it.
 
 For tiny fixes (typos, single-line bug fixes, dependency bumps), a
@@ -65,10 +65,13 @@ just build                          # explorer API server (default)
 just build-server                   # cogh + cognicode + cognicode-mcp only
 just build-wasm                     # explorer frontend
 
+# The gate: unit tests + integration tests + mutants. All three, or it is red.
+just gate                           # bash scripts/test-gate.sh
+
 # Test
 just test-unit                      # 178+ unit tests, no Postgres
 just test-pg                        # Postgres-backed integration tests
-just check-known-failures           # known-failure baseline; local only, not a CI gate
+just mutants                        # mutation testing, scope in .cargo/mutants.toml
 just lint                           # clippy as errors
 
 # Lifecycle

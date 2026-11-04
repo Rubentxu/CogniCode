@@ -19,6 +19,7 @@ mod mcp_reparse_tells_missing_from_unreadable;
 mod prf_f4_w3_corrupt_cache_recovery;
 mod prf_f5_w3_signal_cancel;
 mod prf_h06_adversarial_e2e;
+mod telemetry_is_opt_in;
 mod the_harness_finds_the_binary_it_tests;
 mod the_watch_endpoint_names_what_is_watched;
 mod workspace_catalogue_cannot_define_the_product;

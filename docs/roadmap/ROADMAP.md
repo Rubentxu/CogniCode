@@ -613,3 +613,135 @@ evidencia.
 | Regresión permanente | Una prueba pequeña que impide repetir un fallo importante |
 | SnapshotKey | La identidad que decide si los datos cacheados siguen siendo válidos |
 | Release | Versión publicada, con binarios descargables, íntegros y comprobados |
+
+## 12. Taxonomía de tests y gate (2026-11-04)
+
+Esta sección **sustituye** el ciclo descrito en §11 y el aparato de lanes que
+§2, §9 y §10 dan por cerrado. No reescribe su historia: esos registros
+siguen siendo lo que pasó. Lo que cambia es **qué se exige hoy**.
+
+### 12.1 Dos clases de test, y solo dos
+
+| Clase | Qué es | Dónde vive |
+|---|---|---|
+| **Unitario** | Una función o un tipo. Sin red, sin proceso, sin fichero externo. | `#[cfg(test)]` en el crate; `*.test.ts(x)` en `apps/explorer-ui/src/`. |
+| **Integración con mocks** | Varias piezas reales trabajando juntas, con los bordes (red, binario, reloj) sustituidos por dobles deterministas. | `crates/*/tests/*.rs`; `apps/explorer-ui/src/**/*.test.ts(x)` con MSW. |
+
+**No hay tercera clase.** La clase UAT se retiró antes, bajo `ADR-TH-006`; la
+suite de navegador (Playwright, `apps/explorer-ui/e2e/`) se retiró el
+2026-11-04. Con ellas se retiraron las lanes de CI (`merge-gate`,
+`product-fast`, `release-candidate`, `release`), el publicador del veredicto
+(`scripts/ci/publish-merge-gate.sh`) y el tema de contrato que exigía un
+stage por gate. Una capacidad que no se puede verificar con una de las dos
+clases **no se afirma**: se documenta como limitación conocida, o se acepta
+que no está verificada.
+
+### 12.2 El gate: tres pasos
+
+| # | Qué | Comando |
+|---|---|---|
+| 1 | Tests unitarios | `cargo test --workspace --lib` |
+| 2 | Tests de integración (con mocks) | `cargo test --workspace --tests` |
+| 3 | Mutantes | `cargo mutants` |
+
+`bash scripts/test-gate.sh` los agrupa. Los tres tienen que estar verdes. No
+hay lane detrás: la autoridad de un cambio es el gate en verde más una
+persona que lee el diff.
+
+El tercer paso es el que responde a una pregunta que los otros dos no
+responden: *¿los tests notarían si el código dejara de hacer lo que dice?*
+Un mutante es un defecto real inyectado; uno que sobrevive es un agujero en
+la suite que ninguna cantidad de tests verdes iba a revelar. Los tres pasos
+se quedan porque preguntan cosas distintas.
+
+El **alcance** de la mutación vive en `scripts/test-gate.sh`, en la línea de
+comandos de `cargo mutants`, y es explícito porque el coste es real: el
+workspace tiene 340k líneas y mutar `cognicode-core` (217k) o
+`cognicode-explorer` (65k) no termina en una vida. No está en
+`.cargo/mutants.toml` porque no puede estar: el esquema de configuración de
+`cargo-mutants` es plano y global, con `deny_unknown_fields`, y un fichero
+que abre una tabla `package` se rechaza entero en vez de ignorarse.
+
+**El alcance de hoy** es `cognicode-graph-algos` (5.6k líneas): el crate que
+sostiene los algoritmos de grafo sobre los que está construido el análisis, y
+el único donde la medición de mutación es a la vez *significativa* y
+asequible. No depende de nada del workspace: un mutante es una recompilación
+de un crate y una corrida de tests, así que el paso entero son minutos y no
+horas.
+
+Antes lo eran `cognicode-runtime` y `cognicode-mcp` (40 mutantes), y el
+cambio de alcance no es cosmético: los dos son verdes, pero **cuestan** —
+ambos se apoyan en `cognicode-core`, y el paso de mutación copia el árbol
+antes de mutar, de modo que la copia invalida la caché compartida y cada
+mutante reconstruye `cognicode-core` desde cero (~140 s) y corre la suite
+(~80 s). Eso son horas para un paso que alguien tiene que correr antes de un
+merge. El criterio del alcance no es «mutar mucho», es **mutar lo que
+importa en un tiempo que un gate pueda tener**.
+
+Lo que queda fuera, nombrado con su motivo, porque un alcance que solo dice
+qué incluye se lee como si incluyera todo lo demás:
+
+| Fuera del alcance | Motivo |
+|---|---|
+| `cognicode-core` (217k), `cognicode-explorer` (65k) | **Coste**: mutar 280k líneas no termina en una vida, y un gate que nadie ve terminar es un gate que no vigila nada. |
+| `cognicode-runtime` (1.1k), `cognicode-mcp` (874) | **Coste**: sobre `cognicode-core`, ~140 s de reconstrucción y ~80 s de test por mutante. Su agujero conocido (la telemetría opt-in) está cerrado con un test y su único mutante equivalente (el tamaño de pila de Rayon) está declarado. |
+| `cognicode-graph-wasm` (102 mutantes) | **Trabajo sin hacer**: medido el 2026-11-04, 88 sobrevivieron. |
+| `cognicode-macros` (155 mutantes) | **Trabajo sin hacer**: medido el 2026-11-04, 99 sobrevivieron. |
+| `cognicode-ladybug` (6.7k, 305 mutantes) | **Trabajo sin hacer**, sin medir todavía. |
+
+**Extender el alcance a `cognicode-graph-algos` fue el movimiento de cierre de
+esta unidad, y su coste son los tests que ahora existen.** El crate tenía
+24 agujeros reales repartidos en 12 ficheros de algoritmos: el constructor de
+grafos, el adaptador JSON, los puntos de articulación, las rutas simples, los
+puntos dominadores, la configuración de flujo de control, las comunidades, los
+nodos dios, la conductancia, el grafo de flujo de datos, la condensación y el
+conjunto de arcos de retroalimentación. Cada agujero se cerró con el test que
+faltaba —nunca cambiando la lógica de producto salvo para borrar código
+muerto de verdad— y el resultado es un crate cuya suite es verde **y** cuyo
+método de mutación no encuentra un solo agujero.
+
+Lo que la medición descubrió por el camino, y que queda escrito porque son
+los dos hallazgos que más cuestan:
+
+- **El mutante equivalente se declara, no se esconde.** El par ordenado de
+  una arista puente se guarda ordenado, así que cambiar `<` por `<=` solo
+  difiere cuando `u == v`, y en ese caso las dos escrituras producen el mismo
+  par. No hay entrada que las distinga: no es un agujero, es una propiedad
+  del código, y se declara en `.cargo/mutants.toml` con el argumento al lado.
+- **El plazo dentro del test convierte un cuelgue en un test rojo.** La regla
+  completa está en §12.4; en este crate fue lo que separó los mutantes
+  matados de los que se colgaban.
+
+### 12.3 Lo que esta sección NO reabre
+
+- **No reabre `C#` ya firmadas.** Una certificación cerrada con su SHA sigue
+  cerrada. Lo que se retiró fue el aparato que las ejecutaba, no su
+  veredicto.
+- **No reescribe el `JOURNAL`.** El `JOURNAL` es append-only: las entradas
+  que citan `merge-gate` describen lo que ese gate hacía y siguen siendo
+  ciertas como historia.
+- **No reescribe las entradas de este `ROADMAP`** que citan lanes. Son
+  igualmente historia. Lo que hace esta sección es decir cuál es el gate
+  **de hoy**, para que nadie lo lea del pasado por error.
+
+### 12.4 La regla que sostiene el gate
+
+**Un mutante que sobrevive es un agujero, no una puntuación.** Cuando
+aparece uno, lo que se arregla es el test que no lo mata. Relajar el umbral
+es esconder el agujero. Un mutante *equivalente* —uno cuyo cambio no es
+observable por ninguna entrada, porque el código que se muta no se puede
+observar— no es un agujero: es una propiedad del código, y se declara
+como tal en vez de inventarse un test que no puede existir.
+
+**Un mutante que se cuelga también es un agujero, y se cierra con un
+plazo.** `cargo-mutants` puntúa un cuelgue como *timeout*, no como mutante
+matado: si el test se queda esperando, el binario entero se queda esperando,
+y el paso entero se queda esperando. La forma de cerrarlo es que el test
+lleve su propio plazo —la llamada va en un hilo y el test falla si no
+vuelve a tiempo— para que el cuelgue del mutante se convierta en un test
+rojo. En `cognicode-graph-algos` la medición del crate entero
+(2026-11-04, `cargo mutants -j 1`, 564 mutantes, 50 min) dio 546 matados,
+9 inviables, 8 supervivientes y 1 timeout (`taint.rs:153`, `delete !` en
+`taint_forward`): un cuelgue sin plazo sigue siendo un agujero. El plazo no es una espera: el código sin
+mutar vuelve en microsegundos, y el plazo solo se alcanza cuando el código
+está roto.

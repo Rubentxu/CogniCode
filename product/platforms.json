@@ -10,7 +10,7 @@
       "name": "Linux Aarch64",
       "support_level": "experimental",
       "evidence": [
-        "Not built by release-candidate.pipeline.kts (no entry in `val targets`)",
+        "Not published by product/platforms.json (support_level is not `certified`)",
         "TF-6/TF-7 track the CI runner provisioning and the cross toolchain"
       ]
     },
@@ -20,8 +20,8 @@
       "name": "Linux X86 64",
       "support_level": "certified",
       "evidence": [
-        "Native publishable lane in release-candidate.pipeline.kts",
-        "Certified by release-candidate.pipeline.kts and published unchanged by release.pipeline.kts"
+        "Native publishable platform in product/platforms.json",
+        "Certified by product/platforms.json and published unchanged"
       ]
     },
     {
@@ -30,8 +30,8 @@
       "name": "Linux x86_64 musl",
       "support_level": "experimental",
       "evidence": [
-        "Smoke build in integration.pipeline.kts",
-        "No publishable release lane in release-candidate.pipeline.kts"
+        "Smoke build of the musl target",
+        "No publishable platform in product/platforms.json"
       ]
     },
     {
@@ -40,7 +40,7 @@
       "name": "macOS arm64",
       "support_level": "unsupported",
       "evidence": [
-        "Not built by release-candidate.pipeline.kts (no entry in `val targets`)",
+        "Not published by product/platforms.json (support_level is not `certified`)",
         "A-027 tracks macOS arm64 build/certification"
       ]
     },
@@ -50,7 +50,7 @@
       "name": "macOS x86_64",
       "support_level": "unsupported",
       "evidence": [
-        "Not built by release-candidate.pipeline.kts (no entry in `val targets`)",
+        "Not published by product/platforms.json (support_level is not `certified`)",
         "A-027 tracks macOS build/certification"
       ]
     },
@@ -60,7 +60,7 @@
       "name": "Windows x86_64",
       "support_level": "unsupported",
       "evidence": [
-        "Not built by release-candidate.pipeline.kts (no entry in `val targets`)",
+        "Not published by product/platforms.json (support_level is not `certified`)",
         "A-028 tracks Windows x64 build/certification"
       ]
     }

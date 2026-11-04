@@ -38,10 +38,9 @@ pub fn multi_source_reachability(
     sources: &[usize],
     max_depth: usize,
 ) -> Vec<usize> {
-    if sources.is_empty() || max_depth == 0 {
-        return Vec::new();
-    }
-
+    // No early return for empty `sources` or `max_depth == 0`: with no sources
+    // the queue stays empty, and with depth 0 every seed is skipped by the
+    // `depth >= max_depth` check, so both cases already yield an empty result.
     let n = out_neighbors.len();
     if n == 0 {
         return Vec::new();
@@ -132,6 +131,47 @@ mod tests {
         assert!(!result.contains(&0)); // source not included
         assert!(result.contains(&1)); // B reachable
         assert!(result.contains(&2)); // C reachable
+    }
+
+    /// Runs the function on a thread so a hanging mutant fails the test
+    /// instead of hanging the suite. Returns the result sorted.
+    fn run(out_neighbors: Vec<Vec<usize>>, sources: Vec<usize>, max_depth: usize) -> Vec<usize> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut r = multi_source_reachability(&out_neighbors, &sources, max_depth);
+            r.sort_unstable();
+            let _ = tx.send(r);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("multi_source_reachability did not finish within 5s")
+    }
+
+    /// Chain 0→1→2→3. The depth limit counts hops: depth 1 reaches only 1,
+    /// depth 2 reaches 1 and 2, depth 3 reaches all.
+    #[test]
+    fn depth_limit_counts_hops_exactly() {
+        let g = build_out_neighbors(4, &[(0, 1), (1, 2), (2, 3)]);
+        assert_eq!(run(g.clone(), vec![0], 1), vec![1]);
+        assert_eq!(run(g.clone(), vec![0], 2), vec![1, 2]);
+        assert_eq!(run(g.clone(), vec![0], 3), vec![1, 2, 3]);
+        assert_eq!(run(g, vec![0], 100), vec![1, 2, 3]);
+    }
+
+    /// A source equal to `n` or beyond it is skipped; valid sources still work.
+    #[test]
+    fn out_of_range_sources_are_skipped() {
+        let g = build_out_neighbors(3, &[(0, 1), (1, 2)]);
+        assert_eq!(run(g.clone(), vec![3], 10), Vec::<usize>::new());
+        assert_eq!(run(g.clone(), vec![7], 10), Vec::<usize>::new());
+        assert_eq!(run(g, vec![3, 0, 9], 10), vec![1, 2]);
+    }
+
+    /// Edges pointing at `n` or beyond are ignored; valid neighbours remain.
+    #[test]
+    fn out_of_range_neighbors_are_ignored() {
+        // n = 2. Node 0 → {1, 2 (== n), 9}; node 1 → {2 (== n)}.
+        let g = vec![vec![1, 2, 9], vec![2]];
+        assert_eq!(run(g, vec![0], 10), vec![1]);
     }
 
     /// Determinism: same input → same output (sorted comparison).

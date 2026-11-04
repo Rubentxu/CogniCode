@@ -44,7 +44,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECK = REPO_ROOT / "scripts" / "ci" / "check-built-binary.sh"
-CANDIDATE = REPO_ROOT / "release-candidate.pipeline.kts"
 
 
 def make_tree(directory: str, name: str = "repo") -> tuple[Path, Path, Path]:
@@ -233,22 +232,6 @@ def test_git_metadata_of_the_checkout_is_not_a_source() -> None:
         done = run_check(binary, root)
     assert done.returncode == 0, (
         f"los metadatos de git no son fuentes del binario.\n{done.stdout}{done.stderr}"
-    )
-
-
-def test_the_release_tool_stage_checks_the_tool_it_just_built() -> None:
-    """Si la stage no lo llama, la comprobacion no protege nada."""
-    text = CANDIDATE.read_text(encoding="utf-8")
-    start = text.index('stage("release-tool")')
-    nxt = text.find('stage("', start + 10)
-    body = text[start : nxt if nxt != -1 else len(text)]
-    assert "check-built-binary.sh" in body, (
-        "la stage que construye la herramienta de release tiene que comprobar "
-        "que es de este arbol"
-    )
-    assert "cognicode-release" in body, (
-        "la comprobacion tiene que mirar el binario que la stage acaba de "
-        "construir, no otro"
     )
 
 

@@ -62,7 +62,7 @@ como documento local no versionado, igual que los anteriores. El enrutado:
 | Catálogo público desactualizado | **`C44`**, cerrada el 2026-10-29 (`cf8ad557`) |
 | Acoplamiento aplicación↔infraestructura, `views.rs` (9 669 líneas), `AnalysisService` (4 517) | `C23` |
 | TOCTOU entre verificar y publicar (`file_operations.rs:1281-1287`) | declarado, sin unidad: pide una decisión de alcance |
-| Duplicidad de las specs de perspectiva de Explorer | **no se reproduce**: `perspective-toggle.spec.ts` prueba P2.1–P2.6 y `perspective-toggle-full.spec.ts` tiene un test de visibilidad y otro desactivado con `[DEBT: …]`; el caso desactivado es justamente el que la auditoría llama duplicado |
+| Duplicidad de las specs de perspectiva de Explorer | **no se reproduce**, y la clase entera se retiró el 2026-11-04: `perspective-toggle.spec.ts` probaba P2.1–P2.6 y `perspective-toggle-full.spec.ts` tenía un test de visibilidad y otro desactivado con `[DEBT: …]`; el caso desactivado era justamente el que la auditoría llamaba duplicado. La suite de navegador ya no existe, así que la duplicidad no tiene dónde reproducirse |
 | Plan de cinco fases | no entra: su bloque de mayor retorno es `C23`, que ya está en la cola |
 | Propuestas laterales A–D | `DRAFT-1` a `DRAFT-4`: son propuestas, no trabajo hasta que alguien las mida |
 
