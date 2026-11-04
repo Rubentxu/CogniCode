@@ -3,7 +3,8 @@
 //! Estado pre-B4.W5:
 //!   - Un agente que investiga una propuesta de refactor necesita
 //!     tres piezas de evidencia: las trayectorias de impacto del
-//!     simbolo candidato (B4.W1), las observaciones arquitectonicas
+//!     simbolo candidato (B4.W1, retirado por no tener llamador de
+//!     produccion en TASK-77), las observaciones arquitectonicas
 //!     sobre las capas afectadas (B4.W2), y los hallazgos de
 //!     calidad para los archivos tocados (B4.W3). Tambien necesita
 //!     saber que tools ejecutar a continuacion y cuales debe haber
