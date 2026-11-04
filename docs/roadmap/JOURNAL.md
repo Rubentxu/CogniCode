@@ -30888,3 +30888,26 @@ devuelve 3 aristas, y el mínimo es 2. El test lo documenta. Decisión del maint
 (55 s). Lib `cognicode-graph-algos`: 163 en verde; clippy `-D warnings` y fmt rc=0.
 
 **NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+
+## 2026-11-04 — TASK-106: taint sin supervivientes ni timeouts
+
+**Hueco.** `taint.rs` tenía 3 vivos en `intermediates_on_chain` (249:22 `==`→`!=`,
+255:34 `&&`→`||`, 265:43 `||`→`&&`) y un timeout en `taint_forward` (153:11 `delete !`).
+
+**Tests.** Cadena 0→1→2→3→4 con intermedios `[1,2,3]` (mata 249); un intermedio, arista
+directa y origen = destino; atajo por un nodo que no lleva el origen (resultado
+`[2,4]`, mata 265 `&&`); ciclo por el origen (265, antes colgaba); destino inalcanzable.
+Todos con plazo de 5 s (hilo + `mpsc` + `recv_timeout`).
+
+**Diagnóstico.** El timeout no lo causaba un test nuevo sino dos antiguos
+(`no_sources_means_no_paths`, `empty_inputs_yield_empty_result`) que llamaban a
+`taint_forward` sin plazo: con `delete !` el bucle no termina con la lista de trabajo
+vacía. Ahora todos pasan por el helper con plazo. Código muerto eliminado: el guardia
+`!chain.is_empty() && chain[0] == origin` (la cadena nunca está vacía y empieza por el
+origen) y el `pop` del destino (el destino se devuelve al sacarlo de la cola, nunca es
+padre). Sin equivalentes declarados.
+
+**Evidencia.** `cargo mutants -j 1`: 11 mutantes, 11 atrapados, 0 vivos, 0 timeouts
+(37 s). Lib `cognicode-graph-algos`: 170 en verde; clippy `-D warnings` y fmt rc=0.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
