@@ -31861,3 +31861,96 @@ y su `status`. No se pierde una capacidad que funcionara —el bundle era siempr
 pregunta queda sin dueño: **TASK-111**.
 
 **NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
+
+## 2026-11-04 — TASK-77: la pregunta del impacto tiene un dueño, y las copias muertas se van
+
+**Qué.** Tres superficies formulan la misma pregunta —«¿de qué depende este nombre?»— y tenían tres
+respuestas. El CLI `graph impact foo` casaba por **subcadena**, así que sobre `{foo, foo_bar,
+uses_foo, uses_bar}` contestaba por tres símbolos e incluía `uses_bar`; el MCP casaba exacto; y la
+sesión del workspace devolvía un impacto Low vacío para un nombre que el grafo no tenía. Tres
+copias, tres respuestas.
+
+`AnalysisService::impact_of` (fichero nuevo `application/services/impact_of.rs`) es ahora el dueño:
+resuelve por nombre simple o cualificado, sin distinguir mayúsculas, **exacto**; rechaza un nombre
+que el grafo no sostiene (`SymbolNotInGraph`); deriva el riesgo con `RiskLevel::from_impacted_symbols`
+y ordena la salida. Las tres superficies lo llaman. Efecto declarado: el CLI ya no imprime riesgo
+`NONE` para un símbolo sin dependientes, imprime `LOW` como el MCP, y la sesión del workspace ya no
+responde «impacto vacío» para un nombre ausente, responde `SymbolNotFound`.
+
+**AC2, medida y resuelta.** La tarea nombraba tres copias muertas. Medidas sobre el árbol de hoy:
+
+| Copia | Estado medido | Destino |
+|---|---|---|
+| `AnalysisService::analyze_impact` + `is_safe_to_change` | sin llamador de producción | **borrada** |
+| `impact::build_impact_result` + los tipos que solo él producía (`ImpactResult`, `ImpactPath`, `ImpactEdge`, `ImpactLimits`) | sin llamador de producción (su única presencia viva era su propio test de integración) | **borrados**, con el slot muerto que los llevaba en el informe de revalidación |
+| `ImpactAnalysisService` | **VIVO**: lo consume `cognicode-explorer` | **se queda**, y un test nuevo pinea que responde OTRA pregunta |
+| `ImpactAnalyzer` de dominio (con `ImpactLevel`, `ImpactReport`, `ImpactThreshold`) — una cuarta copia que la tarea no nombraba | sin llamador de producción en ninguna parte | **borrado** |
+
+`ImpactAnalysisService` no es una copia: camina una proyección, está **acotado por profundidad**,
+resuelve por `SymbolId`, y una raíz que no está devuelve vacío; el dueño no está acotado, resuelve
+por nombre y **rechaza** un nombre que el grafo no tiene. El test nuevo lo demuestra sobre el mismo
+grafo y la misma raíz. `ImpactAnalyzer` sí era una copia: `pub` de un crate interno (no hay
+distribución publicada de `cognicode-core`), con **cero** referencias en el repositorio, y con sus
+propios tests de integración como única vida —tests que se borran con ella, porque probaban la copia
+muerta y no un contrato de producto.
+
+Con la cuarta copia fuera, desaparece la divergencia de escala de riesgo que el código documentaba
+—«el MCP usa cuatro cubos y el núcleo cinco»—: el segundo modelo no lo usaba nadie. Los documentos
+que lo citaban (`RiskLevel` del DTO, el del DTO de impacto, el de seguridad, el de hallazgos, el
+handler del MCP, el extractor del assurance export) dicen ahora la verdad.
+
+**Ratchet.** `crates/cognicode-core/tests/it/one_owner_for_the_impact_question.rs` (5 tests): las
+tres superficies llaman al dueño; las copias muertas no vuelven; el escaneo busca **declaraciones**,
+no menciones —un nombre del que se habla en la prosa es un nombre del que alguien escribió, y un
+nombre declarado es un nombre que existe—; y el escaneo tiene control negativo (un nombre fantasma
+ensamblado en runtime no puede ser reportado como presente).
+
+**Verificación.** SHA base ec1e457e. RED del dueño, medido por el implementador original con el
+binario real: `graph impact foo` casaba 3 símbolos e incluía `uses_bar`. RED del ratchet, medido
+aquí revirtiendo **solo** el commit de los borrados (`git revert --no-commit 65dca47b`): el código
+muerto vuelve y el ratchet falla con «`is_safe_to_change` had no production caller and it is back
+in: ["crates/cognicode-core/src/domain/services/impact_analyzer.rs"]»; restaurado, 5/5 GREEN.
+GREEN final sobre la rama: `--lib` de `cognicode-core` 3299 OK y 2 ignorados; `--test it` 997 OK y 2
+ignorados; `cognicode-cli` 332 + 201 + 44 + 15 + 10 + 80 OK (el test nuevo de equivalencia CLI↔MCP
+2/2); `cognicode-mcp` 78 OK y 5 ignorados; `cognicode-explorer` 956 OK; clippy del workspace
+`-D warnings` (rc=0) y `cargo fmt --all --check` limpios; ratchet de tamaño de fichero PASS
+(`interface/mcp/handlers/mod.rs` 4220 → 4195); `npm test --prefix apps/explorer-ui` rc=0 (86
+ficheros, 944 tests).
+
+**Contratos: rojo heredado, no regresión.** `bash scripts/ci/run-all-contracts.sh` da rc=1 con dos
+fallos de `scripts/ci/test_roadmap_version_ratchet.py::test_current_sha_matches_head`:
+`docs/roadmap/CURRENT.md` declara el snapshot sobre `39beacb617ae`, y ese commit está **40 commits
+por detrás** de la punta de `main` (`ec1e457e`), mientras el ratchet acepta como máximo 5 commits
+de deriva. Medido con las funciones del propio contrato: con `main` como punta, base `ec1e457e`,
+distancia 40, `aceptado en main? False` —el rojo es idéntico en `main` y en esta rama, así que no lo
+causa esta unidad. La causa es de ritmo: `main` recibió 40 commits entre el 2026-11-03 y el
+2026-11-04 y el snapshot no se regeneró. Regenerar `CURRENT.md` es reescribir un documento de
+884 líneas cuyo encabezado describe el estado del árbol, no una línea de cabecera: **TASK-113**.
+
+**Aparte, en esta rama: dos rojos del explorer-ui que no eran del código que probaban.** `Shell.test.tsx`
+fallaba de forma intermitente («expected null to be truthy»): en el doble de cytoscape el campo
+`nodes` tapaba el método `nodes()`, la llamada lanzaba dentro de un efecto, React lo subía como error
+no controlado y el ErrorBoundary desmontaba el panel a mitad del test; el doble guarda la lista en
+`nodeList`/`edgeList` y expone `nodes()`/`edges()` como métodos. `GraphLanding.test.tsx` fallaba con
+«Could not create canvas of type 2d»: jsdom no implementa el canvas y cytoscape lanza al construir su
+renderer; `setup.ts` responde con un contexto 2d inerte, con el mismo patrón que los dobles de
+`matchMedia` y `ResizeObserver`. Medido: la suite completa pasa (86 ficheros, 944 tests, rc=0) tres
+veces seguidas, sin errores no controlados.
+
+**Sin cubrir.** La equivalencia probada es CLI↔MCP; la sesión del workspace está cubierta
+estructuralmente (el ratchet comprueba que llama al dueño) y no por comportamiento: construir un
+`WorkspaceSession` exige `WorkspaceCapabilities` (grafo, política de rutas, verificador, sintaxis,
+fuente de símbolos, proveedor de inteligencia, complejidad, búsqueda) y ningún test del repositorio
+construye uno, así que el mapeo `ImpactOf` → `AnalyzeImpactResult` no se ejerce de punta a punta.
+`ImpactAnalysisService` sigue respondiendo la pregunta del impacto a su manera para el explorer: las
+dos no se unifican, son preguntas distintas, y el ratchet pina la diferencia, no una fusión. El
+`ImpactDto` con su cadena de riesgo es una cuarta codificación viva del riesgo de impacto y queda
+fuera de esta unidad.
+
+**Gaps residuales enrutados.** El informe de revalidación dice que ejecutó tres comprobaciones
+(`architecture`, `quality_findings`, `impact`) y no ejecuta ninguna; `run_revalidation` no tiene
+llamador de producción. **TASK-112**. La superficie MCP sigue sin camino de respuesta para «¿por qué
+se reporta este hallazgo?». **TASK-111**. El snapshot `CURRENT.md` está 40 commits atrás y el
+contrato del ratchet lo dice. **TASK-113**.
+
+**NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
