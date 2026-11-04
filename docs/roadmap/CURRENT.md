@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-03, sobre `39beacb617ae434fac167d984b50fd5b48dfd6a7` (la
+> **Snapshot**: 2026-11-05, sobre `a88e2ca2aca3afb0321642988a6a217d51d6b0ba` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -17,13 +17,10 @@
 > realmente tiene; y el catálogo publicado dice de su runtime la versión que
 > ese runtime reporta: el `runtime_metadata` del maestro es el espejo de lo
 > que el runtime publica, y las claves que el runtime no publica siguen
-> curadas a mano; y la suite E2E de Explorer ya no duerme: la aplicación
-> publica una señal observable de que el atajo global está registrado, y las
-> specs esperan esa condición en vez de un reloj fijo; y cada caso
-> desactivado de esa suite nombra a su dueño: la marca dice la razón y el
-> identificador de la tarea que lo toma, el registro publicado dice qué carga
-> cada dueño, y un contrato pone en rojo la desactivación que se esconde
-> detrás de un alias o detrás de un dueño que nadie publica; y las relaciones
+> curadas a mano; y la suite E2E de navegador de Explorer **ya no existe**: se
+> retiró el 2026-11-04 junto con las puertas de merge y las lanes de CI
+> —medido en `67c474e2`—; lo que queda son dos clases de test y solo dos:
+> unitario, e integración con mocks (MSW); y las relaciones
 > Kotlin↔Java ya no se publican por coincidencia de nombre: un corpus
 > versionado declara los homónimos y los overloads que NO se pueden probar, y
 > un contrato comprueba que de esos nombres ambiguos no nace ninguna arista,
@@ -69,23 +66,48 @@
 > daría —`partial`, con `src/link.rs` declarado como `symlink`—, y los huecos
 > tienen un solo dueño: `SourceInventory::coverage_holes`); y el lazo de
 > feedback ya no puede dar verde sin mirar el test que se acaba de escribir:
-> el modo rápido tiene DOS caminos —`changed`, que corre la biblioteca del
-> crate y el target de integración que los paths tocan, y `fallback`, al que se
-> entra cuando el selector no clasifica el cambio—, y el segundo se saltaba
-> el primero entero, de modo que corría `cargo test --workspace --lib`, que
-> son SÓLO pruebas unitarias; `product/tools.json` está versionado y ninguna
-> regla de CR-08 lo clasifica, así que ese camino no era raro: era la norma de
-> cualquier cambio que lo tocara; ahora el `fallback` corre también el target
-> de integración que los paths tocan —y dice que no ha corrido ninguno cuando
-> no los tocan—, sin dejar de correr el subconjunto conservador;
-> y desde entonces: el carril de gate se elige por el radio del cambio y falla
-> si supera 20 minutos; la complejidad y el conteo de parámetros tienen una sola
+> el modo rápido que existía tenía DOS caminos —`changed`, que corría la
+> biblioteca del crate y el target de integración que los paths tocaban, y
+> `fallback`, al que se entraba cuando el selector no clasificaba el cambio—,
+> y el segundo se saltaba el primero entero, de modo que corría
+> `cargo test --workspace --lib`, que son SÓLO pruebas unitarias; ese modo
+> rápido **ya no existe**: se retiró con las puertas de merge, y lo que queda
+> es un gate de tres pasos —unitarios, integración con mocks y mutantes— que
+> se corre entero y no por subconjunto;
+> y desde entonces: la complejidad y el conteo de parámetros tienen una sola
 > medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
 > servidor real exige el token en `/mcp` y `/watch`;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
+
+## Qué cambió desde el snapshot anterior (`39beacb` → `a88e2ca2`)
+
+El snapshot anterior se regeneró sobre `39beacb` (2026-11-03). Entre una
+punta y otra entró **45 commits** (`git rev-list --count 39beacb..a88e2ca2`).
+Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
+en qué commit está medido.
+
+| Qué cambió | Commit | Lo que se midió |
+|---|---|---|
+| Las preguntas del grafo tienen un dueño | `4efba8d6` (TASK-78) | Los hot paths, los entry points, las leaf functions, el camino, la jerarquía y el diagrama se responden en `AnalysisService`: el CLI y el MCP dicen lo mismo del mismo proyecto. El MCP ahora **honra la `direction` y la `depth` que su propia tool declara** y se niega a contestar por un homónimo. Un solo renderizador de Mermaid, con orden determinista: dos corridas sobre el mismo proyecto publican la misma tabla. |
+| «¿De qué depende este nombre?» tiene una sola respuesta | `bf707ee9` (TASK-77) | El impacto tiene un dueño, y el CLI, el MCP y la sesión del workspace preguntan al mismo servicio. Un nombre que varios símbolos llevan es una ambigüedad que **se dice**, con sus candidatos. |
+| La revalidación dice la verdad, y el apply la publica | `f5933b4` (TASK-112) | `executed_checks` nombra solo lo que corrió —hoy nada— y el motivo queda escrito; el bloque de hallazgos distingue «se buscó y no se encontró» de «nadie miró»; y `refactor --apply` publica el informe en su salida. |
+| Los tests que comparten el árbol se turnan | `14f71609` (TASK-115) | Los tres tests del contrato de SBOM comparten el árbol del workspace, no el `HOME`; bajo nextest la anotación `#[serial]` no serializa nada, y los tests se borraban los ficheros unos a otros. El grupo `sbom-workspace` los contiene, y un contrato exige que todo módulo que escriba en el árbol tenga su grupo de un hilo. |
+| La superficie anunciada retira lo que no calcula | `ec1e457e` | Una tool que no calcula no se anuncia: anunciar sin brazo de dispatch es publicar un ghost. |
+| El LSP llega a las operaciones de edición y de jerarquía | `13b5ca02`, `c18b237a`, `e056dbc0`, `e7a89107`, `c5e3bf1a` | `rename`, `callHierarchy`, `typeHierarchy` y `prepareRename` los reenvía el `CompositeProvider`; `find_references` declara el nivel que sirvió como proveedor; `rename_preview` previsualiza sin aplicar. Con `csharp-ls`, `kotlin-lsp` y `groovy-language-server` como servidores por defecto (`8e821042`, `e22ceaf0`), el producto sirve esos lenguajes. |
+| Jenkinsfile, `pipeline.kts` y `build.gradle` se leen | `25576d45`, `2bab8222`, `3e863221`, `c7604c90`, `4d59931a` | Un stage de Jenkinsfile es un símbolo que posee sus llamadas, y `vars/<n>.groovy` es el paso `<n>`; los stages de `pipeline.kts` son símbolos y se consultan sus comandos `sh`; las tareas de `build.gradle` son símbolos de `get_file_symbols`. |
+| El constructor que Groovy se traga ya no se traga | `92de49ab`, `cb81b428` (TASK-108) | El constructor sin tipo de Groovy se leía mal; el test que lo fijaba estaba tragándose el defecto. |
+| El oro de símbolos es escrito a mano | `6940a1b0`, `7cff4373`, `c0d701f8`, `29d5264b` | `get_implementors` se fija contra goldens de herencia escritos a mano para Groovy, Kotlin y C#; `support_level` se deriva de ellos; y las aristas `Inherits` de esos tres lenguajes ya no dependen de que el LSP esté. |
+| El refactor dice la verdad en Kotlin, Groovy y C# | `fe69c420` | `rename`, `extract` y `change-signature` declaran lo que van a hacer, y lo que no pueden hacer se dice. |
+| La maquinaria de puertas y carriles se retiró | `67c474e2`, `6e4a5549` (TASK-72), `a9ba12bc` (TASK-73) | UAT, e2e de navegador, lanes de CI y puertas de merge fuera. El gate que queda son tres pasos y se corre con `cargo nextest`, una invocación por paso. Con el publicador se fue también el juicio del snapshot que precedía a la compilación (`b4b4d0e8`): hoy quien vigila el snapshot es el contrato, no el publicador. |
+| Un binario de tests de integración por crate | `b0d3926b` (TASK-71) | Los tests de integración de cada crate viven en un binario, y los que se comparten, en un módulo compartido. |
+| La ruta que se lee es la ruta que se autorizó | `51b23855`, `e7a33c2f` (TASK-61), `9a2f922b`, `6d58bb68`, `a928659e`, `c59f581c` | `hover`, `go_to_definition` y `find_references` confinan la ruta; un símbolo ausente es `NotFound` y no una respuesta vacía; y «función» tiene un solo criterio por lenguaje. |
+| La capacidad se publica con su capacidad | `24c51fe6` | Una tool sin su capacidad no se publica, y la listada sin almacén responde `gated`: anunciar una herramienta que no puede calcular es publicar un ghost. |
+| Los algoritmos del grafo se miden con mutantes | `6ebbc316` (TASK-96), `6ff7749e` (TASK-105), `49473e55` (TASK-106), `661a486c` (TASK-107) | `conductance` cuenta una arista mutua una vez; y tres algoritmos —`feedback_arc_set`, `taint` y `transitive_reduction`— quedan sin mutantes supervivientes. |
+| El gate del lote 10/10 pasó | `87b72433` | Recibo del gate en verde sobre `f5f23f14`. |
+| El gate vuelve a estar en verde | `a88e2ca2` | Los tres pasos, medidos: 4630 unitarios, 6670 de integración y 574 mutantes con 0 supervivientes. Es el primer gate en verde desde que los tests corren con nextest. |
 
 ## Release: la última publicada es la v0.101.30
 
@@ -239,6 +261,22 @@ código o de la máquina.
     se escribe en el libro mayor, porque una respuesta conservada sigue
     siendo una respuesta —un libro que sólo guarda lo nuevo se vacía en
     cada construcción y rehace el proyecto entero sin querer—.
+
+15. **El mensaje de una fusión lo compone la forja, y el juez que lo juzga
+    llega tarde.** La lección 9 dijo que el squash no pasa por los hooks; esta
+    ventana lo midió: el título del pull request se juzga antes de la fusión
+    **si la fusión la pide el publicador del gate**, y no si la pide la CLI de
+    GitHub. Medido el 2026-11-05: un squash cuya cabecera llevaba una línea de
+    crédito entró en `main` sin que nadie la juzgara, y el primer juez que la
+    vio fue el hook local, cuando el clon intentaba seguir a `main` —que es
+    decir, cuando el daño ya estaba hecho y el commit ya era la historia. El
+    arreglo no es del lado del hook: es que **la fusión se juzga antes de
+    ocurrir**, en el mismo sitio que se pide. Y el arreglo del daño ya hecho no
+    es reescribir `main` —que está protegido y no se reescribe—: es que el
+    crédito que la política prohibe tenga una casa donde sí quepa. La política
+    dice cuál: `AUTHORS.md` —que este repositorio aún no tiene— y, mientras
+    no exista, el `JOURNAL`. El mensaje del commit no es esa casa: es el sitio
+    donde el crédito no puede ir.
 
 ## Unidades abiertas
 
@@ -841,14 +879,26 @@ C2, C3 y C4 salieron en las PR #400, #401 y #402.
 
 | Gate | Comando | Cuándo |
 |---|---|---|
-| fast | `bash scripts/test-fast.sh` | durante el evolutivo, con `--filter` mientras la unidad sea una |
-| full | `bash scripts/test-full.sh` | antes de PR, antes de tag, antes de bump de SemVer |
-| merge-gate | `bash scripts/ci/publish-merge-gate.sh` | publica el veredicto que `main` exige |
+| gate | `bash scripts/test-gate.sh` | al cerrar un lote de diez tareas, y antes de pedir review |
+| contratos | `bash scripts/ci/run-all-contracts.sh` | aparte del gate: los contratos de producto (manifiestos, catálogos, esquemas) |
+| explorer-ui | `npm test --prefix apps/explorer-ui` | aparte del gate: los tests de la UI (vitest: unitarios e integración con MSW) |
 
-`full` incluye el gate de contratos. `merge-gate` corre sobre el árbol de
-trabajo, así que **no se edita código mientras corre**: el resultado
-correspondería a otro árbol. Y corre en un volumen con espacio: si los
-temporales van a `/tmp`, la cuota puede matar la batería entera.
+El gate son **tres pasos, y los tres verdes**: unitarios, integración con mocks
+y mutantes. Los corre `cargo nextest`, una invocación por paso. No hay `fast`,
+ni `full`, ni `merge-gate`: se retiraron el 2026-11-04 (`67c474e2`) junto con
+las puertas de merge, las lanes de CI y la suite E2E de navegador, porque
+medían superficies que ya no existen. Lo que queda detrás del gate es la suite
+en verde más una persona que lee el diff.
+
+Los otros dos comandos **no los corre el gate**: los contratos y la UI son
+gates aparte, y también tienen que estar verdes antes de pedir review —medido
+el 2026-11-05: el gate sobre `14f71609` salió rc=0 con los contratos en rojo,
+porque el ratchet del snapshot es un contrato y no un paso del gate—.
+
+El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
+corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
+espacio: si los temporales van a `/tmp`, la cuota puede matar la batería
+entera.
 
 ## Bloqueos abiertos
 
