@@ -109,9 +109,13 @@ def test_the_docs_lane_runs_the_tests_that_read_docs() -> None:
     check("run-all-contracts.sh" in lane, "docs-gate.pipeline.kts no ejecuta los contratos")
     check("change-class.sh" in lane, "docs-gate.pipeline.kts no comprueba por si mismo que el cambio sea docs")
     readers = READERS.read_text(encoding="utf-8")
-    for crate, test in re.findall(r'"(cognicode-[a-z-]+) ([a-z0-9_]+)"', readers):
-        check((REPO_ROOT / "crates" / crate / "tests" / f"{test}.rs").is_file(),
-              f"docs-readers.sh nombra {crate}/{test}, que no existe")
+    for crate, test, module in re.findall(r'"(cognicode-[a-z-]+) ([a-z0-9_]+)(?: ([a-z0-9_]+))?"', readers):
+        tests = REPO_ROOT / "crates" / crate / "tests"
+        path = tests / test / f"{module}.rs" if module else tests / f"{test}.rs"
+        check(path.is_file(), f"docs-readers.sh nombra {crate}/{test} {module}, que no existe")
+        if module:
+            check((tests / test / "main.rs").is_file(),
+                  f"docs-readers.sh nombra {crate}/{test}, que no es un binario consolidado")
 
 
 def test_the_status_names_the_lane() -> None:

@@ -193,6 +193,39 @@ def changed_code_files(base: str) -> list[str]:
     return sorted(names)
 
 
+def parse_renames(listing: str) -> dict[str, str]:
+    """Map each renamed or copied path to the path it came from.
+
+    `listing` is the output of `git diff --name-status -M -z`: a status token
+    followed by one path, or by two for a rename or a copy.
+    """
+    tokens = listing.split("\0")
+    origin: dict[str, str] = {}
+    index = 0
+    while index < len(tokens):
+        status = tokens[index]
+        index += 1
+        if not status:
+            continue
+        if status[0] in "RC":
+            if index + 1 < len(tokens):
+                origin[tokens[index + 1]] = tokens[index]
+            index += 2
+        else:
+            index += 1
+    return origin
+
+
+def renamed_from(base: str) -> dict[str, str]:
+    """The code files this branch moved, keyed by where they live now."""
+    listing = git("diff", "--name-status", "-M", "-z", base) or ""
+    return {
+        new: old
+        for new, old in parse_renames(listing).items()
+        if is_code_file(new) and is_code_file(old)
+    }
+
+
 def offending_lines(text: str) -> list[tuple[int, str, str]]:
     """The comment lines that carry a reference, as (line, kind, matched)."""
     found: list[tuple[int, str, str]] = []
@@ -224,20 +257,22 @@ def debt_of(text: str | None) -> int:
 
 def setup() -> None:
     """Measure the branch against its base before the checks run."""
-    global BASE, TOUCHED, HEAD_DEBT, BASE_DEBT
+    global BASE, TOUCHED, HEAD_DEBT, BASE_DEBT, MOVED
     BASE = resolve_base()
     if BASE is None:
         TOUCHED = []
         HEAD_DEBT = {}
         BASE_DEBT = {}
+        MOVED = {}
         return
     TOUCHED = changed_code_files(BASE)
     HEAD_DEBT = {
         path: debt_of(working_tree_source(path))
         for path in TOUCHED
     }
+    MOVED = renamed_from(BASE)
     BASE_DEBT = {
-        path: debt_of(source_at(BASE, path))
+        path: debt_of(source_at(BASE, MOVED.get(path, path)))
         for path in TOUCHED
     }
 
@@ -246,6 +281,7 @@ BASE: str | None = None
 TOUCHED: list[str] = []
 HEAD_DEBT: dict[str, int] = {}
 BASE_DEBT: dict[str, int] = {}
+MOVED: dict[str, str] = {}
 
 
 def test_the_base_commit_has_to_be_resolvable() -> None:
@@ -273,6 +309,15 @@ def test_the_touched_files_do_not_carry_more_debt_than_they_inherited() -> None:
         "code does; it does not cite the task, the decision, the pull request "
         "or the date. Write the explanation instead:\n%s"
         % (growth, "\n".join(added)),
+    )
+
+
+def test_a_moved_file_inherits_the_debt_it_had_where_it_came_from() -> None:
+    """Moving a file is not adding the comments it already carried."""
+    listing = "R100\0tests/a.rs\0tests/it/a.rs\0M\0src/b.rs\0A\0src/c.rs\0"
+    check(
+        parse_renames(listing) == {"tests/it/a.rs": "tests/a.rs"},
+        "a rename has to map the new path to the old one, and nothing else",
     )
 
 

@@ -79,8 +79,10 @@ pipeline {
                             cognicode-cli) features="--features ladybug" ;;
                             *) features="" ;;
                         esac
-                        targets=${'$'}(printf '%s\n' "${'$'}pairs" | awk -v c="${'$'}crate" '${'$'}1 == c { printf " --test %s", ${'$'}2 }')
-                        cargo test -p "${'$'}crate" ${'$'}features ${'$'}targets --quiet
+                        for target in ${'$'}(printf '%s\n' "${'$'}pairs" | awk -v c="${'$'}crate" '${'$'}1 == c { print ${'$'}2 }' | sort -u); do
+                            filters=${'$'}(printf '%s\n' "${'$'}pairs" | awk -v c="${'$'}crate" -v t="${'$'}target" '${'$'}1 == c && ${'$'}2 == t && ${'$'}3 != "" { printf " %s", ${'$'}3 }')
+                            cargo test -p "${'$'}crate" ${'$'}features --test "${'$'}target" --quiet -- ${'$'}filters
+                        done
                     done
                 """.trimIndent())
             }

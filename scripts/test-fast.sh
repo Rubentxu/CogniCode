@@ -252,7 +252,17 @@ touched_targets() {
     esac
     rel="${path#"${base}"/}"
     case "$rel" in
-      */*) continue ;;
+      */*/*) continue ;;
+      */*)
+        # A consolidated target: cargo names it after the directory whose
+        # main.rs is the crate root. Other directories hold shared modules.
+        [ -f "$path" ] || continue
+        [ -f "${base}/${rel%%/*}/main.rs" ] || continue
+        name="${rel%%/*}"
+        case " ${names} " in *" ${name} "*) continue ;; esac
+        names="${names}${name} "
+        continue
+        ;;
       *.rs) ;;
       *) continue ;;
     esac
