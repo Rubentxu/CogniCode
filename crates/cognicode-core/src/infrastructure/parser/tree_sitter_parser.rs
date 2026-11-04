@@ -340,26 +340,39 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
     ) -> Option<Symbol> {
-        if self.language != Language::Groovy
-            || node.kind() != "method_invocation"
-            || !self.language.is_script_file(file_path)
-        {
+        if !self.language.is_script_file(file_path) {
             return None;
         }
         let text = |n: tree_sitter::Node| source.get(n.start_byte()..n.end_byte());
-        if text(node.child_by_field_name("name")?)? != "stage" {
-            return None;
-        }
-        node.child_by_field_name("body")
-            .filter(|body| body.kind() == "closure")?;
-        let arguments = node.child_by_field_name("arguments")?;
-        let mut cursor = arguments.walk();
-        let mut named = arguments.named_children(&mut cursor);
-        let label = named.next()?;
-        if named.next().is_some() || label.kind() != "character_literal" {
-            return None;
-        }
-        let label = text(label)?.trim_matches(['\'', '"']);
+        let label = match (self.language, node.kind()) {
+            (Language::Groovy, "method_invocation") => {
+                if text(node.child_by_field_name("name")?)? != "stage" {
+                    return None;
+                }
+                node.child_by_field_name("body")
+                    .filter(|body| body.kind() == "closure")?;
+                let arguments = node.child_by_field_name("arguments")?;
+                let mut cursor = arguments.walk();
+                let mut named = arguments.named_children(&mut cursor);
+                let label = named.next()?;
+                if named.next().is_some() || label.kind() != "character_literal" {
+                    return None;
+                }
+                text(label)?.trim_matches(['\'', '"'])
+            }
+            (Language::Kotlin, "call_expression") => {
+                let (callee, suffix) = (node.child(0)?, node.child(1)?);
+                if text(callee)? != "stage" || suffix.kind() != "call_suffix" {
+                    return None;
+                }
+                let mut cursor = suffix.walk();
+                suffix
+                    .named_children(&mut cursor)
+                    .find(|c| c.kind() == "annotated_lambda")?;
+                Self::kotlin_string_argument(suffix, source)?
+            }
+            _ => return None,
+        };
         if label.is_empty() {
             return None;
         }
@@ -369,6 +382,68 @@ impl TreeSitterParser {
             SymbolKind::Declaration,
             Location::new(file_path, start.row as u32, start.column as u32),
         ))
+    }
+
+    /// The only argument of a Kotlin call suffix when it is a plain string
+    /// literal with no interpolation; `None` for any other argument shape.
+    fn kotlin_string_argument<'a>(suffix: tree_sitter::Node, source: &'a str) -> Option<&'a str> {
+        let mut cursor = suffix.walk();
+        let arguments = suffix
+            .named_children(&mut cursor)
+            .find(|c| c.kind() == "value_arguments")?;
+        let mut inner = arguments.walk();
+        let mut all = arguments.named_children(&mut inner);
+        let argument = all.next()?;
+        if all.next().is_some() || argument.named_child_count() != 1 {
+            return None;
+        }
+        let literal = argument.named_child(0)?;
+        if literal.kind() != "string_literal" || literal.named_child_count() != 1 {
+            return None;
+        }
+        let content = literal.named_child(0)?;
+        if content.kind() != "string_content" {
+            return None;
+        }
+        source.get(content.start_byte()..content.end_byte())
+    }
+
+    /// The shell commands a Kotlin pipeline script runs, as `(stage, command)`:
+    /// every `sh("...")` whose only argument is a plain string, attributed to
+    /// the innermost `stage("...") { }` that holds it. A command outside any
+    /// stage, or built by interpolation, is not listed.
+    pub fn stage_commands(
+        &self,
+        source: &str,
+        file_path: &str,
+    ) -> ParseResult<Vec<(String, String)>> {
+        let tree = self.parse_tree(source)?;
+        let mut found = Vec::new();
+        if self.language != Language::Kotlin {
+            return Ok(found);
+        }
+        let mut stack = vec![(tree.root_node(), None::<String>)];
+        while let Some((current, stage)) = stack.pop() {
+            let mut inside = stage.clone();
+            if let Some(symbol) = self.stage_symbol(current, source, file_path) {
+                inside = Some(symbol.name().to_string());
+            } else if let (Some(stage), true) = (&stage, current.kind() == "call_expression")
+                && current
+                    .child(0)
+                    .and_then(|c| source.get(c.start_byte()..c.end_byte()))
+                    == Some("sh")
+                && let Some(suffix) = current.child(1).filter(|c| c.kind() == "call_suffix")
+                && let Some(command) = Self::kotlin_string_argument(suffix, source)
+            {
+                found.push((stage.clone(), command.to_string()));
+            }
+            for i in (0..current.child_count()).rev() {
+                if let Some(child) = current.child(i) {
+                    stack.push((child, inside.clone()));
+                }
+            }
+        }
+        Ok(found)
     }
 
     /// Helper to iteratively find nodes of a specific type with file path (iterative DFS)
@@ -1984,5 +2059,78 @@ mod csharp_groovy_reading {
             .map(|s| s.name().to_string())
             .collect();
         assert_eq!(found, ["<script>"], "{found:?}");
+    }
+}
+
+#[cfg(test)]
+mod kotlin_pipeline_reading {
+    use super::*;
+
+    const KTS: &str = "stages {\n  stage(\"check\") {\n    stage(\"fmt\") {\n      sh(\"cargo fmt --check\")\n    }\n    stage(\"unit\") {\n      sh(\"cd x && cargo test -p a\")\n    }\n  }\n  stage(\"ship\") { sh(\"./publish.sh\") }\n}\n";
+
+    fn parser() -> TreeSitterParser {
+        TreeSitterParser::new(Language::Kotlin).unwrap()
+    }
+
+    #[test]
+    fn a_kotlin_pipeline_stage_is_a_symbol_named_by_its_label() {
+        let found = parser()
+            .find_all_symbols_with_path(KTS, "gate.pipeline.kts")
+            .unwrap();
+        for label in ["check", "fmt", "unit", "ship"] {
+            assert!(
+                found
+                    .iter()
+                    .any(|s| s.name() == label && *s.kind() == SymbolKind::Declaration),
+                "{label}: {:?}",
+                found.iter().map(|s| s.name()).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn a_stage_without_a_plain_label_or_a_body_is_not_a_stage_and_a_kt_file_has_none() {
+        let p = parser();
+        let odd = "stage(\"a$b\") { }\nstage(name) { }\nstage(\"x\")\nstage(\"x\", 1) { }\n";
+        let found = p.find_all_symbols_with_path(odd, "g.pipeline.kts").unwrap();
+        assert!(
+            found.iter().all(|s| *s.kind() != SymbolKind::Declaration),
+            "{found:?}"
+        );
+        let found = p.find_all_symbols_with_path(KTS, "Gate.kt").unwrap();
+        assert!(
+            found.iter().all(|s| *s.kind() != SymbolKind::Declaration),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn the_stages_that_run_cargo_test_can_be_asked_for() {
+        let commands = parser().stage_commands(KTS, "gate.pipeline.kts").unwrap();
+        assert_eq!(
+            commands,
+            vec![
+                ("fmt".to_string(), "cargo fmt --check".to_string()),
+                ("unit".to_string(), "cd x && cargo test -p a".to_string()),
+                ("ship".to_string(), "./publish.sh".to_string()),
+            ]
+        );
+        let running: Vec<_> = commands
+            .iter()
+            .filter(|(_, c)| c.contains("cargo test"))
+            .map(|(s, _)| s.as_str())
+            .collect();
+        assert_eq!(running, ["unit"]);
+    }
+
+    #[test]
+    fn a_command_outside_a_stage_or_built_by_interpolation_is_not_listed() {
+        let src = "sh(\"cargo test\")\nstage(\"a\") { sh(\"cargo $x\")\n sh(cmd) }\n";
+        assert!(
+            parser()
+                .stage_commands(src, "g.pipeline.kts")
+                .unwrap()
+                .is_empty()
+        );
     }
 }
