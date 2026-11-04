@@ -563,6 +563,48 @@ impl TreeSitterParser {
             .collect())
     }
 
+    /// The parents each declaration of a tree names: `(declaring symbol,
+    /// parent name as written, line)`.
+    ///
+    /// What counts as a parent is the walker's rule, not this method's: the
+    /// walker of the language is the one owner of that grammar knowledge,
+    /// and this traversal only places each answer on the declaration that
+    /// wrote it.
+    pub fn find_supertype_sites_in_tree(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+        walker: crate::infrastructure::parser::language_config::TypeRefWalkerFn,
+    ) -> Vec<(SymbolId, String, u32)> {
+        use crate::application::ingest::types::TypeRefContext;
+        let mut sites = Vec::new();
+        let mut stack = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            let parents: Vec<_> = walker(&node, source.as_bytes())
+                .into_iter()
+                .filter(|r| r.context == TypeRefContext::Supertype)
+                .collect();
+            let declaring = if parents.is_empty() {
+                None
+            } else {
+                self.node_to_symbol_with_path(node, source, file_path)
+            };
+            if let Some(declaring) = declaring {
+                let id = SymbolId::new(declaring.fully_qualified_name());
+                for parent in parents {
+                    sites.push((id.clone(), parent.target_name, parent.line));
+                }
+            }
+            for i in (0..node.child_count()).rev() {
+                if let Some(child) = node.child(i) {
+                    stack.push(child);
+                }
+            }
+        }
+        sites
+    }
+
     /// The calls of a tree: who writes them, what they name, and the line
     /// they are written on.
     ///

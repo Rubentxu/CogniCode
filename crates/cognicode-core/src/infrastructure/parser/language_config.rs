@@ -463,7 +463,7 @@ pub const DART_CONFIG: LanguageConfig = LanguageConfig {
 pub const GROOVY_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::Groovy,
     ts_language: || tree_sitter_groovy::LANGUAGE.into(),
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_groovy_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };
 
@@ -542,12 +542,12 @@ pub const SYSTEMVERILOG_CONFIG: LanguageConfig = LanguageConfig {
 /// fijado en el workspace, y la que expone los tipos de nodo que esta
 /// línea necesita. No declara campo `name`: de eso se ocupa `NameRule`.
 ///
-/// Sin `type_ref_walker`: Kotlin anota tipos (`val x: Int`), pero un
-/// lector de tipos propio es trabajo de su propia unidad, y esta no lo
-/// promete.
+/// El `type_ref_walker` de Kotlin solo lee los padres declarados
+/// (`class A : B()`); Kotlin anota tipos (`val x: Int`), pero un lector de
+/// anotaciones es trabajo de su propia unidad, y esta no lo promete.
 pub const KOTLIN_CONFIG: LanguageConfig = LanguageConfig {
     language: Language::Kotlin,
     ts_language: || tree_sitter_kotlin_sg::LANGUAGE.into(),
-    type_ref_walker: NO_TYPE_REFS,
+    type_ref_walker: Some(crate::infrastructure::parser::type_ref_walkers::walk_kotlin_type_refs),
     semantic_handler: NO_SEMANTIC_HANDLER,
 };

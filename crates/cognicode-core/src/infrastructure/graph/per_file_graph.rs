@@ -8,7 +8,8 @@ use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
 use crate::domain::value_objects::{
-    DependencyType, PendingReference, RejectedRelation, TargetResolution, WalkDecision,
+    DependencyType, PendingClass, PendingReference, RejectedRelation, TargetResolution,
+    WalkDecision,
 };
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
@@ -48,12 +49,13 @@ use std::sync::{Arc, RwLock};
 // =============================================================================
 
 /// Result of building a single file's call graph. The cross-file edge
-/// buffer holds `(caller_id, callee_id)` pairs whose `SymbolId`
+/// buffer holds `(source_id, target_id, kind)` triples whose `SymbolId`
 /// endpoints are not yet in `graph`; they must be reconciled into the
 /// project-level merged graph after every file's symbols are in place.
 pub type CrossFileEdge = (
     crate::domain::aggregates::call_graph::SymbolId,
     crate::domain::aggregates::call_graph::SymbolId,
+    DependencyType,
 );
 
 /// Result of building a single file's call graph.
@@ -576,10 +578,7 @@ impl PerFileGraphCache {
         // named: a relation nobody names is a relation the graph does
         // not have.
         let cross_file_relations: Vec<(SymbolId, SymbolId, DependencyType)> =
-            pending_cross_file_edges
-                .into_iter()
-                .map(|(source_id, target_id)| (source_id, target_id, DependencyType::Calls))
-                .collect();
+            pending_cross_file_edges.into_iter().collect();
         rejected.extend(crate::domain::services::attach_relations(
             |source, target, kind| merged.add_dependency(source, target, kind),
             cross_file_relations,
@@ -915,7 +914,11 @@ impl PerFileGraphCache {
                     } else {
                         // The far end lives in another file: the merged
                         // graph is the one that can hold the edge.
-                        cross_file_edges.push((site.source.clone(), callee_id));
+                        cross_file_edges.push((
+                            site.source.clone(),
+                            callee_id,
+                            DependencyType::Calls,
+                        ));
                     }
                 }
                 Err(class) => {
@@ -925,6 +928,48 @@ impl PerFileGraphCache {
                     if let Some(reference) = PendingReference::of_call(&site, class) {
                         pending.push(reference);
                     }
+                }
+            }
+        }
+
+        // The parents a declaration names. The walker of the language owns
+        // what a parent is; the resolution is the one the calls use, so a
+        // name two declarations share is a hole and not an edge.
+        if let Some(walker) = config.type_ref_walker {
+            for (source_id, parent_name, line) in
+                parser.find_supertype_sites_in_tree(&tree, &source, file_path, walker)
+            {
+                let name_lower = parent_name.to_lowercase();
+                let resolution = match global_index {
+                    Some(index) => index.resolve(&name_lower, Some(caller_path)),
+                    None => resolve_within_file(&name_lower, &name_to_symbol),
+                };
+                match resolution.outcome() {
+                    Ok(parent_id) if parent_id == source_id => {}
+                    Ok(parent_id) => {
+                        if graph.get_symbol(&parent_id).is_some() {
+                            let attached = graph.add_dependency(
+                                &source_id,
+                                &parent_id,
+                                DependencyType::Inherits,
+                            );
+                            debug_assert!(
+                                attached.is_ok(),
+                                "the file graph holds both ends of the edge: {attached:?}"
+                            );
+                        } else {
+                            cross_file_edges.push((source_id, parent_id, DependencyType::Inherits));
+                        }
+                    }
+                    Err(PendingClass::Ambiguous { candidates }) => pending.push(PendingReference {
+                        origin_file: file_path.to_string(),
+                        origin_line: Some(line),
+                        source: source_id,
+                        target: parent_name,
+                        kind: DependencyType::Inherits,
+                        class: PendingClass::Ambiguous { candidates },
+                    }),
+                    Err(PendingClass::Unresolved) => {}
                 }
             }
         }
