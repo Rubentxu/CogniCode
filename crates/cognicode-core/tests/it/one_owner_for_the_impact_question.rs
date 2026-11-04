@@ -53,13 +53,14 @@ fn dead_copies() -> Vec<String> {
         ["Impact", "Threshold"].join(""),
     ]
     .into_iter()
-    .map(String::from)
     .collect()
 }
 
 /// The root of the workspace crates.
 fn crates_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join("crates")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("crates")
 }
 
 /// Every Rust source file of the workspace crates, with its path relative to
@@ -247,7 +248,8 @@ fn the_scan_sees_the_tree_and_not_only_its_absence() {
 /// A chain of two hops: `leaf` calls `middle`, `middle` calls `target`.
 fn chain() -> (CallGraph, SymbolId) {
     let mut graph = CallGraph::new();
-    let function = |name: &str| Symbol::new(name, SymbolKind::Function, Location::new("a.rs", 1, 1));
+    let function =
+        |name: &str| Symbol::new(name, SymbolKind::Function, Location::new("a.rs", 1, 1));
 
     let target = graph.add_symbol(function("target"));
     let middle = graph.add_symbol(function("middle"));
