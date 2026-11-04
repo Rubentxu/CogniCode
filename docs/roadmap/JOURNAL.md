@@ -32115,3 +32115,72 @@ admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
 
 **NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
+
+## 2026-11-05 — TASK-115: los tests que comparten el árbol se turnan
+
+**Qué.** El gate estaba en rojo, y el rojo no era del código: el paso de integración fallaba con
+**2 de 6669**, y los dos fallos eran del mismo módulo —`prf_f6_w3_bis_sbom_contract`— con el mismo
+síntoma: «read crates/cogh-x86_64-unknown-linux-gnu.cdx.json: No such file or directory».
+
+**Por qué.** Los tres tests de ese contrato comparten estado, y el estado compartido no es el `HOME`:
+es **el árbol del workspace**. `scripts/ci/build-sboms-for-lane.sh` se ejecuta contra el workspace
+real y escribe `crates/<component>-<target>.cdx.json` dentro del árbol; cada test empieza borrando
+esos ficheros antes de volver a generarlos. Bajo `cargo test` la anotación `#[serial]` los turnaba.
+Bajo nextest cada test es su propio proceso, así que la anotación no serializa nada: los tres tests
+se borran los ficheros unos a otros, y el que encuentra su fichero ausente falla.
+
+**La atribución, medida.** El cambio a nextest es `6e4a5549` (TASK-72). El último recibo de gate en
+verde es `87b72433`, **anterior**. La carrera no la destapó el gate: la dejó de esconder cuando
+dejó de correr los tests en el mismo proceso.
+
+**La contención.** `.config/nextest.toml` ya declaraba dos grupos de un solo hilo —`http-port` y
+`cli-shared-home`— para el estado que nextest dejó de compartir. El de estos tres tests es el árbol,
+y ninguno de los dos filtros lo cubre. El grupo nuevo `sbom-workspace` (`max-threads = 1`), con el
+filtro `test(/^prf_f6_w3_bis_sbom_contract::/)`, es **la misma contención que los otros dos**: una
+tarea por grupo, y la variable compartida del grupo.
+
+**El contrato que lo vigila.** Un grupo que nadie comprueba es un grupo que desaparece la primera
+vez que alguien ordena el fichero de configuración. El contrato nuevo
+`the_tests_that_share_the_tree_take_turns` —en `crates/cognicode-cli/tests/it/test_taxonomy_contract.rs`—
+exige que todo módulo que escriba en el árbol tenga su grupo de un hilo, y lo comprueba leyendo
+`.config/nextest.toml` como texto.
+
+La detección no es «una llamada a `fs::write` junto a la palabra `crates/`». Es una resolución
+textual que sigue el camino del árbol por los nombres que atraviesa:
+
+- una ruta es **del árbol** cuando nace de `repo_root()`, y `target/` no cuenta: `target/` es de
+  cargo, no de los tests, y un test que prepara un directorio de trabajo con un nombre único ahí no
+  comparte nada con otro;
+- lo que decide es el **destino** de la escritura, no el primer argumento: `fs::copy` y `fs::rename`
+  leen del origen y escriben en el destino, así que copiar un fichero versionado fuera del árbol no
+  es estado compartido;
+- un test que **lee** un fichero del árbol no comparte nada, y uno que escribe en su directorio
+  temporal tampoco;
+- en una orden de shell, el verbo tiene que **empezar** una cadena entrecomillada: «confirm» termina
+  en «rm», y un detector que no distingue los dos señalaría a un test que solo lee.
+
+Sobre el árbol de tests completo, la detección nombra **un solo módulo**: `prf_f6_w3_bis_sbom_contract`.
+El contrato lo fija por nombre, para que una detección que dejara de ver ESA forma no se conformara
+con ver las demás.
+
+**RED medido.** Sin el grupo, la carrera vuelve: en la primera corrida de las tres, 1 de 3 tests
+falló (antes, en el gate, 2 de 3); y el contrato falla nombrando el módulo sin cobertura —«the
+tests of `prf_f6_w3_bis_sbom_contract` write into the repository tree … no group covers them».
+Con el grupo, **3/3 verdes en tres corridas seguidas**, y el contrato en verde.
+
+**Verificación.** SHA base `f5933b4`, rama `feature/task-115-sbom-se-turnan`, commit `c57d1d29`.
+`cargo nextest run --profile gate --workspace --lib`: **4630 OK**, 2 ignorados.
+`cargo nextest run --profile gate --workspace --tests`: **6670 OK**, 10 ignorados — el paso que
+estaba en rojo. `cargo clippy --workspace --all-targets -- -D warnings` rc=0 y `cargo fmt --all
+--check` limpio. `bash scripts/ci/run-all-contracts.sh`: rc=1 con **un solo** contrato en rojo, el
+ratchet de versión de `CURRENT.md`, que es el RED de TASK-113 y ya estaba rojo en `main` antes de
+esta unidad; el contrato de estándar de comentarios, que señalaba una fecha en un comentario
+nuevo, se corrigió para que la explicación no cite la fecha —la medición vive aquí, no en el
+código—.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+**NOT_RUN:** mutantes (el ámbito de mutación es `cognicode-graph-algos`, que esta unidad no toca) y
+gate completo (lote de 10 tareas).
