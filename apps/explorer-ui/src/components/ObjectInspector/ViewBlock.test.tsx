@@ -20,6 +20,8 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useReducer } from "react";
+import { http, HttpResponse } from "msw";
+import { SWRConfig } from "swr";
 
 import { ViewBlock, Blocks, ViewTabs, ObjectInspector as ObjectInspectorContainer } from "./index";
 import {
@@ -30,6 +32,7 @@ import {
   type AppState,
 } from "../../state/context";
 import { contextualViewFixture } from "../../mocks/fixtures";
+import { server } from "../../mocks/node";
 import type {
   ViewBlock as ViewBlockT,
   UnknownViewBlock,
@@ -427,9 +430,13 @@ describe("ObjectInspector — container", () => {
       : { ...initialState, ...initial };
     const [state, dispatch] = useReducer(appReducer, seeded);
     return (
-      <AppContext.Provider value={{ state, dispatch }}>
-        <ObjectInspectorContainer />
-      </AppContext.Provider>
+      // Fresh SWR cache per render: the global one is keyed by object+view
+      // and would leak a view fetched by an earlier test into this one.
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <AppContext.Provider value={{ state, dispatch }}>
+          <ObjectInspectorContainer />
+        </AppContext.Provider>
+      </SWRConfig>
     );
   }
 
@@ -438,7 +445,37 @@ describe("ObjectInspector — container", () => {
     expect(await screen.findByTestId("object-inspector-empty")).toBeInTheDocument();
   });
 
-  it("renders the inspector with the right blocks for an active object", async () => {
+  it("renders the block list for an active object whose view is not graph-shaped", async () => {
+    // `vertical_slice` (the fixture's kind) is graph-shaped and routes to
+    // GraphView, so the block path needs a non-graph kind. The container
+    // refetches the active view, so the network edge must serve it: a seeded
+    // `activeView` alone is overwritten once the fetch resolves.
+    const blockView = {
+      ...contextualViewFixture,
+      view_kind: "summary",
+    } as ContextualView;
+    server.use(
+      http.get("/api/objects/:object_id/views/:view_id", () =>
+        HttpResponse.json(blockView),
+      ),
+    );
+    render(
+      <InspectorHarness
+        initial={{
+          activeObjectId: "symbol:src/lib.rs:build_overview:16",
+          activeViewId: "overview",
+          activeView: blockView,
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("object-inspector")).toBeInTheDocument();
+    });
+    expect(await screen.findByTestId("view-blocks")).toBeInTheDocument();
+    expect(screen.queryByTestId("graph-view-renderer")).not.toBeInTheDocument();
+  });
+
+  it("routes a graph-shaped view to the graph renderer instead of the block list", async () => {
     render(
       <InspectorHarness
         initial={{
@@ -448,11 +485,8 @@ describe("ObjectInspector — container", () => {
         }}
       />,
     );
-    await waitFor(() => {
-      expect(screen.getByTestId("object-inspector")).toBeInTheDocument();
-    });
-    // At least one block from the fixture must render.
-    expect(screen.getByTestId("view-blocks")).toBeInTheDocument();
+    expect(await screen.findByTestId("graph-view-renderer")).toBeInTheDocument();
+    expect(screen.queryByTestId("view-blocks")).not.toBeInTheDocument();
   });
 
   it("renders SuggestionStrip between header and ViewTabs when an object is focused", async () => {
