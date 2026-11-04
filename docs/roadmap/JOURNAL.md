@@ -31705,3 +31705,25 @@ exponen todavía (solo el proveedor LSP, vía API); las columnas se tratan como 
 como UTF-16; los URI solo se despojan de `file://` sin decodificar porcentajes; no se
 comprueba que las ediciones caigan dentro del workspace. **Pendiente de AC2:** `callHierarchy`
 y `typeHierarchy`. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-90 (AC2, rebanada 2): `callHierarchy` y `typeHierarchy` en el proveedor LSP
+
+**Qué.** `CodeIntelligenceProvider` gana `incoming_calls` y `outgoing_calls` con implementación
+por defecto que devuelve error (un proveedor sin soporte no se confunde con «sin llamadores»).
+Tipos de dominio nuevos: `CallHierarchyItem` y `CallHierarchyCall` (con los puntos de llamada).
+`LspIntelligenceProvider` las implementa con `textDocument/prepareCallHierarchy` +
+`callHierarchy/incomingCalls|outgoingCalls`, y sustituye el stub «not yet implemented» de
+`get_hierarchy` por `textDocument/prepareTypeHierarchy` + `typeHierarchy/supertypes|subtypes`,
+reutilizando `TypeHierarchy`. Un elemento o llamada mal formados son error, no se descartan.
+
+**Verificación.** SHA base e056dbc0. RED observado: 8 tests de `hierarchy_tests` fallaban contra
+stubs `todo!()`; GREEN 8/8 más el test del valor por defecto del trait. `--lib` 2518 OK;
+`--test it` 942 OK y los 9 fallos de infraestructura de siempre (falta el binario release);
+clippy del workspace `-D warnings`, fmt y `generate_support_matrix.py --check` limpios.
+**Sin cubrir:** la petición real a un servidor (ninguno instalado: NOT_RUN); la orquestación
+(`prepare_hierarchy`, `calls`, `get_hierarchy`) no tiene test sin servidor, solo los parsers;
+`get_hierarchy` devuelve solo padres e hijos DIRECTOS (`distance` 0), sin recorrido
+transitivo; si `prepareCallHierarchy` no devuelve nada, `incoming/outgoing_calls` dan lista
+vacía; `CompositeProvider` y `TreesitterFallbackProvider` no reenvían las llamadas nuevas, así
+que ni CLI ni MCP las exponen; mismas limitaciones de columnas UTF-16 y URI que la rebanada 1.
+**NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.

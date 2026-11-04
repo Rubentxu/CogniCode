@@ -1,7 +1,8 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, DocumentSymbolKind, HoverInfo,
-    HoverKind, PrepareRename, Reference, ReferenceKind, RenameEdits, TextEdit, TypeHierarchy,
+    CallHierarchyCall, CallHierarchyItem, CodeIntelligenceError, CodeIntelligenceProvider,
+    DocumentSymbol, DocumentSymbolKind, HoverInfo, HoverKind, PrepareRename, Reference,
+    ReferenceKind, RenameEdits, TextEdit, TypeHierarchy, TypeHierarchyNode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
 use crate::infrastructure::lsp::process_manager::LspProcessManager;
@@ -30,6 +31,52 @@ impl LspIntelligenceProvider {
 
     pub fn process_manager(&self) -> &LspProcessManager {
         &self.process_manager
+    }
+
+    /// `prepare{Call,Type}Hierarchy`: the raw items (needed verbatim by the
+    /// follow-up requests) paired with their parsed form.
+    async fn prepare_hierarchy(
+        &self,
+        location: &Location,
+        method: &str,
+    ) -> Result<Vec<(Value, CallHierarchyItem)>, CodeIntelligenceError> {
+        self.ensure_document_open(location.file()).await?;
+        let language = Self::language_from_file(location.file())?;
+        let params = Self::text_document_position_params(
+            location.file(),
+            location.line(),
+            location.column(),
+        )
+        .await;
+        let result = self
+            .process_manager
+            .request(language, method, Some(params))
+            .await
+            .map_err(|e| CodeIntelligenceError::LspError(e.to_string()))?;
+        let parsed = parse_hierarchy_items(location.file(), &result)?;
+        let raws = result.as_array().cloned().unwrap_or_default();
+        Ok(raws.into_iter().zip(parsed).collect())
+    }
+
+    async fn calls(
+        &self,
+        location: &Location,
+        method: &str,
+        key: &str,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        let prepared = self
+            .prepare_hierarchy(location, "textDocument/prepareCallHierarchy")
+            .await?;
+        let Some((raw, _)) = prepared.first() else {
+            return Ok(Vec::new());
+        };
+        let language = Self::language_from_file(location.file())?;
+        let result = self
+            .process_manager
+            .request(language, method, Some(serde_json::json!({ "item": raw })))
+            .await
+            .map_err(|e| CodeIntelligenceError::LspError(e.to_string()))?;
+        parse_calls(&result, key)
     }
 
     async fn ensure_document_open(&self, file_path: &str) -> Result<(), CodeIntelligenceError> {
@@ -180,6 +227,92 @@ fn parse_workspace_edit(result: &Value) -> Result<Option<RenameEdits>, CodeIntel
     Ok(Some(out))
 }
 
+/// One hierarchy item, positioned on its name (`selectionRange`).
+fn parse_item(item: &Value) -> Result<CallHierarchyItem, CodeIntelligenceError> {
+    let name = item
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| bad_shape("hierarchy item"))?;
+    let uri = item
+        .get("uri")
+        .and_then(Value::as_str)
+        .ok_or_else(|| bad_shape("hierarchy item"))?;
+    let kind = item
+        .get("kind")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| bad_shape("hierarchy item"))?;
+    let at = item
+        .get("selectionRange")
+        .or_else(|| item.get("range"))
+        .and_then(|r| r.get("start"))
+        .and_then(|p| location_of(path_of_uri(uri), p))
+        .ok_or_else(|| bad_shape("hierarchy item"))?;
+    Ok(CallHierarchyItem {
+        name: name.to_string(),
+        kind: crate::domain::value_objects::SymbolKind::from_lsp_kind(kind),
+        location: at,
+        detail: item
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+    })
+}
+
+/// Reads the items of a `prepare*Hierarchy` answer. `null` = nothing there.
+fn parse_hierarchy_items(
+    _file_path: &str,
+    result: &Value,
+) -> Result<Vec<CallHierarchyItem>, CodeIntelligenceError> {
+    if result.is_null() {
+        return Ok(Vec::new());
+    }
+    result
+        .as_array()
+        .ok_or_else(|| bad_shape("hierarchy items"))?
+        .iter()
+        .map(parse_item)
+        .collect()
+}
+
+/// Reads `incomingCalls` (`key` = "from") or `outgoingCalls` (`key` = "to").
+fn parse_calls(result: &Value, key: &str) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+    if result.is_null() {
+        return Ok(Vec::new());
+    }
+    result
+        .as_array()
+        .ok_or_else(|| bad_shape("calls"))?
+        .iter()
+        .map(|call| {
+            let item = parse_item(call.get(key).ok_or_else(|| bad_shape("call"))?)?;
+            let file = item.location.file().to_string();
+            let call_sites = call
+                .get("fromRanges")
+                .and_then(Value::as_array)
+                .map(|ranges| {
+                    ranges
+                        .iter()
+                        .map(|r| range_of(&file, r).ok_or_else(|| bad_shape("call range")))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
+            Ok(CallHierarchyCall { item, call_sites })
+        })
+        .collect()
+}
+
+/// Reads a `supertypes`/`subtypes` answer as direct (distance 0) nodes.
+fn parse_type_nodes(result: &Value) -> Result<Vec<TypeHierarchyNode>, CodeIntelligenceError> {
+    Ok(parse_hierarchy_items("", result)?
+        .into_iter()
+        .map(|i| TypeHierarchyNode {
+            symbol: Symbol::new(i.name, i.kind, i.location),
+            distance: 0,
+        })
+        .collect())
+}
+
 #[async_trait::async_trait]
 impl CodeIntelligenceProvider for LspIntelligenceProvider {
     async fn get_symbols(&self, path: &Path) -> Result<Vec<Symbol>, CodeIntelligenceError> {
@@ -268,11 +401,36 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
 
     async fn get_hierarchy(
         &self,
-        _location: &Location,
+        location: &Location,
     ) -> Result<TypeHierarchy, CodeIntelligenceError> {
-        Err(CodeIntelligenceError::Internal(
-            "Type hierarchy via LSP not yet implemented".to_string(),
-        ))
+        let raw = self
+            .prepare_hierarchy(location, "textDocument/prepareTypeHierarchy")
+            .await?;
+        let root = raw.first().ok_or_else(|| {
+            CodeIntelligenceError::InvalidLocation(format!(
+                "no type at {}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ))
+        })?;
+        let language = Self::language_from_file(location.file())?;
+        let params = serde_json::json!({ "item": root.0 });
+        let supers = self
+            .process_manager
+            .request(language, "typeHierarchy/supertypes", Some(params.clone()))
+            .await
+            .map_err(|e| CodeIntelligenceError::LspError(e.to_string()))?;
+        let subs = self
+            .process_manager
+            .request(language, "typeHierarchy/subtypes", Some(params))
+            .await
+            .map_err(|e| CodeIntelligenceError::LspError(e.to_string()))?;
+        Ok(TypeHierarchy {
+            symbol: Symbol::new(root.1.name.clone(), root.1.kind, root.1.location.clone()),
+            parents: parse_type_nodes(&supers)?,
+            children: parse_type_nodes(&subs)?,
+        })
     }
 
     async fn get_definition(
@@ -466,6 +624,22 @@ impl CodeIntelligenceProvider for LspIntelligenceProvider {
             .map_err(|e| CodeIntelligenceError::LspError(e.to_string()))?;
         parse_workspace_edit(&result)
     }
+
+    async fn incoming_calls(
+        &self,
+        location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        self.calls(location, "callHierarchy/incomingCalls", "from")
+            .await
+    }
+
+    async fn outgoing_calls(
+        &self,
+        location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        self.calls(location, "callHierarchy/outgoingCalls", "to")
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -626,5 +800,91 @@ mod rename_tests {
     fn an_edit_without_a_range_is_an_error_not_a_silent_drop() {
         let v = json!({"changes": {"file:///w/a.cs": [{"newText": "X"}]}});
         assert!(parse_workspace_edit(&v).is_err());
+    }
+}
+
+#[cfg(test)]
+mod hierarchy_tests {
+    use super::*;
+    use crate::domain::value_objects::SymbolKind;
+    use serde_json::json;
+
+    fn item(name: &str, line: u32) -> Value {
+        json!({
+            "name": name, "kind": 12, "detail": "fn()",
+            "uri": "file:///w/a.rs",
+            "range": {"start": {"line": line, "character": 0}, "end": {"line": line + 3, "character": 1}},
+            "selectionRange": {"start": {"line": line, "character": 3}, "end": {"line": line, "character": 7}}
+        })
+    }
+
+    #[test]
+    fn a_null_prepare_answer_is_an_empty_list() {
+        assert!(
+            parse_hierarchy_items("/w/a.rs", &Value::Null)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_prepared_item_points_at_its_name_with_one_based_positions() {
+        let items = parse_hierarchy_items("/w/a.rs", &json!([item("foo", 4)])).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "foo");
+        assert_eq!(items[0].kind, SymbolKind::from_lsp_kind(12));
+        assert_eq!(items[0].detail.as_deref(), Some("fn()"));
+        assert_eq!(
+            items[0].location,
+            Location::new("/w/a.rs".to_string(), 5, 4)
+        );
+    }
+
+    #[test]
+    fn an_item_without_a_uri_is_malformed_not_dropped() {
+        let mut bad = item("foo", 1);
+        bad.as_object_mut().unwrap().remove("uri");
+        assert!(parse_hierarchy_items("/w/a.rs", &json!([bad])).is_err());
+    }
+
+    #[test]
+    fn incoming_calls_read_the_caller_from_and_the_call_sites() {
+        let result = json!([{
+            "from": item("caller", 9),
+            "fromRanges": [{"start": {"line": 10, "character": 2}, "end": {"line": 10, "character": 5}}]
+        }]);
+        let calls = parse_calls(&result, "from").unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].item.name, "caller");
+        assert_eq!(calls[0].call_sites.len(), 1);
+        assert_eq!(calls[0].call_sites[0].start().line(), 11);
+    }
+
+    #[test]
+    fn outgoing_calls_read_the_callee_from_to() {
+        let result = json!([{ "to": item("callee", 2), "fromRanges": [] }]);
+        let calls = parse_calls(&result, "to").unwrap();
+        assert_eq!(calls[0].item.name, "callee");
+        assert!(calls[0].call_sites.is_empty());
+    }
+
+    #[test]
+    fn a_call_without_its_other_end_is_malformed() {
+        let result = json!([{ "fromRanges": [] }]);
+        assert!(parse_calls(&result, "from").is_err());
+    }
+
+    #[test]
+    fn null_calls_are_an_empty_list() {
+        assert!(parse_calls(&Value::Null, "from").unwrap().is_empty());
+    }
+
+    #[test]
+    fn type_hierarchy_answers_become_direct_nodes() {
+        let nodes = parse_type_nodes(&json!([item("Base", 0), item("Other", 7)])).unwrap();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].symbol.name(), "Base");
+        assert_eq!(nodes[0].distance, 0);
+        assert_eq!(nodes[1].symbol.location().line(), 8);
     }
 }
