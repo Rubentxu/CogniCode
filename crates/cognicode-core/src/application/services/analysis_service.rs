@@ -27,7 +27,7 @@ use crate::domain::services::{
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{RejectedRelation, TargetResolution, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
-    GlobalSymbolIndex, WalkClassification, classify_walk_extension,
+    GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
@@ -862,7 +862,7 @@ impl AnalysisService {
                 continue;
             }
             let ext = path.extension().and_then(|e| e.to_str());
-            match classify_walk_extension(ext) {
+            match classify_walk_path(path) {
                 WalkClassification::Analyze => file_paths.push(path.to_path_buf()),
                 WalkClassification::KnownUnsupportedGap => {
                     // K0 honest gap: the file is a real source in a

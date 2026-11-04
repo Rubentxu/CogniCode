@@ -31389,3 +31389,33 @@ origin/main.
 con la plantilla tipo Go.
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote).
+
+## 2026-11-04 — TASK-87: C# y Groovy se leen por conjuntos declarados; Jenkinsfile; ficheros con errores
+
+**Qué:** `reads_declared_symbol_sets` activo para C# y Groovy (interfaces, records,
+structs, propiedades, llamadas sin paréntesis vía `call_types`). Un símbolo sintético
+`<script>` por fichero recoge las llamadas de nivel superior (Groovy y `.kts`).
+`Language::from_path` trata `Jenkinsfile` y `Jenkinsfile.*` como Groovy; el recorrido y el
+grafo por fichero lo usan. Un fichero con errores de sintaxis conserva los subárboles
+que parsearon y se nombra en `skipped` con `SkipReason::Parse` (estado `Partial`); la
+ruta estricta (`build_file_graph_reading`) sigue negándose. El índice global ya no
+descarta esos ficheros, para coincidir con su propio grafo.
+
+**RED:** un test por AC, cada uno fallaba antes (AC4: símbolos `[]`, fichero descartado
+entero). **GREEN:** 10 tests nuevos (`csharp_groovy_reading` 4, `from_path_tests` 3,
+`jenkinsfile_tests` 2, `partial_parse_tests` 1). `broken_syntax.rs` sigue Partial/Parse
+sin ajuste. **Verificación:** `cargo test -p cognicode-core --lib`: 2472 pasan;
+`--tests`: 931 pasan y 9 fallan, los mismos 9 de `/tmp/pr-verify.log` (falta
+`target/release/cognicode-mcp`, infraestructura local); clippy `-D warnings` y
+`cargo fmt --all --check` limpios.
+
+**Límite medido de la gramática Groovy:** dentro de un método con tipo devuelto
+(`void f() { foo "a" }`) la llamada sin paréntesis es `ERROR`; solo se produce en
+`def f()` o a nivel de script.
+
+**Deuda:** ~30 sitios deciden lenguaje con `from_extension` (workspace_session,
+lightweight_index, on_demand_graph, scan, etc.); solo se cablearon el grafo por fichero y
+el recorrido de `analysis_service`. Un Jenkinsfile fuera de esas rutas no se reconoce.
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 10/10: se
+lanza al cerrar).
