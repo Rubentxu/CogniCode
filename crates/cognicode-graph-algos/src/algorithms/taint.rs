@@ -241,23 +241,19 @@ fn intermediates_on_chain(
 
     while let Some(node) = queue.pop_front() {
         if node == target {
-            // Reconstruct chain: origin ... -> target.
+            // Walk the parents back from `target`, stopping at `origin`.
+            // `target` is returned the moment it is dequeued, so it is never
+            // a parent, and `origin` is never a key of `prev`.
             let mut chain: Vec<usize> = Vec::new();
             let mut cur = target;
             while let Some(&p) = prev.get(&cur) {
-                chain.push(p);
                 if p == origin {
                     break;
                 }
+                chain.push(p);
                 cur = p;
             }
             chain.reverse();
-            if !chain.is_empty() && chain[0] == origin {
-                chain.remove(0);
-            }
-            if chain.last().copied() == Some(target) {
-                chain.pop();
-            }
             return chain;
         }
         if let Some(nbrs) = succ.get(&node) {
@@ -347,7 +343,7 @@ mod tests {
     fn no_sources_means_no_paths() {
         let stmts = vec![s(0, &["x"], &[]), s(1, &[], &["x"])];
         let edges = dfg_edges(&stmts);
-        let result = taint_forward(&edges, &[], &[1], &[]);
+        let result = forward(edges, &[], &[1], &[]);
         assert!(result.paths.is_empty());
         assert!(result.tainted_statements.is_empty());
     }
@@ -381,9 +377,105 @@ mod tests {
         assert_eq!(result.paths.len(), 2);
     }
 
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn edge(from: usize, to: usize) -> DefUseEdge {
+        DefUseEdge {
+            from,
+            to,
+            variable: "v".into(),
+        }
+    }
+
+    /// Runs `taint_forward` on a thread so a hang fails the test.
+    fn forward(edges: Vec<DefUseEdge>, src: &[usize], snk: &[usize], unt: &[usize]) -> TaintResult {
+        let (src, snk, unt) = (src.to_vec(), snk.to_vec(), unt.to_vec());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(taint_forward(&edges, &src, &snk, &unt));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("taint_forward did not finish within 5s")
+    }
+
+    /// Runs `intermediates_on_chain` on a thread so a hang fails the test.
+    fn chain(
+        succ: &[(usize, &[usize])],
+        carriers: &[usize],
+        origin: usize,
+        target: usize,
+    ) -> Vec<usize> {
+        let succ: BTreeMap<usize, BTreeSet<usize>> = succ
+            .iter()
+            .map(|(k, v)| (*k, v.iter().copied().collect()))
+            .collect();
+        let tainted: BTreeMap<usize, BTreeSet<usize>> = carriers
+            .iter()
+            .map(|&n| (n, BTreeSet::from([origin])))
+            .collect();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(intermediates_on_chain(&succ, origin, target, &tainted));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("intermediates_on_chain did not finish within 5s")
+    }
+
+    #[test]
+    fn taint_forward_finishes_with_nothing_to_propagate() {
+        // No sources: the work list starts empty and the loop must not run.
+        let r = forward(vec![edge(0, 1)], &[], &[1], &[]);
+        assert_eq!(r, TaintResult::default());
+    }
+
+    #[test]
+    fn taint_forward_reports_every_intermediate_in_order() {
+        // 0 → 1 → 2 → 3 → 4, source 0, sink 4: intermediates are 1, 2, 3.
+        let edges = vec![edge(0, 1), edge(1, 2), edge(2, 3), edge(3, 4)];
+        let r = forward(edges, &[0], &[4], &[]);
+        assert_eq!(r.paths.len(), 1);
+        let ids: Vec<usize> = r.paths[0].intermediates.iter().map(|t| t.stmt_id).collect();
+        assert_eq!(ids, vec![1, 2, 3]);
+        assert_eq!(r.tainted_statements, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn chain_has_one_intermediate_when_one_hop_away() {
+        assert_eq!(chain(&[(0, &[1]), (1, &[2])], &[1, 2], 0, 2), vec![1]);
+    }
+
+    #[test]
+    fn chain_is_empty_for_a_direct_edge_and_for_origin_equal_target() {
+        assert_eq!(chain(&[(0, &[1])], &[1], 0, 1), Vec::<usize>::new());
+        assert_eq!(chain(&[(0, &[1])], &[1], 0, 0), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn chain_never_routes_through_a_node_that_does_not_carry_the_origin() {
+        // 0 → 1 → 3 is shorter, but 1 does not carry the origin.
+        // The real route is 0 → 2 → 4 → 3.
+        let succ: &[(usize, &[usize])] = &[(0, &[1, 2]), (1, &[3]), (2, &[4]), (4, &[3])];
+        assert_eq!(chain(succ, &[2, 3, 4], 0, 3), vec![2, 4]);
+    }
+
+    #[test]
+    fn chain_terminates_on_a_cycle_through_the_origin() {
+        // 0 → 1 → 0 (cycle back to the origin), 1 → 2.
+        let succ: &[(usize, &[usize])] = &[(0, &[1]), (1, &[0, 2])];
+        assert_eq!(chain(succ, &[0, 1, 2], 0, 2), vec![1]);
+    }
+
+    #[test]
+    fn chain_is_empty_when_the_target_is_unreachable_through_carriers() {
+        assert_eq!(
+            chain(&[(0, &[1]), (1, &[2])], &[1], 0, 2),
+            Vec::<usize>::new()
+        );
+    }
+
     #[test]
     fn empty_inputs_yield_empty_result() {
-        let result = taint_forward(&[], &[], &[], &[]);
+        let result = forward(Vec::new(), &[], &[], &[]);
         assert_eq!(result, TaintResult::default());
     }
 }
