@@ -856,8 +856,8 @@ pipeline {
                         echo "FAIL: ${'$'}COGNICODE_MCP_BIN_RELEASE is missing or not executable."
                         exit 1
                     fi
-                    cargo test -p cognicode-core --test b6_w1_mcp_robustness --quiet \
-                        -- release_binary_stdio_round_trip_smoke
+                    cargo test -p cognicode-core --test it --quiet \
+                        -- b6_w1_mcp_robustness::release_binary_stdio_round_trip_smoke
                 """.trimIndent())
             }
         }

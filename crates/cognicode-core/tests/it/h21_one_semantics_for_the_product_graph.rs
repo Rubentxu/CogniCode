@@ -18,7 +18,7 @@
 //! reader named it, that the real consumer finds it there, and that both
 //! paths name it the same way.
 
-mod fixtures;
+use crate::fixtures;
 
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::call_graph::SymbolId;

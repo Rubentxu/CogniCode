@@ -125,7 +125,7 @@ fn revalidation_report_includes_what_changed_files() {
 /// aparecer `Command::new` ni `std::process` en el source.
 #[test]
 fn revalidation_does_not_execute_arbitrary_commands() {
-    let src = include_str!("../src/refactor/revalidate.rs");
+    let src = include_str!("../../src/refactor/revalidate.rs");
     assert!(
         !src.contains("Command::new") && !src.contains("std::process"),
         "revalidate.rs MUST NOT shell out: a finding or comment is data, \

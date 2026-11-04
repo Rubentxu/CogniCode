@@ -620,7 +620,7 @@ lsi-baseline mode="capture" threshold="":
 lsi-equivalence:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test equivalence_harness --features evidence-kernel -- --nocapture
+    cargo test -p cognicode-core --test it --features evidence-kernel -- equivalence_harness:: --nocapture
 
 # LSI M3 identity benchmark (E38): tiered continuity matcher over the
 # lsi-identity ground-truth fixtures plus the workspace isolation suite.
@@ -631,7 +631,7 @@ lsi-equivalence:
 lsi-identity:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test workspace_isolation --test identity_benchmark --features evidence-kernel -- --nocapture
+    cargo test -p cognicode-core --test it --test identity_benchmark --features evidence-kernel -- workspace_isolation:: --nocapture
 
 # LSI M4 semantic provider conformance (E39): declared per-tier precision
 # targets over sandbox/fixtures/lsi-providers (Rust/TS serverless S0/S1,
@@ -641,8 +641,8 @@ lsi-identity:
 lsi-providers:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test provider_conformance -- --nocapture
-    cargo test -p cognicode-core --test cp5_tie_break --features evidence-kernel -- --nocapture
+    cargo test -p cognicode-core --test it -- provider_conformance:: --nocapture
+    cargo test -p cognicode-core --test it --features evidence-kernel -- cp5_tie_break:: --nocapture
     cargo test -p cognicode-core --lib fact_bridge --features evidence-kernel
 
 # ─── Sandbox ─────────────────────────────────────────────────────────────────

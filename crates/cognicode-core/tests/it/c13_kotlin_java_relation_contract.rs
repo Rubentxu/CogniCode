@@ -572,7 +572,7 @@ fn only_resolved_names_a_target() {
 
 #[test]
 fn the_shape_is_three_variants_and_the_reason_says_why() {
-    let source = include_str!("../src/domain/value_objects/target_resolution.rs");
+    let source = include_str!("../../src/domain/value_objects/target_resolution.rs");
 
     let body = source
         .split_once("pub enum TargetResolution {")

@@ -177,8 +177,8 @@ def _field(category: str) -> str:
 
 def acceptance_variants(root: Path) -> set[str]:
     sources = [
-        read_required(root, "crates/cognicode-core/tests/m06_acceptance.rs"),
-        read_required(root, "crates/cognicode-core/tests/m10_acceptance.rs"),
+        read_required(root, "crates/cognicode-core/tests/it/m06_acceptance.rs"),
+        read_required(root, "crates/cognicode-core/tests/it/m10_acceptance.rs"),
     ]
     variants: set[str] = set()
     for source in sources:

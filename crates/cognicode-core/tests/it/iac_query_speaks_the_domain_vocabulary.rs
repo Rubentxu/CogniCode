@@ -12,7 +12,7 @@
 //! the relations answer in the same vocabulary, and that no answer carries a
 //! name that only exists inside the implementation.
 
-mod fixtures;
+use crate::fixtures;
 
 use cognicode_core::interface::mcp::handlers::consolidated_handlers::{
     IacQueryInput, handle_iac_query,

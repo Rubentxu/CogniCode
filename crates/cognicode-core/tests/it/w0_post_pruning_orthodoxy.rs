@@ -127,8 +127,14 @@ fn retired_test_paths_are_not_on_disk() {
 fn protected_test_paths_are_still_on_disk() {
     for rel in PROTECTED {
         let path = abs(rel);
+        // A crate's integration tests live either beside `tests/` or, once
+        // consolidated into a single binary, under `tests/it/`.
+        let consolidated = path
+            .parent()
+            .zip(path.file_name())
+            .map(|(dir, name)| dir.join("it").join(name));
         assert!(
-            path.exists(),
+            path.exists() || consolidated.is_some_and(|p| p.exists()),
             "manifest KEEP set path missing: {rel} (expected at {})",
             path.display()
         );
