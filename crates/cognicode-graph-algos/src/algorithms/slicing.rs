@@ -61,9 +61,8 @@ pub fn forward_slice(out_neighbors: &[Vec<usize>], definition_site: usize) -> Ve
 /// slice against. Callers that want a "use anywhere" semantics should pass
 /// `use_sites = (0..n).collect()` explicitly.
 pub fn backward_slice(out_neighbors: &[Vec<usize>], use_sites: &[usize]) -> Vec<usize> {
-    if out_neighbors.is_empty() || use_sites.is_empty() {
-        return Vec::new();
-    }
+    // No early return for an empty graph or empty `use_sites`: in both cases
+    // no site is in range, so `valid_sites` is empty and the result is empty.
     let n = out_neighbors.len();
     // Filter out-of-range sites first; we silently drop them so the slice
     // remains total (no panics on malformed input).
@@ -158,5 +157,70 @@ mod tests {
         let adj: Vec<Vec<usize>> = vec![vec![1], vec![2], vec![3], vec![]];
         assert_eq!(forward_slice(&adj, 0), vec![0, 1, 2, 3]);
         assert_eq!(backward_slice(&adj, &[3]), vec![0, 1, 2, 3]);
+    }
+
+    /// Runs `f` on a thread so a hanging or panicking mutant fails the test
+    /// instead of hanging the suite.
+    fn with_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("slicing did not finish within 5s (or panicked)")
+    }
+
+    /// Edges pointing at `n` or beyond are ignored by the forward slice.
+    /// n = 2; 0 → {1, 2 (== n), 9}; 1 → {2 (== n)}.
+    #[test]
+    fn forward_slice_ignores_out_of_range_edges() {
+        let adj: Vec<Vec<usize>> = vec![vec![1, 2, 9], vec![2]];
+        assert_eq!(with_deadline(move || forward_slice(&adj, 0)), vec![0, 1]);
+    }
+
+    /// The forward slice of an empty graph is empty.
+    #[test]
+    fn forward_slice_of_empty_graph_is_empty() {
+        let r = with_deadline(|| forward_slice(&[], 0));
+        assert_eq!(r, Vec::<usize>::new());
+    }
+
+    /// Edges pointing at `n` or beyond are ignored by the backward slice.
+    /// n = 2; 0 → {1, 2 (== n), 9}. Use at 1: only 0 and 1.
+    #[test]
+    fn backward_slice_ignores_out_of_range_edges() {
+        let adj: Vec<Vec<usize>> = vec![vec![1, 2, 9], vec![]];
+        assert_eq!(
+            with_deadline(move || backward_slice(&adj, &[1])),
+            vec![0, 1]
+        );
+    }
+
+    /// A use site equal to `n` is out of range: dropped, never indexed.
+    #[test]
+    fn backward_slice_drops_a_site_equal_to_n() {
+        let adj: Vec<Vec<usize>> = vec![vec![1], vec![]];
+        assert_eq!(
+            with_deadline(move || backward_slice(&adj, &[2])),
+            Vec::<usize>::new()
+        );
+        let adj: Vec<Vec<usize>> = vec![vec![1], vec![]];
+        assert_eq!(
+            with_deadline(move || backward_slice(&adj, &[2, 0])),
+            vec![0]
+        );
+    }
+
+    /// Empty graph with a site, and a graph with an empty criterion: both empty.
+    #[test]
+    fn backward_slice_degenerate_inputs_are_empty() {
+        assert_eq!(
+            with_deadline(|| backward_slice(&[], &[0])),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            with_deadline(|| backward_slice(&[vec![]], &[])),
+            Vec::<usize>::new()
+        );
     }
 }

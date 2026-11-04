@@ -31019,3 +31019,28 @@ clippy `-D warnings` y `fmt --all --check` rc=0.
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-103: slicing, supervivientes de mutación
+
+**Hueco.** La tarea registraba 7 supervivientes (`forward_slice` → `vec![]`/`vec![0]`/
+`vec![1]`, `delete !` en 88/92, `<` → `>`/`<=` en 79). Re-medidos en el árbol
+actual, esos 7 ya estaban muertos por los tests existentes; el registro estaba
+desfasado. La medición real dio 5 vivos, todos en el manejo de índices fuera de
+rango: `v < n && !visited` (48, `&&`→`||` y `<`→`<=`), `is_empty() || is_empty()`
+(64), `s < n` (70) y `v < n` (79).
+
+**Tests.** Aristas a `n` y más allá en ambos recortes (0→{1, 2==n, 9}), sitio igual a
+`n` descartado sin indexar, grafo vacío y criterio vacío. Los casos `<=` hacen
+panic por índice, así que cada test lleva plazo de 5 s (hilo + `mpsc` +
+`recv_timeout`).
+
+**Diagnóstico.** La guarda inicial de `backward_slice` era código muerto: con grafo
+o criterio vacío, `valid_sites` queda vacío y devuelve lo mismo. Eliminada (sustituida
+por un comentario). Sin equivalentes declarados.
+
+**Evidencia.** `cargo mutants -j 1` con runner de memoria: antes 23 mutantes, 5
+vivos; después 22 mutantes, 22 atrapados, 0 vivos, 0 timeouts (2 min). Lib
+`cognicode-graph-algos`: 217 en verde; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
