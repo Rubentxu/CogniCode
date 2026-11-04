@@ -31627,3 +31627,23 @@ clippy `-D warnings`, fmt y `generate_support_matrix.py --check` limpios; los go
 cambian (no listan `Declaration`). **Sin cubrir:** `stage_commands` no está expuesto por CLI ni
 MCP (solo API del parser); el AC nombra un fichero que ya no existe, por eso queda SIN MARCAR
 a la espera de reescribirlo. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-88 (AC3): `get_file_symbols` de un `build.gradle` lista sus tareas
+
+**Qué.** Decisión de diseño tomada con el permiso implícito del operador: parser genérico, sin
+tocar `semantic_handler` (que solo alimenta Terraform/Ansible). En un fichero llamado
+exactamente `build.gradle`, `tasks.register('x') { }`, `tasks.create('x') { }` y
+`task('x') { }` son símbolos `Declaration` con su etiqueta (cadena simple, con cuerpo
+closure). Un `Jenkinsfile`, `settings.gradle`, `other.gradle` o `vars/*.groovy` no declaran
+tareas. La gramática lee `"a$b"` como un único fragmento, así que la interpolación se rechaza
+por el texto. El fixture `groovy-jenkins/build.gradle` gana dos tareas (`lint`, `packageApp`).
+
+**Verificación.** SHA base c7604c90. 3 tests de parser (`gradle_build_reading`) y 1 de
+`AnalysisService::get_file_symbols` sobre un `build.gradle` real en directorio temporal. El
+RED NO se observó (tests escritos junto a la implementación; un primer fallo fue del test, no
+del código). `cargo test -p cognicode-core --lib` 2493 OK; `--test it` 942 OK y los 9 fallos de
+infraestructura de siempre (falta el binario release); clippy `-D warnings`, fmt y
+`generate_support_matrix.py --check` limpios; los goldens no cambian (no listan `Declaration`).
+**Sin cubrir:** `dependsOn` no genera aristas; `task name { }` sin paréntesis no se lee (la
+gramática no lo parsea como llamada); `build.gradle.kts` no. **NOT_RUN:** mutantes,
+`npm test --prefix apps/explorer-ui`, gate.

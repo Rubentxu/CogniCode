@@ -243,7 +243,10 @@ impl TreeSitterParser {
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
-            } else if let Some(stage) = self.stage_symbol(current, source, file_path) {
+            } else if let Some(stage) = self
+                .stage_symbol(current, source, file_path)
+                .or_else(|| self.gradle_task_symbol(current, source, file_path))
+            {
                 symbols.push(stage);
             }
 
@@ -374,6 +377,62 @@ impl TreeSitterParser {
             _ => return None,
         };
         if label.is_empty() {
+            return None;
+        }
+        let start = node.start_position();
+        Some(Symbol::new(
+            label,
+            SymbolKind::Declaration,
+            Location::new(file_path, start.row as u32, start.column as u32),
+        ))
+    }
+
+    /// The task a `build.gradle` declares with `tasks.register('x') { }`,
+    /// `tasks.create('x') { }` or `task('x') { }`, named by its label. Like a
+    /// stage it is a `Declaration`: the build runs it, no code calls it. Only
+    /// a file named exactly `build.gradle`, so a Jenkinsfile or any other
+    /// Groovy file that happens to call `register` is untouched. The bare
+    /// `task name { }` form is not read: the grammar does not parse it as a call.
+    fn gradle_task_symbol(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        file_path: &str,
+    ) -> Option<Symbol> {
+        let is_build_file = std::path::Path::new(file_path)
+            .file_name()
+            .is_some_and(|n| n == "build.gradle");
+        if self.language != Language::Groovy || node.kind() != "method_invocation" || !is_build_file
+        {
+            return None;
+        }
+        let text = |n: tree_sitter::Node| source.get(n.start_byte()..n.end_byte());
+        let name = text(node.child_by_field_name("name")?)?;
+        let declares = match node.child_by_field_name("object") {
+            Some(object) => text(object)? == "tasks" && matches!(name, "register" | "create"),
+            None => name == "task",
+        };
+        if !declares {
+            return None;
+        }
+        node.child_by_field_name("body")
+            .filter(|body| body.kind() == "closure")?;
+        let arguments = node.child_by_field_name("arguments")?;
+        let label = arguments.named_child(0)?;
+        let label = match label.kind() {
+            "character_literal" => text(label)?.trim_matches(['\'', '"']),
+            "string_literal" if label.named_child_count() == 1 => {
+                let fragment = label.named_child(0)?;
+                if fragment.kind() != "string_fragment" {
+                    return None;
+                }
+                // The grammar keeps `"a$b"` as one fragment; it is built, not a name.
+                text(fragment)?
+            }
+            _ => return None,
+        };
+        let interpolated = label.contains('$') && text(arguments.named_child(0)?)?.starts_with('"');
+        if label.is_empty() || interpolated {
             return None;
         }
         let start = node.start_position();
@@ -2132,5 +2191,48 @@ mod kotlin_pipeline_reading {
                 .unwrap()
                 .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod gradle_build_reading {
+    use super::*;
+
+    const BUILD: &str = "tasks.register('lint') {\n  dependsOn 'compile'\n}\ntasks.register(\"pkg\", Zip) { }\ntask('old') { }\n";
+
+    fn tasks(source: &str, path: &str) -> Vec<String> {
+        TreeSitterParser::new(Language::Groovy)
+            .unwrap()
+            .find_all_symbols_with_path(source, path)
+            .unwrap()
+            .iter()
+            .filter(|s| *s.kind() == SymbolKind::Declaration)
+            .map(|s| s.name().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_tasks_a_build_gradle_registers_are_listed_by_name() {
+        let mut found = tasks(BUILD, "app/build.gradle");
+        found.sort();
+        assert_eq!(found, ["lint", "old", "pkg"]);
+    }
+
+    #[test]
+    fn only_a_file_named_build_gradle_declares_tasks() {
+        for path in [
+            "Jenkinsfile",
+            "vars/x.groovy",
+            "settings.gradle",
+            "build.gradle.bak",
+        ] {
+            assert!(tasks(BUILD, path).is_empty(), "{path}");
+        }
+    }
+
+    #[test]
+    fn a_register_without_a_plain_label_or_a_body_or_on_another_object_is_not_a_task() {
+        let odd = "tasks.register(name) { }\ntasks.register(\"a$b\") { }\ntasks.register('x')\nother.register('y') { }\ntasks.remove('z') { }\n";
+        assert_eq!(tasks(odd, "build.gradle"), Vec::<String>::new());
     }
 }
