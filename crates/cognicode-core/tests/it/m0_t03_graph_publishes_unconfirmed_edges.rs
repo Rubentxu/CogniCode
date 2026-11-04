@@ -146,6 +146,23 @@ impl DependencyRepository for RefusingRepository {
 
 static BUILD_LOCK: Mutex<()> = Mutex::new(());
 
+/// Other modules of this binary build graphs on their own threads. A callsite
+/// they reach while no subscriber is listening keeps a cached "never"
+/// interest, and the scoped subscriber of the log test then misses it. A
+/// process-wide subscriber that discards its output keeps every INFO callsite
+/// registered as enabled; the scoped one still receives the events.
+fn keep_callsites_enabled() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = tracing::subscriber::set_global_default(
+            tracing_subscriber::fmt()
+                .with_writer(std::io::sink)
+                .with_max_level(tracing::Level::INFO)
+                .finish(),
+        );
+    });
+}
+
 /// Adquiere el cerrojo de build sin poisoned: un test que falla no puede
 /// impedir que los otros dos midan.
 fn build_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -327,6 +344,7 @@ fn the_log_publishes_the_same_relation_count_as_the_response() {
         move || Box::new(RefusingRepository::new(tally.clone())) as Box<dyn DependencyRepository>
     });
 
+    keep_callsites_enabled();
     let sink = LogSink::default();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(sink.clone())

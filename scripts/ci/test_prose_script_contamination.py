@@ -148,11 +148,11 @@ EXEMPTIONS: tuple[tuple[str, str], ...] = (
         "localized error message",
     ),
     (
-        "crates/cognicode-core/tests/b3_w4_incremental_analysis.rs",
+        "crates/cognicode-core/tests/it/b3_w4_incremental_analysis.rs",
         "unicode path inside a test fixture",
     ),
     (
-        "crates/cognicode-core/tests/k1_kotlin_symbol_contract.rs",
+        "crates/cognicode-core/tests/it/k1_kotlin_symbol_contract.rs",
         "unicode identifier inside a test that proves the published code "
         "does not shift its column",
     ),

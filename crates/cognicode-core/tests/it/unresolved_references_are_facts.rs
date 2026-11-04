@@ -10,7 +10,7 @@
 //! tied to a declaration. Both travel with the answer, and "complete" is
 //! only said when both are whole.
 
-mod fixtures;
+use crate::fixtures;
 
 use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, Analyze, OutcomeState,

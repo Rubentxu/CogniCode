@@ -18,7 +18,7 @@
 //! the difference between a measured value and a constant is exactly what
 //! this file is about.
 
-mod fixtures;
+use crate::fixtures;
 
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::aggregates::symbol::Symbol;

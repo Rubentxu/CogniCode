@@ -25,7 +25,7 @@
 //! transport published. A declaration that the graph knows and the
 //! transport renames is still a lie the consumer reads.
 
-mod fixtures;
+use crate::fixtures;
 
 use cognicode_core::application::ingest::extractor::extract_file;
 use cognicode_core::application::ingest::types::ExtractionResult;
