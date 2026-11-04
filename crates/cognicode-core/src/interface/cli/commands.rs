@@ -1179,8 +1179,7 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // The question has one owner: the MCP asks it too, and both
@@ -1213,8 +1212,7 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // The question has one owner: the MCP asks it too. Every
@@ -1245,8 +1243,7 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // The question has one owner: the MCP asks it too. Every
@@ -1288,8 +1285,7 @@ impl CommandExecutor {
                 println!("Tracing path from '{}' to '{}' in: {}", from, to, path);
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // The question has one owner: the MCP asks it too. A name
@@ -1361,8 +1357,7 @@ impl CommandExecutor {
                     return Err(format!("Directory does not exist: {}", dir.display()).into());
                 }
 
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // There is one renderer and this is it: the diagram the
@@ -1431,8 +1426,7 @@ impl CommandExecutor {
                 );
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 let dir_enum = match direction.to_lowercase().as_str() {
@@ -1501,8 +1495,7 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 let analyzer = CallGraphAnalyzer::new();
@@ -1537,8 +1530,7 @@ impl CommandExecutor {
                 println!("Analyzing impact of changing '{}' in: {}", symbol, path);
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses, and
-                // the build says what it could not cover.
+                // The graph comes from the same authority the MCP uses.
                 let graph = project_graph_of(&dir)?;
 
                 // The same question, answered by the same function the MCP and
@@ -2515,20 +2507,16 @@ impl CommandExecutor {
 
     /// B5.W3 — Apply con autoridad.
     ///
-    /// Contrato:
-    ///   - Lee el `RefactorPlan` desde `--plan-file` (JSON).
-    ///   - Construye un `AuthorizationToken` desde `--authorization-token`
-    ///     (canal separado; no derivado del plan; AAT-B5-03).
-    ///   - Recomputa el `workspace_state_digest` desde el preview si
-    ///     el caller lo pasa, o desde el disco si no. Llama a
-    ///     `cognicode_core::refactor::apply::apply`.
-    ///   - Cualquier fallo se reporta con código de salida no-cero y
-    ///     mensaje específico (AuthorizationMissing,
-    ///     WorkspaceStateMismatch, SymlinkEscape, TraversalEscape,
-    ///     ConcurrentModification, IoError).
+    /// Lee el `RefactorPlan` de `--plan-file`, construye el
+    /// `AuthorizationToken` del canal separado (`--authorization-token`;
+    /// AAT-B5-03), recomputa el `workspace_state_digest` y llama a
+    /// `cognicode_core::refactor::apply::apply`. Un fallo sale con
+    /// código no-cero y su mensaje específico (AuthorizationMissing,
+    /// WorkspaceStateMismatch, SymlinkEscape, TraversalEscape,
+    /// ConcurrentModification, IoError).
     ///
-    /// Pre-condición: ambos flags vienen del parseo de clap; el caller
-    /// ya verificó que no son `None` antes de llamar esta función.
+    /// Tras un apply correcto publica tambien la revalidacion (B5.W4):
+    /// la salida dice que se verifico y que no, en vez de callarse.
     async fn execute_refactor_apply(
         plan_file: &std::path::Path,
         authorization_token: &str,
@@ -2574,6 +2562,14 @@ impl CommandExecutor {
 
         match apply(&plan, &actual_digest, &token, &workspace_root) {
             Ok(outcome) => {
+                // La revalidacion dice que se verifico y que no: un apply
+                // que no dice nada sobre la verificacion se lee como si la
+                // hubiera hecho.
+                let revalidation = crate::refactor::revalidate::run_revalidation(
+                    &crate::refactor::revalidate::build_revalidation_plan(&plan, &outcome),
+                    &workspace_root,
+                );
+
                 if format == "json" {
                     #[derive(serde::Serialize)]
                     struct ApplyOkJson {
@@ -2581,6 +2577,7 @@ impl CommandExecutor {
                         committed: bool,
                         plan_id: uuid::Uuid,
                         applied_files: Vec<String>,
+                        revalidation: crate::refactor::revalidate::RevalidationReport,
                     }
                     let doc = ApplyOkJson {
                         schema_version: "cognicode.refactor.apply/v1",
@@ -2591,6 +2588,7 @@ impl CommandExecutor {
                             .iter()
                             .map(|p| p.to_string_lossy().to_string())
                             .collect(),
+                        revalidation,
                     };
                     println!("{}", serde_json::to_string_pretty(&doc)?);
                 } else {
@@ -2601,6 +2599,7 @@ impl CommandExecutor {
                     for f in &outcome.applied_files {
                         println!("  + {}", f.display());
                     }
+                    println!("  Revalidation: {}", revalidation.summary());
                 }
                 Ok(())
             }
@@ -2897,24 +2896,16 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
     doc["profiles"] = Value::Array(profiles_arr);
 
     // Tools: the typed catalog is the single source of truth. B2.W2
-    // replaces the manual `serde_json::Value` clone-loop with a round
-    // trip through `ToolDescriptor`. Every public field the schema
-    // promises (name, title, description, category, authority,
-    // stability, input_schema, output_schema, requirements,
-    // requirements_status, estimated_latency_ms, public_profiles,
-    // runtime_metadata) is carried by the struct, so the JSON output
-    // stays shape-compatible with `product/tools.json` and the
-    // parity test can compare the CLI document to the MCP catalog
-    // field-for-field.
+    // replaced the manual `serde_json::Value` clone-loop with a round trip
+    // through `ToolDescriptor`, so the JSON output stays shape-compatible
+    // with `product/tools.json` and the parity test compares the CLI
+    // document to the MCP catalog field-for-field.
     //
-    // We use `load_tool_catalog_active()` (feature-filtered) so the
-    // CLI document matches the MCP `tools/list` exactly: both are the
-    // *live* surface, not the universe of all possible tools. The
-    // catalogue file remains the source of truth on disk; the
-    // `feature` field tells the loader which entries are live in this
-    // build. A `cognicode capabilities --json` consumer sees the same
-    // 73 (default build) tools that MCP advertises; a
-    // `--features evidence-cli-ladybug` build sees 74.
+    // `load_tool_catalog_active()` is feature-filtered so the CLI document
+    // matches the MCP `tools/list` exactly: both are the *live* surface.
+    // The catalogue file stays the source of truth on disk; the `feature`
+    // field says which entries are live in this build (73 in the default
+    // build, 74 with `evidence-cli-ladybug`).
     let catalog = crate::interface::catalog::load_tool_catalog_active();
     let tools_arr: Vec<Value> = catalog
         .iter()

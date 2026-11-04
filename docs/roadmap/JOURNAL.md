@@ -32040,3 +32040,78 @@ al dueño) y por el comportamiento del dueño, no de punta a punta, porque const
 uno.
 
 **NOT_RUN:** mutantes y gate completo (lote de 10 tareas).
+
+## 2026-11-05 — TASK-112: la revalidacion dice la verdad, y el apply la publica
+
+**Qué.** El informe de revalidación declaraba tres comprobaciones ejecutadas —`architecture`,
+`quality_findings`, `impact`— y no ejecutaba ninguna. Peor que la declaración falsa: el módulo no
+tenía llamador de producción. `cognicode refactor --apply` cambiaba ficheros y no decía una sola
+palabra de la verificación. El hueco se había medido al cerrar TASK-77 y enrutado como TASK-112.
+
+**La mentira, tal como estaba fijada en el árbol.** No era un descuido: estaba **pinned** por dos
+tests. `executed_checks_includes_architecture_quality_impact` exigía que el informe nombrara las tres
+comprobaciones, y `executed_checks_is_non_empty_in_default_report` se declaraba «defense-in-depth»
+sobre el anterior con el argumento de que «el reporte dice QUE se ejecutó, no solo QUE falló». El
+segundo test,name en inglés lo que el primero fijaba en español: un informe que dice qué corrió
+cuando no corrió nada es una afirmación que nadie midió. Y el bloque de hallazgos no tenía forma de
+distinguir «se buscó y no se encontró» de «nadie miró»: sus cuatro campos (`findings`,
+`total_files_scanned`, `language_breakdown`, `truncated`) son los de una búsqueda que ocurrió, y la
+búsqueda no ocurrió.
+
+**Qué cambia.**
+
+- `RevalidationFindings` lleva `searched: bool`. Una lista vacía con `searched: false` es «nadie
+  miró»; con `searched: true` sería «se buscó y no se encontró». Son afirmaciones distintas y el
+  bloque las dice.
+- `RevalidationReport` lleva `not_executed_reason: Option<String>`, y `executed_checks` nombra solo
+  lo que corrió. La razón canónica `REVALIDATION_NO_CHECK_EXECUTED_REASON` —«no incremental
+  extractor is wired over the changed files: nothing was searched»— dice en palabras el hueco que
+  antes se tapaba con una lista de tres nombres.
+- `RevalidationReport::summary()` es la única redacción de la línea que se imprime, y vive con el
+  informe y no con la superficie que lo imprime: dos superficies no pueden decir cosas distintas
+  sobre el mismo informe.
+- **`refactor --apply` publica el informe.** Tras un apply correcto, el documento JSON lleva la
+  clave `revalidation` y el terminal imprime la línea del resumen. Antes, el apply se callaba.
+
+**Lo que NO se hace, y por qué.** Esta unidad **no cablea un extractor incremental**. Hoy no hay
+ninguno sobre `what_changed`, y la respuesta honesta a «¿se verificó?» es «no se verificó nada».
+Poner una comprobación en la lista para llenarla sería la misma mentira con otro traje: el nombre
+de un check que nadie corre sigue siendo una afirmación que nadie midió. La unidad hace que el hueco
+sea visible y que el apply lo publique; el extractor es trabajo aparte, con su propio criterio de
+lo que cuenta como verificado.
+
+**Salida publicada, cambios declarados.** El documento JSON de `refactor apply` —`cognicode.refactor.apply/v1`—
+**gana una clave**: `revalidation`. El bloque `findings` de ese informe **gana un campo**: `searched`.
+Un consumidor que compara el documento byte a byte ve el cambio; es una clave nueva, no una
+renombrada.
+
+**RED medido.** Revirtiendo el parche de fuentes sobre el árbol de la unidad (parche en `/tmp` y
+copia de seguridad aparte, porque el hook `reference-transaction` de `git-control` deniega `git stash`
+y `git fetch` en esta máquina): el test de núcleo **no compila** —`REVALIDATION_NO_CHECK_EXECUTED_REASON`,
+`not_executed_reason` y `searched` no existen todavía— y los **2 tests de CLI fallan**: el documento
+previo sale `{"applied_files":[…],"committed":true,"plan_id":…,"schema_version":"cognicode.refactor.apply/v1"}`,
+sin `revalidation`, y el terminal imprime solo la línea del fichero aplicado. Restaurado: 12/12 y
+2/2 GREEN.
+
+**Ratchet.** `crates/cognicode-core/tests/it/b5_w4_post_apply_revalidation.rs` (12 tests): los dos
+tests que fijaban la mentira se reescriben para fijar su contrario, el bloque de hallazgos dice que
+no se buscó, y la revalidación tiene una casa de producción (el `refactor apply` del CLI la llama).
+`crates/cognicode-cli/tests/it/refactor_apply_publishes_the_revalidation.rs` (2 tests, nuevos): el
+binario real sobre un workspace real, y el documento que imprime —`executed_checks` vacío,
+`not_executed_reason` presente, `findings.searched` en `false`, `analyzed_files` contando lo que el
+apply tocó— más la línea del terminal. Los dos tests que fijaban la mentira **se sustituyen**: un
+test que exige una afirmación falsa no se arregla añadiendo otro al lado, se quita.
+
+**Verificación.** SHA base `4efba8d6`, rama `feature/task-112-revalidation-dice-la-verdad`, commit
+`fe23b71d`. `cargo test -p cognicode-core --lib --tests`: `--lib` 2517 OK y 2 ignorados, `--test it`
+959 OK y 2 ignorados. `cargo test -p cognicode-cli --test it`: 214 OK (212 + los 2 nuevos). Clippy del
+workspace con `-D warnings` (rc=0) y `cargo fmt --all --check` limpios. Ratchet de tamaño de fichero
+PASS: `interface/cli/commands.rs` 3109 → 3100 —el fichero ya estaba sobre el límite y esta unidad lo
+hacía crecer, así que se compactaron los ocho comentarios repetidos del grafo, el bloque del
+catálogo de tools y la redacción de la línea de revalidación, que ahora vive en `summary()`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+**NOT_RUN:** mutantes y gate completo (lote de 10 tareas).

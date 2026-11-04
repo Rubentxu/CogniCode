@@ -31,5 +31,6 @@ mod prf_f6_w3_bis_sbom_contract;
 mod prf_f6_w3_bis_staging_contract;
 mod qw03_bin_tracking_guard;
 mod qw04_preflight_contract;
+mod refactor_apply_publishes_the_revalidation;
 mod t1_5_5_json_dispatch;
 mod test_taxonomy_contract;

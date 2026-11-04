@@ -10,6 +10,11 @@
 //!     `RevalidationVerdict::VerdictRefused` with the canonical
 //!     reason. `InvariantsHold` is reserved for a future WU that
 //!     records an `evidence_digest`.
+//!   - `run_revalidation` runs NO check yet: there is no incremental
+//!     extractor wired over the changed files. The report says so —
+//!     `executed_checks` empty, `not_executed_reason` set, and the
+//!     findings block with `searched: false` — instead of naming checks
+//!     nobody ran.
 //!   - `run_revalidation` is PURE with respect to the filesystem:
 //!     does NOT invoke subprocess spawning, does NOT use `process-spawning stdlib APIs`,
 //!     does NOT shell-out. A finding or comment is data, not an
@@ -36,6 +41,15 @@ use super::plan::RefactorPlan;
 // =============================================================================
 // Constantes
 // =============================================================================
+
+/// La razon por la que un informe no nombra ninguna comprobacion.
+///
+/// El informe es evidencia: una lista de comprobaciones que no se
+/// ejecutaron es una afirmacion que nadie midio. Hoy no hay extractor
+/// sobre `what_changed`, asi que el informe lo dice con una lista vacia
+/// y esta razon al lado.
+pub const REVALIDATION_NO_CHECK_EXECUTED_REASON: &str =
+    "no incremental extractor is wired over the changed files: nothing was searched";
 
 /// Razon canonica por la que el veredicto del revalidation es
 /// `VerdictRefused`. Misma cadena que B4.W5: composite queries
@@ -122,6 +136,13 @@ impl RevalidationVerdict {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RevalidationFindings {
     pub findings: Vec<Finding>,
+    /// Si los ficheros se buscaron de verdad.
+    ///
+    /// `false` significa «nadie miró»: la lista de arriba esta vacia
+    /// porque no se busco, no porque no se encontrara nada. Un consumidor
+    /// que lee una lista vacia como «no se encontro nada» esta leyendo
+    /// una afirmacion que nadie hizo.
+    pub searched: bool,
     pub total_files_scanned: usize,
     /// Empty until a producer wires the extractor (see `run_revalidation`).
     pub language_breakdown: std::collections::BTreeMap<String, usize>,
@@ -129,9 +150,29 @@ pub struct RevalidationFindings {
 }
 
 impl RevalidationFindings {
-    fn none_found(total_files_scanned: usize) -> Self {
+    /// Una busqueda que corrio y no encontro nada.
+    ///
+    /// Es la forma que tendrá el bloque cuando un extractor este
+    /// cableado: la lista vacia con `searched` en `true` significa «se
+    /// busco y no se encontro», que es una afirmacion distinta de la de
+    /// `not_searched`.
+    pub fn searched_nothing(total_files_scanned: usize) -> Self {
         Self {
             findings: Vec::new(),
+            searched: true,
+            total_files_scanned,
+            language_breakdown: std::collections::BTreeMap::new(),
+            truncated: false,
+        }
+    }
+
+    /// Una busqueda que no corrio.
+    ///
+    /// La lista esta vacia porque nadie busco, y el bloque lo dice.
+    fn not_searched(total_files_scanned: usize) -> Self {
+        Self {
+            findings: Vec::new(),
+            searched: false,
             total_files_scanned,
             language_breakdown: std::collections::BTreeMap::new(),
             truncated: false,
@@ -156,9 +197,13 @@ pub struct RevalidationReport {
     pub diagnostics: Option<ArchitectureDiagnostic>,
     /// Verdict. Default `VerdictRefused`.
     pub verdict: RevalidationVerdict,
-    /// Names of the checks actually run (B4.W1 / W2 / W3). Always
-    /// populated so a consumer can tell WHAT was executed.
+    /// Names of the checks actually run.
+    ///
+    /// Empty when nothing ran, and that is the honest answer: a report
+    /// that names a check it did not run is a claim nobody measured.
     pub executed_checks: Vec<String>,
+    /// Why no check ran, when none did. `None` when something ran.
+    pub not_executed_reason: Option<String>,
 }
 
 impl RevalidationReport {
@@ -170,6 +215,18 @@ impl RevalidationReport {
     /// Helper exposed so tests can pin the default-empty invariant.
     pub fn incremental_analyses_count_is_zero_for_default_run(&self) -> bool {
         self.incremental_analyses_count() == 0
+    }
+
+    /// The one-line answer a surface prints.
+    ///
+    /// The wording lives here so every surface that prints the report
+    /// says the same thing: what ran, and why nothing ran when nothing
+    /// ran.
+    pub fn summary(&self) -> String {
+        match self.not_executed_reason.as_deref() {
+            Some(reason) => format!("no check ran ({reason})"),
+            None => format!("{} check(s) executed", self.executed_checks.len()),
+        }
     }
 
     /// Number of incremental analyses carried by the report.
@@ -219,20 +276,20 @@ pub fn run_revalidation(rp: &RevalidationPlan, workspace_root: &Path) -> Revalid
     }
     let plan_digest = format!("{:016x}", hasher.finish());
 
+    // El extractor sobre `what_changed` no esta cableado todavia: el
+    // parametro se reserva para el, y el informe lo dice en vez de
+    // nombrar comprobaciones que nadie corrio.
     let _ = workspace_root; // reserved for the extractor wiring.
 
     RevalidationReport {
         plan_id: rp.plan_id,
         plan_digest,
         analyzed_files: rp.what_changed.len(),
-        findings: RevalidationFindings::none_found(rp.what_changed.len()),
+        findings: RevalidationFindings::not_searched(rp.what_changed.len()),
         diagnostics: None,
         verdict: RevalidationVerdict::refused(),
-        executed_checks: vec![
-            "architecture".to_string(),
-            "quality_findings".to_string(),
-            "impact".to_string(),
-        ],
+        executed_checks: Vec::new(),
+        not_executed_reason: Some(REVALIDATION_NO_CHECK_EXECUTED_REASON.to_string()),
     }
 }
 
@@ -302,14 +359,55 @@ mod tests {
         assert_eq!(rp.what_changed, applied);
     }
 
-    /// (3) executed_checks is non-empty.
+    /// (3) executed_checks is empty when nothing ran, and the report
+    /// says why.
     #[test]
-    fn executed_checks_is_non_empty_in_default_report() {
+    fn executed_checks_is_empty_when_no_check_ran() {
         let plan = stub_plan();
         let outcome = stub_outcome(plan.id, Vec::new());
         let rp = build_revalidation_plan(&plan, &outcome);
         let r = run_revalidation(&rp, std::path::Path::new("/tmp/ws"));
-        assert!(!r.executed_checks.is_empty());
+        assert!(
+            r.executed_checks.is_empty(),
+            "a report that names a check it did not run is a claim nobody measured: {:?}",
+            r.executed_checks
+        );
+        assert_eq!(
+            r.not_executed_reason.as_deref(),
+            Some(REVALIDATION_NO_CHECK_EXECUTED_REASON),
+            "the report says why nothing ran"
+        );
+    }
+
+    /// (3b) the findings block says it did not search.
+    #[test]
+    fn the_findings_block_says_it_did_not_search() {
+        let plan = stub_plan();
+        let outcome = stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
+        let rp = build_revalidation_plan(&plan, &outcome);
+        let r = run_revalidation(&rp, std::path::Path::new("/tmp/ws"));
+        assert!(
+            !r.findings.searched,
+            "nobody searched the changed files, and the block says so"
+        );
+        assert!(
+            r.findings.findings.is_empty(),
+            "an empty list is consistent with «nobody looked»"
+        );
+    }
+
+    /// (3c) the summary says what ran, and why when nothing ran.
+    #[test]
+    fn the_summary_says_what_ran_and_why_when_nothing_ran() {
+        let plan = stub_plan();
+        let outcome = stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
+        let rp = build_revalidation_plan(&plan, &outcome);
+        let r = run_revalidation(&rp, std::path::Path::new("/tmp/ws"));
+        assert_eq!(
+            r.summary(),
+            format!("no check ran ({REVALIDATION_NO_CHECK_EXECUTED_REASON})"),
+            "the line a surface prints says that nothing ran and why"
+        );
     }
 
     /// (4) verdict serializes as enum, not as bool.

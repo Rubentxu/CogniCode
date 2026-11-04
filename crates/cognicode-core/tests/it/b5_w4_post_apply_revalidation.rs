@@ -7,12 +7,19 @@
 //!     verdicts; investigate each piece). AAT-B5-04.
 //!   - `build_revalidation_plan(plan, outcome)` deriva `what_changed`
 //!     desde `outcome.applied_files` del `ApplyOutcome` de B5.W3.
-//!   - `run_revalidation(rp, workspace_root)` ejecuta los 3 analyses
-//!     incrementales de B4 (impact, architecture, quality) SOLO sobre
-//!     los archivos cambiados, sin ejecutar comandos arbitrarios.
-//!   - El MCP `safe_refactor_revalidate` aparece en el catalogo
-//!     `product/tools.json` con `authority: read` y `stability: stable`.
-//!   - `executed_checks` documenta los 3 checks B4 ejecutados.
+//!   - `run_revalidation(rp, workspace_root)` NO ejecuta todavia ningun
+//!     analysis incremental: no hay extractor cableado sobre los archivos
+//!     cambiados. El informe lo dice —`executed_checks` vacio,
+//!     `not_executed_reason` con el motivo, y el bloque de hallazgos con
+//!     `searched: false`— en vez de nombrar comprobaciones que nadie
+//!     corrio.
+//!   - `safe_refactor_revalidate` NO aparece en el catalogo: sin extractor
+//!     ni indice `plan_id -> plan` no hay una superficie honesta que
+//!     anunciar, y anunciarla seria volver al fantasma que este WU
+//!     retira (medido 2026-10-18; lo fija
+//!     `revalidation_is_not_advertised_over_mcp`).
+//!   - El comando `refactor apply` del CLI publica el informe tras un
+//!     apply correcto: la salida del apply dice que se verifico y que no.
 //!
 //! Politica B5.W4 (NO se debilita bajo ninguna circunstancia):
 //!   - `RevalidationVerdict::InvariantsHold` SOLO se emite si hay un
@@ -30,8 +37,8 @@ use cognicode_core::refactor::apply::ApplyOutcome;
 use cognicode_core::refactor::plan::RefactorPlan;
 use cognicode_core::refactor::revalidate::IncrementalAnalysis;
 use cognicode_core::refactor::revalidate::{
-    REVALIDATION_VERDICT_REFUSED_REASON, RevalidationVerdict, build_revalidation_plan,
-    run_revalidation,
+    REVALIDATION_NO_CHECK_EXECUTED_REASON, REVALIDATION_VERDICT_REFUSED_REASON,
+    RevalidationVerdict, build_revalidation_plan, run_revalidation,
 };
 use uuid::Uuid;
 
@@ -180,46 +187,70 @@ fn revalidation_is_not_advertised_over_mcp() {
     );
 }
 
-/// `executed_checks` documenta los 3 chequeos B4 ejecutados:
-/// arquitectura (B4.W2), quality findings (B4.W3), impact (B4.W1).
+/// `executed_checks` nombra SOLO las comprobaciones que se ejecutaron.
+///
+/// Este test fijaba la mentira: el informe declaraba tres comprobaciones
+/// (arquitectura, quality findings e impacto) y no ejecutaba ninguna. Un
+/// consumidor que lee `executed_checks` cree que hay evidencia detras, y
+/// la lista vacia es lo unico que no afirma nada que nadie midio.
 #[test]
-fn executed_checks_includes_architecture_quality_impact() {
+fn executed_checks_names_only_what_ran() {
     let plan = stub_plan();
     let outcome = stub_outcome(plan.id, vec![PathBuf::from("a.rs")]);
     let rp = build_revalidation_plan(&plan, &outcome);
     let r = run_revalidation(&rp, PathBuf::from(".").as_path());
-    let lower: HashSet<String> = r.executed_checks.iter().map(|s| s.to_lowercase()).collect();
     assert!(
-        lower.iter().any(|s| s.contains("architecture")),
-        "executed_checks must include architecture (B4.W2); got {:?}",
+        r.executed_checks.is_empty(),
+        "a report that names a check it did not run is a claim nobody \
+         measured; got {:?}",
         r.executed_checks
     );
-    assert!(
-        lower
-            .iter()
-            .any(|s| s.contains("quality") || s.contains("finding")),
-        "executed_checks must include quality/finding (B4.W3); got {:?}",
-        r.executed_checks
-    );
-    assert!(
-        lower.iter().any(|s| s.contains("impact")),
-        "executed_checks must include impact (B4.W1); got {:?}",
-        r.executed_checks
+    assert_eq!(
+        r.not_executed_reason.as_deref(),
+        Some(REVALIDATION_NO_CHECK_EXECUTED_REASON),
+        "the report says WHY nothing ran"
     );
 }
 
-/// `executed_checks` no esta vacio (defense-in-depth sobre el test
-/// anterior: garantiza que el reporte dice QUE se ejecuto, no solo
-/// QUE fallo).
+/// El bloque de hallazgos distingue «se busco y no se encontro» de
+/// «no se busco».
+///
+/// Una lista vacia de hallazgos con `searched: false` no es «no se
+/// encontro nada»: es «nadie miro». El bloque lo dice.
 #[test]
-fn executed_checks_is_non_empty_in_default_report() {
+fn the_findings_block_says_when_nothing_was_searched() {
     let plan = stub_plan();
-    let outcome = stub_outcome(plan.id, Vec::new());
+    let outcome = stub_outcome(plan.id, vec![PathBuf::from("a.rs")]);
     let rp = build_revalidation_plan(&plan, &outcome);
     let r = run_revalidation(&rp, PathBuf::from(".").as_path());
     assert!(
-        !r.executed_checks.is_empty(),
-        "executed_checks MUST be populated"
+        !r.findings.searched,
+        "nobody searched the changed files, and the block says so"
+    );
+    assert!(
+        r.findings.findings.is_empty(),
+        "an empty list is consistent with «nobody looked»"
+    );
+}
+
+/// La revalidacion tiene una casa de produccion.
+///
+/// Una funcion que solo sus propios tests ejercitan no es una capacidad:
+/// es una promesa. El comando `refactor apply` del CLI la llama tras un
+/// apply correcto y publica el informe, de modo que la salida del apply
+/// dice que se verifico y que no.
+#[test]
+fn the_revalidation_has_a_production_home() {
+    let source = include_str!("../../src/interface/cli/commands.rs");
+    assert!(
+        source.contains("run_revalidation"),
+        "the CLI's `refactor apply` must call the revalidation; a function \
+         that only its own tests exercise is a promise nobody keeps"
+    );
+    assert!(
+        source.contains("build_revalidation_plan"),
+        "the CLI's `refactor apply` must build the revalidation plan from \
+         the plan and the apply outcome"
     );
 }
 
@@ -294,6 +325,7 @@ fn revalidation_report_findings_block_keeps_its_published_shape() {
         json["findings"],
         serde_json::json!({
             "findings": [],
+            "searched": false,
             "total_files_scanned": 2,
             "language_breakdown": {},
             "truncated": false,
