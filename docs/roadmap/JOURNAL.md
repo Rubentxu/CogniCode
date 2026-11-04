@@ -32208,3 +32208,53 @@ gate es otro gate, y está rojo por otra unidad.
 
 **Alcance.** Los mutantes siguen cubriendo solo `cognicode-graph-algos`, por diseño del gate: no
 certifican `cognicode-core` ni `cognicode-explorer`.
+
+## 2026-11-05 — TASK-113: el snapshot se regenera sobre la punta, y dice lo que hay
+
+**Qué.** `docs/roadmap/CURRENT.md` declaraba `Snapshot**: 2026-11-03, sobre
+`39beacb617ae434fac167d984b50fd5b48dfd6a7`, y ese commit estaba **45 commits por detrás** de la
+punta. Su propio contrato lo decía: `scripts/ci/test_roadmap_version_ratchet.py` acepta como máximo
+`SNAPSHOT_MAX_DRIFT = 5` commits de deriva, medidos contra la base con `main`.
+
+**RED medido.** `bash scripts/ci/run-all-contracts.sh` salía rc=1 con **dos** fallos, los dos del
+ratchet: `test_current_sha_matches_head` y su agregador `test_control_all_green`. El rojo era
+idéntico en `main` y en cualquier rama: no lo causaba ninguna unidad concreta, era deriva de ritmo.
+
+**Lo que NO se hizo.** No se tocó una cabecera y se dejó la prosa vieja. `CURRENT.md` es un snapshot
+del estado del árbol: cambiar el SHA y dejar el texto describiendo un mundo que ya no existe sería
+una mentira nueva, del mismo tipo que las que este proyecto retira.
+
+**Qué cambia.**
+
+- La cabecera declara `a88e2ca2aca3afb0321642988a6a217d51d6b0ba`, la punta real, con la fecha del
+  día. El ratchet mide la deriva contra la base con `main`, así que un snapshot sobre la punta
+  tiene deriva 0 —y 1 cuando la fusión lo deje un commit atrás, que es lo que el squash produce.
+- **La prosa que describía superficies retiradas dice, ahora, que se retiraron.** La suite E2E de
+  navegador de Explorer ya no duerme: ya no existe —se retiró el 2026-11-04 con las puertas de
+  merge y las lanes de CI, medido en `67c474e2`—, y lo que queda son dos clases de test y solo dos.
+  El «modo rápido» con sus dos caminos tampoco existe: lo que queda es un gate de tres pasos que se
+  corre entero y no por subconjunto.
+- **Una sección nueva: «Qué cambió desde el snapshot anterior»**, con 45 commits de distancia
+  (`git rev-list --count 39beacb..a88e2ca2`) y una tabla donde cada fila dice **qué se movió y en
+  qué commit está medido**. No es una lista de intenciones: las filas citan el commit que la midió.
+- **La lección 15**, que esta ventana destapó: el mensaje de una fusión lo compone la forja, y el
+  juez que lo juzga llega tarde. Un squash cuya cabecera llevaba una línea de crédito entró en
+  `main` sin que nadie la juzgara, y el primer juez que la vio fue el hook local, cuando el clon
+  intentaba seguir a `main` —el daño ya estaba hecho y el commit ya era la historia—. El arreglo no
+  es reescribir `main`, que está protegido: es que el crédito que la política prohibe tenga una
+  casa donde sí quepa, que es `AUTHORS.md` y, mientras no exista, el `JOURNAL`.
+- **La tabla de gates dice los comandos que existen.** Y dice, además, lo que se midió: los
+  contratos y la UI **no los corre el gate** —son gates aparte—, y eso se hurtó del gate medido el
+  2026-11-05 sobre `14f71609`, que salió rc=0 con los contratos en rojo.
+
+**Verificación.** `python3 scripts/ci/test_roadmap_version_ratchet.py` → `ROADMAP version ratchet: OK
+(workspace=0.101.31, head=a88e2ca2aca3)`, y el rojo estaba medido antes de tocar el fichero.
+`bash scripts/ci/run-all-contracts.sh` → **rc=0** (antes rc=1). El cambio es de documentación: no
+toca código de producción, así que la suite de tests y el gate no lo tocan.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+**NOT_RUN:** gate completo (lote de 10 tareas) — la unidad no toca código de producción, y el gate
+sobre `14f71609` está en verde con su recibo.
