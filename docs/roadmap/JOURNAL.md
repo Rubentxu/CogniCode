@@ -31077,3 +31077,47 @@ atrapados, 0 vivos, 0 timeouts (2 min). Lib `cognicode-graph-algos`: 225 en verd
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-61: hover, go_to_definition y find_references confinan la ruta
+
+**Hueco.** Los tres handlers LSP del MCP aceptaban una ruta fuera del workspace y
+leían la definición resultante aunque cayera fuera de él.
+
+**Tests.** `go_to_definition_rejects_a_file_outside_the_workspace`,
+`find_references_rejects_a_file_outside_the_workspace` y
+`a_definition_outside_the_workspace_is_not_read`, más los de hover ya existentes.
+
+**Diagnóstico.** La confinación se aplica antes de cualquier lectura, en los tres
+handlers, y también a la ruta de la definición devuelta.
+
+**Evidencia.** PR #545 → `e7a33c2f`. `cognicode-core --lib lsp_handlers`: 17 ok,
+0 fallos (worktree aislado, `CARGO_TARGET_DIR` propio).
+
+**NOT_RUN.** Gate completo (`bash scripts/test-gate.sh`): se pasa por lote de 10
+tareas. `just verify` no existe en el `justfile`.
+
+## 2026-11-04 — TASK-71: tests de integración consolidados en un binario por crate
+
+**Hueco.** Cada fichero de `tests/` compilaba y enlazaba su propio binario.
+
+**Tests.** Suites `it` de `cognicode-core`, `cognicode-mcp` y `cognicode-cli`;
+verificadores de contrato Python (suites que un pipeline nombra, ratchet de tamaño).
+
+**Evidencia.** PR #546 → `b0d3926b`. `core it`: 940 ok, 1 fallo, 2 ignorados; el
+fallo es `release_binary_stdio_round_trip_smoke` (falta el binario release de
+`cognicode-mcp`, infraestructura local, igual en la base). `mcp it`: 77 ok.
+`cli it`: 222 ok. Ambos verificadores Python: PASS.
+
+**Limitación conocida, SIN atribuir.** La primera corrida de `core it` dio 9 fallos
+(8 de `b6_w1_mcp_robustness` y `b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`).
+No se reprodujo en dos reruns. También falló `merge-gate` en el PR; su causa no se
+conoce. No se afirma que esté resuelto.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+
+## 2026-11-04 — Medición de `cognicode-graph-algos` completa
+
+`cargo mutants -j 1`, 564 mutantes, 50 min: 546 atrapados, 9 inviables, 8 vivos,
+1 timeout (`taint.rs:153`). Derivados: TASK-96 (conductance, bloqueada por decisión
+de producto), TASK-105 (feedback_arc_set), TASK-106 (taint), TASK-107
+(transitive_reduction).
