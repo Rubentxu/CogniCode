@@ -96,12 +96,14 @@ ignore = [
 # the LGPL-licensed transitive if a permissively-licensed alternative
 # appears.
 #
-# This section makes the licenses gate executable. It IS wired as its own
-# blocking step — the `licenses` stage of `release-candidate.pipeline.kts`,
-# running `cargo deny check licenses`. An earlier version of this comment
-# claimed that the two release workflows "only run `cargo deny check
-# advisories`, not licenses", which stopped being true when that step was
-# added; corrected 2026-10-01.
+# This section makes the licenses gate executable. It is run by
+# `cargo deny check licenses`, which the integration test
+# `crates/cognicode-cli/tests/a015_licenses_gate.rs` executes as its own
+# blocking step — the CI lanes that used to run it as a pipeline stage were
+# retired on 2026-11-04, and the test is where the check lives now. An
+# earlier version of this comment claimed that the two release workflows
+# "only run `cargo deny check advisories`, not licenses", which stopped being
+# true when that step was added; corrected 2026-10-01.
 #
 # Status after this commit (2026-09-26):
 #   - All third-party dependencies PASS the allow-list.

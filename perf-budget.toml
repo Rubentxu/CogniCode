@@ -7,12 +7,13 @@
 # exact line. This file used to say "CI fails if any operation exceeds its
 # budget", which was false: no workflow referenced `perf` and nothing invoked
 # scripts/perf-budget-check.sh. The checker exists and works, but running it
-# takes ~457 s, so wiring it into merge-gate (already 12-20 min) is an open
-# decision. Tracked in work item 6e1bb51a-09df-456b-9287-fdfedba835c1.
+# takes ~457 s, so it is measured on demand rather than enforced by anything.
+# The CI lanes were retired on 2026-11-04, which is what makes `none` the
+# truthful word now.
 #
-# If you wire the checker into CI, change this line to `ENFORCEMENT: ci` in the
-# same commit. The contract fails if the two ever disagree, so the declaration
-# cannot rot.
+# If you wire the checker into the gate, change this line to `ENFORCEMENT: ci`
+# in the same commit. The contract fails if the two ever disagree, so the
+# declaration cannot rot.
 #
 # To check manually: ./scripts/perf-budget-check.sh
 #   exit 0  every budgeted operation was measured and within budget

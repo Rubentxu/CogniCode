@@ -463,56 +463,22 @@ fn the_real_budget_declares_enforcement_it_does_not_have() {
         "unrecognised enforcement status `{declared}`; expected `ci` or `none`"
     );
 
-    // Which lane runs the checker, and whether it can stop that lane. The
-    // orchestrator that gates a merge is `merge-gate.pipeline.kts`; it used to
-    // be `.github/workflows/pr-ci.yml`, and the declaration is about a lane
-    // rather than about a file, so it is asked of every pipeline instead of one
-    // named path.
+    // The budget declares how it is enforced, and the declaration is checked
+    // against what the repository actually does. There are no CI lanes any
+    // more (retired 2026-11-04), so the checker runs nowhere: a budget that
+    // nothing executes is a *measurement on demand*, not an enforcement.
     //
-    // `ENFORCEMENT` is about enforcement, not about invocation, and the two came
-    // apart here. `certification.pipeline.kts` runs the checker, prints the
-    // exit code, says in so many words that the verdict is not a PASS, and
-    // continues — so the budget is *observed* and not *enforced*, and `none`
-    // is still the truthful word. The previous version of this test asked only
-    // "is the checker invoked?", which cannot tell those apart, so it read a
-    // faithful lane as a lie. It stayed green anyway, because the reader it used
-    // matched `sh(` and the command on ONE line and could not see inside the
-    // multi-line `sh("""…""")` body the stage actually uses. Two defects, one of
-    // them in the instrument.
-    let invocations = common::invocations("perf-budget-check");
-    let observed: Vec<&str> = invocations.iter().map(|i| i.at.as_str()).collect();
-    let enforced: Vec<&str> = invocations
-        .iter()
-        .filter(|i| i.blocking)
-        .map(|i| i.at.as_str())
-        .collect();
-
-    // Both directions, because the old one-way form could not fail in the
-    // state the repository is in: `perf-budget.toml` declares `none`, and
-    // `declared != "ci" || wired` is then true whatever `wired` says. An
-    // assertion that cannot go red in the present is not a gate.
-    if declared == "ci" {
-        assert!(
-            !enforced.is_empty(),
-            "perf-budget.toml declares `ENFORCEMENT: ci`, but no pipeline runs \
-             the checker in a position where its verdict can fail the lane \
-             (observed in {observed:?}, none of them blocking). Either wire it \
-             where a non-zero exit stops the lane or change the declaration in \
-             the same commit."
-        );
-    } else {
-        assert!(
-            enforced.is_empty(),
-            "perf-budget.toml declares `ENFORCEMENT: none`, yet the checker can \
-             fail the lane from {enforced:?}. Either the declaration is stale or \
-             the lane is enforcing something the budget says is not enforced. \
-             Note that running the checker is not free of consequence: while any \
-             budgeted operation has no benchmark the run exits 3 UNMEASURED, so \
-             making it blocking turns a lane permanently red. Today that set is \
-             whatever `# UNMEASURED:` names — see \
-             `a_budgeted_operation_is_measured_or_declared_unmeasured`."
-        );
-    }
+    // That makes `none` the truthful word, and this test pins it: if a future
+    // change wires the checker into anything that can fail a build, the
+    // declaration has to change in the same commit.
+    assert_eq!(
+        declared, "none",
+        "perf-budget.toml declares `ENFORCEMENT: {declared}`. The CI lanes that \
+         could enforce a budget are gone (retired 2026-11-04), so the only \
+         truthful declaration is `none` — the budget is measured on demand by \
+         `scripts/perf-budget-check.sh`, not enforced by anything. If a budget \
+         is wired into a build again, change this declaration in the same commit."
+    );
 }
 
 // ---------------------------------------------------------------------------

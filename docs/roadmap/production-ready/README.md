@@ -22,7 +22,7 @@
 - `ROLE-ASSIGNMENT.md` — responsables por rol y prerequisitos técnicos.
 - `RISK-REGISTER.md` — riesgos de ejecución y mitigaciones.
 - `METRICS-AND-ACCEPTANCE.md` — KPIs y Definition of Done.
-- `UAT-CHECKLIST.md` — pruebas de aceptación del programa.
+- `UAT-CHECKLIST.md` — pruebas de aceptación del programa. **Retirado** el 2026-11-04, con la clase UAT que el programa usaba como tercera clase de test.
 - `phases/` — plan operativo por fases.
 - `runbooks/` — C8 y e91 paso a paso.
 - `adr/` — propuestas de decisión arquitectónica derivadas de la auditoría.

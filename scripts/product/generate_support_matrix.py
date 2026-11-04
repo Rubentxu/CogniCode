@@ -26,9 +26,9 @@ PLATFORM_SCHEMA_VERSION = "cognicode.platforms/v1"
 SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
 
 # Platforms the product does not claim. The reason each is unsupported is that
-# the release lane does not build it, and that is now checked rather than
+# the product does not publish it, and that is now checked rather than
 # asserted in prose: `deferred_evidence` verifies the target is absent from
-# `val targets` and fails if it appears.
+# the published set and fails if it appears.
 #
 # The strings used to read "No macOS lane exists in .github/workflows/release.yml"
 # — a claim about a file. If someone added a macOS target to the release lane,
@@ -62,22 +62,23 @@ DEFERRED_PUBLIC_PLATFORMS = [
 def deferred_evidence(root: Path, entry: dict[str, object]) -> list[str]:
     """Evidence for a platform this product does not claim: verified absence.
 
-    The evidence for "unsupported" is a negative fact — nothing builds this —
-    so the check is that the release lane does not name the target. A
+    The evidence for "unsupported" is a negative fact — nothing publishes this —
+    so the check is that the platform matrix does not mark it as published. A
     hand-written sentence claiming absence cannot notice the day it stops
     being true.
     """
     target = str(entry["target"])
     if target in release_lane.release_targets(root):
         raise ValueError(
-            f"{release_lane.RELEASE_LANE} builds `{target}`, but "
-            f"`{entry['id']}` is listed here as unsupported. The release lane "
-            f"is the authority for what is published; either the platform is "
-            f"now supported and this entry is stale, or the lane is building "
-            f"something the product does not claim."
+            f"{release_lane.PLATFORMS_MATRIX} publishes `{target}`, but "
+            f"`{entry['id']}` is listed here as unsupported. The platform "
+            f"matrix is the authority for what is published; either the "
+            f"platform is now supported and this entry is stale, or the "
+            f"matrix publishes something the product does not claim."
         )
     return [
-        f"Not built by {release_lane.RELEASE_LANE} (no entry in `val targets`)",
+        f"Not published by {release_lane.PLATFORMS_MATRIX} "
+        f"(support_level is not `{release_lane.PUBLISHED_LEVEL}`)",
         str(entry["tracking"]),
     ]
 
@@ -103,6 +104,32 @@ def read_required(root: Path, relative: str) -> str:
     if not content.strip():
         raise ValueError(f"required source is empty: {relative}")
     return content
+
+
+def read_matrix(root: Path) -> dict[str, Any]:
+    """The product's platform matrix, parsed.
+
+    Read through the JSON parser rather than by shape-matching a pipeline
+    file: the matrix is the authority for what the product supports, and a
+    reader that guesses at its shape is a second implementation of the format
+    that drifts the first time the format is used differently.
+    """
+    path = root / release_lane.PLATFORMS_MATRIX
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(
+            f"required source is unreadable: {release_lane.PLATFORMS_MATRIX}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{release_lane.PLATFORMS_MATRIX} is not valid JSON: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{release_lane.PLATFORMS_MATRIX} must contain an object"
+        )
+    return data
 
 
 def workspace_version(root: Path) -> str:
@@ -187,12 +214,12 @@ def acceptance_variants(root: Path) -> set[str]:
 
 
 def release_platforms(root: Path) -> list[release_lane.ReleasePlatform]:
-    """Every published platform, from the lane that publishes it.
+    """Every published platform, from the matrix that says what is published.
 
     This read `.github/workflows/release.yml` with a regex shaped around a
     YAML matrix entry, and then asserted the pairs against its own `expected`
-    set. Both halves are gone: `release_lane.py` reads the declarations in
-    `release-candidate.pipeline.kts` and reconciles them with each other.
+    set. Both halves are gone: `release_lane.py` reads the published set from
+    `product/platforms.json`.
 
     A matrix regex was the fragile part. It matched
     `platform: <id> runner: … rust_target: <triple>` across a YAML block, so
@@ -209,50 +236,54 @@ def release_platforms(root: Path) -> list[release_lane.ReleasePlatform]:
 
 
 def musl_target(root: Path) -> str:
-    """The musl target the integration lane smoke-builds.
+    """The musl target the product builds experimentally.
 
-    Read from `integration.pipeline.kts`, which runs the build. It used to be
-    read from `ci.yml` by substring search: the check was "this file mentions
-    the target", which is satisfied by a comment and would have survived the
-    build being deleted.
+    Read from `product/platforms.json`, which is where the platform matrix
+    declares it. It used to be read from `ci.yml` by substring search: the
+    check was "this file mentions the target", which is satisfied by a comment
+    and would have survived the build being deleted.
     """
-    source = read_required(root, "integration.pipeline.kts")
-    match = re.search(r"--target\s+([a-z0-9_]+-unknown-linux-musl)", source)
-    if not match:
-        raise ValueError(
-            "integration.pipeline.kts builds no musl target. The platform "
-            "matrix lists linux-x86-64-musl as an experimental smoke build, so "
-            "either the build moved to another lane or the entry is a claim "
-            "nothing backs."
-        )
-    return match.group(1)
+    matrix = read_matrix(root)
+    for entry in matrix.get("platforms", []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("id") == "linux-x86-64-musl":
+            target = entry.get("target")
+            if isinstance(target, str) and target.endswith("-unknown-linux-musl"):
+                return target
+    raise ValueError(
+        "product/platforms.json declares no linux-x86-64-musl target. The "
+        "platform matrix lists linux-x86-64-musl as an experimental build, so "
+        "either the target was renamed or that entry is a claim nothing backs."
+    )
 
 
 def linux_aarch64_target(root: Path) -> str:
-    """The aarch64 Linux triple, read from the lane's own re-enable comment.
+    """The aarch64 Linux triple, read from the platform matrix.
 
     `linux-aarch64` is `experimental`: the project intends to certify it
-    (TF-6 / TF-7) and no lane builds it yet. That is a different claim from
+    (TF-6 / TF-7) and does not publish it yet. That is a different claim from
     `unsupported`, and a third one from simply being absent — an absent
     platform tells a reader nothing, and before 2026-10-15 this one was
     absent by accident: it had only ever appeared because an inert
     `platformOf` arm in the release lane made the generator certify it.
 
-    The triple is read out of the lane rather than written here so that the
-    spelling cannot drift from the one the re-enable steps restore.
+    The triple is read out of the matrix rather than written here so that the
+    spelling cannot drift from the one the platform entry declares.
     """
-    source = read_required(root, release_lane.RELEASE_LANE)
-    match = re.search(
-        r"`([a-z0-9_]+-unknown-linux-gnu)` arm in `platformOf`", source
+    matrix = read_matrix(root)
+    for entry in matrix.get("platforms", []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("id") == "linux-aarch64":
+            target = entry.get("target")
+            if isinstance(target, str) and target:
+                return target
+    raise ValueError(
+        "product/platforms.json no longer declares the linux-aarch64 target. "
+        "The platform matrix lists linux-aarch64 as experimental, so either "
+        "the target was renamed or that entry is a claim nothing backs."
     )
-    if not match:
-        raise ValueError(
-            f"{release_lane.RELEASE_LANE} no longer documents the aarch64 "
-            "triple in its re-enable steps. The platform matrix lists "
-            "linux-aarch64 as experimental, so either the target was renamed "
-            "or that entry is a claim nothing backs."
-        )
-    return match.group(1)
 
 
 def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -317,8 +348,8 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
                 "name": entry.platform.replace("-", " ").title(),
                 "support_level": "certified",
                 "evidence": [
-                    f"Native publishable lane in {release_lane.RELEASE_LANE}",
-                    f"Certified by {release_lane.RELEASE_LANE} and published unchanged by release.pipeline.kts",
+                    f"Native publishable platform in {release_lane.PLATFORMS_MATRIX}",
+                    f"Certified by {release_lane.PLATFORMS_MATRIX} and published unchanged",
                 ],
             }
         )
@@ -329,8 +360,8 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             "name": "Linux x86_64 musl",
             "support_level": "experimental",
             "evidence": [
-                "Smoke build in integration.pipeline.kts",
-                f"No publishable release lane in {release_lane.RELEASE_LANE}",
+                "Smoke build of the musl target",
+                f"No publishable platform in {release_lane.PLATFORMS_MATRIX}",
             ],
         }
     )
@@ -341,7 +372,8 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             "name": "Linux Aarch64",
             "support_level": "experimental",
             "evidence": [
-                f"Not built by {release_lane.RELEASE_LANE} (no entry in `val targets`)",
+                f"Not published by {release_lane.PLATFORMS_MATRIX} "
+                f"(support_level is not `{release_lane.PUBLISHED_LEVEL}`)",
                 "TF-6/TF-7 track the CI runner provisioning and the cross toolchain",
             ],
         }

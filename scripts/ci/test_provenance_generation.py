@@ -49,7 +49,7 @@ ADR de provenance midio.
 
 Un contrato que midiera el binario equivocado no mediria el mecanismo: mediria
 el defecto. Y uno que se saltara porque el binario fijado no esta tampoco
-mediria nada, asi que el `merge-gate` lo instala antes de correr los contratos.
+mediria nada, asi que el gate lo instala antes de correr los contratos.
 
 ## Que se comprueba
 
@@ -86,8 +86,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = REPO_ROOT / "scripts" / "ci" / "attest-provenance.sh"
 GATE = REPO_ROOT / "scripts" / "ci" / "verify-provenance.sh"
-CANDIDATE_PIPELINE = REPO_ROOT / "release-candidate.pipeline.kts"
-RELEASE_PIPELINE = REPO_ROOT / "release.pipeline.kts"
+VERIFIER = GATE
 TOOL = REPO_ROOT / "scripts" / "ci" / "cosign-tool.sh"
 
 # Contrasena de la clave DE SONDA. No es un secreto y no protege nada: la clave
@@ -205,31 +204,21 @@ def _verify_blob(pub: Path, bundle: Path, blob: Path) -> subprocess.CompletedPro
     )
 
 
-def _candidate_provenance_stage() -> str | None:
-    """El CUERPO de la stage, o `None` si no existe.
+def _repo_scripts() -> list[Path]:
+    """Every shell script that belongs to THIS repository.
 
-    MEDIDO 2026-10-04. La primera version de estos tests buscaba
-    `attest-provenance.sh` en el fichero entero, y la mutacion que borra la
-    stage **no los tumbo**: el bloque de comentario que explica la stage
-    menciona el mismo nombre, asi que la asercion se satisfacia con prosa.
-
-    Eso es exactamente el defecto que este ADR documenta para
-    `release.pipeline.kts` —el header describia una politica y el codigo
-    aplicaba otra—, repetido en el contrato que vigila al header. Un gate que
-    puede pasar con un comentario no vigila el codigo.
-
-    Se recorta desde `stage("provenance") {` hasta el cierre del `sh(...)`, que
-    es donde termina el shell que corre de verdad. El comentario de arriba queda
-    fuera por construccion.
+    `rglob` over the repository root also walks `.claude/worktrees/`, where an
+    agent's checkout holds its own copy of every script. A copy is not a second
+    policy: it is the same file in another working tree, and counting it would
+    make the "the policy lives in one place" assertion report a finding that
+    does not exist — and would hide a real one behind the noise.
     """
-    text = CANDIDATE_PIPELINE.read_text(encoding="utf-8")
-    marker = 'stage("provenance") {'
-    if marker not in text:
-        return None
-    start = text.index(marker)
-    if '""".trimIndent())' not in text[start:]:
-        return None
-    return text[start : start + text[start:].index('""".trimIndent())')]
+    skip = {".git", "node_modules", "target", ".claude", "leases", "staging"}
+    return [
+        path
+        for path in REPO_ROOT.rglob("*.sh")
+        if not any(part in skip for part in path.relative_to(REPO_ROOT).parts)
+    ]
 
 
 # --- Tests ------------------------------------------------------------------
@@ -431,100 +420,103 @@ def test_a_bundle_does_not_transfer_to_other_bytes() -> None:
 # --- La forma, que es donde estaba el defecto --------------------------------
 
 
-def test_the_release_lane_does_not_generate() -> None:
-    """La generacion va en la lane del candidato, no en la de publicacion.
+def test_no_orchestration_asks_for_provenance_to_be_generated() -> None:
+    """La generacion la pide el que certifica el artefacto, no el que lo publica.
 
-    El ADR lo dice: la atestion tiene que cubrir **el candidato que fue
-    certificado**, y `release` consume ese candidato. Si `release` generase, la
-    atestion describiría un artefacto que nadie certifico, que es exactamente
-    la propiedad rota que el candidato inmutable previene para los binarios.
+    El ADR lo dice: la atension tiene que cubrir **el candidato que fue
+    certificado**, y la publicacion consume ese candidato. Si la publicacion
+    generase, la atension describiría un artefacto que nadie certifico, que es
+    exactamente la propiedad rota que el candidato inmutable previene para los
+    binarios.
+
+    Las lanes se retiraron el 2026-11-04, asi que no hay orquestador que
+    pueda pedir la generacion. La propiedad que queda —y que este contrato
+    sigue vigilando— es que el generador no se invoca a si mismo: se ejecuta
+    a mano, contra un artefacto concreto, por quien lo certifica.
     """
-    text = RELEASE_PIPELINE.read_text(encoding="utf-8")
-    assert "attest-provenance.sh" not in text, (
-        "release.pipeline.kts no debe generar provenance: la generacion pertenece a "
-        "la lane que produce el candidato (ADR-RELEASE-PROVENANCE-PIPELINEK, "
-        "'Consequences if accepted')."
+    assert not any(REPO_ROOT.glob("*.pipeline.kts")), (
+        "volvio un orquestador de pipelines. Si genera provenance, tiene que "
+        "ser la lane que produce el candidato, no la que lo publica."
     )
 
 
-def test_the_candidate_lane_wires_the_generator_where_the_candidate_is_built() -> None:
-    body = _candidate_provenance_stage()
-    assert body is not None, (
-        "no hay stage(\"provenance\") en release-candidate.pipeline.kts. La "
-        "generacion existe como script pero no esta conectada: es codigo muerto, "
-        "y lo unico que puede separarlo de la custodia es que la clave todavia "
-        "no exista. Conectarlo es lo que deja la custodia como lo unico que falta."
-    )
-    assert "scripts/ci/attest-provenance.sh" in body, (
-        "la stage de provenance no invoca al generador.\n"
-        f"cuerpo:\n{body}"
-    )
+def test_the_generator_is_reachable_by_hand() -> None:
+    """El generador tiene que existir y ser ejecutable a mano.
+
+    Antes de 2026-11-04 esto exigia que una stage de la lane del candidato lo
+    invocara. Sin lanes, la custodia de un artefacto es manual: quien certifica
+    ejecuta el generador contra el artefacto concreto. La garantia que queda
+    —y la que sigue importando— es que el generador existe, se puede ejecutar,
+    y no fabrica nada cuando no puede firmar.
+    """
+    assert GENERATOR.is_file(), f"no existe {GENERATOR}"
+    assert os.access(GENERATOR, os.X_OK), f"{GENERATOR} no es ejecutable"
 
 
 def test_the_policy_still_lives_in_exactly_one_place() -> None:
     """B7 no puede abrir una segunda politica.
 
-    `verify-provenance.sh` es el unico que lee `RELEASE_REQUIRE_PROVENANCE`, y su
-    contrato (`test_provenance_gate.py`) lo exige en ambas lanes. El generador
-    no lee esa variable: su unica condicion es si hay una clave con la que
-    firmar, que es una capacidad, no una politica.
+    `verify-provenance.sh` es el unico que lee `RELEASE_REQUIRE_PROVENANCE`. El
+    generador no lee esa variable: su unica condicion es si hay una clave con la
+    que firmar, que es una capacidad, no una politica.
+
+    Las lanes se retiraron el 2026-11-04, asi que la segunda mitad del contrato
+    —que ninguna lane expanda la politica— ya no tiene objeto: no hay ninguna.
+    Lo que queda, y lo que sigue siendo verdad, es que la politica vive en un
+    solo fichero.
     """
     generator_text = GENERATOR.read_text(encoding="utf-8")
     assert "RELEASE_REQUIRE_PROVENANCE" not in generator_text, (
         "el generador no lee la politica: si la leyera, habria dos politicas y "
         "volveria exactamente el desacuerdo que test_provenance_gate.py prohibe."
     )
-    for pipeline in (CANDIDATE_PIPELINE, RELEASE_PIPELINE):
-        text = pipeline.read_text(encoding="utf-8")
-        assert "${RELEASE_REQUIRE_PROVENANCE" not in text, (
-            f"{pipeline.name} vuelve a expandir la politica de provenance"
-        )
-
-
-def test_the_generator_is_not_required_while_no_key_exists() -> None:
-    """La asercion de orden, y la que si se invirtio dejo v0.101.3 sin publicar.
-
-    El ADR: "Flip the default only once generation exists in the same lane —
-    inverting this order breaks releases". La generacion existe; la clave no.
-    Exigir provenance hoy dejaria la lane roja por una razon que nadie puede
-    accionar, que es como se rompio la release anterior.
-
-    Lo que se comprueba es la FORMA de la etapa, no una palabra: que su cuerpo
-    tenga una rama sin clave que termine en `exit 0`. La primera version de este
-    test afirmaba que el nombre de la variable no aparecia en el fichero, y
-    fallo —el nombre aparece en el comentario que explica precisamente por que
-    la lane no la lee—. Es la distincion que `test_provenance_gate.py` ya fijo
-    y que aqui se respeta: lo prohibido es *evaluar* la variable, no *nombrarla*.
-    """
-    body = _candidate_provenance_stage()
-    assert body is not None, (
-        "no hay stage(\"provenance\") en release-candidate.pipeline.kts, asi que no "
-        "hay rama sin clave que pueda romper la release."
+    readers = [
+        path
+        for path in _repo_scripts()
+        if "RELEASE_REQUIRE_PROVENANCE" in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert readers == [VERIFIER], (
+        f"la politica de provenance la leen {readers}; deberia leerla solo "
+        f"{VERIFIER}. Dos politicas son un desacuerdo esperando a ocurrir."
     )
-    assert "RELEASE_PROVENANCE_KEY" in body, (
+
+
+def test_the_generator_refuses_without_a_key_and_says_why() -> None:
+    """Sin clave, el generador falla y explica el motivo.
+
+    Antes de 2026-11-04 esto se comprobaba sobre la etapa de la lane, que
+    tenia una rama sin clave que terminaba en `exit 0`. La lane se retiro; la
+    politica se mudo al generador, que es donde vive hoy. Y su forma es la
+    opuesta a la de la etapa: sin clave, **falla**, con un mensaje que dice
+    que la clave no se fabrica a proposito y que la custodia es una decision
+    humana.
+
+    Que el fallo sea un fallo y no un exito silencioso es lo que importa: un
+    generador que se salta la firma sin decir nada produce un artefacto sin
+    atension que parece tenerlo.
+    """
+    generator_text = GENERATOR.read_text(encoding="utf-8")
+    assert "--key" in generator_text, (
         "la generacion tiene que depender de la clave, que es la capacidad"
     )
-    assert "if [ -z" in body, (
-        "la stage tiene que tener una rama sin clave. Sin ella, llamar al "
-        f"generador sin clave es un fallo deliberado.\ncuerpo:\n{body}"
+    assert "if [ -z" in generator_text, (
+        "el generador tiene que tener una rama sin clave. Sin ella, llamar al "
+        "generador sin clave tiene que ser un fallo deliberado."
     )
 
-    # La rama sin clave va de `if [ -z` a su `fi` de cierre, buscado con su
-    # sangria y no como subcadena: `"fi"` aparece dentro de palabras y una
-    # busqueda laxa cortaria en el sitio equivocado.
-    start = body.index("if [ -z")
-    close = body.index("\n                    fi", start)
-    no_key_branch = body[start:close]
+    start = generator_text.index("if [ -z")
+    close = generator_text.index("\nfi", start)
+    no_key_branch = generator_text[start:close]
 
-    assert "exit 0" in no_key_branch, (
-        "la rama sin clave tiene que terminar la etapa con exito. Fallar aqui "
-        "seria una release rota por una decision de custodia que todavia no se "
-        f"ha tomado.\nrama:\n{no_key_branch}"
-    )
-    assert "NOT generated" in no_key_branch, (
-        "la etapa tiene que decir que no firmo. Saltarse en silencio es lo mismo "
-        "que no decir nada, que es lo que este repositorio se niega a publicar.\n"
+    assert "die" in no_key_branch, (
+        "la rama sin clave tiene que fallar. Fallar aqui es una decision de "
+        f"custodia que todavia no se ha tomado, no un fallo de construccion.\n"
         f"rama:\n{no_key_branch}"
+    )
+    assert "not" in no_key_branch.lower(), (
+        "la rama sin clave tiene que decir que no firmo y por que. Saltarse en "
+        "silencio es lo mismo que no decir nada, que es lo que este repositorio "
+        f"se niega a publicar.\nrama:\n{no_key_branch}"
     )
 
 

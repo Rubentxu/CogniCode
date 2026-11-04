@@ -12,9 +12,8 @@ merge-gate y nada mas: el gate local (`scripts/test-full.sh`) no lo
 ejecutaba, asi que el veredicto que el operador ve antes de abrir el PR
 podia ser verde con la matriz borrada. Una poda de documentacion borro el
 fichero que el lint lee, el lint sigo dando verde en local y solo el
-merge-gate lo habria detenido. El contrato cierra esa asimetria: el lint
-pasa a formar parte del conjunto de contratos, que el gate local y el
-merge-gate ejecutan los dos.
+gate lo habria detenido. El contrato cierra esa asimetria: el lint
+pasa a formar parte del conjunto de contratos, que el gate ejecuta.
 
 No reimplementa la comparacion. Carga el lint y lo ejercita, incluidos
 sus fallos. Un guard que solo sabe decir "todo bien" no es un guard: por

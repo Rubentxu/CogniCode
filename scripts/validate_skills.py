@@ -250,7 +250,6 @@ NON_TOOL_NAMES = frozenset(
         "build_server",
         "test_unit",
         "test_pg",
-        "check_known_failures",
         "lint",
         "dev",
         "run",

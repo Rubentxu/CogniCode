@@ -55,16 +55,7 @@ just test-unit   # unit tests
 just check       # cargo check across the workspace
 just lint        # clippy
 just fmt         # format
-just check-known-failures   # known-failure baseline is still honest
 ```
-
-**`just check-known-failures` is not a CI gate.** It runs
-`cargo test -p cognicode-core --lib` — without `--features evidence-kernel`,
-which is the slice `merge-gate` does *not* cover — and compares the failures it
-sees against `scripts/known_failures.yaml`. Run it yourself after touching
-`cognicode-core`, and run `just update-known-failures` after fixing a test that
-the baseline lists. CI will not catch a stale baseline for you: it neither runs
-this check nor suppresses anything because of it.
 
 If your change touches the release contract, the MCP tool surface, or the
 product artifacts, there are narrower checks that are the real gate:
@@ -75,18 +66,32 @@ cargo deny check licenses                 # dependency and licence policy
 ```
 
 **Every bug fix needs a test that failed before and passes after.** A fix
-without a regression test is an unverified claim. The CI gate will not catch
-this for you; review will.
+without a regression test is an unverified claim. Review will catch this for
+you; no automation will.
 
-**A passing selected suite is not a passing release gate.** Do not report "tests
-pass" from a subset. The full gate is the `merge-gate` stage tree in
-`merge-gate.pipeline.kts`, and it is required for every change to `main`.
+**A passing selected suite is not a passing gate.** Do not report "tests pass"
+from a subset. The gate is three steps, unfiltered:
 
-PipelineK is the only authority that executes CI/CD. `scripts/ci/pipeline_authority.py`
-declares which pipeline that is, once, and the wiring contracts read it from
-there. If you are adding a gate, add the stage to the pipeline and let the
-contract suite find it: `scripts/ci/run-all-contracts.sh` discovers
-`scripts/ci/test_*.py` by glob, so a new contract needs no orchestrator edit.
+```bash
+bash scripts/test-gate.sh                        # the three steps, together
+cargo test --workspace --lib                      # 1. unit
+cargo test --workspace --tests                    # 2. integration with mocks
+cargo mutants                                     # 3. mutants
+npm test --prefix apps/explorer-ui                # unit + integration with MSW
+```
+
+The third step has a **scope**, and the scope lives in `scripts/test-gate.sh`
+— not here, and not in `.cargo/mutants.toml` (the `cargo-mutants` config
+schema is flat and global, so a `package` table is rejected outright). Run
+the script, not a hand-written `cargo mutants`: the scope is the part that
+decides what the gate is actually measuring, and there is one owner of it.
+
+Those are the gate. There is no CI lane behind them: the gates were
+retired on 2026-11-04, and what is left is the tests themselves plus a human
+who reads the diff.
+
+`scripts/ci/run-all-contracts.sh` discovers `scripts/ci/test_*.py` by glob, so
+a new contract needs no orchestrator edit.
 
 **When you run the full suite on a shared machine, give it a private
 `TMPDIR`.** Cargo deletes "orphaned" `rustdoctest*` directories under `TMPDIR`
@@ -103,14 +108,14 @@ That is contention, not a broken doctest. Do not chase it in the code:
 TMPDIR=/var/tmp/your-own-dir cargo test --workspace --no-fail-fast
 ```
 
-**The gate isolates its build in a volume that has room, and it tells you
+**The build isolates itself in a volume that has room, and it tells you
 before it starts.** The debug build of this workspace occupies about 25G, so a
-gate that compiles it inside a small `/tmp` dies in the linker with
+build that compiles it inside a small `/tmp` dies in the linker with
 `Disk quota exceeded` — a symptom that says nothing about the cause. The
-release candidate clone and the `merge-gate` isolation directory therefore
+release candidate clone and the isolated build directory therefore
 live outside `/tmp` by default, under `${XDG_CACHE_HOME:-$HOME/.cache}/cognicode/gate`,
 and the rule lives in one place: `scripts/ci/build-volume.sh`. Both the
-preflight and the `merge-gate` publisher ask it before they start, so a volume
+preflight and the isolated build ask it before they start, so a volume
 without room is reported in a second, naming the volume, the free bytes and
 what is needed:
 
@@ -126,7 +131,6 @@ looks, and you do not need to edit it:
 
 ```bash
 PREFLIGHT_WORK_DIR=/mnt/disk-with-space/gate bash scripts/ci/preflight-clean-clone.sh
-PREFLIGHT_WORK_DIR=/mnt/disk-with-space/gate bash scripts/ci/publish-merge-gate.sh
 ```
 
 `PREFLIGHT_WORK_DIR` wins over `TMPDIR`, and `TMPDIR` wins over the default.
@@ -154,19 +158,17 @@ enforced:
    MCP tool name, or a shipped binary? If yes, it is a breaking change and the
    version must be derived from the commit history, not chosen by hand.
 
-Every change to `main` goes through a pull request with a green
-`merge-gate` check. Direct pushes to `main` are not accepted.
+Every change to `main` goes through a pull request whose gate is green.
+Direct pushes to `main` are not accepted.
 
 The title of the pull request is the message of the commit the merge
 creates: the forge adds the pull request's number to it and writes the
-result. That header is judged by the policy of the house before the gate
-starts. A squash merge is made by the forge, so its commit never passes
+result. That header is judged by the policy of the house before the merge
+happens. A squash merge is made by the forge, so its commit never passes
 through the hooks that judge the commits this machine makes, and a header the
 policy refuses would only be discovered afterwards — when the merge is public
-and the history cannot be rewritten. `scripts/ci/check-merge-subject.sh`
-asks that policy, through `git-control`, the same engine that judges every
-other commit, and the publisher of the gate consults it before it spends its
-minutes.
+and the history cannot be rewritten. `git-control` asks that policy, the same
+engine that judges every other commit.
 
 So the title of a pull request is a commit message: it has to be a
 Conventional Commit, it has to leave room for the reference the forge adds,

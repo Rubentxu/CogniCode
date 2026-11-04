@@ -34,57 +34,7 @@ use std::process::Command;
 
 mod common;
 
-use common::{merge_authority_runs, merge_authority_stage_of, not_run_message};
-
-fn repo_root() -> PathBuf {
-    common::repo_root()
-}
-
-/// The command line that covers `cogh setup`.
-///
-/// Matches the contract target rather than the literal string `cogh setup`:
-/// the gate runs `cargo test --test a015_onboarding_gate`, and the contract is
-/// what proves the setup behaviour.
-const ONBOARDING_GATE: &str = "cargo test -p cognicode-cli --test a015_onboarding_gate";
-
-/// The gate must run the onboarding contract, and the stage must say which
-/// command it protects.
-///
-/// RED before the stage exists, which is the point: the command is
-/// implemented, the action row is open, and nothing ran it.
-#[test]
-fn the_gate_runs_the_onboarding_contract() {
-    assert!(
-        merge_authority_runs(ONBOARDING_GATE),
-        "{}",
-        not_run_message(
-            ONBOARDING_GATE,
-            "`cogh setup` is implemented and A-015 asks for the \
-             install->doctor->MCP happy path to be covered; a command that \
-             nothing exercises is a command that can rot silently."
-        )
-    );
-
-    // The stage must say what it protects, and must be distinguishable from
-    // the other gate that carries the same action id. A-015 is used twice in
-    // the register — onboarding here, licences in `a015_licenses_gate` — so a
-    // stage named only by the id cannot be told apart in a log. The two halves
-    // are tied together on purpose: renaming one to the other's name has to
-    // fail here.
-    let stage = merge_authority_stage_of(ONBOARDING_GATE).expect("the gate runs it");
-    assert!(
-        stage.contains("a015") && stage.contains("onboarding"),
-        "the stage running the onboarding contract is `{stage}`, which does not \
-         identify it. The action register uses A-015 for both the onboarding and \
-         the licences gate, so a stage named only by the id cannot be told apart \
-         in a CI log."
-    );
-    assert!(
-        !stage.contains("licenses"),
-        "the stage running the onboarding contract is `{stage}`, which is the \
-         name of the other A-015 gate. The two halves are now indistinguishable."
-    );
-}
+use common::repo_root;
 
 /// The happy path is init → install → doctor, and the doctor decides.
 ///

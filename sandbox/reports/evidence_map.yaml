@@ -121,7 +121,7 @@ docs-source-adapter:
   evidence_path: crates/cognicode-core/src/infrastructure/extraction/
 pane-navigation:
   status: verified
-  evidence_path: apps/explorer-ui/src/state/context.test.ts, apps/explorer-ui/e2e/error-states.spec.ts
+  evidence_path: apps/explorer-ui/src/state/context.test.ts
 snapshot-graph-executor:
   status: verified
   evidence_path: crates/cognicode-core/src/infrastructure/graph/snapshot_graph_executor.rs

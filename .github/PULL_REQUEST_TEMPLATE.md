@@ -30,14 +30,20 @@ one commit is one logical change.
 Paste the commands you ran and their real output. Not a summary of what you
 believe happened.
 
-During development, run only the affected tests. The full release gate is the
-`merge-gate` stage tree in merge-gate.pipeline.kts and is required before
-merge; a green subset is not a green gate, and saying "tests pass" from a
-subset is not an acceptable claim.
+During development, run only the affected tests. The gate is three steps and
+all three are required before merge:
 
-PipelineK is the only orchestrator. Gates are added to a lane, not to a GitHub
-Actions workflow, and there are no GitHub Actions workflows left in this
-repository — `scripts/ci/test_no_actions_workflows.py` fails if one reappears.
+    cargo test --workspace --lib      # unit
+    cargo test --workspace --tests    # integration with mocks
+    cargo mutants                     # mutants
+
+`bash scripts/test-gate.sh` runs the three together. A green subset is not a
+green gate, and saying "tests pass" from a subset is not an acceptable claim.
+
+There is no CI lane behind this and no orchestrator runs it for you: the
+authority of a change is the gate in green plus a person who reads the diff.
+There are no GitHub Actions workflows in this repository —
+`crates/cognicode-cli/tests/test_taxonomy_contract.rs` fails if one reappears.
 
 If this is a bug fix, link the test that failed BEFORE and passes AFTER. A fix
 without a regression test is an unverified claim.
@@ -50,7 +56,7 @@ $ <command>
 
 - [ ] The affected tests were run and their output is above
 - [ ] This is a bug fix and a failing-before/passing-after test is linked
-- [ ] I did not run the full release gate locally; CI runs `merge-gate`
+- [ ] The three gate steps are green, or the reason they are not is stated
 
 ## Release impact
 

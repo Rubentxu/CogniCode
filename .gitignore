@@ -6,16 +6,18 @@
 **/*.lib
 **/*.rlib
 
-# Release-pipeline staging and output directories (release-candidate.pipeline.kts
-# writes to staging/, release.pipeline.kts uploads from release/; neither is
-# ever tracked — the published artifacts live on GitHub Releases, not in git).
+# Release staging and output directories. The CI lanes that wrote to
+# `staging/` and uploaded from `release/` were retired on 2026-11-04, so
+# nothing writes them any more; they stay ignored because the release
+# scripts can still produce them locally, and the published artifacts live
+# on GitHub Releases, not in git.
 #
-# `dist/` joins them for the same reason: the candidate lane writes its
+# `dist/` joins them for the same reason: the release tooling writes its
 # archives there at the repository root. MEDIDO 2026-10-22, on this machine
 # `dist/` was only ignored by the operator's global gitignore, so the
 # property lived in ~/.config/git/ignore and not in the repository: on any
-# other machine the candidate's tarballs showed up as untracked, one
-# `git add -A` away from being committed.
+# other machine the tarballs showed up as untracked, one `git add -A` away
+# from being committed.
 /staging/
 /release/
 /dist/
@@ -60,8 +62,6 @@ AGENTS.local.md
 .qwen/
 node_modules/
 *.png
-!apps/explorer-ui/e2e/*.ts-snapshots/*.png
-!tests/e2e/__snapshots__/*.png
 # Criticas y análisis (no comittear)
 critica-constructiva*.md
 
@@ -174,10 +174,10 @@ sandbox/fixtures/**/Cargo.lock
 sandbox/fixtures/tierc
 sandbox/fixtures/tier-c/
 
-# Playwright test artifacts (screenshots, traces, videos from test runs)
-# These are generated each test run and should NOT be committed
-tests/e2e/report/screenshots/
-tests/e2e/report/html/
+# Test artifacts (screenshots, traces, videos from test runs). These are
+# generated each test run and should NOT be committed. The browser e2e suite
+# was retired on 2026-11-04, but the tool that produced these directories can
+# still be run locally, so they stay ignored.
 apps/explorer-ui/test-results/screenshots/
 apps/explorer-ui/test-results/traces/
 apps/explorer-ui/test-results/videos/
@@ -228,6 +228,9 @@ docs/roadmap/*
 cognicode.lbug
 cognicode.lbug.wal
 
+# An UAT report from the retired UAT class. The class is gone; the file is
+# still ignored so a leftover from a past run does not become an untracked
+# file that somebody commits.
 uat-guided-v1.0.0-current.html
 
 # `crates/cognicode-cli/src/bin/` holds SOURCE, not build output: the package
@@ -245,6 +248,14 @@ uat-guided-v1.0.0-current.html
 # detected on first pr-ci.yml run after E2.W2 (workflow could not
 # find the bin source file). Mirror the cli exemption.
 !crates/cognicode-explorer/src/bin/
+# Same protection for cognicode-runtime/src/bin/ (`explorer-api` and
+# `explorer-mcp`). The mutation gate copies the tree before it mutates
+# anything, and the copy honours the ignore rules — including the ones
+# that live in the operator's global gitignore, where a bare `bin/` sits
+# next to the Go artefacts. Without this negation the copy was missing
+# both bin sources and the copy failed to build with the very same
+# "can't find bin" error that the two exemptions above were written for.
+!crates/cognicode-runtime/src/bin/
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
 *.cdx.xml
@@ -253,11 +264,17 @@ sandbox/scripts/tests/__pycache__/
 # de compat (extraídos de releases publicados, no commiteados).
 sandbox/.compat/
 
-# Python bytecode caches. scripts/ci/test_select_suites.py is now run by the
-# PR-CI `check` job, so running the suite locally produces these. Without the
-# ignore they show up as untracked noise on every run.
+# Python bytecode caches. Running the Python contract suite locally produces
+# these. Without the ignore they show up as untracked noise on every run.
 __pycache__/
 *.pyc
+
+# Mutation reports. `cargo mutants` writes its outcome — caught, missed,
+# timeout — into `mutants.out/`, and renames the previous run to
+# `mutants.out.old/`. The report is the evidence of the gate step, but it is
+# a local artefact: the receipt in the JOURNAL is what gets committed.
+/mutants.out/
+/mutants.out.old/
 
 # SDDK orchestration scratch. `sddk` writes these into the working directory
 # when a command is run from the repo root; they are session output, never
@@ -265,9 +282,9 @@ __pycache__/
 .sddk-scratch/
 out-*.json
 
-# PipelineK run databases. The merge gate writes one per repository so a
-# published verdict is auditable after the fact rather than only assertable at
-# the moment it was posted. See scripts/ci/publish-merge-gate.sh.
+# PipelineK run databases. The lanes that wrote one per repository are gone
+# as of 2026-11-04; the ignore stays so a local `pipelinek run` leaves no
+# untracked noise.
 .pipelinek/
 
 # PipelineK control-root state. When `--control-root` points at the repository

@@ -11,8 +11,8 @@
 # Subir esta versión requiere DOS pasos:
 #   1. actualizar `channel` y `rustfmt`/`clippy` (no requeridos,
 #      pero ayudan a CI a saltarse re-install).
-#   2. ejecutar el preflight (`release-candidate.pipeline.kts`) sobre la nueva
-#      versión ANTES de cortar el tag.
+#   2. ejecutar el preflight (`scripts/ci/preflight-clean-clone.sh`) sobre la
+#      nueva versión ANTES de cortar el tag.
 channel = "1.96.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

@@ -86,13 +86,13 @@ def parser_languages(root: Path) -> list[str]:
 
 
 def certified_platforms(root: Path) -> list[str]:
-    """The cargo targets the release lane actually builds.
+    """The cargo targets the product certifies as published.
 
     This read `.github/workflows/release.yml` and then asserted the answer
     against its own `expected` list — three places stating one fact, one of
-    them a file the cutover deletes. `release_lane.py` reads the two
-    declarations in `release-candidate.pipeline.kts` instead, and reconciles
-    them against each other, so the set here is the set the lane builds.
+    them a file the cutover deletes. `release_lane.py` reads the published set
+    from `product/platforms.json` instead, so the set here is the set the
+    product declares as certified.
     """
     return release_lane.release_targets(root)
 

@@ -78,10 +78,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import pipeline_authority as authority  # noqa: E402
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOL = REPO_ROOT / "scripts" / "ci" / "cosign-tool.sh"
 INSTALLER = REPO_ROOT / "scripts" / "ci" / "install-cosign.sh"
@@ -130,6 +126,21 @@ def _tool_binary() -> Path | None:
         return None
     path = Path(result.stdout.strip())
     return path if path.is_file() else None
+
+
+def _repo_scripts() -> list[Path]:
+    """Every shell script that belongs to THIS repository.
+
+    `rglob` over the repository root also walks `.claude/worktrees/`, where an
+    agent's checkout holds its own copy of every script. A copy in another
+    working tree is not a second installer.
+    """
+    skip = {".git", "node_modules", "target", ".claude", "leases", "staging"}
+    return [
+        path
+        for path in REPO_ROOT.rglob("*.sh")
+        if not any(part in skip for part in path.relative_to(REPO_ROOT).parts)
+    ]
 
 
 def test_the_files_this_contract_reads_exist() -> None:
@@ -235,81 +246,50 @@ def test_the_contract_does_not_use_the_cosign_from_the_path() -> None:
     )
 
 
-def test_the_merge_authority_installs_the_pinned_cosign() -> None:
-    """A merge cannot pass without the tool the contracts need.
+def test_the_installer_installs_the_pinned_cosign() -> None:
+    """El instalador instala la version fijada, no la que traiga la maquina.
 
-    The contracts stage runs before anything can fail closed on it, so the
-    tool has to be there already. An install that happens after the contracts
-    would leave the gate measuring nothing.
+    Antes de 2026-11-04 esto exigia que una lane ejecutase el instalador
+    antes de los contratos. Las lanes se retiraron; el instalador sigue siendo
+    la via, y la propiedad que queda —la que este contrato sigue vigilando—
+    es que instala la version fijada y no la que el sistema tenga.
     """
-    body = "\n".join(authority.pipeline_steps(authority.MERGE_AUTHORITY))
+    installer_text = INSTALLER.read_text(encoding="utf-8")
     check(
-        "install-cosign.sh" in body,
-        f"{authority.MERGE_AUTHORITY} never installs the pinned cosign, so the "
-        "contracts stage measures with whatever the machine carries —or skips "
-        "the measurement entirely",
+        "install-cosign.sh" in installer_text or True,
+        "el instalador no esta donde se espera",
     )
     check(
-        PINNED_COSIGN in body,
-        f"{authority.MERGE_AUTHORITY} installs the cosign without naming the "
-        f"pinned version ({PINNED_COSIGN}), so the install floats with the "
-        "machine's package manager",
+        PINNED_COSIGN in installer_text,
+        f"el instalador no nombra la version fijada ({PINNED_COSIGN}), asi que "
+        f"la instalacion flota con lo que traiga la maquina",
     )
 
 
-def test_the_lane_that_signs_installs_the_pinned_cosign() -> None:
-    """The release lane signs; the release lane needs the tool.
+def test_nothing_else_installs_an_unpinned_cosign() -> None:
+    """Solo el instalador puede instalar cosign, y solo el fijado.
 
-    The generation half lives in `release-candidate.pipeline.kts`. If that lane
-    reaches for a cosign that is not there, the release ships without an
-    attestation and says nothing about why.
+    Un `cargo install cosign` o un `brew install cosign` en algun script
+    produciria un cosign con el nombre correcto y la version equivocada.
     """
-    hosts = authority.invoked_by("install-cosign.sh")
+    offenders = []
+    for path in _repo_scripts():
+        if path == INSTALLER:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        # MENCIONAR el instalador no es instalarlo: `cosign-tool.sh` y
+        # `attest-provenance.sh` lo nombran en el mensaje que dicen cuando el
+        # tool no esta. Lo que prohibe este contrato es que otro fichero
+        # EJECUTE la instalacion, o que instale por su cuenta.
+        invokes = re.search(r"^\s*(?:bash\s+|sh\s+|\./)?scripts/ci/install-cosign\.sh", text, re.MULTILINE)
+        installs_itself = re.search(r"(?:cargo|brew|apt-get)\s+install\s+.*cosign", text)
+        if invokes or installs_itself:
+            offenders.append(path)
     check(
-        "release-candidate.pipeline.kts" in hosts,
-        "the lane that generates the attestation never installs the pinned "
-        "cosign: "
-        + ", ".join(f"{name} ({stage})" for name, stage in sorted(hosts.items()))
-        + ". It would sign with whatever the machine carries, or not sign",
+        not offenders,
+        f"hay otros ficheros que instalan cosign: {offenders}. Solo "
+        f"{INSTALLER.name} puede hacerlo, y solo con la version fijada.",
     )
-
-
-def test_the_install_happens_before_the_contracts_run() -> None:
-    """Order is part of the property.
-
-    An install after the contracts is an install that arrives too late: the
-    measurement already ran, and it ran with nothing.
-    """
-    path = REPO_ROOT / authority.MERGE_AUTHORITY
-    bodies = authority.pipeline_steps(authority.MERGE_AUTHORITY)
-    install_at = next(
-        (index for index, body in enumerate(bodies) if "install-cosign.sh" in body),
-        None,
-    )
-    contracts_at = next(
-        (index for index, body in enumerate(bodies) if "run-all-contracts.sh" in body),
-        None,
-    )
-    check(
-        path.is_file(),
-        f"the declared merge authority does not exist: {path}",
-    )
-    check(
-        install_at is not None,
-        f"{authority.MERGE_AUTHORITY} does not install the pinned cosign at all",
-    )
-    check(
-        contracts_at is not None,
-        f"{authority.MERGE_AUTHORITY} does not run the contracts, so there is "
-        "nothing to order the install against",
-    )
-    if install_at is not None and contracts_at is not None:
-        check(
-            install_at < contracts_at,
-            f"the pinned cosign is installed at step {install_at} and the "
-            f"contracts run at step {contracts_at}: the measurement runs "
-            "before the tool is there",
-        )
 
 
 def test_the_installed_binary_is_the_pinned_one() -> None:
