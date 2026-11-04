@@ -16,14 +16,14 @@
 //! - the service that stayed alive answers a DIFFERENT question, so that
 //!   nobody reads it as a second copy of this one.
 
-use std::path::{Path, PathBuf};
-
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::application::services::impact_analysis::ImpactAnalysisService;
 use cognicode_core::domain::aggregates::Symbol;
 use cognicode_core::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
 use cognicode_core::infrastructure::graph::project_call_graph;
+
+use crate::source_scan::{declares_word, rust_sources};
 
 /// The three surfaces that ask the impact question.
 const SURFACES: [&str; 3] = [
@@ -54,111 +54,6 @@ fn dead_copies() -> Vec<String> {
     ]
     .into_iter()
     .collect()
-}
-
-/// The root of the workspace crates.
-fn crates_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("crates")
-}
-
-/// Every Rust source file of the workspace crates, with its path relative to
-/// the repository root.
-fn rust_sources() -> Vec<(String, String)> {
-    let mut pending = vec![crates_root()];
-    let mut found = Vec::new();
-    while let Some(dir) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-                continue;
-            }
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
-            let Ok(content) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let relative = path
-                .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
-                .map(|p| p.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"));
-            found.push((relative, content));
-        }
-    }
-    found
-}
-
-/// Whether `text` carries `token` as a whole word.
-///
-/// The boundary is the ASCII word character: an identifier is a run of
-/// word characters, and a token that touches one of them is part of a
-/// longer name, not the name itself.
-fn contains_word(text: &str, token: &str) -> bool {
-    let bytes = text.as_bytes();
-    let token_bytes = token.as_bytes();
-    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
-    let mut offset = 0;
-    while let Some(found) = text[offset..].find(token) {
-        let at = offset + found;
-        let before_ok = at == 0 || !is_word(bytes[at - 1]);
-        let after = at + token_bytes.len();
-        let after_ok = after >= bytes.len() || !is_word(bytes[after]);
-        if before_ok && after_ok {
-            return true;
-        }
-        offset = at + 1;
-    }
-    false
-}
-
-/// Whether `text` DECLARES `token`, ignoring comments.
-///
-/// A name mentioned in prose is a name somebody wrote about; a name
-/// declared is a name that exists. Only the second one is the defect
-/// this ratchet looks for, and the distinction matters: a file that
-/// explains why a type is gone would otherwise be reported as
-/// bringing it back.
-fn declares_word(text: &str, token: &str) -> bool {
-    let mut in_block_comment = false;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if in_block_comment {
-            match trimmed.find("*/") {
-                Some(end) => {
-                    in_block_comment = false;
-                    if contains_word(&trimmed[end + 2..], token) {
-                        return true;
-                    }
-                }
-                None => continue,
-            }
-            continue;
-        }
-        if trimmed.starts_with("/*") {
-            match trimmed.find("*/") {
-                Some(end) => {
-                    if contains_word(&trimmed[end + 2..], token) {
-                        return true;
-                    }
-                }
-                None => in_block_comment = true,
-            }
-            continue;
-        }
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        if contains_word(line, token) {
-            return true;
-        }
-    }
-    false
 }
 
 /// The three surfaces reach the owner, not a copy of it.

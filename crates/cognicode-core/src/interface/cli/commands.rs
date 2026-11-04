@@ -2,6 +2,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::map_flatten)]
 
+use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::services::CallGraphAnalyzer;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::infrastructure::graph::{
@@ -506,6 +507,9 @@ pub enum GraphCommand {
         from: String,
         /// Target symbol name
         to: String,
+        /// Maximum depth of the path (0 means no limit)
+        #[arg(long, default_value = "10")]
+        max_depth: usize,
         /// Directory to analyze
         #[arg(default_value = ".")]
         path: String,
@@ -1175,41 +1179,28 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
-                let analyzer = CallGraphAnalyzer::new();
-                let hot_paths = analyzer.find_hot_paths(&graph, *limit);
-
-                let filtered: Vec<_> = hot_paths
-                    .into_iter()
-                    .filter(|h| h.fan_in >= *min_fan_in)
-                    .collect();
+                // The question has one owner: the MCP asks it too, and both
+                // publish the same table. The threshold is applied BEFORE
+                // the cut — cutting first published fewer hot paths than
+                // the project had.
+                let entries = AnalysisService::hot_paths(&graph, *limit, *min_fan_in);
 
                 let elapsed = start.elapsed().as_millis();
                 let result = GR::HotPaths {
                     path: path.clone(),
                     limit: *limit,
                     min_fan_in: *min_fan_in,
-                    entries: filtered
-                        .iter()
+                    entries: entries
+                        .into_iter()
                         .map(|hp| HotPathEntry {
-                            name: hp.symbol_name.clone(),
+                            name: hp.name,
                             fan_in: hp.fan_in,
                             fan_out: hp.fan_out,
-                            file: hp.file.clone(),
+                            file: hp.file,
                             line: hp.line,
                         })
                         .collect(),
@@ -1222,38 +1213,29 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
-                let entry_ids = graph.roots();
-                let mut entry_refs: Vec<SymbolRef> = Vec::new();
-                for id in entry_ids.iter().take(20) {
-                    if let Some(sym) = graph.get_symbol(id) {
-                        entry_refs.push(SymbolRef {
-                            name: sym.name().to_string(),
-                            file: sym.location().file().to_string(),
-                            line: sym.location().line(),
-                            column: sym.location().column(),
-                        });
-                    }
-                }
+                // The question has one owner: the MCP asks it too. Every
+                // entry point is published — the list used to stop at
+                // twenty without saying so.
+                let entry_points = AnalysisService::entry_points(&graph);
+                let total = entry_points.len();
+                let entry_refs: Vec<SymbolRef> = entry_points
+                    .iter()
+                    .map(|sym| SymbolRef {
+                        name: sym.name().to_string(),
+                        file: sym.location().file().to_string(),
+                        line: sym.location().line(),
+                        column: sym.location().column(),
+                    })
+                    .collect();
                 let elapsed = start.elapsed().as_millis();
                 let result = GR::EntryPoints {
                     path: path.clone(),
                     symbols: entry_refs,
-                    total: entry_ids.len(),
+                    total,
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4d: text formatting is in the presenter.
@@ -1263,44 +1245,40 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
-                let leaf_ids = graph.leaves();
-                let mut leaf_refs: Vec<SymbolRef> = Vec::new();
-                for id in leaf_ids.iter().take(20) {
-                    if let Some(sym) = graph.get_symbol(id) {
-                        leaf_refs.push(SymbolRef {
-                            name: sym.name().to_string(),
-                            file: sym.location().file().to_string(),
-                            line: sym.location().line(),
-                            column: sym.location().column(),
-                        });
-                    }
-                }
+                // The question has one owner: the MCP asks it too. Every
+                // leaf function is published — the list used to stop at
+                // twenty without saying so.
+                let leaves = AnalysisService::leaf_functions(&graph);
+                let total = leaves.len();
+                let leaf_refs: Vec<SymbolRef> = leaves
+                    .iter()
+                    .map(|sym| SymbolRef {
+                        name: sym.name().to_string(),
+                        file: sym.location().file().to_string(),
+                        line: sym.location().line(),
+                        column: sym.location().column(),
+                    })
+                    .collect();
                 let elapsed = start.elapsed().as_millis();
                 let result = GR::LeafFunctions {
                     path: path.clone(),
                     symbols: leaf_refs,
-                    total: leaf_ids.len(),
+                    total,
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4d: text formatting is in the presenter.
                 Ok(result)
             }
-            GraphCommand::TracePath { from, to, path } => {
+            GraphCommand::TracePath {
+                from,
+                to,
+                max_depth,
+                path,
+            } => {
                 let start = Instant::now();
                 // Progress line stays in the function: the
                 // TracePathFound/NotFound variants don't carry
@@ -1310,29 +1288,19 @@ impl CommandExecutor {
                 println!("Tracing path from '{}' to '{}' in: {}", from, to, path);
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
-                let source_id = crate::domain::aggregates::call_graph::SymbolId::new(from.clone());
-                let target_id = crate::domain::aggregates::call_graph::SymbolId::new(to.clone());
-
-                let path_result = match graph.find_path(&source_id, &target_id) {
-                    Some(path_ids) => {
-                        let mut hops: Vec<PathHop> = Vec::new();
-                        for (i, id) in path_ids.iter().enumerate() {
-                            if let Some(sym) = graph.get_symbol(id) {
+                // The question has one owner: the MCP asks it too. A name
+                // means the symbol that carries it — the trace used to
+                // demand a fully qualified name and answered "not found"
+                // for the simple name the MCP answers.
+                let path_result =
+                    match AnalysisService::trace_path_by_name(&graph, from, to, *max_depth) {
+                        Ok(Some(symbols)) => {
+                            let mut hops: Vec<PathHop> = Vec::new();
+                            for (i, sym) in symbols.iter().enumerate() {
                                 hops.push(PathHop {
                                     position: (i + 1) as u32,
                                     name: sym.name().to_string(),
@@ -1340,20 +1308,20 @@ impl CommandExecutor {
                                     line: sym.location().line(),
                                 });
                             }
+                            GR::TracePathFound {
+                                from: from.clone(),
+                                to: to.clone(),
+                                hops,
+                                elapsed_ms: 0, // filled in below
+                            }
                         }
-                        GR::TracePathFound {
+                        Ok(None) => GR::TracePathNotFound {
                             from: from.clone(),
                             to: to.clone(),
-                            hops,
                             elapsed_ms: 0, // filled in below
-                        }
-                    }
-                    None => GR::TracePathNotFound {
-                        from: from.clone(),
-                        to: to.clone(),
-                        elapsed_ms: 0, // filled in below
-                    },
-                };
+                        },
+                        Err(error) => return Err(Box::new(error)),
+                    };
                 let elapsed = start.elapsed().as_millis();
                 // T1-5.4b: fill elapsed_ms in the result we just built.
                 let final_result = match path_result {
@@ -1393,22 +1361,22 @@ impl CommandExecutor {
                     return Err(format!("Directory does not exist: {}", dir.display()).into());
                 }
 
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
-                let mermaid = graph.to_mermaid("Call Graph");
+                // There is one renderer and this is it: the diagram the
+                // CLI publishes is the diagram the MCP publishes for the
+                // same project.
+                let options = crate::domain::aggregates::call_graph::MermaidOptions {
+                    root: None,
+                    max_depth: 0,
+                    theme: None,
+                    format: Some(format.clone()),
+                    module_filter: None,
+                };
+                let diagram = AnalysisService::mermaid_diagram(&graph, &options);
+                let mermaid = diagram.code;
                 let elapsed = start.elapsed().as_millis();
                 // T1-5.4b: Mermaid variant. T1-5.4h added
                 // the `diagram` field (the presenter needs
@@ -1463,40 +1431,50 @@ impl CommandExecutor {
                 );
 
                 let dir = PathBuf::from(path);
-                let mut strategy = OnDemandStrategy::new();
-
-                if let Err(e) = strategy.build_index(&dir) {
-                    eprintln!("Error building index: {}", e);
-                    return Err(Box::new(e));
-                }
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
                 let dir_enum = match direction.to_lowercase().as_str() {
-                    "in" => TraversalDirection::Callers,
-                    "out" => TraversalDirection::Callees,
-                    _ => TraversalDirection::Both,
+                    "in" => crate::application::services::graph_queries::Direction::Callers,
+                    "out" => crate::application::services::graph_queries::Direction::Callees,
+                    _ => crate::application::services::graph_queries::Direction::Both,
                 };
 
-                let result = strategy.build_subgraph(symbol, *depth, dir_enum);
+                // The question has one owner: the MCP asks it too.
+                let entries = AnalysisService::call_hierarchy(&graph, symbol, *depth, dir_enum)
+                    .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+
+                let root_id = AnalysisService::resolve_symbol(&graph, symbol)
+                    .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+                let root =
+                    graph
+                        .get_symbol(&root_id)
+                        .ok_or_else(|| -> Box<dyn std::error::Error> {
+                            format!("Symbol '{symbol}' is not in the project graph").into()
+                        })?;
+
                 let elapsed = start.elapsed().as_millis();
 
                 let mut by_depth: std::collections::HashMap<u32, Vec<_>> =
                     std::collections::HashMap::new();
-                for entry in &result.entries {
+                for entry in &entries {
                     by_depth.entry(entry.depth).or_default().push(entry);
                 }
                 let mut buckets: Vec<DepthBucket> = Vec::new();
                 for depth in 1..=*depth {
                     if let Some(entries) = by_depth.get(&depth) {
-                        let mut depth_entries: Vec<DepthEntry> = Vec::new();
-                        for entry in entries.iter().take(5) {
-                            let dir_str = format!("{:?}", entry.direction).to_lowercase();
-                            depth_entries.push(DepthEntry {
-                                name: entry.symbol.name().to_string(),
-                                direction: dir_str,
-                                file: entry.symbol.location().file().to_string(),
-                                line: entry.symbol.location().line(),
-                            });
-                        }
+                        // Every entry is published: the bucket used to stop
+                        // at five without saying so.
+                        let depth_entries: Vec<DepthEntry> = entries
+                            .iter()
+                            .map(|entry| DepthEntry {
+                                name: entry.name.clone(),
+                                direction: entry.direction.as_str().to_string(),
+                                file: entry.file.clone(),
+                                line: entry.line,
+                            })
+                            .collect();
                         buckets.push(DepthBucket {
                             depth,
                             entries: depth_entries,
@@ -1507,11 +1485,11 @@ impl CommandExecutor {
                     symbol: symbol.clone(),
                     depth: *depth,
                     direction: direction.clone(),
-                    root_file: result.root_symbol.location().file().to_string(),
-                    root_line: result.root_symbol.location().line(),
-                    root_column: result.root_symbol.location().column(),
+                    root_file: root.location().file().to_string(),
+                    root_line: root.location().line(),
+                    root_column: root.location().column(),
                     buckets,
-                    total_entries: result.entries.len(),
+                    total_entries: entries.len(),
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4j: text formatting is in the
@@ -1523,20 +1501,9 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let complexity = analyzer.calculate_complexity(&graph);
@@ -1570,27 +1537,13 @@ impl CommandExecutor {
                 println!("Analyzing impact of changing '{}' in: {}", symbol, path);
 
                 let dir = PathBuf::from(path);
-                // The graph comes from the same authority the MCP uses: a
-                // command that builds its own graph answers with different
-                // facts than the MCP would hand out for the same tree.
-                //
-                // EXT-02: honor the same Partial/Failed semantics as the
-                // MCP path — surface skipped files, never present a
-                // partial graph as clean.
-                let built = crate::interface::cli::project_graph::project_graph(&dir)
-                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                // The same coverage semantics as the MCP path: say what the
-                // build could not cover, never present a partial graph as
-                // clean.
-                crate::interface::cli::project_graph::warn_incomplete(&built);
-                let graph = built.graph;
+                // The graph comes from the same authority the MCP uses, and
+                // the build says what it could not cover.
+                let graph = project_graph_of(&dir)?;
 
                 // The same question, answered by the same function the MCP and
                 // the workspace session call.
-                let impact =
-                    crate::application::services::analysis_service::AnalysisService::impact_of(
-                        &graph, symbol,
-                    )
+                let impact = AnalysisService::impact_of(&graph, symbol)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
                 let elapsed = start.elapsed().as_millis();
@@ -3421,4 +3374,22 @@ mod f0_1_find_usages_tests {
         // se hace en UAT binaria manual y en los tests E2E. Aquí sólo
         // pineamos que la función está exportada y compila.
     }
+}
+
+/// The project's graph, and what the build could not cover.
+///
+/// The graph comes from the same authority the MCP uses: a command that
+/// builds its own graph answers with different facts than the MCP would
+/// hand out for the same tree. And the build's skips travel with it, so a
+/// command that shows one and hides the other tells half the truth.
+fn project_graph_of(
+    dir: &std::path::Path,
+) -> Result<
+    std::sync::Arc<crate::domain::aggregates::call_graph::CallGraph>,
+    Box<dyn std::error::Error>,
+> {
+    let built = crate::interface::cli::project_graph::project_graph(dir)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    crate::interface::cli::project_graph::warn_incomplete(&built);
+    Ok(built.graph)
 }

@@ -36,7 +36,6 @@ use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
-use crate::domain::value_objects::TraversalDirection;
 use crate::domain::value_objects::file_time::measured_seconds;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
@@ -872,51 +871,38 @@ impl WorkspaceSession {
         let graph = self.require_graph()?;
 
         let direction = match direction {
-            "incoming" | "callers" => TraversalDirection::Callers,
-            "outgoing" | "callees" => TraversalDirection::Callees,
-            _ => TraversalDirection::Both,
+            "incoming" | "callers" => {
+                crate::application::services::graph_queries::Direction::Callers
+            }
+            "outgoing" | "callees" => {
+                crate::application::services::graph_queries::Direction::Callees
+            }
+            _ => crate::application::services::graph_queries::Direction::Both,
         };
 
-        let index = self.build_symbol_name_index(&graph);
-        let search_name = symbol.to_lowercase();
+        // The question has one owner: the CLI and the MCP ask it there
+        // too. A name the graph does not hold is a refusal, not an empty
+        // list — an empty list reads as "nothing depends on it", which is
+        // a claim about a symbol nobody asked for.
+        let entries =
+            crate::application::services::analysis_service::AnalysisService::call_hierarchy(
+                &graph,
+                symbol,
+                depth as u32,
+                direction,
+            )
+            .map_err(|error| WorkspaceError::SymbolNotFound(error.to_string()))?;
 
-        let symbol_ids: Vec<_> = index
-            .get(&search_name)
-            .map(|entries| {
-                entries
-                    .iter()
-                    .map(|(_, s)| {
-                        crate::domain::aggregates::call_graph::SymbolId::new(
-                            s.fully_qualified_name(),
-                        )
-                    })
-                    .collect()
+        let all_calls: Vec<crate::application::dto::CallHierarchyEntry> = entries
+            .into_iter()
+            .map(|entry| crate::application::dto::CallHierarchyEntry {
+                symbol: entry.name,
+                file: entry.file,
+                line: entry.line,
+                column: entry.column,
+                confidence: 1.0,
             })
-            .unwrap_or_default();
-
-        let mut all_calls = Vec::new();
-
-        for symbol_id in symbol_ids {
-            let entries = match direction {
-                TraversalDirection::Callers => graph.traverse_callers(&symbol_id, depth as u8),
-                TraversalDirection::Callees => graph.traverse_callees(&symbol_id, depth as u8),
-                TraversalDirection::Both => {
-                    let mut both = graph.traverse_callers(&symbol_id, depth as u8);
-                    both.extend(graph.traverse_callees(&symbol_id, depth as u8));
-                    both
-                }
-            };
-
-            for entry in entries {
-                all_calls.push(crate::application::dto::CallHierarchyEntry {
-                    symbol: entry.symbol_name,
-                    file: entry.file,
-                    line: entry.line,
-                    column: entry.column,
-                    confidence: 1.0,
-                });
-            }
-        }
+            .collect();
 
         let total_calls = all_calls.len();
         Ok(crate::application::dto::GetCallHierarchyResult {
@@ -927,21 +913,6 @@ impl WorkspaceSession {
                 analysis_time_ms: 0,
             },
         })
-    }
-
-    fn build_symbol_name_index(
-        &self,
-        graph: &CallGraph,
-    ) -> std::collections::HashMap<String, Vec<(String, crate::domain::aggregates::Symbol)>> {
-        let mut index: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
-        for symbol in graph.symbols() {
-            let name_lower = symbol.name().to_lowercase();
-            index
-                .entry(name_lower)
-                .or_default()
-                .push((symbol.name().to_string(), symbol.clone()));
-        }
-        index
     }
 
     /// Analyze the impact of changing a symbol
@@ -1077,7 +1048,7 @@ impl WorkspaceSession {
         _format: &str,
         theme: Option<&str>,
         root: Option<&str>,
-        _module_filter: Option<&str>,
+        module_filter: Option<&str>,
     ) -> WorkspaceResult<String> {
         self.ensure_graph_built().await?;
 
@@ -1088,9 +1059,20 @@ impl WorkspaceSession {
             max_depth: 3, // default depth
             theme: theme.map(|s| s.to_string()),
             format: Some(_format.to_string()),
+            // The filter was accepted and dropped. The renderer knows how
+            // to honour it now, so it is honoured.
+            module_filter: module_filter.map(|s| s.to_string()),
         };
 
-        Ok(graph.to_mermaid_with_options("Call Graph", &options))
+        // The diagram has one owner: the renderer is called there and
+        // nowhere else, so the CLI, the MCP and the session publish the
+        // same document for the same project.
+        Ok(
+            crate::application::services::analysis_service::AnalysisService::mermaid_diagram(
+                &graph, &options,
+            )
+            .code,
+        )
     }
 
     /// Build a subgraph limited to specific directories.

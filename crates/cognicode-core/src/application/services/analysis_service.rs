@@ -21,11 +21,9 @@ use crate::application::error::{AppError, AppResult};
 use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::services::{
-    ComplexityCalculator, CycleDetector, attach_relations, resolve_target,
-};
+use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{RejectedRelation, TargetResolution, WalkFilter};
+use crate::domain::value_objects::{RejectedRelation, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
@@ -1788,10 +1786,9 @@ impl AnalysisService {
     /// utilities.
     pub fn get_entry_points(&self) -> Vec<SymbolDto> {
         let graph = self.get_project_graph();
-        graph
-            .roots()
+        super::graph_queries::entry_points(&graph)
             .iter()
-            .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
+            .map(SymbolDto::from_symbol)
             .collect()
     }
 
@@ -1802,10 +1799,9 @@ impl AnalysisService {
     /// with external systems directly.
     pub fn get_leaf_functions(&self) -> Vec<SymbolDto> {
         let graph = self.get_project_graph();
-        graph
-            .leaves()
+        super::graph_queries::leaf_functions(&graph)
             .iter()
-            .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
+            .map(SymbolDto::from_symbol)
             .collect()
     }
 
@@ -1995,47 +1991,17 @@ impl AnalysisService {
     ) -> AppResult<Option<Vec<SymbolDto>>> {
         let graph = self.get_project_graph();
 
-        // Find source and target symbol IDs by name
-        let source_id = self.find_symbol_id_by_name(&graph, source_name)?;
-        let target_id = self.find_symbol_id_by_name(&graph, target_name)?;
-
-        // Find path using BFS, respecting max_depth if specified
-        let path = if max_depth > 0 {
-            graph.find_path_with_max_depth(&source_id, &target_id, max_depth)
-        } else {
-            graph.find_path(&source_id, &target_id)
-        };
-
-        Ok(path.map(|symbol_ids| {
-            symbol_ids
-                .iter()
-                .filter_map(|id| graph.get_symbol(id).map(SymbolDto::from_symbol))
-                .collect()
-        }))
-    }
-
-    /// Finds a symbol ID by its name
-    ///
-    /// The rule is the domain's: a name that one symbol carries resolves to
-    /// it, a name that several carry is ambiguous and says so, and a name
-    /// that none carries is not found. The application layer does not pick
-    /// between homonyms: it has no way to prove which one was meant, and a
-    /// path through a symbol nobody named is worse than no path at all.
-    fn find_symbol_id_by_name(&self, graph: &CallGraph, name: &str) -> AppResult<SymbolId> {
-        match resolve_target(graph, name) {
-            TargetResolution::Resolved(id) => Ok(id),
-            TargetResolution::Ambiguous { name, candidates } => Err(AppError::AmbiguousSymbol {
-                name,
-                candidates: candidates
-                    .iter()
-                    .map(|candidate| candidate.as_str().to_string())
-                    .collect(),
-            }),
-            TargetResolution::Unresolved(_) => Err(AppError::SymbolNotFound(format!(
-                "Symbol not found: {}",
-                name
-            ))),
-        }
+        // The question has one owner: the CLI and the MCP ask it there too.
+        super::graph_queries::trace_path(&graph, source_name, target_name, max_depth)
+            .map(|path| path.map(|symbols| symbols.iter().map(SymbolDto::from_symbol).collect()))
+            .map_err(|error| match error {
+                super::graph_queries::GraphQueryError::Ambiguous { name, candidates } => {
+                    AppError::AmbiguousSymbol { name, candidates }
+                }
+                super::graph_queries::GraphQueryError::NotFound { name } => {
+                    AppError::SymbolNotFound(format!("Symbol not found: {name}"))
+                }
+            })
     }
 }
 
@@ -2911,7 +2877,10 @@ def d():
         }
 
         // 5. Test to_mermaid export (just verify it doesn't crash)
-        let mermaid = graph.to_mermaid("Test Graph");
+        let mermaid = graph.to_mermaid_with_options(
+            "Test Graph",
+            &crate::domain::aggregates::call_graph::MermaidOptions::default(),
+        );
         println!("[ENHANCED] Mermaid export length: {} chars", mermaid.len());
         assert!(
             mermaid.contains("flowchart"),
@@ -3069,7 +3038,10 @@ def d():
             .add_dependency(&id_b, &id_c, DependencyType::Calls)
             .unwrap();
 
-        let mermaid = graph.to_mermaid("Test Call Graph");
+        let mermaid = graph.to_mermaid_with_options(
+            "Test Call Graph",
+            &crate::domain::aggregates::call_graph::MermaidOptions::default(),
+        );
 
         println!("[MERMAID] Generated diagram:\n{}", mermaid);
 
