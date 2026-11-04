@@ -74,6 +74,50 @@ pub trait CodeIntelligenceProvider: Send + Sync {
             "rename is not supported by this provider".to_string(),
         ))
     }
+
+    /// Callers of the symbol at `location` (`callHierarchy/incomingCalls`).
+    ///
+    /// `Ok(vec![])` means the provider found no symbol or no callers.
+    /// Providers without call hierarchy keep this default, which reports the
+    /// gap as an error instead of answering "no callers".
+    async fn incoming_calls(
+        &self,
+        _location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "incomingCalls is not supported by this provider".to_string(),
+        ))
+    }
+
+    /// Callees of the symbol at `location` (`callHierarchy/outgoingCalls`).
+    /// Same contract as [`Self::incoming_calls`].
+    async fn outgoing_calls(
+        &self,
+        _location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "outgoingCalls is not supported by this provider".to_string(),
+        ))
+    }
+}
+
+/// A symbol taking part in a call hierarchy.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CallHierarchyItem {
+    pub name: String,
+    pub kind: crate::domain::value_objects::SymbolKind,
+    /// Where the symbol's name is.
+    pub location: Location,
+    pub detail: Option<String>,
+}
+
+/// One edge of a call hierarchy: the other end of the call plus the call sites.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CallHierarchyCall {
+    /// The caller (incoming) or the callee (outgoing).
+    pub item: CallHierarchyItem,
+    /// Ranges of the call expressions, in the file of the caller.
+    pub call_sites: Vec<SourceRange>,
 }
 
 /// Answer to `prepareRename` when the symbol can be renamed.
@@ -718,6 +762,20 @@ mod tests {
         assert!(matches!(prepare, Err(CodeIntelligenceError::Internal(_))));
         let rename = mock.rename(&loc, "other").await;
         assert!(matches!(rename, Err(CodeIntelligenceError::Internal(_))));
+    }
+
+    #[tokio::test]
+    async fn a_provider_without_call_hierarchy_reports_the_gap_instead_of_no_callers() {
+        let mock = MockCodeIntelligence::new();
+        let loc = Location::new("test.rs", 5, 10);
+        assert!(matches!(
+            mock.incoming_calls(&loc).await,
+            Err(CodeIntelligenceError::Internal(_))
+        ));
+        assert!(matches!(
+            mock.outgoing_calls(&loc).await,
+            Err(CodeIntelligenceError::Internal(_))
+        ));
     }
 
     #[tokio::test]
