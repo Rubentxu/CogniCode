@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use crate::domain::aggregates::Symbol;
-use crate::domain::value_objects::{Location, Provenance, SymbolKind};
+use crate::domain::value_objects::{Location, Provenance, SourceRange, SymbolKind};
 use async_trait::async_trait;
 use std::fmt;
 use std::str::FromStr;
@@ -46,6 +46,61 @@ pub trait CodeIntelligenceProvider: Send + Sync {
 
     /// Gets hover information (type + docs) for a symbol at the given location
     async fn hover(&self, location: &Location) -> Result<Option<HoverInfo>, CodeIntelligenceError>;
+
+    /// Asks whether the symbol at `location` can be renamed (`prepareRename`).
+    ///
+    /// `Ok(None)` means the provider answered that nothing renamable is there.
+    /// Providers without rename support keep this default, which reports the
+    /// gap as an error instead of answering "not renamable".
+    async fn prepare_rename(
+        &self,
+        _location: &Location,
+    ) -> Result<Option<PrepareRename>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "prepareRename is not supported by this provider".to_string(),
+        ))
+    }
+
+    /// Computes the edits that rename the symbol at `location` to `new_name`.
+    ///
+    /// The edits are returned, never applied: writing files is a separate
+    /// capability. `Ok(None)` means the server declined to rename.
+    async fn rename(
+        &self,
+        _location: &Location,
+        _new_name: &str,
+    ) -> Result<Option<RenameEdits>, CodeIntelligenceError> {
+        Err(CodeIntelligenceError::Internal(
+            "rename is not supported by this provider".to_string(),
+        ))
+    }
+}
+
+/// Answer to `prepareRename` when the symbol can be renamed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PrepareRename {
+    /// Range of the identifier. `None` when the server accepts the rename
+    /// without saying which range (`defaultBehavior`).
+    pub range: Option<SourceRange>,
+    /// Text the server proposes to show as the current name.
+    pub placeholder: Option<String>,
+}
+
+/// One text replacement of a rename.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TextEdit {
+    /// Replaced range (start inclusive, end exclusive; 1-based lines/columns).
+    pub range: SourceRange,
+    pub new_text: String,
+}
+
+/// Edits proposed by a rename, plus what could not be represented.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RenameEdits {
+    pub edits: Vec<TextEdit>,
+    /// File create/rename/delete operations in the server's answer. They are
+    /// not turned into edits, so a non-zero count means the result is partial.
+    pub skipped_resource_operations: usize,
 }
 
 /// Precision tier of a code-intelligence provider, ordered from lowest
@@ -653,6 +708,16 @@ mod tests {
                 kind: HoverKind::Mixed,
             }))
         }
+    }
+
+    #[tokio::test]
+    async fn a_provider_without_rename_support_reports_the_gap_instead_of_answering_none() {
+        let mock = MockCodeIntelligence::new();
+        let loc = Location::new("test.rs", 5, 10);
+        let prepare = mock.prepare_rename(&loc).await;
+        assert!(matches!(prepare, Err(CodeIntelligenceError::Internal(_))));
+        let rename = mock.rename(&loc, "other").await;
+        assert!(matches!(rename, Err(CodeIntelligenceError::Internal(_))));
     }
 
     #[tokio::test]
