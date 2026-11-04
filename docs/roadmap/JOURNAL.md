@@ -31585,3 +31585,25 @@ en el parser y un test del grafo de producción (`callers` de `deploy` = `["Depl
 warnings`, fmt y `generate_support_matrix.py --check` limpios. **Sin cubrir:** símbolos espurios
 `_` y `any` del Jenkinsfile; el extractor de ingest no se midió para stages. **NOT_RUN:** mutantes,
 `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-88 (AC2): el impacto de un paso de shared library lista las stages que lo ejecutan
+
+**Qué.** Medido con una sonda sobre el grafo de producción (`PerFileGraphCache::merge`): el
+arco que daba por bueno el test de AC1 (PR #564) era `Deploy → Deploy`. `deploy(...)` se
+resolvía por nombre en minúsculas contra la propia stage `Deploy`, y no existía arco hacia
+`vars/deploy.groovy` (su función se llamaba `call`). El test de AC1 pasaba por esa coincidencia.
+Corregido aquí: (1) el `call` de primer nivel de `vars/<n>.groovy` se publica como `<n>`;
+(2) una stage pasa a `SymbolKind::Declaration` (se ejecuta, nadie la llama) y los índices de
+destinos (`name_to_symbol` y el índice global de `per_file_graph.rs`) no la incluyen. El test
+nuevo usa dos pipelines que ejecutan el paso, un tercero que no, y comprueba que las
+dependientes de `deploy` son exactamente `Deploy@ci` y `Ship@release` y que la stage no tiene
+llamantes. Contrato: `symbols.golden` de `groovy-jenkins` pierde `function Deploy@Jenkinsfile`
+y sus `call` de `vars/` pasan a `deploy` y `notify`.
+
+**Verificación.** SHA base 2bab8222. RED observado en los 3 tests nuevos antes de tocar
+producción. `cargo test -p cognicode-core --lib` 2485 OK; `--test it` 942 OK y los 9 fallos de
+infraestructura de siempre (falta el binario release `cognicode-mcp`); clippy `-D warnings`,
+fmt y `generate_support_matrix.py --check` limpios. **Sin cubrir:** el extractor de ingest no
+se midió; `analyze_impact` por MCP no se ejercitó de extremo a extremo (se midió el grafo que
+consume); `sh`, `echo` y `@Library` como pasos externos son de AC posterior; símbolos espurios
+`_` y `any`. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
