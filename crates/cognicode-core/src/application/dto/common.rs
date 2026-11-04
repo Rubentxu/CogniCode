@@ -163,10 +163,11 @@ pub struct AnalysisMetadata {
 /// `RiskLevel` (4 buckets `Low | Medium | High | Critical`). It is a
 /// simplified blast-radius heuristic derived from `symbols_count` in
 /// `interface::mcp::handlers::handle_analyze_impact`. NOT
-/// interchangeable with the core `ImpactLevel` (5 buckets with type
-/// multiplier) or any of the other four `RiskLevel`/`ImpactLevel`
-/// enums in this crate. See `domain::services::ImpactLevel` for the
-/// canonical core model.
+/// interchangeable with the impact DTO string field, the findings
+/// `RiskLevel`, or the safety `RiskLevel` — three other risk encodings
+/// in this crate, each one belonging to another question. The impact
+/// question has a single owner, `AnalysisService::impact_of`, and this
+/// is the scale it publishes.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {

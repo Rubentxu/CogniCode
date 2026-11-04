@@ -6,8 +6,9 @@
 //! Estos tests pinean tres puertos nuevos del exporter
 //! `assurance-evidence/v1`:
 //!
-//! - `extract_impact_relations`: drena `ImpactEdge`s (B4.W1, módulo
-//!   `crates/cognicode-core/src/impact/` aún no fusionado en este WU).
+//! - `extract_impact_relations`: drenaba las aristas de impacto de B4.W1;
+//!   ese payload no tenía llamador de producción y se fue (TASK-77), así
+//!   que el extractor declara `Unsupported`.
 //! - `extract_architecture_observations`: drena
 //!   `ArchitectureObservation`s (B4.W2, módulo
 //!   `architecture::diagnostic` aún no fusionado).
@@ -90,8 +91,8 @@ fn fixture_producer() -> ProducerInfo {
 // 1. Graceful fallback: B4.W1 (impact) not yet merged
 // =========================================================================
 
-/// B4.W4 invariante 1: el extractor de `ImpactEdge`s declara
-/// explícitamente `Unsupported` mientras B4.W1 no esté fusionado. No
+/// B4.W4 invariante 1: el extractor de relaciones de impacto declara
+/// explícitamente `Unsupported` mientras no haya payload que drenar. No
 /// infiere Complete ni deja el accumulator a medio poblar: el caller
 /// sabe leer `capability_kind = "impact-relations:envelope-v2"` y
 /// propagarlo al envelope como un CapabilityGap honesto.

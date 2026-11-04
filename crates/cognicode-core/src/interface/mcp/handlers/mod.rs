@@ -2098,21 +2098,15 @@ pub async fn handle_structural_search(
 
 /// Handler for analyze_impact tool
 ///
-/// **Risk level divergence**: this handler derives
-/// `risk_level` from `symbols_count` with thresholds `>2 / >5 / >10`
-/// (yielding `Low | Medium | High | Critical`). This is intentionally
-/// different from the core `ImpactAnalyzer::determine_impact_level`
-/// (which uses 5 buckets `Minimal | Low | Medium | High | Critical`
-/// with a 2x multiplier for type definitions). The MCP wrapper
-/// prioritizes a simple blast-radius heuristic over the core's
-/// type-aware semantics. The full
-/// rationale and the five distinct `RiskLevel`/`ImpactLevel`
-/// implementations are documented in the architecture record.
-///
-/// This is **not** a bug. It is a documented contract: the MCP
-/// output is a simplified view tailored for tool consumers (AI
-/// agents), while the core API exposes the refined semantic for
-/// library callers.
+/// **Risk level**: `risk_level` comes from `RiskLevel::from_impacted_symbols`,
+/// the scale the owner publishes. The core used to carry a second,
+/// type-aware impact scale — five buckets
+/// (`Minimal | Low | Medium | High | Critical`) with a 2x multiplier for
+/// type definitions — and this handler deliberately diverged from it: the
+/// published surface preferred a simple blast-radius heuristic. That
+/// second model had no production caller, so it is gone (TASK-77) and the
+/// divergence with it. The CLI, this handler and the workspace session
+/// publish the same scale now, from the same function.
 #[cognicode_macros::aix_tool(
     name = "analyze_impact",
     description = "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
@@ -7367,21 +7361,15 @@ mod tests {
     /// `IndexCommand::Impact` variant. The "CLI" path used by the
     /// per-file and query wrappers was always a direct core API call (e.g.,
     /// `LightweightStrategy`); the same convention is used here:
-    /// `analysis_service.build_project_graph` + `ImpactAnalyzer::calculate_impact`.
+    /// `analysis_service.build_project_graph` + `AnalysisService::impact_of`.
     ///
-    /// However, an equivalence assertion against the core is
-    /// **not** meaningful for this tool: the core's
-    /// `ImpactAnalyzer::determine_impact_level` uses a five-bucket
-    /// function (`Minimal|Low|Medium|High|Critical`) gated by
-    /// direct + adjusted-transitive counts with a 2x multiplier for
-    /// type definitions, whereas the MCP wrapper
-    /// `handle_analyze_impact` derives `risk_level` from a
-    /// four-bucket function (`Low|Medium|High|Critical`) gated only
-    /// by the count of impacted symbols (`>2 / >5 / >10`). These
-    /// are intentionally different risk models, not a bug; the
-    /// surface that IS shared between core and MCP is the set of
-    /// `(impacted_files, impacted_symbols)`, which both derive
-    /// from the same `graph.find_all_dependents(...)` traversal.
+    /// The core used to carry a second risk model — five buckets
+    /// (`Minimal|Low|Medium|High|Critical`) gated by direct plus
+    /// adjusted-transitive counts with a 2x multiplier for type
+    /// definitions — and this wrapper deliberately diverged from it.
+    /// That model had no production caller and is gone (TASK-77), so
+    /// there is one risk scale for the impact question now, and it is
+    /// the one this tool publishes.
     ///
     /// This module pins the shared surface only:
     ///

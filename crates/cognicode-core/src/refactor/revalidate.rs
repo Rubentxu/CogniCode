@@ -29,7 +29,6 @@ use uuid::Uuid;
 
 use crate::architecture::diagnostic::ArchitectureDiagnostic;
 use crate::domain::findings::Finding;
-use crate::impact::graph::ImpactResult;
 
 use super::apply::ApplyOutcome;
 use super::plan::RefactorPlan;
@@ -51,17 +50,15 @@ pub const REVALIDATION_VERDICT_REFUSED_REASON: &str =
 // Tipos publicos
 // =============================================================================
 
-/// Incremental analysis slot. Reuses B4.W1 (ImpactResult),
-/// B4.W2 (ArchitectureDiagnostic) y B4.W3 (Finding) types.
+/// Incremental analysis slot. Reuses B4.W2 (ArchitectureDiagnostic)
+/// and B4.W3 (Finding) types.
+///
+/// The B4.W1 slot (the call-graph impact payload) is gone with the
+/// payload itself: `impact::graph` had no production caller, and a slot
+/// that can only ever hold `None` is a promise the report does not keep.
 #[derive(Debug, Clone, Serialize)]
 #[allow(clippy::large_enum_variant)]
-// The size difference between ImpactResult (rich call-graph payload)
-// and Finding (a single quality observation) is intentional: each
-// variant carries the full type for that tool's output. Boxing would
-// force an indirection on every read of the dominant variant.
 pub enum IncrementalAnalysis {
-    /// B4.W1 — call graph impact over the changed files.
-    Impact(ImpactResult),
     /// B4.W2 — architecture observation over the changed files.
     Architecture(ArchitectureDiagnostic),
     /// B4.W3 — quality finding produced by one of the 5 tools.
@@ -157,8 +154,6 @@ pub struct RevalidationReport {
     pub findings: RevalidationFindings,
     /// B4.W2 diagnostic over the changed files. `None` if not run.
     pub diagnostics: Option<ArchitectureDiagnostic>,
-    /// B4.W1 impact result over the changed files. `None` if not run.
-    pub impact: Option<ImpactResult>,
     /// Verdict. Default `VerdictRefused`.
     pub verdict: RevalidationVerdict,
     /// Names of the checks actually run (B4.W1 / W2 / W3). Always
@@ -178,20 +173,14 @@ impl RevalidationReport {
     }
 
     /// Number of incremental analyses carried by the report.
-    /// Mirrors the B4.W5 composite shape (findings + diagnostics +
-    /// impact) so the count reflects what a populated report would
-    /// have.
+    /// Mirrors the B4.W5 composite shape (findings + diagnostics) so the
+    /// count reflects what a populated report would have.
     pub fn incremental_analyses_count(&self) -> usize {
         self.findings.findings.len()
             + self
                 .diagnostics
                 .as_ref()
                 .map(|d| d.observations.len())
-                .unwrap_or(0)
-            + self
-                .impact
-                .as_ref()
-                .map(|i| i.paths.iter().map(|p| p.edges.len()).sum::<usize>())
                 .unwrap_or(0)
     }
 }
@@ -238,7 +227,6 @@ pub fn run_revalidation(rp: &RevalidationPlan, workspace_root: &Path) -> Revalid
         analyzed_files: rp.what_changed.len(),
         findings: RevalidationFindings::none_found(rp.what_changed.len()),
         diagnostics: None,
-        impact: None,
         verdict: RevalidationVerdict::refused(),
         executed_checks: vec![
             "architecture".to_string(),

@@ -709,22 +709,16 @@ pub const CAPABILITY_KIND_ARCHITECTURE_OBSERVATIONS: &str = "architecture-observ
 /// release.
 pub const CAPABILITY_KIND_QUALITY_FINDINGS: &str = "quality-findings:envelope-v2";
 
-/// Drena `ImpactEdge`s (B4.W1) al accumulator, honrando el límite
-/// `max` (simétrico a `MAX_COLLECTION_SIZE = 1024`).
+/// Reporta las relaciones de impacto que el workspace sostiene, honrando
+/// el límite `max` (simétrico a `MAX_COLLECTION_SIZE = 1024`).
 ///
-/// **Estado B4.W4 (este commit)**: B4.W1 no está fusionado en la rama
-/// de release, así que el extractor no encuentra datos. Devuelve
-/// `Unsupported` con `capability_kind = CAPABILITY_KIND_IMPACT_RELATIONS`
-/// y deja el accumulator intacto. Si el caller pre-pobló el accumulator
-/// con más de `max` items (escenario de integración cuando B4.W1
-/// aterrice y exporte un set grande), se trunca al límite y se
-/// devuelve `Partial` con el gap honesto. Esa rama es la que B2.W4
-/// pineó como "symmetric limits".
-///
-/// Cuando B4.W1 se fusione, este extractor se reescribe para:
-/// 1. Iterar `crates/cognicode-core::impact::iter_impact_edges()`.
-/// 2. Mapear cada `ImpactEdge` a `Relation { from, to, kind, evidence }`.
-/// 3. Misma regla de truncado.
+/// El extractor drenaba en su día las aristas de impacto de B4.W1. Ese
+/// payload no tenía ningún llamador de producción y se ha ido (TASK-77),
+/// así que no hay nada que drenar: el extractor dice `Unsupported` con
+/// `capability_kind = CAPABILITY_KIND_IMPACT_RELATIONS` y deja el
+/// accumulator intacto. Si el caller pre-pobló el accumulator con más de
+/// `max` items, se trunca al límite y se devuelve `Partial` con el gap
+/// honesto. Esa rama es la que B2.W4 pineó como "symmetric limits".
 ///
 /// El `capability_kind` permanece estable para que el consumer pueda
 /// identificar el motivo de `Unsupported` byte-a-byte sin re-codificar

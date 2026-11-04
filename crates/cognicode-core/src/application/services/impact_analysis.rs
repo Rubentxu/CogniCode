@@ -21,12 +21,18 @@
 //! max_depth)` triple on a graph where the edge direction is reversed
 //! (mirror graph).
 //!
-//! ## Companion to [`crate::domain::services::ImpactAnalyzer`]
+//! ## What this service is NOT
 //!
-//! `ImpactAnalyzer` (domain service) stays untouched and continues to
-//! produce the count-based `ImpactReport`. The application service
-//! does not replace it — it is a strictly additive capability that
-//! gives callers access to the graph algorithms exposed by
+//! This is not the owner of the impact question. The owner is
+//! `AnalysisService::impact_of`: it resolves a NAME to the symbols that
+//! depend on it, transitively, derives the risk, and refuses a name the
+//! graph does not hold. This service answers a different question — it
+//! walks a projection, it is bounded by a depth, and it resolves by
+//! `SymbolId` — so a root it does not hold is an empty answer here and a
+//! refusal there. The domain service that used to answer the same
+//! question a third way had no production caller and is gone (TASK-77).
+//!
+//! What this service adds is access to the graph algorithms exposed by
 //! `CallGraphProjection` (Dijkstra, SCC, connected components, etc.)
 //! from a single, well-typed entry point.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)

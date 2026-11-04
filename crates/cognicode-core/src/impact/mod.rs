@@ -46,12 +46,8 @@
 //!     `execute_composite` se modifica para poblar los campos.
 
 pub mod composite;
-pub mod graph;
 
 pub use composite::{
     COMPOSITE_VERDICT_REFUSED_REASON, CompositeImpactQuery, CompositeImpactResult,
     execute_composite,
-};
-pub use graph::{
-    Direction, ImpactEdge, ImpactLimits, ImpactPath, ImpactResult, Provenance, build_impact_result,
 };
