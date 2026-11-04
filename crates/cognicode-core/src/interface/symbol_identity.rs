@@ -196,6 +196,23 @@ pub fn default_provider_for_tool(tool: &str) -> &'static str {
     }
 }
 
+/// Provider label for the tier that actually answered a navigation query.
+///
+/// `default_provider_for_tool` names the chain; this names the link that
+/// served, so an agent can tell a language-server answer from a heuristic one.
+pub fn provider_for_tier(
+    tier: crate::domain::traits::code_intelligence::PrecisionTier,
+) -> &'static str {
+    use crate::domain::traits::code_intelligence::PrecisionTier::*;
+    match tier {
+        S0 => "tree-sitter",
+        S1 => "local-resolver",
+        S2 => "lsp",
+        S3 => "scip",
+        S4 => "compiler-ir",
+    }
+}
+
 /// The 8 navigation tools B3.W1 unifies. Pinned by the
 /// `catalog_declares_precision_floor_for_every_navigation_tool` test so
 /// adding a 9th navigation tool cannot land without updating both this
@@ -210,6 +227,19 @@ pub const NAVIGATION_TOOLS: &[&str] = &[
     "get_implementors",
     "get_type_references",
 ];
+
+#[cfg(test)]
+mod tier_label_tests {
+    use super::provider_for_tier;
+    use crate::domain::traits::code_intelligence::PrecisionTier;
+
+    #[test]
+    fn the_language_server_tier_is_labelled_lsp_and_heuristics_are_not() {
+        assert_eq!(provider_for_tier(PrecisionTier::S2), "lsp");
+        assert_eq!(provider_for_tier(PrecisionTier::S0), "tree-sitter");
+        assert_ne!(provider_for_tier(PrecisionTier::S0), "lsp");
+    }
+}
 
 #[cfg(test)]
 mod tests {

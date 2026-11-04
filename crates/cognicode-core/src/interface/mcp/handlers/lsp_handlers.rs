@@ -1,9 +1,13 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::needless_borrows_for_generic_args, dead_code)]
 use super::*;
-use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use crate::domain::traits::code_intelligence::{
+    CodeIntelligenceProvider, Reference, TieredCodeIntelligenceProvider, TieredOutcome,
+};
 use crate::infrastructure::lsp::providers::CompositeProvider;
-use crate::interface::symbol_identity::{default_provider_for_tool, precision_floor_for_tool};
+use crate::interface::symbol_identity::{
+    default_provider_for_tool, precision_floor_for_tool, provider_for_tier,
+};
 
 /// Helper to get the code intelligence provider from context or create a default one
 fn get_provider(ctx: &HandlerContext) -> Arc<dyn CodeIntelligenceProvider> {
@@ -120,6 +124,36 @@ pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerRes
     }
 }
 
+/// Builds the `find_references` answer from a tiered outcome, labelling
+/// `provider` with the tier that actually served the references.
+fn references_output(
+    symbol: String,
+    outcome: TieredOutcome<Vec<Reference>>,
+) -> FindReferencesOutput {
+    let (references, provider) = match outcome {
+        TieredOutcome::Served(tiered) => (tiered.value, provider_for_tier(tiered.tier)),
+        TieredOutcome::Unresolved(_) => (Vec::new(), default_provider_for_tool("find_references")),
+    };
+    let entries: Vec<ReferenceEntry> = references
+        .iter()
+        .map(|r| ReferenceEntry {
+            file: r.location.file().to_string(),
+            line: r.location.line(),
+            column: r.location.column(),
+            kind: format!("{:?}", r.reference_kind),
+            context: r.container.clone().unwrap_or_default(),
+        })
+        .collect();
+    let total = entries.len();
+    FindReferencesOutput {
+        symbol,
+        references: entries,
+        total,
+        precision: precision_floor_for_tool("find_references"),
+        provider: provider.to_string(),
+    }
+}
+
 /// Handler for find_references tool
 #[cognicode_macros::aix_tool(
     name = "find_references",
@@ -139,6 +173,14 @@ pub async fn handle_find_references(
         input.column,
     );
 
+    // Without an injected provider the composite chain answers, and its tier
+    // says who served; an injected provider has no tier to report.
+    if ctx.code_intelligence_provider.is_none() {
+        let outcome = CompositeProvider::new(&ctx.working_dir)
+            .find_references_tiered(&location, input.include_declaration)
+            .await;
+        return Ok(references_output(input.file_path, outcome));
+    }
     match provider
         .find_references(&location, input.include_declaration)
         .await
@@ -845,5 +887,33 @@ mod tests {
             "the source of a file outside the workspace must not be returned: {:?}",
             out.context
         );
+    }
+
+    #[test]
+    fn references_served_by_the_language_server_report_provider_lsp() {
+        use crate::domain::traits::code_intelligence::{PrecisionTier, ReferenceKind};
+        let refs = vec![Reference {
+            location: Location::new("a.cs", 3, 5),
+            reference_kind: ReferenceKind::Read,
+            container: None,
+        }];
+        let out = references_output(
+            "a.cs".to_string(),
+            TieredOutcome::served(refs.clone(), PrecisionTier::S2),
+        );
+        assert_eq!(out.provider, "lsp");
+        assert_eq!(out.total, 1);
+        let heuristic = references_output(
+            "a.cs".to_string(),
+            TieredOutcome::served(refs, PrecisionTier::S0),
+        );
+        assert_eq!(heuristic.provider, "tree-sitter");
+    }
+
+    #[test]
+    fn unresolved_references_do_not_claim_a_serving_provider() {
+        let out = references_output("a.cs".to_string(), TieredOutcome::unresolved(Vec::new()));
+        assert_eq!(out.total, 0);
+        assert_ne!(out.provider, "lsp");
     }
 }

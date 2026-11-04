@@ -31727,3 +31727,22 @@ transitivo; si `prepareCallHierarchy` no devuelve nada, `incoming/outgoing_calls
 vacía; `CompositeProvider` y `TreesitterFallbackProvider` no reenvían las llamadas nuevas, así
 que ni CLI ni MCP las exponen; mismas limitaciones de columnas UTF-16 y URI que la rebanada 1.
 **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-90 (AC4, parcial): `find_references` etiqueta `provider` con el tier que sirvió
+
+**Qué.** `handle_find_references` ponía el literal `lsp::composite` en `provider` pasara lo que
+pasara (también cuando sirvió tree-sitter). Sin proveedor inyectado, ahora usa
+`CompositeProvider::find_references_tiered` y `references_output` etiqueta con
+`provider_for_tier`: S2 → `lsp`, S0 → `tree-sitter`. Un resultado sin resolver no se atribuye a
+ningún proveedor. Con proveedor inyectado el camino no cambia.
+
+**Verificación.** SHA base c18b237a. Tests unitarios de `references_output` y de
+`provider_for_tier` (la función de mapeo se escribió con su implementación, sin RED propio).
+`--lib` 2521 OK; `--test it` 942 OK y los 9 fallos de infraestructura de siempre; clippy, fmt y
+matriz limpios. **Medición con servidor real** (test temporal, NO commiteado): con
+`rust-analyzer` sobre un crate de 2 funciones, la 1.ª llamada en frío sirvió S0 con el
+diagnóstico «LSP returned no references» y las 5 siguientes sirvieron S2 sin diagnósticos.
+**Sin cubrir:** AC4 sigue abierto: no existen goldens de `find_references` (los de
+`sandbox/fixtures/lsi-baseline` no lo incluyen) y csharp-ls, kotlin-lsp y
+groovy-language-server siguen sin instalar (NOT_RUN); el handler con `CompositeProvider` real no
+tiene test determinista. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
