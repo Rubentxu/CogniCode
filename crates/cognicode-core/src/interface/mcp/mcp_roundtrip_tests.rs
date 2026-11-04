@@ -1244,6 +1244,172 @@ fn simple_function() {
                 ghosts.join(", ")
             );
         }
+
+        // ======================================================================
+        // TASK-64 — a tool the catalogue marks `stable` is served and tested.
+        //
+        // The catalogue published two tools as `stable` while the code behind
+        // them computed nothing. That is the class of defect this ratchet
+        // closes: a `stable` tool has to be dispatched by the server (it is
+        // served) and has to be named by a test (somebody checks it).
+        //
+        // What this ratchet does NOT prove: that the test naming the tool
+        // pins its *behaviour*. A test that names a tool and asserts that a
+        // missing graph is an error does name it. Proving the stronger claim
+        // needs a registry of behaviour tests per tool, and that registry is a
+        // second source of truth waiting to drift. The stronger claim is a
+        // known limitation, not a claim this file makes.
+        // ======================================================================
+
+        /// The names the catalogue marks `stable`.
+        fn stable_tool_names() -> Vec<String> {
+            crate::interface::catalog::load_tool_catalog()
+                .into_iter()
+                .filter(|d| d.stability == "stable")
+                .map(|d| d.name)
+                .collect()
+        }
+
+        /// The test sources of the repository, and the names each one names.
+        ///
+        /// A file counts as a test carrier when it declares at least one
+        /// test; a name counts as named when the file carries it as a string
+        /// literal. The scan is recomputed from the tree on every run, so
+        /// there is no list to keep in sync with the repository.
+        fn names_named_by_tests(
+            names: &[String],
+        ) -> std::collections::BTreeMap<String, Vec<String>> {
+            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("crates");
+            let mut found: std::collections::BTreeMap<String, Vec<String>> =
+                std::collections::BTreeMap::new();
+            let mut pending = vec![root];
+            while let Some(dir) = pending.pop() {
+                let Ok(entries) = std::fs::read_dir(&dir) else {
+                    continue;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        pending.push(path);
+                        continue;
+                    }
+                    if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                        continue;
+                    }
+                    let Ok(content) = std::fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    if !(content.contains("#[test]") || content.contains("#[tokio::test]")) {
+                        continue;
+                    }
+                    for name in names {
+                        if content.contains(&format!("\"{name}\"")) {
+                            found
+                                .entry(name.clone())
+                                .or_default()
+                                .push(path.display().to_string());
+                        }
+                    }
+                }
+            }
+            found
+        }
+
+        /// A `stable` tool is one the server serves.
+        #[test]
+        fn every_stable_tool_is_served_by_the_server() {
+            let arms = dispatch_arms();
+            let stable = stable_tool_names();
+            assert!(
+                stable.len() >= 40,
+                "the catalogue publishes {} stable tools; a ratchet over almost \
+                 nothing proves nothing",
+                stable.len()
+            );
+            let unserved: Vec<&String> = stable.iter().filter(|n| !arms.contains_key(*n)).collect();
+            assert!(
+                unserved.is_empty(),
+                "the catalogue marks these tools `stable` and the server cannot \
+                 dispatch them: {unserved:?}"
+            );
+        }
+
+        /// A `stable` tool is one somebody checks.
+        #[test]
+        fn every_stable_tool_is_named_by_a_test() {
+            let stable = stable_tool_names();
+            let named = names_named_by_tests(&stable);
+            let untested: Vec<&String> =
+                stable.iter().filter(|n| !named.contains_key(*n)).collect();
+            assert!(
+                untested.is_empty(),
+                "the catalogue marks these tools `stable` and no test names them: \
+                 {untested:?}"
+            );
+        }
+
+        /// The server announces the capabilities it serves, and only those.
+        ///
+        /// `resources` used to be announced while no handler implemented it: a
+        /// client that saw the capability was entitled to call
+        /// `resources/list`, and the server answered "method not found". An
+        /// announcement is a promise, and this server keeps the ones it can
+        /// honour.
+        ///
+        /// The first assertion is the anti-vacuity guard: a server that
+        /// announced nothing would satisfy the other three by saying nothing.
+        #[test]
+        fn the_server_announces_only_the_capabilities_it_serves() {
+            use rmcp::ServerHandler;
+
+            let handler =
+                crate::interface::mcp::CogniCodeHandler::new(std::path::PathBuf::from("/tmp/test"));
+            let capabilities = handler.get_info().capabilities;
+
+            assert!(
+                capabilities.tools.is_some(),
+                "the server serves tools and must say so"
+            );
+            assert!(
+                capabilities.resources.is_none(),
+                "the server does not serve resources; announcing the capability is a \
+                 promise it cannot keep"
+            );
+            assert!(
+                capabilities.prompts.is_none(),
+                "the server does not serve prompts; announcing the capability is a \
+                 promise it cannot keep"
+            );
+            assert!(
+                capabilities.completions.is_none(),
+                "the server does not serve completions; announcing the capability is a \
+                 promise it cannot keep"
+            );
+        }
+
+        /// The scan sees the tests, and it is not answering "yes" to
+        /// everything.
+        #[test]
+        fn the_test_scan_sees_the_tests_and_not_only_their_absence() {
+            // The ghost name is assembled at runtime: written out, it would
+            // be a literal in this very file, and the scan would find the
+            // scan.
+            let ghost = ["a", "tool", "that", "does", "not", "exist"].join("_");
+            let probe = vec!["build_graph".to_string(), ghost.clone()];
+            let named = names_named_by_tests(&probe);
+            assert!(
+                named
+                    .get("build_graph")
+                    .is_some_and(|files| !files.is_empty()),
+                "the scan must find the tests that name build_graph"
+            );
+            assert!(
+                !named.contains_key(&ghost),
+                "a name no test mentions must not be reported as named"
+            );
+        }
     }
 
     // ==========================================================================

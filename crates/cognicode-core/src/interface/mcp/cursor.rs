@@ -1,5 +1,5 @@
 //! H2.3 — Typed cursor errors and anchored pagination for the MCP
-//! `list_tools` and `resources/list` surfaces.
+//! `tools/list` surface.
 //!
 //! H2.3 spec: "Reutilizar cursor/paginación existentes; anclar
 //! snapshot, workspace, filtros y orden. Error tipado para cursor
@@ -60,8 +60,7 @@ fn short_hash(s: &str) -> String {
 pub struct CursorContext {
     /// Workspace path (or `__tools__` for the global catalog).
     pub workspace: String,
-    /// Snapshot digest (catalog digest for `tools/list`; can be
-    /// a workspace-state digest for `resources/list`).
+    /// Snapshot digest (the catalog digest for `tools/list`).
     pub snapshot: String,
 }
 

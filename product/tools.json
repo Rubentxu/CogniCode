@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 79,
+  "runtime_tool_count": 77,
   "tools": [
     {
       "name": "analyze_impact",
@@ -63,113 +63,6 @@
         "requires build_graph to be current"
       ],
       "impact_direction_floor": "observed"
-    },
-    {
-      "name": "composite_impact_query",
-      "title": "Composite impact query for agents",
-      "description": "Aggregate impact paths (B4.W1), architecture observations (B4.W2), and quality findings (B4.W3) for a symbol. Adds the suggested follow-ups and prerequisites pulled from the catalog. Investigative, NOT authoritative: the result always carries verdict_refused=true with reason `composite queries return evidence, not verdicts; investigate each piece`. Use the suggested tools to investigate each piece independently.",
-      "category": "graph",
-      "authority": "read",
-      "stability": "stable",
-      "input_schema": {
-        "properties": {
-          "qualified_name": {
-            "description": "Qualified name of the symbol to investigate",
-            "type": "string"
-          },
-          "file_path": {
-            "description": "File where the symbol is defined (best-effort location)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "qualified_name"
-        ],
-        "type": "object"
-      },
-      "output_schema": {
-        "properties": {
-          "verdict_refused": {
-            "description": "Always true; the composite result is evidence, not a verdict",
-            "type": "boolean"
-          },
-          "verdict_refused_reason": {
-            "description": "Canonical reason string pinned in the source",
-            "type": "string"
-          },
-          "impact": {
-            "description": "B4.W1 ImpactResult envelope, or null when B4.W1 not wired",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "architecture": {
-            "description": "B4.W2 ArchitectureDiagnostic envelope, or null when not wired",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "findings": {
-            "description": "B4.W3 Finding list (empty when not wired)",
-            "type": "array"
-          },
-          "suggested_follow_ups": {
-            "description": "ToolRef list pulled from ToolDescriptor.follow_ups",
-            "type": "array"
-          },
-          "suggested_prerequisites": {
-            "description": "ToolRef list pulled from ToolDescriptor.prerequisites",
-            "type": "array"
-          }
-        },
-        "required": [
-          "verdict_refused",
-          "verdict_refused_reason",
-          "impact",
-          "architecture",
-          "findings",
-          "suggested_follow_ups",
-          "suggested_prerequisites"
-        ],
-        "type": "object"
-      },
-      "requirements": {
-        "graph": false,
-        "persistence": false,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 10,
-      "public_profiles": [
-        "reviewer"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 10,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.31"
-      },
-      "required_args": [
-        "qualified_name"
-      ],
-      "prerequisites": [],
-      "follow_ups": [],
-      "limitations": [
-        "investigation only; result is not a verdict",
-        "evidence fields are empty until B4.W1 / B4.W2 / B4.W3 extractors wire to the composite",
-        "follow_ups and prerequisites are pulled from the catalog by qualified_name; unknown symbols yield empty suggestions"
-      ],
-      "intent_tags": [
-        "verify",
-        "locate"
-      ]
     },
     {
       "name": "ask_about_code",
@@ -2477,59 +2370,6 @@
       "limitations": [
         "requires build_graph to be current",
         "max_hops bounds exhaustive search; substring name match"
-      ]
-    },
-    {
-      "name": "graph_analyze",
-      "title": "Run advanced graph algorithms: scc, reduced, or feedback_arcs",
-      "description": "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
-      "category": "graph",
-      "authority": "read",
-      "stability": "stable",
-      "input_schema": {
-        "properties": {
-          "mode": {
-            "enum": [
-              "scc",
-              "reduced",
-              "feedback_arcs"
-            ],
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "output_schema": null,
-      "requirements": {
-        "graph": true,
-        "persistence": false,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 150,
-      "public_profiles": [
-        "reviewer"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 150,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.31"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_condensed",
-        "graph_reduced"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
       ]
     },
     {

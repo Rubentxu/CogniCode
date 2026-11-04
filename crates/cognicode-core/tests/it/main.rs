@@ -115,6 +115,7 @@ mod prf_sec_07_adversarial_campaign;
 mod provider_conformance;
 mod read_set_e2e;
 mod refactor_integration_tests;
+mod retired_tools_are_not_announced;
 mod roadmap_claims_contract;
 mod safety_gate_tests;
 mod sandbox_orchestrator_test;

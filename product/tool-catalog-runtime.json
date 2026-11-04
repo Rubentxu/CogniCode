@@ -32,83 +32,6 @@
     }
   },
   {
-    "name": "composite_impact_query",
-    "description": "Aggregate impact paths (B4.W1), architecture observations (B4.W2), and quality findings (B4.W3) for a symbol. Adds the suggested follow-ups and prerequisites pulled from the catalog. Investigative, NOT authoritative: the result always carries verdict_refused=true with reason `composite queries return evidence, not verdicts; investigate each piece`. Use the suggested tools to investigate each piece independently.",
-    "inputSchema": {
-      "properties": {
-        "file_path": {
-          "description": "File where the symbol is defined (best-effort location)",
-          "type": "string"
-        },
-        "qualified_name": {
-          "description": "Qualified name of the symbol to investigate",
-          "type": "string"
-        }
-      },
-      "required": [
-        "qualified_name"
-      ],
-      "type": "object"
-    },
-    "outputSchema": {
-      "properties": {
-        "architecture": {
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "findings": {
-          "items": {
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "impact": {
-          "type": [
-            "object",
-            "null"
-          ]
-        },
-        "suggested_follow_ups": {
-          "items": {
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "suggested_prerequisites": {
-          "items": {
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "verdict_refused": {
-          "type": "boolean"
-        },
-        "verdict_refused_reason": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "verdict_refused",
-        "verdict_refused_reason"
-      ],
-      "type": "object"
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 10,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.31"
-      }
-    }
-  },
-  {
     "name": "ask_about_code",
     "description": "Answer questions about code flow by tracing execution paths between symbols.",
     "inputSchema": {
@@ -1570,35 +1493,6 @@
         "from_symbol",
         "to_symbol"
       ],
-      "type": "object"
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 150,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.31"
-      }
-    }
-  },
-  {
-    "name": "graph_analyze",
-    "description": "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
-    "inputSchema": {
-      "properties": {
-        "mode": {
-          "enum": [
-            "scc",
-            "reduced",
-            "feedback_arcs"
-          ],
-          "type": "string"
-        }
-      },
       "type": "object"
     },
     "_meta": {
