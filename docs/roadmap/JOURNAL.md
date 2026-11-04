@@ -30791,3 +30791,47 @@ append-only, y una corrección se hace hacia adelante, con su propia entrada. La
 forma que se quiso decir es la que está en el cierre: el crate se deriva del
 path TOCADO —el binario que cargo declara por cada fichero de integración bajo
 `crates/<crate>/tests/`—.
+
+## 2026-11-04 — TASK-95: la conductancia deja de confundir una arista con ninguna, y la mutación recibe techo de memoria
+
+**El defecto.** `conductance.rs` calculaba `m = total_volume.saturating_sub(1) / 2`.
+Con volumen 2 —una arista mutua— `m` valía 0 y el grafo entero entraba por la rama
+temprana de «no hay aristas», que reporta 1.0 en todas las comunidades. El testigo:
+`0→1` y `2→3` con comunidades `{0,1}` y `{2,3}`; ninguna arista sale de ninguna, así
+que la conductancia es 0.0, y el código decía 1.0. La corrección es `total_volume / 2`;
+la rama temprana sigue entrando sólo con volumen 0. El test nuevo
+`closed_communities_of_a_two_edge_graph_have_zero_conductance` falló antes
+(`got 1`) y pasa después.
+
+**Lo que la corrección destapó.** `two_communities_with_cut` pasaba por accidente,
+a través de la misma rama temprana. Se reescribió con el contrato real
+(comunidad 0 = 1.0, comunidad 1 = 0.0). La conductancia de este crate usa volumen de
+grado de salida y corte saliente, mientras que la documentación describe una versión
+no dirigida: esa decisión es de producto y queda en `TASK-96`, no se resolvió aquí.
+
+**Código muerto en `dominators.rs`.** El bloque «tighten» y la variable `bucket` no
+tenían efecto (`idom[v]` ya se inicializa a `semi[v]`); se borraron, con un digest
+FNV-1a sobre 263 714 casos (todos los grafos de 1 a 4 nodos, todos los subconjuntos
+de aristas, todas las raíces) que demuestra que el resultado no cambió. Tres
+mutantes `< → <=` (líneas 83, 97, 105) son equivalentes y están declarados en
+`.cargo/mutants.toml` con su motivo. **El algoritmo sigue siendo incorrecto**:
+`semi` se indexa por id de nodo y no por número DFS. Está marcado como KNOWN DEFECT
+y fijado por caracterización; no tiene tarea todavía.
+
+**El OOM.** La corrida de mutantes se comió 71, 25 y 19 GB: el mutante
+`head += 1 → *=` hace crecer un `Vec` sin tope. `scripts/mem-capped-runner.sh` aplica
+`ulimit -v` (6 GiB por defecto, `MUTANT_TEST_VMEM_KB`) sólo a los binarios de test,
+vía `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER`, y `scripts/test-gate.sh` lo pasa
+al paso de mutación. El mutante que colgaba ahora muere por SIGABRT, que cuenta como
+atrapado. Los tests nuevos de `dominators.rs` llevan plazo de 5 s, pero el techo de
+memoria es la protección real: un hilo no se puede matar.
+
+**Evidencia.** Base `7a35a077`. `cognicode-graph-algos` lib: 181 en verde.
+`cognicode-core` lib `conductance`: 6 en verde; `analytics_registry_cohort_3`: 34 en
+verde. Mutación serial (`-j 1`, con el runner) sobre `dominators.rs`: 39 mutantes,
+38 atrapados, 1 inviable, 0 supervivientes, 0 timeouts, rc=0.
+
+**NOT_RUN.** La mutación completa de `cognicode-graph-algos` (577 mutantes, `-j 4`)
+seguía en curso al escribir este recibo: su resultado no se afirma aquí. El gate
+entero (`bash scripts/test-gate.sh`) tampoco se corrió: se pasa por lote de 10
+tareas.

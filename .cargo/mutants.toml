@@ -1,0 +1,70 @@
+# cargo-mutants — the third step of the gate.
+#
+# The gate has three steps (see `scripts/test-gate.sh`): unit tests,
+# integration tests, and mutants. This file configures the third one.
+#
+# WHY THE SCOPE LIVES IN THE GATE SCRIPT AND NOT HERE
+# ---------------------------------------------------
+# This file cannot declare a scope. The `cargo-mutants` config schema is
+# deliberately flat and global (`deny_unknown_fields` on a struct with one
+# flat set of options): there is no `package` key, and a file that tries to
+# open one is rejected outright rather than ignored. The scope is therefore a
+# command-line concern, and `scripts/test-gate.sh` passes it explicitly:
+#
+#     cargo mutants -p cognicode-graph-algos
+#
+# Mutants are generated from the sources of the packages named above, and from
+# nothing else: this gate does not mutate test code, because a mutant in a
+# test is not a hole in the code.
+exclude_globs = ["tests/**", "benches/**", "examples/**"]
+
+# Every mutant is a rebuild plus a full test run, and a machine under load
+# makes a legitimate slow test look like a hang. The timeout is relative to
+# the baseline `cargo test` time, so it scales with the machine instead of
+# being a fixed number that is wrong on every machine but one.
+#
+# The floor is 120 s and not 30 s because of what was measured: with the
+# gate running eight mutants at once, a mutant whose tests DO fail was
+# reported as a timeout instead of as a caught mutant, because the test phase
+# ran out of budget while the machine was busy. A caught mutant reported as a
+# timeout is a red gate that says nothing about the code. The floor is high
+# enough that a mutant the tests kill is always reported as killed, and the
+# mutants that really hang are killed by the tests themselves: the tests that
+# call into code that can loop forever carry their own deadline, so a hang
+# becomes a red test in seconds rather than a timeout in minutes.
+timeout_multiplier = 4.0
+minimum_test_timeout = 120.0
+
+# EQUIVALENT MUTANTS
+# ------------------
+# A mutant whose change cannot be observed by ANY input is not a hole in the
+# test suite: it is a property of the code. No test can kill it, because a
+# test that cannot tell the two behaviours apart is not a test of anything.
+# The project's rule ("a surviving mutant is a hole, not a score") is about
+# holes. These are not holes, and they are named here, one by one, with the
+# argument for why they cannot be observed — not hidden behind a threshold.
+#
+# `bridges.rs` — the edge of a bridge is stored sorted, so the pair does not
+# depend on the direction the DFS reached it from:
+#
+#     let (a, b) = if u < v { (u, v) } else { (v, u) };
+#
+# Changing `<` to `<=` only differs when `u == v`, and in that case both
+# spellings produce the pair `(u, u)`: the sorted pair of a node with
+# itself. There is no input that tells them apart.
+#
+# `dominators.rs`, three `<` -> `<=` mutants, each equivalent:
+#
+# - line 83 (`eval`): `semi[best[x]] < semi[best[par]]` differs only when the
+#   two semidominators are EQUAL, and then `best[x]` is set to another node
+#   with the same `semi`. Nothing reads `best` except through `semi[best[_]]`,
+#   so the value observed is the same.
+# - line 97: `semi[u] < semi[v]` differs only when they are equal, and then
+#   the branch assigns `semi[v] = semi[u]`, the value it already has.
+# - line 105: `p < n` differs only for `p == n`, the sentinel `parent` of the
+#   root. The root is the LAST node of the reverse-DFS loop, so the
+#   `ancestor[root] = n` it would write is never read.
+exclude_re = [
+    "crates/cognicode-graph-algos/src/algorithms/bridges\\.rs:56:.*: replace < with <= .*",
+    "crates/cognicode-graph-algos/src/algorithms/dominators\\.rs:(83|97|105):.*: replace < with <= .*",
+]

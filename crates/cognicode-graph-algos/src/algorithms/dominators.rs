@@ -66,7 +66,6 @@ pub fn dominators(
     let mut semi: Vec<usize> = (0..n).collect();
     let mut ancestor: Vec<usize> = vec![0; n];
     let mut best: Vec<usize> = (0..n).collect();
-    let mut bucket: Vec<Vec<usize>> = vec![Vec::new(); n];
 
     // Union-Find eval with path compression
     fn eval(v: usize, ancestor: &mut [usize], best: &mut [usize], semi: &[usize]) -> usize {
@@ -99,22 +98,12 @@ pub fn dominators(
                     semi[v] = semi[u];
                 }
             }
-            bucket[semi[v]].push(v);
         }
 
         // Link v to its DFS parent
         let p = parent[v];
         if p < n {
             ancestor[v] = p;
-        }
-
-        // Process bucket[parent[v]]
-        if p < n {
-            for w in bucket[p].drain(..) {
-                let u = eval(w, &mut ancestor, &mut best, &semi);
-                let _ = u; // idom[w] = if semi[u] < semi[w] { u } else { semi[w] }
-                // We'll tighten in phase 2
-            }
         }
     }
 
@@ -126,22 +115,6 @@ pub fn dominators(
     for &v in &dfs_order {
         if v != root {
             idom[v] = Some(semi[v]);
-        }
-    }
-
-    // Tighten: if semi[v] != idom[v], set idom[v] = idom[semi[v]]
-    // Iterate until stable (handles cycles)
-    for _ in 0..4 {
-        for &v in &dfs_order {
-            if v == root {
-                continue;
-            }
-            if let Some(idom_v) = idom[v]
-                && semi[v] != idom_v
-                && let Some(semi_idom) = idom[semi[v]]
-            {
-                idom[v] = Some(semi_idom);
-            }
         }
     }
 
@@ -297,5 +270,95 @@ mod tests {
         let result = dominators(&out_neighbors, 1, 0);
         assert_eq!(result[0].1, Some(0));
         assert_eq!(result[0].2, 0);
+    }
+
+    // ─── Mutation-gate tests ────────────────────────────────────────────────
+    //
+    // KNOWN DEFECT, recorded 2026-11-04 by the mutation gate and NOT fixed
+    // here: `dominators` indexes `semi` by node id instead of by DFS number,
+    // and takes `semi` as the immediate dominator with no tightening step
+    // (the step that used to be here was dead code, removed 2026-11-04). It
+    // is not a correct dominator
+    // algorithm. Measured against a set-based reference over every graph of
+    // up to 4 nodes (root 0, ids relabelled in DFS order), 4608 of 66066
+    // results differ; on `0→2→1` it answers `idom[1] = 1`, depth 0, where
+    // the true answer is `idom[1] = 2`, depth 2.
+    //
+    // So the tests below are CHARACTERISATION tests: they pin what the
+    // function does today so that a mutant which changes it is caught.
+    // They do NOT certify that the answer is right. When the algorithm is
+    // fixed, the digest below changes on purpose and is re-pinned in the
+    // same diff as the fix.
+
+    /// Runs `f` on a worker thread and fails the test if it does not return
+    /// within five seconds. A mutant that stops the BFS cursor advancing
+    /// loops forever; this turns that hang into a red test. The worker is
+    /// not killed (std has no way), so the memory ceiling of
+    /// `scripts/mem-capped-runner.sh` is what bounds a runaway allocation.
+    fn within_deadline<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("dominators did not return within 5s")
+    }
+
+    /// FNV-1a over a stream of u64 words.
+    fn fnv(h: &mut u64, word: u64) {
+        for b in word.to_le_bytes() {
+            *h ^= u64::from(b);
+            *h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+
+    /// Digest of the result of `dominators` for every graph of 1..=4 nodes
+    /// and every root: 263 714 cases, all edge subsets included.
+    fn corpus_digest() -> (u64, usize) {
+        let mut h = 0xcbf2_9ce4_8422_2325u64;
+        let mut cases = 0usize;
+        for n in 1..=4usize {
+            let pairs: Vec<(usize, usize)> =
+                (0..n).flat_map(|u| (0..n).map(move |v| (u, v))).collect();
+            for mask in 0u32..(1u32 << pairs.len()) {
+                let mut adj = vec![Vec::new(); n];
+                for (i, &(u, v)) in pairs.iter().enumerate() {
+                    if (mask >> i) & 1 == 1 {
+                        adj[u].push(v);
+                    }
+                }
+                for root in 0..n {
+                    cases += 1;
+                    for (node, idom, depth) in dominators(&adj, n, root) {
+                        fnv(&mut h, node as u64);
+                        fnv(&mut h, idom.map_or(u64::MAX, |d| d as u64));
+                        fnv(&mut h, u64::from(depth));
+                    }
+                }
+            }
+        }
+        (h, cases)
+    }
+
+    #[test]
+    fn every_small_graph_keeps_its_pinned_result() {
+        let (digest, cases) = within_deadline(corpus_digest);
+        assert_eq!(cases, 263_714, "the corpus changed size");
+        assert_eq!(
+            digest, 12_195_379_540_474_901_861,
+            "result of `dominators` changed on some graph of up to 4 nodes"
+        );
+    }
+
+    #[test]
+    fn edges_from_unreachable_nodes_to_ids_outside_the_graph_are_ignored() {
+        // `v < n` guards the predecessor build. A reachable node with such
+        // an edge panics later in the DFS, so the guard is only observable
+        // from a node the root cannot reach: node 1 points at id 2 == n.
+        let result = within_deadline(|| {
+            let adj = vec![Vec::<usize>::new(), vec![2usize]];
+            dominators(&adj, 2, 0)
+        });
+        assert_eq!(result, vec![(0, Some(0), 0), (1, None, 0)]);
     }
 }
