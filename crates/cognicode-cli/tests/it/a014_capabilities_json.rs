@@ -19,7 +19,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-mod common;
+use crate::common;
 
 use common::binary_path;
 

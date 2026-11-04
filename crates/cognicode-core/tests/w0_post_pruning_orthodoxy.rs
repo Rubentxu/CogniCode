@@ -58,7 +58,7 @@ const PROTECTED: &[&str] = &[
     "crates/cognicode-core/tests/cu2_w2_finding_projection.rs",
     "crates/cognicode-core/tests/cu2_w3_guard_transfer.rs",
     "crates/cognicode-core/tests/cu2_w4_live_consumer.rs",
-    "crates/cognicode-cli/tests/cli_exit_code_propagation.rs",
+    "crates/cognicode-cli/tests/it/cli_exit_code_propagation.rs",
     "crates/cognicode-mcp/tests/a009_agent_safe_profile.rs",
     "crates/cognicode-mcp/tests/a010_tool_authority_audit.rs",
     "crates/cognicode-mcp/tests/prf_h06_adversarial_e2e.rs",

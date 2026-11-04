@@ -192,7 +192,7 @@ lsp-types = "0.93"
 # `prometheus 0.14.0` is what pulls `protobuf ^3.7.2`, the patched version the
 # advisory names. So this is a TWO-major migration, and stopping at 0.29.0
 # would produce a tree that looks migrated and is still vulnerable.
-# `crates/cognicode-cli/tests/cr07_protobuf_advisory_closed.rs` pins that.
+# `crates/cognicode-cli/tests/it/cr07_protobuf_advisory_closed.rs` pins that.
 #
 # The four crates are NOT version-locked with each other, and the difference
 # is load-bearing:

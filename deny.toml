@@ -7,7 +7,7 @@
 # a summary sentence claiming "5 deudas documentadas"; and JOURNAL §55 is about
 # the A-013 lifecycle gate, not advisories. The backing record is
 # docs/debts/DEBT-SEC-001-advisory-ignores.md, one row per ignore, enforced by
-# crates/cognicode-cli/tests/advisory_ignore_backing_contract.rs.
+# crates/cognicode-cli/tests/it/advisory_ignore_backing_contract.rs.
 #
 # Each reason below was corrected on 2026-10-01 against what `cargo deny` and
 # the advisory database actually report. Two of the old ones were wrong: this

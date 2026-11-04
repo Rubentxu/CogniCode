@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 fn impact(symbol: &str, project: &Path, format: &str) -> Output {
     Command::new(common::binary_path("cognicode"))

@@ -43,7 +43,7 @@ use std::process::Command;
 
 use serial_test::serial;
 
-mod common;
+use crate::common;
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

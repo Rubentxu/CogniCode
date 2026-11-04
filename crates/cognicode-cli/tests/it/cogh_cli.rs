@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 /// Path to the `cogh` binary.
 ///

@@ -14,7 +14,7 @@ passed, and passing is exactly the problem — a gate that no merge runs
 is not a gate, and this repo has already paid for that three times
 (N+50 selector, N+51 `--lib` blind spot, N+57 anchor scope) plus once
 more in the CP axis when A-013's suite turned out to be green without
-ever executing. `crates/cognicode-cli/tests/portable_skill_bundle.rs`
+ever executing. `crates/cognicode-cli/tests/it/portable_skill_bundle.rs`
 does not close the gap: its 8 tests exercise the validator CLI against
 synthetic bundles, which proves the mechanism works when handed a
 bundle, not that the six skills the repo publishes are valid.

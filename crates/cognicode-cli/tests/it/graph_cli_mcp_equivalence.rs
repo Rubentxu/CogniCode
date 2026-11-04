@@ -22,7 +22,7 @@
 //! SAME thing: they are adapters over one service, and a service that
 //! answers two ways is two services.
 
-mod common;
+use crate::common;
 
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::interface::coverage::{PendingReason, PendingReferenceInfo};

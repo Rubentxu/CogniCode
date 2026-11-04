@@ -41,7 +41,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-mod common;
+use crate::common;
 
 fn cognicode_bin() -> PathBuf {
     common::binary_path("cognicode")

@@ -32,7 +32,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-mod common;
+use crate::common;
 
 use common::{merge_authority_runs, merge_authority_stage_of, not_run_message};
 

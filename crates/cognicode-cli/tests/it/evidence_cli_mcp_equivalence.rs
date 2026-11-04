@@ -34,7 +34,7 @@
 
 #![cfg(feature = "ladybug")]
 
-mod common;
+use crate::common;
 
 use common::binary_path;
 use serde_json::Value;

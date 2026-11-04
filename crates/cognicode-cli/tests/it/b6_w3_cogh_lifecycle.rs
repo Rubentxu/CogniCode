@@ -27,7 +27,7 @@ use std::process::{Command, Output};
 
 use serde_json::Value;
 
-mod common;
+use crate::common;
 
 // ============================================================================
 // helpers
