@@ -21,11 +21,13 @@ pub fn feedback_arc_set(
         return Vec::new();
     }
 
-    let mut in_n: Vec<Vec<usize>> = _in_neighbors.to_vec();
     let mut out_n: Vec<Vec<usize>> = out_neighbors.to_vec();
     let mut result = Vec::new();
 
-    loop {
+    // Every productive pass removes one edge, so the graph is acyclic after at
+    // most `edge_count` removals. The bound makes termination structural.
+    let edge_count: usize = out_neighbors.iter().map(Vec::len).sum();
+    for _ in 0..edge_count {
         match toposort_check(&out_n, n) {
             Ok(()) => break, // DAG, no cycles
             Err(()) => {
@@ -42,9 +44,8 @@ pub fn feedback_arc_set(
                     }
                 }
                 if let Some((u, v)) = best_edge {
-                    // Remove edge u→v from both lists.
+                    // Only `out_n` drives the search, so only it is updated.
                     out_n[u].retain(|&x| x != v);
-                    in_n[v].retain(|&x| x != u);
                     result.push((u, v));
                 } else {
                     break; // Shouldn't happen
@@ -96,6 +97,32 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    /// Runs on a thread so a hang fails the test instead of the suite.
+    fn run(in_n: Vec<Vec<usize>>, out_n: Vec<Vec<usize>>, n: usize) -> Vec<(usize, usize)> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(feedback_arc_set(&in_n, &out_n, n));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("feedback_arc_set did not finish within 5s")
+    }
+
+    #[test]
+    fn tie_on_out_degree_picks_the_lowest_node() {
+        // 0 → 1 → 0: both nodes have out-degree 1; the first one wins.
+        let g = vec![vec![1], vec![0]];
+        assert_eq!(run(g.clone(), g, 2), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn the_highest_out_degree_node_loses_its_first_edge() {
+        // 0→1, 1→2, 2→0 and 1→0. Node 1 has out-degree 2 (edges 2, 0),
+        // so its first edge (1, 2) goes first; 0→1, 2→0, 1→0 remain
+        // and 0↔1 is still a cycle: node 0 (degree 1) → (0, 1).
+        let out_n = vec![vec![1], vec![2, 0], vec![0]];
+        assert_eq!(run(vec![Vec::new(); 3], out_n, 3), vec![(1, 2), (0, 1)]);
+    }
+
     #[test]
     fn simple_cycle_returns_one_edge() {
         // 0 → 1 → 0: removing any edge breaks the cycle.
@@ -112,6 +139,9 @@ mod tests {
         let in_n = vec![vec![1], vec![0], vec![3], vec![2]];
         let out_n = vec![vec![1], vec![0], vec![3], vec![2]];
         let result = feedback_arc_set(&in_n, &out_n, 4);
-        assert_eq!(result.len(), 3);
+        // Known heuristic defect: after (0, 1) the pair 0↔1 is already
+        // acyclic, but (1, 0) is still removed because only the global
+        // out-degree is looked at. The result is not minimum (2 would do).
+        assert_eq!(result, vec![(0, 1), (1, 0), (2, 3)]);
     }
 }

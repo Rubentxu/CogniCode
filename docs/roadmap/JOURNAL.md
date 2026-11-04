@@ -30863,3 +30863,28 @@ core tarda ahora hasta el kernel en aparecer) y la cobertura sin la feature
 **NOT_RUN.** `test-full`.
 
 **SHA citable.** `7c40fa29` (PR #508, squash).
+
+## 2026-11-04 — TASK-105: feedback_arc_set sin código muerto y con terminación acotada
+
+**Hueco.** El mutante `feedback_arc_set.rs:47` (`in_n[v].retain`) sobrevivía: `in_n`
+se escribía y nunca se leía.
+
+**Tests.** `tie_on_out_degree_picks_the_lowest_node` y
+`the_highest_out_degree_node_loses_its_first_edge` (secuencias calculadas a mano),
+y `two_disjoint_cycles` fija la secuencia exacta `[(0,1),(1,0),(2,3)]`. Plazo de 5 s
+(hilo + `mpsc` + `recv_timeout`).
+
+**Diagnóstico.** Eliminada la copia `in_n` (código muerto demostrado; la firma no
+cambia). El bucle `loop` pasa a `0..edge_count`: cada pasada productiva quita una
+arista, así que la terminación es estructural. Antes `!=`→`==` en el `retain` (línea
+45) no quitaba la arista y colgaba. Aparecieron además `>`→`>=` (36), cerrado con el
+test de empate.
+
+**Defecto conocido, NO corregido.** La heurística elige la arista de mayor grado de
+salida sin comprobar que esté en un ciclo: en dos ciclos disjuntos 0↔1 y 2↔3
+devuelve 3 aristas, y el mínimo es 2. El test lo documenta. Decisión del maintainer.
+
+**Evidencia.** `cargo mutants -j 1`: 20 mutantes, 20 atrapados, 0 vivos, 0 timeouts
+(55 s). Lib `cognicode-graph-algos`: 163 en verde; clippy `-D warnings` y fmt rc=0.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
