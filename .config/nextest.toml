@@ -1,0 +1,50 @@
+# cargo-nextest — the runner behind the first two steps of the gate.
+#
+# `scripts/test-gate.sh` runs `cargo nextest run --profile gate` once per step
+# (unit: `--lib`, integration: `--tests`). There is ONE profile because there is
+# one lane: the pr/merge/nightly lanes were retired on 2026-11-04, and a
+# profile nobody selects is a configuration that rots.
+#
+# nextest runs each test in its own process. That makes the process-global
+# state the old `#[serial]` annotations guarded (HOME, the current directory)
+# private to each test. The annotations stay: `cargo test` still runs the
+# doc-tests, and the mutants step builds with it, and there they still matter.
+
+[profile.gate]
+# Report every failure instead of stopping at the first: a gate that hides
+# the second failure costs a whole run per bug.
+fail-fast = false
+
+# A test that can hang is killed, not waited for. 60 s is slow for a unit or
+# mocked-integration test; it is flagged then, and terminated after 5 periods.
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The tests that start an HTTP server of their own pick the port with
+# `free_port()`: bind to port 0, read the port, drop the socket, hand the
+# number to a child process. Between the drop and the child's bind another
+# test process can be given the same port, and the child dies with "Address
+# already in use". Measured 2026-11-04: one failure in the first whole-suite
+# run under nextest, none in isolation. Inside one process `cargo test` did
+# not expose it; one process per test does. One thread for the group removes
+# the race without touching the helper.
+[test-groups.http-port]
+max-threads = 1
+
+[[profile.gate.overrides]]
+filter = 'package(cognicode-mcp) & (test(/^cr07_metrics_exposition_contract::/) | test(/^mcp_http_routes_authority::/) | test(/^the_watch_endpoint_names_what_is_watched::/))'
+test-group = 'http-port'
+
+# The unit tests of the `cogh` binaries mutate state that lives outside their
+# temp dir: `redirect_home` moves HOME but not XDG, so lifecycle tests rename
+# files under the real `~/.config/opencode`. Under `cargo test` the `#[serial]`
+# annotations took turns on it; one process per test needs the same turn-taking
+# said here. Measured 2026-11-04: `layout::tests::t_debt4_t3_...` failed with
+# "rename ~/.config/opencode/opencode.json: No such file" once in two whole-suite
+# runs. The proper fix is hermetic tests (known debt); this group is the
+# containment, and it costs what `#[serial]` already cost.
+[test-groups.cli-shared-home]
+max-threads = 1
+
+[[profile.gate.overrides]]
+filter = 'binary_id(/^cognicode-cli::bin\//)'
+test-group = 'cli-shared-home'

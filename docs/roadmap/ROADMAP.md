@@ -640,8 +640,8 @@ que no está verificada.
 
 | # | Qué | Comando |
 |---|---|---|
-| 1 | Tests unitarios | `cargo test --workspace --lib` |
-| 2 | Tests de integración (con mocks) | `cargo test --workspace --tests` |
+| 1 | Tests unitarios | `cargo nextest run --profile gate --workspace --lib` |
+| 2 | Tests de integración (con mocks) | `cargo nextest run --profile gate --workspace --tests` |
 | 3 | Mutantes | `cargo mutants` |
 
 `bash scripts/test-gate.sh` los agrupa. Los tres tienen que estar verdes. No

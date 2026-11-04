@@ -33,8 +33,8 @@ believe happened.
 During development, run only the affected tests. The gate is three steps and
 all three are required before merge:
 
-    cargo test --workspace --lib      # unit
-    cargo test --workspace --tests    # integration with mocks
+    cargo nextest run --profile gate --workspace --lib      # unit
+    cargo nextest run --profile gate --workspace --tests    # integration with mocks
     cargo mutants                     # mutants
 
 `bash scripts/test-gate.sh` runs the three together. A green subset is not a

@@ -31308,3 +31308,31 @@ release de `cognicode-mcp`): infraestructura local, no regresión. `cargo fmt --
 
 **NOT_RUN.** `bash scripts/test-gate.sh` completo, mutantes, `npm test --prefix
 apps/explorer-ui`, contratos Python de `scripts/ci`.
+
+## 2026-11-04 — TASK-72: cargo-nextest, una invocación por paso del gate
+
+**Cambio.** `.config/nextest.toml` con un único perfil `gate` (los carriles
+pr/merge/nightly se retiraron, así que un perfil por carril sería configuración que
+nadie elige). `scripts/test-gate.sh` corre `cargo nextest run --profile gate
+--workspace --lib` y `--tests`, una invocación por paso, y falla con instrucciones si
+falta `cargo-nextest`. AGENTS.md, ROADMAP, CONTRIBUTING y la plantilla de PR citan los
+comandos nuevos; `test_taxonomy_contract` los fija (RED antes de tocar el script).
+`slow-timeout` 60 s con terminación a los 5 periodos.
+
+**Medición** (mismos binarios, caché caliente, solo fase de ejecución; no hay V09 en
+el árbol, la línea base es `cargo test` medido el mismo día): `--lib` 26,2 s → 15,6 s;
+`--tests` 79,9 s → 21,2 s. Mismas cifras de tests (4570 y 6568 pasan) y los mismos 9
+fallos de infraestructura (faltan binarios release).
+
+**Dos carreras que `cargo test` ocultaba** (un proceso por test las expone):
+`free_port()` del mcp (bind a :0, soltar, pasar el número al hijo) daba "Address already
+in use"; y un test de `layout` del CLI renombra `~/.config/opencode/opencode.json` REAL
+porque `redirect_home` no mueve XDG. Contención: test-groups `http-port` y
+`cli-shared-home` (un hilo). Con ellos: 8/8 corridas de `--tests` con exactamente los 9
+fallos conocidos; 4/4 de `--lib` en verde.
+
+**Deuda declarada, no corregida.** Los tests del CLI no son herméticos (escriben bajo
+el HOME real); `free_port` tiene TOCTOU. Los `#[serial]` se quedan: `cargo test`
+(mutantes, doc-tests) los sigue necesitando.
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo.

@@ -3,8 +3,8 @@
 #
 # The gate. Three things, and nothing else:
 #
-#   1. unit tests        — cargo test --workspace --lib
-#   2. integration tests — cargo test --workspace --tests
+#   1. unit tests        — cargo nextest run --profile gate --workspace --lib
+#   2. integration tests — cargo nextest run --profile gate --workspace --tests
 #   3. mutants           — cargo mutants, over the crates that carry the logic
 #
 # There is no CI lane behind this script. It was retired on 2026-11-04 with the
@@ -107,6 +107,14 @@ case "${1:-}" in
   *) echo "ERROR: opcion desconocida: $1" >&2; exit 2 ;;
 esac
 
+# Steps 1 and 2 run under cargo-nextest (one process per test, profile `gate`
+# in .config/nextest.toml). A missing runner is infrastructure, not a
+# regression, and it has to say so before the suite starts.
+if { $RUN_UNIT || $RUN_INTEGRATION; } && ! cargo nextest --version >/dev/null 2>&1; then
+  printf 'FAIL: cargo-nextest no esta instalado. Instálalo con: cargo install cargo-nextest --locked\n' >&2
+  exit 2
+fi
+
 printf '=== test-gate @ %s ===\n' "$(git rev-parse --short HEAD)"
 overall_rc=0
 
@@ -125,7 +133,7 @@ run_step() {
 # 1. Unit tests. `--lib` compiles and runs the `#[cfg(test)]` modules inside
 #    the sources: one unit, in isolation, no process and no network.
 if $RUN_UNIT; then
-  run_step "unit tests" cargo test --workspace --lib
+  run_step "unit tests" cargo nextest run --profile gate --workspace --lib
 fi
 
 # The release-flow suites execute release-profile bytes on purpose: a debug
@@ -152,7 +160,7 @@ fi
 # 2. Integration tests. `--tests` compiles and runs every target under
 #    `tests/`: several real pieces working together, with the edges mocked.
 if $RUN_INTEGRATION; then
-  run_step "integration tests" cargo test --workspace --tests
+  run_step "integration tests" cargo nextest run --profile gate --workspace --tests
 fi
 
 # 3. Mutants. A mutant is a deliberate defect injected into the source; a
