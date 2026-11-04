@@ -2,7 +2,7 @@
   "schema_version": "cognicode.languages/v1",
   "product": "cognicode",
   "version": "0.101.31",
-  "source_commit": "7cff437323732922f38b9dc803b3da6c49cf94d4",
+  "source_commit": "c0d701f8ee0629ae3cfc8d6651978ea68c7e303f",
   "languages": [
     {
       "id": "bash",
@@ -171,7 +171,7 @@
     {
       "id": "groovy",
       "name": "Groovy",
-      "support_level": "experimental",
+      "support_level": "supported",
       "extensions": [
         "gradle",
         "groovy"
@@ -182,7 +182,7 @@
         "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension mapping in language_config.rs",
         "Node kinds the language declares, in domain/value_objects/language.rs",
-        "Hand-written symbol golden for groovy declares reader limits (!missing/!spurious)"
+        "Hand-written symbol golden sandbox/fixtures/*/symbols.golden for groovy, with no declared reader limit"
       ]
     },
     {

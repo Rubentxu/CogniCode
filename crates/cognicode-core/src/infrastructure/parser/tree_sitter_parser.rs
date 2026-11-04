@@ -391,7 +391,11 @@ impl TreeSitterParser {
             }
         };
 
-        let start = node.start_position();
+        // A callable the grammar swallowed into the declaration before it is
+        // located where it is written, not where the swallowing one starts.
+        let start = naming::swallowed_declaration_name(&node)
+            .unwrap_or(node)
+            .start_position();
         // E38.1 CP-1: the stored line is the tree-sitter 0-based `start.row`;
         // `Symbol::new` renders it verbatim through
         // `SymbolFqn::from_legacy_side`, so the LEGACY FQN keeps its 0-based

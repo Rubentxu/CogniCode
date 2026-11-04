@@ -31534,3 +31534,25 @@ test_product_support_matrix 6/6 (+2 nuevos), test_oss_foundation 12/12, test_cap
 **NOT_RUN.** Suite `--test it` completa en este hito, mutantes, `npm test --prefix explorer-ui`,
 gate. `test_skill_surface_claims.py::test_main_reports_and_returns` falla en mi arnés ad hoc por
 registro de módulo (KeyError), no por el cambio; sin ejecutar con su runner.
+
+## 2026-11-04 — TASK-108 lector de Groovy: constructor sin tipo y campo `def`
+
+**Qué.** La gramática Groovy no termina una sentencia en un salto de línea, así que `def steps` seguido
+de `Kube(steps){…}` se leía como un solo `method_declaration` con un `ERROR(Kube)` entre el nombre y
+`formal_parameters`: el campo salía como `function steps` y el constructor `Kube` se perdía.
+`naming::swallowed_declaration_name` (forma estrecha: el hijo tras el campo `name` es un `ERROR` con
+exactamente un identificador y el siguiente hermano son los parámetros) devuelve ese identificador;
+`own_name` lo usa para el nombre y `node_to_symbol_with_path` para la posición. Se retiró del golden de
+`groovy-jenkins` el bloque `!missing`/`!spurious`; por la derivación de TASK-91 Groovy pasa de
+`experimental` a **`supported`**. `product/languages.json` regenerado con el generador (`--check` ok;
+`platforms.json` solo cambia `source_commit`), README.md/README.es.md y recuentos Python a 20/11.
+
+**Verificación.** RED: `groovy_jenkins_reads_its_declarations` (leía `function steps`, no `function
+Kube`) y `the_published_support_level_follows_the_golden`. GREEN: ambos. `--test it` completo:
+942 pasan, 9 fallan por infraestructura local (falta binario release `cognicode-mcp`: `b3_w2`,
+`b6_w1_mcp_robustness`), los mismos de antes del cambio. `--lib` de cognicode-core 2476/2476; clippy
+`-D warnings` y fmt limpios; Python (sin pytest, arnés propio) test_product_support_matrix 6/6.
+
+**Residuo.** No hay test unitario negativo de `swallowed_declaration_name` (un `ERROR` con más de un
+identificador conserva el nombre de la gramática); lo cubre solo el golden positivo. El extractor de
+ingest no se midió por separado. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.

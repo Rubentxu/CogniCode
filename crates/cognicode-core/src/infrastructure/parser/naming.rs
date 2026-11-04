@@ -74,6 +74,9 @@ pub fn declaration_name(
 /// and the name before the Terraform handler could see them and made every
 /// block in the file share one identity.
 fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
+    if let Some(name) = swallowed_declaration_name(node) {
+        return Some(node_text(&name, source));
+    }
     if let Some(name_node) = node.child_by_field_name("name") {
         return Some(node_text(&name_node, source));
     }
@@ -99,6 +102,33 @@ fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
     } else {
         Some(header.join(" "))
     }
+}
+
+/// The name of a callable the grammar swallowed into the declaration before
+/// it.
+///
+/// The Groovy grammar does not end a statement at a line break, so an untyped
+/// field followed by a constructor reads as one declaration:
+///
+/// ```groovy
+/// def steps          // type `def`, name `steps`
+/// Kube(steps) { }    // an ERROR holding `Kube`, then the parameters
+/// ```
+///
+/// The shape is narrow on purpose: the child right after the `name` field is
+/// an `ERROR` holding exactly one identifier, and the next sibling is the
+/// parameter list. Only then is the identifier the callable's name, and what
+/// came before it a separate field. Anything else keeps the grammar's name.
+pub fn swallowed_declaration_name<'tree>(node: &Node<'tree>) -> Option<Node<'tree>> {
+    let name = node.child_by_field_name("name")?;
+    let stray = name.next_sibling()?;
+    if stray.kind() != "ERROR" || !stray.next_sibling()?.kind().ends_with("parameters") {
+        return None;
+    }
+    let mut cursor = stray.walk();
+    let mut inside = stray.named_children(&mut cursor);
+    let only = inside.next()?;
+    (only.kind() == "identifier" && inside.next().is_none()).then_some(only)
 }
 
 /// The name of the class that contains this node, with the suffix its
