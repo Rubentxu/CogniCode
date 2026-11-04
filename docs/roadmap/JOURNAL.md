@@ -31647,3 +31647,21 @@ infraestructura de siempre (falta el binario release); clippy `-D warnings`, fmt
 **Sin cubrir:** `dependsOn` no genera aristas; `task name { }` sin paréntesis no se lee (la
 gramática no lo parsea como llamada); `build.gradle.kts` no. **NOT_RUN:** mutantes,
 `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-90 (AC1): servidores LSP por defecto para C#, Kotlin y Groovy
+
+**Qué.** `Language::lsp_server_binary`/`lsp_server_name`/`lsp_install_command`/`lsp_args`:
+C# pasa de `omnisharp --stdio` (pista `dotnet tool install -g omnisharp`, incorrecta) a
+`csharp-ls` sin argumentos (`dotnet tool install --global csharp-ls`); Kotlin usa `kotlin-lsp
+--stdio`; Groovy usa `groovy-language-server` sin argumentos. Los demás lenguajes no cambian.
+
+**Verificación.** SHA base 4d59931a. RED observado: 2 de los 4 tests de `lsp_defaults_tests`
+fallaban (binario `omnisharp` y pista antigua); los otros 2 son guardas de no-regresión.
+GREEN: `cargo test -p cognicode-core --lib` 2497 OK; `--test it` 942 OK y los 9 fallos de
+infraestructura de siempre (falta el binario release); clippy `-D warnings`, fmt y
+`generate_support_matrix.py --check` limpios. **Sin cubrir:** ningún servidor se ha ejecutado
+(no hay `csharp-ls`, `kotlin-lsp` ni `groovy-language-server` instalados aquí), así que las
+pistas de instalación de Kotlin (brew) y Groovy (compilar desde fuente, sin paquete oficial)
+no se han probado; el argumento `--stdio` de `kotlin-lsp` tampoco. `doctor` ya itera estas
+funciones y mostrará las filas nuevas (AC3 sigue pendiente). **NOT_RUN:** mutantes,
+`npm test --prefix apps/explorer-ui`, gate.
