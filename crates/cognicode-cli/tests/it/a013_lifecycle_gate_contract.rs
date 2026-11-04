@@ -57,7 +57,7 @@ const BLACKBOX_CONTRACTS: &[(&str, &str)] = &[
 fn every_blackbox_mcp_contract_is_pinned() {
     let missing: Vec<&str> = BLACKBOX_CONTRACTS
         .iter()
-        .filter(|(name, _)| !merge_authority_runs(&format!("--test {name}")))
+        .filter(|(name, _)| !merge_authority_runs(&format!("{name}::")))
         .map(|(name, _)| *name)
         .collect();
     assert!(
@@ -104,21 +104,21 @@ fn a014_capabilities_contract_is_pinned() {
     // `cognicode capabilities --format json`. Its tests live in `tests/`, so
     // the CLI `mcp`/`cli` suites run with `--lib` and never touch them.
     assert!(
-        merge_authority_runs("--test a014_capabilities_json"),
+        merge_authority_runs("a014_capabilities_json::"),
         "The `cognicode.capabilities/v1` schema is the discovery contract for \
          skills and integration adapters, and nothing in the merge gate would \
          notice it breaking.\n{}",
         not_run_message(
-            "cargo test -p cognicode-cli --test a014_capabilities_json",
+            "cargo test -p cognicode-cli --test it -- a014_capabilities_json::",
             "a014_capabilities_json must run in the merge authority"
         )
     );
     assert!(
-        merge_authority_runs("--test a015_licenses_gate"),
+        merge_authority_runs("a015_licenses_gate::"),
         "The published license allow-list is not checked against crate metadata \
          by the gate.\n{}",
         not_run_message(
-            "cargo test -p cognicode-cli --test a015_licenses_gate",
+            "cargo test -p cognicode-cli --test it -- a015_licenses_gate::",
             "a015_licenses_gate must run in the merge authority"
         )
     );

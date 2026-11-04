@@ -43,9 +43,9 @@ fn repo_root() -> PathBuf {
 /// The command line that covers `cogh setup`.
 ///
 /// Matches the contract target rather than the literal string `cogh setup`:
-/// the gate runs `cargo test --test a015_onboarding_gate`, and the contract is
+/// the gate runs `cargo test --test it -- a015_onboarding_gate::`, and the contract is
 /// what proves the setup behaviour.
-const ONBOARDING_GATE: &str = "cargo test -p cognicode-cli --test a015_onboarding_gate";
+const ONBOARDING_GATE: &str = "cargo test -p cognicode-cli --test it --quiet -- a015_onboarding_gate::";
 
 /// The gate must run the onboarding contract, and the stage must say which
 /// command it protects.
