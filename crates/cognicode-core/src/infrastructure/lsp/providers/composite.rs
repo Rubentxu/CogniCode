@@ -1,8 +1,8 @@
 use crate::domain::aggregates::Symbol;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo, PrecisionTier,
-    ProviderDiagnostic, ProviderOutcome, Reference, TieredCodeIntelligenceProvider, TieredOutcome,
-    TypeHierarchy,
+    CallHierarchyCall, CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol, HoverInfo,
+    PrecisionTier, PrepareRename, ProviderDiagnostic, ProviderOutcome, Reference, RenameEdits,
+    TieredCodeIntelligenceProvider, TieredOutcome, TypeHierarchy,
 };
 use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::LightweightIndex;
@@ -573,6 +573,111 @@ impl CompositeProvider {
         }
     }
 
+    /// Gate for an S2-only op. No lower tier can serve rename or call
+    /// hierarchy, so the readiness wait gets its full budget: `S3` is never
+    /// enabled, which is what `readiness_budget` reads as "nothing below".
+    async fn gate_lsp_only(
+        &self,
+        location: &Location,
+        op: &'static str,
+    ) -> Result<(), ProviderDiagnostic> {
+        self.gate_lsp_for_location(location, op, PrecisionTier::S3)
+            .await
+    }
+
+    /// Wraps a provider answer for an S2-only op. An `Err` keeps its variant
+    /// and is reported as an S2 error, so "unsupported" never looks like an
+    /// empty answer.
+    fn lsp_only_attempt<T>(
+        op: &'static str,
+        answer: Result<T, CodeIntelligenceError>,
+    ) -> Attempt<T> {
+        match answer {
+            Ok(value) => Attempt::Served(value),
+            Err(error) => Attempt::Failed(
+                Self::diagnostic(
+                    PrecisionTier::S2,
+                    LspIntelligenceProvider::PROVIDER_ID,
+                    ProviderOutcome::Error,
+                    format!("{op}: {error}"),
+                ),
+                Some(error),
+            ),
+        }
+    }
+
+    async fn attempt_lsp_prepare_rename(
+        &self,
+        location: &Location,
+    ) -> Attempt<Option<PrepareRename>> {
+        if let Err(d) = self.gate_lsp_only(location, "prepare_rename").await {
+            return Attempt::Failed(d, None);
+        }
+        Self::lsp_only_attempt("prepare_rename", self.lsp.prepare_rename(location).await)
+    }
+
+    async fn attempt_lsp_rename(
+        &self,
+        location: &Location,
+        new_name: &str,
+    ) -> Attempt<Option<RenameEdits>> {
+        if let Err(d) = self.gate_lsp_only(location, "rename").await {
+            return Attempt::Failed(d, None);
+        }
+        Self::lsp_only_attempt("rename", self.lsp.rename(location, new_name).await)
+    }
+
+    async fn attempt_lsp_incoming_calls(
+        &self,
+        location: &Location,
+    ) -> Attempt<Vec<CallHierarchyCall>> {
+        if let Err(d) = self.gate_lsp_only(location, "incoming_calls").await {
+            return Attempt::Failed(d, None);
+        }
+        Self::lsp_only_attempt("incoming_calls", self.lsp.incoming_calls(location).await)
+    }
+
+    async fn attempt_lsp_outgoing_calls(
+        &self,
+        location: &Location,
+    ) -> Attempt<Vec<CallHierarchyCall>> {
+        if let Err(d) = self.gate_lsp_only(location, "outgoing_calls").await {
+            return Attempt::Failed(d, None);
+        }
+        Self::lsp_only_attempt("outgoing_calls", self.lsp.outgoing_calls(location).await)
+    }
+
+    /// Settles an S2-only attempt for the non-tiered trait: counts it on S2,
+    /// returns the served value, or the provider's own error (a gate failure
+    /// has no provider error and becomes the exhausted summary).
+    fn settle_lsp_only<T>(
+        &self,
+        op: &'static str,
+        attempt: Attempt<T>,
+    ) -> Result<T, CodeIntelligenceError> {
+        match attempt {
+            Attempt::Served(value) => {
+                self.record_served(PrecisionTier::S2);
+                Ok(value)
+            }
+            Attempt::Degraded(d) => {
+                self.record_failure(op, &d);
+                Err(Self::exhausted(op, &[d]))
+            }
+            Attempt::Failed(d, error) => {
+                self.record_failure(op, &d);
+                Err(error.unwrap_or_else(|| Self::exhausted(op, &[d])))
+            }
+        }
+    }
+
+    /// Error for an S2-only op when the policy leaves no tier able to serve.
+    fn lsp_disabled(op: &str) -> CodeIntelligenceError {
+        CodeIntelligenceError::Internal(format!(
+            "{op}: requires the LSP tier (S2), disabled by policy"
+        ))
+    }
+
     async fn attempt_lsp_definition(&self, location: &Location) -> Attempt<Option<Location>> {
         // S1 is the definition op's lower eligible tier (fixed matrix).
         if let Err(diagnostic) = self
@@ -998,6 +1103,51 @@ impl CodeIntelligenceProvider for CompositeProvider {
             },
         }
     }
+
+    async fn prepare_rename(
+        &self,
+        location: &Location,
+    ) -> Result<Option<PrepareRename>, CodeIntelligenceError> {
+        if !self.policy.enabled(PrecisionTier::S2) {
+            return Err(Self::lsp_disabled("prepare_rename"));
+        }
+        let attempt = self.attempt_lsp_prepare_rename(location).await;
+        self.settle_lsp_only("prepare_rename", attempt)
+    }
+
+    async fn rename(
+        &self,
+        location: &Location,
+        new_name: &str,
+    ) -> Result<Option<RenameEdits>, CodeIntelligenceError> {
+        if !self.policy.enabled(PrecisionTier::S2) {
+            return Err(Self::lsp_disabled("rename"));
+        }
+        let attempt = self.attempt_lsp_rename(location, new_name).await;
+        self.settle_lsp_only("rename", attempt)
+    }
+
+    async fn incoming_calls(
+        &self,
+        location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        if !self.policy.enabled(PrecisionTier::S2) {
+            return Err(Self::lsp_disabled("incoming_calls"));
+        }
+        let attempt = self.attempt_lsp_incoming_calls(location).await;
+        self.settle_lsp_only("incoming_calls", attempt)
+    }
+
+    async fn outgoing_calls(
+        &self,
+        location: &Location,
+    ) -> Result<Vec<CallHierarchyCall>, CodeIntelligenceError> {
+        if !self.policy.enabled(PrecisionTier::S2) {
+            return Err(Self::lsp_disabled("outgoing_calls"));
+        }
+        let attempt = self.attempt_lsp_outgoing_calls(location).await;
+        self.settle_lsp_only("outgoing_calls", attempt)
+    }
 }
 
 /// The fixed highest-first, policy-gated tier pipeline (D2/D3).
@@ -1153,6 +1303,99 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unknown_language_location(tmp: &tempfile::TempDir) -> Location {
+        let file = tmp.path().join("thing.unknownlang");
+        std::fs::write(&file, "fn helper() {}\n").unwrap();
+        Location::new(file.to_string_lossy().to_string(), 1, 4)
+    }
+
+    /// Rename and call hierarchy are S2-only: with the LSP gate failing, each
+    /// op reports the S2 attempt and counts it, instead of falling into the
+    /// trait default ("not supported by this provider").
+    #[tokio::test]
+    async fn lsp_only_ops_go_through_the_s2_gate_and_report_it() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let location = unknown_language_location(&tmp);
+        let provider = CompositeProvider::with_policy(tmp.path(), TierPolicy::all());
+
+        let errors = [
+            provider.prepare_rename(&location).await.unwrap_err(),
+            provider.rename(&location, "renamed").await.unwrap_err(),
+            provider.incoming_calls(&location).await.unwrap_err(),
+            provider.outgoing_calls(&location).await.unwrap_err(),
+        ];
+        for error in &errors {
+            let message = error.to_string();
+            assert!(
+                message.contains("lsp@S2 unavailable"),
+                "the S2 gate failure must be named: {message}"
+            );
+        }
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
+        assert_eq!((s2.attempts, s2.unavailable, s2.served), (4, 4, 0));
+        let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
+        assert_eq!(s0.attempts, 0, "tree-sitter cannot serve these ops");
+    }
+
+    /// A policy that disables S2 leaves nothing able to serve: the op fails
+    /// naming the policy, with no attempt counted.
+    #[tokio::test]
+    async fn lsp_only_ops_name_the_policy_when_s2_is_disabled() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let location = unknown_language_location(&tmp);
+        let policy = TierPolicy {
+            lsp: false,
+            ..TierPolicy::all()
+        };
+        let provider = CompositeProvider::with_policy(tmp.path(), policy);
+
+        let error = provider.incoming_calls(&location).await.unwrap_err();
+        assert!(
+            error.to_string().contains("disabled by policy"),
+            "policy named: {error}"
+        );
+        let status = provider.status();
+        assert_eq!(status.tier(PrecisionTier::S2).unwrap().attempts, 0);
+    }
+
+    /// A simulated S2 answer is served and counted on S2; an empty caller
+    /// list stays a served answer, while a provider that lacks the op keeps
+    /// its own error variant — the two are never conflated.
+    #[test]
+    fn a_served_empty_list_is_not_the_same_as_an_unsupported_op() {
+        let provider = CompositeProvider::new(std::path::Path::new("/nonexistent"));
+
+        let none_found = provider
+            .settle_lsp_only("incoming_calls", Attempt::Served(Vec::<u8>::new()))
+            .expect("an empty served answer is Ok");
+        assert!(none_found.is_empty());
+
+        let unsupported = provider
+            .settle_lsp_only::<Vec<u8>>(
+                "incoming_calls",
+                Attempt::Failed(
+                    CompositeProvider::diagnostic(
+                        PrecisionTier::S2,
+                        LspIntelligenceProvider::PROVIDER_ID,
+                        ProviderOutcome::Error,
+                        "incoming_calls: unsupported",
+                    ),
+                    Some(CodeIntelligenceError::Internal(
+                        "incomingCalls is not supported by this provider".to_string(),
+                    )),
+                ),
+            )
+            .unwrap_err();
+        assert!(
+            matches!(unsupported, CodeIntelligenceError::Internal(m) if m.contains("not supported"))
+        );
+
+        let status = provider.status();
+        let s2 = status.tier(PrecisionTier::S2).unwrap();
+        assert_eq!((s2.attempts, s2.served, s2.errors), (2, 1, 1));
+    }
 
     /// The old-trait passthrough (W2, task 1.1): a definition query for a
     /// missing/unreadable file is the deepest provider's error, never a

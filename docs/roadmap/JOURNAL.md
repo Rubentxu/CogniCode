@@ -31746,3 +31746,24 @@ diagnóstico «LSP returned no references» y las 5 siguientes sirvieron S2 sin 
 `sandbox/fixtures/lsi-baseline` no lo incluyen) y csharp-ls, kotlin-lsp y
 groovy-language-server siguen sin instalar (NOT_RUN); el handler con `CompositeProvider` real no
 tiene test determinista. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-109: `CompositeProvider` reenvía rename y call hierarchy por el tier S2
+
+**Qué.** `prepare_rename`, `rename`, `incoming_calls` y `outgoing_calls` caían en el error por
+defecto del trait al pasar por `CompositeProvider`. Ahora pasan por `gate_lsp_for_location` (con
+presupuesto de espera completo: ningún tier inferior puede servirlas) y se cuentan en S2.
+`settle_lsp_only` devuelve el valor servido (una lista vacía sigue siendo un `Ok`) o el error
+original del proveedor; un fallo del gate sale como resumen «exhausted». Con S2 desactivado por
+política el error nombra la política y no cuenta intento. `TreesitterFallbackProvider` declara
+explícitamente que no las soporta (`Internal`, «not supported in tree-sitter fallback»).
+
+**Verificación.** SHA base e7a89107. RED: el test de `settle_lsp_only` no compilaba y los de
+Composite exigen el mensaje `lsp@S2 unavailable`, que el valor por defecto no produce; el test
+del fallback se escribió junto con su implementación (sin RED propio observado). GREEN 4/4.
+`--lib` de `cognicode-core` 2525 OK; `--test it` 942 OK y los 9 fallos de infraestructura de
+siempre (falta el binario release); clippy `-D warnings` del crate y fmt limpios.
+**Sin cubrir:** una respuesta S2 real (ningún servidor en el test: NOT_RUN); la cadena S2 se
+simula con `Attempt::Served` porque `lsp` es un tipo concreto del Composite, no un doble
+inyectable; no hay versión `*_tiered` de estas operaciones, así que el tier que sirvió solo se ve
+en los contadores de `status()`; CLI y MCP siguen sin exponer las capacidades.
+**NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
