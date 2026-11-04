@@ -636,6 +636,38 @@ mod tests {
         );
     }
 
+    /// C#, Kotlin y Groovy tienen servidor y el doctor informa el estado de
+    /// cada uno: una fila por servidor, `Ok` si esta en el PATH o `Missing`
+    /// con la pista de instalacion de su lenguaje, nunca `not yet supported`.
+    /// El estado depende de la maquina; que la fila exista y sea de uno de
+    /// esos dos estados, no.
+    #[test]
+    fn csharp_kotlin_and_groovy_servers_are_reported_with_their_install_hint() {
+        let section = check_lsp_section(&[]);
+        for lang in [Language::CSharp, Language::Kotlin, Language::Groovy] {
+            let server = lang.lsp_server_name();
+            let rows: Vec<_> = section.checks.iter().filter(|c| c.name == server).collect();
+            assert_eq!(rows.len(), 1, "{server}: una fila por servidor");
+            let row = rows[0];
+            match row.status {
+                DoctorStatus::Ok => assert!(row.install_hint.is_none(), "{server}"),
+                DoctorStatus::Missing => assert_eq!(
+                    row.install_hint.as_deref(),
+                    Some(lang.lsp_install_command()),
+                    "{server}: la pista es la de su lenguaje"
+                ),
+                ref other => panic!("{server}: estado inesperado {other:?}"),
+            }
+            assert!(
+                !section
+                    .checks
+                    .iter()
+                    .any(|c| c.name == lang.name() && matches!(c.status, DoctorStatus::Info)),
+                "{lang:?} tiene servidor y no debe salir como `not yet supported`"
+            );
+        }
+    }
+
     /// Un `--version` que devuelve varias lineas se muestra en una.
     ///
     /// MEDIDO 2026-10-04 sobre el binario publicado: `clangd --version`

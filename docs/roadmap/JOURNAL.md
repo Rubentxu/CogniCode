@@ -31665,3 +31665,21 @@ pistas de instalación de Kotlin (brew) y Groovy (compilar desde fuente, sin paq
 no se han probado; el argumento `--stdio` de `kotlin-lsp` tampoco. `doctor` ya itera estas
 funciones y mostrará las filas nuevas (AC3 sigue pendiente). **NOT_RUN:** mutantes,
 `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-90 (AC3): `doctor` muestra el estado de cada servidor LSP
+
+**Qué.** Medición: tras #568, `check_lsp_section` ya recorre `all_languages` +
+`lsp_server_binary`, así que C#, Kotlin y Groovy salen como filas `csharp-ls`, `kotlin-lsp` y
+`groovy-language-server` (`Ok` con versión, o `Missing` con la pista de su lenguaje) y ya no
+como `not yet supported`. El código de producción NO cambia; este PR solo fija ese
+comportamiento con `csharp_kotlin_and_groovy_servers_are_reported_with_their_install_hint`.
+
+**Verificación.** SHA base 8e821042. RED natural NO observado (el comportamiento ya existía
+tras #568); no vacuidad comprobada con una mutación manual (Kotlin sin binario en
+`lsp_server_binary` → el test falla; restaurado). `--lib` 2498 OK; `--test it` 942 OK y los 9
+fallos de infraestructura de siempre (falta el binario release); clippy `-D warnings`, fmt y
+`generate_support_matrix.py --check` limpios. **Sin cubrir:** el test fija la fila y la
+pista, no el estado `Ok` (ningún servidor está instalado aquí; `which` de los tres falla);
+`check_binary` llama a `<servidor> --version` y no se ha probado contra el `kotlin-lsp` ni el
+`groovy-language-server` reales (si no entienden `--version` saldrían como `found` sin
+versión). **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
