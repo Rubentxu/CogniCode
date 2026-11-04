@@ -62,7 +62,12 @@ minimum_test_timeout = 120.0
 #   `semi[label[_]]`, so the value observed is the same.
 # - line 121: `semi[u] < semi[w]` differs only when they are equal, and then
 #   the branch assigns `semi[w] = semi[u]`, the value it already has.
+#
+# `personalized_pagerank.rs`, `delta > max_delta` -> `>=` (running maximum of the
+# per-node change): the two operators differ only when `delta == max_delta`, and
+# the branch then assigns `max_delta = delta`, the value it already holds.
 exclude_re = [
     "crates/cognicode-graph-algos/src/algorithms/bridges\\.rs:56:.*: replace < with <= .*",
     "crates/cognicode-graph-algos/src/algorithms/dominators\\.rs:(105|121):.*: replace < with <= .*",
+    "crates/cognicode-graph-algos/src/algorithms/personalized_pagerank\\.rs:115:.*: replace > with >= .*",
 ]

@@ -30892,3 +30892,29 @@ y timeouts por módulo, ahora con tarea: `interproc_summary` 16+4 (TASK-98),
 **NOT_RUN.** `just verify` no existe en el `justfile` (sólo `verify-version-sync`,
 `release-verify`), así que no se pudo ejecutar; el gate entero se pasa por lote de 10
 tareas.
+
+## 2026-11-04 — TASK-102: personalized_pagerank deja de tener mutantes vivos
+
+**Hueco.** La mutación completa dejó 19 supervivientes en `personalized_pagerank.rs`,
+incluido el reemplazo de la función entera: ningún test comprobaba un valor de salida.
+
+**Tests.** Valores calculados a mano (alpha 0,85) sobre grafos de 1 a 3 nodos: una
+iteración y dos iteraciones con nodos colgantes, normalización de la personalización
+`[2,0,6]`, vector de suma 0 o infinita, punto estacionario de un ciclo de dos nodos
+(`x = 0,15 / (1 − 0,85²)`), conservación de masa, reparto por grado de salida,
+arista de entrada con grado 0 y presupuesto `usize::MAX` con un ciclo estacionario
+(la tolerancia debe cortar el bucle). Cada llamada corre en un hilo con plazo de 5 s.
+El umbral y el saneado de rango pasaron a `has_converged` y `sanitize_rank`, con
+test de frontera propio, para poder fijar `<` frente a `<=` y `-0.0`.
+
+**Evidencia.** Primera corrida serial con los tests nuevos (55 mutantes): 48
+atrapados, 7 vivos (95, 96 ×2, 101 ×2, 103, 110); tras los tests de reparto, de
+grado 0 y de frontera: 60 mutantes, 59 atrapados, 1 vivo (115, `delta > max_delta`
+→ `>=`). Ese es equivalente (con igualdad asigna el valor que ya tiene) y está
+declarado en `.cargo/mutants.toml`. Corrida final `-j 1` con el runner de memoria:
+59 mutantes, 59 atrapados, rc=0. `cognicode-graph-algos` lib: 193 en verde;
+`cognicode-core` lib `analytics`/`graph_analytics`: 94; clippy `-D warnings` y
+`fmt --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo no se pasa
+por tarea sino por lote de 10 tareas del tablero (regla fija).

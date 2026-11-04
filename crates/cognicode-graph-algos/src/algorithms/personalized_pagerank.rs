@@ -10,6 +10,20 @@
 
 use std::collections::HashMap;
 
+/// Largest per-node change below which an iteration counts as converged.
+const TOLERANCE: f64 = 1e-6;
+
+/// A rank is a non-negative finite probability mass; anything else is 0.
+fn sanitize_rank(r: f64) -> f64 {
+    if r.is_finite() && r > 0.0 { r } else { 0.0 }
+}
+
+/// An iteration has converged when its largest change is strictly below
+/// [`TOLERANCE`].
+fn has_converged(max_delta: f64) -> bool {
+    max_delta < TOLERANCE
+}
+
 /// Run Personalized PageRank on a pre-built adjacency structure.
 ///
 /// # Arguments
@@ -66,8 +80,6 @@ pub fn personalized_pagerank(
     let inv_n = 1.0 / n as f64;
     let mut ranks: Vec<f64> = vec![inv_n; n];
 
-    const TOLERANCE: f64 = 1e-6;
-
     for _ in 0..max_iterations.max(1) {
         // Dangling-node mass: nodes with no outgoing edges contribute rank
         // uniformly to all nodes (avoids "black hole" accumulation).
@@ -98,7 +110,7 @@ pub fn personalized_pagerank(
             }
 
             let r = teleportation_contrib + dangling_contrib + alpha * incoming;
-            let new_v = if r.is_finite() && r > 0.0 { r } else { 0.0 };
+            let new_v = sanitize_rank(r);
             let delta = (new_v - ranks[v]).abs();
             if delta > max_delta {
                 max_delta = delta;
@@ -107,7 +119,7 @@ pub fn personalized_pagerank(
         }
 
         ranks = new_ranks;
-        if max_delta < TOLERANCE {
+        if has_converged(max_delta) {
             break;
         }
     }
@@ -213,6 +225,167 @@ mod tests {
         );
         let sum: f64 = result.values().sum();
         assert!((sum - 1.0).abs() < 1e-3, "mass conservation: sum={}", sum);
+    }
+
+    /// Runs the function on a worker thread so a loop that never converges
+    /// fails the test after 5 s instead of hanging the suite.
+    fn run(
+        in_neighbors: Vec<Vec<usize>>,
+        out_degree: Vec<usize>,
+        iterations: usize,
+        personalization: Option<Vec<f64>>,
+    ) -> Vec<f64> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let n = out_degree.len();
+            let scores = personalized_pagerank(
+                &in_neighbors,
+                &out_degree,
+                n,
+                0.85,
+                iterations,
+                personalization.as_deref(),
+            );
+            let _ = tx.send((0..n).map(|v| scores[&v]).collect::<Vec<f64>>());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("personalized_pagerank did not return within 5 s")
+    }
+
+    fn assert_close(actual: &[f64], expected: &[f64], eps: f64) {
+        assert_eq!(actual.len(), expected.len());
+        for (v, (a, e)) in actual.iter().zip(expected).enumerate() {
+            assert!((a - e).abs() < eps, "node {v}: got {a}, expected {e}");
+        }
+    }
+
+    /// `0 → 1` with node 2 isolated: nodes 1 and 2 are dangling (out-degree 0).
+    fn dangling_graph() -> (Vec<Vec<usize>>, Vec<usize>) {
+        (vec![vec![], vec![0], vec![]], vec![1, 0, 0])
+    }
+
+    /// One iteration from the uniform start, by hand (alpha = 0.85, n = 3):
+    /// dangling mass = 2/3, teleport = 0.15/3 = 0.05, dangling share =
+    /// 0.85 * (2/3) / 3, and node 1 also receives 0.85 * (1/3) from node 0.
+    #[test]
+    fn one_iteration_matches_hand_computed_values() {
+        let (inn, out) = dangling_graph();
+        let base = 0.05 + 0.85 * (2.0 / 3.0) / 3.0;
+        let got = run(inn, out, 1, None);
+        assert_close(&got, &[base, base + 0.85 / 3.0, base], 1e-12);
+    }
+
+    /// Second iteration by hand. It pins the convergence bookkeeping: a loop
+    /// that stops after the first pass returns the first-iteration values.
+    #[test]
+    fn two_iterations_match_hand_computed_values() {
+        let (inn, out) = dangling_graph();
+        let first_base = 0.05 + 0.85 * (2.0 / 3.0) / 3.0;
+        let first = [first_base, first_base + 0.85 / 3.0, first_base];
+        let base = 0.05 + 0.85 * (first[1] + first[2]) / 3.0;
+        let got = run(inn, out, 2, None);
+        assert_close(&got, &[base, base + 0.85 * first[0], base], 1e-12);
+        assert!(
+            (got[0] - first[0]).abs() > 1e-3,
+            "must not stop after one pass"
+        );
+    }
+
+    /// An unnormalized vector `[2, 0, 6]` is scaled to `[0.25, 0, 0.75]`.
+    #[test]
+    fn personalization_is_normalized_by_its_sum() {
+        let (inn, out) = dangling_graph();
+        let got = run(inn, out, 1, Some(vec![2.0, 0.0, 6.0]));
+        let expected = [
+            0.15 * 0.25 + 0.85 * (2.0 / 3.0) * 0.25,
+            0.85 / 3.0,
+            0.15 * 0.75 + 0.85 * (2.0 / 3.0) * 0.75,
+        ];
+        assert_close(&got, &expected, 1e-12);
+    }
+
+    /// A vector summing to 0 (or to a non-finite value) is invalid and the
+    /// teleportation falls back to uniform, never to NaN.
+    #[test]
+    fn zero_or_non_finite_personalization_sum_falls_back_to_uniform() {
+        let (inn, out) = dangling_graph();
+        let uniform = run(inn.clone(), out.clone(), 1, None);
+        let base = 0.05 + 0.85 * (2.0 / 3.0) / 3.0;
+        assert_close(&uniform, &[base, base + 0.85 / 3.0, base], 1e-12);
+        let zeros = run(inn.clone(), out.clone(), 1, Some(vec![0.0; 3]));
+        assert_close(&zeros, &uniform, 1e-12);
+        let infinite = run(inn, out, 1, Some(vec![f64::INFINITY, 1.0, 1.0]));
+        assert_close(&infinite, &uniform, 1e-12);
+    }
+
+    /// Two-node cycle teleporting only to node 0. Stationary point:
+    /// x = 0.15 + 0.85 y and y = 0.85 x, so x = 0.15 / (1 - 0.85^2).
+    #[test]
+    fn converges_to_the_stationary_distribution() {
+        let x = 0.15 / (1.0 - 0.85 * 0.85);
+        let got = run(
+            vec![vec![1], vec![0]],
+            vec![1, 1],
+            100,
+            Some(vec![1.0, 0.0]),
+        );
+        assert_close(&got, &[x, 0.85 * x], 1e-5);
+    }
+
+    /// Mass is conserved even when most nodes are dangling.
+    #[test]
+    fn dangling_nodes_do_not_leak_mass() {
+        let (inn, out) = dangling_graph();
+        let got = run(inn, out, 100, Some(vec![0.2, 0.3, 0.5]));
+        assert!((got.iter().sum::<f64>() - 1.0).abs() < 1e-9);
+    }
+
+    /// With a huge iteration budget the tolerance must stop the loop: a
+    /// uniform cycle is already stationary, so the first pass has delta 0.
+    #[test]
+    fn tolerance_stops_the_loop_long_before_the_iteration_budget() {
+        let got = run(
+            vec![vec![2], vec![0], vec![1]],
+            vec![1, 1, 1],
+            usize::MAX,
+            None,
+        );
+        assert_close(&got, &[1.0 / 3.0; 3], 1e-12);
+    }
+
+    /// `0 → 1` and `0 → 2`: node 0 splits its rank over two out-edges.
+    #[test]
+    fn rank_is_split_over_the_out_degree() {
+        let got = run(vec![vec![], vec![0], vec![0]], vec![2, 0, 0], 1, None);
+        let base = 0.05 + 0.85 * (2.0 / 3.0) / 3.0;
+        let shared = base + 0.85 * (1.0 / 3.0) / 2.0;
+        assert_close(&got, &[base, shared, shared], 1e-12);
+    }
+
+    /// An in-edge whose source reports out-degree 0 is inconsistent input;
+    /// it contributes nothing instead of dividing by zero.
+    #[test]
+    fn an_in_edge_from_a_zero_out_degree_source_is_ignored() {
+        let got = run(vec![vec![1], vec![]], vec![0, 0], 1, None);
+        assert_close(&got, &[0.5, 0.5], 1e-12);
+    }
+
+    #[test]
+    fn sanitize_rank_keeps_only_positive_finite_values() {
+        assert_eq!(sanitize_rank(0.25), 0.25);
+        assert_eq!(sanitize_rank(f64::INFINITY), 0.0);
+        assert_eq!(sanitize_rank(f64::NAN), 0.0);
+        assert_eq!(sanitize_rank(-0.5), 0.0);
+        assert_eq!(sanitize_rank(0.0), 0.0);
+        // Negative zero is normalized to +0.0 rather than passed through.
+        assert!(sanitize_rank(-0.0).is_sign_positive());
+    }
+
+    #[test]
+    fn convergence_threshold_is_strict() {
+        assert!(has_converged(TOLERANCE / 2.0));
+        assert!(!has_converged(TOLERANCE));
+        assert!(!has_converged(TOLERANCE * 2.0));
     }
 
     /// Invalid personalization (wrong length) falls back to uniform.
