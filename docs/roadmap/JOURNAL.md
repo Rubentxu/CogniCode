@@ -32184,3 +32184,27 @@ tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hoo
 
 **NOT_RUN:** mutantes (el ámbito de mutación es `cognicode-graph-algos`, que esta unidad no toca) y
 gate completo (lote de 10 tareas).
+
+## 2026-11-05 — Gate sobre `14f71609` (cierra el NOT_RUN del recibo de TASK-115)
+
+**SHA:** `14f71609` (main tras #579). **PASS** — `bash scripts/test-gate.sh` rc=0, los tres pasos.
+
+| Paso | Salida |
+|---|---|
+| Unitarios | `4630 tests run: 4630 passed, 2 skipped` |
+| Integración | `6670 tests run: 6670 passed, 10 skipped` |
+| Mutantes (`cognicode-graph-algos`) | `574 mutants tested in 10m: 573 caught, 1 unviable` |
+| UI (vitest) | `Test Files 86 passed (86)`, `Tests 944 passed (944)` |
+
+**Qué dice este recibo.** El recibo de TASK-115 cerró con «NOT_RUN: mutantes y gate completo», y era
+verdad cuando se escribió: el gate se había corrido sobre `f5933b4`, con la carrera viva, y salía en
+rojo. Este recibo mide el gate sobre la punta que la arregla, y por tanto **cierra ese NOT_RUN**: los
+tres pasos verdes sobre `14f71609`, y la suite de la UI en verde también.
+
+**Lo que este gate NO dice.** El gate no incluye la suite de contratos
+(`bash scripts/ci/run-all-contracts.sh`), que sobre `14f71609` sale rc=1 con el ratchet de versión de
+`CURRENT.md` en rojo —el RED de TASK-113—. Los tres pasos del gate son los que el gate es; el otro
+gate es otro gate, y está rojo por otra unidad.
+
+**Alcance.** Los mutantes siguen cubriendo solo `cognicode-graph-algos`, por diseño del gate: no
+certifican `cognicode-core` ni `cognicode-explorer`.
