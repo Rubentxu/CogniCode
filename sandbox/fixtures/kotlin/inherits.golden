@@ -1,0 +1,4 @@
+# Hand-written: every `child : parent` pair the sources declare between
+# types of this corpus.
+Circle : Shape
+Rect : Shape

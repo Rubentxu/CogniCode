@@ -1,0 +1,7 @@
+# Hand-written: every `child : parent` pair the sources declare between
+# types of this corpus. A parent the corpus does not declare (IDisposable)
+# is not listed: it has no declaration to point at. `Repo<int>` names Repo.
+Circle : Shape
+IntBox : Repo
+Shape : IShape
+Square : Shape

@@ -31470,3 +31470,22 @@ Un golden de repo real no se midió. La caché por fichero sigue sirviendo hits 
 cross-file (preexistente, no tocado).
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 11: 1/10).
+
+## 2026-11-04 — TASK-89 (AC2): goldens de herencia por lenguaje
+
+**SHA:** se fija al fusionar (base 29d5264b). Fixtures versionados en `sandbox/fixtures`:
+`groovy/` (5 fuentes) y `csharp/` (4 fuentes) nuevos; `kotlin/` reutiliza `Shapes.kt`.
+Cada directorio lleva un `inherits.golden` escrito a mano (`hijo : padre`). El test
+`inherits_goldens_without_lsp` carga el corpus con la convención de C13
+(`CARGO_MANIFEST_DIR/../../sandbox/fixtures`, ficheros ordenados), construye el grafo con
+`PerFileGraphCache::merge_with_report` y exige que `get_implementors` devuelva exactamente
+los hijos del golden por cada padre; un padre externo (`Serializable`, `IDisposable`) no
+devuelve nada. Cubre extends, implements, interfaz que extiende interfaz y genérico (`Repo<int>`).
+
+**RED→GREEN.** Revirtiendo solo `per_file_graph.rs` a su versión previa a #558 fallan 3/3;
+con el cableado pasan 3/3. Fichero restaurado desde copia de seguridad.
+
+**Verificación:** `cargo test -p cognicode-core --test it inherits_goldens` 3/3 (filtrado: no
+certifica la unidad); clippy `-D warnings` y `cargo fmt --all --check` limpios.
+
+**NOT_RUN.** Suite `--test it` completa, mutantes, `npm test --prefix apps/explorer-ui`, gate.
