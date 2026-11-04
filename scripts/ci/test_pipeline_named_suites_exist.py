@@ -118,11 +118,11 @@ def test_every_named_suite_exists_under_the_crate_it_names() -> None:
     for pipeline in pipeline_files():
         named |= {(p.name, *pair) for pair in suites_of(pipeline) for p in [pipeline]}
 
-    # Suelo de sordera del extractor. Bajo de 30 a 15 al consolidar los
-    # binarios de integracion de un crate en `tests/it`: menos nombres
+    # Suelo de sordera del extractor. Bajo de 30 a 8 al consolidar los
+    # binarios de integracion de core, cli y mcp en `tests/it`: menos nombres
     # distintos no es menos cobertura.
     check(
-        len(named) >= 15,
+        len(named) >= 8,
         f"solo se han encontrado {len(named)} suites nombradas por los "
         f"pipelines. Si el extractor dejo de verlas, este contrato no esta "
         f"midiendo nada y pasaria siempre.",
