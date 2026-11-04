@@ -8,6 +8,11 @@
 //! reader produces and the sources do not hold. Both are asserted exactly,
 //! so a declared limit cannot go stale: when the reader is fixed, the test
 //! fails until the declaration is removed.
+//!
+//! The first line, `@language <id>`, names the language every file of the
+//! corpus must be read as. `product/languages.json` takes its `support_level`
+//! from that golden: `supported` when it declares no limit, `experimental`
+//! when it does. The last test holds the published matrix to that rule.
 
 use std::path::{Path, PathBuf};
 
@@ -75,6 +80,7 @@ fn read(root: &Path) -> Vec<String> {
 }
 
 struct Golden {
+    language: String,
     declared: Vec<String>,
     missing: Vec<String>,
     spurious: Vec<String>,
@@ -83,6 +89,7 @@ struct Golden {
 fn golden(root: &Path) -> Golden {
     let text = std::fs::read_to_string(root.join("symbols.golden")).unwrap();
     let mut g = Golden {
+        language: String::new(),
         declared: Vec::new(),
         missing: Vec::new(),
         spurious: Vec::new(),
@@ -91,7 +98,10 @@ fn golden(root: &Path) -> Golden {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(entry) = line.strip_prefix("!missing ") {
+        if let Some(id) = line.strip_prefix("@language ") {
+            assert!(g.language.is_empty(), "two @language lines in {root:?}");
+            g.language = id.to_string();
+        } else if let Some(entry) = line.strip_prefix("!missing ") {
             g.missing.push(entry.to_string());
         } else if let Some(entry) = line.strip_prefix("!spurious ") {
             g.spurious.push(entry.to_string());
@@ -100,6 +110,7 @@ fn golden(root: &Path) -> Golden {
         }
     }
     assert!(!g.declared.is_empty(), "empty golden in {root:?}");
+    assert!(!g.language.is_empty(), "no @language line in {root:?}");
     g
 }
 
@@ -114,6 +125,15 @@ fn remove_one(entries: &mut Vec<String>, entry: &str) {
 fn check(name: &str) {
     let root = corpus_dir(name);
     let g = golden(&root);
+
+    for file in sources(&root) {
+        assert_eq!(
+            Language::from_path(&file).unwrap().id(),
+            g.language,
+            "{name}: {file:?} is not a {} file",
+            g.language
+        );
+    }
 
     let mut expected = g.declared.clone();
     for entry in &g.missing {
@@ -142,4 +162,40 @@ fn kotlin_reads_its_declarations() {
 #[test]
 fn csharp_reads_its_declarations() {
     check("csharp");
+}
+
+const CORPORA: [&str; 3] = ["groovy-jenkins", "kotlin", "csharp"];
+
+#[test]
+fn the_published_support_level_follows_the_golden() {
+    let matrix: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../product/languages.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let languages = matrix["languages"].as_array().expect("a list of languages");
+
+    let mut offenders = Vec::new();
+    for name in CORPORA {
+        let g = golden(&corpus_dir(name));
+        let expected = if g.missing.is_empty() && g.spurious.is_empty() {
+            "supported"
+        } else {
+            "experimental"
+        };
+        let published = languages
+            .iter()
+            .find(|entry| entry["id"] == g.language.as_str())
+            .map(|entry| entry["support_level"].as_str().unwrap_or_default())
+            .unwrap_or("absent");
+        if published != expected {
+            offenders.push(format!(
+                "{}: published `{published}`, its golden says `{expected}`",
+                g.language
+            ));
+        }
+    }
+    assert!(offenders.is_empty(), "{}", offenders.join("\n"));
 }

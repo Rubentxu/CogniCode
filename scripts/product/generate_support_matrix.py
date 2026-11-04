@@ -213,6 +213,36 @@ def acceptance_variants(root: Path) -> set[str]:
     return variants
 
 
+def golden_verdicts(root: Path) -> dict[str, str]:
+    """Language id -> `clean` | `limited`, from the hand-written symbol goldens.
+
+    A golden is `sandbox/fixtures/<corpus>/symbols.golden` and names its
+    language with a `@language <id>` line. It is `limited` when it declares a
+    reader limit (`!missing` / `!spurious`) and `clean` otherwise. That the
+    reader produces exactly what the golden says is asserted by
+    `language_symbols_goldens.rs`, so a clean golden is a passing one.
+    """
+    verdicts: dict[str, str] = {}
+    for golden in sorted((root / "sandbox/fixtures").glob("*/symbols.golden")):
+        lines = [line.strip() for line in golden.read_text(encoding="utf-8").splitlines()]
+        ids = [line.split(None, 1)[1] for line in lines if line.startswith("@language ")]
+        if len(ids) != 1:
+            raise ValueError(f"{golden} must name its language with exactly one `@language <id>` line")
+        if ids[0] in verdicts:
+            raise ValueError(f"two goldens claim language {ids[0]!r}")
+        limited = any(line.startswith(("!missing ", "!spurious ")) for line in lines)
+        verdicts[ids[0]] = "limited" if limited else "clean"
+    return verdicts
+
+
+def derive_support_level(accepted: bool, golden: str | None) -> str:
+    """A language with a golden is as supported as its golden says; mere
+    mention in the acceptance sources no longer is evidence for it."""
+    if golden is not None:
+        return "supported" if golden == "clean" else "experimental"
+    return "supported" if accepted else "experimental"
+
+
 def release_platforms(root: Path) -> list[release_lane.ReleasePlatform]:
     """Every published platform, from the matrix that says what is published.
 
@@ -295,6 +325,7 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
     if missing_config:
         raise ValueError(f"Language variants without runtime configuration: {missing_config}")
     accepted = acceptance_variants(root)
+    goldens = golden_verdicts(root)
     unknown_acceptance = sorted(accepted - set(variants))
     if unknown_acceptance:
         raise ValueError(f"acceptance references unknown languages: {unknown_acceptance}")
@@ -319,11 +350,15 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             "LanguageConfig extension mapping in language_config.rs",
             "Node kinds the language declares, in domain/value_objects/language.rs",
         ]
-        if variant in accepted:
-            support_level = "supported"
+        golden = goldens.get(language_id)
+        support_level = derive_support_level(variant in accepted, golden)
+        if golden == "clean":
+            evidence.append(f"Hand-written symbol golden sandbox/fixtures/*/symbols.golden for {language_id}, with no declared reader limit")
+        elif golden == "limited":
+            evidence.append(f"Hand-written symbol golden for {language_id} declares reader limits (!missing/!spurious)")
+        elif variant in accepted:
             evidence.append("Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs")
         else:
-            support_level = "experimental"
             evidence.append("No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs")
         languages.append(
             {

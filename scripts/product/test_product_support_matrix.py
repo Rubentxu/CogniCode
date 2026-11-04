@@ -44,8 +44,8 @@ def test_generation_and_classification() -> None:
     languages, platforms = generator.build_documents(ROOT, BASELINE)
     assert len(languages["languages"]) == 31
     assert len(platforms["platforms"]) == 6
-    assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 18
-    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 13
+    assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 19
+    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 12
     assert [item["id"] for item in languages["languages"]] == sorted(item["id"] for item in languages["languages"])
     # The certified set is whatever the release lane builds, read here
     # independently of the generator. Asserting two literals instead would be a
@@ -149,3 +149,21 @@ def test_invalid_sha_and_drift_fail_without_overwriting() -> None:
         )
         assert checked.returncode != 0
         assert "generated languages differ" in checked.stderr
+
+
+def test_support_level_of_a_language_with_a_golden_follows_the_golden() -> None:
+    derive = load_generator().derive_support_level
+    # Mention in the acceptance sources is no longer enough once a golden exists.
+    assert derive(True, "limited") == "experimental"
+    assert derive(False, "clean") == "supported"
+    assert derive(True, "clean") == "supported"
+    # Without a golden the previous rule holds.
+    assert derive(True, None) == "supported"
+    assert derive(False, None) == "experimental"
+
+
+def test_golden_verdicts_read_the_declared_limits() -> None:
+    verdicts = load_generator().golden_verdicts(ROOT)
+    assert verdicts["groovy"] == "limited"
+    assert verdicts["kotlin"] == "clean"
+    assert verdicts["csharp"] == "clean"

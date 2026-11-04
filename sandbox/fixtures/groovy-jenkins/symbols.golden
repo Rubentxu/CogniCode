@@ -1,3 +1,4 @@
+@language groovy
 # Hand-written from the sources: the types and callables each file declares,
 # as `class|function <name>@<path relative to this directory>`. Variables,
 # fields and the synthetic <script> entry are not part of the contract.
