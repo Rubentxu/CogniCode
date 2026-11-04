@@ -31567,3 +31567,21 @@ gramática. Medido antes con sonda sobre el árbol real.
 **Verificación.** `cargo test -p cognicode-core --lib groovy` 9/9. Mutación manual de la posición
 (volver a `node.start_position()`): el test de ubicación FALLA; restaurado, pasa. clippy `-D
 warnings` y fmt limpios. **NOT_RUN:** `--test it`, mutantes con cargo-mutants, gate.
+
+## 2026-11-04 — TASK-88 (AC1): la stage de un Jenkinsfile es un símbolo que posee sus llamadas
+
+**Qué.** En un fichero script Groovy, `stage('Label') { ... }` (un solo argumento string y cuerpo
+de cierre) se publica como función con el nombre del label, y las llamadas escritas dentro de su
+cuerpo se atribuyen a esa stage en vez de a `<script>`. Una `stage` con otra forma (sin label, sin
+cuerpo, dos argumentos) sigue siendo una llamada ordinaria. Cambio en `tree_sitter_parser.rs`
+(`stage_symbol`, `top_level_calls`, `find_calls_in_tree`); lo heredan `per_file_graph.rs` y
+`get_file_symbols` porque ambos leen por `find_all_symbols_in_tree`/`find_call_sites_in_tree`.
+Contrato: `symbols.golden` de `groovy-jenkins` gana `function Deploy@Jenkinsfile`.
+
+**Verificación.** SHA base cb81b428. RED observado en el test de símbolo; GREEN: 3 tests de stage
+en el parser y un test del grafo de producción (`callers` de `deploy` = `["Deploy"]`).
+`cargo test -p cognicode-core --lib` 2482 OK; `--test it` 942 OK y 9 fallos de infraestructura
+(`b3_w2`, `b6_w1`: falta el binario release `cognicode-mcp`), los mismos de antes; clippy `-D
+warnings`, fmt y `generate_support_matrix.py --check` limpios. **Sin cubrir:** símbolos espurios
+`_` y `any` del Jenkinsfile; el extractor de ingest no se midió para stages. **NOT_RUN:** mutantes,
+`npm test --prefix apps/explorer-ui`, gate.

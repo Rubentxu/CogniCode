@@ -1525,6 +1525,44 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
+    fn the_callers_of_a_shared_library_step_include_the_jenkins_stage_that_runs_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let vars = dir.path().join("vars");
+        std::fs::create_dir(&vars).unwrap();
+        let step = vars.join("deploy.groovy");
+        std::fs::write(&step, "def call(Map args) {\n  echo args.manifest\n}\n").unwrap();
+        let pipeline = dir.path().join("Jenkinsfile");
+        std::fs::write(
+            &pipeline,
+            "pipeline {\n  stages {\n    stage('Deploy') {\n      steps {\n        deploy(manifest: 'k8s/app.yaml')\n      }\n    }\n  }\n}\n",
+        )
+        .unwrap();
+
+        let graph = PerFileGraphCache::new().merge(&[step.as_path(), pipeline.as_path()]);
+
+        let callee = graph
+            .find_by_name("deploy")
+            .into_iter()
+            .chain(graph.find_by_name("call"))
+            .next()
+            .expect("the step is in the graph");
+        let callee_id = graph
+            .symbol_ids()
+            .find(|(_, s)| {
+                s.name() == callee.name() && s.location().file() == callee.location().file()
+            })
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        let callers: Vec<String> = graph
+            .callers(&callee_id)
+            .iter()
+            .filter_map(|id| graph.get_symbol(id))
+            .map(|s| s.name().to_string())
+            .collect();
+        assert_eq!(callers, vec!["Deploy".to_string()], "got {callers:?}");
+    }
+
+    #[test]
     fn test_per_file_graph_cache_empty() {
         let cache = PerFileGraphCache::new();
         assert_eq!(cache.cached_file_count(), 0);

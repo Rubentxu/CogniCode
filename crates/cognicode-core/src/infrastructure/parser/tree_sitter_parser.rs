@@ -243,6 +243,8 @@ impl TreeSitterParser {
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
+            } else if let Some(stage) = self.stage_symbol(current, source, file_path) {
+                symbols.push(stage);
             }
 
             let cc = current.child_count();
@@ -278,14 +280,14 @@ impl TreeSitterParser {
         tree: &tree_sitter::Tree,
         source: &str,
         file_path: &str,
-    ) -> Vec<(String, u32)> {
+    ) -> Vec<(String, u32, Option<Symbol>)> {
         if !self.language.is_script_file(file_path) {
             return Vec::new();
         }
         let declared = self.language.symbols();
         let mut found = Vec::new();
-        let mut stack = vec![tree.root_node()];
-        while let Some(current) = stack.pop() {
+        let mut stack = vec![(tree.root_node(), None::<Symbol>)];
+        while let Some((current, owner)) = stack.pop() {
             let kind = current.kind();
             if self.language.is_function_kind(kind) || declared.class_types.contains(&kind) {
                 continue;
@@ -293,15 +295,68 @@ impl TreeSitterParser {
             if declared.call_types.contains(&kind)
                 && let Some(callee) = self.extract_callee_name(current, source)
             {
-                found.push((callee, current.start_position().row as u32 + 1));
+                found.push((
+                    callee,
+                    current.start_position().row as u32 + 1,
+                    owner.clone(),
+                ));
             }
+            // The call that opens a stage belongs to whoever holds the stage;
+            // what is written inside it belongs to the stage.
+            let inside = self.stage_symbol(current, source, file_path).or(owner);
             for i in (0..current.child_count()).rev() {
                 if let Some(child) = current.child(i) {
-                    stack.push(child);
+                    stack.push((child, inside.clone()));
                 }
             }
         }
         found
+    }
+
+    /// The symbol a Jenkins `stage('Label') { ... }` declares, named by its
+    /// label.
+    ///
+    /// A stage is the unit a pipeline is read by, and what it calls is what
+    /// the stage does; without it every call of a pipeline belongs to the
+    /// file's script and "who calls `deploy`" can only answer "the file". The
+    /// shape is exact: a call named `stage` with one string label and a
+    /// closure body, in a script file. A `stage` with another shape is an
+    /// ordinary call.
+    fn stage_symbol(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        file_path: &str,
+    ) -> Option<Symbol> {
+        if self.language != Language::Groovy
+            || node.kind() != "method_invocation"
+            || !self.language.is_script_file(file_path)
+        {
+            return None;
+        }
+        let text = |n: tree_sitter::Node| source.get(n.start_byte()..n.end_byte());
+        if text(node.child_by_field_name("name")?)? != "stage" {
+            return None;
+        }
+        node.child_by_field_name("body")
+            .filter(|body| body.kind() == "closure")?;
+        let arguments = node.child_by_field_name("arguments")?;
+        let mut cursor = arguments.walk();
+        let mut named = arguments.named_children(&mut cursor);
+        let label = named.next()?;
+        if named.next().is_some() || label.kind() != "character_literal" {
+            return None;
+        }
+        let label = text(label)?.trim_matches(['\'', '"']);
+        if label.is_empty() {
+            return None;
+        }
+        let start = node.start_position();
+        Some(Symbol::new(
+            label,
+            SymbolKind::Function,
+            Location::new(file_path, start.row as u32, start.column as u32),
+        ))
     }
 
     /// Helper to iteratively find nodes of a specific type with file path (iterative DFS)
@@ -630,8 +685,8 @@ impl TreeSitterParser {
         let top_level = self.top_level_calls(tree, source, file_path);
         if !top_level.is_empty() {
             let script = Self::script_symbol(file_path);
-            for (callee, line) in top_level {
-                calls.push((script.clone(), callee, line));
+            for (callee, line, owner) in top_level {
+                calls.push((owner.unwrap_or_else(|| script.clone()), callee, line));
             }
         }
 
@@ -1798,5 +1853,61 @@ mod csharp_groovy_reading {
         assert!(!typed.iter().any(|(n, _)| n == "Kube"), "{typed:?}");
         let plain = located("class K {\n  def steps\n  int x = 1\n}\n");
         assert!(plain.contains(&("steps".to_string(), 1)), "{plain:?}");
+    }
+
+    const JENKINSFILE: &str = "pipeline {\n  stages {\n    stage('Deploy') {\n      steps {\n        deploy(manifest: 'k8s/app.yaml')\n      }\n    }\n    stage('Notify') {\n      steps { notify('done') }\n    }\n  }\n}\n";
+
+    fn jenkins_calls(source: &str) -> Vec<(String, String)> {
+        let parser = TreeSitterParser::new(Language::Groovy).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        parser
+            .find_call_sites_in_tree(&tree, source, "Jenkinsfile")
+            .unwrap()
+            .iter()
+            .map(|c| (c.source.as_str().to_string(), c.target.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_jenkins_stage_is_a_symbol_named_by_its_label() {
+        let parser = TreeSitterParser::new(Language::Groovy).unwrap();
+        let found: Vec<String> = parser
+            .find_all_symbols_with_path(JENKINSFILE, "Jenkinsfile")
+            .unwrap()
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect();
+        for stage in ["Deploy", "Notify"] {
+            assert!(found.iter().any(|n| n == stage), "{stage} in {found:?}");
+        }
+    }
+
+    #[test]
+    fn the_calls_inside_a_stage_belong_to_that_stage() {
+        let made = jenkins_calls(JENKINSFILE);
+        let owner_of = |target: &str| {
+            made.iter()
+                .find(|(_, t)| t == target)
+                .map(|(c, _)| c.clone())
+                .unwrap_or_default()
+        };
+        assert!(owner_of("deploy").contains(":Deploy:"), "{made:?}");
+        assert!(owner_of("notify").contains(":Notify:"), "{made:?}");
+        // The stage call itself, and the blocks around it, stay with the script.
+        assert!(owner_of("stage").contains("<script>"), "{made:?}");
+        assert!(owner_of("pipeline").contains("<script>"), "{made:?}");
+    }
+
+    #[test]
+    fn a_call_named_stage_without_a_label_or_a_body_is_not_a_stage() {
+        let source = "stage(name)\nstage('a', 'b') { x() }\nstage('c')\n";
+        let parser = TreeSitterParser::new(Language::Groovy).unwrap();
+        let found: Vec<String> = parser
+            .find_all_symbols_with_path(source, "Jenkinsfile")
+            .unwrap()
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect();
+        assert_eq!(found, ["<script>"], "{found:?}");
     }
 }

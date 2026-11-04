@@ -2,8 +2,10 @@
 # Hand-written from the sources: the types and callables each file declares,
 # as `class|function <name>@<path relative to this directory>`. Variables,
 # fields and the synthetic <script> entry are not part of the contract.
-# A Jenkinsfile and a build.gradle declare nothing of their own.
+# A Jenkinsfile declares one function per `stage('Label') { ... }`, named by
+# its label; a build.gradle declares nothing of its own.
 class Kube@src/org/acme/Kube.groovy
+function Deploy@Jenkinsfile
 function Kube@src/org/acme/Kube.groovy
 function apply@src/org/acme/Kube.groovy
 function rollback@src/org/acme/Kube.groovy
