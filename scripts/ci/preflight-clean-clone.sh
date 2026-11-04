@@ -498,7 +498,7 @@ fi
 # these five tests as passed rather than as missing. The count of ignored
 # tests rises by five, and the receipt says so.
 log "Stage 5.1/7: la cadena de continuación MCP, contra el servidor real"
-if ! cargo test -p cognicode-mcp --test continuation_e2e --locked -- \
+if ! cargo test -p cognicode-mcp --test it --locked -- continuation_e2e:: \
      --include-ignored >>"$TEST_OUTPUT_FILE" 2>&1; then
   log "  → tail del test output:"
   tail -30 "$TEST_OUTPUT_FILE" | tee -a "$LOG_FILE"

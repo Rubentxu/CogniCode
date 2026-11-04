@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 HANDLERS = "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs"
 TELEMETRY = "crates/cognicode-core/src/infrastructure/telemetry/mod.rs"
-BOUNDARY_TEST = "crates/cognicode-core/tests/a_rejection_arrives_as_a_rejection.rs"
+BOUNDARY_TEST = "crates/cognicode-core/tests/it/a_rejection_arrives_as_a_rejection.rs"
 
 
 def source(relative: str) -> str:

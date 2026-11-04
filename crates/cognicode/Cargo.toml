@@ -10,9 +10,3 @@ publish = false
 [dependencies]
 cognicode-core = { path = "../cognicode-core" }
 anyhow.workspace = true
-
-[dev-dependencies]
-tokio.workspace = true
-tempfile.workspace = true
-serde_json.workspace = true
-serde_norway.workspace = true

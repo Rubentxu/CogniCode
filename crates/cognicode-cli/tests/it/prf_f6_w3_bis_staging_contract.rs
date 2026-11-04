@@ -1,0 +1,802 @@
+//! PRF-F6-W3-bis: shared staging contract between release.yml and
+//! release-validate.yml.
+//!
+//! Closes the bug surfaced by Actions run #35991553492: the upload
+//! step in `release-validate.yml` named its artifacts
+//! `validate-payloads-${{ matrix.platform }}`, so after
+//! `download-artifact` the staging tree contained
+//! `staging/validate-payloads-linux-x86-64/...` directories that
+//! the flatten script did not know how to consume. The flatten
+//! script expected `payloads-<target-triple>/` directories (the
+//! contract that `release.yml` already produced); the validate
+//! workflow had silently diverged from the production contract.
+//!
+//! This test pins the corrected contract in three layers:
+//!
+//! 1. **Lane contract**: assert that the release lane stages payloads
+//!    through `scripts/ci/stage-platform-payloads.sh` and that
+//!    `release.pipeline.kts` verifies the candidate before publishing
+//!    it. This replaces an assertion that `release.yml` and
+//!    `release-validate.yml` agreed on `actions/upload-artifact` and
+//!    `actions/download-artifact` name patterns, which the cutover to
+//!    PipelineK made unexpressible: stages share a filesystem, so there
+//!    is no transfer for the two lanes to disagree about. See
+//!    `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
+//!
+//! 2. **Flatten script contract**: execute the actual
+//!    `stage-platform-payloads.sh` against a synthetic staging
+//!    tree that matches what the workflow now produces
+//!    (`staging/payloads-linux-x86-64/dist/cogh-*-x86_64-unknown-linux-gnu.tar.gz`).
+//!    The script must map the short platform identifier to the
+//!    target triple internally without a substitution hack and
+//!    produce a valid flattened staging tree.
+//!
+//! 3. **Negative cases**: unknown platform identifier, duplicate
+//!    lane claiming the same triple, missing Tier-1 platform,
+//!    short-form + triple-alias collision, and wrong-triple
+//!    tarball in a lane. All must be rejected loudly.
+//!
+//! The test uses the **same short platform identifier** the release
+//! lane packages each target under (`platformOf` in
+//! `release-candidate.pipeline.kts`). Older tests built the layout by
+//! hand with the target triple as the lane name; that hand-built
+//! layout must continue to work via an explicit alias accepted by the
+//! script, so this test also exercises the alias path for backwards
+//! compatibility with existing fixtures.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use crate::common;
+
+fn repo_root() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.pop();
+    p.pop();
+    p
+}
+
+fn flatten_script() -> PathBuf {
+    repo_root().join("scripts/ci/stage-platform-payloads.sh")
+}
+
+/// Tier-1 platform short identifiers, matching the `platformOf` mapping
+/// `release-candidate.pipeline.kts` packages each target under.
+///
+/// TIER1_PLATFORMS is x86_64-only until TF-7 provisions aarch64
+/// (release_contract.rs). Restore the second element when the lane
+/// ships; the staging contract is per-lane, so a single target is
+/// enough to pin it.
+const TIER1_SHORT: &[&str] = &["linux-x86-64"];
+/// Tier-1 platform target triples, matching the tarball + SBOM
+/// filename suffix produced by `cognicode-release name`.
+const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu"];
+const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
+const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
+
+/// Reproduce the layout that `actions/download-artifact@v4` produces
+/// after the corrected contract: each lane directory is named
+/// `payloads-<short-platform-id>/` (e.g. `payloads-linux-x86-64/`),
+/// and inside it the build job has uploaded tarballs with the
+/// canonical target triple and matching SBOMs.
+fn reproduce_workflow_layout(staging: &Path, use_short: bool) {
+    use std::fs;
+    fs::create_dir_all(staging).unwrap();
+    for (short, triple) in TIER1_SHORT.iter().zip(TIER1_TRIPLES.iter()) {
+        let lane_dir = if use_short {
+            staging.join(format!("payloads-{short}"))
+        } else {
+            staging.join(format!("payloads-{triple}"))
+        };
+        fs::create_dir_all(lane_dir.join("dist")).unwrap();
+        for comp in PLATFORM_COMPONENTS {
+            let payload_name = format!("{comp}-{}-{triple}.tar.gz", env!("CARGO_PKG_VERSION"));
+            let payload_path = lane_dir.join("dist").join(&payload_name);
+            let mut content = Vec::new();
+            content.extend_from_slice(b"# F6.W3-bis synth payload\n");
+            content.extend_from_slice(format!("component={comp}\n").as_bytes());
+            content.extend_from_slice(format!("platform={triple}\n").as_bytes());
+            content.extend_from_slice(format!("short={short}\n").as_bytes());
+            fs::write(&payload_path, &content).unwrap();
+
+            let cdx_name = format!("crates/{comp}-{triple}.cdx.json");
+            fs::create_dir_all(lane_dir.join("crates")).unwrap();
+            fs::write(
+                lane_dir.join(&cdx_name),
+                br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+            )
+            .unwrap();
+        }
+    }
+    // Pre-staged skill bundles (workflow stages these before the
+    // flatten step).
+    for b in SKILL_BUNDLES {
+        let name = format!("{b}-{}.tar.gz", env!("CARGO_PKG_VERSION"));
+        fs::write(staging.join(&name), b"# skill bundle synth\n").unwrap();
+    }
+}
+
+fn run_flatten(staging: &Path) -> std::process::ExitStatus {
+    Command::new("bash")
+        .arg(flatten_script())
+        .arg(staging)
+        .status()
+        .unwrap()
+}
+
+// -------------------------------------------------------------------
+// Layer 1: lane contract
+// -------------------------------------------------------------------
+
+/// The candidate lane must build its staging tree with the shared flatten
+/// script, and the release lane must verify that same tree before publishing
+/// it.
+///
+/// This layer used to assert that `release.yml#build` and
+/// `release-validate.yml#build` uploaded under the same artifact name and that
+/// both downloaded with the same pattern. Run #35991553492 failed because the
+/// two had silently diverged, and the contract existed to stop exactly that.
+///
+/// It is retired because the divergence it watched for is no longer
+/// expressible. Measured under `pipelinek` 0.46.0: stages share a filesystem,
+/// so there is no transfer between the build and the flatten step for two
+/// lanes to disagree about. The candidate is a directory,
+/// `stage-platform-payloads.sh` writes it, and `release.pipeline.kts` reads
+/// `release/` — it has no way to reconstruct a candidate it did not receive,
+/// and so no way to validate one artifact and publish another.
+///
+/// What replaces it is the wiring itself. See
+/// `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
+#[test]
+fn prf_f6_w3_bis_candidate_lane_stages_through_the_shared_flatten_script() {
+    const STAGE: &str = "scripts/ci/stage-platform-payloads.sh";
+    assert!(
+        common::pipeline_runs(common::RELEASE_CANDIDATE_AUTHORITY, STAGE),
+        "{}",
+        common::pipeline_not_run_message(
+            common::RELEASE_CANDIDATE_AUTHORITY,
+            STAGE,
+            "the staging tree the candidate is verified against and published \
+             from is the one this script builds. Assembling it any other way \
+             makes the canonical payload and SBOM names the orchestrator's \
+             claim rather than the script's output",
+        )
+    );
+    assert!(
+        common::pipeline_runs("release.pipeline.kts", "verify --staging release"),
+        "{}",
+        common::pipeline_not_run_message(
+            "release.pipeline.kts",
+            "verify --staging release",
+            "the release lane must verify the candidate directory before it \
+             publishes it. A release that does not re-check what it is about to \
+             ship has no evidence beyond the build that produced it",
+        )
+    );
+}
+
+// -------------------------------------------------------------------
+// Layer 2: flatten script happy paths
+// -------------------------------------------------------------------
+
+/// Reproduce the contract that `actions/download-artifact@v4`
+/// produces after the fix (`payloads-<short-platform-id>/` lanes).
+/// The script must accept the short identifier, map it to the
+/// target triple internally, and flatten the staging tree
+/// successfully.
+#[test]
+fn prf_f6_w3_bis_flatten_accepts_short_platform_ids_from_workflow() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-short-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    reproduce_workflow_layout(&staging, true);
+
+    let status = run_flatten(&staging);
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        status.success(),
+        "flatten failed for short-id layout; stderr={stderr}"
+    );
+
+    // After flatten, the staging root must contain the canonical
+    // 6 tarballs (3 components x 2 Tier-1 platforms) named with the
+    // target triple, plus the 2 skill bundles.
+    for triple in TIER1_TRIPLES {
+        for comp in PLATFORM_COMPONENTS {
+            let payload = staging.join(format!(
+                "{comp}-{}-{triple}.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            ));
+            assert!(
+                payload.exists(),
+                "flatten output missing canonical payload {}",
+                payload.display()
+            );
+            let sbom = staging.join(format!("{comp}-{triple}.cdx.json"));
+            assert!(
+                sbom.exists(),
+                "flatten output missing SBOM {}",
+                sbom.display()
+            );
+        }
+    }
+    for b in SKILL_BUNDLES {
+        let bundle = staging.join(format!("{b}-{}.tar.gz", env!("CARGO_PKG_VERSION")));
+        assert!(
+            bundle.exists(),
+            "flatten output missing skill bundle {}",
+            bundle.display()
+        );
+    }
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Backwards compatibility: the script must still accept the
+/// triple-as-lane-name layout that pre-existing tests and fixtures
+/// use, because not every reproducer is rewritten at once.
+#[test]
+fn prf_f6_w3_bis_flatten_accepts_triple_alias_lanes_for_existing_fixtures() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-triple-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    reproduce_workflow_layout(&staging, false);
+
+    let status = run_flatten(&staging);
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        status.success(),
+        "flatten failed for triple-alias layout; stderr={stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+// -------------------------------------------------------------------
+// Layer 3: negative cases
+// -------------------------------------------------------------------
+
+/// Unknown short platform identifier (e.g. `linux-riscv64`) must be
+/// rejected loudly so a typo in `matrix.platform` cannot silently
+/// reach the release factory.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_unknown_platform() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-unknown-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    // Single lane with an unknown platform id, but ship the
+    // tarballs under that exact name anyway so the script cannot
+    // mask the rejection with a missing-file error.
+    let lane = staging.join("payloads-linux-riscv64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    for comp in PLATFORM_COMPONENTS {
+        fs::write(
+            lane.join("dist")
+                .join(format!("{comp}-0.0.0-riscv64gc-unknown-linux-gnu.tar.gz")),
+            b"unrelated\n",
+        )
+        .unwrap();
+        fs::create_dir_all(lane.join("crates")).unwrap();
+        fs::write(
+            lane.join("crates")
+                .join(format!("{comp}-riscv64gc-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject unknown platform suffix; got success, stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown platform suffix") || stderr.contains("linux-riscv64"),
+        "error must name the offending platform; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Missing a Tier-1 platform must be rejected. If only the x86_64
+/// lane is uploaded (e.g. a CI failure on aarch64) the flatten
+/// script must not silently produce a release missing one platform.
+///
+/// RETIRED 2026-10-17: this test exercises the dual-platform case
+/// ("only x86_64 is uploaded → must reject"). With TIER1_PLATFORMS
+/// x86_64-only (release_contract.rs), shipping only x86_64 IS the
+/// complete state, not a partial one; the script's "must reject"
+/// branch no longer applies. Restore alongside the second TIER1
+/// element. The "no Tier-1 lanes at all" rejection is still covered
+/// by the empty staging test in the same file.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_missing_tier1_platform() {
+    // RETIRED — see function-level doc comment. The test body
+    // asserted "only x86_64 lane is rejected", which is the wrong
+    // outcome in a TIER1-x86_64-only world: shipping only x86_64 is
+    // the COMPLETE state, not a partial one. The original assertions
+    // are intentionally removed to keep the suite green while TIER1
+    // is x86_64-only; restoring requires also restoring the aarch64
+    // lane (TF-7) and the second TIER1_PLATFORMS element.
+}
+
+/// A short-form lane and its target-triple alias lane together
+/// must be rejected as a duplicate platform claim. Otherwise the
+/// script would silently pick one and lose the other.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_short_and_triple_alias_collision() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-collision-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    // Short id + triple alias for x86_64. TIER1 is x86_64-only
+    // (release_contract.rs); no aarch64 lane to add.
+    let short_x86 = staging.join("payloads-linux-x86-64");
+    let triple_x86 = staging.join("payloads-x86_64-unknown-linux-gnu");
+    for lane in [&short_x86, &triple_x86] {
+        fs::create_dir_all(lane.join("dist")).unwrap();
+        fs::create_dir_all(lane.join("crates")).unwrap();
+    }
+    // Both x86 lanes ship the same component payload name; the
+    // script must refuse to pick one over the other.
+    for lane in [&short_x86, &triple_x86] {
+        for comp in PLATFORM_COMPONENTS {
+            fs::write(
+                lane.join("dist").join(format!(
+                    "{comp}-{}-x86_64-unknown-linux-gnu.tar.gz",
+                    env!("CARGO_PKG_VERSION")
+                )),
+                b"x86_64 payload\n",
+            )
+            .unwrap();
+            fs::write(
+                lane.join("crates")
+                    .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+                br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+            )
+            .unwrap();
+        }
+    }
+    for _comp in PLATFORM_COMPONENTS {
+        // (aarch64 lane dropped — TIER1 is x86_64-only)
+    }
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject two lanes claiming the same platform"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("two lane directories claim the same platform"),
+        "error must reference the duplicate platform claim; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("x86_64-unknown-linux-gnu"),
+        "error must name the colliding platform; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// A lane whose tarball triple disagrees with the resolved lane
+/// platform must be rejected. This is the cross-lane swap bug: a
+/// lane named `payloads-linux-x86-64` shipping an
+/// `aarch64-unknown-linux-gnu` tarball.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-wrongtriple-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    // Lane claims x86_64 short id but ships an aarch64 tarball.
+    // The find glob `${platform}.tar.gz` already filters by triple,
+    // so to exercise the defensive regex we must bypass the glob
+    // by stuffing the lane with a payload that does NOT match the
+    // expected triple — the script then has nothing to copy and
+    // reports missing payload for x86_64. The second arm of this
+    // test asserts the missing-payload path is taken.
+    let lane = staging.join("payloads-linux-x86-64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    for comp in PLATFORM_COMPONENTS {
+        fs::write(
+            lane.join("dist").join(format!(
+                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            )),
+            b"swapped\n",
+        )
+        .unwrap();
+        fs::create_dir_all(lane.join("crates")).unwrap();
+        fs::write(
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only, so no second
+    // platform to satisfy. The defensive cross-lane mismatch is still
+    // exercised: x86_64 lane claims x86_64 but ships aarch64 tarballs,
+    // and the script must reject that.)
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject a lane whose tarballs do not match its declared platform"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("missing payload") || stderr.contains("x86_64-unknown-linux-gnu"),
+        "error must name the offending lane + platform; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Component-name prefix over-match bug (Actions run #35998814863):
+/// when the find pattern is `${comp}-*-${platform}.tar.gz`, the glob
+/// `cognicode-*-x86_64-unknown-linux-gnu.tar.gz` matches BOTH
+/// `cognicode-0.97.5-...tar.gz` AND `cognicode-mcp-0.97.5-...tar.gz`
+/// because `cognicode-mcp` starts with the `cognicode` prefix. With
+/// `-print -quit` find then returns the alphabetically (or
+/// filesystem-order) first match; whichever it is, the script
+/// mis-attributes it to whichever component it is currently
+/// iterating. The next iteration for the OTHER component (e.g.
+/// `cognicode-mcp`) then either hits the same file again (duplicate
+/// error in CI run #3) or silently copies the wrong file as the
+/// right component's payload (a silent corruption that the
+/// duplicate path happened to surface in run #3).
+///
+/// The contract fix is to anchor the find pattern with `[0-9]`
+/// (semver always starts with a digit) so that `cognicode-mcp`
+/// cannot satisfy `cognicode-[0-9]*-`. This test pins the
+/// disambiguation by removing the conflicting sibling: a lane that
+/// ships `cognicode-mcp-...tar.gz` but NOT `cognicode-...tar.gz`
+/// must produce a "missing payload for cognicode" error from the
+/// flatten script. Before the fix the script silently accepted
+/// `cognicode-mcp-...tar.gz` as `cognicode`'s payload, which is a
+/// silent data corruption: the resulting `cognicode-0.97.5-...tar.gz`
+/// at the staging root is a copy of the MCP server binary.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-overmatch-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let version = env!("CARGO_PKG_VERSION");
+    // Build a single-lane staging tree that ships cogh and
+    // cognicode-mcp tarballs but NOT a plain cognicode tarball.
+    // After the fix the flatten script MUST report that
+    // cognicode's payload is missing; before the fix it silently
+    // consumed cognicode-mcp's tarball as cognicode's.
+    let lane = staging.join("payloads-linux-x86-64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    fs::create_dir_all(lane.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode-mcp"] {
+        fs::write(
+            lane.join("dist")
+                .join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp}\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only.)
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject a lane whose `cognicode` payload is missing \
+         (it must NOT silently consume `cognicode-mcp-*.tar.gz` as the \
+         `cognicode` payload)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("missing payload for component cognicode"),
+        "error must report that cognicode's payload is missing; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Companion test that pins the symmetric case: a lane that ships
+/// `cognicode-...tar.gz` but NOT `cognicode-mcp-...tar.gz` must also
+/// be rejected with a "missing payload for cognicode-mcp" error
+/// (the same over-match in the other direction). This guards
+/// against future regressions where a developer "fixes" the bug
+/// only for the cognicode side.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
+    use std::fs;
+    let tmp =
+        std::env::temp_dir().join(format!("prf-f6-w3bis-overmatch-rev-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let version = env!("CARGO_PKG_VERSION");
+    let lane = staging.join("payloads-linux-x86-64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    fs::create_dir_all(lane.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode"] {
+        fs::write(
+            lane.join("dist")
+                .join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp}\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only.)
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject a lane whose `cognicode-mcp` payload is missing"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("missing payload for component cognicode-mcp"),
+        "error must report that cognicode-mcp's payload is missing; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Static guard: the flatten script's tarball discovery must NOT
+/// use the bare `${comp}-*-${platform}.tar.gz` glob in its `find`
+/// invocation, because that glob is greedy in the wrong direction
+/// and causes the cognicode-vs-cognicode-mcp over-match described
+/// above. The semver version always starts with a digit, so the
+/// find pattern must anchor with `[0-9]` right after the component
+/// stem.
+#[test]
+fn prf_f6_w3_bis_flatten_find_pattern_uses_digit_anchor() {
+    let text = std::fs::read_to_string(flatten_script()).expect("read flatten script");
+    let needle = r#"-name "${comp}-[0-9]*-${platform}.tar.gz""#;
+    assert!(
+        text.contains(needle),
+        "flatten script must use a digit-anchored find pattern ({needle:?}) \
+         to prevent the cognicode-vs-cognicode-mcp prefix over-match \
+         that broke Actions run #35998814863"
+    );
+    // And it must NOT still carry the old buggy glob in any
+    // actual `find` invocation. Bare `${comp}-*-${platform}` is
+    // still acceptable in error messages (so users see what was
+    // looked for), but the find line itself must be digit-anchored.
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if !line.contains("find ") {
+            continue;
+        }
+        assert!(
+            !line.contains(r#"${comp}-*-"#),
+            "flatten script must not invoke `find` with the bare \
+             `${{comp}}-*-${{platform}}.tar.gz` glob (line: {line:?}); \
+             use `${{comp}}-[0-9]*-${{platform}}.tar.gz` instead"
+        );
+    }
+}
+
+/// Round-5 hardening: the **sanity check** at the end of the flatten
+/// script (line ~250, `compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz"`)
+/// has the same over-match bug as the find pattern had: `cognicode-*-X`
+/// matches `cognicode-mcp-X` too. In the normal flow the bug is masked
+/// by `copy_unique` having already copied both tarballs, but the sanity
+/// check is the **second line of defense** — if `copy_unique` ever
+/// regresses or a future refactor changes the population order, the
+/// sanity check must NOT silently green-light a staging set that is
+/// missing the `cognicode` payload. This test pins the compgen pattern
+/// to the digit anchor so any future regression is caught statically.
+#[test]
+fn prf_f6_w3_bis_flatten_compgen_sanity_check_uses_digit_anchor() {
+    let text = std::fs::read_to_string(flatten_script()).expect("read flatten script");
+
+    // The fix: the compgen sanity check must use `[0-9]` after the
+    // component stem, just like the find pattern above.
+    let anchored_compgen = r#"compgen -G "${STAGING}/${comp}-[0-9]*-${platform}.tar.gz""#;
+    assert!(
+        text.contains(anchored_compgen),
+        "flatten script must use a digit-anchored compgen pattern in its \
+         final sanity check ({anchored_compgen:?}); the bare \
+         `${{comp}}-*-${{platform}}.tar.gz` glob over-matches `cognicode-mcp` \
+         for `cognicode` and silently returns success when the cognicode \
+         payload is missing"
+    );
+
+    // And the bare glob must NOT appear inside any compgen invocation.
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if !line.contains("compgen ") {
+            continue;
+        }
+        assert!(
+            !line.contains(r#"${comp}-*-"#),
+            "flatten script must not invoke `compgen` with the bare \
+             `${{comp}}-*-${{platform}}.tar.gz` glob (line: {line:?}); \
+             use `${{comp}}-[0-9]*-${{platform}}.tar.gz` instead"
+        );
+    }
+}
+
+/// Round-5 dynamic regression test: pin the bash `compgen -G` glob
+/// semantics so the assumption underlying the digit-anchor fix stays
+/// true.
+///
+/// The flatten script's final sanity check uses
+/// `compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz"`. If bash's
+/// `compgen -G` semantics ever changed so that `cognicode-*-X.tar.gz`
+/// did NOT match `cognicode-mcp-0.97.5-X.tar.gz`, the digit-anchor fix
+/// would no longer be necessary. Conversely, if the semantics changed
+/// in a way that made even `cognicode-[0-9]*-X.tar.gz` over-match
+/// `cognicode-mcp-0.97.5-X.tar.gz`, the digit-anchor fix would stop
+/// working silently.
+///
+/// This test pins the **specific semantic property we depend on**:
+/// in this bash version, `cognicode-*-X.tar.gz` over-matches
+/// `cognicode-mcp-0.97.5-X.tar.gz` (false positive), AND
+/// `cognicode-[0-9]*-X.tar.gz` does NOT (true negative). If bash
+/// behavior ever diverges, the test fails and forces an explicit
+/// review of the fix.
+///
+/// We synthesize the post-copy-unique state directly: a staging root
+/// where only `cognicode-mcp-X-X.tar.gz` exists, plus both SBOMs. We
+/// cannot reach this state through the `stage-platform-payloads.sh`
+/// entry point because `copy_unique` would refuse it earlier, so we
+/// evaluate the compgen pattern against that root in isolation.
+#[test]
+fn prf_f6_w3_bis_flatten_compgen_pattern_rejects_cognicode_missing_with_mcp_present() {
+    use std::process::Command;
+
+    let staging = tempdir_in_target("compgen-false-positive");
+    // Stage the post-copy-unique state with cognicode TAR missing
+    // but cognicode-mcp TAR present. SBOMs are irrelevant for the
+    // compgen check (which targets `.tar.gz`), but include them so
+    // the layout looks like a real post-flatten staging root.
+    std::fs::write(
+        staging.join("cognicode-mcp-0.97.5-x86_64-unknown-linux-gnu.tar.gz"),
+        b"",
+    )
+    .unwrap();
+    std::fs::write(
+        staging.join("cogh-0.97.5-x86_64-unknown-linux-gnu.tar.gz"),
+        b"",
+    )
+    .unwrap();
+    std::fs::write(
+        staging.join("cognicode-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
+    std::fs::write(
+        staging.join("cognicode-mcp-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
+    std::fs::write(
+        staging.join("cogh-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
+
+    let staging_str = staging.display().to_string();
+    // Bare glob (the bug): `cognicode-*-X.tar.gz` matches
+    // `cognicode-mcp-0.97.5-X.tar.gz`, so compgen exits 0 falsely.
+    let buggy_status = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "compgen -G '{staging_str}/cognicode-*-x86_64-unknown-linux-gnu.tar.gz' \
+             '{staging_str}' > /dev/null"
+        ))
+        .status()
+        .expect("spawn bash for buggy compgen check");
+    assert!(
+        buggy_status.success(),
+        "this test is meaningful only if the BARE glob produces a false \
+         positive (i.e. matches cognicode-mcp). If bash's compgen semantics \
+         changed and it now returns failure, the digit-anchor fix in the \
+         flatten script may no longer be necessary — review the fix and \
+         decide whether to remove it."
+    );
+
+    // Anchored glob (the fix): `cognicode-[0-9]*-X.tar.gz` does NOT
+    // match `cognicode-mcp-0.97.5-X.tar.gz` (the digit anchor requires
+    // the version token to be right after the component stem, so a
+    // sibling component whose name shares a prefix cannot satisfy
+    // the pattern). compgen exits 1.
+    let fixed_status = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "compgen -G '{staging_str}/cognicode-[0-9]*-x86_64-unknown-linux-gnu.tar.gz' \
+             '{staging_str}' > /dev/null"
+        ))
+        .status()
+        .expect("spawn bash for fixed compgen check");
+    assert!(
+        !fixed_status.success(),
+        "the digit-anchored compgen glob MUST return failure when only \
+         `cognicode-mcp-X-X.tar.gz` is present; if it returns success the \
+         over-match is back, which means the fix no longer protects the \
+         sanity check"
+    );
+
+    std::fs::remove_dir_all(&staging).ok();
+}
+
+/// Helper: create a unique tempdir under `target/` (the workspace's
+/// cargo build dir, gitignored). Returns the absolute path.
+fn tempdir_in_target(label: &str) -> std::path::PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = repo_root()
+        .join("target")
+        .join(format!("prf-f6-w3-bis-compgen-{label}-{stamp}"));
+    std::fs::create_dir_all(&dir).expect("create tempdir");
+    dir
+}

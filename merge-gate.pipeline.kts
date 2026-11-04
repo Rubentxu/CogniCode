@@ -438,7 +438,7 @@ pipeline {
             // contract below is what pins its behaviour, so run the contract rather
             // than reimplementing the diff walk in shell.
             stage("qw08-crate-selector") {
-                sh("$cd && cargo test -p cognicode-cli --test qw08_crate_selector --quiet")
+                sh("$cd && cargo test -p cognicode-cli --test it --quiet -- qw08_crate_selector::")
             }
 
             // pr-ci.yml also runs the selector script itself, not only its
@@ -475,7 +475,7 @@ pipeline {
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
                     export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
                     export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
-                    cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e --quiet
+                    cargo test -p cognicode-mcp --test it --quiet -- prf_h06_adversarial_e2e
                 """.trimIndent())
             }
 
@@ -584,13 +584,13 @@ pipeline {
             // cli named contracts (pr-ci.yml:408-528)
             // One cargo invocation per crate: every separate `cargo test --test` pays ~50 s of fixed cost. Same suites, same order; the first failing one stops the run.
             stage("cli-named-contracts") {
-                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --test qw04_preflight_contract --test a013_lifecycle_gate_contract --test a014_capabilities_json --test a015_licenses_gate --test action_register_identity_contract --quiet")
+                sh("$cd && cargo test -p cognicode-cli --test it --quiet -- qw03_bin_tracking_guard:: qw04_preflight_contract:: a013_lifecycle_gate_contract:: a014_capabilities_json:: a015_licenses_gate:: action_register_identity_contract::")
             }
 
             // Kept apart on purpose: A-015 names two gates and the contract
             // requires the stage that runs onboarding to say so in its name.
             stage("cli-a015-onboarding-gate") {
-                sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
+                sh("$cd && cargo test -p cognicode-cli --test it --quiet -- a015_onboarding_gate::")
             }
 
             // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
@@ -638,33 +638,7 @@ pipeline {
                     $cd || exit 1
                     $cdLog || exit 1
                     if ! cargo test -p cognicode-cli --features ladybug --quiet \
-                        --test a013_lifecycle_gate_contract \
-                        --test a014_capabilities_json \
-                        --test a015_licenses_gate \
-                        --test a015_onboarding_gate \
-                        --test action_register_identity_contract \
-                        --test advisory_ignore_backing_contract \
-                        --test b1_w2_identity \
-                        --test b6_w3_cogh_lifecycle \
-                        --test b6_w4_skills_autodiscovery \
-                        --test backtick_provenance_contract \
-                        --test cli_exit_code_propagation \
-                        --test cogh_cli \
-                        --test cognicode_ide_adapter \
-                        --test cognicode_lifecycle \
-                        --test cognicode_plugin \
-                        --test cr07_protobuf_advisory_closed \
-                        --test evidence_cli_mcp_equivalence \
-                        --test gitignore_negation_contract \
-                        --test perf_budget_checker_contract \
-                        --test portable_skill_bundle \
-                        --test prf_f4_w2_binary_restart \
-                        --test prf_f6_w3_bis_sbom_contract \
-                        --test prf_f6_w3_bis_staging_contract \
-                        --test qw03_bin_tracking_guard \
-                        --test qw04_preflight_contract \
-                        --test qw08_crate_selector \
-                        --test t1_5_5_json_dispatch \
+                        --test it \
                         > "$logDir/cli-integration-suites.log" 2>&1; then
                         tail -40 "$logDir/cli-integration-suites.log"
                         echo "the full log is $logDir/cli-integration-suites.log"
@@ -681,7 +655,7 @@ pipeline {
             // tool authority audit, structured output, tools/runtime consistency,
             // corrupt-cache recovery and signal cancellation.
             stage("mcp-named-contracts") {
-                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --test a009_agent_safe_profile --test a010_tool_authority_audit --test a012_structured_output --test a016_tools_runtime_consistency --test prf_f4_w3_corrupt_cache_recovery --test prf_f5_w3_signal_cancel --quiet")
+                sh("$cd && cargo test -p cognicode-mcp --test it --quiet -- cr07_metrics_exposition_contract:: a009_agent_safe_profile:: a010_tool_authority_audit:: a012_structured_output:: a016_tools_runtime_consistency:: prf_f4_w3_corrupt_cache_recovery:: prf_f5_w3_signal_cancel::")
             }
 
             // One stage per contract, the way the workflow spelled them out. The
@@ -819,7 +793,7 @@ pipeline {
                     $cd || exit 1
                     if [ -x sandbox/.compat/0.97.3/cognicode-mcp ]; then
                         echo "compat fixture present, running the matrix"
-                        cargo test -p cognicode-mcp --test find_usages_compat_0_97 -- \
+                        cargo test -p cognicode-mcp --test it -- find_usages_compat_0_97:: \
                             --skip compat_forward_0973_server_handles_modern_request
                     else
                         echo "SKIP: sandbox/.compat/0.97.3/cognicode-mcp absent (ADR-PRF-008 policy R1)"

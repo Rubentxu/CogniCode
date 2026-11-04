@@ -227,7 +227,7 @@ pipeline {
         // ------------------------------------------------------------- preflight
         stage("preflight") {
             stage("qw04-preflight-contract") {
-                sh("$cd && cargo test -p cognicode-cli --test qw04_preflight_contract --quiet")
+                sh("$cd && cargo test -p cognicode-cli --test it --quiet -- qw04_preflight_contract::")
             }
 
             // The clean clone is the property that a build of a dirty tree does
@@ -816,19 +816,19 @@ pipeline {
         stage("release-contracts") {
             stage("prf-f6-w1-release-coherence") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-cli --test prf_f6_w1_release_coherence --quiet
+                    cargo test -p cognicode-cli --test release --quiet -- prf_f6_w1_release_coherence::
                 """.trimIndent())
             }
 
             stage("prf-f6-w2-staging-contract") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-cli --test prf_f6_w2_staging_contract --quiet
+                    cargo test -p cognicode-cli --test release --quiet -- prf_f6_w2_staging_contract::
                 """.trimIndent())
             }
 
             stage("published-skill-bundles-are-required") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-cli --test published_skill_bundles_are_required --quiet
+                    cargo test -p cognicode-cli --test release --quiet -- published_skill_bundles_are_required::
                 """.trimIndent())
             }
 
@@ -856,8 +856,8 @@ pipeline {
                         echo "FAIL: ${'$'}COGNICODE_MCP_BIN_RELEASE is missing or not executable."
                         exit 1
                     fi
-                    cargo test -p cognicode-core --test b6_w1_mcp_robustness --quiet \
-                        -- release_binary_stdio_round_trip_smoke
+                    cargo test -p cognicode-core --test it --quiet \
+                        -- b6_w1_mcp_robustness::release_binary_stdio_round_trip_smoke
                 """.trimIndent())
             }
         }

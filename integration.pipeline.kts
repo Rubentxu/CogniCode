@@ -166,15 +166,15 @@ pipeline {
             }
 
             stage("architecture-drift-e2e") {
-                sh("$cd && cargo test -p cognicode-core --test architecture_drift_e2e || echo 'ADVISORY: architecture drift e2e reported failures'")
+                sh("$cd && cargo test -p cognicode-core --test it -- architecture_drift_e2e:: || echo 'ADVISORY: architecture drift e2e reported failures'")
             }
 
             stage("findings-canonical-grounding") {
-                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test findings_canonical_grounding_e2e || echo 'ADVISORY: findings grounding e2e reported failures'")
+                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test it -- findings_canonical_grounding_e2e:: || echo 'ADVISORY: findings grounding e2e reported failures'")
             }
 
             stage("workspace-isolation") {
-                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test workspace_isolation || echo 'ADVISORY: workspace isolation reported failures'")
+                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test it -- workspace_isolation:: || echo 'ADVISORY: workspace isolation reported failures'")
             }
 
             // The continuation chain used to have a stage here. It could not

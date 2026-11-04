@@ -81,7 +81,7 @@
 #   13. Cualquier path desconocido -> fallback ALL.
 #
 # Test contractual:
-#   crates/cognicode-cli/tests/qw08_crate_selector.rs
+#   crates/cognicode-cli/tests/it/qw08_crate_selector.rs
 #
 # Política L1.2 (revisada durante el cutover a PipelineK): el selector SÍ se
 # ejecuta — el stage `selector` de `merge-gate.pipeline.kts` lo invoca — pero
