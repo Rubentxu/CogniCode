@@ -30947,3 +30947,23 @@ SCC igual ya se hizo `continue`). `cognicode-graph-algos` lib: 199 en verde; cli
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-99: modularity sin mutantes vivos
+
+**Hueco.** Sobrevivían 4 mutantes en `modularity.rs` (línea 98 `node < n` →
+`==`/`<=`/`>`, línea 99 `+=` → `-=`): los tests existentes sólo comprobaban `q > 0`
+o `q = 0,5` en un caso donde el término de pares sin arista vale 0, así que la suma
+de grado por comunidad no cambiaba el resultado.
+
+**Tests.** Valores a mano, con plazo de 5 s en un hilo: par mutuo 0↔1 en una
+comunidad (m=2, aristas 2·0,75 = 1,5, pares −0,25, Q = 0,3125); dos pares mutuos, uno
+por comunidad (m=4, Q = (3,5 − 0,25)/8 = 0,40625); y entradas de asignación con
+`node == n` y `node > n`, que deben ignorarse (mismo Q = 0,3125).
+
+**Evidencia.** `cargo mutants -j 1` con el runner de memoria: 51 mutantes, 51
+atrapados, 0 vivos, 0 timeouts, rc=0 (4 min). Sin cambios de código de producción ni
+equivalentes declarados. `cognicode-graph-algos` lib en verde; clippy `-D warnings` y
+`fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
