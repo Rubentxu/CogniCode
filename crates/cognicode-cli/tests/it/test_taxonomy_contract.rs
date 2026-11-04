@@ -58,6 +58,19 @@ const RETIRED_PATHS: &[&str] = &[
     "certification.pipeline.kts",
     "scripts/ci/publish-merge-gate.sh",
     "scripts/ci/check-merge-subject.sh",
+    // The test selector of those lanes. `impact.py` read
+    // `merge-gate.pipeline.kts` to decide which stages a change could break;
+    // once that file was gone it could only fail, and so did its test.
+    "impact-gate.pipeline.kts",
+    "docs-gate.pipeline.kts",
+    "scripts/ci/impact.py",
+    "scripts/ci/test_impact.py",
+    "scripts/ci/change-class.sh",
+    "scripts/ci/test_change_class.py",
+    "scripts/ci/docs-readers.sh",
+    // The contract that judged the publisher above; with the publisher gone
+    // it can only report a defect in a file that does not exist.
+    "scripts/ci/test_snapshot_is_judged_before_the_gate.py",
 ];
 
 /// The three steps of the gate, in order.
