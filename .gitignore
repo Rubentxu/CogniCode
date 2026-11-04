@@ -305,3 +305,28 @@ out-*.json
 # del producto. Lo que se deriva de ellos —identificadores de tarea y su
 # recibo— se anota en el Journal, que sí es la autoridad versionada.
 planning/
+
+.codegraph/
+
+# ── Contexto del agente: nada de esto es contenido del proyecto ──────────
+# series de parches sueltas: material de trabajo, no fuente
+[0-9][0-9][0-9][0-9]-*.patch
+*.orig
+*.rej
+# entornos e índices que se regeneran
+.codegraph/
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# transitorios
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+Thumbs.db
