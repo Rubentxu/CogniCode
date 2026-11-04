@@ -592,7 +592,7 @@ mod tests {
     ///   Features: linux                    <-- el bloque de clangd, dos veces
     ///   Platform: x86_64-unknown-linux-gnu
     ///   ✅ clangd  Homebrew clangd version 23.1.0
-    ///   ❌ omnisharp
+    ///   ❌ csharp-ls
     ///   ℹ️  HCL  not yet supported
     /// ```
     ///

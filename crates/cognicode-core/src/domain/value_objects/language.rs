@@ -870,7 +870,9 @@ impl Language {
             Language::Go => "gopls",
             Language::Java => "jdtls",
             Language::C | Language::Cpp => "clangd",
-            Language::CSharp => "omnisharp",
+            Language::CSharp => "csharp-ls",
+            Language::Kotlin => "kotlin-lsp",
+            Language::Groovy => "groovy-language-server",
             _ => "",
         }
     }
@@ -886,7 +888,13 @@ impl Language {
             Language::Go => "go install golang.org/x/tools/gopls@latest",
             Language::Java => "brew install jdtls",
             Language::C | Language::Cpp => "apt install clangd",
-            Language::CSharp => "dotnet tool install -g omnisharp",
+            Language::CSharp => "dotnet tool install --global csharp-ls",
+            Language::Kotlin => "brew install JetBrains/utils/kotlin-lsp",
+            Language::Groovy => {
+                "git clone https://github.com/GroovyLanguageServer/groovy-language-server \
+                 && cd groovy-language-server && ./gradlew build \
+                 (put a `groovy-language-server` launcher for build/libs/*-all.jar on PATH)"
+            }
             _ => "",
         }
     }
@@ -896,6 +904,9 @@ impl Language {
             Language::Rust => &[],
             Language::Go => &["serve"],
             Language::Java => &[],
+            // csharp-ls and groovy-language-server speak stdio by default and
+            // reject unknown flags.
+            Language::CSharp | Language::Groovy => &[],
             _ => &["--stdio"],
         }
     }
@@ -908,7 +919,9 @@ impl Language {
             Language::Go => "gopls",
             Language::Java => "eclipse-jdtls",
             Language::C | Language::Cpp => "clangd",
-            Language::CSharp => "omnisharp",
+            Language::CSharp => "csharp-ls",
+            Language::Kotlin => "kotlin-lsp",
+            Language::Groovy => "groovy-language-server",
             _ => "",
         }
     }
@@ -995,5 +1008,73 @@ mod from_path_tests {
             Language::from_path(Path::new("build.gradle")),
             Some(Language::Groovy)
         );
+    }
+}
+
+#[cfg(test)]
+mod lsp_defaults_tests {
+    use super::Language;
+
+    #[test]
+    fn csharp_kotlin_and_groovy_each_have_their_own_default_server() {
+        let expected = [
+            (Language::CSharp, "csharp-ls", &[][..]),
+            (Language::Kotlin, "kotlin-lsp", &["--stdio"][..]),
+            (Language::Groovy, "groovy-language-server", &[][..]),
+        ];
+        for (lang, binary, args) in expected {
+            assert_eq!(lang.lsp_server_binary(), binary, "{lang:?} binary");
+            assert_eq!(lang.lsp_server_name(), binary, "{lang:?} name");
+            assert_eq!(lang.lsp_args(), args, "{lang:?} args");
+        }
+    }
+
+    #[test]
+    fn install_hints_name_the_server_they_install() {
+        assert_eq!(
+            Language::CSharp.lsp_install_command(),
+            "dotnet tool install --global csharp-ls"
+        );
+        assert!(
+            Language::Kotlin
+                .lsp_install_command()
+                .contains("kotlin-lsp")
+        );
+        assert!(
+            Language::Groovy
+                .lsp_install_command()
+                .contains("groovy-language-server")
+        );
+    }
+
+    #[test]
+    fn the_other_languages_keep_their_server() {
+        let unchanged = [
+            (Language::Rust, "rust-analyzer", "rust-analyzer"),
+            (Language::Python, "pyright-langserver", "pyright"),
+            (Language::Go, "gopls", "gopls"),
+            (Language::Java, "jdtls", "eclipse-jdtls"),
+            (Language::C, "clangd", "clangd"),
+            (Language::Cpp, "clangd", "clangd"),
+        ];
+        for (lang, binary, name) in unchanged {
+            assert_eq!(lang.lsp_server_binary(), binary);
+            assert_eq!(lang.lsp_server_name(), name);
+        }
+        assert_eq!(Language::Go.lsp_args(), &["serve"]);
+        assert_eq!(Language::Ruby.lsp_server_binary(), "");
+    }
+
+    #[test]
+    fn every_server_has_a_name_and_an_install_hint() {
+        for lang in Language::all_languages() {
+            let has_binary = !lang.lsp_server_binary().is_empty();
+            assert_eq!(has_binary, !lang.lsp_server_name().is_empty(), "{lang:?}");
+            assert_eq!(
+                has_binary,
+                !lang.lsp_install_command().is_empty(),
+                "{lang:?}"
+            );
+        }
     }
 }
