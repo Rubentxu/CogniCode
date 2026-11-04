@@ -31336,3 +31336,38 @@ el HOME real); `free_port` tiene TOCTOU. Los `#[serial]` se quedan: `cargo test`
 (mutantes, doc-tests) los sigue necesitando.
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo.
+
+## 2026-11-04 — TASK-73: Retirar el selector de pruebas huérfano del merge-gate
+
+**Base:** origin/main 6e4a5549. Rama `task-73`.
+
+La tarea original (filtro nextest por PR, carril nocturno, `select-suites.sh`)
+presuponía lanes de CI que #551 (67c474e2) retiró; se reescribió a lo vigente. Una
+nota anterior de la tarea afirmó por error que `impact.py` y el `justfile` no existían
+(una búsqueda truncada con `head`); se corrigió en la propia tarea.
+
+**Lo que había:** `scripts/ci/impact.py` lee `merge-gate.pipeline.kts`, que ya no existe,
+y `test_impact.py` fallaba con `FileNotFoundError`. Con ellos, `impact-gate` y
+`docs-gate` (`.pipeline.kts`), `change-class.sh` y `docs-readers.sh` solo se llamaban
+entre sí, y `test_snapshot_is_judged_before_the_gate.py` juzgaba
+`publish-merge-gate.sh`, también retirado.
+
+**RED:** los 8 ficheros se añadieron a `RETIRED_PATHS` de `test_taxonomy_contract`;
+`retired_test_classes_are_not_on_disk` falló con «impact-gate.pipeline.kts exists».
+**GREEN:** tras `git rm` de los 8 (más `test_change_class.py` y `test_impact.py`), 7/7.
+
+**Verificación (sin filtro en el crate tocado):** `run-all-contracts.sh` rc=0 y 0
+fallos (antes: `test_impact` y `test_snapshot_is_judged...` en rojo); `cargo fmt --all
+--check` y `cargo clippy -p cognicode-cli --all-targets -D warnings` limpios;
+`cargo nextest run --profile gate -p cognicode-cli`: 594 pasan, 8 fallan, todos del
+binario `release` por falta de `target/release` (infraestructura local conocida).
+`cargo nextest list --workspace --tests` incluye `cognicode-cli::it` (201) y
+`cognicode-mcp::it` (78): AC3 sin necesidad de selector. AGENTS.md y CONTRIBUTING no
+mencionan carril nocturno ni selector.
+
+**No tocado a propósito:** menciones históricas en ROADMAP, ADR y CHANGELOG; un
+mensaje de `check-build-isolation.sh:163` que cita el publisher retirado.
+**Efecto en el backlog:** TASK-86 y TASK-93 dependían de esta tarea y hablan de
+«selección de tests en sombra» y «SLOs nocturnos»; hay que revisarlas.
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 8/10).
