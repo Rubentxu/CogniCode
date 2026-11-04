@@ -31607,3 +31607,23 @@ fmt y `generate_support_matrix.py --check` limpios. **Sin cubrir:** el extractor
 se midió; `analyze_impact` por MCP no se ejercitó de extremo a extremo (se midió el grafo que
 consume); `sh`, `echo` y `@Library` como pasos externos son de AC posterior; símbolos espurios
 `_` y `any`. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-88 (AC4, parcial): las stages de un `*.pipeline.kts` son símbolos y se pregunta cuáles ejecutan `cargo test`
+
+**Qué.** `merge-gate.pipeline.kts`, el fichero que nombra el AC, fue retirado del árbol por el
+PR #551 (67c474e2); estaba en la raíz y usaba `stages { stage("check") { stage("fmt") {
+sh("...") } } }`, con stages anidadas. Hoy no existe ningún fichero con esa forma salvo el
+fixture `sandbox/fixtures/kotlin/ci.pipeline.kts`. La capacidad se implementó sobre esa
+sintaxis: (1) `stage("label") { ... }` en un `.kts` es un símbolo `Declaration` con su
+etiqueta (solo etiqueta de cadena sin interpolación y con cuerpo lambda; `.kt` no); las
+llamadas de dentro se atribuyen a la stage más interna (misma ruta que Jenkins);
+(2) `TreeSitterParser::stage_commands` lista `(stage, comando)` de cada `sh("...")` literal,
+y la consulta «qué stages ejecutan `cargo test`» es un filtro sobre esa lista.
+
+**Verificación.** SHA base 3e863221. Los 4 tests de `kotlin_pipeline_reading` se escribieron
+junto con la implementación: el RED NO se observó. `cargo test -p cognicode-core --lib` 2489
+OK; `--test it` 942 OK y los 9 fallos de infraestructura de siempre (falta el binario release);
+clippy `-D warnings`, fmt y `generate_support_matrix.py --check` limpios; los goldens no
+cambian (no listan `Declaration`). **Sin cubrir:** `stage_commands` no está expuesto por CLI ni
+MCP (solo API del parser); el AC nombra un fichero que ya no existe, por eso queda SIN MARCAR
+a la espera de reescribirlo. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
