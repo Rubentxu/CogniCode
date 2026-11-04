@@ -31445,3 +31445,28 @@ lanza al cerrar).
 
 **Alcance.** Mutantes solo cubre `cognicode-graph-algos`, por diseño del gate; no
 certifica `cognicode-core` ni `cognicode-explorer`.
+
+## 2026-11-04 — TASK-89: aristas de herencia en Kotlin, Groovy y C#
+
+**SHA:** a2d88016 (base 87b72433). Los walkers de tipos de los tres lenguajes leen ahora
+los padres declarados (`TypeRefContext::Supertype`): el extractor de `application/ingest`
+los emite como `dependency.inherits` y el constructor de producción
+(`per_file_graph::build_file_graph_tolerant`) los resuelve con las mismas reglas de ámbito
+que las llamadas. `CrossFileEdge` lleva su `DependencyType`. Un nombre de padre que varias
+declaraciones comparten no crea arista: deja un `PendingReference` ambiguo.
+
+**RED→GREEN.** `inherits_edges_without_lsp` (4 tests de integración, `get_implementors`
+sobre un corpus temporal de ficheros separados): sin el cableado fallan los 3 de lenguaje;
+con él pasan los 4. El de ambigüedad es un guardián y pasa en ambos estados. Más 4 tests
+del extractor (`extractor::tests`).
+
+**Verificación:** `cargo test -p cognicode-core --lib`: 2476 pasan; `--test it`: 945 de 946
+pasan; el que falla, `b6_w1_mcp_robustness::large_response_uses_pagination`, estaba entre
+los 9 de `/tmp/pr-verify.log` (binario release local, no el grafo). clippy `-D warnings` y
+`cargo fmt --all --check` limpios.
+
+**Límite:** el corpus es sintético; no hay fixtures de Groovy ni C# en `sandbox/fixtures`.
+Un golden de repo real no se midió. La caché por fichero sigue sirviendo hits sin aristas
+cross-file (preexistente, no tocado).
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 11: 1/10).

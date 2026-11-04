@@ -422,6 +422,10 @@ pub enum TypeRefContext {
     VariableType,
     /// Trait bound or supertype.
     TraitBound,
+    /// A declared parent type: `class A : B`, `extends B`, `implements B`.
+    /// Unlike a bound, it makes the declaring type a subtype of the target,
+    /// so the extractor publishes it as an `Inherits` edge.
+    Supertype,
 }
 
 impl TypeRefContext {
@@ -433,6 +437,7 @@ impl TypeRefContext {
             TypeRefContext::GenericArg => "generic_arg",
             TypeRefContext::VariableType => "variable_type",
             TypeRefContext::TraitBound => "trait_bound",
+            TypeRefContext::Supertype => "supertype",
         }
     }
 }

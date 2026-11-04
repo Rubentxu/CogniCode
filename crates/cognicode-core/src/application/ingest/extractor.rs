@@ -6,7 +6,9 @@
 
 use std::path::Path;
 
-use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
+use crate::application::ingest::types::{
+    ExtractionEdge, ExtractionResult, TargetRef, TypeRefContext,
+};
 // Un-gated: the identity grammar is shared by the legacy path and the fact
 // path (E38.1 CP-1), so `SymbolFqn` compiles unconditionally.
 use crate::domain::aggregates::{GraphNode, NodeId};
@@ -565,7 +567,8 @@ fn node_text(node: &Node, source: &[u8]) -> String {
     String::from_utf8_lossy(&source[start..end]).into_owned()
 }
 
-/// Call the type-ref walker (if configured) and emit `References` edges.
+/// Call the type-ref walker (if configured) and emit `References` edges,
+/// or `Inherits` edges for the parents a declaration names.
 fn extract_type_refs(
     config: &LanguageConfig,
     node: &Node,
@@ -581,10 +584,14 @@ fn extract_type_refs(
 
     let type_refs = walker(node, source);
     for tr in type_refs {
+        let dependency = match tr.context {
+            TypeRefContext::Supertype => DependencyType::Inherits,
+            _ => DependencyType::References,
+        };
         edges.push(ExtractionEdge {
             source: symbol_id.to_string(),
             target_ref: TargetRef::Unresolved(tr.target_name),
-            kind: format!("dependency.{}", DependencyType::References),
+            kind: format!("dependency.{}", dependency),
             provenance: Provenance::Extracted,
             confidence: 1.0,
             line: Some(tr.line),
@@ -928,6 +935,71 @@ fn sorted_unique(v: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Names the symbols a file's `Inherits` edges point at, as written in
+    /// the source (the Resolve stage matches them against the index).
+    fn inherited_names(
+        cfg: &crate::infrastructure::parser::language_config::LanguageConfig,
+        path: &str,
+        source: &str,
+    ) -> Vec<String> {
+        let result = extract_file(cfg, std::path::Path::new(path), source, "hash");
+        assert!(result.is_ok(), "extract_file failed: {:?}", result.error);
+        let kind = format!("dependency.{}", DependencyType::Inherits);
+        let mut names: Vec<String> = result
+            .edges
+            .iter()
+            .filter(|e| e.kind == kind)
+            .filter_map(|e| match &e.target_ref {
+                TargetRef::Unresolved(n) => Some(n.clone()),
+                TargetRef::Resolved(_) => None,
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn csharp_base_list_produces_inherits_edges() {
+        let source = "class Dog : Animal, IWalker, IComparable<Dog> { }\n\
+                      interface IPet : IAnimal { }\n";
+        let cfg = crate::infrastructure::parser::language_config::CSHARP_CONFIG;
+        assert_eq!(
+            inherited_names(&cfg, "/tmp/Dog.cs", source),
+            vec!["Animal", "IAnimal", "IComparable", "IWalker"]
+        );
+    }
+
+    #[test]
+    fn kotlin_delegation_specifiers_produce_inherits_edges() {
+        let source = "open class Animal\n\
+                      interface Walker\n\
+                      class Dog(val n: String) : Animal(), Walker\n\
+                      object Registry : Walker\n";
+        let cfg = crate::infrastructure::parser::language_config::KOTLIN_CONFIG;
+        assert_eq!(
+            inherited_names(&cfg, "/tmp/Dog.kt", source),
+            vec!["Animal", "Walker", "Walker"]
+        );
+    }
+
+    #[test]
+    fn groovy_extends_and_implements_produce_inherits_edges() {
+        let source = "class Dog extends Animal implements Walker, Runner { }\n\
+                      interface Pet extends Animal { }\n";
+        let cfg = crate::infrastructure::parser::language_config::GROOVY_CONFIG;
+        assert_eq!(
+            inherited_names(&cfg, "/tmp/Dog.groovy", source),
+            vec!["Animal", "Animal", "Runner", "Walker"]
+        );
+    }
+
+    #[test]
+    fn a_plain_class_declares_no_inherits_edge() {
+        let source = "class Plain { }\n";
+        let cfg = crate::infrastructure::parser::language_config::CSHARP_CONFIG;
+        assert!(inherited_names(&cfg, "/tmp/Plain.cs", source).is_empty());
+    }
 
     /// Regression test for the variables of a real file.
     /// A real production Rust file mixes top-level items with methods inside

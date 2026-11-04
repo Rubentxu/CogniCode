@@ -516,22 +516,7 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
         | "struct_declaration"
         | "record_declaration" => {
             // C# inheritance: `class Foo : Bar, IBaz` → base_list
-            for i in 0..node.child_count() {
-                let child = node.child(i).unwrap();
-                if child.kind() == "base_list" {
-                    for j in 0..child.child_count() {
-                        let base = child.child(j).unwrap();
-                        if base.is_named() {
-                            collect_type_names(
-                                &base,
-                                source,
-                                TypeRefContext::TraitBound,
-                                &mut refs,
-                            );
-                        }
-                    }
-                }
-            }
+            collect_supertypes_of_kind(node, "base_list", source, &mut refs);
 
             // Class body fields
             if let Some(body) = node.child_by_field_name("body") {
@@ -541,22 +526,7 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
 
         "enum_declaration" => {
             // Enum can implement interfaces
-            for i in 0..node.child_count() {
-                let child = node.child(i).unwrap();
-                if child.kind() == "base_list" {
-                    for j in 0..child.child_count() {
-                        let base = child.child(j).unwrap();
-                        if base.is_named() {
-                            collect_type_names(
-                                &base,
-                                source,
-                                TypeRefContext::TraitBound,
-                                &mut refs,
-                            );
-                        }
-                    }
-                }
-            }
+            collect_supertypes_of_kind(node, "base_list", source, &mut refs);
         }
 
         "field_declaration" => {
@@ -569,6 +539,101 @@ pub fn walk_csharp_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
     }
 
     refs
+}
+
+// ============================================================================
+// Kotlin and Groovy
+// ============================================================================
+
+/// Walk a Kotlin class/object declaration and extract its parents.
+///
+/// Kotlin names every parent in a `delegation_specifier`: `Base()` (a
+/// superclass constructor call), `Iface`, or `Iface by delegate`.
+pub fn walk_kotlin_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    if matches!(node.kind(), "class_declaration" | "object_declaration") {
+        for i in 0..node.child_count() {
+            let child = node.child(i).unwrap();
+            if child.kind() == "delegation_specifier" {
+                push_supertype(&child, source, &mut refs);
+            }
+        }
+    }
+    refs
+}
+
+/// Walk a Groovy class/interface declaration and extract its parents:
+/// `extends Base`, `implements A, B` and an interface's `extends A, B`.
+pub fn walk_groovy_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
+    let mut refs = Vec::new();
+    match node.kind() {
+        "class_declaration" => {
+            if let Some(superclass) = node.child_by_field_name("superclass") {
+                push_named_children_as_supertypes(&superclass, source, &mut refs);
+            }
+            if let Some(interfaces) = node.child_by_field_name("interfaces") {
+                push_named_children_as_supertypes(&interfaces, source, &mut refs);
+            }
+        }
+        "interface_declaration" => {
+            collect_supertypes_of_kind(node, "extends_interfaces", source, &mut refs);
+        }
+        _ => {}
+    }
+    refs
+}
+
+/// Publish every named child of each `list_kind` child of `node` as a parent.
+fn collect_supertypes_of_kind(
+    node: &tree_sitter::Node,
+    list_kind: &str,
+    source: &[u8],
+    out: &mut Vec<TypeRef>,
+) {
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if child.kind() == list_kind {
+            push_named_children_as_supertypes(&child, source, out);
+        }
+    }
+}
+
+/// Publish the named leaves under `node` as parents, looking through list
+/// wrappers (`type_list`) but not into a parent's own type arguments.
+fn push_named_children_as_supertypes(
+    node: &tree_sitter::Node,
+    source: &[u8],
+    out: &mut Vec<TypeRef>,
+) {
+    for i in 0..node.child_count() {
+        let child = node.child(i).unwrap();
+        if !child.is_named() {
+            continue;
+        }
+        if child.kind() == "type_list" {
+            push_named_children_as_supertypes(&child, source, out);
+        } else {
+            push_supertype(&child, source, out);
+        }
+    }
+}
+
+/// Publish one parent, named as the source writes it: `ns.Base<T>`,
+/// `Base(args)` and `Base by delegate` all name `Base`.
+fn push_supertype(node: &tree_sitter::Node, source: &[u8], out: &mut Vec<TypeRef>) {
+    let text = node_text(node, source);
+    let head = text
+        .split(|c: char| c == '<' || c == '(' || c.is_whitespace())
+        .next()
+        .unwrap_or("");
+    let name = head.rsplit('.').next().unwrap_or("");
+    if !name.is_empty() {
+        out.push(TypeRef {
+            target_name: name.to_string(),
+            context: TypeRefContext::Supertype,
+            line: node.start_position().row as u32 + 1,
+        });
+    }
 }
 
 // ============================================================================
