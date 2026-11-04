@@ -96,6 +96,7 @@ mod iac_query_answers_with_the_edge_it_has;
 mod iac_query_speaks_the_domain_vocabulary;
 mod inc007_integration;
 mod inherits_edges_without_lsp;
+mod inherits_goldens_without_lsp;
 mod intelligence_event_log_e2e;
 mod inventory_says_which_is_which;
 mod k1_kotlin_symbol_contract;

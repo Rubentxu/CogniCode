@@ -1,0 +1,9 @@
+# Hand-written: every `child : parent` pair the sources declare between
+# types of this corpus. A parent the corpus does not declare (Serializable)
+# is not listed: it has no declaration to point at.
+Cat : Animal
+Cat : Speaker
+Dog : Animal
+Dog : Runner
+Dog : Speaker
+Loud : Speaker
