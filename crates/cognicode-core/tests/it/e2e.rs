@@ -4,9 +4,9 @@
 //! exercising the full stack including tree-sitter parsing, graph building,
 //! and refactoring operations.
 
-use cognicode::application::services::analysis_service::AnalysisService;
-use cognicode::application::services::refactor_service::RefactorService;
-use cognicode::infrastructure::parser::{Language, TreeSitterParser};
+use cognicode_core::application::services::analysis_service::AnalysisService;
+use cognicode_core::application::services::refactor_service::RefactorService;
+use cognicode_core::infrastructure::parser::{Language, TreeSitterParser};
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -181,10 +181,18 @@ fn test_e2e_vfs_syntax_validation_accepts_valid() {
     let service = RefactorService::new();
 
     let source = std::fs::read_to_string(file.path()).unwrap();
-    let valid_edits = vec![cognicode::domain::aggregates::refactor::TextEdit::new(
-        cognicode::domain::value_objects::SourceRange::new(
-            cognicode::domain::value_objects::Location::new(file.path().to_str().unwrap(), 0, 4),
-            cognicode::domain::value_objects::Location::new(file.path().to_str().unwrap(), 0, 7),
+    let valid_edits = vec![cognicode_core::domain::aggregates::refactor::TextEdit::new(
+        cognicode_core::domain::value_objects::SourceRange::new(
+            cognicode_core::domain::value_objects::Location::new(
+                file.path().to_str().unwrap(),
+                0,
+                4,
+            ),
+            cognicode_core::domain::value_objects::Location::new(
+                file.path().to_str().unwrap(),
+                0,
+                7,
+            ),
         ),
         "bar", // Rename "foo" to "bar"
     )];

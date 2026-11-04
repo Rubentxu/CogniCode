@@ -2,7 +2,7 @@
 //!
 //! These tests establish the expected behavior for the Rule trait and Strategy pattern.
 
-use cognicode::interface::mcp::security::{
+use cognicode_core::interface::mcp::security::{
     InputValidator, PathValidationRule, SqlValidationRule, UrlValidationRule, ValidationRule,
 };
 

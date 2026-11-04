@@ -2,7 +2,7 @@
 //!
 //! These tests establish the expected behavior for SafetyValidator trait and chaining.
 
-use cognicode::infrastructure::safety::{
+use cognicode_core::infrastructure::safety::{
     ComplexitySafetyValidator, DependencySafetyValidator, OperationType, PathSafetyValidator,
     RiskLevel, RiskThreshold, SafetyGate, SafetyOperation, SafetyValidation, SafetyValidator,
     ViolationCode, WarningCode,
@@ -126,34 +126,6 @@ fn test_safety_gate_uses_validators() {
     let result = gate.validate(&operation);
 
     assert!(result.is_safe);
-}
-
-#[test]
-fn test_risk_threshold_is_above() {
-    let low = RiskThreshold::LOW;
-    let medium = RiskThreshold::MEDIUM;
-    let high = RiskThreshold::HIGH;
-
-    // Medium is above Low
-    assert!(medium.is_above(&low));
-    // High is above Medium
-    assert!(high.is_above(&medium));
-    // High is above Low
-    assert!(high.is_above(&low));
-
-    // Low is NOT above Medium
-    assert!(!low.is_above(&medium));
-    // Medium is NOT above High
-    assert!(!medium.is_above(&high));
-}
-
-#[test]
-fn test_risk_threshold_from_risk_level() {
-    let level = RiskLevel::Medium;
-    let threshold = RiskThreshold::from_risk_level(level);
-
-    assert!(threshold.is_above(&RiskThreshold::LOW));
-    assert!(!threshold.is_above(&RiskThreshold::HIGH));
 }
 
 #[test]

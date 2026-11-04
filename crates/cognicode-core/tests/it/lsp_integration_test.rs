@@ -63,8 +63,8 @@ fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
 
 #[tokio::test]
 async fn test_rust_analyzer_hover() {
-    use cognicode::application::services::analysis_service::AnalysisService;
-    use cognicode::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::application::services::analysis_service::AnalysisService;
+    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -153,8 +153,8 @@ fn main() {
 
 #[tokio::test]
 async fn test_rust_analyzer_goto_definition() {
-    use cognicode::application::services::analysis_service::AnalysisService;
-    use cognicode::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::application::services::analysis_service::AnalysisService;
+    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -245,8 +245,8 @@ fn main() {
 #[tokio::test]
 #[ignore = "requires pyright binary"]
 async fn test_pyright_goto_definition() {
-    use cognicode::application::services::analysis_service::AnalysisService;
-    use cognicode::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::application::services::analysis_service::AnalysisService;
+    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
     // Create a temporary Python project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -316,8 +316,8 @@ print(result)
 #[tokio::test]
 #[ignore = "requires pyright binary"]
 async fn test_pyright_find_references() {
-    use cognicode::application::services::analysis_service::AnalysisService;
-    use cognicode::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::application::services::analysis_service::AnalysisService;
+    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
     // Create a temporary Python project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -472,8 +472,8 @@ fn test_availability_detection_of_the_lsp_servers_agrees_with_the_binaries() {
 
 #[tokio::test]
 async fn test_extract_location_from_lsp_params() {
-    use cognicode::application::services::analysis_service::AnalysisService;
-    use cognicode::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::application::services::analysis_service::AnalysisService;
+    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
     let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
 

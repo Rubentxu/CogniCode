@@ -9,12 +9,12 @@
 //! - Complex control flow detection
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 
-use cognicode::application::error::AppError;
-use cognicode::application::services::refactor_service::RefactorService;
-use cognicode::infrastructure::parser::{Language, TreeSitterParser};
-use cognicode::infrastructure::refactor::ExtractStrategy;
-use cognicode::infrastructure::refactor::InlineStrategy;
-use cognicode::infrastructure::safety::SafetyGate;
+use cognicode_core::application::error::AppError;
+use cognicode_core::application::services::refactor_service::RefactorService;
+use cognicode_core::infrastructure::parser::{Language, TreeSitterParser};
+use cognicode_core::infrastructure::refactor::ExtractStrategy;
+use cognicode_core::infrastructure::refactor::InlineStrategy;
+use cognicode_core::infrastructure::safety::SafetyGate;
 use std::io::Write;
 use std::sync::Arc;
 use tempfile::NamedTempFile;

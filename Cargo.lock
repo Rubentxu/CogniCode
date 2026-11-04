@@ -474,10 +474,6 @@ version = "0.101.31"
 dependencies = [
  "anyhow",
  "cognicode-core",
- "serde_json",
- "serde_norway",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

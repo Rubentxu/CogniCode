@@ -10,10 +10,10 @@
 
 use std::path::PathBuf;
 
-use cognicode::sandbox_core::artifacts::{
+use cognicode_core::sandbox_core::artifacts::{
     LanguageBreakdown, ResourceUsage, ScenarioResult, Timing, ToolBreakdown,
 };
-use cognicode::sandbox_core::failure::FailureClass;
+use cognicode_core::sandbox_core::failure::FailureClass;
 
 /// Get project root (two ancestors up from crates/cognicode)
 fn project_root() -> PathBuf {
@@ -27,7 +27,7 @@ fn project_root() -> PathBuf {
 #[test]
 fn test_manifest_schema_rust_tier_a() {
     // Verify rust.yaml parses correctly and has Tier A
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/rust.yaml"))
         .expect("rust.yaml should parse");
@@ -54,7 +54,7 @@ fn test_manifest_schema_rust_tier_a() {
 
 #[test]
 fn test_manifest_schema_python_tier_a() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/python.yaml"))
         .expect("python.yaml should parse");
@@ -65,7 +65,7 @@ fn test_manifest_schema_python_tier_a() {
 
 #[test]
 fn test_manifest_expand_produces_unique_ids() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     let manifest = Manifest::from_path(&project_root().join("sandbox/manifests/rust.yaml"))
         .expect("rust.yaml should parse");
@@ -84,7 +84,7 @@ fn test_manifest_expand_produces_unique_ids() {
 
 #[test]
 fn test_failure_classification_capability_missing() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // CapabilityMissing should NOT be CI blocking
     assert!(
@@ -95,7 +95,7 @@ fn test_failure_classification_capability_missing() {
 
 #[test]
 fn test_failure_classification_expected_fail() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     assert!(
         !FailureClass::ExpectedFail.is_ci_blocking(),
@@ -105,7 +105,7 @@ fn test_failure_classification_expected_fail() {
 
 #[test]
 fn test_failure_classification_build_failure() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     assert!(
         FailureClass::BuildFailure.is_ci_blocking(),
@@ -123,7 +123,7 @@ fn test_failure_classification_build_failure() {
 
 #[test]
 fn test_failure_classification_preexisting_repo_failure() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     assert!(
         !FailureClass::PreexistingRepoFailure.is_ci_blocking(),
@@ -133,10 +133,10 @@ fn test_failure_classification_preexisting_repo_failure() {
 
 #[test]
 fn test_scenario_result_roundtrip_serde() {
-    use cognicode::sandbox_core::artifacts::{
+    use cognicode_core::sandbox_core::artifacts::{
         MutationInfo, PipelineStageResult, ResourceUsage, ScenarioResult, Timing, ValidationResult,
     };
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     let result = ScenarioResult {
         scenario_id: "rust_rename_function".into(),
@@ -263,8 +263,8 @@ fn make_fail_result(scenario_id: &str) -> ScenarioResult {
 
 fn aggregate_test_results(
     results: &[ScenarioResult],
-) -> cognicode::sandbox_core::artifacts::Summary {
-    use cognicode::sandbox_core::artifacts::Summary;
+) -> cognicode_core::sandbox_core::artifacts::Summary {
+    use cognicode_core::sandbox_core::artifacts::Summary;
 
     let mut summary = Summary::new("2026-01-01T00:00:00Z".into(), "test".into());
     let mut all_durations = Vec::new();
@@ -345,7 +345,7 @@ fn test_classify_outcome_respects_expected_fail_on_validation_failure() {
     // and validation failure should get "expected_fail" outcome, not stage failure.
 
     // Create a minimal manifest with expected_fail + validation stages
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     // This test verifies the behavior through manifest parsing:
     // A scenario with expected_fail outcome should NOT get stage-failure outcomes
@@ -391,7 +391,7 @@ scenarios:
 /// When expected_outcome="pass" and validation fails, outcome should be the stage failure name.
 #[test]
 fn test_classify_outcome_returns_stage_failure_for_pass_expected() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     let manifest_content = r##"
 version: "1.0"
@@ -534,7 +534,7 @@ fn test_fixture_deterministic_multiple_runs() {
 /// This test verifies the manifest structure needed for this classification.
 #[test]
 fn test_applied_false_expected_fail_manifest_structure() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     // Create a manifest with expected_fail outcome for edit_file
     let manifest_content = r##"
@@ -624,7 +624,7 @@ fn test_applied_false_response_parsing() {
 /// the outcome should be "expected_fail", not "unexpected_pass".
 #[test]
 fn test_expected_fail_with_applied_false_not_unexpected_pass() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     // This test documents the fix for the blocker:
     // BEFORE: classify_outcome would return "unexpected_pass" when:
@@ -696,7 +696,7 @@ scenarios:
 /// This test documents the manifest structure that triggers the correct classification.
 #[test]
 fn test_expected_fail_baseline_failure_is_not_preexisting_fail() {
-    use cognicode::sandbox_core::manifest::Manifest;
+    use cognicode_core::sandbox_core::manifest::Manifest;
 
     // This test verifies the manifest structure for expected_fail scenarios
     // where baseline validation fails. The scenario should be classified as
@@ -747,7 +747,7 @@ scenarios:
 /// the outcome should be "path_safety_rejection".
 #[test]
 fn test_path_safety_rejection_classification() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // PathSafetyRejection should be CI blocking
     assert!(
@@ -761,7 +761,7 @@ fn test_path_safety_rejection_classification() {
 /// the outcome should be "semantic_regression".
 #[test]
 fn test_semantic_regression_classification() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // SemanticRegression should be CI blocking
     assert!(
@@ -775,7 +775,7 @@ fn test_semantic_regression_classification() {
 /// the outcome should be "resource_limit_exceeded".
 #[test]
 fn test_resource_limit_exceeded_classification() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // ResourceLimitExceeded should be CI blocking
     assert!(
@@ -789,7 +789,7 @@ fn test_resource_limit_exceeded_classification() {
 /// the outcome should be "nondeterministic".
 #[test]
 fn test_nondeterministic_classification() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // Nondeterministic should be CI blocking
     assert!(
@@ -803,7 +803,7 @@ fn test_nondeterministic_classification() {
 /// the outcome should be "timeout".
 #[test]
 fn test_timeout_classification() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
 
     // Timeout should be CI blocking
     assert!(
@@ -816,7 +816,7 @@ fn test_timeout_classification() {
 /// This ensures summary.json aggregation works correctly.
 #[test]
 fn test_all_failure_classes_have_unique_serde_names() {
-    use cognicode::sandbox_core::failure::FailureClass;
+    use cognicode_core::sandbox_core::failure::FailureClass;
     use std::collections::HashSet;
 
     let all_classes = [
@@ -860,7 +860,7 @@ fn test_all_failure_classes_have_unique_serde_names() {
 /// This verifies the depth reporting enhancement.
 #[test]
 fn test_tool_breakdown_includes_timing_p99() {
-    use cognicode::sandbox_core::artifacts::ToolBreakdown;
+    use cognicode_core::sandbox_core::artifacts::ToolBreakdown;
 
     let breakdown = ToolBreakdown::new();
     // The new field should exist (will be None initially)
@@ -870,7 +870,7 @@ fn test_tool_breakdown_includes_timing_p99() {
 /// Test that LanguageBreakdown includes all timing percentile fields.
 #[test]
 fn test_language_breakdown_includes_all_timing_percentiles() {
-    use cognicode::sandbox_core::artifacts::LanguageBreakdown;
+    use cognicode_core::sandbox_core::artifacts::LanguageBreakdown;
 
     let breakdown = LanguageBreakdown::new();
     assert!(breakdown.timing_p50_ms.is_none());
