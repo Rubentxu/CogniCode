@@ -31489,3 +31489,26 @@ con el cableado pasan 3/3. Fichero restaurado desde copia de seguridad.
 certifica la unidad); clippy `-D warnings` y `cargo fmt --all --check` limpios.
 
 **NOT_RUN.** Suite `--test it` completa, mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-91 (AC1): goldens de símbolos por lenguaje
+
+**Qué.** Corpus versionado y un golden escrito a mano por lenguaje (`symbols.golden`: clases y
+funciones que declara cada fichero, desde las fuentes, no desde la salida del lector):
+`sandbox/fixtures/groovy-jenkins` (nuevo: `vars/`, `src/org/acme/Kube.groovy`, `Jenkinsfile`,
+`build.gradle`), `sandbox/fixtures/kotlin` (+`Main.kt`, `ci.pipeline.kts`) y
+`sandbox/fixtures/csharp` (+2 proyectos, namespace de fichero, partial class, record, struct,
+sobrecargas, método de extensión). Test: `tests/it/language_symbols_goldens.rs`, misma
+convención de corpus que C13.
+
+**Límites declarados del lector de Groovy** (`!missing` / `!spurious` en el golden, aseverados en
+ambos sentidos: el test falla el día que el lector acierte): el constructor `Kube(steps)` no se
+lee (nodo ERROR en el árbol) y el campo `def steps` se lee como función. No se tocó el fixture
+para esconderlo. Causa raíz sin medir: tarea de seguimiento.
+
+**Verificación.** RED medido sobre copia de seguridad de un golden concreto (sin `!spurious` y sin
+`main@Main.kt`): ambos fallan; restaurados, `language_symbols_goldens` 3/3. clippy `-D warnings`
+y `cargo fmt --all --check` limpios. Suite `--test it` completa: 941 ok, 9 FAIL, los mismos 9 que
+en main (`b3_w2` inspect y `b6_w1_mcp_robustness`): falta `cognicode-mcp` release en el target
+aislado, infraestructura local, no regresión.
+
+**NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate. AC2 y AC3 siguen abiertos.

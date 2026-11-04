@@ -1,0 +1,20 @@
+# Hand-written from the sources: the types and callables each file declares,
+# as `class|function <name>@<path relative to this directory>`. Variables,
+# fields and the synthetic <script> entry are not part of the contract.
+# A Jenkinsfile and a build.gradle declare nothing of their own.
+class Kube@src/org/acme/Kube.groovy
+function Kube@src/org/acme/Kube.groovy
+function apply@src/org/acme/Kube.groovy
+function rollback@src/org/acme/Kube.groovy
+function call@vars/deploy.groovy
+function call@vars/notify.groovy
+function failed@vars/notify.groovy
+
+# Declared reader limits. Kube.groovy has an untyped field (`def steps`) and
+# an untyped constructor parameter; the Java-shaped Groovy grammar parses
+# that pair with ERROR nodes, so the constructor is lost and the field is read
+# as a function. `!missing` is declared above but not produced; `!spurious` is
+# produced but not declared. The test requires both to hold exactly: the day
+# the reader gets it right, this block must go.
+!missing function Kube@src/org/acme/Kube.groovy
+!spurious function steps@src/org/acme/Kube.groovy

@@ -1,0 +1,13 @@
+@Library('acme') _
+
+pipeline {
+    agent any
+    stages {
+        stage('Deploy') {
+            steps {
+                deploy(manifest: 'k8s/app.yaml')
+                notify('deployed')
+            }
+        }
+    }
+}
