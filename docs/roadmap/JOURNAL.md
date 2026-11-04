@@ -30835,3 +30835,37 @@ verde. Mutación serial (`-j 1`, con el runner) sobre `dominators.rs`: 39 mutant
 seguía en curso al escribir este recibo: su resultado no se afirma aquí. El gate
 entero (`bash scripts/test-gate.sh`) tampoco se corrió: se pasa por lote de 10
 tareas.
+
+## TASK-97 — dominators.rs: Lengauer-Tarjan en números DFS (2026-11-04)
+
+**Defecto.** `semi`, `best` y los buckets se indexaban por id de nodo y no por número
+DFS. Un test contra una referencia por conjuntos (un dominador estricto `d` de `v`
+es aquel cuya retirada deja a `v` inalcanzable) lo mostró con el testigo
+`0→2→1` y también con raíz distinta de 0, más amplio que el KNOWN DEFECT anotado en
+el recibo de TASK-95.
+
+**Corrección.** `dominators()` traduce de forma explícita nodo↔DFS (`vertex[dfn]`,
+`num[node]`); `semi`, `ancestor`, `label`, los buckets e `idom_dfn` viven en espacio
+DFS, y el resultado se traduce de vuelta a ids. La profundidad se calcula en orden
+DFS. Se retiraron los tests de caracterización (digest FNV-1a) que fijaban el
+resultado incorrecto.
+
+**Evidencia.** RED medido antes de tocar el algoritmo; GREEN después:
+`a_node_reached_through_a_higher_id_is_dominated_by_it` y
+`every_small_graph_matches_the_set_based_reference` (263 714 casos: grafos de 1 a 4
+nodos, todos los subconjuntos de aristas, todas las raíces). `cognicode-graph-algos`
+lib: 182 en verde; `cognicode-core` lib `dominator`: 1; `analytics_registry_cohort_2`:
+33. Mutación serial (`-j 1`, con el runner de memoria) sobre `dominators.rs`: 38
+mutantes, 38 atrapados, 0 supervivientes, rc=0. Dos `< → <=` (líneas 105 y 121) son
+equivalentes (sólo difieren en igualdad y el valor resultante es el mismo) y están
+declarados en `.cargo/mutants.toml` con su motivo.
+
+**Mutación completa de `cognicode-graph-algos`** (NOT_RUN en el recibo de TASK-95;
+corrida antes de esta reescritura): 577 mutantes, 509 atrapados, 56 supervivientes,
+4 inviables, 8 timeouts, 16 min, pico ≈34,5 GB, 0 abortos del vigilante, rc=3. Los
+supervivientes están en `interproc_summary`, `modularity`,
+`multi_source_reachability_helper`, `page_rank`, `personalized_pagerank`, `slicing`
+y `k_core`; ninguno en `dominators.rs`. Quedan sin tarea.
+
+**NOT_RUN.** El gate entero (por lote de 10 tareas) y las pruebas del
+`cognicode-explorer` (el filtro `dominator` no selecciona nada allí).

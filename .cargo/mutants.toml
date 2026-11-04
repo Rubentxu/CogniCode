@@ -53,18 +53,16 @@ minimum_test_timeout = 120.0
 # spellings produce the pair `(u, u)`: the sorted pair of a node with
 # itself. There is no input that tells them apart.
 #
-# `dominators.rs`, three `<` -> `<=` mutants, each equivalent:
+# `dominators.rs`, two `<` -> `<=` mutants, each equivalent (re-measured after
+# the Lengauer-Tarjan rewrite; the lines below are the current ones):
 #
-# - line 83 (`eval`): `semi[best[x]] < semi[best[par]]` differs only when the
-#   two semidominators are EQUAL, and then `best[x]` is set to another node
-#   with the same `semi`. Nothing reads `best` except through `semi[best[_]]`,
-#   so the value observed is the same.
-# - line 97: `semi[u] < semi[v]` differs only when they are equal, and then
-#   the branch assigns `semi[v] = semi[u]`, the value it already has.
-# - line 105: `p < n` differs only for `p == n`, the sentinel `parent` of the
-#   root. The root is the LAST node of the reverse-DFS loop, so the
-#   `ancestor[root] = n` it would write is never read.
+# - line 105 (`eval`): `semi[label[a]] < semi[label[x]]` differs only when the
+#   two semidominators are EQUAL, and then `label[x]` is set to another node
+#   with the same `semi`. Nothing reads `label` except through
+#   `semi[label[_]]`, so the value observed is the same.
+# - line 121: `semi[u] < semi[w]` differs only when they are equal, and then
+#   the branch assigns `semi[w] = semi[u]`, the value it already has.
 exclude_re = [
     "crates/cognicode-graph-algos/src/algorithms/bridges\\.rs:56:.*: replace < with <= .*",
-    "crates/cognicode-graph-algos/src/algorithms/dominators\\.rs:(83|97|105):.*: replace < with <= .*",
+    "crates/cognicode-graph-algos/src/algorithms/dominators\\.rs:(105|121):.*: replace < with <= .*",
 ]

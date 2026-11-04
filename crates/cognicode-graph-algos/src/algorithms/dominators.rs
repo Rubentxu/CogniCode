@@ -1,10 +1,15 @@
 //! Dominators — pure function. No petgraph, no domain types.
 //!
-//! Algorithm: Cooper-Harvey-Kennedy (CHK) dominators with Union-Find.
-//! Reference: "A Simple, Fast Dominance Algorithm" (Cooper et al., 2001).
+//! Algorithm: Lengauer-Tarjan (simple version, path compression, no
+//! balancing). Reference: Lengauer & Tarjan, "A Fast Algorithm for Finding
+//! Dominators in a Flowgraph" (1979).
 //!
-//! Phase 1: Compute semidominators on reverse DFS order.
-//! Phase 2: Compute immediate dominators from semidominators.
+//! Two index spaces are in play and never mixed: *node ids* (`0..n`, the
+//! caller's numbering) and *DFS numbers* (`0..reached`, preorder of the
+//! depth-first spanning tree). `vertex[dfn]` and `num[node]` translate
+//! between them; `semi`, `ancestor`, `label`, the buckets and the
+//! intermediate `idom` all live in DFS-number space and are translated back
+//! to node ids only when the result is built.
 
 /// Run dominators on a pre-built outgoing-adjacency structure.
 ///
@@ -32,7 +37,7 @@ pub fn dominators(
         return Vec::new();
     }
 
-    // Build predecessor list
+    // Predecessor lists, indexed by node id.
     let mut preds: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (u, nbrs) in out_neighbors.iter().enumerate() {
         for &v in nbrs {
@@ -42,113 +47,114 @@ pub fn dominators(
         }
     }
 
-    // ─── Step 1: Forward DFS to get order + parent ───────────────────────────
-    let mut dfs_order: Vec<usize> = Vec::with_capacity(n);
-    let mut visited: Vec<bool> = vec![false; n];
-    let mut parent: Vec<usize> = vec![n; n];
+    // ─── Step 1: forward DFS — numbering and spanning-tree parents ──────────
+    const NONE: usize = usize::MAX;
+    // vertex[dfn] = node id; num[node] = dfn (NONE when unreachable).
+    let mut vertex: Vec<usize> = Vec::with_capacity(n);
+    let mut num: Vec<usize> = vec![NONE; n];
+    let mut parent_node: Vec<usize> = vec![NONE; n];
 
     let mut stack = vec![root];
     while let Some(v) = stack.pop() {
-        if visited[v] {
+        if num[v] != NONE {
             continue;
         }
-        visited[v] = true;
-        dfs_order.push(v);
+        num[v] = vertex.len();
+        vertex.push(v);
         for &next in &out_neighbors[v] {
-            if !visited[next] {
-                parent[next] = v;
+            if num[next] == NONE {
+                parent_node[next] = v;
                 stack.push(next);
             }
         }
     }
+    let reached = vertex.len();
 
-    // ─── Step 2: CHK Phase 1 — semidominators with Union-Find ───────────────
-    let mut semi: Vec<usize> = (0..n).collect();
-    let mut ancestor: Vec<usize> = vec![0; n];
-    let mut best: Vec<usize> = (0..n).collect();
+    // par[dfn] = dfn of the tree parent (the root, dfn 0, has none).
+    let par: Vec<usize> = vertex
+        .iter()
+        .map(|&v| {
+            if parent_node[v] == NONE {
+                NONE
+            } else {
+                num[parent_node[v]]
+            }
+        })
+        .collect();
 
-    // Union-Find eval with path compression
-    fn eval(v: usize, ancestor: &mut [usize], best: &mut [usize], semi: &[usize]) -> usize {
-        if ancestor[v] == 0 {
-            return best[v];
+    // ─── Step 2: semidominators and implicit idoms, in DFS-number space ─────
+    let mut semi: Vec<usize> = (0..reached).collect();
+    let mut ancestor: Vec<usize> = vec![NONE; reached];
+    let mut label: Vec<usize> = (0..reached).collect();
+    let mut bucket: Vec<Vec<usize>> = vec![Vec::new(); reached];
+    let mut idom_dfn: Vec<usize> = vec![0; reached];
+
+    // Union-Find eval with iterative path compression.
+    fn eval(v: usize, ancestor: &mut [usize], label: &mut [usize], semi: &[usize]) -> usize {
+        if ancestor[v] == NONE {
+            return v;
         }
-        let mut stack: Vec<usize> = Vec::new();
+        let mut chain: Vec<usize> = Vec::new();
         let mut u = v;
-        while ancestor[u] != 0 {
-            stack.push(u);
+        while ancestor[u] != NONE && ancestor[ancestor[u]] != NONE {
+            chain.push(u);
             u = ancestor[u];
         }
-        while let Some(x) = stack.pop() {
-            let par = ancestor[x];
-            if semi[best[x]] < semi[best[par]] {
-                best[x] = best[par];
+        while let Some(x) = chain.pop() {
+            let a = ancestor[x];
+            if semi[label[a]] < semi[label[x]] {
+                label[x] = label[a];
             }
-            ancestor[x] = ancestor[par];
+            ancestor[x] = ancestor[a];
         }
-        best[v]
+        label[v]
     }
 
-    // Process in reverse DFS order (excluding root)
-    for &v in dfs_order.iter().rev() {
-        if v != root {
-            // Compute semi[v] = min { semi[w] | w ∈ preds(v) }
-            for &w in &preds[v] {
-                let u = eval(w, &mut ancestor, &mut best, &semi);
-                if semi[u] < semi[v] {
-                    semi[v] = semi[u];
-                }
+    for w in (1..reached).rev() {
+        // semi[w] = min over predecessors reached by the DFS.
+        for &pred_node in &preds[vertex[w]] {
+            let v = num[pred_node];
+            if v == NONE {
+                continue;
+            }
+            let u = eval(v, &mut ancestor, &mut label, &semi);
+            if semi[u] < semi[w] {
+                semi[w] = semi[u];
             }
         }
+        bucket[semi[w]].push(w);
+        let p = par[w];
+        ancestor[w] = p;
 
-        // Link v to its DFS parent
-        let p = parent[v];
-        if p < n {
-            ancestor[v] = p;
+        // Everything in the parent's bucket now has its path compressed.
+        for v in std::mem::take(&mut bucket[p]) {
+            let u = eval(v, &mut ancestor, &mut label, &semi);
+            idom_dfn[v] = if semi[u] < semi[v] { u } else { p };
+        }
+    }
+    // Resolve the deferred cases, in increasing DFS number.
+    for w in 1..reached {
+        if idom_dfn[w] != semi[w] {
+            idom_dfn[w] = idom_dfn[idom_dfn[w]];
         }
     }
 
-    // ─── Step 3: CHK Phase 2 — immediate dominators ─────────────────────────
-    let mut idom: Vec<Option<usize>> = vec![None; n];
-    idom[root] = Some(root);
-
-    // Initial: idom[v] = semi[v]
-    for &v in &dfs_order {
-        if v != root {
-            idom[v] = Some(semi[v]);
-        }
+    // ─── Step 3: depth in the dominator tree (idom has a smaller dfn) ───────
+    let mut depth_dfn: Vec<u32> = vec![0; reached];
+    for w in 1..reached {
+        depth_dfn[w] = depth_dfn[idom_dfn[w]] + 1;
     }
 
-    // ─── Step 4: compute depth via BFS on idom tree ──────────────────────────
-    let mut depth: Vec<u32> = vec![0; n];
-    depth[root] = 0;
-
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for (v, idom_v) in idom.iter().enumerate() {
-        if let Some(idom_v) = idom_v
-            && *idom_v != v
-        {
-            children[*idom_v].push(v);
-        }
-    }
-
-    let mut queue = vec![root];
-    let mut head = 0usize;
-    while head < queue.len() {
-        let cur = queue[head];
-        head += 1;
-        for &child in &children[cur] {
-            depth[child] = depth[cur] + 1;
-            queue.push(child);
-        }
-    }
-
-    // Build result sorted by node_id
-    let mut result: Vec<(usize, Option<usize>, u32)> = Vec::with_capacity(n);
-    for v in 0..n {
-        result.push((v, idom[v], depth[v]));
-    }
-    result.sort_by_key(|r| r.0);
-    result
+    // ─── Step 4: translate back to node ids ─────────────────────────────────
+    (0..n)
+        .map(|v| {
+            if num[v] == NONE {
+                (v, None, 0)
+            } else {
+                (v, Some(vertex[idom_dfn[num[v]]]), depth_dfn[num[v]])
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -272,23 +278,7 @@ mod tests {
         assert_eq!(result[0].2, 0);
     }
 
-    // ─── Mutation-gate tests ────────────────────────────────────────────────
-    //
-    // KNOWN DEFECT, recorded 2026-11-04 by the mutation gate and NOT fixed
-    // here: `dominators` indexes `semi` by node id instead of by DFS number,
-    // and takes `semi` as the immediate dominator with no tightening step
-    // (the step that used to be here was dead code, removed 2026-11-04). It
-    // is not a correct dominator
-    // algorithm. Measured against a set-based reference over every graph of
-    // up to 4 nodes (root 0, ids relabelled in DFS order), 4608 of 66066
-    // results differ; on `0→2→1` it answers `idom[1] = 1`, depth 0, where
-    // the true answer is `idom[1] = 2`, depth 2.
-    //
-    // So the tests below are CHARACTERISATION tests: they pin what the
-    // function does today so that a mutant which changes it is caught.
-    // They do NOT certify that the answer is right. When the algorithm is
-    // fixed, the digest below changes on purpose and is re-pinned in the
-    // same diff as the fix.
+    // ─── Mutation-gate and correctness tests ───────────────────────────────
 
     /// Runs `f` on a worker thread and fails the test if it does not return
     /// within five seconds. A mutant that stops the BFS cursor advancing
@@ -304,52 +294,6 @@ mod tests {
             .expect("dominators did not return within 5s")
     }
 
-    /// FNV-1a over a stream of u64 words.
-    fn fnv(h: &mut u64, word: u64) {
-        for b in word.to_le_bytes() {
-            *h ^= u64::from(b);
-            *h = h.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-
-    /// Digest of the result of `dominators` for every graph of 1..=4 nodes
-    /// and every root: 263 714 cases, all edge subsets included.
-    fn corpus_digest() -> (u64, usize) {
-        let mut h = 0xcbf2_9ce4_8422_2325u64;
-        let mut cases = 0usize;
-        for n in 1..=4usize {
-            let pairs: Vec<(usize, usize)> =
-                (0..n).flat_map(|u| (0..n).map(move |v| (u, v))).collect();
-            for mask in 0u32..(1u32 << pairs.len()) {
-                let mut adj = vec![Vec::new(); n];
-                for (i, &(u, v)) in pairs.iter().enumerate() {
-                    if (mask >> i) & 1 == 1 {
-                        adj[u].push(v);
-                    }
-                }
-                for root in 0..n {
-                    cases += 1;
-                    for (node, idom, depth) in dominators(&adj, n, root) {
-                        fnv(&mut h, node as u64);
-                        fnv(&mut h, idom.map_or(u64::MAX, |d| d as u64));
-                        fnv(&mut h, u64::from(depth));
-                    }
-                }
-            }
-        }
-        (h, cases)
-    }
-
-    #[test]
-    fn every_small_graph_keeps_its_pinned_result() {
-        let (digest, cases) = within_deadline(corpus_digest);
-        assert_eq!(cases, 263_714, "the corpus changed size");
-        assert_eq!(
-            digest, 12_195_379_540_474_901_861,
-            "result of `dominators` changed on some graph of up to 4 nodes"
-        );
-    }
-
     #[test]
     fn edges_from_unreachable_nodes_to_ids_outside_the_graph_are_ignored() {
         // `v < n` guards the predecessor build. A reachable node with such
@@ -360,5 +304,106 @@ mod tests {
             dominators(&adj, 2, 0)
         });
         assert_eq!(result, vec![(0, Some(0), 0), (1, None, 0)]);
+    }
+
+    // ─── Correctness tests (independent reference) ──────────────────────────
+    //
+    // Unlike the characterisation tests above, these compare `dominators`
+    // with a definition-level reference that shares no code with it: `d`
+    // strictly dominates `v` when `v` is reachable from the root and either
+    // `d` is the root or removing `d` makes `v` unreachable. The immediate
+    // dominator is the strict dominator with the most strict dominators of
+    // its own, and the depth is the number of strict dominators of `v`.
+
+    fn reachable_avoiding(adj: &[Vec<usize>], root: usize, banned: Option<usize>) -> Vec<bool> {
+        let mut seen = vec![false; adj.len()];
+        if banned == Some(root) {
+            return seen;
+        }
+        let mut stack = vec![root];
+        seen[root] = true;
+        while let Some(u) = stack.pop() {
+            for &v in &adj[u] {
+                if v < adj.len() && !seen[v] && banned != Some(v) {
+                    seen[v] = true;
+                    stack.push(v);
+                }
+            }
+        }
+        seen
+    }
+
+    fn reference_dominators(adj: &[Vec<usize>], root: usize) -> Vec<(usize, Option<usize>, u32)> {
+        let n = adj.len();
+        let reach = reachable_avoiding(adj, root, None);
+        let without: Vec<Vec<bool>> = (0..n)
+            .map(|d| reachable_avoiding(adj, root, Some(d)))
+            .collect();
+        let strict = |d: usize, v: usize| d != v && reach[v] && (d == root || !without[d][v]);
+        (0..n)
+            .map(|v| {
+                if !reach[v] {
+                    return (v, None, 0);
+                }
+                if v == root {
+                    return (v, Some(root), 0);
+                }
+                let sdoms: Vec<usize> = (0..n).filter(|&d| strict(d, v)).collect();
+                let idom = sdoms
+                    .iter()
+                    .copied()
+                    .max_by_key(|&d| (0..n).filter(|&x| strict(x, d)).count())
+                    .expect("a reachable non-root node has the root as strict dominator");
+                (v, Some(idom), sdoms.len() as u32)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_node_reached_through_a_higher_id_is_dominated_by_it() {
+        // 0 -> 2 -> 1: every path to 1 goes through 2.
+        let result = within_deadline(|| {
+            let adj = vec![vec![2usize], vec![], vec![1usize]];
+            dominators(&adj, 3, 0)
+        });
+        assert_eq!(
+            result,
+            vec![(0, Some(0), 0), (1, Some(2), 2), (2, Some(0), 1)]
+        );
+    }
+
+    #[test]
+    fn every_small_graph_matches_the_set_based_reference() {
+        let mismatches = within_deadline(|| {
+            let mut bad: Vec<String> = Vec::new();
+            let mut cases = 0usize;
+            for n in 1..=4usize {
+                let pairs: Vec<(usize, usize)> =
+                    (0..n).flat_map(|u| (0..n).map(move |v| (u, v))).collect();
+                for mask in 0u32..(1u32 << pairs.len()) {
+                    let mut adj = vec![Vec::new(); n];
+                    for (i, &(u, v)) in pairs.iter().enumerate() {
+                        if (mask >> i) & 1 == 1 {
+                            adj[u].push(v);
+                        }
+                    }
+                    for root in 0..n {
+                        cases += 1;
+                        if dominators(&adj, n, root) != reference_dominators(&adj, root)
+                            && bad.len() < 3
+                        {
+                            bad.push(format!("n={n} root={root} adj={adj:?}"));
+                        }
+                    }
+                }
+            }
+            (cases, bad)
+        });
+        assert_eq!(mismatches.0, 263_714);
+        assert!(
+            mismatches.1.is_empty(),
+            "dominators disagrees with the reference, first cases: {:?}",
+            mismatches.1
+        );
     }
 }
