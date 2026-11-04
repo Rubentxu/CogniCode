@@ -20,6 +20,39 @@
 - Respetar arquitectura hexagonal, SOLID, cohesión y connascence: nueva abstracción solo para acoplamiento probado con tests; puertos de aplicación no dependen de adaptadores MCP. **No crear dos fuentes de verdad ni duplicar la semántica entre interfaces** (lección aprendida: `EvidenceStore`).
 - Cada corrección de bug incorpora test que fallaba ANTES y pasa DESPUÉS; suites seleccionadas no sustituyen el gate completo de release. Excepciones de cobertura, plataforma o UAT nunca se inventan tras el fallo.
 
+## Cómo leer un fichero grande sin llenarte el contexto
+
+Un fichero de más de 30KB **no se lee entero**: se pide lo que hace falta. Herramientas y cuándo
+usar cada una:
+
+| Necesitas | Comando | En vez de leerlo entero |
+|---|---|---|
+| La estructura de un fichero | `ctx outline <fichero>` | ~6K tokens en vez de ~71K |
+| El código de un solo símbolo | `ctx symbol <fichero> <línea> <col>` | ~50 tokens |
+| Quién usa un símbolo | `ctx usages <símbolo>` | ~600 tokens y 0 ficheros abiertos |
+| Una sección de un documento | `ctx section <fichero> <patrón>` | ~15K tokens en vez de ~142K |
+
+**Cuándo**: antes de abrir cualquier fichero de más de 30KB, y antes de un `Grep` recursivo
+sobre el árbol. Aquí `docs/roadmap/ROADMAP.md` es el caso claro. Si el fichero cabe en 30KB,
+`Read` es más simple y más rápido.
+
+**Cadena y respaldo**: `ctx` prueba **CogniCode primero**. Donde CogniCode no llega o no
+funciona, `ctx` cae a **codegraph** sin que nadie lo decida; y en la **prosa**
+(`docs/roadmap/ROADMAP.md`, el `JOURNAL`), a búsqueda por sección, porque la prosa no se indexa
+en ninguna herramienta. El motor que respondió se anuncia en stderr.
+
+**Interruptor**: si un motor falla de forma repetida, `ctx` lo apaga solo para esa combinación
+(motor, capacidad, lenguaje) y deja de intentarlo 5 minutos; después lo sondea otra vez, y si
+vuelve a funcionar, lo reactiva. Un fallo permanente lo apaga al primer intento; uno
+transitorio, al tercero. `ctx breaker` muestra el estado y `ctx breaker --reset` lo reinicia.
+
+Cada llamada deja traza en `~/.cache/ctx-traces/`, y `ctx stats` dice qué motor resolvió cada
+consulta **y qué es lo que CogniCode todavía no cubre** — ese informe es la lista de trabajo del
+tool.
+
+**Lo que no cambia**: `ctx` es una forma de leer menos, no de decidir más. El contrato, el
+criterio y los gates son los de este fichero.
+
 ## Estrategia de tests (fast / full)
 
 La batería completa (`cargo test --workspace` + doc-tests + clippy + fmt)
