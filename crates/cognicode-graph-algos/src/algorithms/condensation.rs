@@ -103,6 +103,28 @@ pub fn condensation(out_neighbors: &[Vec<usize>], n: usize) -> Vec<Vec<usize>> {
 mod tests {
     use super::*;
 
+    /// Run `condensation` on a worker thread and fail the test if it does
+    /// not finish.
+    ///
+    /// The mutation gate can turn the iterative traversal into one that
+    /// never terminates — the visit marker stops being set, so a cycle is
+    /// walked forever. A test that called the function directly would
+    /// hang the whole suite rather than fail it, and cargo-mutants scores
+    /// a hang as a timeout instead of as a caught mutant. The deadline
+    /// turns the hang into a failure.
+    ///
+    /// The unmutated code returns in microseconds, so the deadline is
+    /// never reached in a green run.
+    fn condensation_within(out_neighbors: &[Vec<usize>], n: usize) -> Vec<Vec<usize>> {
+        let out_neighbors = out_neighbors.to_vec();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(condensation(&out_neighbors, n));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("condensation did not terminate")
+    }
+
     #[test]
     fn empty_graph() {
         assert!(condensation(&[], 0).is_empty());
@@ -110,7 +132,7 @@ mod tests {
 
     #[test]
     fn single_node() {
-        let result = condensation(&[Vec::new()], 1);
+        let result = condensation_within(&[Vec::new()], 1);
         assert_eq!(result, vec![vec![0]]);
     }
 
@@ -122,7 +144,7 @@ mod tests {
             vec![2], // B calls C
             vec![0], // C calls A
         ];
-        let result = condensation(&out_neighbors, 3);
+        let result = condensation_within(&out_neighbors, 3);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], vec![0, 1, 2]);
     }
@@ -135,7 +157,7 @@ mod tests {
             Vec::new(), // B calls nobody
             Vec::new(), // C calls nobody
         ];
-        let result = condensation(&out_neighbors, 3);
+        let result = condensation_within(&out_neighbors, 3);
         assert_eq!(result.len(), 3);
         for scc in &result {
             assert_eq!(scc.len(), 1);
@@ -151,7 +173,7 @@ mod tests {
             vec![3], // 2 calls 3
             vec![2], // 3 calls 2
         ];
-        let result = condensation(&out_neighbors, 4);
+        let result = condensation_within(&out_neighbors, 4);
         assert_eq!(result.len(), 2);
         for scc in &result {
             assert_eq!(scc.len(), 2);
@@ -162,7 +184,7 @@ mod tests {
     fn self_loop_is_singleton_scc() {
         // Node 0 with self-loop: still one node but has a self-loop.
         let out_neighbors = vec![vec![0]];
-        let result = condensation(&out_neighbors, 1);
+        let result = condensation_within(&out_neighbors, 1);
         assert_eq!(result, vec![vec![0]]);
     }
 }

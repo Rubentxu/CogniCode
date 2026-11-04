@@ -102,7 +102,12 @@ mod tests {
         let in_n = vec![vec![1], vec![0]];
         let out_n = vec![vec![1], vec![0]];
         let result = feedback_arc_set(&in_n, &out_n, 2);
-        assert_eq!(result.len(), 1);
+        // WHICH edge, not only how many. The heuristic keeps the first
+        // node with the highest out-degree, and on a cycle where both
+        // nodes have the same out-degree that is node 0. A test that
+        // only counted the edges could not tell this from the variant
+        // that keeps the last one.
+        assert_eq!(result, vec![(0, 1)]);
     }
 
     #[test]

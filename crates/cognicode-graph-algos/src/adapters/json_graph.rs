@@ -45,7 +45,7 @@ impl JsonGraph {
 impl GraphBuilder for JsonGraph {
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
         let n = self.nodes.len();
-        let mut id_to_idx: std::collections::HashMap<&str, usize> = self
+        let id_to_idx: std::collections::HashMap<&str, usize> = self
             .nodes
             .iter()
             .enumerate()
@@ -54,30 +54,26 @@ impl GraphBuilder for JsonGraph {
         let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
         let mut out_degree: Vec<usize> = vec![0; n];
 
-        // Pre-compute the next ghost index offset
-        let mut next_ghost = n;
-
         for edge in &self.edges {
-            // Dangling edges (referring to nodes not in the node list) are
-            // registered as bare nodes per spec REQ-006. This matches the
-            // current cognicode-core behavior.
-            let s = *id_to_idx.entry(edge.source.as_str()).or_insert_with(|| {
-                let idx = next_ghost;
-                next_ghost += 1;
-                idx
-            });
-            let t = *id_to_idx.entry(edge.target.as_str()).or_insert_with(|| {
-                let idx = next_ghost;
-                next_ghost += 1;
-                idx
-            });
-            // Within the [0,n) range we treat as live.
-            if s < n && t < n {
-                in_neighbors[t].push(s);
-                out_degree[s] += 1;
-            }
-            // Phantom slots (s or t >= n) are ignored — matches
-            // call_graph_projection.rs skip-orphan behavior.
+            // Dangling edges — an endpoint that is not a declared node — are
+            // ignored, per spec REQ-006 and the skip-orphan behavior of
+            // call_graph_projection.rs.
+            //
+            // This used to allocate a "ghost" index for each dangling
+            // endpoint and then discard it: the index was only ever compared
+            // against `n`, so every ghost was ignored and the counter that
+            // assigned them was unobservable. The mutation gate is what made
+            // that visible — the counter could be changed from `+= 1` to
+            // `*= 1` without changing a single output — and a counter whose
+            // value nobody can see is a counter that should not exist.
+            let (Some(&s), Some(&t)) = (
+                id_to_idx.get(edge.source.as_str()),
+                id_to_idx.get(edge.target.as_str()),
+            ) else {
+                continue;
+            };
+            in_neighbors[t].push(s);
+            out_degree[s] += 1;
         }
         (in_neighbors, out_degree)
     }

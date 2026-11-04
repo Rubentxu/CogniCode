@@ -30869,3 +30869,26 @@ y `k_core`; ninguno en `dominators.rs`. Quedan sin tarea.
 
 **NOT_RUN.** El gate entero (por lote de 10 tareas) y las pruebas del
 `cognicode-explorer` (el filtro `dominator` no selecciona nada allí).
+
+## 2026-11-04 — graph-algos: tests de mutación conservados y clippy en verde
+
+Los 10 ficheros de `cognicode-graph-algos` con tests de mutación sin commitear se
+conservan: existían (mtime 10:25–10:33) antes de la mutación completa de las 11:53,
+y ninguno de ellos tiene supervivientes ni timeouts en esa corrida. El único fallo de
+`cargo clippy -p cognicode-graph-algos --all-targets -- -D warnings` era
+`single_element_loop` en `graph_builder.rs:90` (un `for` sobre un array de un
+elemento en el fixture `SingleEdge`); se sustituye por asignaciones directas.
+
+**Evidencia.** clippy rc=0; `cargo fmt --all --check` rc=0; `cargo test -p
+cognicode-graph-algos --lib`: 182 en verde.
+
+**Mutación completa (577 mutantes, `-j 4`, runner de memoria).** 509 atrapados, 56
+supervivientes, 4 inviables, 8 timeouts, 16 min, pico ≈34,5 GB, rc=3. Supervivientes
+y timeouts por módulo, ahora con tarea: `interproc_summary` 16+4 (TASK-98),
+`modularity` 4 (TASK-99), `multi_source_reachability_helper` 4 (TASK-100),
+`page_rank` 6 (TASK-101), `personalized_pagerank` 19 (TASK-102), `slicing` 7
+(TASK-103), `k_core` 4 timeouts (TASK-104).
+
+**NOT_RUN.** `just verify` no existe en el `justfile` (sólo `verify-version-sync`,
+`release-verify`), así que no se pudo ejecutar; el gate entero se pasa por lote de 10
+tareas.
