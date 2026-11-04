@@ -31683,3 +31683,25 @@ pista, no el estado `Ok` (ningún servidor está instalado aquí; `which` de los
 `check_binary` llama a `<servidor> --version` y no se ha probado contra el `kotlin-lsp` ni el
 `groovy-language-server` reales (si no entienden `--version` saldrían como `found` sin
 versión). **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-90 (AC2, rebanada 1): `prepareRename` y `rename` en el proveedor LSP
+
+**Qué.** `CodeIntelligenceProvider` gana `prepare_rename` y `rename` con implementación por
+defecto que devuelve error («no soportado por este proveedor»), de modo que los otros 17
+implementadores no cambian y un proveedor sin soporte no se confunde con «no renombrable».
+`LspIntelligenceProvider` las implementa con `textDocument/prepareRename` y
+`textDocument/rename`. Tipos de dominio nuevos: `PrepareRename`, `TextEdit`, `RenameEdits`.
+`rename` DEVUELVE las ediciones y no las aplica (escribir ficheros es otra capacidad).
+Las operaciones de recurso (create/rename/delete) de un `WorkspaceEdit` no se convierten en
+ediciones: se cuentan en `skipped_resource_operations` para que el resultado se lea parcial.
+
+**Verificación.** SHA base e22ceaf0. RED observado: 10 tests de `rename_tests` fallaban contra
+stubs `todo!()`; GREEN 10/10 más el test del valor por defecto del trait. `--lib` 2509 OK;
+`--test it` 942 OK y los 9 fallos de infraestructura de siempre (falta el binario release);
+clippy del workspace `-D warnings`, fmt y `generate_support_matrix.py --check` limpios.
+**Sin cubrir:** la petición real a un servidor (ninguno instalado: NOT_RUN); `CompositeProvider`
+y `TreesitterFallbackProvider` NO reenvían estas operaciones, así que ni CLI ni MCP las
+exponen todavía (solo el proveedor LSP, vía API); las columnas se tratan como caracteres, no
+como UTF-16; los URI solo se despojan de `file://` sin decodificar porcentajes; no se
+comprueba que las ediciones caigan dentro del workspace. **Pendiente de AC2:** `callHierarchy`
+y `typeHierarchy`. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
