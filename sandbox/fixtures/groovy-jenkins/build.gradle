@@ -9,3 +9,11 @@ repositories {
 dependencies {
     implementation 'org.apache.groovy:groovy:4.0.22'
 }
+
+tasks.register('lint') {
+    dependsOn 'classes'
+}
+
+tasks.register("packageApp") {
+    dependsOn 'lint'
+}

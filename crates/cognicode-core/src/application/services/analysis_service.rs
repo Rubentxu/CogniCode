@@ -2348,6 +2348,35 @@ mod tests {
     }
 
     #[test]
+    fn get_file_symbols_of_a_build_gradle_lists_its_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let build = "plugins { id 'groovy' }\ntasks.register('lint') {\n  dependsOn 'compile'\n}\ntask('package') { }\n";
+        std::fs::write(dir.path().join("build.gradle"), build).unwrap();
+        std::fs::write(dir.path().join("other.gradle"), build).unwrap();
+        let service = AnalysisService::new();
+
+        let listed = service
+            .get_file_symbols(&dir.path().join("build.gradle"))
+            .unwrap();
+        let named = |l: &[SymbolDto]| -> Vec<(String, u32)> {
+            let mut v: Vec<_> = l
+                .iter()
+                .filter(|s| s.name != "<script>")
+                .map(|s| (s.name.clone(), s.line))
+                .collect();
+            v.sort();
+            v
+        };
+        let tasks = named(&listed);
+        assert_eq!(tasks, [("lint".to_string(), 2), ("package".to_string(), 5)]);
+
+        let other = service
+            .get_file_symbols(&dir.path().join("other.gradle"))
+            .unwrap();
+        assert!(named(&other).is_empty(), "{other:?}");
+    }
+
+    #[test]
     fn test_symbol_locations_have_correct_file_path() {
         let mut file = NamedTempFile::with_suffix(".py").unwrap();
         writeln!(file, "def hello():").unwrap();
