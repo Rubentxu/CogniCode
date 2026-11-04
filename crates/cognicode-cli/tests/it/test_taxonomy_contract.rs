@@ -67,8 +67,8 @@ const RETIRED_PATHS: &[&str] = &[
 /// purpose" is a commit that says so. This list is the definition; changing it
 /// means changing the contract in the same diff, which is the point.
 const GATE_STEPS: &[&str] = &[
-    "cargo test --workspace --lib",
-    "cargo test --workspace --tests",
+    "cargo nextest run --profile gate --workspace --lib",
+    "cargo nextest run --profile gate --workspace --tests",
     "cargo mutants",
 ];
 

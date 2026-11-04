@@ -74,8 +74,8 @@ from a subset. The gate is three steps, unfiltered:
 
 ```bash
 bash scripts/test-gate.sh                        # the three steps, together
-cargo test --workspace --lib                      # 1. unit
-cargo test --workspace --tests                    # 2. integration with mocks
+cargo nextest run --profile gate --workspace --lib                     # 1. unit
+cargo nextest run --profile gate --workspace --tests                    # 2. integration with mocks
 cargo mutants                                     # 3. mutants
 npm test --prefix apps/explorer-ui                # unit + integration with MSW
 ```
