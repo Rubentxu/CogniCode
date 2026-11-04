@@ -1770,4 +1770,33 @@ mod csharp_groovy_reading {
                 .any(|n| n == "<script>")
         );
     }
+
+    fn located(source: &str) -> Vec<(String, u32)> {
+        let parser = TreeSitterParser::new(Language::Groovy).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        parser
+            .find_all_symbols_in_tree(&tree, source, "f")
+            .unwrap()
+            .iter()
+            .map(|s| (s.name().to_string(), s.location().line()))
+            .collect()
+    }
+
+    #[test]
+    fn a_groovy_constructor_swallowed_by_the_field_before_it_is_read_where_it_is_written() {
+        let found = located("class K {\n  def steps\n  Kube(steps) { }\n}\n");
+        assert!(found.contains(&("Kube".to_string(), 2)), "{found:?}");
+        assert!(!found.iter().any(|(n, _)| n == "steps"), "{found:?}");
+    }
+
+    #[test]
+    fn a_groovy_declaration_that_is_not_a_swallowed_constructor_keeps_its_name() {
+        // Two identifiers in the error, or no error at all: the grammar's own
+        // reading stands.
+        let typed = located("class K {\n  def steps\n  Kube Two(steps) { }\n}\n");
+        assert!(typed.contains(&("Two".to_string(), 2)), "{typed:?}");
+        assert!(!typed.iter().any(|(n, _)| n == "Kube"), "{typed:?}");
+        let plain = located("class K {\n  def steps\n  int x = 1\n}\n");
+        assert!(plain.contains(&("steps".to_string(), 1)), "{plain:?}");
+    }
 }
