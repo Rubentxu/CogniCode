@@ -30911,3 +30911,25 @@ padre). Sin equivalentes declarados.
 (37 s). Lib `cognicode-graph-algos`: 170 en verde; clippy `-D warnings` y fmt rc=0.
 
 **NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+
+## 2026-11-04 — TASK-107: transitive_reduction sin supervivientes ni timeouts
+
+**Hueco.** `topological_sort` (77:5) tenía 3 vivos: las sustituciones del cuerpo completo
+por `Ok(vec![])`, `Ok(vec![0])` y `Err(())`.
+
+**Diagnóstico.** El `Vec` de orden del `Ok` nunca se leía: la función solo se usaba para
+saber si había ciclo. Código muerto demostrable, eliminado: ahora `has_cycle -> bool`
+(Kahn con contador; cada nodo entra una vez en la cola, bucle acotado por `n`). Sin
+equivalentes declarados; no se crea `.cargo/mutants.toml`.
+
+**Tests.** Calculados a mano, todos con plazo de 5 s (hilo + `mpsc` + `recv_timeout`),
+incluidos los 4 antiguos: ciclo 0→1,0→2,1→2,2→0 devuelve las 4 aristas (sin detección,
+`(0,2)` caería por 0→1→2: mata `false`); DAG con arista implícita se reduce (mata
+`true`); diamante intacto; cadena con atajos → cadena; duplicados; fila de adyacencia
+ausente; componentes inconexas; autobucle.
+
+**Evidencia.** `cargo mutants -j 1` sobre el fichero: 29 mutantes, 29 atrapados, 0 vivos,
+0 timeouts (86 s). Crate `cognicode-graph-algos`: 176 tests lib en verde; clippy
+`-D warnings` y fmt rc=0. Base 49473e55.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
