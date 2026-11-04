@@ -14,7 +14,7 @@
 //! RED→GREEN: before the fix the answer to `graph_pagerank` without a
 //! graph was `isError: false` with the error inside the payload.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 use serde_json::{Value, json};

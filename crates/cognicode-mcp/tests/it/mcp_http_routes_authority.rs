@@ -7,7 +7,7 @@
 //! scraper reaches without a secret (`/health`, `/ready`, `/metrics`) must
 //! keep answering.
 
-mod common;
+use crate::common;
 
 use std::io::Read;
 use std::net::SocketAddr;

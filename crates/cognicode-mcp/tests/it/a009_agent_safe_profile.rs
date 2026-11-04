@@ -33,7 +33,7 @@ use cognicode_core::product::{PROFILE_POSTURES, ProfilePosture};
 use serde_json::Value;
 use std::path::PathBuf;
 
-mod common;
+use crate::common;
 use common::McpSession;
 
 fn repo_root() -> PathBuf {

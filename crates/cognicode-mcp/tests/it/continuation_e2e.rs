@@ -38,7 +38,7 @@ const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 // the right precedence (CARGO_BIN_EXE_cognicode-mcp > CARGO_TARGET_DIR >
 // workspace fallback); the harness import keeps the test working whether
 // you run it from the workspace root or from the crate directory.
-mod common;
+use crate::common;
 use common::binary_path;
 
 /// Result of a chain traversal.

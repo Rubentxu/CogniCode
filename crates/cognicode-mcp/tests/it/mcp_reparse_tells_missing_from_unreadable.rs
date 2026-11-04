@@ -6,7 +6,7 @@
 //! about it (graph and manifest) is still there once the directory can be
 //! read again.
 
-mod common;
+use crate::common;
 
 use std::path::PathBuf;
 

@@ -8,8 +8,6 @@
 //! black-box check: a test that runs a binary that was built before the
 //! change it is supposed to measure passes while measuring nothing.
 
-mod common;
-
 mod harness {
     use crate::common::*;
     use std::path::{Path, PathBuf};

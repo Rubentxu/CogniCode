@@ -30,7 +30,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
-mod common;
+use crate::common;
 use common::binary_path;
 
 fn repo_root() -> PathBuf {

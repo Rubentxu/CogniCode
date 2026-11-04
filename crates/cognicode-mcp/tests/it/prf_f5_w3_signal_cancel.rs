@@ -27,7 +27,7 @@
 //! also pins (stdin-EOF path); this test pins the SIGKILL path
 //! which is the more common failure mode in production.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 use std::path::Path;

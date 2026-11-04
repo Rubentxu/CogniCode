@@ -118,8 +118,11 @@ def test_every_named_suite_exists_under_the_crate_it_names() -> None:
     for pipeline in pipeline_files():
         named |= {(p.name, *pair) for pair in suites_of(pipeline) for p in [pipeline]}
 
+    # Suelo de sordera del extractor. Bajo de 30 a 20 al consolidar los
+    # binarios de integracion de un crate en `tests/it`: menos nombres
+    # distintos no es menos cobertura.
     check(
-        len(named) >= 30,
+        len(named) >= 20,
         f"solo se han encontrado {len(named)} suites nombradas por los "
         f"pipelines. Si el extractor dejo de verlas, este contrato no esta "
         f"midiendo nada y pasaria siempre.",
@@ -127,8 +130,12 @@ def test_every_named_suite_exists_under_the_crate_it_names() -> None:
 
     missing = []
     for pipeline, crate, suite in sorted(named):
-        candidate = REPO_ROOT / "crates" / crate / "tests" / f"{suite}.rs"
-        if not candidate.is_file():
+        tests_dir = REPO_ROOT / "crates" / crate / "tests"
+        # Un target es `tests/<suite>.rs` o, consolidado, `tests/<suite>/main.rs`.
+        if not (
+            (tests_dir / f"{suite}.rs").is_file()
+            or (tests_dir / suite / "main.rs").is_file()
+        ):
             actual = [
                 c.name
                 for c in (REPO_ROOT / "crates").iterdir()

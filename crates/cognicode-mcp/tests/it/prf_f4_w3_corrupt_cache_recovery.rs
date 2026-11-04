@@ -20,7 +20,7 @@
 //! trigger a rebuild (not a load-from-cache); if any scenario
 //! ever silently loads a corrupt cache, this test fails.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 use serde_json::Value;
