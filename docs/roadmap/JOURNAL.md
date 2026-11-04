@@ -31419,3 +31419,29 @@ el recorrido de `analysis_service`. Un Jenkinsfile fuera de esas rutas no se rec
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate completo (lote 10/10: se
 lanza al cerrar).
+
+## 2026-11-04 — Gate del lote 10/10 (cierre de TASK-87)
+
+**SHA:** f5f23f14 (main tras #556). **PASS** — `bash scripts/test-gate.sh` rc=0 y
+`npm test --prefix apps/explorer-ui` rc=0, sin filtro.
+
+| Paso | Salida |
+|---|---|
+| Unitarios | `4585 tests run: 4585 passed, 2 skipped` |
+| Integración | `6592 tests run: 6592 passed, 10 skipped` |
+| Mutantes (`cognicode-graph-algos`) | `574 mutants tested in 11m: 572 caught, 2 unviable` |
+| UI (vitest) | `Test Files 86 passed (86)`, `Tests 944 passed (944)` |
+
+**Historia del lote.** Sobre 25576d45 el gate salió rojo dos veces, y ambas se atribuyeron:
+- Paso 2: 8 fallos en `cognicode-cli::release` por faltar los binarios release
+  `cognicode-release` y `cognicode` (infraestructura local). Construidos, 6592/6592.
+- UI: `ViewBlock.test.tsx > ObjectInspector — container` fallaba de forma determinista
+  también en 6ebbc316 (padre de #551), es decir, antes del lote. Causa: `vertical_slice`
+  entró en `GRAPH_KINDS` (#170) y el fixture del test ya se enruta a `GraphView`, no a la
+  lista de bloques. Arreglo en #556 (solo test): el borde MSW sirve la vista de bloques
+  (la vista sembrada la pisa el refetch), un test nuevo fija el camino de grafo y cada
+  render usa su propio caché SWR (el global, con clave objeto+vista, filtraba la vista
+  de un test al siguiente).
+
+**Alcance.** Mutantes solo cubre `cognicode-graph-algos`, por diseño del gate; no
+certifica `cognicode-core` ni `cognicode-explorer`.
