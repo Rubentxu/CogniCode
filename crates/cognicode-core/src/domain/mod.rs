@@ -83,7 +83,7 @@ pub use aggregates::{CallGraph, Refactor, Symbol};
 pub use error::DomainError;
 pub use events::{GraphDiffCalculator, GraphEvent};
 pub use example_block::{ExampleBlock, ExampleKind};
-pub use services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
+pub use services::{ComplexityCalculator, CycleDetector};
 pub use value_objects::{DependencyType, Location, SourceRange, SymbolKind};
 
 // Graph port re-exports — `GraphRepository`, `GraphError`,

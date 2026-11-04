@@ -17,7 +17,9 @@
 //!     avisa que esto es investigativo, no autoritativo.
 //!
 //! Degradacion graciosa (a este commit):
-//!   - B4.W1 (typed `ImpactResult` extractor) NO mergea: `impact: None`.
+//!   - B4.W1 (typed impact extractor) NO mergea: `impact: None`. El
+//!     payload que hubiera rellenado ese campo no tiene llamador de
+//!     produccion y se fue (TASK-77).
 //!   - B4.W2 (typed `ArchitectureDiagnostic` extractor) NO mergea:
 //!     `architecture: None`.
 //!   - B4.W3 (Finding extractor wired al composite) NO mergea:

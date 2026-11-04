@@ -257,11 +257,10 @@ pub enum ViolationCode {
 /// `RiskLevel` (5 ordinal buckets `None | Low | Medium | High |
 /// Critical`, where `None` is the default and ordinal 0). It is the
 /// only one with a `None` bucket because safety classification of
-/// operations may be undefined. Distinct from the core `ImpactLevel`
-/// (which has no `None`), the MCP `RiskLevel` (4 buckets), the impact
-/// DTO string field, and the findings `RiskLevel`. NOT interchangeable
-/// with any of them. Used by the safety module to gate operations by
-/// permission/danger.
+/// operations may be undefined. Distinct from the MCP `RiskLevel`
+/// (4 buckets), the impact DTO string field, and the findings
+/// `RiskLevel`. NOT interchangeable with any of them. Used by the
+/// safety module to gate operations by permission/danger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RiskLevel {
     #[default]

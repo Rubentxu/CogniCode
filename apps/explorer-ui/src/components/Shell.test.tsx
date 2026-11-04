@@ -16,19 +16,34 @@ vi.mock("cytoscape", () => {
   type NodeData = { id: string; style_class?: string; label?: string };
   type EdgeData = { id: string; source: string; target: string };
 
+  // The double models the API the component actually calls.
+  //
+  // It used to hold `id` and `data` as PROPERTIES and to declare `nodes`
+  // as a field on the collection class. A field named `nodes` shadows the
+  // `nodes()` method on the prototype, so `cy.nodes()` threw
+  // "cy.nodes is not a function" inside an effect, the error boundary
+  // tore the panel down, and the assertion that the graph is rendered
+  // found nothing — two runs out of three failed for that reason alone.
+  // Real cytoscape answers `id()`, `data(key)` and `nodes()`; so does
+  // this one now.
   class CyNode {
-    id: string;
-    data: NodeData;
+    readonly idValue: string;
+    readonly nodeData: NodeData;
     classes: Set<string> = new Set();
     private listeners = new Map<string, Array<(e: unknown) => void>>();
     private edgeListeners = new Set<CyEdge>();
     constructor(d: NodeData) {
-      this.id = String(d.id);
-      this.data = d;
+      this.idValue = String(d.id);
+      this.nodeData = d;
+    }
+    id(): string { return this.idValue; }
+    data(key: string): unknown {
+      return (this.nodeData as Record<string, unknown>)[key];
     }
     addClass(c: string) { this.classes.add(c); }
     removeClass(c: string) { this.classes.delete(c); }
     hasClass(c: string) { return this.classes.has(c); }
+    position(_: { x: number; y: number }) {}
     on(evt: string, fn: (e: unknown) => void) {
       const list = this.listeners.get(evt) ?? [];
       list.push(fn);
@@ -38,8 +53,8 @@ vi.mock("cytoscape", () => {
       const list = this.listeners.get(evt) ?? [];
       this.listeners.set(evt, list.filter((f) => f !== fn));
     }
-    connectedEdges(): CyEdge[] {
-      return [...this.edgeListeners];
+    connectedEdges(): CyCollection {
+      return new CyCollection([...this.edgeListeners]);
     }
     private emit() {
       for (const fn of this.listeners.get("tap") ?? []) fn({ target: this });
@@ -47,12 +62,16 @@ vi.mock("cytoscape", () => {
     static fireTap(n: CyNode) { n.emit(); }
   }
   class CyEdge {
-    id: string;
-    data: EdgeData;
+    readonly idValue: string;
+    readonly edgeData: EdgeData;
     classes: Set<string> = new Set();
     constructor(d: EdgeData) {
-      this.id = String(d.id);
-      this.data = d;
+      this.idValue = String(d.id);
+      this.edgeData = d;
+    }
+    id(): string { return this.idValue; }
+    data(key: string): unknown {
+      return (this.edgeData as Record<string, unknown>)[key];
     }
     addClass(c: string) { this.classes.add(c); }
     removeClass(c: string) { this.classes.delete(c); }
@@ -65,58 +84,70 @@ vi.mock("cytoscape", () => {
     constructor(items: Array<CyNode | CyEdge>) {
       this.items = items;
     }
+    get length(): number { return this.items.length; }
+    map<T>(fn: (item: CyNode | CyEdge) => T): T[] {
+      return this.items.map(fn);
+    }
+    filter(fn: (item: CyNode | CyEdge) => boolean): CyCollection {
+      return new CyCollection(this.items.filter(fn));
+    }
     addClass(c: string) { for (const i of this.items) i.addClass(c); }
     removeClass(c: string) { for (const i of this.items) i.removeClass(c); }
     subtract(other: CyCollection): CyCollection {
-      const ids = new Set(other.items.map((i) => i.id));
-      return new CyCollection(this.items.filter((i) => !ids.has(i.id)));
+      const ids = new Set(other.items.map((i) => i.idValue));
+      return new CyCollection(this.items.filter((i) => !ids.has(i.idValue)));
     }
-    length = 0;
   }
   class Cy {
-    // @ts-expect-error -- mock property, the nodes() method below is the public API
-    nodes: CyNode[] = [];
-    edgeElements: CyEdge[] = [];
+    // The backing arrays are NOT named `nodes`/`edges`: a class field with
+    // those names would shadow the methods of the same name, and the
+    // component calls `cy.nodes()` and `cy.edges()`.
+    nodeList: CyNode[] = [];
+    edgeList: CyEdge[] = [];
     constructor(opts: {
       elements?: { nodes?: NodeData[]; edges?: NodeData[] };
       renderer?: { name: string; webgl?: boolean };
     }) {
-      this.nodes = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
-      this.edgeElements = (opts.elements?.edges ?? []).map(
+      this.nodeList = (opts.elements?.nodes ?? []).map((d) => new CyNode(d));
+      this.edgeList = (opts.elements?.edges ?? []).map(
         (d) => new CyEdge(d as EdgeData),
       );
-      for (const e of this.edgeElements) {
-        const src = this.nodes.find((n) => n.id === String(e.data.source));
-        const tgt = this.nodes.find((n) => n.id === String(e.data.target));
+      for (const e of this.edgeList) {
+        const src = this.nodeList.find((n) => n.idValue === String(e.edgeData.source));
+        const tgt = this.nodeList.find((n) => n.idValue === String(e.edgeData.target));
         if (src) (src as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
         if (tgt) (tgt as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
       }
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
-    on(_evt: string, selector: string | ((e: unknown) => void), _?: (e: unknown) => void) {
-      if (typeof selector === "function") {
-        this.nodes.forEach((n) => n.on("tap", selector));
-      }
+    on(
+      _evt: string,
+      selector: string | ((e: unknown) => void),
+      maybeHandler?: (e: unknown) => void,
+    ) {
+      const handler = typeof selector === "function" ? selector : maybeHandler;
+      if (!handler) return;
+      for (const n of this.nodeList) n.on("tap", handler);
     }
     off(_evt: string, fn: (e: unknown) => void) {
-      for (const n of this.nodes) n.off("tap", fn);
+      for (const n of this.nodeList) n.off("tap", fn);
     }
     elements(): CyCollection {
-      return new CyCollection([...this.nodes, ...this.edgeElements]);
+      return new CyCollection([...this.nodeList, ...this.edgeList]);
     }
     getElementById(id: string): CyCollection {
-      const all = [...this.nodes, ...this.edgeElements];
-      return new CyCollection(all.filter((i) => i.id === String(id)));
+      const all = [...this.nodeList, ...this.edgeList];
+      return new CyCollection(all.filter((i) => i.idValue === String(id)));
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
-    edges(_?: string) {
-      return new CyCollection(this.edgeElements);
+    edges(_?: string): CyCollection {
+      return new CyCollection(this.edgeList);
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
-    // @ts-expect-error -- intentional duplicate with property above; method is the public API
-    nodes(_?: string) {
-      return new CyCollection(this.nodes);
+    nodes(_?: string): CyCollection {
+      return new CyCollection(this.nodeList);
     }
+    batch(fn: () => void) { fn(); }
     destroy() {}
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     layout(_?: { name: string; rows?: number }) {

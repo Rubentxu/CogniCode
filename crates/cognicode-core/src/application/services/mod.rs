@@ -14,6 +14,7 @@ pub mod file_operations;
 pub mod graph_analytics;
 pub mod graph_insights;
 pub mod impact_analysis;
+pub mod impact_of;
 pub mod lsp_proxy_service;
 pub mod refactor_service;
 pub mod relation_candidates;

@@ -1585,68 +1585,24 @@ impl CommandExecutor {
                 crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
-                // Find all symbols that match the name
-                let search_name = symbol.to_lowercase();
-                let symbol_ids: Vec<_> = graph
-                    .symbols()
-                    .filter(|s| {
-                        let name = s.name().to_lowercase();
-                        let fqn = s.fully_qualified_name().to_lowercase();
-                        name == search_name
-                            || fqn == search_name
-                            || name.contains(&search_name)
-                            || fqn.contains(&search_name)
-                    })
-                    .map(|s| {
-                        crate::domain::aggregates::call_graph::SymbolId::new(
-                            s.fully_qualified_name(),
-                        )
-                    })
-                    .collect();
-                let symbol_ids =
-                    crate::application::analysis_basis::require_present(symbol_ids, symbol)
-                        .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
+                // The same question, answered by the same function the MCP and
+                // the workspace session call.
+                let impact =
+                    crate::application::services::analysis_service::AnalysisService::impact_of(
+                        &graph, symbol,
+                    )
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.to_string().into() })?;
 
                 let elapsed = start.elapsed().as_millis();
 
-                let mut impacted_symbols_set = std::collections::HashSet::new();
-                let mut impacted_files_set = std::collections::HashSet::new();
-
-                for symbol_id in &symbol_ids {
-                    // Find all dependents (transitive)
-                    let dependents = graph.find_all_dependents(symbol_id);
-
-                    for dep_id in dependents {
-                        if let Some(sym) = graph.get_symbol(&dep_id) {
-                            impacted_symbols_set.insert(sym.name().to_string());
-                            impacted_files_set.insert(sym.location().file().to_string());
-                        }
-                    }
-                }
-
-                let impacted_symbols: Vec<String> = impacted_symbols_set.into_iter().collect();
-                let impacted_files: Vec<String> = impacted_files_set.into_iter().collect();
-
-                let risk_level = if impacted_symbols.len() > 10 {
-                    "CRITICAL"
-                } else if impacted_symbols.len() > 5 {
-                    "HIGH"
-                } else if impacted_symbols.len() > 2 {
-                    "MEDIUM"
-                } else if !impacted_symbols.is_empty() {
-                    "LOW"
-                } else {
-                    "NONE"
-                };
-
                 let result = GR::Impact {
                     symbol: symbol.clone(),
-                    risk_level: risk_level.to_string(),
-                    direct_dependents: symbol_ids.len(),
-                    total_impacted_symbols: impacted_symbols.len(),
-                    impacted_files_count: impacted_files.len(),
-                    impacted_symbols,
-                    impacted_files,
+                    risk_level: format!("{:?}", impact.risk).to_uppercase(),
+                    direct_dependents: impact.matched,
+                    total_impacted_symbols: impact.symbols.len(),
+                    impacted_files_count: impact.files.len(),
+                    impacted_symbols: impact.symbols,
+                    impacted_files: impact.files,
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4l: text formatting is in the
