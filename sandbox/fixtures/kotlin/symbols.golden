@@ -1,0 +1,30 @@
+# Hand-written from the sources: the types and callables each file declares,
+# as `class|function <name>@<path relative to this directory>`. Properties,
+# variables, the package and the synthetic <script> entry are not part of the
+# contract. The unnamed companion of Plain is read as Plain.Companion, the
+# name Kotlin gives it.
+class Shape@Shapes.kt
+class Rect@Shapes.kt
+class Filled@Shapes.kt
+class Circle@Shapes.kt
+class Factory@Shapes.kt
+class Color@Shapes.kt
+class Plain@Shapes.kt
+class Plain.Companion@Shapes.kt
+class Registry@Shapes.kt
+class Node@Shapes.kt
+class Money@Shapes.kt
+function describe@Shapes.kt
+function describe@Shapes.kt
+function Rect@Shapes.kt
+function unit@Shapes.kt
+function make@Shapes.kt
+function register@Shapes.kt
+function largest@Shapes.kt
+function shout@Shapes.kt
+function overload@Shapes.kt
+function overload@Shapes.kt
+class Labels@Unicode.kt
+function main@Main.kt
+function describeShape@Main.kt
+function stage@ci.pipeline.kts

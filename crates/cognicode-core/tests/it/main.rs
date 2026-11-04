@@ -101,6 +101,7 @@ mod intelligence_event_log_e2e;
 mod inventory_says_which_is_which;
 mod k1_kotlin_symbol_contract;
 mod language_registry_matches_its_grammar;
+mod language_symbols_goldens;
 mod lsp_integration_test;
 mod m06_acceptance;
 mod m0_t03_graph_publishes_unconfirmed_edges;

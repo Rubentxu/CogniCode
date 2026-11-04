@@ -1,0 +1,29 @@
+# Hand-written from the sources: the types and callables each file declares,
+# as `class|function <name>@<path relative to this directory>`. An interface,
+# a record and a struct are types. Properties, fields and namespaces are not
+# part of the contract. A partial class is declared once per file that holds
+# a part; an overload is one entry per signature.
+class IShape@IShape.cs
+function Area@IShape.cs
+class Shape@Shape.cs
+function Area@Shape.cs
+function Dispose@Shape.cs
+class Circle@Shapes.cs
+class Square@Shapes.cs
+function Area@Shapes.cs
+function Area@Shapes.cs
+class Repo@Repo.cs
+class IntBox@Repo.cs
+class Price@Core/Money.cs
+class Point@Core/Money.cs
+class Ledger@Core/Money.cs
+function Total@Core/Money.cs
+class Calculator@Core/Money.cs
+function Add@Core/Money.cs
+function Add@Core/Money.cs
+class Ledger@Core/Ledger.Entries.cs
+function Count@Core/Ledger.Entries.cs
+class StringExtensions@Core/Extensions.cs
+function Shout@Core/Extensions.cs
+class Program@App/Program.cs
+function Main@App/Program.cs
