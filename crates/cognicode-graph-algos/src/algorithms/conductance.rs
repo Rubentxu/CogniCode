@@ -5,12 +5,16 @@
 //!
 //! Formula: φ(S) = cut_edges(S, ¬S) / min(vol(S), vol(¬S))
 //!
-//! Where:
-//! - cut_edges(S, ¬S) = number of edges crossing from S to outside S
-//! - vol(S) = sum of degrees of nodes in S
-//! - min(vol(S), vol(¬S)) = volume of the smaller side (sentinel: 0 if both empty)
+//! The graph is read as **undirected**: every directed edge `u → v` in the
+//! input is one undirected edge between `u` and `v`, whichever way it points.
+//!
+//! - cut_edges(S, ¬S) = number of edges with exactly one endpoint in S
+//!   (edges leaving S and edges entering S both count)
+//! - degree(v) = out-degree + in-degree (a self-loop adds 2)
+//! - vol(S) = sum of degrees of nodes in S; vol(V) = 2m
+//! - min(vol(S), vol(¬S)) = volume of the smaller side
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Compute conductance for each community in a community assignment.
 ///
@@ -20,13 +24,14 @@ use std::collections::HashMap;
 ///   Each node appears exactly once per community_id.
 ///   community_ids are arbitrary non-negative integers.
 /// - `out_neighbors`: outgoing adjacency list where `out_neighbors[u]` contains
-///   every `v` such that edge `u → v` exists.
+///   every `v` such that edge `u → v` exists. Edges whose target is not a node
+///   of the graph (`v >= out_neighbors.len()`) are ignored.
 ///
 /// # Returns
 ///
 /// `Vec<(CommunityId, f64)>` — conductance score per community, in arbitrary order.
-/// If a community has no edges (neither internal nor crossing), conductance = 1.0
-/// (worst case — isolated community).
+/// If the graph has no edges, or the smaller side has volume 0 (for example a
+/// community with no edges, or one that holds every edge), the score is 1.0.
 ///
 /// # Complexity
 ///
@@ -36,7 +41,7 @@ use std::collections::HashMap;
 ///
 /// - `community_assignment` is empty: returns empty vec.
 /// - A community with no internal edges but crossing edges: cut / min(vol(S), vol(¬S))
-/// - A community with no edges at all: returns 1.0 (isolated, worst-case conductance).
+/// - A community whose smaller side has no edges: returns 1.0 (worst case).
 pub fn conductance(
     community_assignment: &[(usize, usize)],
     out_neighbors: &[Vec<usize>],
@@ -50,31 +55,29 @@ pub fn conductance(
         return Vec::new();
     }
 
-    // Build community assignment array: node_to_community[node] = community_id
-    // If a node is not in the assignment, it belongs to a special "unassigned" community.
-    let mut node_to_community: Vec<Option<usize>> = vec![None; n];
-    let mut community_members: HashMap<usize, Vec<usize>> = HashMap::new();
+    // Undirected view: degree = out + in, plus the incoming adjacency so the
+    // cut can count edges that enter a community.
     let mut node_degree: Vec<usize> = vec![0; n];
-
-    // Compute degrees from out_neighbors
-    for v in 0..n {
-        node_degree[v] = out_neighbors[v].len();
+    let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (u, targets) in out_neighbors.iter().enumerate() {
+        for &v in targets.iter().filter(|&&v| v < n) {
+            node_degree[u] += 1;
+            node_degree[v] += 1;
+            in_neighbors[v].push(u);
+        }
     }
 
-    // Populate node_to_community and community_members
+    let mut community_members: HashMap<usize, Vec<usize>> = HashMap::new();
     for &(node, community) in community_assignment {
         if node < n {
-            node_to_community[node] = Some(community);
             community_members.entry(community).or_default().push(node);
         }
     }
 
-    // Pre-compute total graph volume (2m)
+    // Total graph volume (2m).
     let total_volume: usize = node_degree.iter().sum();
-    // m = total edges (undirected volume / 2)
-    let m = total_volume.saturating_sub(1) / 2;
 
-    if m == 0 {
+    if total_volume == 0 {
         // No edges in graph — every community is isolated → worst conductance
         return community_members.keys().map(|&c| (c, 1.0)).collect();
     }
@@ -82,34 +85,30 @@ pub fn conductance(
     let mut results: Vec<(usize, f64)> = Vec::with_capacity(community_members.len());
 
     for (&community, members) in community_members.iter() {
-        if members.is_empty() {
-            continue;
-        }
+        let members_set: HashSet<usize> = members.iter().cloned().collect();
 
-        let members_set: std::collections::HashSet<usize> = members.iter().cloned().collect();
-
-        // Compute cut edges: edges from community to outside
+        // Edges with exactly one endpoint in the community.
         let mut cut_edges: usize = 0;
         let mut vol_s: usize = 0;
 
         for &v in members {
             vol_s += node_degree[v];
-            for &w in &out_neighbors[v] {
-                if !members_set.contains(&w) {
-                    cut_edges += 1;
-                }
-            }
+            cut_edges += out_neighbors[v]
+                .iter()
+                .filter(|&&w| w < n && !members_set.contains(&w))
+                .count();
+            cut_edges += in_neighbors[v]
+                .iter()
+                .filter(|&&u| !members_set.contains(&u))
+                .count();
         }
 
         // vol(¬S) = total_volume - vol(S)
-        let vol_not_s = total_volume.saturating_sub(vol_s);
-
-        // min(vol(S), vol(¬S))
+        let vol_not_s = total_volume - vol_s;
         let min_vol = vol_s.min(vol_not_s);
 
         let conductance_score = if min_vol == 0 {
-            // Community is on the smaller side and has no edges
-            // or graph is disconnected — worst case
+            // The smaller side has no edges — worst case
             1.0
         } else {
             cut_edges as f64 / min_vol as f64
@@ -173,10 +172,10 @@ mod tests {
     }
 
     /// Two communities with cut edges: {A} and {B,C}. Edge A→B crosses.
-    /// Community 0: {A}, cut=1 (A→B), vol(S)=1, vol(¬S)=4
-    /// min_vol = 1 → conductance = 1/1 = 1.0
-    /// Community 1: {B,C}, cut=1 (A→B), vol(S)=4, vol(¬S)=1
-    /// min_vol = 1 → conductance = 1/1 = 1.0
+    /// Undirected degrees: A=1, B=2, C=1 (total volume 4).
+    /// Community 0: {A}, cut=1, vol(S)=1, vol(¬S)=3 → 1/1 = 1.0
+    /// Community 1: {B,C}, cut=1 (the same edge, seen from the other side),
+    /// vol(S)=3, vol(¬S)=1 → 1/1 = 1.0
     #[test]
     fn two_communities_with_cut() {
         // A=0 (community 0), B=1, C=2 (community 1)
@@ -253,5 +252,106 @@ mod tests {
         assert!((result_map[&0] - 1.0).abs() < 1e-9);
         // Community 1: cut=0, vol(S)=2, vol(¬S)=0 → min_vol=0 → 1.0
         assert!((result_map[&1] - 1.0).abs() < 1e-9);
+    }
+
+    fn scores(
+        assignment: &[(usize, usize)],
+        edges: &[(usize, usize)],
+        n: usize,
+    ) -> HashMap<usize, f64> {
+        let out_neighbors = build_out_neighbors(n, edges);
+        conductance(assignment, &out_neighbors)
+            .into_iter()
+            .collect()
+    }
+
+    /// The witness for the directed-only defect: 0→1, 1→2 with {0} and {1,2}.
+    /// The edge 0→1 enters {1,2}; it must count for that side too.
+    #[test]
+    fn an_incoming_edge_counts_toward_the_cut() {
+        let r = scores(&[(0, 0), (1, 1), (2, 1)], &[(0, 1), (1, 2)], 3);
+        assert!((r[&1] - 1.0).abs() < 1e-9, "got {}", r[&1]);
+        assert!((r[&0] - 1.0).abs() < 1e-9, "got {}", r[&0]);
+    }
+
+    /// A single edge between two singleton communities: each side has
+    /// volume 1 and the edge crosses → 1.0 for both (not the "no edges"
+    /// sentinel path).
+    #[test]
+    fn a_single_edge_between_singletons() {
+        let r = scores(&[(0, 0), (1, 1)], &[(0, 1)], 2);
+        assert!((r[&0] - 1.0).abs() < 1e-9);
+        assert!((r[&1] - 1.0).abs() < 1e-9);
+    }
+
+    /// Path 0→1→2→3→4→5, S={0,1}, T={2,3,4,5}.
+    /// Degrees 1,2,2,2,2,1 (total 10). cut=1. vol(S)=3, vol(T)=7.
+    /// φ = 1 / min(3,7) = 1/3 for both sides.
+    #[test]
+    fn path_split_is_one_third_on_both_sides() {
+        let edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)];
+        let a = [(0, 0), (1, 0), (2, 1), (3, 1), (4, 1), (5, 1)];
+        let r = scores(&a, &edges, 6);
+        assert!((r[&0] - 1.0 / 3.0).abs() < 1e-9, "got {}", r[&0]);
+        assert!((r[&1] - 1.0 / 3.0).abs() < 1e-9, "got {}", r[&1]);
+    }
+
+    /// Reversing every edge describes the same undirected graph.
+    #[test]
+    fn reversing_every_edge_changes_nothing() {
+        let a = [(0, 0), (1, 0), (2, 1), (3, 1), (4, 1), (5, 1)];
+        let fwd = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)];
+        let rev = [(1, 0), (2, 1), (3, 2), (4, 3), (5, 4)];
+        let f = scores(&a, &fwd, 6);
+        let b = scores(&a, &rev, 6);
+        assert!((f[&0] - b[&0]).abs() < 1e-9);
+        assert!((f[&1] - b[&1]).abs() < 1e-9);
+    }
+
+    /// Two dense halves joined by one edge, edges in both directions inside
+    /// each half. {0,1} and {2,3}: 0↔1, 2↔3, 1→2.
+    /// Degrees: 0→2, 1→3, 2→3, 3→2 (total 10). vol=5 each, cut=1 → 0.2.
+    #[test]
+    fn two_halves_joined_by_one_edge() {
+        let edges = [(0, 1), (1, 0), (2, 3), (3, 2), (1, 2)];
+        let r = scores(&[(0, 0), (1, 0), (2, 1), (3, 1)], &edges, 4);
+        assert!((r[&0] - 0.2).abs() < 1e-9, "got {}", r[&0]);
+        assert!((r[&1] - 0.2).abs() < 1e-9, "got {}", r[&1]);
+    }
+
+    /// Like `scores` but keeps edges whose target is outside the graph
+    /// (`build_out_neighbors` would drop them).
+    fn scores_raw(assignment: &[(usize, usize)], out: Vec<Vec<usize>>) -> HashMap<usize, f64> {
+        conductance(assignment, &out).into_iter().collect()
+    }
+
+    /// An edge whose target is not a node of the graph is not an edge: it
+    /// adds neither degree nor cut. Path 0→1→…→5 plus 0→9 gives the same 1/3.
+    #[test]
+    fn an_edge_to_a_missing_node_is_ignored() {
+        let out = vec![vec![1, 9], vec![2], vec![3], vec![4], vec![5], vec![]];
+        let a = [(0, 0), (1, 0), (2, 1), (3, 1), (4, 1), (5, 1)];
+        let r = scores_raw(&a, out);
+        assert!((r[&0] - 1.0 / 3.0).abs() < 1e-9, "got {}", r[&0]);
+        assert!((r[&1] - 1.0 / 3.0).abs() < 1e-9, "got {}", r[&1]);
+    }
+
+    /// A target equal to `n` (one past the last node) is as missing as 9.
+    /// Witness 0→1, 1→2 plus 0→3 with n = 3 still gives 1.0 on both sides.
+    #[test]
+    fn an_edge_to_node_n_is_ignored() {
+        let out = vec![vec![1, 3], vec![2], vec![]];
+        let r = scores_raw(&[(0, 0), (1, 1), (2, 1)], out);
+        assert!((r[&0] - 1.0).abs() < 1e-9, "got {}", r[&0]);
+        assert!((r[&1] - 1.0).abs() < 1e-9, "got {}", r[&1]);
+    }
+
+    /// An assigned node equal to `n` does not exist: its community is not
+    /// reported and nothing panics.
+    #[test]
+    fn an_assigned_node_n_is_ignored() {
+        let r = scores(&[(0, 0), (1, 1), (2, 1), (3, 7)], &[(0, 1), (1, 2)], 3);
+        assert!(!r.contains_key(&7));
+        assert!((r[&0] - 1.0).abs() < 1e-9);
     }
 }

@@ -30933,3 +30933,30 @@ ausente; componentes inconexas; autobucle.
 `-D warnings` y fmt rc=0. Base 49473e55.
 
 **NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
+
+## 2026-11-04 — TASK-96: la conductancia es no dirigida
+
+**Hueco.** `conductance.rs` documentaba φ(S) = cut / min(vol(S), vol(¬S)) con volumen
+no dirigido (2m), pero calculaba grado de SALIDA y contaba solo aristas que salen de la
+comunidad. Con 0→1, 1→2 y {1,2}, la arista 0→1 entra y no se contaba (cut=0). Además
+`m = (total-1)/2` mandaba cualquier grafo de una arista a la rama «sin aristas» (1.0).
+
+**Decisión.** No dirigida: el contrato del módulo ya la definía así y es la conductancia
+estándar. Cada arista dirigida del grafo de llamadas es una arista entre sus extremos;
+grado = entrada + salida (autobucle suma 2); el corte cuenta aristas que salen y que
+entran. La firma no cambia; `conductance_descriptor` (`directed() == true` describe la
+entrada) no necesita cambios.
+
+**Tests.** Valores a mano: camino 0→…→5 con {0,1}|{2..5} = 1/3 en ambos lados; dos
+mitades con una arista de unión = 0.2; invertir todas las aristas no cambia nada; aristas
+a un nodo inexistente (9 y n) y nodo asignado n se ignoran. RED antes del arreglo: camino,
+inversión y dos mitades (el testigo 0→1,1→2 pasaba por la rama `m == 0`). Código muerto
+eliminado: `m` y el guardia `members.is_empty()`. Los tests de aristas colgantes usan
+adyacencia cruda porque `build_out_neighbors` descarta destinos fuera de rango.
+
+**Evidencia.** `cargo mutants -j 1` sobre el fichero: 36 mutantes, 36 atrapados, 0 vivos,
+0 timeouts (incluye el antiguo 75:26 `/`→`*`). Crate: 184 tests en verde; consumidor
+`cognicode-core` (`analytics_registry_cohort_3` 34, lib `conductance` 6) en verde; clippy
+`-D warnings` y fmt rc=0. Base 661a486c.
+
+**NOT_RUN.** Gate completo (lote de 10). `just verify` no existe.
