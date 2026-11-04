@@ -27,8 +27,8 @@ pub fn transitive_reduction(
         return Vec::new();
     }
 
-    // Check for cycles via toposort. If cycle exists, return all edges.
-    if let Err(()) = topological_sort(out_neighbors, n) {
+    // If the graph has a cycle, the reduction is the identity: return all edges.
+    if has_cycle(out_neighbors, n) {
         // Cycle detected — return all edges as identity reduction.
         let mut result = Vec::new();
         let mut seen: HashSet<(usize, usize)> = HashSet::new();
@@ -73,7 +73,10 @@ pub fn transitive_reduction(
     result
 }
 
-fn topological_sort(out_neighbors: &[Vec<usize>], n: usize) -> Result<Vec<usize>, ()> {
+/// Kahn's algorithm used only as a cycle detector: the graph is acyclic
+/// exactly when every node leaves the queue. Each node is queued at most once
+/// (when its in-degree reaches zero), so the loop is bounded by `n`.
+fn has_cycle(out_neighbors: &[Vec<usize>], n: usize) -> bool {
     let mut in_degree: Vec<usize> = vec![0; n];
     for u in 0..n {
         let neighbors = out_neighbors.get(u).map(|n| n.as_slice()).unwrap_or(&[]);
@@ -82,9 +85,9 @@ fn topological_sort(out_neighbors: &[Vec<usize>], n: usize) -> Result<Vec<usize>
         }
     }
     let mut queue: Vec<usize> = (0..n).filter(|&v| in_degree[v] == 0).collect();
-    let mut order = Vec::with_capacity(n);
+    let mut processed = 0;
     while let Some(u) = queue.pop() {
-        order.push(u);
+        processed += 1;
         let neighbors = out_neighbors.get(u).map(|n| n.as_slice()).unwrap_or(&[]);
         for &v in neighbors {
             in_degree[v] -= 1;
@@ -93,7 +96,7 @@ fn topological_sort(out_neighbors: &[Vec<usize>], n: usize) -> Result<Vec<usize>
             }
         }
     }
-    if order.len() == n { Ok(order) } else { Err(()) }
+    processed != n
 }
 
 fn reachable_without_edge(
@@ -133,57 +136,80 @@ fn reachable_without_edge(
 mod tests {
     use super::*;
 
+    /// Runs the reduction on a thread so a hanging mutant fails the test
+    /// instead of hanging the suite.
+    fn run(out_neighbors: Vec<Vec<usize>>, n: usize) -> Vec<(usize, usize)> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(transitive_reduction(&[], &out_neighbors, n));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("transitive_reduction did not finish within 5s")
+    }
+
     #[test]
     fn empty_graph() {
-        assert_eq!(
-            transitive_reduction(&[], &[], 0),
-            Vec::<(usize, usize)>::new()
-        );
+        assert_eq!(run(Vec::new(), 0), Vec::<(usize, usize)>::new());
     }
 
     #[test]
     fn single_edge_preserved() {
-        // A → B: minimal.
-        let in_n = vec![vec![0], Vec::new()];
-        let out_n = vec![vec![1], Vec::new()];
-        let result = transitive_reduction(&in_n, &out_n, 2);
-        assert_eq!(result, vec![(0, 1)]);
+        assert_eq!(run(vec![vec![1], Vec::new()], 2), vec![(0, 1)]);
     }
 
     #[test]
     fn redundant_edge_removed() {
-        // A → B, A → C, B → C: edge A→C is redundant (path A→B→C exists).
-        // in_n = [in_0=[], in_1=[0], in_2=[0,1]] means 0→1, 0→2, 1→2
-        // out_n = [out_0=[1,2], out_1=[2], out_2=[]] means same edges
-        // Edge (0,2) is redundant: 0→1→2 exists without it.
-        // Edge (1,2) is NOT redundant: no path from 1 to 2 without (1,2).
-        let in_n = vec![Vec::new(), vec![0], vec![0, 1]];
-        let out_n = vec![vec![1, 2], vec![2], Vec::new()];
-        let result = transitive_reduction(&in_n, &out_n, 3);
-        // (0,2) is redundant, removed; (0,1) and (1,2) survive
-        assert_eq!(result, vec![(0, 1), (1, 2)]);
+        // 0→1, 0→2, 1→2: (0,2) is implied by 0→1→2.
+        let out = vec![vec![1, 2], vec![2], Vec::new()];
+        assert_eq!(run(out, 3), vec![(0, 1), (1, 2)]);
     }
 
     #[test]
-    fn cyclic_graph_returns_all_edges() {
-        // 0 → 1 → 0: cycle. Return both edges.
-        let in_n = vec![vec![1], vec![0]];
-        let out_n = vec![vec![1], vec![0]];
-        let result = transitive_reduction(&in_n, &out_n, 2);
-        assert_eq!(result.len(), 2);
+    fn diamond_keeps_every_edge() {
+        // 0→1, 0→2, 1→3, 2→3: no edge is implied by another path.
+        let out = vec![vec![1, 2], vec![3], vec![3], Vec::new()];
+        assert_eq!(run(out, 4), vec![(0, 1), (0, 2), (1, 3), (2, 3)]);
     }
 
     #[test]
-    fn diamond_dag() {
-        // A → B, A → C, B → D, C → D.
-        // Edge A→C might be redundant if there's A→B→...→C path.
-        let in_n = vec![Vec::new(), vec![0], vec![0], vec![1, 2]];
-        let out_n = vec![vec![1, 2], vec![3], vec![3], Vec::new()];
-        let result = transitive_reduction(&in_n, &out_n, 4);
-        // At minimum, A→B and B→D should survive.
-        // C→D survives if no A→...→C→D alternative.
-        // The structure is a diamond: no edge is truly redundant.
-        assert!(result.contains(&(0, 1)));
-        assert!(result.contains(&(1, 3)));
+    fn chain_with_shortcuts_reduces_to_the_chain() {
+        // 0→1→2→3 plus shortcuts 0→2, 0→3, 1→3.
+        let out = vec![vec![1, 2, 3], vec![2, 3], vec![3], Vec::new()];
+        assert_eq!(run(out, 4), vec![(0, 1), (1, 2), (2, 3)]);
+    }
+
+    #[test]
+    fn dag_duplicate_edge_is_reported_once() {
+        assert_eq!(run(vec![vec![1, 1], Vec::new()], 2), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn dag_with_a_missing_adjacency_row() {
+        // `out_neighbors` is shorter than `n`: node 1 has no row.
+        assert_eq!(run(vec![vec![1]], 2), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn disconnected_dag_components() {
+        let out = vec![vec![1], Vec::new(), vec![3], Vec::new()];
+        assert_eq!(run(out, 4), vec![(0, 1), (2, 3)]);
+    }
+
+    #[test]
+    fn cyclic_graph_returns_all_edges_even_the_implied_one() {
+        // 0→1, 0→2, 1→2, 2→0. Without cycle detection (0,2) would be dropped
+        // because 0→1→2 exists; on a cycle the identity is returned.
+        let out = vec![vec![1, 2], vec![2], vec![0]];
+        assert_eq!(run(out, 3), vec![(0, 1), (0, 2), (1, 2), (2, 0)]);
+    }
+
+    #[test]
+    fn cyclic_graph_deduplicates_edges_in_traversal_order() {
+        assert_eq!(run(vec![vec![1, 1], vec![0]], 2), vec![(0, 1), (1, 0)]);
+    }
+
+    #[test]
+    fn self_loop_counts_as_a_cycle() {
+        assert_eq!(run(vec![vec![0]], 1), vec![(0, 0)]);
     }
 }
