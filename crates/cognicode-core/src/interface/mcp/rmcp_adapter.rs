@@ -1182,6 +1182,15 @@ pub(crate) async fn call_tool_handler(
                 .await?;
                 Ok(serde_json::to_string(&output)?)
             }
+            "rename_preview" => {
+                let input: crate::interface::mcp::schemas::RenamePreviewInput =
+                    serde_json::from_value(arguments.into())?;
+                let output = crate::interface::mcp::handlers::lsp_handlers::handle_rename_preview(
+                    ctx, input,
+                )
+                .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
             "read_file" => {
                 let input: crate::interface::mcp::schemas::ReadFileInput =
                     serde_json::from_value(arguments.into())?;

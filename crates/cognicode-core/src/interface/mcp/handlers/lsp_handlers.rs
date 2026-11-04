@@ -2,9 +2,11 @@
 #![allow(clippy::needless_borrows_for_generic_args, dead_code)]
 use super::*;
 use crate::domain::traits::code_intelligence::{
-    CodeIntelligenceProvider, Reference, TieredCodeIntelligenceProvider, TieredOutcome,
+    CodeIntelligenceProvider, PrecisionTier, Reference, TieredCodeIntelligenceProvider,
+    TieredOutcome,
 };
 use crate::infrastructure::lsp::providers::CompositeProvider;
+use crate::interface::mcp::schemas::{RenameEditEntry, RenamePreviewInput, RenamePreviewOutput};
 use crate::interface::symbol_identity::{
     default_provider_for_tool, precision_floor_for_tool, provider_for_tier,
 };
@@ -122,6 +124,97 @@ pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerRes
             kind: None,
         }),
     }
+}
+
+/// Handler for rename_preview tool
+///
+/// Asks the language server what a rename would change and returns the edits.
+/// It never writes: applying them is a separate capability.
+#[cognicode_macros::aix_tool(
+    name = "rename_preview",
+    description = "Preview the edits an LSP rename would make, without applying them.",
+    input_schema = RenamePreviewInput
+)]
+pub async fn handle_rename_preview(
+    ctx: &HandlerContext,
+    input: RenamePreviewInput,
+) -> HandlerResult<RenamePreviewOutput> {
+    if input.new_name.trim().is_empty() {
+        return Err(HandlerError::InvalidInput(
+            "new_name must not be empty".to_string(),
+        ));
+    }
+    let provider = get_provider(ctx);
+    // The path that reaches the provider is the path that was authorised.
+    let authorised = authorise_file_path(ctx, &input.file_path)?;
+    let location = crate::domain::value_objects::Location::new(
+        authorised.to_string_lossy().into_owned(),
+        input.line,
+        input.column,
+    );
+    let unavailable = |e: crate::domain::traits::code_intelligence::CodeIntelligenceError| {
+        HandlerError::Internal(format!("rename preview unavailable: {e}"))
+    };
+    let answer = |renamable, placeholder, edits: Vec<RenameEditEntry>, skipped, message| {
+        let total_edits = edits.len();
+        RenamePreviewOutput {
+            renamable,
+            placeholder,
+            edits,
+            total_edits,
+            skipped_resource_operations: skipped,
+            partial: skipped > 0,
+            message,
+            precision: precision_floor_for_tool("rename_preview"),
+            provider: provider_for_tier(PrecisionTier::S2).to_string(),
+        }
+    };
+
+    let prepared = match provider
+        .prepare_rename(&location)
+        .await
+        .map_err(unavailable)?
+    {
+        Some(prepared) => prepared,
+        None => {
+            return Ok(answer(
+                false,
+                None,
+                Vec::new(),
+                0,
+                Some("the server reports nothing renamable at this position".to_string()),
+            ));
+        }
+    };
+    let Some(renamed) = provider
+        .rename(&location, &input.new_name)
+        .await
+        .map_err(unavailable)?
+    else {
+        return Ok(answer(
+            false,
+            prepared.placeholder,
+            Vec::new(),
+            0,
+            Some("the server declined to rename".to_string()),
+        ));
+    };
+    let edits = renamed
+        .edits
+        .iter()
+        .map(|e| RenameEditEntry {
+            file: e.range.start().file().to_string(),
+            start_line: e.range.start().line(),
+            start_column: e.range.start().column(),
+            end_line: e.range.end().line(),
+            end_column: e.range.end().column(),
+            new_text: e.new_text.clone(),
+        })
+        .collect();
+    let skipped = renamed.skipped_resource_operations;
+    let message = (skipped > 0)
+        .then(|| format!("{skipped} file operation(s) in the server's answer are not represented"));
+    Ok(answer(true, prepared.placeholder, edits, skipped, message))
 }
 
 /// Builds the `find_references` answer from a tiered outcome, labelling
@@ -915,5 +1008,248 @@ mod tests {
         let out = references_output("a.cs".to_string(), TieredOutcome::unresolved(Vec::new()));
         assert_eq!(out.total, 0);
         assert_ne!(out.provider, "lsp");
+    }
+
+    // ========================================================================
+    // handle_rename_preview tests
+    // ========================================================================
+
+    use crate::domain::traits::code_intelligence::{PrepareRename, RenameEdits, TextEdit};
+
+    /// Provider that only knows rename; every other operation is unused.
+    struct RenameMock {
+        prepare: Result<Option<PrepareRename>, String>,
+        rename: Result<Option<RenameEdits>, String>,
+        rename_calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RenameMock {
+        fn new(
+            prepare: Result<Option<PrepareRename>, String>,
+            rename: Result<Option<RenameEdits>, String>,
+        ) -> Self {
+            Self {
+                prepare,
+                rename,
+                rename_calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CodeIntelligenceProvider for RenameMock {
+        async fn get_symbols(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Vec<Symbol>, CodeIntelligenceError> {
+            Ok(vec![])
+        }
+        async fn find_references(
+            &self,
+            _location: &Location,
+            _include_declaration: bool,
+        ) -> Result<Vec<Reference>, CodeIntelligenceError> {
+            Ok(vec![])
+        }
+        async fn get_hierarchy(
+            &self,
+            _location: &Location,
+        ) -> Result<crate::domain::traits::code_intelligence::TypeHierarchy, CodeIntelligenceError>
+        {
+            Err(CodeIntelligenceError::Internal("unused".to_string()))
+        }
+        async fn get_definition(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<Location>, CodeIntelligenceError> {
+            Ok(None)
+        }
+        async fn get_document_symbols(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Vec<DocumentSymbol>, CodeIntelligenceError> {
+            Ok(vec![])
+        }
+        async fn hover(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<HoverInfo>, CodeIntelligenceError> {
+            Ok(None)
+        }
+        async fn prepare_rename(
+            &self,
+            _location: &Location,
+        ) -> Result<Option<PrepareRename>, CodeIntelligenceError> {
+            self.prepare
+                .clone()
+                .map_err(CodeIntelligenceError::Internal)
+        }
+        async fn rename(
+            &self,
+            _location: &Location,
+            _new_name: &str,
+        ) -> Result<Option<RenameEdits>, CodeIntelligenceError> {
+            self.rename_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.rename.clone().map_err(CodeIntelligenceError::Internal)
+        }
+    }
+
+    fn renamable() -> Result<Option<PrepareRename>, String> {
+        Ok(Some(PrepareRename {
+            range: Some(create_test_source_range("a.rs", 1, 4, 1, 7)),
+            placeholder: Some("foo".to_string()),
+        }))
+    }
+
+    fn one_edit(skipped: usize) -> Result<Option<RenameEdits>, String> {
+        Ok(Some(RenameEdits {
+            edits: vec![TextEdit {
+                range: create_test_source_range("a.rs", 1, 4, 1, 7),
+                new_text: "bar".to_string(),
+            }],
+            skipped_resource_operations: skipped,
+        }))
+    }
+
+    fn rename_input(file: &str, new_name: &str) -> RenamePreviewInput {
+        RenamePreviewInput {
+            file_path: file.to_string(),
+            line: 1,
+            column: 4,
+            new_name: new_name.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_preview_returns_the_edits_and_never_writes_them() {
+        let workspace = tempfile::tempdir().unwrap();
+        let file = workspace.path().join("a.rs");
+        std::fs::write(&file, "fn foo() {}\n").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(Arc::new(RenameMock::new(renamable(), one_edit(0))))
+            .build();
+
+        let out = handle_rename_preview(&ctx, rename_input("a.rs", "bar"))
+            .await
+            .unwrap();
+
+        assert!(out.renamable);
+        assert_eq!(out.placeholder.as_deref(), Some("foo"));
+        assert_eq!(out.total_edits, 1);
+        assert_eq!(out.edits[0].new_text, "bar");
+        assert_eq!(out.edits[0].file, "a.rs");
+        assert_eq!((out.edits[0].start_line, out.edits[0].start_column), (1, 4));
+        assert_eq!((out.edits[0].end_line, out.edits[0].end_column), (1, 7));
+        assert!(!out.partial);
+        assert_eq!(out.provider, "lsp");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "fn foo() {}\n",
+            "a preview must not touch the file"
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_preview_flags_a_partial_result() {
+        let workspace = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(Arc::new(RenameMock::new(renamable(), one_edit(2))))
+            .build();
+
+        let out = handle_rename_preview(&ctx, rename_input("a.rs", "bar"))
+            .await
+            .unwrap();
+
+        assert!(out.partial, "skipped resource operations make it partial");
+        assert_eq!(out.skipped_resource_operations, 2);
+    }
+
+    #[tokio::test]
+    async fn rename_preview_not_renamable_is_an_answer_and_skips_rename() {
+        let workspace = tempfile::tempdir().unwrap();
+        let mock = Arc::new(RenameMock::new(Ok(None), one_edit(0)));
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(mock.clone())
+            .build();
+
+        let out = handle_rename_preview(&ctx, rename_input("a.rs", "bar"))
+            .await
+            .unwrap();
+
+        assert!(!out.renamable);
+        assert!(out.edits.is_empty());
+        assert_eq!(
+            mock.rename_calls.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_preview_without_support_is_an_error_not_not_renamable() {
+        let workspace = tempfile::tempdir().unwrap();
+        // MockLspProvider keeps the port defaults: rename unsupported.
+        let ctx = confined_ctx(&workspace, MockLspProvider::new());
+
+        let result = handle_rename_preview(&ctx, rename_input("a.rs", "bar")).await;
+
+        assert!(
+            matches!(&result, Err(HandlerError::Internal(m)) if m.contains("not supported")),
+            "an unsupported operation must not read as 'not renamable': {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_preview_reports_a_failing_rename_after_a_positive_prepare() {
+        let workspace = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(Arc::new(RenameMock::new(
+                renamable(),
+                Err("server crashed".to_string()),
+            )))
+            .build();
+
+        let result = handle_rename_preview(&ctx, rename_input("a.rs", "bar")).await;
+
+        assert!(
+            matches!(&result, Err(HandlerError::Internal(m)) if m.contains("server crashed")),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_preview_rejects_a_file_outside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = outside_file();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .with_code_intelligence_arc(Arc::new(RenameMock::new(renamable(), one_edit(0))))
+            .build();
+
+        let result =
+            handle_rename_preview(&ctx, rename_input(&outside.path().to_string_lossy(), "bar"))
+                .await;
+
+        assert!(
+            matches!(result, Err(HandlerError::Security(_))),
+            "a path outside the workspace must be refused: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_preview_rejects_an_empty_new_name() {
+        let workspace = tempfile::tempdir().unwrap();
+        let ctx = confined_ctx(&workspace, MockLspProvider::new());
+
+        let result = handle_rename_preview(&ctx, rename_input("a.rs", "  ")).await;
+
+        assert!(
+            matches!(result, Err(HandlerError::InvalidInput(_))),
+            "{result:?}"
+        );
     }
 }

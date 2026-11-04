@@ -1289,6 +1289,50 @@ pub struct FindReferencesOutput {
     pub provider: String,
 }
 
+/// Input for rename_preview tool
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RenamePreviewInput {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
+    /// Name the symbol would take. The preview never applies it.
+    pub new_name: String,
+}
+
+/// One replacement a rename would make (1-based, end exclusive).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenameEditEntry {
+    pub file: String,
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+    pub new_text: String,
+}
+
+/// Output for rename_preview tool.
+///
+/// `renamable: false` is the server's own answer that nothing can be renamed
+/// there; a missing server or an unsupported operation is an error instead.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RenamePreviewOutput {
+    pub renamable: bool,
+    /// Text the server proposes as the current name.
+    pub placeholder: Option<String>,
+    pub edits: Vec<RenameEditEntry>,
+    pub total_edits: usize,
+    /// File create/rename/delete operations the server asked for and the
+    /// preview does not represent.
+    pub skipped_resource_operations: usize,
+    /// True when the edits are not the whole rename.
+    pub partial: bool,
+    pub message: Option<String>,
+    /// Minimum provenance tier the answer is guaranteed to carry.
+    pub precision: Precision,
+    /// Provider that produced the result.
+    pub provider: String,
+}
+
 /// A single reference entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReferenceEntry {
