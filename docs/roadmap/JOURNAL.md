@@ -31512,3 +31512,25 @@ en main (`b3_w2` inspect y `b6_w1_mcp_robustness`): falta `cognicode-mcp` releas
 aislado, infraestructura local, no regresión.
 
 **NOT_RUN.** Mutantes, `npm test --prefix apps/explorer-ui`, gate. AC2 y AC3 siguen abiertos.
+
+## 2026-11-04 — TASK-91 (AC2, AC3): el nivel de soporte sale del golden
+
+**Qué.** Hasta hoy `supported` era que `Language::X` apareciese en `m06`/`m10_acceptance.rs` (C#
+cumplía por una línea de «smoke parse»). Ahora un lenguaje con `sandbox/fixtures/*/symbols.golden`
+toma el nivel de su golden (`derive_support_level`, `generate_support_matrix.py`): `supported` si no
+declara límites (`!missing`/`!spurious`), `experimental` si los declara; sin golden rige la regla
+anterior. Cada golden nombra su lenguaje con `@language <id>`; el test exige que todo fichero del
+corpus se lea como ese lenguaje. Efecto medido en `product/languages.json`: C# sigue `supported`
+(golden limpio, pasa); Groovy sigue `experimental` (límites declarados, TASK-108); **Kotlin pasa de
+`experimental` a `supported`** (golden limpio). README.md/README.es.md y el test de recuentos
+actualizados (19 supported / 12 experimental).
+
+**Verificación.** RED: `the_published_support_level_follows_the_golden` falló con «kotlin: published
+experimental, its golden says supported». GREEN tras regenerar con el generador (`--check` ok).
+`cargo test -p cognicode-core --test it language_` 13/13 (filtrado: no certifica); clippy `-D
+warnings` y fmt limpios. Python (ejecutados sin pytest, que no está instalado):
+test_product_support_matrix 6/6 (+2 nuevos), test_oss_foundation 12/12, test_capabilities_drift 7/7.
+
+**NOT_RUN.** Suite `--test it` completa en este hito, mutantes, `npm test --prefix explorer-ui`,
+gate. `test_skill_surface_claims.py::test_main_reports_and_returns` falla en mi arnés ad hoc por
+registro de módulo (KeyError), no por el cambio; sin ejecutar con su runner.

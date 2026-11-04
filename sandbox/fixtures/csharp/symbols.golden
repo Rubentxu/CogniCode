@@ -1,3 +1,4 @@
+@language csharp
 # Hand-written from the sources: the types and callables each file declares,
 # as `class|function <name>@<path relative to this directory>`. An interface,
 # a record and a struct are types. Properties, fields and namespaces are not
