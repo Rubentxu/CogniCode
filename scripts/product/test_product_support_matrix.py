@@ -44,8 +44,8 @@ def test_generation_and_classification() -> None:
     languages, platforms = generator.build_documents(ROOT, BASELINE)
     assert len(languages["languages"]) == 31
     assert len(platforms["platforms"]) == 6
-    assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 19
-    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 12
+    assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 20
+    assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 11
     assert [item["id"] for item in languages["languages"]] == sorted(item["id"] for item in languages["languages"])
     # The certified set is whatever the release lane builds, read here
     # independently of the generator. Asserting two literals instead would be a
@@ -164,6 +164,6 @@ def test_support_level_of_a_language_with_a_golden_follows_the_golden() -> None:
 
 def test_golden_verdicts_read_the_declared_limits() -> None:
     verdicts = load_generator().golden_verdicts(ROOT)
-    assert verdicts["groovy"] == "limited"
+    assert verdicts["groovy"] == "clean"
     assert verdicts["kotlin"] == "clean"
     assert verdicts["csharp"] == "clean"
