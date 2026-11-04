@@ -19,7 +19,7 @@
 //! failure mode it guards is invisible from the inside: the server answers
 //! `tools/list` with a well-formed list, exit code 0, nothing on stderr.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 use serde_json::{Value, json};

@@ -39,7 +39,7 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-mod common;
+use crate::common;
 
 /// Resuelve el path al binario legacy 0.97.3. Si no existe, devuelve
 /// `None` y los tests se saltan con un mensaje claro.

@@ -38,7 +38,7 @@
 //! rather than asserted against the source, because the source is the thing
 //! being changed.
 
-mod common;
+use crate::common;
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

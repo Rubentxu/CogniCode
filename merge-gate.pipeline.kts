@@ -475,7 +475,7 @@ pipeline {
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
                     export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
                     export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
-                    cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e --quiet
+                    cargo test -p cognicode-mcp --test it --quiet -- prf_h06_adversarial_e2e
                 """.trimIndent())
             }
 
@@ -681,7 +681,7 @@ pipeline {
             // tool authority audit, structured output, tools/runtime consistency,
             // corrupt-cache recovery and signal cancellation.
             stage("mcp-named-contracts") {
-                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --test a009_agent_safe_profile --test a010_tool_authority_audit --test a012_structured_output --test a016_tools_runtime_consistency --test prf_f4_w3_corrupt_cache_recovery --test prf_f5_w3_signal_cancel --quiet")
+                sh("$cd && cargo test -p cognicode-mcp --test it --quiet -- cr07_metrics_exposition_contract:: a009_agent_safe_profile:: a010_tool_authority_audit:: a012_structured_output:: a016_tools_runtime_consistency:: prf_f4_w3_corrupt_cache_recovery:: prf_f5_w3_signal_cancel::")
             }
 
             // One stage per contract, the way the workflow spelled them out. The
@@ -819,7 +819,7 @@ pipeline {
                     $cd || exit 1
                     if [ -x sandbox/.compat/0.97.3/cognicode-mcp ]; then
                         echo "compat fixture present, running the matrix"
-                        cargo test -p cognicode-mcp --test find_usages_compat_0_97 -- \
+                        cargo test -p cognicode-mcp --test it -- find_usages_compat_0_97:: \
                             --skip compat_forward_0973_server_handles_modern_request
                     else
                         echo "SKIP: sandbox/.compat/0.97.3/cognicode-mcp absent (ADR-PRF-008 policy R1)"

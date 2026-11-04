@@ -32,7 +32,7 @@
 //! This file pins the observable consequence an operator sees: the
 //! advertised catalogue does not depend on the launch context.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 

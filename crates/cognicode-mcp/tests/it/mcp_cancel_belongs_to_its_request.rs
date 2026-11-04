@@ -15,7 +15,7 @@
 //! cliente: un `Cancelled` ahi significa que la segunda peticion observo la
 //! cancelacion de la primera.
 
-mod common;
+use crate::common;
 
 use common::McpSession;
 use serde_json::json;

@@ -9,7 +9,7 @@
 //! the endpoint publishes is not what matters here; what the server says
 //! over the socket is.
 
-mod common;
+use crate::common;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
