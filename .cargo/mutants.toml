@@ -66,8 +66,13 @@ minimum_test_timeout = 120.0
 # `personalized_pagerank.rs`, `delta > max_delta` -> `>=` (running maximum of the
 # per-node change): the two operators differ only when `delta == max_delta`, and
 # the branch then assigns `max_delta = delta`, the value it already holds.
+# `interproc_summary.rs`, `scc_pos[&callee_scc] > my_pos` -> `>=`: the two differ
+# only when the callee's SCC position equals the caller's, i.e. the same SCC,
+# and that case is already skipped by the `callee_scc == scc_id` check right
+# above. The comparison never sees equal operands.
 exclude_re = [
     "crates/cognicode-graph-algos/src/algorithms/bridges\\.rs:56:.*: replace < with <= .*",
     "crates/cognicode-graph-algos/src/algorithms/dominators\\.rs:(105|121):.*: replace < with <= .*",
     "crates/cognicode-graph-algos/src/algorithms/personalized_pagerank\\.rs:115:.*: replace > with >= .*",
+    "crates/cognicode-graph-algos/src/algorithms/interproc_summary\\.rs:226:.*: replace > with >= .*",
 ]

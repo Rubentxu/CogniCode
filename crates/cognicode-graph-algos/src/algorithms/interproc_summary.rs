@@ -143,9 +143,7 @@ pub fn compute_summaries(
     // `call_graph` is shorter than `n`, pad with empty vecs. Out-of-range
     // callees coming from `call_graph` are dropped here as well.
     let mut padded_cg: Vec<Vec<usize>> = call_graph.to_vec();
-    while padded_cg.len() < n {
-        padded_cg.push(Vec::new());
-    }
+    padded_cg.resize_with(n.max(padded_cg.len()), Vec::new);
     for row in padded_cg.iter_mut() {
         row.retain(|&c| c < n);
     }
@@ -156,9 +154,7 @@ pub fn compute_summaries(
     let mut node_scc: Vec<usize> = vec![0; n];
     for (scc_id, scc) in sccs.iter().enumerate() {
         for &node in scc {
-            if node < n {
-                node_scc[node] = scc_id;
-            }
+            node_scc[node] = scc_id;
         }
     }
 
@@ -196,11 +192,9 @@ pub fn compute_summaries(
 
     for (scc_id, scc) in sccs.iter().enumerate() {
         for &node in scc {
-            if node < n {
-                scc_reads[scc_id].extend(local_reads[node].iter().cloned());
-                scc_writes[scc_id].extend(local_writes[node].iter().cloned());
-                scc_calls[scc_id].extend(local_calls[node].iter().cloned());
-            }
+            scc_reads[scc_id].extend(local_reads[node].iter().cloned());
+            scc_writes[scc_id].extend(local_writes[node].iter().cloned());
+            scc_calls[scc_id].extend(local_calls[node].iter().cloned());
         }
     }
 
@@ -215,11 +209,11 @@ pub fn compute_summaries(
         .collect();
 
     for &scc_id in &scc_order {
-        let members: Vec<usize> = sccs[scc_id].iter().copied().filter(|&m| m < n).collect();
+        let members: &[usize] = &sccs[scc_id];
         let my_pos = scc_pos[&scc_id];
 
         let mut callee_sccs_to_union: Vec<usize> = Vec::new();
-        for &node in &members {
+        for &node in members {
             if let Some(nbrs) = padded_cg.get(node) {
                 for &callee in nbrs {
                     if callee >= n {
@@ -247,35 +241,9 @@ pub fn compute_summaries(
             scc_calls[scc_id].extend(c);
         }
 
-        // Fixed-point over a recursive SCC: union each member's local data
-        // with every other member's reachable set until stable.
-        if scc_is_recursive[scc_id] {
-            loop {
-                let mut changed = false;
-                for &node in &members {
-                    let before_r = scc_reads[scc_id].len();
-                    let before_w = scc_writes[scc_id].len();
-                    let before_c = scc_calls[scc_id].len();
-                    for &other in &members {
-                        if other == node {
-                            continue;
-                        }
-                        scc_reads[scc_id].extend(local_reads[other].iter().cloned());
-                        scc_writes[scc_id].extend(local_writes[other].iter().cloned());
-                        scc_calls[scc_id].extend(local_calls[other].iter().cloned());
-                    }
-                    if scc_reads[scc_id].len() != before_r
-                        || scc_writes[scc_id].len() != before_w
-                        || scc_calls[scc_id].len() != before_c
-                    {
-                        changed = true;
-                    }
-                }
-                if !changed {
-                    break;
-                }
-            }
-        }
+        // No per-SCC fixed-point pass is needed: the accumulators were seeded
+        // with every member's local data, and members of a strongly connected
+        // component reach each other, so the seed is already the fixed point.
     }
 
     // Emit per-function summaries. Calls reported as semantic FunctionIds
@@ -445,6 +413,113 @@ mod tests {
             ..s_a.clone()
         };
         assert_eq!(summary_id(&s_a), summary_id(&s_c));
+    }
+
+    /// Runs `compute_summaries` on a thread so a non-terminating mutant fails
+    /// the test instead of hanging the suite.
+    fn run(
+        call_graph: Vec<Vec<usize>>,
+        functions: Vec<FunctionLocalView>,
+    ) -> Vec<InterprocSummary> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(compute_summaries(&call_graph, &functions));
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .expect("compute_summaries did not finish within 5s")
+    }
+
+    fn strs(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn out_of_range_local_calls_are_dropped_and_in_range_kept() {
+        // n = 2; f0 calls idx 1 (valid), 2 (== n) and 9 (> n).
+        let functions = vec![
+            f(10, vec![], vec![1, 2, 9]),
+            f(20, vec![s(0, &["y"], &[])], vec![]),
+        ];
+        let out = run(vec![vec![1], vec![]], functions);
+        assert_eq!(out[0].calls, vec![20]);
+        assert_eq!(out[0].kind, SummaryKind::BottomUp);
+    }
+
+    #[test]
+    fn short_call_graph_is_padded_with_empty_rows() {
+        let functions = vec![
+            f(1, vec![s(0, &["x"], &[])], vec![]),
+            f(2, vec![s(1, &["y"], &[])], vec![]),
+        ];
+        let out = run(vec![], functions);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].writes, strs(&["x"]));
+        assert_eq!(out[1].writes, strs(&["y"]));
+    }
+
+    #[test]
+    fn out_of_range_call_graph_edges_are_dropped_but_valid_ones_propagate() {
+        let functions = vec![
+            f(1, vec![s(0, &["x"], &[])], vec![1]),
+            f(2, vec![s(1, &["y"], &[])], vec![]),
+        ];
+        // Row 0 holds the valid edge 1 plus out-of-range 2 (== n) and 7.
+        let out = run(vec![vec![1, 2, 7], vec![]], functions);
+        assert_eq!(out[0].writes, strs(&["x", "y"]));
+        assert_eq!(out[1].writes, strs(&["y"]));
+    }
+
+    #[test]
+    fn independent_sccs_do_not_share_summaries() {
+        // 0 → 1, and an unrelated 2. The callee never inherits from the caller.
+        let functions = vec![
+            f(1, vec![s(0, &["a"], &[])], vec![1]),
+            f(2, vec![s(1, &["b"], &["c"])], vec![]),
+            f(3, vec![s(2, &["d"], &[])], vec![]),
+        ];
+        let out = run(vec![vec![1], vec![], vec![]], functions);
+        assert_eq!(out[0].writes, strs(&["a", "b"]));
+        assert_eq!(out[0].reads, strs(&["c"]));
+        assert_eq!(out[1].writes, strs(&["b"]));
+        assert_eq!(out[1].reads, strs(&["c"]));
+        assert_eq!(out[2].writes, strs(&["d"]));
+        assert!(out[2].reads.is_empty());
+        assert_eq!(out[2].kind, SummaryKind::Leaf);
+    }
+
+    #[test]
+    fn recursive_scc_members_share_the_union_of_reads_writes_and_calls() {
+        // 0 ↔ 1 recursive; 1 also calls leaf 2.
+        let functions = vec![
+            f(1, vec![s(0, &["a"], &["ra"])], vec![1]),
+            f(2, vec![s(1, &["b"], &["rb"])], vec![0, 2]),
+            f(3, vec![s(2, &["c"], &[])], vec![]),
+        ];
+        let out = run(vec![vec![1], vec![0, 2], vec![]], functions);
+        for i in [0, 1] {
+            assert_eq!(out[i].kind, SummaryKind::FixedPoint);
+            assert_eq!(out[i].writes, strs(&["a", "b", "c"]));
+            assert_eq!(out[i].reads, strs(&["ra", "rb"]));
+            assert_eq!(out[i].calls, vec![1, 2, 3]);
+        }
+        assert_eq!(out[2].kind, SummaryKind::Leaf);
+        assert_eq!(out[2].writes, strs(&["c"]));
+    }
+
+    #[test]
+    fn summary_id_is_the_sha256_of_the_canonical_json() {
+        let summary = InterprocSummary {
+            function_id: 1,
+            kind: SummaryKind::Leaf,
+            reads: vec!["r".into()],
+            writes: vec!["w".into()],
+            calls: vec![],
+        };
+        // printf '%s' '{"function_id":1,"kind":"leaf","reads":["r"],"writes":["w"],"calls":[]}' | sha256sum
+        assert_eq!(
+            summary_id(&summary),
+            "e2717c05f5a556bba3a2168d9449fe428799ef0d34fee6f00e9bb67edf85bdad"
+        );
     }
 
     #[test]

@@ -30918,3 +30918,32 @@ declarado en `.cargo/mutants.toml`. Corrida final `-j 1` con el runner de memori
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo no se pasa
 por tarea sino por lote de 10 tareas del tablero (regla fija).
+
+## 2026-11-04 — TASK-98: interproc_summary sin mutantes vivos ni colgados
+
+**Hueco.** La mutación completa dejó 16 supervivientes y 4 timeouts en
+`interproc_summary.rs`. Los timeouts eran el bucle de punto fijo por SCC: con
+`!=`→`==` o `delete !` nunca terminaba.
+
+**Diagnóstico.** Ese bucle era código muerto: los acumuladores del SCC ya nacen con
+los datos locales de todos los miembros, y los miembros de un SCC se alcanzan entre
+sí, así que la semilla ya es el punto fijo y `changed` nunca valía `true`. Se
+eliminó (con su `||` y su `!`). Lo mismo con el relleno de `call_graph` (la
+condensación ya trata filas ausentes como vacías) y los guardas `node < n` / `m < n`,
+que `condensation` ya garantiza tras el `retain`.
+
+**Tests.** Valores a mano: llamadas locales fuera de rango (`== n` y `> n`), grafo
+corto, aristas fuera de rango en `call_graph`, SCC independientes (el callee no hereda
+del caller), SCC recursivo con callee hoja (unión exacta de reads/writes/calls) y
+`summary_id` fijado con el SHA-256 de `{"function_id":1,"kind":"leaf",...}` calculado
+con `sha256sum`. Cada llamada corre en un hilo con plazo de 5 s.
+
+**Evidencia.** Corrida con los tests nuevos y el bucle aún presente: 31 mutantes, 22
+atrapados, 7 vivos, 2 inviables. Tras la simplificación: 18 mutantes, 16 atrapados,
+2 inviables, 0 vivos, 0 timeouts (`-j 1`, runner de memoria, 82 s). Un equivalente
+declarado en `.cargo/mutants.toml`: `scc_pos[&callee_scc] > my_pos` → `>=` (con
+SCC igual ya se hizo `continue`). `cognicode-graph-algos` lib: 199 en verde; clippy
+`-D warnings` y `fmt --all --check` rc=0.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
