@@ -350,3 +350,358 @@ fn the_governing_document_declares_the_two_classes_and_the_three_steps() {
          others; the taxonomy has to be stated, not implied"
     );
 }
+
+// ===========================================================================
+// Test 5 — the tests that share the tree take turns
+// ===========================================================================
+
+/// The test modules that write into the repository tree.
+///
+/// A test that writes into `crates/` shares state with every other test
+/// that does the same: they delete and rewrite the same files. Under
+/// `cargo test` the `#[serial]` annotations took turns; under nextest each
+/// test is its own process, so the annotations no longer serialize
+/// anything. The three tests of the SBOM contract delete each other's
+/// files: each one removes the SBOMs the others are producing, and the
+/// one that finds its file gone fails with "read
+/// crates/cogh-x86_64-unknown-linux-gnu.cdx.json: No such file or
+/// directory".
+fn modules_that_write_into_the_tree() -> Vec<String> {
+    let root = repo_root();
+    let mut out = Vec::new();
+
+    // The test trees of every crate: a source file that mentions
+    // `crates/` is not a test that shares state with other tests.
+    let mut pending = Vec::new();
+    let Ok(crates) = std::fs::read_dir(root.join("crates")) else {
+        return out;
+    };
+    for entry in crates.flatten() {
+        let tests = entry.path().join("tests");
+        if tests.is_dir() {
+            pending.push(tests);
+        }
+    }
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if writes_into_the_tree(&text)
+                && let Some(name) = path.file_stem().and_then(|n| n.to_str())
+            {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// True when the module WRITES into the repository tree.
+///
+/// A path into the tree and a write are two different facts, and only
+/// the two together are shared state: a test that READS a source file
+/// from the tree shares nothing, and a test that writes into its own
+/// temp dir shares nothing either.
+///
+/// The resolution is textual, but it is not naive: the tree path
+/// usually travels through a variable —`let path = repo_root().join(...)`,
+/// then `for p in &paths`, then `fs::remove_file(&p)`— so the detector
+/// follows the names it taints. A path is tainted when it comes from
+/// `repo_root()`; a write is shared when the argument it takes is a
+/// tainted name, or when the write itself names the tree.
+fn writes_into_the_tree(text: &str) -> bool {
+    let mut tainted: Vec<String> = Vec::new();
+
+    for chunk in text.split(';') {
+        let chunk = chunk.trim();
+
+        // A binding: `let path = repo_root().join(...)`.
+        let binding = chunk
+            .strip_prefix("let ")
+            .map(|rest| rest.strip_prefix("mut ").unwrap_or(rest));
+        if let Some(rest) = binding
+            && let Some((lhs, rhs)) = rest.split_once('=')
+        {
+            let name = leading_identifier(lhs);
+            let rooted = (rhs.contains("repo_root()") && !is_build_directory(rhs))
+                || names_in(rhs).iter().any(|n| is_tainted(n, &tainted));
+            if !name.is_empty() && rooted {
+                taint(&mut tainted, &name);
+            }
+        }
+
+        // A loop over tree paths: `for p in &paths`.
+        if let Some(rest) = chunk.strip_prefix("for ")
+            && let Some((var, iter)) = rest.split_once(" in ")
+        {
+            let name = leading_identifier(var);
+            let rooted = (iter.contains("repo_root()") && !is_build_directory(iter))
+                || names_in(iter).iter().any(|n| is_tainted(n, &tainted));
+            if !name.is_empty() && rooted {
+                taint(&mut tainted, &name);
+            }
+        }
+
+        // A write whose DESTINATION is a tree path.
+        //
+        // The destination is not always the first argument: `fs::copy`
+        // and `fs::rename` read from the source and write to the
+        // target, so a copy that READS a tracked file out of the tree
+        // is not shared state.
+        for (op, destination) in [
+            ("fs::write", 0),
+            ("fs::remove_file", 0),
+            ("fs::remove_dir_all", 0),
+            ("fs::create_dir_all", 0),
+            ("fs::create_dir", 0),
+            ("fs::rename", 1),
+            ("fs::copy", 1),
+        ] {
+            let Some(at) = chunk.find(op) else {
+                continue;
+            };
+            let call_arguments = arguments(&chunk[at..]);
+            let Some(argument) = call_arguments.get(destination) else {
+                continue;
+            };
+            if argument.contains("repo_root()")
+                || names_in(argument).iter().any(|n| is_tainted(n, &tainted))
+            {
+                return true;
+            }
+        }
+
+        // A shell command that mutates the tree: `rm -f crates/...`.
+        //
+        // The verb has to be the START of a quoted command, not a
+        // substring somewhere in a word: "confirm" ends in "rm", and a
+        // detector that cannot tell the two flags a test that only
+        // reads.
+        if chunk.contains("Command::new") {
+            for literal in quoted_literals(chunk) {
+                let command = literal.trim_start();
+                if ["rm ", "mv ", "cp ", "mkdir "]
+                    .iter()
+                    .any(|verb| command.starts_with(verb))
+                    && literal.contains("crates/")
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// True when the path lands in the build directory.
+///
+/// `target/` is cargo's, not the tests': cargo writes there while the
+/// suite runs, and a test that stages a scratch directory under it
+/// with a unique name shares nothing with another test. The shared
+/// state this contract is about lives in the SOURCE tree —a tracked
+/// file that two tests would write over each other.
+fn is_build_directory(text: &str) -> bool {
+    text.contains("join(\"target\")")
+        || text.contains("join(\"target/")
+        || text.contains("CARGO_TARGET_DIR")
+}
+
+/// The identifier a binding starts with: `path` out of `path: PathBuf`.
+fn leading_identifier(text: &str) -> String {
+    text.trim()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
+}
+
+/// The identifiers of a piece of source text.
+fn names_in(text: &str) -> Vec<String> {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn is_tainted(name: &str, tainted: &[String]) -> bool {
+    tainted.iter().any(|t| t == name)
+}
+
+fn taint(tainted: &mut Vec<String>, name: &str) {
+    if !tainted.iter().any(|t| t == name) {
+        tainted.push(name.to_string());
+    }
+}
+
+/// The contents of the double-quoted literals of a piece of source.
+fn quoted_literals(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('"') {
+        let after = &rest[open + 1..];
+        match after.find('"') {
+            Some(close) => {
+                out.push(after[..close].to_string());
+                rest = &after[close + 1..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// The arguments of a call, split on the commas that are not nested.
+fn arguments(call: &str) -> Vec<String> {
+    let Some(open) = call.find('(') else {
+        return Vec::new();
+    };
+    let rest = &call[open + 1..];
+    let mut out = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    for c in rest.chars() {
+        match c {
+            '(' | '[' | '{' => {
+                depth += 1;
+                current.push(c);
+            }
+            ')' | ']' | '}' => {
+                if depth == 0 {
+                    out.push(current.trim().to_string());
+                    return out;
+                }
+                depth -= 1;
+                current.push(c);
+            }
+            ',' if depth == 0 => {
+                out.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    out.push(current.trim().to_string());
+    out
+}
+
+/// The filters of the nextest groups that run one test at a time.
+///
+/// `.config/nextest.toml` is the containment for the state that nextest
+/// stopped sharing. The file is small and regular — `[test-groups.<name>]`
+/// declares `max-threads`, and `[[profile.gate.overrides]]` binds a filter
+/// to a group — so reading it as text is enough, and it keeps this
+/// contract independent of a TOML parser.
+fn single_threaded_filters() -> Vec<String> {
+    let text = std::fs::read_to_string(repo_root().join(".config/nextest.toml"))
+        .expect(".config/nextest.toml is readable");
+
+    let mut group_threads: Vec<(String, usize)> = Vec::new();
+    let mut current_group: Option<String> = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("[test-groups.") {
+            current_group = Some(rest.trim_end_matches(']').to_string());
+            continue;
+        }
+        if let Some(group) = current_group.clone()
+            && let Some(threads) = line
+                .strip_prefix("max-threads = ")
+                .and_then(|n| n.trim().parse::<usize>().ok())
+        {
+            group_threads.push((group, threads));
+            continue;
+        }
+        if line.starts_with('[') {
+            current_group = None;
+        }
+    }
+
+    let mut overrides: Vec<(String, String)> = Vec::new();
+    let mut filter: Option<String> = None;
+    let mut group: Option<String> = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with("[[profile.gate.overrides]]") {
+            if let (Some(f), Some(g)) = (filter.take(), group.take()) {
+                overrides.push((f, g));
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("filter = ") {
+            filter = Some(value.trim().trim_matches('\'').to_string());
+        }
+        if let Some(value) = line.strip_prefix("test-group = ") {
+            group = Some(value.trim().trim_matches('\'').to_string());
+        }
+    }
+    if let (Some(f), Some(g)) = (filter, group) {
+        overrides.push((f, g));
+    }
+
+    overrides
+        .into_iter()
+        .filter(|(_, group)| {
+            group_threads
+                .iter()
+                .any(|(name, threads)| name == group && *threads == 1)
+        })
+        .map(|(filter, _)| filter)
+        .collect()
+}
+
+/// Every test that writes into the tree is in a group of one thread.
+///
+/// The groups are the containment, and a containment that nobody checks is
+/// a containment that gets deleted the first time somebody tidies the
+/// configuration file.
+///
+/// The detection resolves the tree path through the names it travels by,
+/// so a test that READS a tracked file, or that writes into its own temp
+/// directory, is not mistaken for a test that shares the tree. The build
+/// directory (`target/`) is cargo's, not the tests'.
+///
+/// What this does NOT check: a shared state reached through a shape the
+/// resolution does not follow — a path that crosses a function boundary,
+/// for instance. Such a test needs its own group, and this contract will
+/// not say so.
+#[test]
+fn the_tests_that_share_the_tree_take_turns() {
+    let shared = modules_that_write_into_the_tree();
+    assert!(
+        !shared.is_empty(),
+        "no test module writes into the repository tree, so this contract \
+         is looking at nothing; the detection has stopped seeing the shape \
+         it was written for"
+    );
+    assert!(
+        shared.iter().any(|m| m == "prf_f6_w3_bis_sbom_contract"),
+        "the SBOM contract is the module this contract was written for — the \
+         one that writes `crates/<component>-<target>.cdx.json` into the tree \
+         and deletes it again. The detection has stopped seeing it: {shared:?}"
+    );
+
+    let filters = single_threaded_filters();
+    for module in shared {
+        assert!(
+            filters.iter().any(|filter| filter.contains(&module)),
+            "the tests of `{module}` write into the repository tree, so they \
+             share state with each other; under nextest each test is its own \
+             process and `#[serial]` no longer takes turns — they need a \
+             group with `max-threads = 1`, and no group covers them: {filters:?}"
+        );
+    }
+}

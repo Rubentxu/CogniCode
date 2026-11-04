@@ -48,3 +48,21 @@ max-threads = 1
 [[profile.gate.overrides]]
 filter = 'binary_id(/^cognicode-cli::bin\//)'
 test-group = 'cli-shared-home'
+
+# The SBOM contract runs `scripts/ci/build-sboms-for-lane.sh` against the
+# REAL workspace: the script writes `crates/<component>-<target>.cdx.json`
+# into the tree, and each of the three tests starts by deleting those files
+# before regenerating them. Under `cargo test` the `#[serial]` annotations
+# took turns; under nextest each test is its own process, so the annotations
+# no longer serialize anything and the three tests deleted each other's
+# files — one of them fails with "read
+# crates/cogh-x86_64-unknown-linux-gnu.cdx.json: No such file or directory".
+# Their shared state is not the HOME — it is the workspace tree — so the two
+# groups above do not cover them. One thread for the group removes the race,
+# the same containment the other two groups already use.
+[test-groups.sbom-workspace]
+max-threads = 1
+
+[[profile.gate.overrides]]
+filter = 'test(/^prf_f6_w3_bis_sbom_contract::/)'
+test-group = 'sbom-workspace'
