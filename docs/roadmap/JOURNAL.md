@@ -30967,3 +30967,31 @@ equivalentes declarados. `cognicode-graph-algos` lib en verde; clippy `-D warnin
 
 **NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
 lote de 10 tareas, no por tarea.
+
+## 2026-11-04 — TASK-100: multi_source_reachability sin mutantes vivos
+
+**Hueco.** Sobrevivían 4 mutantes en `multi_source_reachability_helper.rs` (líneas 55,
+61 y 65): los límites de índice y de profundidad. Ningún test probaba una fuente o un
+vecino con índice `== n`, ni un límite de profundidad intermedio.
+
+**Tests.** Con plazo de 5 s en un hilo: cadena 0→1→2→3 con profundidad 1, 2, 3 y 100
+(resultados `[1]`, `[1,2]`, `[1,2,3]`, `[1,2,3]`); fuentes `== n` y `> n` (vacío) y
+mezcladas con una válida (`[1,2]`); vecinos `== n` y `> n` ignorados (`[1]`).
+
+**Diagnóstico.** La corrida con los tests nuevos dejó un único vivo, `||`→`&&` en la
+guarda inicial `sources.is_empty() || max_depth == 0`: era una guarda redundante, pues
+sin fuentes la cola queda vacía y con profundidad 0 cada semilla se salta por
+`depth >= max_depth`. Se eliminó (los tests de fuentes vacías y profundidad 0 siguen
+fijando el comportamiento).
+
+**Evidencia.** Primera corrida `-j 1` con runner de memoria: 16 mutantes, 15
+atrapados, 1 vivo. Tras eliminar la guarda: 14 mutantes, 14 atrapados, 0 vivos, 0
+timeouts (71 s). Sin equivalentes declarados. Lib `cognicode-graph-algos`: 205 en
+verde; clippy `-D warnings` y `fmt --all --check` rc=0.
+
+**Observación (fuera de alcance).** Con un ciclo que vuelve a la fuente (0→1→0) la
+fuente entra en `visited` y se devuelve, aunque la documentación dice que se excluyen.
+No se ha cambiado ni fijado; queda para decisión del maintainer.
+
+**NOT_RUN.** `just verify` no existe en el `justfile`. El gate completo se pasa por
+lote de 10 tareas, no por tarea.
