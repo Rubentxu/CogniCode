@@ -31790,3 +31790,74 @@ release de `cognicode-mcp` construido (incluye `wire_tools_list_matches_hand_aut
 de `tools/list` no se regeneró; CLI y call hierarchy LSP fuera de alcance (hay
 `get_call_hierarchy` por grafo: no se crea segunda fuente). **NOT_RUN:** mutantes,
 `npm test --prefix apps/explorer-ui`, gate (lote 11: 7/10 al cerrar).
+
+## 2026-11-04 — TASK-64: se retira de la superficie anunciada lo que no calcula
+
+**Qué.** Dos tools marcadas `stable` en `product/tools.json` no calcularon nunca nada.
+`graph_analyze` respondía a cualquier modo con el mismo `{"type": …, "nodes": <recuento>}` y su
+payload llegó a afirmar que la SCC se había calculado con `petgraph::algo::tarjan_scc`; ningún
+algoritmo corría. `composite_impact_query` prometía un paquete de evidencia (`impact`,
+`architecture`, `findings`) que nunca cableó, y sus seguimientos se buscaban comparando un nombre de
+**símbolo** contra un nombre de **tool**, así que la comparación no podía acertar.
+
+Los dos nombres salen de `tools/list` —ni del catálogo, ni de la captura de runtime, ni de
+`capabilities.rs`— pero **siguen siendo invocables**: un nombre publicado que desaparece sin una
+palabra rompe a quien lo usa. `graph_analyze` lo sirve ahora la tool que sí calcula
+(`graph_condensed` para `scc`, `graph_reduced` para `reduced`, `graph_feedback_arcs` para
+`feedback_arcs`) y `composite_impact_query` lo sirve `analyze_impact`. La respuesta dice `alias`,
+`served_by` y `deprecation`, y el payload es el de la tool que calculó, aplanado al lado: quien pasa
+del nombre retirado a su sustituto encuentra los mismos campos.
+
+El servidor deja de anunciar `resources`: el handler no implementaba ninguno y un cliente que veía
+la capacidad tenía derecho a llamar `resources/list`, que el servidor respondía «method not found».
+Un anuncio es una promesa. `prompts.rs`, `resources.rs` y `completion.rs` (871 líneas, cero
+llamadores) se **borran** en vez de cablearse: cablear `resources` exponía `handle_resources_read`,
+que une una URI sin validar sobre el workspace —superficie de path traversal— y habría añadido una
+capacidad, no quitado una mentira.
+
+`schemas.rs` conserva `CompositeImpactQueryInput` (la forma del cable del alias retirado) pero le
+retira `into_core_query()`, que era la puerta al bundle vacío. `output_contracts.rs` pierde el
+schema escrito a mano de `composite_impact_query`; el que se publica ahora se deriva del tipo que
+serializa la respuesta. El recuento publicado baja de 79 a 77 (`product/tools.json`,
+`product/tool-catalog-runtime.json`, `README.md`, `README.es.md`, `skills/cognicode/SKILL.md`,
+`skills/cognicode-mcp/SKILL.md` y el pin del audit `h21_consumer_questions_audit`).
+
+**Ratchet de AC4.** En `mcp_roundtrip_tests.rs`: toda tool `stable` la sirve el servidor (brazo de
+despacho) y toda tool `stable` la nombra un test. El escaneo de tests se recalcula sobre el árbol
+en cada corrida —no hay lista que mantener— y lleva su control negativo: un nombre fantasma
+ensamblado en runtime no puede ser reportado como nombrado (escrito como literal, el escaneo
+encontraría al escaneo).
+
+**Verificación.** SHA base c5e3bf1a. RED medido revirtiendo solo el arreglo y reejecutando: 6
+fallos de integración y 1 unitario, con el diagnóstico exacto de la mentira («SCC computed via
+`petgraph::algo::tarjan_scc`» y el bundle vacío
+`{"findings":[],"suggested_follow_ups":[],"suggested_prerequisites":[],"verdict_refused":true,…}`).
+GREEN: `--lib` de `cognicode-core` 2525 OK; `--test it` 960 OK y 2 ignorados; `cognicode-mcp` 78+13
+OK; `cognicode-cli` 332+201+44+15+10 OK; `cognicode-explorer` 18 binarios OK; clippy del workspace
+`-D warnings`, `cargo fmt --all --check` y `bash scripts/ci/run-all-contracts.sh` (rc=0) limpios;
+`npm test --prefix apps/explorer-ui` rc=0.
+
+**Medición sobre el cable real** (binario release, JSON-RPC por stdout, fixture `rust-callgraph`):
+las capacidades anuncio son exactamente `['tools']`; 72 tools anunciadas —77 en el catálogo, menos 5
+detrás de features no habilitadas en esta build (`contract-store` 2, `program-analysis-server` 1,
+`evidence-cli-ladybug` 2)—; `graph_analyze` y `composite_impact_query` **no** aparecen; y
+`tools/call` de los dos nombres responde `served_by: graph_condensed` (con `algorithm`,
+`component_count`, `components`) y `served_by: analyze_impact` (con `symbol: helper`,
+`impacted_symbols`) respectivamente.
+
+**Sin cubrir.** Un test que nombra una tool no es un test que fija su comportamiento: el ratchet de
+AC4 prueba presencia, no contrato. La afirmación fuerte exigiría un registro de test de
+comportamiento por tool, y ese registro es una segunda fuente de verdad esperando a derivar; es una
+limitación conocida, no una afirmación que este cambio haga. El alias con un modo desconocido es
+error de entrada, no respuesta, y nadie lo ha medido en el cable. `composite_impact_query` mapea el
+nombre cualificado a su último segmento, así que un símbolo con dos homónimos se resuelve con las
+reglas de `analyze_impact`, no con las del composite (que nunca tuvo). La deprecación es un texto,
+no un mecanismo: `tools/list` no lleva marcas de deprecación.
+
+**Gap residual enrutado.** La superficie MCP sigue sin camino de respuesta para «¿por qué se
+reporta este hallazgo?»: el dominio de hallazgos es rico (`domain/findings/`, `application/findings/`)
+pero ninguna tool publicada devuelve un `Finding` con su `message`, su `causal_chain`, su `detector`
+y su `status`. No se pierde una capacidad que funcionara —el bundle era siempre `[]`— pero la
+pregunta queda sin dueño: **TASK-111**.
+
+**NOT_RUN:** mutantes y gate completo (lote de 10 tareas).

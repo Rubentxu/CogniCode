@@ -967,9 +967,14 @@ fn concurrent_requests_in_different_sessions_isolated() {
         "session B must NOT see session A's graph, but graph_analyze \
          succeeded there: {b_graph}"
     );
+    // The reason is the graph session B lacks, said by the tool that
+    // serves the name: the alias does not invent a failure of its own,
+    // it hands the call to the tool that computes and reports what that
+    // tool reports.
     assert!(
-        first_text(&b_graph).contains("No graph available"),
-        "session B's graph_analyze must fail with the no-graph reason: {b_graph}"
+        first_text(&b_graph).contains("build_graph"),
+        "session B's graph_analyze must fail naming the graph it lacks and how \
+         to get one: {b_graph}"
     );
 
     // --- Per-session state #2: the bound workspace root. ---------

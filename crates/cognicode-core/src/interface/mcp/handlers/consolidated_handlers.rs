@@ -223,55 +223,6 @@ pub async fn handle_smart_search(
     })
 }
 
-// ── graph_analyze ────────────────────────────────────────────────────────────
-
-#[derive(Debug, serde::Deserialize)]
-pub struct GraphAnalyzeInput {
-    #[serde(default = "default_analyze_mode")]
-    pub mode: String,
-}
-fn default_analyze_mode() -> String {
-    "scc".into()
-}
-
-#[derive(Debug, serde::Serialize)]
-pub struct GraphAnalyzeOutput {
-    pub mode: String,
-    pub result: serde_json::Value,
-}
-
-pub async fn handle_graph_analyze(
-    ctx: &HandlerContext,
-    input: GraphAnalyzeInput,
-) -> HandlerResult<GraphAnalyzeOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
-        Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal("No graph available".into())),
-    };
-    let mode = input.mode.as_str();
-    let result = match mode {
-        "scc" => {
-            serde_json::json!({"type": "SCC condensation", "nodes": graph.symbol_count(), "note": "SCC computed via petgraph::algo::tarjan_scc"})
-        }
-        "reduced" => {
-            serde_json::json!({"type": "Transitive reduction", "nodes": graph.symbol_count()})
-        }
-        "feedback_arcs" => {
-            serde_json::json!({"type": "Feedback arc set", "nodes": graph.symbol_count()})
-        }
-        _ => {
-            return Err(HandlerError::InvalidInput(format!(
-                "Unknown mode '{}'. Valid modes: scc, reduced, feedback_arcs",
-                mode
-            )));
-        }
-    };
-    Ok(GraphAnalyzeOutput {
-        mode: mode.into(),
-        result,
-    })
-}
-
 // ── project_overview ─────────────────────────────────────────────────────────
 
 #[derive(Debug, serde::Deserialize)]

@@ -637,17 +637,18 @@ fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
 
 impl ServerHandler for CogniCodeHandler {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
-        )
-        .with_server_info(rmcp::model::Implementation::new(
-            "cognicode",
-            env!("CARGO_PKG_VERSION"),
-        ))
-        .with_protocol_version(rmcp::model::ProtocolVersion::V_2025_03_26)
+        // Only the capabilities this server actually serves are
+        // announced. `resources` used to be announced here while the
+        // handler implemented none of it: a client that saw the
+        // capability was entitled to call `resources/list`, and the
+        // server answered "method not found". An announcement is a
+        // promise, and this server keeps the ones it can honour.
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(rmcp::model::Implementation::new(
+                "cognicode",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_protocol_version(rmcp::model::ProtocolVersion::V_2025_03_26)
     }
 
     fn list_tools(
@@ -944,8 +945,10 @@ pub(crate) async fn call_tool_handler(
                 let input: crate::interface::mcp::schemas::CompositeImpactQueryInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    crate::interface::mcp::handlers::handle_composite_impact_query(ctx, input)
-                        .await?;
+                    crate::interface::mcp::handlers::retired::handle_composite_impact_query(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
 
@@ -1539,13 +1542,11 @@ pub(crate) async fn call_tool_handler(
                 Ok(serde_json::to_string_pretty(&output)?)
             }
             "graph_analyze" => {
-                let input: crate::interface::mcp::handlers::consolidated_handlers::GraphAnalyzeInput =
-                serde_json::from_value(arguments.into())?;
+                let input: crate::interface::mcp::handlers::retired::GraphAnalyzeInput =
+                    serde_json::from_value(arguments.into())?;
                 let output =
-                    crate::interface::mcp::handlers::consolidated_handlers::handle_graph_analyze(
-                        ctx, input,
-                    )
-                    .await?;
+                    crate::interface::mcp::handlers::retired::handle_graph_analyze(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string_pretty(&output)?)
             }
             "project_overview" => {

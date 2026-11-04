@@ -1,4 +1,4 @@
-//! Behaviour of the two tools this unit wired into `tools/call`.
+//! Behaviour of the tools this unit wired into `tools/call`.
 //!
 //! MEDIDO 2026-10-18. `tools/list` announced four tools that `tools/call`
 //! answered with `InterfaceError::ToolNotFound`. Two of them had a real
@@ -9,6 +9,13 @@
 //! _dispatch_arm` proves the arms exist — these prove the arms *do
 //! something*.
 //!
+//! TASK-64 retired `composite_impact_query`: the capability behind the
+//! arm computed nothing (the evidence bundle it promised was never wired,
+//! and its follow-ups were looked up by comparing a symbol name against a
+//! tool name). The name left the advertised surface and the arm is now
+//! served by the tool that computes the impact. The two tests below pin
+//! that.
+//!
 //! Both handlers are read-only, which is the property worth pinning: the
 //! whole point of exposing them was that an agent can investigate a
 //! refactor or an impact without a write capability anywhere in the call.
@@ -17,9 +24,9 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use cognicode_core::application::analysis_basis::AnalysisBasis;
+use cognicode_core::interface::mcp::handlers::retired::handle_composite_impact_query;
 use cognicode_core::interface::mcp::handlers::{
-    HandlerContext, HandlerError, handle_composite_impact_query,
-    refactor_handlers::handle_safe_refactor_preview,
+    HandlerContext, HandlerError, refactor_handlers::handle_safe_refactor_preview,
 };
 use cognicode_core::interface::mcp::schemas::{
     CompositeImpactQueryInput, SafeRefactorPreviewInput,
@@ -67,72 +74,74 @@ fn plan_fixture(root: &std::path::Path) -> PathBuf {
 }
 
 // ----------------------------------------------------------------------------
-// composite_impact_query
+// composite_impact_query — a retired name, still served
 // ----------------------------------------------------------------------------
 
-/// The load-bearing B4.W5 invariant travels over MCP too: whatever the
-/// caller asks about, the answer is evidence and never a verdict.
+/// The retired name still answers, and the answer says which tool served it.
+///
+/// The composite promised an evidence bundle — `impact`, `architecture`,
+/// `findings` — whose extractors were never wired. Over MCP it answered
+/// with an empty bundle, and the follow-ups it suggested were looked up by
+/// comparing a *symbol* name against a *tool* name, so the lookup could
+/// not match a symbol. The name left the advertised surface; the call is
+/// served by `analyze_impact`, which computes the impact of a symbol.
 #[tokio::test]
-async fn composite_impact_query_refuses_the_verdict_over_mcp() {
+async fn the_retired_composite_impact_query_is_served_by_the_tool_that_computes() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let ctx = crate::fixtures::graph_of(dir.path(), "rust-callgraph").await;
 
     let out = handle_composite_impact_query(
-        &ctx(&root),
+        &ctx,
         CompositeImpactQueryInput {
-            qualified_name: "alpha::beta".to_string(),
-            file_path: Some(root.join("a.txt").display().to_string()),
+            qualified_name: "helper".to_string(),
+            file_path: None,
         },
     )
     .await
-    .expect("a read-only composite query must answer");
+    .expect("the retired name must still answer");
 
+    assert_eq!(out.alias, "composite_impact_query");
+    assert_eq!(out.served_by, "analyze_impact");
     assert!(
-        out.verdict_refused,
-        "the composite result must always refuse the verdict; over MCP a \
-         client reads this field and nothing else"
-    );
-    assert_eq!(
-        out.verdict_refused_reason,
-        cognicode_core::impact::composite::COMPOSITE_VERDICT_REFUSED_REASON,
-        "the reason is a pinned constant, not a per-call string"
+        out.deprecation.contains("analyze_impact"),
+        "the note names the tool that replaced it: {}",
+        out.deprecation
     );
 }
 
-/// A missing `file_path` must not be filled with a fabricated directory.
+/// The answer does not invent a location for the symbol.
 ///
-/// Pinned at the conversion, not through the handler. The only consumer of
-/// that field is the `file_path` argument on the follow-up tools the
-/// composite result suggests, and for an arbitrary symbol that list is
-/// empty — so asserting through the handler here would have been a test
-/// that cannot fail, which is the shape of the defect this unit exists to
-/// remove.
-#[test]
-fn composite_impact_query_does_not_invent_a_file_path() {
+/// The composite used to convert its input into a core query, and an absent
+/// `file_path` had to stay absent rather than become
+/// `workspace/<unspecified>` — a fabricated directory handed back as if the
+/// tool had located the symbol. The conversion is gone with the retired
+/// handler; what replaced it must not fabricate either: the location in
+/// the answer comes from the graph, not from what the caller sent.
+#[tokio::test]
+async fn the_retired_composite_impact_query_does_not_invent_a_file_path() {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().canonicalize().unwrap();
+    let ctx = crate::fixtures::graph_of(dir.path(), "rust-callgraph").await;
 
-    let query = CompositeImpactQueryInput {
-        qualified_name: "alpha::beta".to_string(),
-        file_path: None,
-    }
-    .into_core_query(&root);
+    let out = handle_composite_impact_query(
+        &ctx,
+        CompositeImpactQueryInput {
+            qualified_name: "helper".to_string(),
+            file_path: Some("/nonexistent/fabricated.rs".to_string()),
+        },
+    )
+    .await
+    .expect("the retired name must still answer");
 
-    assert_eq!(
-        query.symbol.file_path,
-        PathBuf::new(),
-        "an absent file_path must stay absent, not become {}/<unspecified>",
-        root.display()
+    let answer = serde_json::to_value(&out).expect("the answer is serialisable");
+    assert!(
+        !answer.to_string().contains("fabricated"),
+        "the answer must not carry the location the caller made up: {answer}"
     );
-    assert_eq!(query.workspace_root, root);
-
-    // The other direction still carries what the caller sent.
-    let given = CompositeImpactQueryInput {
-        qualified_name: "alpha::beta".to_string(),
-        file_path: Some(root.join("a.txt").display().to_string()),
-    }
-    .into_core_query(&root);
-    assert_eq!(given.symbol.file_path, root.join("a.txt"));
+    assert_eq!(
+        answer.get("symbol").and_then(serde_json::Value::as_str),
+        Some("helper"),
+        "the answer names the symbol the caller asked about: {answer}"
+    );
 }
 
 // ----------------------------------------------------------------------------

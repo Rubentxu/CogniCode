@@ -31,7 +31,7 @@
 //! ## What this law does not govern
 //!
 //! Walks that only enumerate *names* for a caller-initiated search —
-//! filename completion, MCP `resources/list`, `find file` — are not
+//! filename completion, `find file` — are not
 //! covered, and should not be. They never read a byte through the
 //! link, so the content behind it stays unrevealed, and they make no
 //! claim about coverage that a symlink could falsify. A caller who

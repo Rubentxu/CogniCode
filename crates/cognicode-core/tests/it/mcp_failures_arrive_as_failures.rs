@@ -18,15 +18,13 @@ use cognicode_core::domain::value_objects::location::Location;
 use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
 use cognicode_core::infrastructure::persistence::InMemoryGraphStore;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
-use cognicode_core::interface::mcp::handlers::consolidated_handlers::{
-    GraphAnalyzeInput, handle_graph_analyze,
-};
 use cognicode_core::interface::mcp::handlers::graph_handlers::{
     handle_graph_all_paths, handle_graph_communities, handle_graph_community_detail,
     handle_graph_condensed, handle_graph_feedback_arcs, handle_graph_god_nodes,
     handle_graph_insights, handle_graph_pagerank, handle_graph_reduced, handle_graph_search_idf,
     handle_graph_suggest_questions, handle_graph_surprising_connections,
 };
+use cognicode_core::interface::mcp::handlers::retired::{GraphAnalyzeInput, handle_graph_analyze};
 use cognicode_core::interface::mcp::schemas::{
     GraphAllPathsInput, GraphCommunitiesInput, GraphCommunityDetailInput, GraphCondensedInput,
     GraphFeedbackArcsInput, GraphGodNodesInput, GraphInsightsInput, GraphPageRankInput,

@@ -108,11 +108,9 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         "graph_query"
         | "graph_query_filtered"
-        | "graph_analyze"
         | "graph_explain"
         | "graph_insights"
-        | "graph_suggest_questions"
-        | "composite_impact_query" => ToolCapabilities {
+        | "graph_suggest_questions" => ToolCapabilities {
             langs: tree_sitter_langs(),
             precision: "AST",
         },
@@ -262,10 +260,8 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "graph_checkpoint",
         "graph_query",
         "graph_query_filtered",
-        "graph_analyze",
         "graph_explain",
         "graph_insights",
-        "composite_impact_query",
         "export_mermaid",
         "export_callflow",
         "get_per_file_graph",

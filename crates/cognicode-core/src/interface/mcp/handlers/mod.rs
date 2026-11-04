@@ -90,7 +90,6 @@ use crate::interface::mcp::schemas::{
     CheckArchitectureOutput,
     CompareCallGraphsInput,
     ComplexityMetrics,
-    CompositeImpactQueryInput,
     ContextFormatDetail,
     ContextLines,
     DeadCodeEntry,
@@ -2096,29 +2095,6 @@ pub async fn handle_structural_search(
         matches,
         total: 0,
     })
-}
-
-/// Handler for composite_impact_query tool.
-///
-/// Mirrors `cognicode graph impact-composite`. The result is
-/// **investigative, not authoritative**: it carries `verdict_refused:
-/// true` by construction, so a consumer cannot mistake it
-/// for a shipped verdict. This handler only translates the MCP input
-/// into the core query and serialises the core result — the semantics
-/// live in exactly one place, `impact::composite`.
-#[cognicode_macros::aix_tool(
-    name = "composite_impact_query",
-    description = "Investigative composite impact query over a qualified symbol name. \
-                  The result is explicitly non-authoritative (verdict_refused).",
-    input_schema = CompositeImpactQueryInput
-)]
-pub async fn handle_composite_impact_query(
-    ctx: &HandlerContext,
-    input: CompositeImpactQueryInput,
-) -> HandlerResult<crate::impact::composite::CompositeImpactResult> {
-    ctx.validator.validate_query(&input.qualified_name)?;
-    let query = input.into_core_query(&ctx.working_dir);
-    Ok(crate::impact::composite::execute_composite(&query))
 }
 
 /// Handler for analyze_impact tool
@@ -4240,6 +4216,7 @@ pub mod consolidated_handlers;
 pub mod graph_handlers;
 pub mod graph_query_handlers;
 pub mod program_analysis_handlers;
+pub mod retired;
 
 #[cfg(test)]
 mod tests {

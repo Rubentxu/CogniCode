@@ -17,17 +17,23 @@
 //! |----------|------|-------|--------------|
 //! | Homonym: "where is `helper` used?" | `query_symbol_index` | `symbol_name` (case-insensitive) | all locations of that name |
 //! | API impact: "what breaks if I change `add`?" | `analyze_impact` | `symbol_name` | impacted files + risk level |
-//! | Finding justification: "why is finding X reported?" | `composite_impact_query` | `qualified_name` | `verdict_refused=true` + evidence (impact/architecture/findings) + follow-ups |
+//! | Finding justification: "why is finding X reported?" | — | — | the tool that used to answer it could not fill the bundle it promised |
 //!
 //! The third question is the interesting one. There is no tool that
-//! says "the verdict is X because Y": the composite refuses to give
-//! a verdict (the `verdict_refused_reason` is pinned in the source
-//! at `composite queries return evidence, not verdicts; investigate
-//! each piece`). The consumer must use the suggested follow-ups to
-//! dig deeper. The audit captures this as a feature, not a bug:
-//! the consumer gets an EVIDENCE BUNDLE, not a verdict, and the
-//! "answer" to "why?" is the bundle of impacts + findings + arch
-//! observations with their individual reasons.
+//! says "the verdict is X because Y": a tool that answered "why?"
+//! had to refuse the verdict (the `verdict_refused_reason` is pinned
+//! in the source at `composite queries return evidence, not verdicts;
+//! investigate each piece`) and hand over an EVIDENCE BUNDLE instead.
+//!
+//! TASK-64 retired the tool that carried that promise.
+//! `composite_impact_query` announced an evidence bundle — `impact`,
+//! `architecture`, `findings` — whose extractors were never wired, so
+//! over MCP it answered with an empty bundle, and the follow-ups it
+//! suggested were looked up by comparing a *symbol* name against a
+//! *tool* name, so the lookup could not match a symbol. A tool that
+//! cannot fill the bundle must not be offered as the answer to "why?",
+//! because the consumer reads an empty bundle as "there is nothing to
+//! report". The audit below pins the retirement and the reason.
 
 use serde_json::Value;
 
@@ -95,7 +101,13 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
          a drift means the catalog the operator maintains is no longer the catalog the MCP \
          server ships"
     );
-    assert_eq!(hand_names.len(), 79, "H2.1 audit pins the 79-tool surface");
+    // TASK-64 retired `graph_analyze` and `composite_impact_query` from the
+    // advertised surface: the code behind them computed nothing.
+    assert_eq!(
+        hand_names.len(),
+        77,
+        "the surface is 77 tools after TASK-64"
+    );
 }
 
 #[test]
@@ -177,98 +189,70 @@ fn api_impact_question_is_answered_by_analyze_impact() {
 }
 
 #[test]
-fn finding_justification_is_a_typed_refusal_with_evidence() {
-    // Q3: "Why is finding X reported?" There is no tool that
-    // answers with a verdict. The existing tool is
-    // `composite_impact_query`, which is INVESTIGATIVE: the result
-    // always carries verdict_refused=true and the reason
-    // `composite queries return evidence, not verdicts; investigate
-    // each piece`. The audit pins: the answer to "why?" is the
-    // evidence bundle (impact + architecture + findings list +
-    // suggested follow-ups), and the verdict is refused, by
-    // design. A future contributor who adds a "verdict" mode to
-    // the composite will break this test on purpose, so the
-    // change is visible.
+fn the_surface_does_not_offer_a_finding_justification_it_cannot_deliver() {
+    // Q3: "Why is finding X reported?" The tool that used to answer it,
+    // `composite_impact_query`, was INVESTIGATIVE by design: the result
+    // always carried `verdict_refused=true` and the reason `composite
+    // queries return evidence, not verdicts; investigate each piece`,
+    // and the consumer was handed the evidence bundle (impact +
+    // architecture + findings) to dig into.
+    //
+    // The bundle was never filled: the extractors it waits for were
+    // never wired, so over MCP the tool answered with `impact: null`,
+    // `architecture: null` and `findings: []`, and the follow-ups it
+    // suggested were looked up by comparing a *symbol* name against a
+    // *tool* name, so the lookup could not match a symbol. A consumer
+    // that read the empty bundle would have concluded "nothing to
+    // report", which is the worst thing a tool can say about a finding
+    // it did not look for.
+    //
+    // TASK-64 retired it from the advertised surface. This pins the
+    // retirement, because a tool that cannot fill the bundle must not
+    // be offered as the answer to "why?".
     let catalog = load(CATALOG);
-    let tool = find_tool(&catalog, "composite_impact_query");
-    let output = tool
-        .get("output_schema")
-        .expect("composite_impact_query must declare its output schema");
-    let props = output
-        .get("properties")
-        .and_then(Value::as_object)
-        .expect("composite_impact_query output must have properties");
-    assert_eq!(
-        props
-            .get("verdict_refused")
-            .and_then(Value::as_object)
-            .and_then(|o| o.get("type"))
-            .and_then(Value::as_str),
-        Some("boolean"),
-        "the composite must promise verdict_refused is a boolean (typed refusal)"
-    );
-    let required = output
-        .get("required")
-        .and_then(Value::as_array)
-        .expect("composite output must declare required fields");
-    let required_names: std::collections::BTreeSet<&str> =
-        required.iter().filter_map(Value::as_str).collect();
-    for must in [
-        "verdict_refused",
-        "verdict_refused_reason",
-        "impact",
-        "architecture",
-        "findings",
-        "suggested_follow_ups",
-        "suggested_prerequisites",
-    ] {
-        assert!(
-            required_names.contains(must),
-            "composite_impact_query must always carry `{must}` (the consumer is never promised a verdict, only the evidence shape)"
-        );
-    }
-    let reason_field = props
-        .get("verdict_refused_reason")
-        .and_then(Value::as_object)
-        .expect("verdict_refused_reason must be a typed string field");
-    assert_eq!(
-        reason_field.get("type").and_then(Value::as_str),
-        Some("string"),
-        "verdict_refused_reason must be a typed string (the consumer cannot parse a free-form refusal)"
-    );
-    let description = tool
-        .get("description")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    // The canonical reason string lives in the tool description
-    // (the field-level description is a meta-comment pointing at
-    // the source). The audit pins BOTH: the tool's surfaced
-    // promise, and the canonical literal that downstream code
-    // actually emits. A future contributor who changes the
-    // canonical reason will have to update both places, and this
-    // test catches the silent drift.
     assert!(
-        description.contains("verdict_refused=true"),
-        "the tool description must surface the refusal so the consumer sees it in tools/list"
+        by_name(&catalog)
+            .into_iter()
+            .all(|t| t.get("name").and_then(Value::as_str) != Some("composite_impact_query")),
+        "the catalogue still offers `composite_impact_query` as the answer to \
+         the finding-justification question; it cannot fill the evidence \
+         bundle it promises"
     );
     assert!(
-        description.contains("composite queries return evidence, not verdicts"),
-        "the canonical refusal reason is pinned here; the field is typed as string because the literal is part of the consumer contract"
+        by_name(&catalog)
+            .into_iter()
+            .all(|t| t.get("name").and_then(Value::as_str) != Some("graph_analyze")),
+        "the catalogue still offers `graph_analyze`; it answered every mode \
+         with the same canned payload"
+    );
+}
+
+/// The tool that replaced the retired composite computes the impact of a
+/// symbol, and it is read authority: a mutation is not an answer.
+#[test]
+fn the_tool_that_replaced_the_retired_composite_is_read_authority() {
+    let catalog = load(CATALOG);
+    let tool = find_tool(&catalog, "analyze_impact");
+    assert_eq!(
+        tool.get("authority").and_then(Value::as_str),
+        Some("read"),
+        "the tool that computes the impact of a symbol must be read authority"
     );
 }
 
 #[test]
-fn the_three_question_covering_tools_are_all_read_authority() {
-    // Belt and suspenders: the three tools that answer the
+fn the_question_covering_tools_are_all_read_authority() {
+    // Belt and suspenders: the tools that answer the
     // consumer questions must be all read authority. A mutation
     // surfacing in the same name space as a read tool would be
     // a security defect, and the audit catches it.
+    //
+    // The third tool of the original audit, `composite_impact_query`,
+    // left the catalogue with TASK-64: it could not fill the evidence
+    // bundle it promised, and the tool that now answers the impact
+    // question is `analyze_impact`.
     let catalog = load(CATALOG);
-    for name in [
-        "query_symbol_index",
-        "analyze_impact",
-        "composite_impact_query",
-    ] {
+    for name in ["query_symbol_index", "analyze_impact"] {
         let tool = find_tool(&catalog, name);
         assert_eq!(
             tool.get("authority").and_then(Value::as_str),
@@ -293,13 +277,9 @@ fn mutating_tools_are_not_in_the_three_question_path() {
         .filter(|t| t.get("authority").and_then(Value::as_str) == Some("mutating"))
         .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
         .collect();
-    let answering: std::collections::BTreeSet<&str> = [
-        "query_symbol_index",
-        "analyze_impact",
-        "composite_impact_query",
-    ]
-    .into_iter()
-    .collect();
+    let answering: std::collections::BTreeSet<&str> = ["query_symbol_index", "analyze_impact"]
+        .into_iter()
+        .collect();
     for name in &answering {
         assert!(
             !mutating.contains(*name),
