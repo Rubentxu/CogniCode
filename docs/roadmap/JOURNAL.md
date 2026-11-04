@@ -31556,3 +31556,14 @@ Kube`) y `the_published_support_level_follows_the_golden`. GREEN: ambos. `--test
 **Residuo.** No hay test unitario negativo de `swallowed_declaration_name` (un `ERROR` con más de un
 identificador conserva el nombre de la gramática); lo cubre solo el golden positivo. El extractor de
 ingest no se midió por separado. **NOT_RUN:** mutantes, `npm test --prefix apps/explorer-ui`, gate.
+
+## 2026-11-04 — TASK-108 (deuda): tests del nombre y la posición de un constructor Groovy tragado
+
+**Qué.** Dos tests unitarios en `tree_sitter_parser.rs` para `naming::swallowed_declaration_name`:
+el constructor `Kube` tragado por `def steps` se lee en su línea (2) y `steps` no se publica; y las
+formas que no son ese caso (`Kube Two(steps)`, un campo seguido de otro) conservan el nombre de la
+gramática. Medido antes con sonda sobre el árbol real.
+
+**Verificación.** `cargo test -p cognicode-core --lib groovy` 9/9. Mutación manual de la posición
+(volver a `node.start_position()`): el test de ubicación FALLA; restaurado, pasa. clippy `-D
+warnings` y fmt limpios. **NOT_RUN:** `--test it`, mutantes con cargo-mutants, gate.
