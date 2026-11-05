@@ -137,7 +137,8 @@ impl CallGraphProjection {
     ///
     /// The constructor is non-mutating and deterministic:
     ///
-    /// - Every symbol known to `cg` becomes a node.
+    /// - Every symbol known to `cg` becomes a node, numbered by its sorted
+    ///   symbol id.
     /// - Every edge from `cg.edges_with_metadata()` becomes an edge with
     ///   weight `(dependency_type, sanitize_confidence(confidence))`.
     /// - The side-lookup maps every `SymbolId` to its full
@@ -152,10 +153,25 @@ impl CallGraphProjection {
         let mut id_to_index: HashMap<SymbolId, NodeIndex> = HashMap::new();
 
         // Populate nodes + side-lookup.
-        for (id, symbol) in cg.symbol_ids() {
+        //
+        // The nodes are numbered by the SORTED symbol id, not by the order
+        // the graph hands them over: that order is the iteration order of a
+        // hash map, which is different for every instance, so a numbering
+        // taken from it would give the same project a different index space
+        // on every run — and every algorithm that works in index space
+        // (the community detection among them) would publish a different
+        // answer each time. The other constructor of this projection
+        // already numbers its nodes deterministically (`from_facts`); this
+        // one now does the same, over the same rule.
+        let entries: Vec<(&SymbolId, &Symbol)> = cg.symbol_ids().collect();
+        let mut ids: Vec<&SymbolId> = entries.iter().map(|(id, _)| *id).collect();
+        ids.sort_unstable();
+        for id in ids {
             let ni = graph.add_node(id.clone());
-            symbol_lookup.insert(id.clone(), symbol.clone());
             id_to_index.insert(id.clone(), ni);
+        }
+        for (id, symbol) in entries {
+            symbol_lookup.insert(id.clone(), symbol.clone());
         }
 
         // Populate edges. Iterate the metadata iterator to preserve
@@ -1093,6 +1109,35 @@ mod tests {
             dep,
             ExtractionContext::DirectExtraction,
         );
+    }
+
+    /// The nodes are numbered by the sorted symbol id.
+    ///
+    /// The projection is the index space every algorithm works in, and the
+    /// community detection breaks its ties by node id: a numbering taken
+    /// from the iteration order of a hash map gives the same project a
+    /// different index space on every run, and the detection a different
+    /// answer each time (measured: 4.960 vs 4.935 communities for the same
+    /// code, in the same process).
+    #[test]
+    fn the_nodes_are_numbered_by_the_sorted_symbol_id() {
+        let graph = build_graph(|g| {
+            for name in ["delta", "alpha", "charlie", "bravo", "echo"] {
+                g.add_symbol(sym(name));
+            }
+        });
+
+        let projection = CallGraphProjection::from_call_graph(&graph);
+
+        let mut ids: Vec<&SymbolId> = graph.symbol_ids().map(|(id, _)| id).collect();
+        ids.sort();
+        for (expected, id) in ids.iter().enumerate() {
+            assert_eq!(
+                projection.id_to_index()[*id],
+                NodeIndex::new(expected),
+                "the nodes are numbered by the sorted symbol id: {id} is not the node {expected}"
+            );
+        }
     }
 
     // 3.1

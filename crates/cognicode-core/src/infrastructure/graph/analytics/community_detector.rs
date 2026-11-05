@@ -165,6 +165,14 @@ impl CommunityDetector {
             }
         }
 
+        // The members of a community come out sorted by symbol id. The
+        // partition does not depend on the order they were collected in,
+        // but the community detail publishes them, and the order they were
+        // collected in is the iteration order of a hash map.
+        for nodes in community_nodes.values_mut() {
+            nodes.sort();
+        }
+
         // Compute cohesion per community.
         let mut communities: Vec<Community> = community_nodes
             .into_iter()
@@ -428,6 +436,49 @@ mod tests {
         g.add_symbol(sym(a, fa));
         g.add_symbol(sym(b, fb));
         let _ = g.add_dependency(&id(a, fa), &id(b, fb), DependencyType::Calls);
+    }
+
+    /// The members of a community come out sorted by symbol id.
+    ///
+    /// The partition does not depend on the order the members were
+    /// collected in, but the community detail publishes them, and that
+    /// order used to be the iteration order of a hash map: the same
+    /// community came out with its members shuffled.
+    #[test]
+    fn the_members_of_a_community_are_sorted() {
+        // Eight symbols that all call each other: one community of eight.
+        let names = ["a", "b", "c", "d", "e", "f", "g", "h"];
+        let mut graph = CallGraph::new();
+        for name in names {
+            graph.add_symbol(sym(name, "mod.rs"));
+        }
+        for from in names {
+            for to in names {
+                if from != to {
+                    let _ = graph.add_dependency(
+                        &id(from, "mod.rs"),
+                        &id(to, "mod.rs"),
+                        DependencyType::Calls,
+                    );
+                }
+            }
+        }
+
+        let result = CommunityDetector::detect(&graph, 100);
+        assert_eq!(
+            result.communities.len(),
+            1,
+            "the eight symbols form one community"
+        );
+        let members = &result.communities[0].nodes;
+        assert_eq!(members.len(), 8, "the community holds the eight symbols");
+
+        let mut sorted = members.clone();
+        sorted.sort();
+        assert_eq!(
+            members, &sorted,
+            "the members of a community come out sorted by symbol id"
+        );
     }
 
     #[test]
