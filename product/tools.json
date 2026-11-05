@@ -252,6 +252,10 @@
                 "description": "Digest over the effective configuration relevant to the build.\nStable across identical configurations; changes when config changes.",
                 "type": "string"
               },
+              "graph_source": {
+                "description": "Where the graph came from: `built`, `cache` or `daemon`.\n\nThe graph that was read now and the graph that was served from\nbefore are the same answer only when the tree did not change in\nbetween, and *who checked that* is part of the identity of the\nanswer: a consumer that trusts a daemon's word has to know there\nwas one. The word is the one the provenance enum publishes, so the\nmessage the handler writes and the field the consumer reads cannot\ndisagree.",
+                "type": "string"
+              },
               "snapshot_schema": {
                 "description": "The shape the snapshot was written in.",
                 "type": "string"
@@ -272,6 +276,7 @@
               "analyzer_version",
               "analyzer_features",
               "snapshot_schema",
+              "graph_source",
               "complete"
             ],
             "type": "object"

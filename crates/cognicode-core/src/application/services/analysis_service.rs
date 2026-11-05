@@ -135,11 +135,16 @@ pub struct AnalysisService {
     /// Somebody who is watching the tree and can say that a manifest
     /// still describes it.
     ///
-    /// `None` when nobody is watching: the product then decides the
+    /// Empty when nobody is watching: the product then decides the
     /// freshness by itself, which is what it always did. The oracle is a
     /// port, not an implementation: the service never learns how the
     /// answer travels.
-    freshness_oracle: Option<Arc<dyn crate::application::freshness::FreshnessOracle>>,
+    ///
+    /// It is set once, by whoever names the watcher first, because the
+    /// watcher belongs to the service and not to the session that happens
+    /// to ask: a service two sessions share has to answer the same way to
+    /// both.
+    freshness_oracle: std::sync::OnceLock<Arc<dyn crate::application::freshness::FreshnessOracle>>,
 }
 
 /// What the service remembers between builds about what the last one proved.
@@ -204,7 +209,7 @@ impl AnalysisService {
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
-            freshness_oracle: None,
+            freshness_oracle: std::sync::OnceLock::new(),
         }
     }
 
@@ -223,7 +228,7 @@ impl AnalysisService {
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
-            freshness_oracle: None,
+            freshness_oracle: std::sync::OnceLock::new(),
         }
     }
 
@@ -233,18 +238,33 @@ impl AnalysisService {
     /// The oracle is a port: the service asks it a question and takes the
     /// answer, and it never learns where the answer came from.
     pub fn with_freshness_oracle(
-        mut self,
+        self,
         oracle: Option<Arc<dyn crate::application::freshness::FreshnessOracle>>,
     ) -> Self {
-        self.freshness_oracle = oracle;
+        if let Some(oracle) = oracle {
+            let _ = self.freshness_oracle.set(oracle);
+        }
         self
+    }
+
+    /// Names the watcher of a service that is already shared.
+    ///
+    /// A context that brings its own analysis service cannot rebuild it
+    /// with a watcher, and a service that two sessions share cannot have
+    /// one watcher per session. The first watcher named is the one that
+    /// stays.
+    pub fn set_freshness_oracle(
+        &self,
+        oracle: Arc<dyn crate::application::freshness::FreshnessOracle>,
+    ) {
+        let _ = self.freshness_oracle.set(oracle);
     }
 
     /// The oracle that watches the tree, if somebody is watching it.
     pub fn freshness_oracle(
         &self,
     ) -> Option<&Arc<dyn crate::application::freshness::FreshnessOracle>> {
-        self.freshness_oracle.as_ref()
+        self.freshness_oracle.get()
     }
 
     /// Replaces the factory that creates the repository of a build.

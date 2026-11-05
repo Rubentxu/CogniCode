@@ -33656,3 +33656,66 @@ tres pasos del gate en la misma forma en que los ejecuta `scripts/test-gate.sh`.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-92 (rebanada 2): el MCP usa el daemon si existe, y lo dice en el basis
+
+**El hueco.** AC1 decía «cognicode y cognicode-mcp usan el daemon si existe y lo indican en basis». La rebanada 1 le había dado el veredicto al cliente, pero el MCP no lo tenía: su contexto no nombraba a ningún watcher, y `BasisDto` —el documento de identidad que `build_graph` publica— no decía de dónde salía el grafo. El consumidor del MCP recibía un grafo y no podía saber si lo había calculado el producto ahora o si se lo había servido del snapshot: dos respuestas que sólo son la misma cuando el árbol no cambió, y el que consume es el que tiene que saber quién lo comprobó.
+
+**Qué se leyó antes de tocar nada** (el árbol, no el título):
+
+| Hecho | Dónde | Qué significa |
+|---|---|---|
+| El contexto del MCP creaba el `AnalysisService` sin watcher | `interface/mcp/handlers/mod.rs` (`HandlerContextBuilder::build`) | el MCP no tenía a quién preguntar |
+| Los tres constructores del adapter y el servidor HTTP montaban su contexto a mano | `interface/mcp/rmcp_adapter.rs`, `crates/cognicode-mcp/src/server.rs` | ninguno nombraba al daemon |
+| `compute_basis` construía el manifiesto DESDE EL ÁRBOL | `handlers/mod.rs` (la función que calculaba el `basis`) | un segundo hash del contenido del árbol, por respuesta, después de que `load_or_build_graph` ya había pagado uno |
+| `BasisDto` vive en un esquema publicado | `product/tools.json` → `build_graph` → `$defs.BasisDto` | añadirle un campo es recapturar `tools/list` y resincronizar el maestro |
+| `handlers/mod.rs` no puede crecer | ratchet de tamaño: 3699 líneas de producción contra una base de 3701 | el campo nuevo (con su documentación, que es el texto publicado) no cabía |
+
+**La rebanada, en tres partes.**
+
+1. **El MCP tiene un watcher.** `HandlerContextBuilder` gana `with_freshness_oracle`, y el servicio de análisis lo consulta antes de leer el contenido del árbol. El watcher es el puerto que ya existía (`FreshnessOracle`) y lo implementa el adaptador del socket: el core sigue sin red. Como un servicio ya compartido no se puede reconstruir con un watcher, el campo pasó a un `OnceLock` y hay un `set_freshness_oracle`: el primer watcher nombrado es el que se queda, y un contexto que traiga su propio servicio no pierde el suyo en silencio. Los tres constructores del adapter y el servidor HTTP pasan el `DaemonOracle` de su workspace —el mismo socket que el daemon sirve, en la misma caché—.
+2. **El basis lo dice.** `BasisDto` gana `graph_source`, y su palabra sale de `GraphSource::published_label()`: el mensaje que escribe el handler y el campo que lee el consumidor no pueden discrepar, porque son el mismo dueño. El mensaje de la CLI, que copiaba esa frase a mano desde la rebanada 1, ahora sale de `published_message()`: la salida es byte a byte la misma y la frase tiene un solo dueño.
+3. **El MCP deja de hashear el árbol dos veces.** `compute_basis` usa el manifiesto que la respuesta ya lleva (el del snapshot servido, o el que se tomó antes de construir) en vez de construir otro desde el árbol, y el digest de las fuentes tiene un dueño nuevo (`graph_snapshot::source_digest`). El valor publicado de `source_manifest_digest` NO cambia: el algoritmo es el mismo (rutas relativas ordenadas + hashes de contenido), sólo que ahora lo calcula un sitio con nombre y no el handler.
+
+**Los tres rojos, medidos.**
+
+| Rojo | Cómo se midió | Qué dijo |
+|---|---|---|
+| 1 — el test ni compilaba | `cargo nextest run -p cognicode-core --test it -E 'test(daemon_freshness)'` | `no method named 'with_freshness_oracle' found for struct 'HandlerContextBuilder'` |
+| 2 — el dato faltaba | el API y el campo en su sitio, el cableado todavía no | `left: "cache", right: "daemon"` —el basis publicaba el origen, pero la palabra del daemon no llegaba al handler— |
+| 3 — el contrato publicado | el maestro de `product/tools.json` puesto al de antes de la rebanada | `$.$defs.BasisDto.properties.graph_source (only in the derived one)`, `$.$defs.BasisDto.required (different lengths: 8 and 7)` |
+
+**Lo que cambia en lo publicado.** El `output_schema` de `build_graph` gana un campo. El maestro se actualizó con el contrato DERIVADO (no con una copia) y la captura `product/tool-catalog-runtime.json` se refrescó con una build de las tres features (`program-analysis-server`, `evidence-cli-ladybug`, `contract-store`): 78 tools, y la única diferencia contra la captura anterior es `build_graph.outputSchema`. `sync_tool_catalog_with_the_capture.py --check` dice que el maestro es un punto fijo de la fusión.
+
+**Verificación (medida en esta rama, `feature/task-92-mcp-basis-daemon`, base `99060047`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run -p cognicode-core --lib --tests` | **3537 tests run: 3537 passed, 4 skipped** |
+| `cargo nextest run -p cognicode-mcp -p cognicode-cli --lib --tests` | **730 tests run: 730 passed, 6 skipped** |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0, sin avisos |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `handlers/mod.rs` 3699 → 3629 (el `basis` se mudó a su propio módulo) |
+| `python3 scripts/ci/test_cr06_ratchet.py` | PASS — 28 → 28 (0 added, 0 retired) |
+| `python3 scripts/ci/test_comment_standard.py` | OK |
+| `python3 scripts/product/sync_tool_catalog_with_the_capture.py --check` | el maestro está sincronizado con la captura |
+| `bash scripts/ci/run-all-contracts.sh` | los contratos de producto en verde tras seguir el `basis` a su nueva casa; queda en rojo el ratchet del roadmap (ver abajo) |
+
+**UAT efímero (los binarios de verdad, no un doble).** Con un daemon vivo (`cognicode-mcp-server`) sobre un workspace y el MCP por stdio (`cognicode-mcp`) por encima: `basis.graph_source = "daemon"`. Con el daemon parado y el mismo árbol: `basis.graph_source = "cache"`. Los dos casos, con la caché del producto en un directorio temporal.
+
+**Gate: NOT_RUN (lote).** El gate se pasa por lotes de diez (AGENTS.md), y esta unidad es la quinta desde el último gate (AC1, AC2 y TASK-79 AC4, la rebanada 1 de TASK-92, y esta). El paso de mutación mide `cognicode-graph-algos`, un crate que esta rama no toca.
+
+**Lo que esta rebanada NO hace (queda escrito para que no se lea más de lo que es).**
+
+- **El daemon sólo ayuda cuando el build es COMPLETO.** La regla es la de siempre: un árbol con ficheros que no se pueden leer no deja snapshot, y entonces el daemon no tiene índice que respaldar y no dice nada. Con un build parcial el cliente sigue reconstruyendo, como antes.
+- **La palabra del daemon es sobre UN árbol.** El socket es por workspace, y el digest del manifiesto es el del manifiesto que el cliente tiene: un daemon que vigila otro workspace no dice nada de éste. Y si el `build_graph` apunta a un subdirectorio, el manifiesto es de otro árbol y el daemon no avala: se sirve el snapshot tras la comprobación propia.
+- **La palabra del daemon no sustituye la comprobación del cliente.** Los mtimes del árbol tienen que seguir de acuerdo con el manifiesto que el cliente tiene; el daemon informa y el cliente decide.
+- **El transporte HTTP del daemon y su exposición no se tocan.** El socket unix sigue siendo un canal local, con 0600.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **El ratchet del roadmap está en rojo, y lo estaba antes de esta rebanada.** `scripts/ci/test_roadmap_version_ratchet.py` falla porque `docs/roadmap/CURRENT.md` declara el snapshot de `0eeffa17` y llevan **8 commits** sin regenerar (la ventana son 5). Medido en un worktree sobre `99060047` (la base de esta rama): el mismo fallo, sin este cambio. No lo arregla esta rebanada: un snapshot se regenera sobre una punta que viva en `main`, y el squash de esta rama todavía no existe. Queda como unidad propia (TASK-126).
+- **El coste que queda**: el recorrido del árbol y la decodificación del snapshot. La palabra del daemon quita el hash, no la carga del snapshot.
+- **La caché del producto no tiene política de caducidad** (residuo heredado): nada limpia `~/.cache/cognicode/<hash>`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

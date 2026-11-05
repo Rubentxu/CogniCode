@@ -226,10 +226,33 @@ async fn a_cold_analysis_and_a_warm_one_declare_the_same_identity() {
     // snapshot está al día, así que se sirve.
     let warm = build(&workspace, &cache).await;
 
+    // La identidad es lo mismo en las dos: el workspace, la
+    // configuración, las fuentes y el analizador que las leyó. Lo que NO
+    // es lo mismo es de dónde salió el grafo, y el basis lo dice —un grafo leído ahora y uno servido de antes no son la
+    // misma respuesta aunque el árbol no haya cambiado—.
+    let mut cold_identity = cold["basis"].clone();
+    let mut warm_identity = warm["basis"].clone();
+    cold_identity
+        .as_object_mut()
+        .expect("el basis es un objeto")
+        .remove("graph_source");
+    warm_identity
+        .as_object_mut()
+        .expect("el basis es un objeto")
+        .remove("graph_source");
+
     assert_eq!(
-        cold["basis"], warm["basis"],
+        cold_identity, warm_identity,
         "servirse de la caché no es una razón para declarar otra identidad: \
          el análisis en frío y el servido dicen lo mismo"
+    );
+    assert_eq!(
+        cold["basis"]["graph_source"], "built",
+        "el grafo en frío se calculó ahora"
+    );
+    assert_eq!(
+        warm["basis"]["graph_source"], "cache",
+        "el grafo en caliente se sirvió del snapshot durable"
     );
     assert_eq!(
         cold["symbols_found"], warm["symbols_found"],
