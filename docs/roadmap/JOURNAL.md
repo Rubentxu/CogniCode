@@ -34176,3 +34176,164 @@ que ninguna lane ejecuta).
 del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
 `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
 recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-130: la complejidad de un proyecto real termina
+
+**El encargo.** La primera rebanada vertical de TASK-130: la ruta que llega al
+consumidor. La tarea preguntaba qué hacer con dos funciones que no contestan
+sobre un proyecto real (`CallGraphAnalyzer::calculate_complexity` y
+`AnalysisService::find_minimal_feedback_set`), y admitía tres respuestas
+distintas: terminar con un plazo y declarar que no cabe, calcular una
+proyección más barata, o no pasarle ese grafo. Eso es una decisión, no un
+arreglo, y por eso era una tarea. Esta rebanada decide y arregla la primera;
+la segunda (`find_minimal_feedback_set`, AC2) no la expone el MCP ni el CLI y
+queda para otra.
+
+**El estado medido antes de decidir (2026-11-05, `main` @ `cc571e63`).**
+
+| Grafo | Símbolos | Aristas | Raíces | Construcción | `calculate_complexity` |
+|---|---|---|---|---|---|
+| `src/infrastructure/lsp` | 784 | 406 | 650 | 0,149 s | termina: publica **11** |
+| `src/application/services` | 2.272 | 1.063 | 2.064 | 0,324 s | **no termina en 20 s** |
+| `src/domain` | 5.932 | 2.039 | 5.319 | 0,875 s | **no termina en 20 s** |
+| `src` (el core entero) | 28.572 | 12.149 | 25.391 | 9,13 s | **no termina en 20 s** |
+
+**La causa, leída en el árbol.** `CallGraphAnalyzer::calculate_max_depth`
+preguntaba, PARA CADA SÍMBOLO, cuál era la cadena más larga que empieza en un
+punto de entrada, y lo hacía con una búsqueda por cada par (símbolo, raíz):
+`CallGraph::find_path` **28.572 × 25.391 = 725 millones de veces**, cada una
+abriendo dos tablas hash. Y `depth_from_roots` recalculaba `graph.roots()` —que
+clona y ordena todos los identificadores— una vez por cada símbolo.
+
+**Las tres rutas de consumidor** (las llama el mismo `calculate_complexity`):
+`application/services/analyze.rs:294` (`ServiceAnalyzer`, el adaptador de
+producción del puerto `Analyze`), `application/workspace_session.rs:1328`
+(`get_project_diagnostics`, que **hoy no tiene ningún llamador** fuera de su
+fichero: 0 apariciones) e `interface/cli/commands.rs:1466` (el CLI).
+
+**La decisión.** Se midieron dos algoritmos, porque el encargo pedía decidir y
+el título no decidía:
+
+| Candidato | Qué es | Coste sobre `src` (28.572 símbolos) | Número publicado |
+|---|---|---|---|
+| **A** — una búsqueda por raíz | la semántica de siempre (la cadena que una búsqueda en profundidad encuentra por casualidad), pero con una búsqueda por raíz en vez de una por par (símbolo, raíz) | **538 ms**, 80.680 visitas | el mismo de antes (medido: **11 = 11** sobre `src/infrastructure/lsp`) |
+| **C** — la cadena más larga sobre la condensación | lo que el nombre del campo y su documentación ya prometen («longest path») | **135 ms** | el nuevo (**15** sobre `src/infrastructure/lsp`) |
+
+A conserva el número, pero su coste es la suma de los símbolos que alcanza cada
+raíz, y en el peor caso —muchas raíces que alcanzan el mismo subgraph— es
+R×V: cuadrático. Para darle una garantía haría falta un presupuesto y un
+estado «no cabe» que atravesaría el informe, el CLI y el MCP.
+
+C es lineal **por construcción** —la condensación de Tarjan, que ya vivía en
+`cognicode-graph-algos` y es iterativa, más el camino más largo sobre el DAG de
+la condensación—, así que **termina siempre** y no hace falta inventar un estado
+«no cabe». Su precio es que el número publicado cambia.
+
+**Por qué cambiar el número no es un gasto escondido.** El valor viejo era la
+cadena que la búsqueda en profundidad encontraba por casualidad: `find_path` se
+documenta como «(BFS)» y hace una búsqueda en profundidad (usa `Vec::pop()`, que
+es LIFO). El valor nuevo es la cadena más larga, que es lo que el campo
+promete. El nuevo es **mayor o igual** que el viejo en todos los casos —el viejo
+era *una* cadena, el nuevo es la más larga— y sobre el grafo real completo del
+core pasa de **no-contestar** a **21**.
+
+**Lo que entra.**
+
+| Fichero | Qué |
+|---|---|
+| `crates/cognicode-graph-algos/src/algorithms/longest_chain.rs` (nuevo) | `longest_chain(out_neighbors, n)`: la condensación + el camino más largo sobre el DAG, en tiempo lineal; 11 tests unitarios |
+| `crates/cognicode-core/src/domain/services/call_graph_analyzer.rs` | `calculate_max_depth` mide la cadena más larga; se van `depth_from_roots` y el `graph.roots()` por símbolo; numeración única de los símbolos (`call_adjacency`); 3 tests unitarios |
+| `crates/cognicode-core/tests/it/the_complexity_of_a_real_project_answers.rs` (nuevo) | el testigo de código real: la complejidad de un proyecto responde dentro de un plazo, y la ruta del consumidor publica la profundidad |
+
+**Lo que sale**: 28 líneas (`calculate_max_depth` por símbolo y `depth_from_roots`).
+
+**El RED, medido con el código viejo** (restaurado por sustitución exacta del
+texto, nunca con `git checkout`).
+
+| Prueba | Con el código viejo | Con la corrección |
+|---|---|---|
+| `the_complexity_of_a_real_project_answers_within_a_deadline` | **FAIL a los 10,9 s**: *the complexity of a real project did not answer in 10s* | PASS (1,0 s) |
+| `the_consumer_route_publishes_the_depth_of_a_real_project` | **TIMEOUT a los 300,0 s** (el plazo del perfil `gate`) | PASS (1,0 s) |
+
+**El CLI real** (medido, no simulado):
+
+```
+$ cognicode graph complexity crates/cognicode-core
+Complexity Metrics:
+  Total symbols: 35419
+  Total edges: 14666
+  Max depth: 21
+  Cyclomatic complexity: 0
+  High fan-out (>=10): 51
+  Medium fan-out (5-9): 579
+  Low fan-out (<5): 34789
+  Entry points: 31591
+  Leaf functions: 29333
+
+Analysis completed in 11628ms
+```
+
+Antes de esta unidad, ese comando no terminaba nunca.
+
+**Las mutaciones focales de `longest_chain`, medidas sobre el mismo árbol.**
+
+| Mutación | Qué rompe | Muertos en `longest_chain` | Muertos en el dominio |
+|---|---|---|---|
+| M1 | la cadena no cuenta los símbolos del propio grupo | **10 de 11** | **3 de 3** |
+| M2 | un grupo se trata como quien se llama a sí mismo | **1 de 11** | 0 de 3 |
+| M3 | se publica el grupo más pequeño en vez del más largo | **7 de 11** | **2 de 3** |
+| M4 | el recorrido no avanza | **10 de 11** | 2 de 3 |
+
+**M2 sobrevivió a la primera medición, y eso es un dato.** Los fixtures no
+tenían un grupo cíclico que *continuase* la cadena, así que la mutación no
+cambiaba nada en ellos: un mutante que sobrevive no siempre señala un test que
+falta, sino un test que no distingue el caso que el mutante rompe. El fixture
+que la mata (`a_chain_that_goes_through_a_group_counts_the_group_and_what_it_calls`)
+es una cadena que entra en un grupo que se llama a sí mismo y sale de él.
+
+**M4 dejó la máquina sin memoria, y el arreglo fue del algoritmo, no del
+test.** El mutante que no avanza el recorrido no sólo se cuelga: acumula
+`order` sin fin, y el plazo del test lo salva del cuelgue pero **no** del
+consumo de memoria —la máquina se quedó sin RAM y el trabajo se paró—. La
+lección es del código: ahora cada grupo entra en la cola y en el orden **una
+sola vez** (`queued` y `processed`), de modo que la memoria del cálculo queda
+acotada por el tamaño del grafo y un recorrido que no avance no puede
+acumular sin límite. Medido con el mutante puesto y la memoria vigilada: el
+proceso de test se queda en **46,5 MB** y los tests fallan por su plazo a los
+5 s.
+
+**Verificación (medida en esta rama, base `cc571e63`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-graph-algos -p cognicode-core --lib --tests` | **3778 tests run: 3778 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli --tests` | **888 tests run: 888 passed, 1 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-graph-algos -p cognicode-core --all-targets -- -D warnings` | limpio |
+| CLI real | `Max depth: 21` en 11,6 s |
+
+**Gate: NOT_RUN (lote).** El gate se paga por lotes de diez tareas
+(`AGENTS.md`), y ésta es la **novena** unidad desde el último gate (TASK-79 AC1,
+TASK-82 por la mitad, TASK-79 AC4, TASK-92 rebanada 1, TASK-92 rebanada 2,
+TASK-70 grupo 1, TASK-128, TASK-70 grupo 2 y esta).
+
+**Lo que queda de TASK-130.** AC2: `AnalysisService::find_minimal_feedback_set`
+— sigue sin responder sobre un grafo real y **no está expuesto por el MCP ni por
+el CLI** (0 apariciones fuera de `application/services/analysis_service.rs` y
+`domain/services/cycle_detector.rs`), así que su rebanada no llega al
+consumidor: es una función de biblioteca. La tarea queda abierta con 3 de 4 AC.
+
+**Dos hallazgos que no son de esta unidad.**
+
+- `CallGraph::find_path` se documenta como «(BFS)» y hace una búsqueda en
+  profundidad (`Vec::pop()` es LIFO). Desde esta unidad su único consumidor de
+  producción es `has_path`, que lo usa como booleano; el resto son benches y un
+  test. La mentira está anotada, no tocada.
+- `WorkspaceSession::get_project_diagnostics` — una de las tres rutas de
+  consumidor que nombra el encargo — **no tiene hoy ningún llamador** fuera de
+  su fichero. Hereda la corrección, pero no hay a quién preguntarle.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg`
+del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
+`AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
+recibo, en vez de en un trailer que el hook rechaza.
