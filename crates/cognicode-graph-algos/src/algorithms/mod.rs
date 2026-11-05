@@ -13,6 +13,7 @@ pub mod dfg;
 pub mod dominators;
 pub mod dominators_cfg;
 pub mod feedback_arc_set;
+pub mod feedback_vertex_set;
 pub mod god_nodes;
 pub mod interproc_summary;
 pub mod k_core;
@@ -40,6 +41,7 @@ pub use dfg::{DefUseEdge, Statement, dfg_edges, reaching_uses};
 pub use dominators::dominators;
 pub use dominators_cfg::{DominatorInfo, dominators_cfg};
 pub use feedback_arc_set::feedback_arc_set;
+pub use feedback_vertex_set::feedback_vertex_set;
 pub use god_nodes::god_nodes;
 pub use interproc_summary::{
     FunctionLocalView, InterprocSummary, SummaryKind, compute_summaries, summary_id,

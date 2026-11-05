@@ -74,59 +74,43 @@ impl CycleDetector {
         result.cycles.iter().any(|cycle| cycle.contains(symbol_id))
     }
 
-    /// Finds the minimal set of symbols that need to be removed to break all cycles
+    /// Finds a set of symbols whose removal breaks every cycle in the graph.
+    ///
+    /// The minimum feedback vertex set is NP-hard, so this is a greedy
+    /// approximation and not a minimum: the returned set always breaks
+    /// every cycle the detector reports, but its size is not guaranteed
+    /// to be the smallest possible one. The name is the published one.
+    ///
+    /// The answer is deterministic: the same graph always yields the same
+    /// set, whatever order its symbols were added in.
+    ///
+    /// Cost: `O(F · (V + E))`, where `F` is the size of the set. Every
+    /// symbol of the set is taken out of a cycle, so the search ends.
     pub fn find_minimal_feedback_set(&self, graph: &CallGraph) -> Vec<SymbolId> {
-        let result = self.detect_cycles(graph);
-        if !result.has_cycles {
-            return Vec::new();
+        // The symbols are numbered by their identifier, so that the
+        // answer does not depend on the order the graph happens to hold
+        // them in: the tie between two symbols that break the same
+        // number of cycles is the smaller identifier.
+        let mut ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
+        ids.sort();
+        let mut position_of: HashMap<&SymbolId, usize> = HashMap::with_capacity(ids.len());
+        for (position, id) in ids.iter().enumerate() {
+            position_of.insert(id, position);
         }
 
-        // Use a greedy approach to find a small feedback vertex set
-        // This is NP-hard in general, so we use a greedy approximation
-        let mut symbols_to_consider: Vec<SymbolId> =
-            graph.symbol_ids().map(|(id, _)| id.clone()).collect();
-
-        // Sort by degree (lower degree = better candidate for removal)
-        symbols_to_consider.sort_by(|a, b| {
-            let deg_a = graph.callers(a).len() + graph.callees(a).len();
-            let deg_b = graph.callers(b).len() + graph.callees(b).len();
-            deg_a.cmp(&deg_b)
-        });
-
-        let mut result_set = Vec::new();
-        let mut working_graph = graph.clone();
-
-        // Greedily remove symbols that break cycles
-        while self.detect_cycles(&working_graph).has_cycles {
-            let candidates: Vec<SymbolId> = working_graph
-                .symbol_ids()
-                .map(|(id, _)| id.clone())
-                .filter(|id| !result_set.contains(id))
-                .collect();
-
-            if candidates.is_empty() {
-                break;
-            }
-
-            // Find the symbol whose removal breaks the most cycles
-            let mut best_symbol = candidates[0].clone();
-            let mut best_breakage = 0;
-
-            for candidate in &candidates {
-                let mut test_graph = working_graph.clone();
-                test_graph.remove_symbol(candidate);
-                let breakage = self.detect_cycles(&test_graph).cycles.len();
-                if breakage > best_breakage {
-                    best_breakage = breakage;
-                    best_symbol = candidate.clone();
+        let mut successors: Vec<Vec<usize>> = vec![Vec::new(); ids.len()];
+        for (position, id) in ids.iter().enumerate() {
+            for (callee, _) in graph.callees(id) {
+                if let Some(&target) = position_of.get(&callee) {
+                    successors[position].push(target);
                 }
             }
-
-            result_set.push(best_symbol.clone());
-            working_graph.remove_symbol(&best_symbol);
         }
 
-        result_set
+        cognicode_graph_algos::feedback_vertex_set(&successors, ids.len())
+            .into_iter()
+            .map(|position| ids[position].clone())
+            .collect()
     }
 
     /// Tarjan's strongly connected components algorithm
@@ -388,6 +372,152 @@ mod tests {
 
         assert!(detector.would_break_cycles(&graph, &id_a));
         assert!(detector.would_break_cycles(&graph, &id_b));
+    }
+
+    /// A graph with two cycles and one symbol that belongs to none.
+    ///
+    /// `a` and `b` call each other, `d` calls itself, and `c` calls
+    /// nobody: removing `c` breaks nothing, so a set that holds it is
+    /// holding a symbol for no reason.
+    fn graph_with_two_cycles() -> (CallGraph, SymbolId, SymbolId, SymbolId, SymbolId) {
+        let mut graph = CallGraph::new();
+
+        let a = graph.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        ));
+        let b = graph.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("test.rs", 2, 1),
+        ));
+        let c = graph.add_symbol(Symbol::new(
+            "c",
+            SymbolKind::Function,
+            Location::new("test.rs", 3, 1),
+        ));
+        let d = graph.add_symbol(Symbol::new(
+            "d",
+            SymbolKind::Function,
+            Location::new("test.rs", 4, 1),
+        ));
+
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &a, DependencyType::Calls).unwrap();
+        graph.add_dependency(&d, &d, DependencyType::Calls).unwrap();
+
+        (graph, a, b, c, d)
+    }
+
+    #[test]
+    fn the_feedback_set_breaks_every_cycle() {
+        let detector = CycleDetector::new();
+        let (graph, _, _, _, _) = graph_with_two_cycles();
+
+        let chosen = detector.find_minimal_feedback_set(&graph);
+
+        let mut without = graph.clone();
+        for symbol in &chosen {
+            without.remove_symbol(symbol);
+        }
+        assert!(
+            !detector.detect_cycles(&without).has_cycles,
+            "the set leaves a cycle alive: {chosen:?}"
+        );
+    }
+
+    #[test]
+    fn the_feedback_set_holds_only_the_symbols_that_break_a_cycle() {
+        let detector = CycleDetector::new();
+        let (graph, _, _, harmless, _) = graph_with_two_cycles();
+
+        let chosen = detector.find_minimal_feedback_set(&graph);
+
+        assert!(
+            !chosen.contains(&harmless),
+            "the set holds a symbol that breaks no cycle: {chosen:?}"
+        );
+        assert_eq!(
+            chosen.len(),
+            2,
+            "one symbol breaks the pair and one breaks the self-loop: {chosen:?}"
+        );
+    }
+
+    #[test]
+    fn the_feedback_set_does_not_depend_on_the_order_of_the_symbols() {
+        let detector = CycleDetector::new();
+        let (graph, _, _, _, _) = graph_with_two_cycles();
+
+        // The same graph, built the other way round. The symbols of a
+        // graph live in a hash map whose order depends on the order they
+        // were added, and the answer must not: the same graph is the same
+        // question, and it has the same answer every time it is asked.
+        let mut reversed = CallGraph::new();
+        let d = reversed.add_symbol(Symbol::new(
+            "d",
+            SymbolKind::Function,
+            Location::new("test.rs", 4, 1),
+        ));
+        let c = reversed.add_symbol(Symbol::new(
+            "c",
+            SymbolKind::Function,
+            Location::new("test.rs", 3, 1),
+        ));
+        let b = reversed.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("test.rs", 2, 1),
+        ));
+        let a = reversed.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        ));
+        reversed
+            .add_dependency(&a, &b, DependencyType::Calls)
+            .unwrap();
+        reversed
+            .add_dependency(&b, &a, DependencyType::Calls)
+            .unwrap();
+        reversed
+            .add_dependency(&d, &d, DependencyType::Calls)
+            .unwrap();
+
+        let mut first = detector.find_minimal_feedback_set(&graph);
+        let mut second = detector.find_minimal_feedback_set(&reversed);
+        first.sort();
+        second.sort();
+
+        assert_eq!(
+            first, second,
+            "the same graph got two different answers: {first:?} and {second:?}"
+        );
+        assert!(
+            !first.contains(&c),
+            "the set holds a symbol that breaks no cycle: {first:?}"
+        );
+    }
+
+    #[test]
+    fn a_graph_without_cycles_has_no_feedback_set() {
+        let detector = CycleDetector::new();
+        let mut graph = CallGraph::new();
+
+        let a = graph.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        ));
+        let b = graph.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("test.rs", 2, 1),
+        ));
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+
+        assert!(detector.find_minimal_feedback_set(&graph).is_empty());
     }
 
     #[test]

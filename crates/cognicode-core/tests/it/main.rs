@@ -138,6 +138,7 @@ mod the_consumer_can_declare_the_version;
 mod the_continuation_chain_is_byte_exact;
 mod the_declaration_knows_where_it_is;
 mod the_fact_path_does_not_invent_the_place_of_a_declaration;
+mod the_feedback_set_of_a_real_project_answers;
 mod the_filtered_route_says_what_it_covered;
 mod the_graph_changes_where_the_code_changed;
 mod the_graph_does_not_depend_on_the_directory_order;
