@@ -32331,3 +32331,86 @@ mío, y por eso se vuelve a medir antes de certificar.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-116: el paso de mutantes no confunde un mutante atrapado con un tiempo agotado
+
+**Qué.** El tercer paso del gate —`cargo mutants`— daba un veredicto que dependía de la carga de la
+máquina: el mismo árbol, el mismo commit (`fadf5e6a`), dos veredictos distintos. Un gate cuyo
+veredicto cambia con quién corría al lado no es una autoridad: es una moneda al aire.
+
+**La evidencia, medida dos veces.** Dentro del gate completo, `574 mutants tested in 8m: 570 caught,
+4 unviable` — rc=0. En solitario, sin nada más en la máquina, `574 mutants tested in 11m: 565 caught,
+1 unviable, 8 timeouts` — rc=1. Los ocho con tiempo agotado eran todos de
+`crates/cognicode-graph-algos/src/algorithms/condensation.rs`, un fichero que la unidad que lo
+descubrió (TASK-111) no toca.
+
+**El mutante no cuelga: lo mata el test.** Con el filtro `condensation.rs` (17 mutantes) y `-j 8` los
+17 se atrapan en 26 s; con `-j 1`, dos mutantes se atrapan en 16 s. Los tests que llaman a un
+algoritmo que puede no terminar llevan su propio plazo —hilo y `recv_timeout`—, que es exactamente
+para esto. Lo que cuelga es la **máquina**, cuando los 574 mutantes corren a la vez.
+
+**La causa, con su aritmética.** `scripts/mem-capped-runner.sh` deja crecer cada binario de test
+hasta 6291456 KiB (6 GiB) de espacio de direcciones, y `scripts/test-gate.sh` lanza **ocho** trabajos
+a la vez: 8 × 6 GiB = 48 GiB para una máquina con 94 GiB totales y unos 39 GiB libres.
+
+Cuando el presupuesto de memoria se agota, el daño no lo paga el mutante que se pasa: lo pagan sus
+vecinos. Un mutante que los tests matan en segundos se queda sin presupuesto y se reporta como
+**TIEMPO AGOTADO**. El propio `.cargo/mutants.toml` ya avisa: «un mutante atrapado reportado como
+tiempo agotado es un gate rojo que no dice nada del código»; el suelo de 120 s ya no bastaba.
+
+**El arreglo.** El techo del runner baja a 2 GiB: 8 × 2 GiB = 16 GiB, holgadamente dentro de lo que
+la máquina tiene libre, y el mutante que asigna sin parar muere antes —que es para lo que el runner
+existe—. El techo sigue siendo un knob (`MUTANT_TEST_VMEM_KB`) para un crate cuyos tests propios
+necesiten más.
+
+**La aritmética queda fijada, no sólo corregida.** Un contrato nuevo,
+`scripts/ci/test_mutant_memory_budget.py`, declara el presupuesto: techo × trabajos ≤ 16 GiB. RED
+medido antes de corregir el runner: «el paso de mutantes pide 49152 MiB a la vez (techo 6144 MiB x 8
+trabajos) y el presupuesto es 16384 MiB». El contrato lleva su detector de vacío —un presupuesto que
+se pasa tiene que verse, y uno que cabe no puede verse como un problema—, porque un detector que
+nunca dispara es peor que no tener detector.
+
+**Lo que NO cambia.** El alcance de la mutación (un solo crate), el número de mutantes, el plazo de
+120 s, el deadline de 5 s de los tests que pueden colgarse, y el hecho de que un mutante que
+sobrevive siga siendo un agujero. Lo que cambia es el techo bajo el que un mutante desbocado muere:
+antes moría tardísimo y arrastraba a sus vecinos; ahora muere pronto y les deja trabajar.
+
+**Verificación.** Rama `fix/the-mutation-step-is-not-a-coin-toss`, base `fadf5e6a`, commit `f64b2795`.
+`python3 scripts/ci/test_mutant_memory_budget.py`: RED antes de corregir, PASS después.
+
+**La primera corrida del gate sobre esta rama salió rc=1, y no fue por el cambio.** El paso de
+mutantes salió verde (`574 mutants tested in 10m: 573 caught, 1 unviable`, 0 tiempos agotados), pero
+la integración falló en dos tests de `b6_w1_mcp_robustness`
+(`large_response_uses_pagination` y `wire_tools_list_matches_hand_authored_catalog`). La causa es
+que el test resuelve el binario del servidor MCP prefiriendo **release** sobre debug, y el binario
+release que había en el directorio de destino compartido se había compilado desde el árbol de
+TASK-111 (78 tools) mientras este árbol declara 77: el servidor anunciaba una tool que el catálogo de
+este árbol no tiene. Es la trampa que AGENTS.md ya documenta (un binario release viejo o de otro
+árbol es infraestructura local, no una regresión), y el remedio es el de siempre:
+`cargo build --release --bin cognicode-mcp` **antes** de reinvocar la suite. Reconstruido desde este
+árbol, los dos tests pasan (medido: 2 passed, 6680 skipped).
+
+**El paso de mutantes, medido en solitario.** Nada más cargando la máquina, que es la causa medida
+de los falsos tiempos agotados: el techo nuevo por defecto, ocho trabajos, los 574 mutantes del
+alcance. Veredicto: `574 mutants tested in 10m: 572 caught, 2 unviable` — **0 tiempos agotados, 0
+supervivientes**, rc=0.
+
+Las tres corridas con el techo nuevo dicen lo mismo en lo que el gate mide: 572 atrapados y 2
+inviables (en solitario), 573 atrapados y 1 inviable (dentro del gate), 570 atrapados y 4 inviables
+(la primera, en solitario). Ningún tiempo agotado, ningún superviviente. La moneda al aire era el tiempo
+agotado, y el tiempo agotado ya no aparece.
+
+`bash scripts/test-gate.sh` sobre la punta de la rama: unitarios **4630 OK** (2 ignorados),
+integración **6672 OK** (10 ignorados) y mutantes **574 en 10m: 573 atrapados, 1 inviable,
+0 supervivientes, 0 tiempos agotados** — rc=0. `bash scripts/ci/run-all-contracts.sh` rc=0.
+
+**Una diferencia que queda dicha, porque el recibo no puede esconderla.** El número de mutantes
+**inviables** no es estable: 1, 2 y 4 en las tres corridas con el techo nuevo. Un inviable es un
+mutante que el runner no pudo ejecutar (su build falla o el proceso muere antes de concluir), así que
+cada uno es un mutante que nadie midió. La cifra que el gate mide —supervivientes y tiempos
+agotados— sí es estable con el techo nuevo: cero en todas las corridas. Los inviables se anotan como
+lo que son: un agujero pequeño y conocido en la cobertura de la medición, no un veredicto.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

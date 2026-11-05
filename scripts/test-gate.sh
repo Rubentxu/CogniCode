@@ -218,6 +218,14 @@ if $RUN_MUTANTS; then
     # The test binaries run under `scripts/mem-capped-runner.sh`: a mutant
     # that loops while it allocates (a BFS cursor that never advances) must
     # die at the ceiling, not exhaust the machine's memory.
+    #
+    # The ceiling is paid by every job at the same time, so the two numbers
+    # belong together: the runner's ceiling times this script's parallelism is
+    # the memory the step asks for at once, and it has to fit in what the
+    # machine has free. When it does not fit, the mutants that the tests kill
+    # in seconds are reported as timeouts instead — a red gate that says
+    # nothing about the code. `scripts/ci/test_mutant_memory_budget.py` keeps
+    # the two numbers from drifting apart.
     run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
       cargo mutants -j "${MUTANTS_JOBS}" \
