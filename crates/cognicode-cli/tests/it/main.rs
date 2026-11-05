@@ -24,6 +24,7 @@ mod evidence_cli_mcp_equivalence;
 mod gitignore_negation_contract;
 mod graph_cli_mcp_equivalence;
 mod graph_impact_absent_symbol;
+mod json_stdout_is_one_document;
 mod one_answer_one_document;
 mod one_published_line_base;
 mod perf_budget_checker_contract;
