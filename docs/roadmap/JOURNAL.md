@@ -34036,3 +34036,143 @@ limpios. Gate completo: **NOT_RUN** (se paga por lotes de diez tareas).
 **Los PR de la unidad, en orden.** #600 → `d39b686c` (el sustituto, el arreglo del `start_line`, la
 retirada del fichero y el `sha2`), #601 → `22358503` (el residuo del preflight), #602 → `c4b2f7c6`
 (el recibo), #603 → `f0ad0ccb` (el digest publicado).
+
+## 2026-11-05 — TASK-70 (grupo 2): el grafo sobre código real tiene dueño
+
+**El encargo.** Grupo 2 de TASK-70: los dos tests `#[ignore]`d de
+`crates/cognicode-core/src/application/services/analysis_service.rs`. La tarea
+los describía como «una tarea disfrazada de test» por la regla 6 del
+`AGENTS.md`, con 223 líneas anotadas y con un motivo de `#[ignore]` que
+nombraba tres sustitutos. Las tres cosas eran hipótesis; lo que hay debajo se
+midió.
+
+**El estado medido antes de decidir (2026-11-05, `main` @ `a51818e7`).**
+
+| Hecho medido | Valor | Cómo se midió |
+|---|---|---|
+| Tests `#[ignore]`d en ese fichero | **2** | `grep -n "#\[ignore"` |
+| Líneas que ocupan | **229** | diff del PR #605 |
+| ¿Terminan? | **no**: TIMEOUT a los **300,064 s** y **300,057 s** | `cargo nextest run --profile gate -p cognicode-core --lib --run-ignored all --test-threads 1` |
+| Dónde se cuelgan | `AnalysisService::find_minimal_feedback_set` y `CallGraphAnalyzer::calculate_complexity` | la última línea impresa antes del corte |
+| El grafo sobre el que se cuelgan | **35.403 símbolos, 35.362 SCC** | el propio test, antes de colgarse |
+| El export mermaid de ese grafo | **9.991.053 caracteres** | ídem |
+| Sustitutos que nombra el motivo de `ignore` | 3, **y 2 no cubren lo que dice** | lectura de los tres |
+
+La última fila es la que obliga a mirar: el motivo de `#[ignore]` **sobredeclara**
+la cobertura que invoca.
+
+- «`build_project_graph → graph → get_file_symbols` … bounded-covered by
+  `test_debug_call_relationships_in_real_code` (single file, 0,1 s)»: ese test
+  **no llama** a `build_project_graph` ni a `get_file_symbols` — llama al parser
+  y a `PetGraphStore` directamente (`analysis_service.rs:2465`).
+- «the full graph stats pin is in `test_lightweight_index_real_project_benchmark`
+  (10708 symbols, 28337 locations)»: esos dos números son `println!`; las
+  aserciones del sustituto son `symbol_count() > 100` y
+  `find_symbol("build_project_graph")` no vacío, y son del `LightweightIndex`,
+  no del `CallGraph` (`lightweight_index.rs:405`).
+- «The enhanced features (entry_points, dead_code, hot_paths, etc.) are
+  bounded-covered by other unit tests in this file»: `dead_code` y `hot_paths`
+  **no los afirma ni el propio test ignorado** — los imprime.
+
+**La decisión (lente de promoción de regresiones: `promote | replace | retire`).**
+
+- **PROMOTE: imposible.** Un test que no termina no puede vivir en el gate
+  (`AGENTS.md`, reglas 6 y 7). No es un test lento: es un test que cuelga.
+- **Lo que sólo estos dos tenían**: el grafo del producto **construido sobre
+  código real**, respondiendo por los símbolos que ese código declara. Todo lo
+  demás que afirman tiene dueño vivo (sobre fixtures) o lo afirma un test vivo
+  sobre un archivo real.
+- **REPLACE**: un test de integración en casa, sobre una subárbol real y
+  acotada, que afirme exactamente eso.
+- **RETIRE**: los dos `#[ignore]`d salen del árbol cuando el sustituto esté
+  verde.
+
+**El sustituto**: `crates/cognicode-core/tests/it/the_graph_over_real_code_answers.rs`
+(151 líneas, 1 test, **0,55 s**). Testigo: `src/infrastructure/lsp` — 12
+ficheros, 5.282 líneas, **287 símbolos y 156 aristas**, con un directorio
+anidado dentro (`providers/`) y sin módulos de test. Siete afirmaciones: el
+grafo holds el tipo que el código real declara, holds el método que ese código
+declara **dentro de un `impl`**, holds **aristas**, `get_file_symbols` encuentra
+lo que el fichero real declara, `impact_of` resuelve el nombre, los entry
+points y las leaf functions no están vacíos, y el grafo se dibuja.
+
+**La garantía y quién la cubre** (AC1 de la tarea: cada borrado cita el test
+que sigue cubriendo la misma garantía).
+
+| Garantía | Antes | Ahora |
+|---|---|---|
+| El grafo del producto sobre **código real** responde por el código que leyó | los dos `#[ignore]`d (que no terminaban) | `the_graph_over_real_code_answers.rs` |
+| El grafo sobre un árbol cualquiera responde lo mismo por las dos rutas | — | `the_whole_route_is_the_filtered_route_over_the_root.rs`, `h14_system_holds_end_to_end.rs`, `graph_walk_stays_inside_the_root.rs`, `cached_coverage_is_honest.rs` |
+| `get_entry_points` / `get_leaf_functions` | — | `one_published_column_base.rs`, `graph_cli_mcp_equivalence.rs` |
+| `get_file_symbols` | — | `test_get_file_symbols_rust` |
+| `impact_of` | — | `one_owner_for_the_impact_question.rs` |
+| El export mermaid | — | `test_mermaid_export` |
+| El parser sobre un **archivo real** | — | `test_debug_call_relationships_in_real_code` |
+| El índice ligero y el grafo bajo demanda sobre el crate | — | `test_lightweight_index_real_project_benchmark`, `test_on_demand_graph_real_project_benchmark` |
+
+**El rojo discriminante**: cuatro mutaciones focales, medidas sobre el mismo
+árbol y con las dos suites completas como término de comparación.
+
+| Mutación | El test nuevo | `--test it` (963) | `--lib` (2545) |
+|---|---|---|---|
+| M1 las aristas `Calls` no se guardan | ROJO: *the graph of real code has no relations* | 27 rojos | 103 rojos |
+| M2 `get_file_symbols` devuelve vacío | ROJO: *the real file declares CompositeProvider and reading it does not find it* | 6 rojos | 10 rojos |
+| M3 el parser no baja a los `impl` | ROJO: *does not hold wait_timeout_secs … inside an impl block* | 2 rojos | 1 rojo |
+| M4 el walk salta el directorio `providers` | ROJO: *does not hold CompositeProvider* | **1 rojo: sólo el nuevo** | **0 rojos** |
+
+**M4 es la prueba de que el sustituto es dueño de algo que nadie más es**: un
+filtro del walk que separe un directorio real no lo nota ningún fixture,
+porque ningún fixture tiene un `providers/`. Las otras tres también las matan
+otros tests, y el recibo lo dice: el sustituto no es el único dueño de esas, y
+no se presenta como tal.
+
+**Lo que sale del árbol.**
+
+| Sale | Medida | Por qué |
+|---|---|---|
+| `test_real_code_analysis_workflow` y `test_enhanced_call_graph_features` | **229 líneas**, 2 atributos `#[ignore]` | no terminaban (300 s) y su motivo de `ignore` sobredeclara la cobertura |
+| el resto de `#[ignore]` del crate | **0** | el crate se queda sin ninguno |
+
+**Lo que entra**: 151 líneas (el sustituto) + 1 línea en `tests/it/main.rs`.
+
+**Verificación (medida en esta rama, base `a51818e7`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2545 tests run: 2545 passed, 0 skipped** (antes 2545 + 2 skipped, que eran estos dos) |
+| `cargo nextest run --profile gate -p cognicode-core --test it` | **963 tests run: 963 passed, 2 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+
+**Gate: NOT_RUN (lote).** El gate se paga por lotes de diez tareas (`AGENTS.md`),
+y esta es la **octava** unidad desde el último gate (TASK-79 AC1, TASK-82 por
+la mitad, TASK-79 AC4, TASK-92 rebanada 1, TASK-92 rebanada 2, TASK-70 grupo 1,
+TASK-128 y esta).
+
+**Residuo enrutado (fuera del alcance de este grupo).** Los dos cuelgues son
+hechos de producto, no coste de test:
+
+- `CallGraphAnalyzer::calculate_complexity(&graph)` no termina en 300 s sobre el
+  grafo de un proyecto real. Llamantes en el árbol: `application/services/analyze.rs:294`
+  (`ServiceAnalyzer`, el adaptador de producción del puerto `Analyze`),
+  `application/workspace_session.rs:1328` e `interface/cli/commands.rs:1466`. El
+  MCP `get_complexity` no se ve afectado (calcula por fichero).
+- `AnalysisService::find_minimal_feedback_set(&graph)` tampoco, y no está
+  expuesto por el MCP ni por el CLI (0 apariciones fuera de
+  `application/services/analysis_service.rs` y `domain/services/cycle_detector.rs`).
+
+Enrutado como **TASK-130**, con las cifras y los tres llamantes. Lo que hay que
+decidir allí —si la función termina con un plazo y declara que no cabe, si
+calcula una proyección más barata, o si el grafo que se le pasa es el que no
+debe ser— no está medido, y por eso es tarea y no un arreglo.
+
+**Lo que queda de TASK-70** (la unidad sigue abierta: AC1 y AC2 sin cerrar, AC3
+marcada): el **grupo 3**, los 14 contratos Python de proceso (3.724 líneas), uno
+a uno y con el sustituto nombrado, empezando por los que ya no tienen consumidor
+(`test_preflight_passed_ratchet` y `test_preflight_clone_ref` miden un script
+que ninguna lane ejecuta).
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg`
+del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
+`AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
+recibo, en vez de en un trailer que el hook rechaza.
