@@ -32875,3 +32875,58 @@ tocan.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-120: el stdout JSON se prueba donde lo usan los comandos que emiten progreso
+
+**El hueco.** Al fundirse TASK-80, la cobertura conductual de «en modo JSON el stdout es un único
+documento» quedó en un solo comando: `impact-composite`. Los cuatro comandos que **sí** emiten
+línea de progreso —`trace-path`, `impact`, `hierarchy` y `mermaid`— quedaron sin cobertura.
+
+Lo que hay en `main` no lo cubre: el guard estructural que lee las fuentes del módulo CLI del core
+exime `progress.rs` a propósito (es el único sitio permitido para escribir en stdout), y una
+llamada que pase el formato equivocado a la regla de canal no la detecta nadie. El test que sí
+existe, `impact-composite`, ni siquiera llama a `progress_line`.
+
+La rama `fix/task-80` (ad1bc760) tenía esa cobertura en
+`crates/cognicode-cli/tests/json_stdout_is_one_document.rs`, con cinco casos. Retirarla sin más
+hubiera perdido la garantía: la regla de canal es la que decide que el documento JSON ocupe el
+stdout entero, y su poder discriminante estaba en esos cuatro casos, no en el quinto.
+
+**La corrección.** Los cuatro casos se portan al binario de tests agregado
+(`crates/cognicode-cli/tests/it/json_stdout_is_one_document.rs`), escritos contra el binario real
+como sub-proceso. El caso de `impact-composite` **no** se porta: `one_answer_one_document.rs` ya
+cubre esa garantía con otro fixture, y duplicar el mismo aserto no es cobertura.
+
+El test lleva plazo: el comando corre en un hilo con su tubería leída en otros dos, y el test
+falla si el proceso no vuelve en 60 s. Una espera sin deadline en un test es una espera que
+puede no terminar nunca, y retiene la suite y cada corrida de mutantes que la incluya.
+
+**RED medido.** Se rompió la regla de canal a propósito (`progress_line` escribía siempre en
+stdout) y los cuatro casos cayeron: **0 passed; 4 failed**, con el mensaje «the standard output is
+not ONE JSON document» y el stdout ensuciado a la vista —la línea de progreso delante del
+documento—:
+
+```
+graph ["mermaid"]: the standard output is not ONE JSON document (expected value at line 1 column 1):
+--- stdout ---
+Exporting to Mermaid format from: /tmp/.tmpwEt7x2
+{
+  "kind": "mermaid",
+  ...
+```
+
+Restaurada la regla: **4 passed**. El RED no es un artefacto: es la prueba de que el test mide la
+garantía y no el camino sano.
+
+**Verificación.** Rama `feature/task-120-json-stdout-is-one-document`, base `de1dd1d3` (la punta de
+`main`). `cargo nextest run --profile gate -p cognicode-cli --tests`: **627 tests run: 627 passed,
+1 skipped** (antes 623; los cuatro son los nuevos). `cargo fmt --all --check` limpio.
+`cargo clippy --workspace --all-targets -- -D warnings` rc=0.
+`bash scripts/ci/run-all-contracts.sh` → rc=0, **43 contratos** y 303 casos en verde.
+
+**Gate: NOT_RUN (lote).** El gate entero se pasa por lotes de diez tareas, no por tarea: su paso
+de mutación mide `cognicode-graph-algos`, un crate que esta rama no toca (el cambio es un test de
+la CLI), y el resto de la suite del workspace no se ve afectada por un fichero de test nuevo.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
