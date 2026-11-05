@@ -21,6 +21,7 @@
 //! snapshot that cannot be served is not evidence of anything: it is
 //! rebuilt, and the reason is in the log.
 
+use crate::application::analysis_basis::GraphSource;
 use crate::application::error::AppResult;
 use crate::application::graph_cache;
 use crate::application::services::analysis_service::{AnalysisService, TreeFile, TreeState};
@@ -39,13 +40,13 @@ pub struct LoadedGraph {
     /// `None` when the graph was served without one: a session that kept
     /// its own graph does not have to describe it again.
     pub manifest: Option<FileManifest>,
-    /// Whether the graph was served from the durable snapshot.
+    /// Where the graph came from.
     ///
-    /// The answer has to say which of the two it was: a graph calculated
+    /// The answer has to say which of the three it was: a graph calculated
     /// now and a graph calculated before are the same answer only when
     /// the tree did not change, and the consumer is the one who has to
-    /// know that the product checked.
-    pub loaded_from_cache: bool,
+    /// know that the product checked —and who checked.
+    pub source: GraphSource,
     /// The tree as it was when the answer was decided.
     ///
     /// The holes the tree has RIGHT NOW travel here. The persisted graph
@@ -90,11 +91,16 @@ pub fn load_or_build_graph(
         if session_holds_a_graph {
             if let Some(manifest) = session_manifest {
                 let tree = service.tree_state(project_dir);
-                if !is_manifest_stale(manifest, project_dir, &tree.files) {
+                let vouched = vouched_for(service, manifest, project_dir, &tree);
+                if vouched || !is_manifest_stale(manifest, project_dir, &tree.files) {
                     return Ok(LoadedGraph {
                         graph: service.get_project_graph(),
                         manifest: None,
-                        loaded_from_cache: true,
+                        source: if vouched {
+                            GraphSource::Daemon
+                        } else {
+                            GraphSource::Cache
+                        },
                         tree,
                     });
                 }
@@ -123,12 +129,17 @@ pub fn load_or_build_graph(
                 // decides the freshness also says what holes the tree
                 // has now, so it is done once.
                 let tree = service.tree_state(project_dir);
-                if !is_manifest_stale(&manifest, project_dir, &tree.files) {
+                let vouched = vouched_for(service, &manifest, project_dir, &tree);
+                if vouched || !is_manifest_stale(&manifest, project_dir, &tree.files) {
                     service.graph_cache().replace(graph.clone());
                     return Ok(LoadedGraph {
                         graph: Arc::new(graph),
                         manifest: Some(manifest),
-                        loaded_from_cache: true,
+                        source: if vouched {
+                            GraphSource::Daemon
+                        } else {
+                            GraphSource::Cache
+                        },
                         tree,
                     });
                 }
@@ -200,9 +211,73 @@ pub fn load_or_build_graph(
     Ok(LoadedGraph {
         graph: service.get_project_graph(),
         manifest: manifest_to_keep,
-        loaded_from_cache: false,
+        source: GraphSource::Built,
         tree,
     })
+}
+
+/// Whether somebody who is watching the tree says that `manifest` still
+/// describes it.
+///
+/// Two things have to hold for the answer to be worth anything:
+///
+/// 1. The tree the watcher is watching is the tree the manifest was taken
+///    from. The modification times decide that, and they are free: the
+///    walk already read them. A file that changed after the manifest was
+///    taken has a later time, and a manifest that does not know a file
+///    is a manifest of another tree.
+/// 2. The watcher is talking about THIS manifest. The digest of the
+///    manifest is what binds the two: a watcher that is watching another
+///    build says nothing about this one.
+///
+/// When both hold, the content of the tree does not have to be read to
+/// know that the index still describes it. That is the whole point of the
+/// watcher: it is the one that has to notice the change that leaves the
+/// modification time alone.
+fn vouched_for(
+    service: &AnalysisService,
+    manifest: &FileManifest,
+    project_dir: &Path,
+    tree: &TreeState,
+) -> bool {
+    let Some(oracle) = service.freshness_oracle() else {
+        return false;
+    };
+    if !manifest_mtimes_agree(manifest, project_dir, &tree.files) {
+        return false;
+    }
+    oracle.vouches_for(manifest)
+}
+
+/// The digest of a manifest: the tree state it describes.
+///
+/// The manifest is a map of files to what was read from them, and this
+/// digest is over that map —sorted by path, because the map itself is
+/// not ordered, and two manifests of the same tree state have to have
+/// the same digest whatever order they were built in.
+///
+/// It is the thing that binds a claim to a tree state: a watcher that
+/// says "my index is fresh" says it about a digest, and a client can
+/// tell whether that digest is the one of the manifest it holds.
+pub fn manifest_digest(manifest: &FileManifest) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut entries: Vec<(
+        &PathBuf,
+        &crate::domain::value_objects::file_manifest::FileEntry,
+    )> = manifest.entries.iter().collect();
+    entries.sort_by(|left, right| left.0.cmp(right.0));
+
+    let mut hasher = Sha256::new();
+    for (relative, entry) in entries {
+        hasher.update(relative.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
+        hasher.update(entry.content_hash.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(entry.mtime.unwrap_or_default().to_string().as_bytes());
+        hasher.update(b"\n");
+    }
+    hex_digest(&hasher.finalize())
 }
 
 /// Atomically persist the graph + manifest snapshot to
@@ -333,6 +408,38 @@ pub fn canonical_workspace(project_dir: &Path) -> String {
         .unwrap_or_else(|_| project_dir.to_string_lossy().to_string())
 }
 
+/// Whether every file the manifest knows is still there, with the same
+/// modification time, and no file is missing from the manifest.
+///
+/// This is the cheap half of the freshness check: the walk already read
+/// the times, so comparing them costs nothing. It cannot tell a file
+/// whose content changed with the time left alone —that is what the
+/// content hash is for— but it does catch every ordinary change, and it
+/// is what decides whether the expensive half is worth paying.
+pub fn manifest_mtimes_agree(
+    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
+    project_dir: &Path,
+    files: &[TreeFile],
+) -> bool {
+    // The files that can change the graph are decided by the same rule
+    // the graph builder uses. A manifest that covered a different set
+    // would miss the files it does not know about, and a change in one
+    // of those would leave the cached graph in place while the product
+    // reported a complete build over sources that no longer exist.
+    let mut checked = 0usize;
+    for file in files {
+        let path = &file.path;
+        let rel = path.strip_prefix(project_dir).unwrap_or(path);
+        checked += 1;
+        match manifest.entries.get(rel) {
+            Some(entry) if entry.mtime == file.mtime_millis => {}
+            _ => return false, // new, modified, or missing from manifest
+        }
+    }
+    // If manifest has more entries than files checked, files were deleted
+    checked == manifest.entries.len()
+}
+
 /// Checks whether any source file has changed since the manifest was saved.
 ///
 /// Staleness is decided on three independent signals, in order of cost:
@@ -360,49 +467,41 @@ pub fn is_manifest_stale(
 ) -> bool {
     use sha2::{Digest, Sha256};
 
-    // The files that can change the graph are decided by the same rule
-    // the graph builder uses. A manifest that covered a different set
-    // would miss the files it does not know about, and a change in one
-    // of those would leave the cached graph in place while the product
-    // reported a complete build over sources that no longer exist.
-    let mut checked = 0usize;
+    if !manifest_mtimes_agree(manifest, project_dir, files) {
+        return true;
+    }
+
     for file in files {
         let path = &file.path;
         let rel = path.strip_prefix(project_dir).unwrap_or(path);
-        checked += 1;
-        match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == file.mtime_millis => {
-                // Mtime alone is not sufficient. A tool
-                // can rewrite the file bytes while keeping the original
-                // timestamp (e.g. restoring a backup, partial restore,
-                // `touch -r`). Compare the on-disk content_hash against
-                // the stored one to detect that case.
-                //
-                // A file whose content can no longer be
-                // read (e.g. permissions revoked after the snapshot)
-                // invalidates the snapshot — serving it would hide the
-                // loss of coverage behind a stale "complete" result.
-                //
-                // A file whose clock nobody read has no time to compare:
-                // both sides are absent, the times agree, and the file
-                // does not invalidate the snapshot by itself. What decides
-                // is the content hash.
-                let bytes = match std::fs::read(path) {
-                    Ok(b) => b,
-                    Err(_) => return true,
-                };
-                let on_disk_hash = hex_digest(&Sha256::digest(&bytes));
-                if on_disk_hash != entry.content_hash {
-                    return true;
-                }
-                continue; // unchanged
-            }
-            _ => return true, // new, modified, or missing from manifest
+        let Some(entry) = manifest.entries.get(rel) else {
+            return true;
+        };
+        // Mtime alone is not sufficient. A tool
+        // can rewrite the file bytes while keeping the original
+        // timestamp (e.g. restoring a backup, partial restore,
+        // `touch -r`). Compare the on-disk content_hash against
+        // the stored one to detect that case.
+        //
+        // A file whose content can no longer be
+        // read (e.g. permissions revoked after the snapshot)
+        // invalidates the snapshot — serving it would hide the
+        // loss of coverage behind a stale "complete" result.
+        //
+        // A file whose clock nobody read has no time to compare:
+        // both sides are absent, the times agree, and the file
+        // does not invalidate the snapshot by itself. What decides
+        // is the content hash.
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(_) => return true,
+        };
+        let on_disk_hash = hex_digest(&Sha256::digest(&bytes));
+        if on_disk_hash != entry.content_hash {
+            return true;
         }
     }
-    // If manifest has more entries than files checked, files were deleted → stale
-    let manifest_source_count = manifest.entries.len();
-    checked != manifest_source_count
+    false
 }
 
 /// Builds a FileManifest for the given project directory.
@@ -491,7 +590,7 @@ mod tests {
         )
         .expect("the first call answers");
         assert!(
-            !first.loaded_from_cache,
+            first.source == GraphSource::Built,
             "the first call had nothing to serve: it calculated the graph"
         );
 
@@ -506,7 +605,7 @@ mod tests {
         )
         .expect("the second call answers");
         assert!(
-            second.loaded_from_cache,
+            second.source != GraphSource::Built,
             "the second call served the snapshot the first one wrote"
         );
         assert_eq!(
@@ -545,7 +644,7 @@ mod tests {
         )
         .expect("the forced call answers");
         assert!(
-            !forced.loaded_from_cache,
+            forced.source == GraphSource::Built,
             "the caller that asks for the tree again gets the tree read \
              again: the snapshot is not what it asked for"
         );
@@ -576,7 +675,7 @@ mod tests {
         )
         .expect("the call answers");
         assert!(
-            !after.loaded_from_cache,
+            after.source == GraphSource::Built,
             "the snapshot describes a tree that no longer exists: it is not \
              served"
         );

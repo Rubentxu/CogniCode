@@ -55,11 +55,20 @@ pub struct ProjectGraph {
 /// when it cannot. A command that builds its own graph is a command that
 /// ignores what the product already calculated.
 pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
-    let service = AnalysisService::new();
+    let cache_root = crate::application::graph_cache::default_cache_root();
+    // The daemon's word, when there is a daemon to ask: a daemon that
+    // watches the tree can say that the index is still fresh without the
+    // product reading the content of every file again.
+    let service = match &cache_root {
+        Some(root) => AnalysisService::new().with_freshness_oracle(Some(std::sync::Arc::new(
+            crate::interface::daemon::DaemonOracle::for_workspace(root, dir),
+        ))),
+        None => AnalysisService::new(),
+    };
     let loaded = crate::application::graph_snapshot::load_or_build_graph(
         &service,
         dir,
-        crate::application::graph_cache::default_cache_root().as_deref(),
+        cache_root.as_deref(),
         None,
         false,
     )
@@ -74,22 +83,23 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
     // persisted graph cannot know about them— and its references and
     // relations are the graph's own, which are empty because a snapshot
     // only exists for a build that had none of them.
-    let (skipped, pending, rejected) = if loaded.loaded_from_cache {
-        (loaded.tree.holes, Vec::new(), Vec::new())
-    } else {
-        match service.get_last_build_report() {
-            Some(BuildReport {
-                status:
-                    BuildStatus::Partial {
-                        skipped,
-                        pending,
-                        rejected,
-                    },
-                ..
-            }) => (skipped, pending, rejected),
-            _ => (Vec::new(), Vec::new(), Vec::new()),
-        }
-    };
+    let (skipped, pending, rejected) =
+        if loaded.source != crate::application::analysis_basis::GraphSource::Built {
+            (loaded.tree.holes, Vec::new(), Vec::new())
+        } else {
+            match service.get_last_build_report() {
+                Some(BuildReport {
+                    status:
+                        BuildStatus::Partial {
+                            skipped,
+                            pending,
+                            rejected,
+                        },
+                    ..
+                }) => (skipped, pending, rejected),
+                _ => (Vec::new(), Vec::new(), Vec::new()),
+            }
+        };
 
     Ok(ProjectGraph {
         graph: loaded.graph,

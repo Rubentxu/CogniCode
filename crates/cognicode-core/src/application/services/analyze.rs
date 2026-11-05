@@ -104,6 +104,20 @@ impl ServiceAnalyzer {
     pub fn service(&self) -> &AnalysisService {
         &self.service
     }
+
+    /// The analyzer that asks `oracle` whether the graph it holds is
+    /// still fresh.
+    ///
+    /// The oracle is a port: the analyzer asks it a question and takes the
+    /// answer. Without one the analyzer is exactly the one there was, and
+    /// the product decides the freshness by itself.
+    pub fn with_oracle(
+        mut self,
+        oracle: Option<std::sync::Arc<dyn crate::application::freshness::FreshnessOracle>>,
+    ) -> Self {
+        self.service = std::sync::Arc::new(AnalysisService::new().with_freshness_oracle(oracle));
+        self
+    }
 }
 
 impl Default for ServiceAnalyzer {
@@ -182,11 +196,7 @@ impl ServiceAnalyzer {
                 );
             }
         };
-        let source = Some(if loaded.loaded_from_cache {
-            GraphSource::Cache
-        } else {
-            GraphSource::Built
-        });
+        let source = Some(loaded.source);
 
         let graph = self.service.get_project_graph();
         if !holds_material(graph.symbol_count()) {
@@ -216,7 +226,7 @@ impl ServiceAnalyzer {
         // no lo ve— y sus referencias y relaciones son las del grafo
         // servido, que son vacias porque un snapshot solo existe para un
         // build completo.
-        let (skipped, pending, rejected) = if loaded.loaded_from_cache {
+        let (skipped, pending, rejected) = if loaded.source != GraphSource::Built {
             (loaded.tree.holes, Vec::new(), Vec::new())
         } else {
             match self.partial_coverage() {

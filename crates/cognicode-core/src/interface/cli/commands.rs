@@ -1093,12 +1093,11 @@ impl CommandExecutor {
                 // (PRF-EXT-02 / H-03 constraint preserved).
                 //
                 // The CLI names the user's cache: what it calculates is kept
-                // there, and the next run over the same tree is served.
-                let analyzer =
-                    crate::application::consumer_analysis::ServiceAnalyzer::with_cache_root(
-                        crate::application::graph_cache::default_cache_root(),
-                    );
+                // there, and the next run over the same tree is served. The
+                // daemon's word, when there is one, is asked by the
+                // analyzer the CLI builds.
                 let dir = PathBuf::from(&path);
+                let analyzer = crate::interface::cli::analyzer::cli_analyzer(&dir);
                 let basis = crate::application::analysis_basis::AnalysisBasis::for_workspace(
                     std::path::PathBuf::from(&path),
                 );

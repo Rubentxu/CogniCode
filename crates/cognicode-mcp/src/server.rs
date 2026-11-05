@@ -171,6 +171,26 @@ async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// The daemon's index, read from the snapshot it wrote.
+///
+/// The snapshot is what a client will be served, so the index the daemon
+/// vouches for is the one the snapshot describes. A daemon with no
+/// snapshot keeps no index, and it says so: it vouches for nothing.
+fn refresh_daemon_index(
+    state: &cognicode_core::interface::daemon::DaemonState,
+    cache_root: Option<&std::path::Path>,
+    workspace: &std::path::Path,
+) {
+    let Some(root) = cache_root else {
+        state.mark_changed();
+        return;
+    };
+    match cognicode_core::interface::daemon::index_from_snapshot(root, workspace) {
+        Some(record) => state.publish(record),
+        None => state.mark_changed(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -278,12 +298,69 @@ async fn main() -> anyhow::Result<()> {
         cognicode_core::application::ingest::watcher::start_watcher(cwd.clone());
     let _watcher_handle = Arc::new(std::sync::Mutex::new(watcher_handle));
 
+    // ── The daemon's local socket ─────────────────────────────────────────
+    // A client on this machine asks the daemon whether the index it keeps
+    // is still fresh, and the daemon answers from what its watcher has
+    // seen. The socket lives in the user's cache, next to the snapshot
+    // the two of them already share, and it is private to the user.
+    let daemon_state = Arc::new(cognicode_core::interface::daemon::DaemonState::new());
+    let cache_root = cognicode_core::application::graph_cache::default_cache_root();
+    if let Some(root) = cache_root.as_ref() {
+        let socket = cognicode_core::application::graph_cache::daemon_socket_path(root, &cwd);
+        match cognicode_core::interface::daemon::bind(&socket) {
+            Ok(listener) => {
+                let state_for_socket = daemon_state.clone();
+                std::thread::spawn(move || {
+                    cognicode_core::interface::daemon::serve(listener, state_for_socket);
+                });
+                tracing::info!("daemon socket at {}", socket.display());
+            }
+            Err(e) => {
+                // The daemon still serves over HTTP: the socket is a way
+                // in, not the way in.
+                tracing::error!("daemon socket at {} failed: {e}", socket.display());
+            }
+        }
+    }
+
+    // The daemon's index: it is calculated at startup, so the first
+    // client finds a warm index and not a cold one. A daemon with no
+    // index says nothing is fresh, and the client goes on without it.
+    {
+        let input = cognicode_core::interface::mcp::handlers::BuildGraphInput { directory: None };
+        match cognicode_core::interface::mcp::handlers::handle_build_graph(&shared_ctx, input).await
+        {
+            Ok(output) => {
+                tracing::info!(
+                    "daemon index: {} symbols, {} relationships",
+                    output.symbols_found,
+                    output.relationships_found
+                );
+                refresh_daemon_index(&daemon_state, cache_root.as_deref(), &cwd);
+            }
+            Err(e) => {
+                tracing::error!("daemon index: the first build failed: {e}");
+            }
+        }
+    }
+
     // Spawn a task that consumes watcher events and triggers graph rebuilds.
     // Uses debounce_changes to coalesce rapid file changes into a single rebuild.
     {
         let ctx_for_watcher = shared_ctx.clone();
-        let debounced =
-            cognicode_core::application::ingest::watcher::debounce_changes(watcher_rx, 500);
+        let state_for_watcher = daemon_state.clone();
+        let state_for_report = daemon_state.clone();
+        let root_for_watcher = cache_root.clone();
+        let workspace_for_watcher = cwd.clone();
+        let debounced = cognicode_core::application::ingest::watcher::debounce_changes_reporting(
+            watcher_rx,
+            500,
+            move || {
+                // The tree moved: the index is not fresh from this moment,
+                // not from the moment the rebuild finishes.
+                state_for_report.mark_changed();
+            },
+        );
         tokio::spawn(async move {
             let mut rx = debounced.await;
             while let Some(changed_files) = rx.recv().await {
@@ -304,6 +381,11 @@ async fn main() -> anyhow::Result<()> {
                             "file watcher: graph rebuilt — {} symbols, {} edges",
                             output.symbols_found,
                             output.relationships_found
+                        );
+                        refresh_daemon_index(
+                            &state_for_watcher,
+                            root_for_watcher.as_deref(),
+                            &workspace_for_watcher,
                         );
                     }
                     Err(e) => {

@@ -55,6 +55,18 @@ pub fn snapshot_path(cache_root: &Path, workspace: &Path) -> PathBuf {
     cache_dir(cache_root).join(workspace_key(workspace))
 }
 
+/// The socket the daemon of `workspace` listens on.
+///
+/// One socket per repository, inside the cache: the daemon serves one
+/// workspace, and the socket is the product's own state, so it lives
+/// where the rest of that state lives — never inside the analysed tree,
+/// for the same reason the snapshot does not go there.
+pub fn daemon_socket_path(cache_root: &Path, workspace: &Path) -> PathBuf {
+    cache_dir(cache_root)
+        .join("daemon")
+        .join(format!("{}.sock", workspace_key(workspace)))
+}
+
 /// The name of the workspace's entry in the cache.
 ///
 /// The hash of the canonical path, so the entry is the same whatever route
@@ -146,6 +158,34 @@ mod tests {
         assert!(
             !path.starts_with(&one),
             "the snapshot does not live in the analysed tree: {path:?}"
+        );
+    }
+
+    #[test]
+    fn the_daemon_socket_is_one_per_workspace_and_lives_in_the_cache() {
+        let root = tempfile::tempdir().expect("a temporary root");
+        let cache = root.path().join("cache");
+        let one = workspace(root.path(), "one");
+        let two = workspace(root.path(), "two");
+
+        let first = daemon_socket_path(&cache, &one);
+        let second = daemon_socket_path(&cache, &two);
+        assert_ne!(
+            first, second,
+            "two repositories never share a daemon: a daemon serves one tree"
+        );
+        assert_eq!(
+            first,
+            daemon_socket_path(&cache, &one),
+            "the same repository always finds its own daemon"
+        );
+        assert!(
+            first.starts_with(&cache),
+            "the socket lives in the cache the caller named: {first:?}"
+        );
+        assert!(
+            !first.starts_with(&one),
+            "the socket does not live in the analysed tree: {first:?}"
         );
     }
 }
