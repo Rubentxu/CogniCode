@@ -42,7 +42,13 @@ use crate::source_scan::{declares_word, rust_sources};
 
 /// The surfaces that ask the graph questions, and the owner calls each of
 /// them owes.
-const SURFACES: [(&str, &[&str]); 4] = [
+///
+/// Two of the tokens are the door itself rather than the name of a
+/// question: `consolidated_handlers` and `aix_handlers` answered the hot
+/// paths on their own, and a copy of the question is a copy of the answer
+/// — one that ordered the list by the number of callers alone, and so
+/// published a different list on every run.
+const SURFACES: [(&str, &[&str]); 5] = [
     (
         "crates/cognicode-core/src/interface/cli/commands.rs",
         &[
@@ -67,7 +73,15 @@ const SURFACES: [(&str, &[&str]); 4] = [
     ),
     (
         "crates/cognicode-core/src/interface/mcp/handlers/aix_handlers.rs",
-        &["resolve_symbol", "trace_path_between"],
+        &[
+            "resolve_symbol",
+            "trace_path_between",
+            "AnalysisService::hot_paths",
+        ],
+    ),
+    (
+        "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
+        &["AnalysisService::hot_paths"],
     ),
     (
         "crates/cognicode-core/src/application/workspace_session.rs",

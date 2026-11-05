@@ -19,8 +19,9 @@ impl CycleDetector {
     ///
     /// The answer does not depend on the order the graph happens to hold
     /// its symbols in: the traversal starts at the smallest symbol id and
-    /// visits the successors of each node in symbol id order, so the same
-    /// graph always publishes its cycles in the same order.
+    /// visits the successors of each node in the order the graph
+    /// publishes them, which is symbol id order, so the same graph always
+    /// publishes its cycles in the same order.
     pub fn detect_cycles(&self, graph: &CallGraph) -> CycleDetectionResult {
         let mut state = TarjanState::new();
         // The symbols come out of a hash map, so their order is different
@@ -133,13 +134,11 @@ impl CycleDetector {
         state.stack.push(node.clone());
         state.in_stack.insert(node.clone());
 
-        // Consider all successors, in symbol id order: the graph hands
-        // them over in the iteration order of a hash map, and the order
-        // the traversal visits them in decides the order the cycles are
-        // published in.
-        let mut successors = graph.callees(node);
-        successors.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-        for (successor, _) in successors {
+        // Consider all successors. The graph publishes them in symbol id
+        // order — that is the aggregate's contract, and it is the only
+        // place that decides it — and the order the traversal visits them
+        // in decides the order the cycles are published in.
+        for (successor, _) in graph.callees(node) {
             if !state.node_index.contains_key(&successor) {
                 // Successor has not yet been visited
                 self.tarjanStronglyConnected(&successor, graph, state);

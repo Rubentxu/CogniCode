@@ -1371,27 +1371,24 @@ pub async fn handle_evaluate_refactor_quality(
 // ============================================================================
 
 /// Get hot paths from graph
+///
+/// The owner's answer, not a second one: the same question the
+/// `get_hot_paths` tool asks, of the same graph. The copy that answered
+/// here ordered the list by the number of callers alone, so the ties —
+/// and the cut, which fell inside a tie — were decided by the order the
+/// graph happened to hold its symbols in, and the published list came
+/// out different on every run.
 fn get_hot_paths_from_graph(graph: &CallGraph, limit: usize) -> Vec<HotPathDto> {
-    let mut hot_paths: Vec<HotPathDto> = graph
-        .symbols()
-        .map(|s| {
-            let id = SymbolId::new(s.fully_qualified_name());
-            let fan_in = graph.callers(&id).len();
-            let fan_out = graph.callees(&id).len();
-            HotPathDto {
-                symbol_name: s.name().to_string(),
-                file: s.location().file().to_string(),
-                line: published_line(s.location().line()),
-                fan_in,
-                fan_out,
-            }
+    AnalysisService::hot_paths(graph, limit, 2)
+        .into_iter()
+        .map(|row| HotPathDto {
+            symbol_name: row.name,
+            file: row.file,
+            line: row.line,
+            fan_in: row.fan_in,
+            fan_out: row.fan_out,
         })
-        .filter(|hp| hp.fan_in >= 2)
-        .collect();
-
-    hot_paths.sort_by(|a, b| b.fan_in.cmp(&a.fan_in));
-    hot_paths.truncate(limit);
-    hot_paths
+        .collect()
 }
 
 /// Check architecture internally (returns None if graph not built)
