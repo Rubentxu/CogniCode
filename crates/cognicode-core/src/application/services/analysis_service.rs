@@ -23,7 +23,9 @@ use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{RejectedRelation, WalkFilter, published_line};
+use crate::domain::value_objects::{
+    RejectedRelation, WalkFilter, published_column, published_line,
+};
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
@@ -1844,16 +1846,9 @@ impl AnalysisService {
                 // For now, all dead code gets NoIncomingEdges reason
                 // Visibility-based confidence could be added later
                 let confidence = 0.5;
+                let reason = DeadCodeReason::NoIncomingEdges;
 
-                Some(DeadCodeEntry {
-                    symbol: symbol.fully_qualified_name().to_string(),
-                    file: symbol.location().file().to_string(),
-                    line: published_line(symbol.location().line()),
-                    column: symbol.location().column() + 1,
-                    kind,
-                    reason: DeadCodeReason::NoIncomingEdges,
-                    confidence,
-                })
+                Some(DeadCodeEntry::from_symbol(symbol, kind, reason, confidence))
             })
             .collect();
 
@@ -2224,7 +2219,7 @@ impl AnalysisService {
                     usages.push(UsageResult {
                         file: path.to_string_lossy().into_owned(),
                         line: published_line(occ.line),
-                        column: occ.column,
+                        column: published_column(occ.column),
                         context: occ.context.clone(),
                         is_definition,
                         context_lines,

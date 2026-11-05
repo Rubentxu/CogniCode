@@ -5,7 +5,7 @@
 use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::services::CallGraphAnalyzer;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
-use crate::domain::value_objects::published_line;
+use crate::domain::value_objects::{published_column, published_line};
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
@@ -436,7 +436,7 @@ pub enum IndexCommand {
         file: String,
         /// Line number (1-indexed)
         line: u32,
-        /// Column number (0-indexed)
+        /// Column number (1-indexed): the column a person reads.
         column: u32,
         /// Include docstring/comment above symbol
         #[arg(long, default_value = "true")]
@@ -583,7 +583,7 @@ pub enum NavigateCommand {
     /// Go to the definition of the symbol at the given file:line:column position
     Definition {
         /// Position as file:line:column (e.g., src/main.rs:42:10).
-        /// The line is 1-indexed: the line a person reads.
+        /// The line and the column are 1-indexed.
         position: String,
         /// Workspace root directory
         #[arg(default_value = ".")]
@@ -592,7 +592,7 @@ pub enum NavigateCommand {
     /// Show hover information (type + docs) for the symbol at the given position
     Hover {
         /// Position as file:line:column (e.g., src/main.rs:42:10).
-        /// The line is 1-indexed: the line a person reads.
+        /// The line and the column are 1-indexed.
         position: String,
         /// Workspace root directory
         #[arg(default_value = ".")]
@@ -601,7 +601,7 @@ pub enum NavigateCommand {
     /// Find all references to the symbol at the given position
     References {
         /// Position as file:line:column (e.g., src/main.rs:42:10).
-        /// The line is 1-indexed: the line a person reads.
+        /// The line and the column are 1-indexed.
         position: String,
         /// Include the declaration itself in results
         #[arg(long, default_value = "true")]
@@ -892,11 +892,11 @@ impl CommandExecutor {
                         path: dir,
                     })
                 } else {
-                    Ok(IndexResult::Query {
-                        symbol: symbol.clone(),
-                        path: dir,
-                        locations,
-                    })
+                    Ok(IndexResult::published_query(
+                        symbol.clone(),
+                        dir,
+                        &locations,
+                    ))
                 }
             }
             IndexCommand::Outline {
@@ -924,10 +924,10 @@ impl CommandExecutor {
                     *include_tests,
                 );
 
-                Ok(IndexResult::Outline {
-                    file: file.clone().into(),
-                    symbols: outline,
-                })
+                Ok(IndexResult::published_outline(
+                    file.clone().into(),
+                    &outline,
+                ))
             }
             IndexCommand::SymbolCode {
                 file,
@@ -1011,7 +1011,7 @@ impl CommandExecutor {
                     root_name: result.root_symbol.name().to_string(),
                     root_file: result.root_symbol.location().file().to_string(),
                     root_line: published_line(result.root_symbol.location().line()),
-                    root_column: result.root_symbol.location().column(),
+                    root_column: published_column(result.root_symbol.location().column()),
                     entries_len: result.entries.len(),
                 };
                 // T1-5.4i: text formatting is in the presenter.
@@ -1210,7 +1210,7 @@ impl CommandExecutor {
                         name: sym.name().to_string(),
                         file: sym.location().file().to_string(),
                         line: published_line(sym.location().line()),
-                        column: sym.location().column(),
+                        column: published_column(sym.location().column()),
                     })
                     .collect();
                 let elapsed = start.elapsed().as_millis();
@@ -1241,7 +1241,7 @@ impl CommandExecutor {
                         name: sym.name().to_string(),
                         file: sym.location().file().to_string(),
                         line: published_line(sym.location().line()),
-                        column: sym.location().column(),
+                        column: published_column(sym.location().column()),
                     })
                     .collect();
                 let elapsed = start.elapsed().as_millis();
@@ -1470,7 +1470,7 @@ impl CommandExecutor {
                     direction: direction.clone(),
                     root_file: root.location().file().to_string(),
                     root_line: published_line(root.location().line()),
-                    root_column: root.location().column(),
+                    root_column: published_column(root.location().column()),
                     buckets,
                     total_entries: entries.len(),
                     elapsed_ms: elapsed,

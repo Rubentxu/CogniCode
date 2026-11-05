@@ -37,8 +37,8 @@ use crate::domain::value_objects::Location;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::file_time::measured_seconds;
-use crate::domain::value_objects::published_line;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
+use crate::domain::value_objects::{published_column, published_line};
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -1251,13 +1251,13 @@ impl WorkspaceSession {
                     "{}:{}:{}",
                     sym.location().file(),
                     published_line(sym.location().line()),
-                    sym.location().column()
+                    published_column(sym.location().column())
                 ),
                 name: sym.name().to_string(),
                 kind: sym.kind().to_string(),
                 file_path: sym.location().file().to_string(),
                 line: published_line(sym.location().line()),
-                column: sym.location().column(),
+                column: published_column(sym.location().column()),
                 documentation: None,
                 signature: None,
             })
@@ -1383,8 +1383,8 @@ impl WorkspaceSession {
                             new_text: new_name.to_string(),
                             location: crate::application::dto::SourceLocation {
                                 file: start_loc.file().to_string(),
-                                line: start_loc.line(),
-                                column: start_loc.column(),
+                                line: published_line(start_loc.line()),
+                                column: published_column(start_loc.column()),
                             },
                         }
                     })

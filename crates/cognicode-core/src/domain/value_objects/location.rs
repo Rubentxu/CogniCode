@@ -12,9 +12,10 @@
 //!     the line a person reads in their editor.
 //!
 //! The gap between the two is closed in exactly one place:
-//! [`published_line`]. Every surface that publishes a graph position
-//! goes through it, and the code-intelligence paths carry the
-//! published base already.
+//! [`published_line`] for the line, [`published_column`] for the
+//! column. Every surface that publishes a graph position goes through
+//! them, and the code-intelligence paths carry the published base
+//! already.
 //!
 //! A second copy of that arithmetic is a second truth about where a
 //! line is. It was there, and it is why one product published the
@@ -40,6 +41,23 @@ pub fn published_line(internal_line: u32) -> u32 {
     internal_line + PUBLISHED_LINE_BASE
 }
 
+/// The base of every column the product publishes: one.
+///
+/// The column a person reads in their editor is the column one, the
+/// same way the line is the line one.
+pub const PUBLISHED_COLUMN_BASE: u32 = 1;
+
+/// The column as the product publishes it.
+///
+/// The graph's positions are zero-indexed and this is where they
+/// become the column a consumer reads. It is the only place the
+/// arithmetic lives, for the same reason [`published_line`] is: a
+/// second copy of that arithmetic is a second truth about where a
+/// column is.
+pub fn published_column(internal_column: u32) -> u32 {
+    internal_column + PUBLISHED_COLUMN_BASE
+}
+
 /// Represents a location in source code defined by file path, line, and column.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Location {
@@ -52,7 +70,12 @@ pub struct Location {
     /// reads. The graph's positions are zero-indexed, and they reach
     /// a consumer through [`published_line`].
     line: u32,
-    /// Zero-indexed column number
+    /// The column of the position.
+    ///
+    /// The code-intelligence paths carry the base the product
+    /// publishes — one-indexed — because that is the column a person
+    /// reads. The graph's positions are zero-indexed, and they reach a
+    /// consumer through [`published_column`].
     column: u32,
 }
 

@@ -39,7 +39,7 @@ use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::aggregates::Symbol;
 use crate::domain::aggregates::call_graph::{CallGraph, MermaidOptions, SymbolId};
 use crate::domain::services::resolve_target;
-use crate::domain::value_objects::{TargetResolution, published_line};
+use crate::domain::value_objects::{TargetResolution, published_column, published_line};
 
 /// Which way a hierarchy question walks the graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +151,7 @@ pub fn hot_paths(graph: &CallGraph, limit: usize, min_fan_in: usize) -> Vec<HotP
                 name: symbol.name().to_string(),
                 file: symbol.location().file().to_string(),
                 line: published_line(symbol.location().line()),
-                column: symbol.location().column(),
+                column: published_column(symbol.location().column()),
                 fan_in,
                 fan_out,
             })
@@ -444,7 +444,7 @@ fn hierarchy_entry(symbol: &Symbol, depth: u32, direction: Direction) -> Hierarc
         name: symbol.name().to_string(),
         file: symbol.location().file().to_string(),
         line: published_line(symbol.location().line()),
-        column: symbol.location().column(),
+        column: published_column(symbol.location().column()),
         depth,
         direction,
     }

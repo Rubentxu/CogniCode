@@ -68,7 +68,7 @@ use crate::domain::services::{CycleDetector, resolve_target};
 // the contract cannot drift from the struct that produces the bytes.
 use crate::domain::value_objects::{
     AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind, TargetResolution,
-    published_line,
+    published_column, published_line,
 };
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
@@ -2457,7 +2457,7 @@ pub async fn handle_get_entry_points(
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
                     line: published_line(symbol.location().line()),
-                    column: symbol.location().column(),
+                    column: published_column(symbol.location().column()),
                 },
                 signature: None,
             })
@@ -2511,7 +2511,7 @@ pub async fn handle_get_leaf_functions(
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
                     line: published_line(symbol.location().line()),
-                    column: symbol.location().column(),
+                    column: published_column(symbol.location().column()),
                 },
                 signature: None,
             })
@@ -2652,7 +2652,7 @@ fn path_entries(path: &[crate::domain::aggregates::Symbol]) -> Vec<PathEntry> {
             symbol: symbol.name().to_string(),
             file: symbol.location().file().to_string(),
             line: published_line(symbol.location().line()),
-            column: symbol.location().column(),
+            column: published_column(symbol.location().column()),
         })
         .collect()
 }
@@ -3151,8 +3151,8 @@ pub async fn handle_query_symbol_index(
         .iter()
         .map(|loc| SymbolLocationEntry {
             file: loc.file.clone(),
-            line: loc.line,
-            column: loc.column,
+            line: published_line(loc.line),
+            column: published_column(loc.column),
             symbol_kind: format!("{:?}", loc.symbol_kind),
         })
         .collect();
@@ -3219,7 +3219,7 @@ pub async fn handle_build_call_subgraph(
         name: result.root_symbol.name().to_string(),
         file: result.root_symbol.location().file().to_string(),
         line: published_line(result.root_symbol.location().line()),
-        column: result.root_symbol.location().column(),
+        column: published_column(result.root_symbol.location().column()),
         symbol_kind: format!("{:?}", result.root_symbol.kind()),
     };
 
@@ -3231,7 +3231,7 @@ pub async fn handle_build_call_subgraph(
                 name: entry.symbol.name().to_string(),
                 file: entry.symbol.location().file().to_string(),
                 line: published_line(entry.symbol.location().line()),
-                column: entry.symbol.location().column(),
+                column: published_column(entry.symbol.location().column()),
                 symbol_kind: format!("{:?}", entry.symbol.kind()),
             },
             depth: entry.depth,
@@ -3270,7 +3270,7 @@ pub async fn handle_get_per_file_graph(
                 .map(|s| SymbolLocationEntry {
                     file: s.location().file().to_string(),
                     line: published_line(s.location().line()),
-                    column: s.location().column(),
+                    column: published_column(s.location().column()),
                     symbol_kind: format!("{:?}", s.kind()),
                 })
                 .collect();
@@ -3420,7 +3420,7 @@ pub async fn handle_merge_graphs(
         .map(|s| SymbolLocationEntry {
             file: s.location().file().to_string(),
             line: published_line(s.location().line()),
-            column: s.location().column(),
+            column: published_column(s.location().column()),
             symbol_kind: format!("{:?}", s.kind()),
         })
         .collect();
@@ -3506,7 +3506,7 @@ fn convert_outline_node(node: &crate::infrastructure::semantic::OutlineNode) -> 
         name: node.name.clone(),
         kind: format!("{:?}", node.kind).to_lowercase(),
         line: published_line(node.location.line()),
-        column: node.location.column(),
+        column: published_column(node.location.column()),
         signature: node.signature.clone(),
         children: node.children.iter().map(convert_outline_node).collect(),
         is_private: node.is_private,
@@ -3611,7 +3611,7 @@ pub async fn handle_semantic_search(
             kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
             file: r.symbol.location().file().to_string(),
             line: published_line(r.symbol.location().line()),
-            column: r.symbol.location().column(),
+            column: published_column(r.symbol.location().column()),
             score: r.score,
             match_type: format!("{:?}", r.match_type).to_lowercase(),
         })
@@ -6908,7 +6908,9 @@ mod tests {
                 .join("crates/cognicode-core/testdata/query_index_equivalence/src")
         }
 
-        /// CLI path: `LightweightStrategy::new().build_index(&dir).query_symbols(name)`
+        /// CLI path: `LightweightStrategy::new().build_index(&dir).query_symbols(name)`,
+        /// published the way the CLI publishes it —the position a person
+        /// reads, not the one the index counts.
         fn cli_query(dir: &Path, name: &str) -> BTreeSet<(String, u32, u32)> {
             let mut s = LightweightStrategy::new();
             s.build_index(dir).expect("build_index must succeed");
@@ -6919,7 +6921,8 @@ mod tests {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| loc.file.clone());
-                    (basename, loc.line, loc.column)
+                    let published = crate::interface::cli::result::PublishedLocation::from(&loc);
+                    (basename, published.line, published.column)
                 })
                 .collect()
         }

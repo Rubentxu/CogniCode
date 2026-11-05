@@ -1,7 +1,7 @@
 //! Symbol DTO - Data Transfer Objects for symbol information
 
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::published_line;
+use crate::domain::value_objects::{published_column, published_line};
 use crate::infrastructure::semantic::symbol_code::extract_docstring;
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +48,7 @@ impl SymbolDto {
             kind: symbol.kind().to_string(),
             file_path: file_path.to_string(),
             line: published_line(symbol.location().line()),
-            column: symbol.location().column() + 1, // Convert to 1-indexed
+            column: published_column(symbol.location().column()),
             documentation,
             signature: symbol.signature().map(|s| s.to_string()),
         }
@@ -82,7 +82,7 @@ impl From<&Symbol> for SymbolLocationDto {
             name: symbol.name().to_string(),
             file_path: symbol.location().file().to_string(),
             line: published_line(symbol.location().line()),
-            column: symbol.location().column() + 1, // Convert to 1-indexed
+            column: published_column(symbol.location().column()),
         }
     }
 }
