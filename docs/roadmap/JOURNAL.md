@@ -32258,3 +32258,76 @@ tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hoo
 
 **NOT_RUN:** gate completo (lote de 10 tareas) — la unidad no toca código de producción, y el gate
 sobre `14f71609` está en verde con su recibo.
+## 2026-11-05 — TASK-114: el JSON es un documento, y el texto conserva su formato
+
+**Qué.** Cuatro comandos de grafo —`trace-path`, `mermaid`, `hierarchy` e `impact`— escribían su
+línea de progreso en la **salida estándar**, delante del documento. La salida del CLI con
+`--format json` era por tanto «una línea de texto + un documento», y un consumidor que hiciera
+`serde_json::from_slice(&stdout)` fallaba.
+
+**La prueba estaba en el propio repositorio.** El test de equivalencia CLI↔MCP tenía que **buscar la
+primera llave** (`stdout.find('{')`) para encontrar el documento, y su propio comentario lo decía en
+palabras: «the JSON contract of the CLI is "a document", not "a document and something else", and
+that is worth a task of its own». Un lector que necesita conocer el truco es la prueba de que el
+contrato era el otro.
+
+**RED medido.** Siete tests fallaban, y cada uno nombraba la línea exacta que rompía el contrato:
+«Analyzing impact of changing 'foo' in: …», «Exporting to Mermaid format from: …», «Tracing path from
+'middle' to 'leaf_a' in: …» y «Getting call hierarchy for 'middle' (depth=1, direction=out) in: …».
+El test nuevo, que exige que la salida estándar sea el documento y nada más, falló también.
+
+**La regla del canal.** Vive en `crates/cognicode-core/src/interface/cli/progress.rs`, y dice una
+cosa:
+
+- En **modo texto** la línea de progreso se queda en la salida estándar: es el formato publicado, y
+  el formato publicado la puso ahí.
+- En **modo JSON** pasa a la salida de error: la salida estándar es el documento entero.
+
+La línea llega igual al usuario en los dos modos —la salida de error también está en la terminal— y
+lo que cambia es el canal, y el canal es lo que un consumidor parsea.
+
+**Por qué no «siempre a la salida de error».** Habría arreglado el JSON igual, pero de paso habría
+cambiado el **formato de texto publicado** de cuatro comandos: la línea habría salido del `stdout`
+del modo texto, y el AGENTS.md pide preservar los contratos publicados —cambiarlos exige una prueba
+de consumidor anterior o una deprecación explícita—. Arreglar el contrato del JSON no tiene por qué
+mover el contrato del texto. El `refactor` del mismo fichero ya hacía esto —en modo JSON escribía el
+progreso a la salida de error—: la unidad lo extienden a los comandos de grafo en vez de inventar
+una segunda manera de decirlo.
+
+**Lo que NO cambia.** Las líneas de progreso que emite el presenter —`per-file`, `entry-points`,
+`leaf-functions`, `hot-paths`, `complexity`— se quedan en el flujo de texto: son el formato
+publicado, y los tests de snapshot las fijan byte a byte. En modo JSON el presenter no se llama
+—el bin serializa el resultado—, así que nunca tocaron el documento. Por eso los comandos afectados
+eran cuatro y no nueve.
+
+**La documentación.** `presenter.rs` declara los dos canales y por qué cada línea de progreso va
+donde va, y los cinco sitios que describían el hogar de la línea dicen ahora la regla del canal en
+vez de «se queda en la función como un `println!`».
+
+**Ratchet.** `crates/cognicode-core/src/interface/cli/commands.rs` 3100 → 3098: dos bloques de
+comentario rancio (historia de la migración T1-5.4/T1-5.5, que ya no describe el código) se podaron
+para pagar el módulo nuevo y la firma que lleva el formato.
+
+**Verificación.** SHA base `abcd418e`, rama `fix/task-114-el-json-es-un-documento`, commit
+`d3306705`. `cargo nextest run --profile gate --workspace --lib`: **4630 OK**, 2 ignorados.
+`cargo nextest run --profile gate --workspace --tests`: **6672 OK**, 10 ignorados. Clippy del
+workspace con `-D warnings` rc=0 y `cargo fmt --all --check` limpio. Ratchet de tamaño de fichero
+PASS. `bash scripts/ci/run-all-contracts.sh` rc=0.
+
+**Gate.** `bash scripts/test-gate.sh` sobre la punta de la rama: unitarios **4630 OK** (2
+ignorados), integración **6672 OK** (10 ignorados) y mutantes **574 en 11m: 573 atrapados, 1
+inviable, 0 supervivientes, 0 tiempos agotados** —rc=0.
+
+**Una medición que salió mal y cómo se atribuyó.** La primera corrida del gate salió rc=1 con **7
+tiempos agotados** en los mutantes de `cognicode-graph-algos/src/algorithms/condensation.rs`. La
+causa no era el código: **yo estaba corriendo otra suite en paralelo** mientras la de mutantes
+medía, y un mutante que se queda en bucle necesita su tiempo para que el tope de 120 s lo mate.
+La prueba es que la corrida limpia —sin nada más en la máquina— da **573 atrapados, 1 inviable, 0
+tiempos agotados**, que es exactamente lo que dio el gate sobre `14f71609`. La regla del AGENTS.md
+—«no se edita código mientras corre: el resultado correspondería a otro árbol»— no es solo sobre
+editar: es sobre **no cargar la máquina** mientras el gate mide. El primer resultado era ruido
+mío, y por eso se vuelve a medir antes de certificar.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
