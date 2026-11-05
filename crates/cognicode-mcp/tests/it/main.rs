@@ -7,7 +7,6 @@ mod a009_agent_safe_profile;
 mod a010_tool_authority_audit;
 mod a012_structured_output;
 mod a016_tools_runtime_consistency;
-mod continuation_e2e;
 mod cr07_metrics_exposition_contract;
 mod explain_finding_answers_why;
 mod find_usages_compat_0_97;

@@ -491,7 +491,7 @@ impl FileOperationsService {
                 let start = input.start_line.unwrap_or(1);
                 let requested_chunk_size = input.chunk_size.unwrap_or(0);
 
-                let (content, actual_end_line, actual_has_more, actual_next_token) =
+                let (content, page_start, page_end, page_more, page_token) =
                     match (&decoded_token, requested_chunk_size) {
                         // ── Path 4a: paginated continuation — line-paginated, page = chunk_size lines.
                         (Some(ct), _) if ct.mode == ContinuationMode::Paginated => {
@@ -520,7 +520,13 @@ impl FileOperationsService {
                             } else {
                                 None
                             };
-                            (content, resume_end_line, has_more, next_token)
+                            (
+                                content,
+                                resume_start_line,
+                                resume_end_line,
+                                has_more,
+                                next_token,
+                            )
                         }
                         // ── Path 3: byte-chunked read (legacy semantics preserved).
                         (None, cs) if cs > 0 => {
@@ -555,7 +561,13 @@ impl FileOperationsService {
                                     + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
-                            (chunk, chunk_end_line, has_more, next_token)
+                            (
+                                chunk,
+                                chunk_start_line,
+                                chunk_end_line,
+                                has_more,
+                                next_token,
+                            )
                         }
                         // ── Path 4b: byte-chunked continuation (legacy tokens issued before H4.1).
                         (Some(ct), _) if ct.mode == ContinuationMode::Chunked => {
@@ -585,7 +597,13 @@ impl FileOperationsService {
                                     + 1
                             };
                             let chunk_end_line = chunk_start_line + lines_in_chunk.len() as u32 - 1;
-                            (chunk, chunk_end_line, has_more, next_token)
+                            (
+                                chunk,
+                                chunk_start_line,
+                                chunk_end_line,
+                                has_more,
+                                next_token,
+                            )
                         }
                         // ── Path 1+2: no chunk_size, no continuation (or chunk_size=0).
                         // Honors explicit end_line if present (case 1), else default page (case 2).
@@ -621,7 +639,7 @@ impl FileOperationsService {
                                     }
                                 }
                             };
-                            (content, end, has_more, next_token)
+                            (content, start, end, has_more, next_token)
                         }
                         // ── Wildcard: unreachable in practice because all (Some(_), _) cases
                         // are covered by guards above; the explicit branch documents that.
@@ -649,7 +667,13 @@ impl FileOperationsService {
                             } else {
                                 None
                             };
-                            (content, resume_end_line, has_more, next_token)
+                            (
+                                content,
+                                resume_start_line,
+                                resume_end_line,
+                                has_more,
+                                next_token,
+                            )
                         }
                     };
 
@@ -665,12 +689,18 @@ impl FileOperationsService {
                     None
                 };
 
+                // The page declares the lines it brings, and those are the lines
+                // it brings — not the ones the request asked for. A
+                // continuation resumes where the previous page stopped, so the
+                // first line of a continuation page is not the first line of
+                // the file: publishing the request's start line there told the
+                // client that a page starting at line 501 started at line 1.
                 (
                     content,
-                    start,
-                    actual_end_line,
-                    actual_has_more || auto_suggest,
-                    actual_next_token,
+                    page_start,
+                    page_end,
+                    page_more || auto_suggest,
+                    page_token,
                     suggested,
                 )
             }
