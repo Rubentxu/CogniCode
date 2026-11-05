@@ -19,7 +19,12 @@ import language_source  # noqa: E402
 from check_semantics import check_provenance, content_mismatch  # noqa: E402
 
 SCHEMA_VERSION = "cognicode.product/v1"
-MCP_PROTOCOL_REVISION = "2025-03-26"
+# The protocol revision the MCP surface declares. It is the same fact the
+# server declares in `get_info()`, and the two are compared by
+# `b6_w1_mcp_robustness::the_product_manifest_declares_the_version_the_server_declares`,
+# so a manifest that keeps naming an older revision than the server does
+# fails instead of ageing quietly.
+MCP_PROTOCOL_REVISION = "2025-11-25"
 SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
 PUBLIC_BINARIES = [
     {

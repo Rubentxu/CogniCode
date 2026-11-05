@@ -62,7 +62,7 @@ fn published_tool_count() -> usize {
 /// (`interproc_summary` → `program-analysis-server`, `list_evidence` and
 /// `search_evidence` → `evidence-cli-ladybug`, plus `persistence` annotations
 /// on `detect_drift` / `reparse_on_edit`). The full catalogue is the master
-/// list (76 tools, used by the CLI `capabilities --json` consumer), but
+/// list (78 tools, used by the CLI `capabilities --json` consumer), but
 /// the runtime surface is the **active** subset (the same tools filtered
 /// by `tool_feature_enabled`). The PRF-MCP-05 tests below pin the
 /// contract between the runtime and the active catalogue; the full
@@ -227,7 +227,7 @@ fn reviewer_posture_covers_exactly_the_published_non_mutating_tools() {
     );
 }
 
-/// `requirements_status: not_declared` on all 73 tools is not an
+/// `requirements_status: not_declared` on all 78 tools is not an
 /// unexplained gap — it is a statement that `cache` and `network` are
 /// `null` because the runtime does not declare them, and a status that
 /// said "declared" while two of four requirements are `null` would be the
@@ -304,6 +304,94 @@ async fn all_tool_names(session: &mut McpSession) -> Vec<String> {
         }
     }
     names
+}
+
+/// Helper: every tool the runtime advertises, with the entry the wire sent.
+///
+/// The entries, not the names: the hints a tool publishes travel inside its
+/// own entry, so a test that reads only the name cannot see them.
+async fn all_tools(session: &mut McpSession) -> Vec<Value> {
+    let mut tools = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut params = serde_json::json!({});
+        if let Some(c) = &cursor {
+            params["cursor"] = Value::String(c.clone());
+        }
+        let response = session
+            .request("tools/list", params)
+            .await
+            .expect("tools/list request");
+        let result = &response["result"];
+        tools.extend(result["tools"].as_array().cloned().unwrap_or_default());
+        match result["nextCursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
+        }
+    }
+    tools
+}
+
+/// The behaviour hints on the wire must follow the published authority.
+///
+/// The authority is the catalogue's word about what a tool does. The hints
+/// are how that word reaches a client that never read the catalogue, and
+/// for such a client they are the only thing there is: a tool that says
+/// `readOnlyHint` is one a client can offer without asking.
+///
+/// This test reads them from the wire, so a hint that drifts from the
+/// authority is visible where a client sees it and not only inside the
+/// adapter.
+#[tokio::test]
+async fn the_published_hints_follow_the_published_authority() {
+    let mut s = McpSession::spawn(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws"),
+    )
+    .await
+    .expect("spawn cognicode-mcp");
+    let tools = all_tools(&mut s).await;
+    s.shutdown().await;
+
+    assert!(!tools.is_empty(), "the server advertises no tools at all");
+    for tool in &tools {
+        let name = tool["name"].as_str().expect("tool name");
+        let authority = published_authority(name)
+            .unwrap_or_else(|| panic!("{name} is advertised but publishes no authority"));
+        let hints = tool
+            .get("annotations")
+            .unwrap_or_else(|| panic!("{name} advertises no behaviour hints"));
+
+        match authority.as_str() {
+            "read" => {
+                assert_eq!(
+                    hints["readOnlyHint"], true,
+                    "{name} is read-only and must say so"
+                );
+                assert_eq!(
+                    hints["destructiveHint"], false,
+                    "{name} changes nothing and must say so"
+                );
+                assert_eq!(
+                    hints["idempotentHint"], true,
+                    "{name} can be called twice with the same result and must say so"
+                );
+                assert_eq!(
+                    hints["openWorldHint"], false,
+                    "{name} touches a closed world and must say so"
+                );
+            }
+            other => {
+                assert_eq!(
+                    hints["readOnlyHint"], false,
+                    "{name} has authority {other} and must not claim to be read-only"
+                );
+                assert_eq!(
+                    hints["destructiveHint"], true,
+                    "{name} has authority {other} and must not claim to be harmless"
+                );
+            }
+        }
+    }
 }
 
 /// The mutating list must be complete: under `--read-only`, the tools the

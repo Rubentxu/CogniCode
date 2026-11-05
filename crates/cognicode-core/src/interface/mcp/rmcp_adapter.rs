@@ -612,7 +612,15 @@ fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
         d.authority.as_str(),
     );
 
-    let mut tool = Tool::new(d.name, d.description, Arc::new(input_schema)).with_meta(meta);
+    let mut tool = Tool::new(d.name, d.description, Arc::new(input_schema))
+        .with_meta(meta)
+        // The catalogue says what a tool does; these hints are how that
+        // word reaches a client that never read the catalogue. They are
+        // derived from the same authority the mutating check uses, so the
+        // two cannot disagree about the same tool.
+        .with_annotations(crate::interface::mcp::tool_response::annotations_for(
+            d.authority.as_str(),
+        ));
 
     // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission
     // explicitly so clients can distinguish mutating tools without
@@ -648,7 +656,7 @@ impl ServerHandler for CogniCodeHandler {
                 "cognicode",
                 env!("CARGO_PKG_VERSION"),
             ))
-            .with_protocol_version(rmcp::model::ProtocolVersion::V_2025_03_26)
+            .with_protocol_version(rmcp::model::ProtocolVersion::V_2025_11_25)
     }
 
     fn list_tools(
@@ -761,10 +769,17 @@ impl ServerHandler for CogniCodeHandler {
             // notification finds nobody to mark.
             let _registration = cancellations.register(request_id, flag);
 
+            // The name is needed after the request is consumed: it says
+            // whether the answer carries a published contract, and a
+            // contract is a promise about where the answer lands.
+            let tool_name = request.name.to_string();
+
             let result = call_tool_handler(&request_ctx, request).await;
 
             match result {
-                Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
+                Ok(output) => Ok(crate::interface::mcp::tool_response::success_result(
+                    &tool_name, output,
+                )),
                 Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
             }
         }
@@ -1334,7 +1349,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_all_paths" => {
                 let input: crate::interface::mcp::schemas::GraphAllPathsInput =
@@ -1344,7 +1359,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_condensed" => {
                 let input: crate::interface::mcp::schemas::GraphCondensedInput =
@@ -1354,7 +1369,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_god_nodes" => {
                 let input: crate::interface::mcp::schemas::GraphGodNodesInput =
@@ -1364,7 +1379,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_reduced" => {
                 let input: crate::interface::mcp::schemas::GraphReducedInput =
@@ -1373,7 +1388,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_feedback_arcs" => {
                 let input: crate::interface::mcp::schemas::GraphFeedbackArcsInput =
@@ -1383,7 +1398,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
 
             // Phase 5: Community Detection handlers (extracted to graph_handlers.rs)
@@ -1395,7 +1410,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_community_detail" => {
                 let input: crate::interface::mcp::schemas::GraphCommunityDetailInput =
@@ -1405,7 +1420,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_surprising_connections" => {
                 let input: crate::interface::mcp::schemas::GraphSurprisingConnectionsInput =
@@ -1415,7 +1430,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
 
             // Phase 6: IDF-weighted Search & Unified Insights (extracted to graph_handlers.rs)
@@ -1427,7 +1442,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_insights" => {
                 let input: crate::interface::mcp::schemas::GraphInsightsInput =
@@ -1437,7 +1452,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_suggest_questions" => {
                 let input: crate::interface::mcp::schemas::GraphSuggestQuestionsInput =
@@ -1447,7 +1462,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Sprint 2: Graphify-style tools (ADR-026)
             "graph_query" => {
@@ -1458,7 +1473,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_explain" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::GraphExplainInput =
@@ -1468,7 +1483,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Edge-type query tools (ADR-026)
             "get_type_references" => {
@@ -1479,7 +1494,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "get_imports" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::GetImportsInput =
@@ -1489,7 +1504,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "get_implementors" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput =
@@ -1499,7 +1514,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "get_members" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::GetMembersInput =
@@ -1509,7 +1524,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_query_filtered" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput = serde_json::from_value(arguments.into())?;
@@ -1518,7 +1533,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "export_callflow" => {
                 let input: crate::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput =
@@ -1528,7 +1543,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Sprint 5: Consolidated + High-value tools (ADR-027 + ADR-028)
             "smart_search" => {
@@ -1539,7 +1554,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "graph_analyze" => {
                 let input: crate::interface::mcp::handlers::retired::GraphAnalyzeInput =
@@ -1547,7 +1562,7 @@ pub(crate) async fn call_tool_handler(
                 let output =
                     crate::interface::mcp::handlers::retired::handle_graph_analyze(ctx, input)
                         .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "project_overview" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput = serde_json::from_value(arguments.into())?;
@@ -1556,7 +1571,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "codebase_map" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput =
@@ -1566,7 +1581,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "project_insights" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput = serde_json::from_value(arguments.into())?;
@@ -1575,7 +1590,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "review_pr" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::ReviewPrInput =
@@ -1585,7 +1600,7 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             "iac_query" => {
                 let input: crate::interface::mcp::handlers::consolidated_handlers::IacQueryInput =
@@ -1595,12 +1610,12 @@ pub(crate) async fn call_tool_handler(
                         ctx, input,
                     )
                     .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // SOLID Audit tool
             "solid_audit" => {
                 let output = crate::interface::mcp::handlers::handle_solid_audit(ctx).await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Architecture check
             "check_architecture" => {
@@ -1608,7 +1623,7 @@ pub(crate) async fn call_tool_handler(
                     serde_json::from_value(arguments.into())?;
                 let output =
                     crate::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Graph checkpoint management
             "graph_checkpoint" => {
@@ -1618,7 +1633,7 @@ pub(crate) async fn call_tool_handler(
                 ctx, input,
             )
             .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Merge per-file graphs into consolidated project graph
             "merge_graphs" => {
@@ -1626,7 +1641,7 @@ pub(crate) async fn call_tool_handler(
                     serde_json::from_value(arguments.into())?;
                 let output =
                     crate::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Build lightweight symbol index
             "build_lightweight_index" => {
@@ -1635,7 +1650,7 @@ pub(crate) async fn call_tool_handler(
                 let output =
                     crate::interface::mcp::handlers::handle_build_lightweight_index(ctx, input)
                         .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             // Incremental reindex after edits (requires persistence feature)
             #[cfg(feature = "persistence")]
@@ -1646,7 +1661,7 @@ pub(crate) async fn call_tool_handler(
                     ctx, input,
                 )
                 .await?;
-                Ok(serde_json::to_string_pretty(&output)?)
+                Ok(serde_json::to_string(&output)?)
             }
             #[cfg(not(feature = "persistence"))]
             "reparse_on_edit" => {
@@ -1902,7 +1917,40 @@ mod tests {
         // Verify protocol version is set correctly
         assert_eq!(
             info.protocol_version,
-            rmcp::model::ProtocolVersion::V_2025_03_26
+            rmcp::model::ProtocolVersion::V_2025_11_25
+        );
+    }
+
+    /// The order of `tools/list` must not depend on the run.
+    ///
+    /// Two calls, two orders: a catalogue read into a hash map would
+    /// publish a different order every time, and a client paging through
+    /// the list would see a tool twice and miss another. The order is the
+    /// catalogue's, and it is the same on every call — which is also what
+    /// makes a pagination cursor mean something.
+    #[test]
+    fn the_tool_order_is_stable_across_calls() {
+        let names = |tools: &[Tool]| {
+            tools
+                .iter()
+                .map(|t| t.name.to_string())
+                .collect::<Vec<String>>()
+        };
+
+        let first = names(&build_all_tools());
+        let second = names(&build_all_tools());
+        assert_eq!(
+            first, second,
+            "tools/list must publish the same order every time"
+        );
+
+        let mut unique = first.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            first.len(),
+            "the catalogue publishes a tool twice"
         );
     }
 

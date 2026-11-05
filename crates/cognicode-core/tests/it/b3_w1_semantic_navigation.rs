@@ -460,6 +460,7 @@ fn sample_get_implementors_output() -> GetImplementorsOutput {
         implementors: vec!["MyStruct".to_string()],
         precision: precision_floor_for_tool("get_implementors"),
         provider: default_provider_for_tool("get_implementors").to_string(),
+        summary: "1 implementors of MyTrait".to_string(),
     }
 }
 
@@ -472,5 +473,6 @@ fn sample_get_type_references_output() -> GetTypeRefsOutput {
         }],
         precision: precision_floor_for_tool("get_type_references"),
         provider: default_provider_for_tool("get_type_references").to_string(),
+        summary: "1 type references to Config".to_string(),
     }
 }

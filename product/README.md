@@ -95,24 +95,32 @@ publishes, including the ones a default build does not expose. The runtime
 list is the **active subset**. They are not the same set, and capturing the
 wrong one is silent — it produces a smaller catalog that still validates.
 
-The two tools that a default build hides are gated by
-`program-analysis-server` and `evidence-cli-ladybug`. Build with both, or the
-capture will come up three tools short and will be missing
-`interproc_summary`, `list_evidence` and `search_evidence`. Measured
-2026-10-25: a default build reports 75 tools, and a full-feature build
-reports the 78 the catalog publishes.
+Five of the tools that a default build hides are gated by three features:
+`program-analysis-server` (`interproc_summary`), `evidence-cli-ladybug`
+(`list_evidence` and `search_evidence`) and `contract-store`
+(`generate_contract` and `validate_contract`). Build with all three, or the
+capture comes up short and the catalog stops describing the surface the
+runtime publishes. Measured 2026-11-05: a default build reports 73 tools,
+and a build with the three features reports the 78 the catalog publishes.
 
 Capture what the runtime really publishes:
 
 ```bash
 cargo build -p cognicode-mcp \
-  --features cognicode-core/program-analysis-server,cognicode-core/evidence-cli-ladybug
+  --features cognicode-core/program-analysis-server,cognicode-core/evidence-cli-ladybug,cognicode-core/contract-store
 /var/home/rubentxu/cargo-targets/debug/mcp-client \
   --workspace "$PWD" \
   --method tools/list \
   --server-binary /var/home/rubentxu/cargo-targets/debug/cognicode-mcp \
   > product/tool-catalog-runtime.json
 ```
+
+The capture is the runtime's own answer, so it carries what the runtime
+publishes: the input schema, the derived output contract and the behaviour
+hints (`readOnlyHint`, `destructiveHint`, `idempotentHint` and
+`openWorldHint`). The hints are not in the master on purpose — the runtime
+derives them from the `authority` the master declares, and a second copy
+would be a second source of truth.
 
 **`product/tools.json` is hand-authored. Do not write the generator's output
 over it.** The generator does not own nine of the fields (listed below), so
@@ -140,9 +148,14 @@ Validate the committed projection with:
 python3 scripts/product/test_product_tool_catalog.py
 ```
 
-The catalog schema is `product/schemas/tools.v1.schema.json`. Output schemas
-remain `null` until the structured-output contract is implemented for the
-relevant public profile. No output contract is invented here.
+The catalog schema is `product/schemas/tools.v1.schema.json`. An output
+schema is `null` for the tools that publish no contract, and it is the
+**derived** contract for the tools that do: the runtime derives it from the
+type that serialises the answer, and the catalogue publishes that same
+contract rather than a hand-written copy of it. A copy is a second
+description of a shape, and the copy is the one that rots —
+`crates/cognicode-core/tests/it/b2_w3_output_schema_contract.rs` compares
+the two byte for byte so they cannot drift apart unnoticed.
 
 ### Fields the generator does not own
 

@@ -32525,3 +32525,144 @@ de esa medición estable, no la de una corrida que dependía de la máquina.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-65: respuestas MCP conformes y baratas
+
+**Qué.** Una tool que publica un contrato de salida le ha dicho al cliente la
+forma de su respuesta. La respuesta tenía que llegar donde el contrato dice:
+en `structuredContent`. Llegaba dentro de un bloque de texto que el cliente
+tenía que parsear para llegar al objeto, y el `outputSchema` que anunciaba
+era una promesa sobre una forma que nadie recibía. Y la misma respuesta, leída
+por un agente, es una línea de prosa, no un objeto que parsear. Esta unidad
+hace las dos cosas: el objeto donde el contrato lo puso, la línea al lado, y
+el JSON que viaja, compacto.
+
+**El bloque de texto no se mueve.** La especificación pide que una tool que
+devuelve contenido estructurado devuelva además el JSON serializado en un
+bloque de texto, y ese bloque es además el contrato que los consumidores
+actuales de este producto leen: el primer bloque de texto es lo que devuelve
+`scripts/mcp/mcp_smoke_all.py` y lo que parsean las suites de integración
+(`a012`, `explain_finding`, `find_usages_compat_0_97`, `continuation_e2e`).
+Moverlo o quitarlo sería un cambio incompatible sin deprecación detrás, y no
+hay ninguna. Así que el JSON sigue siendo el primer bloque, y el resumen es
+**un bloque más**, al lado.
+
+**El resumen es la línea del propio payload, no una segunda copia.** El
+payload que publica un contrato lleva su propio `summary` —o su `message`,
+que es como lo llamaban los que ya lo tenían— y el cable lo lee de ahí. La
+regla vive en un sitio (`tool_response.rs`), y el resumen de una respuesta
+pertenece a la respuesta: lo escribe el tipo que la conoce. Once de los
+dieciséis contratos publicaban una línea que no era una línea —`detail` es
+el eco de lo que pidió el cliente, `explanation` es un párrafo— y esos
+reciben ahora su propio `summary`. Los que ya traían su línea —`build_graph`
+y `graph_checkpoint` con `message`, `project_insights`, `review_pr` y
+`explain_finding` con `summary`— no han crecido: un payload con dos campos de
+prosa que dicen lo mismo es un payload con dos fuentes de verdad.
+
+**Las pistas de comportamiento salen de la autoridad que ya existía.** El
+catálogo ya declaraba, tool por tool, si una tool lee, muta, ejecuta o
+habla con la red, y el runtime ya usaba esa declaración para decidir qué
+tools se esconden en modo `--read-only`. Lo que faltaba era que esa palabra
+llegara al cliente: ahora cada tool publica `readOnlyHint`,
+`destructiveHint`, `idempotentHint` y `openWorldHint`, derivados de la misma
+autoridad. Una autoridad que nadie puede leer se trata como la más
+peligrosa: la pista es lo único que un cliente tiene, y asumir lo mejor es
+justo el error que cuesta.
+
+**El protocolo que el servidor declara.** `2025-03-26` → `2025-11-25`. La
+versión que el servidor declara es la que implementa; la que el cliente pide
+en `initialize` es otra cosa, y el test que las confundía ahora las
+distingue.
+
+**Dos cosas que la superficie publicada decía de menos.** La primera: el
+manifiesto del producto publicaba `protocol_revision: 2025-03-26`, y con el
+servidor declarando `2025-11-25` ese documento mentía sobre la versión que
+habla. Ahora el manifiesto, el generador que lo produce, el `const` del
+esquema y su contrato dicen `2025-11-25`, y un test nuevo compara la
+declaración del manifiesto con la del servidor: las dos son un hecho, y un
+hecho no puede estar en dos sitios.
+
+La segunda la destapó el propio gate, y es la razón por la que este recibo
+tiene dos veredictos. `rmcp` negocia: si la versión que pide el cliente es una
+de las que conoce, el servidor contesta con esa, y sólo cuando el cliente
+pide una versión que nadie conoce la respuesta lleva la declaración del
+servidor. El test de humo del binario release pedía `2025-03-26` —una versión
+que `rmcp` conoce— y comprobaba que la respuesta fuese `2025-11-25`: medía
+la petición del cliente, no la declaración del servidor. El gate lo dejó en
+rojo, que es lo que un gate debe hacer con un test que mide otra cosa. El
+test pide ahora una versión que no existe, y la respuesta es la declaración.
+
+**El JSON que viaja, compacto.** 33 de los 75 brazos de dispatch serializaban
+con `to_string_pretty` y los otros 42 con `to_string`. La respuesta es la
+misma; lo que cambia es lo que viaja.
+
+**Un contrato publicado que era una copia.** El `output_schema` del catálogo
+es el contrato **derivado** del tipo que serializa la respuesta, y hasta
+ahora solo se comparaba la cobertura —qué tools tienen contrato— y no el
+contrato en sí. La comparación byte a byte que faltaba encontró dos copias
+publicadas que habían perdido campos que su tipo todavía lleva:
+`get_implementors` y `get_type_references` ya no publicaban `precision` ni
+`provider`, así que las dos tools prometían menos de lo que entregan. La
+comparación vive ahora en `b2_w3_output_schema_contract.rs` y corre en cada
+gate.
+
+**La captura del catálogo estaba vieja, y el arreglo la destapó.** Al
+publicar el contrato derivado, la captura commiteada resultó no ser la
+respuesta del runtime: le faltaban las cuatro pistas que esta unidad añade,
+y el contrato de `build_graph` era anterior al tipo que lo serializa (le
+faltaban `RejectedRelationInfo` y cuatro campos de `BasisDto`). La captura
+se vuelve a tomar con el procedimiento que `product/README.md` documenta, y
+esa comparación encontró una cosa más: **el procedimiento estaba incompleto**.
+El catálogo publica 78 tools y el runtime con dos features publicaba 76:
+`generate_contract` y `validate_contract` viven detrás de `contract-store`,
+un tercer feature que el README no mencionaba. Medido 2026-11-05: un build
+por defecto anuncia 73 tools, y un build con los tres features anuncia los
+78 que el catálogo publica. El README dice ahora los tres features, los
+cinco tools que cada uno esconde, y por qué las pistas de comportamiento no
+están en el catálogo maestro: el runtime las deriva de la `authority` que el
+maestro declara, y una segunda copia sería una segunda fuente de verdad.
+
+**RED medido.**
+
+- `a012_structured_output::a_contract_tool_returns_structured_content_and_a_summary`:
+  «a tool with a contract answers with structuredContent» — la respuesta no
+  traía `structuredContent`.
+- `b2_w3_output_schema_contract::every_published_contract_is_the_derived_one`:
+  el catálogo publicaba un contrato que no era el derivado (`build_graph`,
+  primero de doce).
+- `b6_w1_mcp_robustness::release_binary_stdio_round_trip_smoke`: el binario
+  declaraba `2025-03-26` y el test pedía lo mismo.
+- `b6_w1_mcp_robustness::the_product_manifest_declares_the_version_the_server_declares`:
+  el manifiesto publicaba `2025-03-26` y el servidor declara `2025-11-25`.
+- El propio gate, en su paso de integración, dejó en rojo
+  `release_binary_stdio_round_trip_smoke` por la razón de arriba: el test
+  comprobaba la versión *negociada* mientras el cliente pedía una versión
+  que `rmcp` conoce, así que medía la petición del cliente. El test pide
+  ahora una versión que nadie conoce, y lo que llega es la declaración.
+
+**Verificación.** Rama `feature/task-65-mcp-conformant-answers`, base
+`78829037` (la punta de `main`), commit `c4826f9b`.
+`cargo nextest run --profile gate --workspace --lib`: **4640 OK**, 2 ignorados.
+`cargo nextest run --profile gate --workspace --tests`: **6694 OK**, 10 ignorados.
+`cargo clippy --workspace --all-targets -- -D warnings` rc=0 y `cargo fmt --all --check`
+limpio. Ratchet de tamaño de fichero PASS (10 de 776 fuentes por encima de 2000 líneas, ninguna
+crece). `bash scripts/ci/run-all-contracts.sh` rc=0. `npm test --prefix apps/explorer-ui`:
+**944 OK** en 86 ficheros. Captura del runtime: **78 tools**, 16 con contrato de salida, 78 con
+anotaciones; un build por defecto anuncia 73.
+
+**Gate.** `bash scripts/test-gate.sh` sobre la punta de la rama, en solitario: unitarios **4640
+OK** (2 ignorados), integración **6694 OK** (10 ignorados) y mutantes **574 en 10m: 572 atrapados,
+2 inviables, 0 supervivientes, 0 tiempos agotados** — rc=0.
+
+**El gate también encontró un defecto en su propio test.** La primera corrida del gate sobre esta
+rama salió rc=1, y no por el código: el paso de integración dejó en rojo
+`release_binary_stdio_round_trip_smoke`. La causa estaba en el test, no en el servidor —`rmcp`
+negocia la versión, así que un cliente que pide una versión que la librería conoce recibe esa, y
+sólo una petición de una versión que nadie conoce hace que la respuesta lleve la declaración del
+servidor. El test pedía `2025-03-26` y comprobaba `2025-11-25`: medía la petición del cliente. El
+servidor declaraba `2025-11-25` todo ese tiempo, y el test no lo veía. El test pide ahora una
+versión que no existe, y lo que llega es la declaración.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda
+aquí, en el recibo, en vez de en un trailer que el hook rechaza.

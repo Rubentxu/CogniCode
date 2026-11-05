@@ -18,6 +18,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -49,6 +55,12 @@
         "question"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -95,6 +107,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -125,12 +143,34 @@
         "BasisDto": {
           "description": "Provenance basis for a build_graph result.",
           "properties": {
+            "analyzer_commit": {
+              "description": "The commit the analyzer was built from, when it could be known.\n\n`null` when the binary was built outside a checkout. That is a\nfact about the binary, not a value invented to fill the field.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "analyzer_features": {
+              "description": "The capabilities the analyzer was built with, in a stable order.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "analyzer_version": {
+              "description": "The version of the analyzer that produced this analysis.\n\nThe provider's version, not the consumer's: it says which build\ncalculated the answer, which is what a cached answer has to be\nchecked against before it can be served again.",
+              "type": "string"
+            },
             "complete": {
               "description": "`true` only when every identity component was established and\nthere was material to identify. A workspace with nothing to\nanalyze has an established identity of an empty tree, which\ndescribes no analysis: the basis is not complete.",
               "type": "boolean"
             },
             "config_digest": {
               "description": "Digest over the effective configuration relevant to the build.\nStable across identical configurations; changes when config changes.",
+              "type": "string"
+            },
+            "snapshot_schema": {
+              "description": "The shape the snapshot was written in.",
               "type": "string"
             },
             "source_manifest_digest": {
@@ -146,6 +186,9 @@
             "workspace",
             "config_digest",
             "source_manifest_digest",
+            "analyzer_version",
+            "analyzer_features",
+            "snapshot_schema",
             "complete"
           ],
           "type": "object"
@@ -227,6 +270,34 @@
           ],
           "type": "object"
         },
+        "RejectedRelationInfo": {
+          "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+          "properties": {
+            "kind": {
+              "description": "What the relation is.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Why the repository refused it.",
+              "type": "string"
+            },
+            "source": {
+              "description": "The declaration that holds the relation.",
+              "type": "string"
+            },
+            "target": {
+              "description": "The declaration the relation points at.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target",
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
         "SkippedFileDto": {
           "description": "Per-file skipped-file record surfaced through `build_graph`.",
           "properties": {
@@ -271,9 +342,19 @@
           "type": "string"
         },
         "pending_references": {
-          "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`None` when the graph was served from cache (no walk happened on\nthis call); `Some([])` when every reference was tied.",
+          "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`Some([])` when every reference was tied. An answer served from\nthe cache publishes the references of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
           "items": {
             "$ref": "#/$defs/PendingReferenceInfo"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "rejected_relationships": {
+          "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`Some([])` when every relation was taken. An answer served from\nthe cache publishes the relations of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
+          "items": {
+            "$ref": "#/$defs/RejectedRelationInfo"
           },
           "type": [
             "array",
@@ -286,7 +367,7 @@
           "type": "integer"
         },
         "skipped_files": {
-          "description": "Files that could not be processed during the walk.\n`None` when the graph was served from cache (no walk happened\non this call); `Some([])` when the walk finished with no\nomissions; `Some([..])` when one or more files were dropped\nbecause of I/O / parsing failures.",
+          "description": "The holes of the tree, as it is now.\n`Some([])` when the walk left nothing out; `Some([..])` when one\nor more paths were dropped —because of I/O / parsing failures,\nbecause the walk declined them, or because their language is one\nnobody supports yet.\n\nThe list belongs to the tree and not to the build that produced\nthe graph: an answer served from the cache publishes the holes of\nthe tree as it is NOW, so that no consumer can be told `complete`\nabout a tree the walk does not read whole.",
           "items": {
             "$ref": "#/$defs/SkippedFileDto"
           },
@@ -296,7 +377,7 @@
           ]
         },
         "status": {
-          "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), or a reference could not\n    be tied to a declaration.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.",
+          "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: the answer describes the whole tree: no file was\n    dropped and no reference was left without a declaration.\n  - `\"partial\"`: something is missing: a file was dropped (I/O or\n    parsing failure), a reference could not be tied to a\n    declaration, or the repository refused a relation.\n  - `\"unknown\"`: the answer carries no verdict about the coverage\n    of the tree.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.\n\nThe verdict is the tree's, not the build's: an answer served from\nthe cache says what the tree looks like NOW, which is the same\nthing a fresh walk of it would say.",
           "type": "string"
         },
         "success": {
@@ -318,6 +399,12 @@
       ],
       "title": "BuildGraphOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -354,6 +441,12 @@
       },
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -386,6 +479,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -410,6 +509,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -447,6 +552,10 @@
         "map": {
           "type": "string"
         },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
+        },
         "token_estimate": {
           "format": "uint",
           "minimum": 0,
@@ -456,10 +565,17 @@
       "required": [
         "format",
         "map",
-        "token_estimate"
+        "token_estimate",
+        "summary"
       ],
       "title": "CodebaseMapOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -497,6 +613,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -530,6 +652,12 @@
       },
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -554,6 +682,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -584,6 +718,12 @@
         "algorithm_params"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -639,6 +779,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "mutating",
@@ -679,14 +825,25 @@
         },
         "mermaid": {
           "type": "string"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
         "mermaid",
-        "community_count"
+        "community_count",
+        "summary"
       ],
       "title": "ExportCallflowOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -733,6 +890,12 @@
       },
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -764,6 +927,12 @@
         "intent"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -803,6 +972,12 @@
         "column"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -844,6 +1019,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -880,6 +1061,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -912,6 +1099,12 @@
         "file_path"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -958,6 +1151,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -990,6 +1189,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1014,6 +1219,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1051,6 +1262,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1079,6 +1296,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1135,6 +1358,10 @@
           "description": "B4.W1 — provider that produced the result.",
           "type": "string"
         },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
+        },
         "trait_name": {
           "type": "string"
         }
@@ -1143,10 +1370,17 @@
         "trait_name",
         "implementors",
         "precision",
-        "provider"
+        "provider",
+        "summary"
       ],
       "title": "GetImplementorsOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1186,14 +1420,25 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
         "file_path",
-        "imports"
+        "imports",
+        "summary"
       ],
       "title": "GetImportsOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1219,6 +1464,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1264,15 +1515,26 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
         "class_name",
         "methods",
-        "fields"
+        "fields",
+        "summary"
       ],
       "title": "GetMembersOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1301,6 +1563,12 @@
         "file_path"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1339,6 +1607,12 @@
         "col"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1410,6 +1684,10 @@
           },
           "type": "array"
         },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
+        },
         "symbol": {
           "type": "string"
         }
@@ -1418,10 +1696,17 @@
         "symbol",
         "references",
         "precision",
-        "provider"
+        "provider",
+        "summary"
       ],
       "title": "GetTypeRefsOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1457,6 +1742,12 @@
         "column"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1494,6 +1785,12 @@
         "to_symbol"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1560,6 +1857,12 @@
       "title": "GraphCheckpointOutput",
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1584,6 +1887,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1617,6 +1926,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1636,6 +1951,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1749,6 +2070,10 @@
         },
         "node": {
           "$ref": "#/$defs/ExplainNode"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
@@ -1756,10 +2081,17 @@
         "callers",
         "callees",
         "fan_in",
-        "fan_out"
+        "fan_out",
+        "summary"
       ],
       "title": "GraphExplainOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1780,6 +2112,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1806,6 +2144,12 @@
       },
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1825,6 +2169,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1854,6 +2204,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -1972,16 +2328,27 @@
         },
         "question": {
           "type": "string"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
         "question",
         "nodes",
         "edges",
-        "explanation"
+        "explanation",
+        "summary"
       ],
       "title": "GraphQueryOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2126,6 +2493,10 @@
         },
         "question": {
           "type": "string"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
@@ -2133,10 +2504,17 @@
         "nodes",
         "edges",
         "explanation",
-        "applied_filters"
+        "applied_filters",
+        "summary"
       ],
       "title": "GraphQueryFilteredOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2157,6 +2535,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2190,6 +2574,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2209,6 +2599,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2238,6 +2634,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2273,6 +2675,12 @@
         "column"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2366,16 +2774,27 @@
         },
         "resource_type": {
           "type": "string"
+        },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
         }
       },
       "required": [
         "resource_id",
         "resource_type",
         "dependencies",
-        "dependents"
+        "dependents",
+        "summary"
       ],
       "title": "IacQueryOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2422,6 +2841,12 @@
       },
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2441,6 +2866,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2473,6 +2904,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2504,6 +2941,12 @@
         "query"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2657,6 +3100,12 @@
       "title": "ProjectInsightsOutput",
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2723,6 +3172,10 @@
           },
           "type": "array"
         },
+        "summary": {
+          "description": "One line saying what the answer says.",
+          "type": "string"
+        },
         "system_prompt_context": {
           "type": [
             "string",
@@ -2734,10 +3187,17 @@
         "detail",
         "hot_paths",
         "entry_points",
-        "recommendations"
+        "recommendations",
+        "summary"
       ],
       "title": "ProjectOverviewOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2770,6 +3230,12 @@
         "symbol_name"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2825,6 +3291,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2852,6 +3324,12 @@
         "id"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2883,6 +3361,12 @@
         "file_paths"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2923,6 +3407,12 @@
         "query"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -2991,6 +3481,12 @@
       "title": "ReviewPrOutput",
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3035,6 +3531,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3075,6 +3577,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3128,6 +3636,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3158,6 +3672,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3187,6 +3707,12 @@
         "algorithm_params"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3220,6 +3746,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3239,6 +3771,12 @@
     "inputSchema": {
       "properties": {},
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3269,6 +3807,12 @@
         "algorithm_params"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3311,6 +3855,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3343,6 +3893,12 @@
         "generated_code"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3385,6 +3941,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "mutating",
@@ -3415,6 +3977,12 @@
       ],
       "type": "object"
     },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -3443,6 +4011,12 @@
         }
       },
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3479,6 +4053,12 @@
         "query"
       ],
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {
@@ -3799,6 +4379,12 @@
       ],
       "title": "ExplainFindingOutput",
       "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
     },
     "_meta": {
       "cognicode": {

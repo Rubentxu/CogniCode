@@ -1364,12 +1364,21 @@ fn release_binary_stdio_round_trip_smoke() {
         .spawn()
         .expect("spawn release binary");
 
+    // The version the client asks for is NOT the version the server
+    // declares, and a test that confuses the two measures nothing.
+    //
+    // `rmcp` negotiates: if the requested version is one it knows, the
+    // server answers with the requested one; only when the client asks
+    // for a version nobody knows does the answer carry the server's own
+    // declaration. So the request below asks for a version that does not
+    // exist, and the answer is the declaration — which is what this test
+    // is about: what the released binary says it implements.
     rpc_send(
         &mut child,
         1,
         "initialize",
         json!({
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": "1999-01-01",
             "capabilities": {},
             "clientInfo": {"name": "b6_w1_release_smoke", "version": "0.0.1"}
         }),
@@ -1378,8 +1387,9 @@ fn release_binary_stdio_round_trip_smoke() {
     let init = init_resp.expect("initialize within 10s on release binary");
     assert_eq!(init["jsonrpc"], "2.0");
     assert_eq!(
-        init["result"]["protocolVersion"], "2025-03-26",
-        "release binary must declare the same protocolVersion as the rest of the suite"
+        init["result"]["protocolVersion"], "2025-11-25",
+        "the server declares the protocol version it implements; the version the \
+         client asks for in `initialize` is a different thing"
     );
 
     rpc_send(&mut child, 2, "tools/list", json!({}));
@@ -1398,5 +1408,56 @@ fn release_binary_stdio_round_trip_smoke() {
     assert!(
         !first.is_empty(),
         "release binary returned a tool with an empty name"
+    );
+}
+
+/// The published manifest must declare the protocol revision the server
+/// declares.
+///
+/// The manifest publishes the MCP surface to whoever consumes the product:
+/// the transport, the protocol revision and the tool catalogue. A revision
+/// there that is older than the one the server speaks is a promise the
+/// product does not keep — and it is the kind of promise that survives,
+/// because nothing compared the two: the manifest is built from a
+/// constant and the server declares its own.
+///
+/// This is the comparison that was missing. It reads the declaration from
+/// the server itself, so the two facts cannot drift apart without this
+/// failing.
+#[test]
+fn the_product_manifest_declares_the_version_the_server_declares() {
+    use cognicode_core::interface::mcp::CogniCodeHandler;
+    use rmcp::ServerHandler;
+
+    let handler = CogniCodeHandler::new(PathBuf::from("/tmp/cognicode-manifest-check"));
+    let declared = handler.get_info().protocol_version.as_str().to_string();
+
+    let path = repo_root().join("product/product-manifest.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let manifest: Value = serde_json::from_str(&text).expect("the manifest is JSON");
+    let published = manifest["public_surface"]["mcp"]["protocol_revision"]
+        .as_str()
+        .expect("the manifest publishes the protocol revision");
+
+    assert_eq!(
+        published, declared,
+        "the manifest publishes {published} and the server declares {declared}: \
+         one of them is telling the consumer something the other does not do"
+    );
+}
+
+/// The repository root, found by walking up from this crate.
+fn repo_root() -> PathBuf {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for ancestor in manifest.ancestors() {
+        let candidate = ancestor.join("product").join("product-manifest.json");
+        if candidate.is_file() {
+            return ancestor.to_path_buf();
+        }
+    }
+    panic!(
+        "could not locate the repository root above {}",
+        manifest.display()
     );
 }
