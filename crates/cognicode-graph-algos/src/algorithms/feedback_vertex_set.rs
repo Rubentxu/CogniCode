@@ -40,8 +40,6 @@ pub fn feedback_vertex_set(out_neighbors: &[Vec<usize>], n: usize) -> Vec<usize>
     // the cycles are found on the graph as it is, not on the graph as it
     // was.
     let mut successors = out_neighbors.to_vec();
-    let mut callers = callers_of(&successors, n);
-    let mut removed = vec![false; n];
     let mut result: Vec<usize> = Vec::new();
 
     for _ in 0..n {
@@ -59,6 +57,12 @@ pub fn feedback_vertex_set(out_neighbors: &[Vec<usize>], n: usize) -> Vec<usize>
             }
         }
 
+        // The callers are read off the live graph on every pass: a node
+        // that is taken out of it is no longer calling anybody, and a
+        // list kept up to date by hand would have to be right about that
+        // too.
+        let callers = callers_of(&successors, n);
+
         // The node that takes part in the most cycles is the one that
         // breaks the most of them. The ties go to the node of the
         // smaller degree —it cuts fewer edges on the way— and then to
@@ -66,7 +70,7 @@ pub fn feedback_vertex_set(out_neighbors: &[Vec<usize>], n: usize) -> Vec<usize>
         // the graph happens to be walked in.
         let mut best: Option<usize> = None;
         for node in 0..n {
-            if removed[node] || participation[node] == 0 {
+            if participation[node] == 0 {
                 continue;
             }
             let degree = successors[node].len() + callers[node].len();
@@ -90,9 +94,8 @@ pub fn feedback_vertex_set(out_neighbors: &[Vec<usize>], n: usize) -> Vec<usize>
             break;
         };
 
-        removed[chosen] = true;
         result.push(chosen);
-        take_out(&mut successors, &mut callers, chosen);
+        take_out(&mut successors, chosen);
     }
 
     result
@@ -127,22 +130,18 @@ fn callers_of(successors: &[Vec<usize>], n: usize) -> Vec<Vec<usize>> {
 }
 
 /// Takes a node out of the live graph: its edges go with it.
-fn take_out(successors: &mut [Vec<usize>], callers: &mut [Vec<usize>], node: usize) {
-    let Some(callees) = successors.get_mut(node) else {
-        return;
-    };
-    let callees = std::mem::take(callees);
-    for &caller in &callers[node] {
-        if let Some(list) = successors.get_mut(caller) {
-            list.retain(|&target| target != node);
-        }
+///
+/// The node stops being a callee —every list loses it— and stops being
+/// a caller: its own list is emptied. The callers of the remaining
+/// nodes are read off the graph again on the next pass, so nothing
+/// here has to remember who called what.
+fn take_out(successors: &mut [Vec<usize>], node: usize) {
+    for list in successors.iter_mut() {
+        list.retain(|&target| target != node);
     }
-    for &callee in &callees {
-        if let Some(list) = callers.get_mut(callee) {
-            list.retain(|&source| source != node);
-        }
+    if let Some(list) = successors.get_mut(node) {
+        list.clear();
     }
-    callers[node].clear();
 }
 
 #[cfg(test)]
