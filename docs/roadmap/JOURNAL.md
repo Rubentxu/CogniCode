@@ -33996,3 +33996,43 @@ rebanada 1, TASK-92 rebanada 2, TASK-70 grupo 1, más esta).
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
 el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-128 (anexo): el digest que publica la cadena nombra el fichero
+
+**Por qué este anexo.** El criterio de aceptación de TASK-128 habla de «paginación y SHA
+acumulado». Al revisar el cierre, el `content_hash` que `read_file` publica en cada página no lo
+afirmaba nadie: el fichero retirado usaba `sha2` como **instrumento de su propia comparación**
+(acumulado contra el prefijo del disco) y nunca miraba el digest que el producto publica — 0
+apariciones de `content_hash` en sus 609 líneas. Es decir: la cadena publicaba un digest por página
+y nadie comprobaba qué nombraba.
+
+**Lo que se afirma ahora** (PR #603 → `f0ad0ccb`): cada página de la cadena publica el digest del
+**fichero completo**, y todas las páginas publican el mismo. Eso es lo que dice al cliente que las
+páginas que guarda pertenecen a la misma versión del fichero — que es lo que necesita cuando la
+cadena dura más de una petición.
+
+**El rojo discriminante (M5).** Mutación: `read_file` publica el digest de la **página** en vez del
+del fichero (`content_hash: Some(sha256_hex(content.as_bytes()))`). La aserción nueva lo mata:
+
+```
+assertion `left == right` failed: page 0 publishes a digest that is not the digest of the file:
+the pages would not all belong to the same version of it
+  left: "44be35b857d85a8c75f24f8f807190530c49dd8a58bcba15e2806e85e90d4dab"
+ right: "d94626566b010214f0e6e41c1a19acda823685e28ce7b04ab7e644403a8a0d7c"
+```
+
+El fichero retirado **no lo habría visto**: nunca leyó ese campo.
+
+**El producto no se toca en este anexo.** El digest ya era el del fichero
+(`count_lines_and_hash`, `crates/cognicode-core/src/application/services/file_operations.rs:1189`,
+lee el fichero entero y lo hashea; se publica en `ReadFileResult.content_hash`, línea 735). Lo que
+faltaba era el dueño de la garantía, no la garantía: una garantía sin dueño es la que se pierde sin
+que nadie lo note.
+
+**Verificación.** `cargo nextest run --profile gate -p cognicode-core --test it` → **962 passed**, 2
+skipped; `cargo fmt --all --check` y `cargo clippy -p cognicode-core --all-targets -- -D warnings`
+limpios. Gate completo: **NOT_RUN** (se paga por lotes de diez tareas).
+
+**Los PR de la unidad, en orden.** #600 → `d39b686c` (el sustituto, el arreglo del `start_line`, la
+retirada del fichero y el `sha2`), #601 → `22358503` (el residuo del preflight), #602 → `c4b2f7c6`
+(el recibo), #603 → `f0ad0ccb` (el digest publicado).
