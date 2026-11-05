@@ -21,11 +21,14 @@ use schemars::JsonSchema;
 // graph_query
 // ============================================================================
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphQueryInput {
+    /// Natural language question about the graph topology
     pub question: String,
+    /// Maximum BFS depth from seed nodes (default: 3)
     #[serde(default = "default_max_depth")]
     pub max_depth: usize,
+    /// Maximum nodes to collect (default: 1500)
     #[serde(default = "default_budget")]
     pub budget: usize,
 }
@@ -194,9 +197,11 @@ pub async fn handle_graph_query(
 // graph_explain
 // ============================================================================
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphExplainInput {
+    /// Symbol name to explain
     pub symbol: String,
+    /// Neighbor depth (default: 2)
     #[serde(default = "default_depth_e")]
     pub depth: usize,
 }
@@ -386,8 +391,9 @@ fn extract_keywords(question: &str) -> Vec<String> {
 // Edge-type query tools (ADR-026)
 // ============================================================================
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetTypeRefsInput {
+    /// Symbol name
     pub symbol_name: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -452,8 +458,9 @@ pub async fn handle_get_type_references(
     })
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetImportsInput {
+    /// File path
     pub file_path: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -519,8 +526,9 @@ pub async fn handle_get_imports(
     })
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetImplementorsInput {
+    /// Trait or interface name
     pub trait_name: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -583,8 +591,9 @@ pub async fn handle_get_implementors(
     })
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GetMembersInput {
+    /// Class or struct name
     pub class_name: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -654,13 +663,13 @@ pub async fn handle_get_members(
 }
 
 // graph_query_filtered — graph_query with provenance/kind/community filters
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphQueryFilteredInput {
     pub question: String,
     pub filters: Option<QueryFilters>,
     pub limit: Option<usize>,
 }
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct QueryFilters {
     pub provenance: Option<Vec<String>>,
     pub node_kinds: Option<Vec<String>>,
@@ -727,8 +736,9 @@ pub async fn handle_graph_query_filtered(
 }
 
 // export_callflow — community-level Mermaid architecture diagram
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExportCallflowInput {
+    /// Max architecture sections (default: 8)
     pub max_sections: Option<usize>,
     pub format: Option<String>,
 }

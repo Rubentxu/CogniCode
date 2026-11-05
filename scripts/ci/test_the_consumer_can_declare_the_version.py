@@ -49,10 +49,10 @@ MAPPING = "crates/cognicode-core/src/interface/mcp/dto_mapping.rs"
 SCHEMAS = "crates/cognicode-core/src/interface/mcp/schemas.rs"
 
 # La sincronizacion del maestro la posee un solo modulo; el contrato lo usa en
-# vez de reimplementar la regla. Ver `scripts/product/sync_tool_catalog_runtime_metadata.py`.
+# vez de reimplementar la regla. Ver `scripts/product/sync_tool_catalog_with_the_capture.py`.
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "product"))
 from generate_tool_catalog import render  # noqa: E402
-from sync_tool_catalog_runtime_metadata import merge_runtime_metadata  # noqa: E402
+from sync_tool_catalog_with_the_capture import merge_with_the_capture  # noqa: E402
 
 # Las tools que aceptan la version que el consumidor leyo.
 CONDITIONAL_TOOLS = ("write_file", "edit_file")
@@ -319,7 +319,7 @@ def test_the_curated_runtime_metadata_is_still_there() -> None:
 def test_the_synchronization_keeps_the_curated_metadata() -> None:
     """La sincronizacion no se lleva por delante lo curado a mano."""
     master = document(CATALOG)
-    merged, findings = merge_runtime_metadata(master, document(CAPTURE))
+    merged, findings = merge_with_the_capture(master, document(CAPTURE))
     assert not findings, "FAIL: " + summarize(findings)
     drift = the_curated_metadata_survives_the_merge(master, merged)
     assert not drift, "FAIL: " + summarize(drift)
@@ -328,7 +328,7 @@ def test_the_synchronization_keeps_the_curated_metadata() -> None:
 def test_the_committed_master_is_synchronized() -> None:
     """El maestro commiteado es el maestro sincronizado con la captura."""
     master = document(CATALOG)
-    merged, _ = merge_runtime_metadata(master, document(CAPTURE))
+    merged, _ = merge_with_the_capture(master, document(CAPTURE))
     assert render(merged) == source(CATALOG), (
         "FAIL: el maestro commiteado no es el resultado de sincronizarlo con la "
         "captura; o su metadato de runtime esta viejo, o el documento lleva "

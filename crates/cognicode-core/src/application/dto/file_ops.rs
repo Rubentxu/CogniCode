@@ -13,7 +13,15 @@ use super::common::{ContentMatch, EditValidation, FileEdit, FileMetadata};
 // ============================================================================
 
 /// Read mode for file content
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+///
+/// The modes travel in lowercase, and that is the spelling this type uses
+/// everywhere: `serde` names the variants after the Rust ones, so the
+/// renaming is what makes `Raw` travel as `raw` — the word the published
+/// schema names and the word `Display` and `FromStr` already speak.
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum ReadMode {
     #[default]
     Raw,

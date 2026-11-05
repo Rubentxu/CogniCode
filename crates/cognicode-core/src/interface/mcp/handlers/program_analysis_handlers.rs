@@ -26,7 +26,7 @@ use crate::domain::plan::limits::PlanLimits;
 
 /// Wrapper shared by every M5 tool call. `algorithm_params` matches the
 /// conformance-corpus shape so callers can replay fixtures end-to-end.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct ProgramAnalysisToolInput {
     /// Algorithm-specific parameters (shape per tool).
     pub algorithm_params: serde_json::Value,

@@ -578,13 +578,14 @@ fn build_report() -> crate::interface::catalog::CatalogReport {
 /// `cognicode capabilities --json`; the catalog is the source of
 /// truth, the MCP projection is a strict subset for the wire.
 fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
-    let input_schema = if let Some(obj) = d.input_schema.as_object() {
-        obj.clone()
-    } else {
-        // input_schema is null/missing for tools that take no args.
-        // rmcp requires an object map; empty map is the contract.
-        serde_json::Map::new()
-    };
+    // The schema a tool advertises is the one derived from the struct that
+    // reads its arguments. The catalogue's copy is the fallback for the
+    // tools that read their arguments one key at a time and publish no
+    // derived contract: a hand-written shape there is the only shape there
+    // is, and pretending otherwise would be a claim nobody can check.
+    let input_schema = super::input_contracts::input_schema_for(&d.name)
+        .or_else(|| d.input_schema.as_object().cloned())
+        .unwrap_or_default();
 
     // PRF-MCP-05: authority is the primary oracle. `mutates_workspace`
     // is derived (not declared) so the flag cannot lie about the

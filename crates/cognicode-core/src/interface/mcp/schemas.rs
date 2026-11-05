@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::application::dto::ReadMode;
 use crate::interface::symbol_identity::Precision;
 
 // Re-export types from dto for MCP protocol use
@@ -45,7 +46,7 @@ fn default_compressed() -> bool {
 // Call Hierarchy
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetCallHierarchyInput {
     /// Fully qualified name (e.g., 'module::function' or 'Class.method')
     pub symbol_name: String,
@@ -67,7 +68,7 @@ pub struct GetCallHierarchyInput {
     pub compressed: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum CallDirection {
     Incoming,
@@ -98,8 +99,9 @@ pub struct CallEntry {
 // File Symbols
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetFileSymbolsInput {
+    /// Path to the source file
     pub file_path: String,
 
     /// Return compressed natural language summary instead of JSON (default: false)
@@ -193,10 +195,12 @@ pub struct GetAllSymbolsOutput {
 // Find Usages
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FindUsagesInput {
+    /// Symbol to search
     pub symbol_name: String,
 
+    /// Include definition (default: true)
     #[serde(default = "default_true")]
     pub include_declaration: bool,
 
@@ -271,8 +275,9 @@ pub struct MatchEntry {
 // Analyze Impact
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnalyzeImpactInput {
+    /// Symbol to analyze
     pub symbol_name: String,
 
     /// Return compressed natural language summary instead of JSON (default: false)
@@ -293,8 +298,9 @@ pub struct AnalyzeImpactOutput {
 // Check Architecture
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CheckArchitectureInput {
+    /// Optional scope to filter analysis (e.g., module name)
     pub scope: Option<String>,
 }
 
@@ -337,15 +343,18 @@ pub struct ViolationInfo {
 /// read_only_mcp_tool_cannot_acquire_write_authority`) was written before the
 /// attribute was here. It never reported the gap because it lives in
 /// `core-unrestricted-evidence-kernel`, which had never completed a run.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SafeRefactorInput {
+    /// Refactor action
     pub action: RefactorAction,
+    /// Target symbol name
     pub target: String,
+    /// Action-specific parameters
     pub params: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RefactorAction {
     Rename,
@@ -378,11 +387,13 @@ pub struct CompositeImpactQueryInput {
 /// exactly one has to arrive. Resolving which one is a precondition, not a
 /// default: silently preferring one would mean a caller who sent the other got
 /// a preview of the wrong thing.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SafeRefactorPreviewInput {
+    /// Absolute path to a RefactorPlan JSON file.
     #[serde(default)]
     pub plan_path: Option<String>,
+    /// Inline RefactorPlan JSON (alternative to plan_path).
     #[serde(default)]
     pub plan_json: Option<String>,
 }
@@ -440,9 +451,11 @@ pub struct SyntaxWarning {
 // Get Complexity
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetComplexityInput {
+    /// Path to source file
     pub file_path: String,
+    /// Optional specific function
     pub function_name: Option<String>,
 }
 
@@ -466,7 +479,7 @@ pub struct ComplexityMetrics {
 // Get Entry Points
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetEntryPointsInput {
     /// Return compressed natural language summary instead of JSON (default: false)
     #[serde(default = "default_compressed")]
@@ -484,7 +497,7 @@ pub struct GetEntryPointsOutput {
 // Get Leaf Functions
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetLeafFunctionsInput {
     /// Return compressed natural language summary instead of JSON (default: false)
     #[serde(default = "default_compressed")]
@@ -502,7 +515,7 @@ pub struct GetLeafFunctionsOutput {
 // Trace Path
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TracePathInput {
     /// Source symbol name (function or method)
     pub source: String,
@@ -545,7 +558,7 @@ pub struct PathEntry {
 // Export Mermaid
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ExportMermaidInput {
     /// Subgraph root symbol (optional - if not provided, exports entire graph)
     pub root_symbol: Option<String>,
@@ -589,7 +602,7 @@ pub struct ExportMermaidOutput {
 // Get Hot Paths
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetHotPathsInput {
     /// Number of hot paths to return (default: 10)
     #[serde(default = "default_hot_paths_limit")]
@@ -704,7 +717,7 @@ pub struct GetModuleDependenciesOutput {
 // Graph Strategy - Build Index
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BuildIndexInput {
     /// Directory to build the index for (default: current working directory)
     pub directory: Option<String>,
@@ -731,7 +744,7 @@ pub struct BuildIndexOutput {
 // Graph Strategy - Query Symbol Index
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QuerySymbolInput {
     /// Symbol name to query (case-insensitive)
     pub symbol_name: String,
@@ -763,7 +776,7 @@ pub struct SymbolLocationEntry {
 // Graph Strategy - Build Call Subgraph (On-Demand)
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BuildSubgraphInput {
     /// Symbol name to build subgraph around
     pub symbol_name: String,
@@ -780,7 +793,7 @@ pub struct BuildSubgraphInput {
     pub directory: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SubgraphDirection {
     In,
@@ -824,7 +837,7 @@ pub struct HierarchyEntryInfo {
 // Graph Strategy - Per-File Graph
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetPerFileGraphInput {
     /// File path to get graph for
     pub file_path: String,
@@ -860,7 +873,7 @@ pub struct DependencyInfo {
 // Graph Strategy - Merge Graphs
 // ============================================================================
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MergeGraphsInput {
     /// List of file paths to merge
     pub file_paths: Vec<String>,
@@ -1191,7 +1204,7 @@ mod tests {
 // ============================================================================
 
 /// Input for go_to_definition tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoToDefinitionInput {
     pub file_path: String,
     /// Line number (1-indexed): the line a person reads.
@@ -1216,7 +1229,7 @@ pub struct GoToDefinitionOutput {
 }
 
 /// Input for hover tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HoverInput {
     pub file_path: String,
     /// Line number (1-indexed): the line a person reads.
@@ -1235,7 +1248,7 @@ pub struct HoverOutput {
 }
 
 /// Input for find_references tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FindReferencesInput {
     pub file_path: String,
     /// Line number (1-indexed): the line a person reads.
@@ -1260,7 +1273,7 @@ pub struct FindReferencesOutput {
 }
 
 /// Input for rename_preview tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RenamePreviewInput {
     pub file_path: String,
     /// Line number (1-indexed): the line a person reads.
@@ -1361,7 +1374,7 @@ pub struct OutlineNodeDto {
 // ============================================================================
 
 /// Input for get_symbol_code tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SymbolCodeInput {
     /// Path to the source file
     pub file: String,
@@ -1369,7 +1382,7 @@ pub struct SymbolCodeInput {
     /// Line number (1-indexed)
     pub line: u32,
 
-    /// Column number (0-indexed)
+    /// Column number (1-indexed): the column a person reads.
     pub col: u32,
 }
 
@@ -1482,7 +1495,7 @@ pub struct ContextLines {
 // ============================================================================
 
 /// Input for read_file tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReadFileInput {
     /// Path to the file to read (required)
     pub path: String,
@@ -1493,7 +1506,12 @@ pub struct ReadFileInput {
     /// End line for partial read (1-indexed, default: last line)
     pub end_line: Option<u32>,
 
-    /// Read mode: raw, outline, symbols, compressed (default: raw)
+    /// Read mode: raw, outline, symbols, compressed (default: raw).
+    /// A mode that is not one of these is refused.
+    // The vocabulary is the domain's and not a copy of it: the schema
+    // projects the type that decides which modes exist, so the published
+    // shape and the server cannot disagree about them.
+    #[schemars(with = "Option<ReadMode>")]
     pub mode: Option<String>,
 
     /// Chunk size for streaming reads (optional)
@@ -1552,7 +1570,7 @@ pub struct ReadFileOutput {
 }
 
 /// Input for edit_file tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EditFileInput {
     /// Path to the file to edit (required)
     pub path: String,
@@ -1593,7 +1611,7 @@ pub struct EditFileOutput {
 }
 
 /// Input for write_file tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WriteFileInput {
     /// Path to the file to write (required)
     pub path: String,
@@ -1629,7 +1647,7 @@ pub struct WriteFileOutput {
 }
 
 /// Input for search_content tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchContentInput {
     /// Search pattern (required)
     pub pattern: String,
@@ -1682,7 +1700,7 @@ pub struct SearchContentOutput {
 }
 
 /// Input for list_files tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListFilesInput {
     /// Path to list (optional, defaults to workspace root)
     pub path: Option<String>,
@@ -1734,18 +1752,22 @@ pub struct ListFilesOutput {
 // AVC-1: Generate Contract
 
 /// Input for generate_contract tool
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GenerateContractInput {
+    /// Name of the function to generate a contract for
     pub function_name: String,
+    /// Path to the source file containing the function
     pub file_path: String,
 }
 
 // AVC-2: Validate Contract
 
 /// Input for validate_contract tool
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ValidateContractInput {
+    /// ID of the contract to validate against
     pub contract_id: String,
+    /// The code to validate
     pub generated_code: String,
     /// Source file path for audit trail (optional)
     #[serde(default)]
@@ -1895,7 +1917,7 @@ fn default_nl_limit() -> usize {
 }
 
 /// Input for nl_to_symbol tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NlToSymbolInput {
     /// Natural language query
     pub query: String,
@@ -1909,7 +1931,7 @@ fn default_ask_limit() -> usize {
 }
 
 /// Input for ask_about_code tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AskAboutCodeInput {
     /// Question about code flow
     pub question: String,
@@ -1919,7 +1941,7 @@ pub struct AskAboutCodeInput {
 }
 
 /// Input for find_pattern_by_intent tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FindPatternByIntentInput {
     /// Natural language intent description (optional when listing all patterns)
     #[serde(default)]
@@ -2001,7 +2023,7 @@ fn default_god_min_fan_in() -> usize {
 }
 
 /// Input for detect_god_functions tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetectGodFunctionsInput {
     /// Minimum size-proxy threshold (file-size estimate, not measured lines)
     #[serde(default = "default_god_min_lines")]
@@ -2019,7 +2041,7 @@ fn default_max_params() -> usize {
 }
 
 /// Input for detect_long_parameter_lists tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetectLongParamsInput {
     /// Maximum number of parameters allowed
     #[serde(default = "default_max_params")]
@@ -2076,7 +2098,7 @@ pub struct SuggestContextOutput {
 }
 
 /// Input for reparse_on_edit tool (Phase 3A)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReparseOnEditInput {
     /// File paths that were edited (required)
     pub file_paths: Vec<String>,
@@ -2086,7 +2108,7 @@ pub struct ReparseOnEditInput {
 }
 
 /// Edit range within a file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EditRange {
     /// File path
     pub file: String,
@@ -2131,7 +2153,7 @@ pub struct ReparseOnEditOutput {
 // ============================================================================
 
 /// Input for detect_drift tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetectDriftInput {
     /// Path to the source file to analyze (required)
     pub file_path: String,
@@ -2221,7 +2243,7 @@ pub struct DetectDriftOutput {
 // ============================================================================
 
 /// Input for retrieve_and_verify tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RetrieveAndVerifyInput {
     /// Search query string (required)
     pub query: String,
@@ -2417,7 +2439,7 @@ fn default_god_percentile() -> f64 {
 
 /// Input for `graph_pagerank` — PageRank importance scores for every
 /// symbol in the call graph.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphPageRankInput {
     /// Damping factor (default: 0.85). Must be in (0.0, 1.0].
     #[serde(default = "default_pagerank_alpha")]
@@ -2430,7 +2452,7 @@ pub struct GraphPageRankInput {
 
 /// Input for `graph_all_paths` — every simple path between two symbols
 /// within a hop budget.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphAllPathsInput {
     /// Source symbol name (substring match, case-insensitive).
     pub from_symbol: String,
@@ -2445,7 +2467,7 @@ pub struct GraphAllPathsInput {
 
 /// Input for `graph_god_nodes` — symbols whose PageRank sits above
 /// the requested percentile.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphGodNodesInput {
     /// Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols
     /// whose PageRank is at or above this percentile are returned.
@@ -2455,17 +2477,17 @@ pub struct GraphGodNodesInput {
 
 /// Input for `graph_condensed` — SCC condensation of the call graph.
 /// Takes no arguments; everything is inferred from the current call graph.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct GraphCondensedInput {}
 
 /// Input for `graph_reduced` — transitive reduction of the call graph.
 /// Takes no arguments; everything is inferred from the current call graph.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct GraphReducedInput {}
 
 /// Input for `graph_feedback_arcs` — find edges whose removal makes the graph acyclic.
 /// Takes no arguments; everything is inferred from the current call graph.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct GraphFeedbackArcsInput {}
 
 /// Default max iterations for Label Propagation community detection.
@@ -2480,7 +2502,7 @@ fn default_surprising_top_n() -> u32 {
 
 /// Input for `graph_communities` — Label Propagation community detection
 /// over the call graph.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphCommunitiesInput {
     /// Max label propagation iterations (default: 100).
     #[serde(default = "default_communities_max_iterations")]
@@ -2489,7 +2511,7 @@ pub struct GraphCommunitiesInput {
 
 /// Input for `graph_community_detail` — fetch the details of a single
 /// community detected by `graph_communities`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphCommunityDetailInput {
     /// Sequential community id (from `graph_communities` output).
     pub community_id: u32,
@@ -2502,7 +2524,7 @@ pub struct GraphCommunityDetailInput {
 
 /// Input for `graph_surprising_connections` — find edges that cross
 /// community boundaries (indicating unexpected coupling).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphSurprisingConnectionsInput {
     /// Maximum number of cross-community edges to return (default: 20).
     #[serde(default = "default_surprising_top_n")]
@@ -2529,7 +2551,7 @@ fn default_idf_max_results() -> u32 {
 /// information retrieval: rare terms count more than common ones.
 /// The 95th-percentile-degree hub bypass demotes overly-connected
 /// "switchboard" nodes.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphSearchIdfInput {
     /// Free-text search query (full or partial symbol name).
     pub query: String,
@@ -2545,7 +2567,7 @@ pub struct GraphSearchIdfInput {
 /// a 0-100 health score, and natural-language questions. The tool
 /// itself takes no arguments; everything is inferred from the
 /// current call graph.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct GraphInsightsInput {}
 
 /// Input for `graph_suggest_questions` — natural-language prompts
@@ -2554,7 +2576,7 @@ pub struct GraphInsightsInput {}
 /// Like `graph_insights` but only returns the `suggested_questions`
 /// array, so callers can ingest the questions without parsing the
 /// full report.
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct GraphSuggestQuestionsInput {}
 
 // ============================================================================
@@ -2639,7 +2661,7 @@ pub struct SolidScores {
 // ============================================================================
 
 /// Input for smart_search tool
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SmartSearchInput {
     /// Search query string
     pub query: String,
@@ -2796,7 +2818,7 @@ pub struct ViewSpec {
 }
 
 /// Input for list_view_specs (empty for v1).
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct ListViewSpecsInput {}
 
 /// Output for list_view_specs.
@@ -2807,8 +2829,9 @@ pub struct ListViewSpecsOutput {
 }
 
 /// Input for read_view_spec.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReadViewSpecInput {
+    /// ViewSpec id (built-in kebab id or UUID)
     pub id: String,
 }
 

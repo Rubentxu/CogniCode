@@ -67,13 +67,15 @@ pub async fn handle_read_file(
         Some(m) => m,
         None => {
             // No metrics available, call service directly
-            let dto_input: crate::application::dto::ReadFileRequest = input.into();
+            let dto_input = crate::application::dto::ReadFileRequest::try_from(input)
+                .map_err(HandlerError::InvalidInput)?;
             let dto_result = service.read_file(dto_input).map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
     let mode = input.mode.clone();
-    let dto_input: crate::application::dto::ReadFileRequest = input.into();
+    let dto_input = crate::application::dto::ReadFileRequest::try_from(input)
+        .map_err(HandlerError::InvalidInput)?;
 
     let result = instrument_tool(
         &metrics,

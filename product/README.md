@@ -122,6 +122,10 @@ hints (`readOnlyHint`, `destructiveHint`, `idempotentHint` and
 derives them from the `authority` the master declares, and a second copy
 would be a second source of truth.
 
+The input schema is derived too: the runtime derives it from the struct that
+reads the tool's arguments, so the shape a client builds a call from is the
+shape the server honours.
+
 **`product/tools.json` is hand-authored. Do not write the generator's output
 over it.** The generator does not own nine of the fields (listed below), so
 running it over the master drops all nine. Use it to see what the runtime
@@ -169,15 +173,33 @@ is never regenerated is recorded in `docs/roadmap/JOURNAL.md`.
 
 ### Keeping the master's mirror of the runtime honest
 
-`runtime_metadata` is a different kind of field. It is the mirror of what the
-runtime publishes in `_meta.cognicode`, `tool_version` included, and the
-runtime injects that version from `CARGO_PKG_VERSION` on every response. A
-mirror that is written once and never revisited therefore drifts every time
-the runtime moves. It is synchronized, never regenerated:
+Two fields of the master are mirrors of what the runtime publishes, and both
+are synchronized, never regenerated.
+
+`runtime_metadata` is the mirror of what the runtime publishes in
+`_meta.cognicode`, `tool_version` included, and the runtime injects that
+version from `CARGO_PKG_VERSION` on every response. A mirror that is written
+once and never revisited therefore drifts every time the runtime moves.
+
+`input_schema` is the mirror of the `inputSchema` the runtime advertises,
+and the runtime derives it from the struct that reads the arguments
+(`crates/cognicode-core/src/interface/mcp/input_contracts.rs`). The same
+argument applies: a hand-written copy of a shape is a second description of
+it, and the copy is the one that rots. Four tools accepted an argument the
+published schema never named, so a client that built its call from the
+schema could not pass them.
+
+The vocabulary of an argument is derived with it. Where the argument is an
+enumeration — the mode `read_file` reads, the shape `codebase_map`
+publishes — the published shape names the values the server accepts,
+because the type that names them is the type the server reads. A value
+outside that list is a rejection; the server used to accept some of them in
+silence, and a `read_file` whose mode does not exist came back with the
+whole file.
 
 ```bash
-python3 scripts/product/sync_tool_catalog_runtime_metadata.py
-python3 scripts/product/sync_tool_catalog_runtime_metadata.py --check
+python3 scripts/product/sync_tool_catalog_with_the_capture.py
+python3 scripts/product/sync_tool_catalog_with_the_capture.py --check
 ```
 
 The synchronization is a merge. It takes from the runtime the keys the runtime

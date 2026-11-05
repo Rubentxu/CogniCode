@@ -33247,3 +33247,117 @@ los ejecuta `scripts/test-gate.sh`. El lote cierra con la unidad que lo complete
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
 el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-82 (mitad de entrada): los argumentos se declaran una vez, y de ahi salen el esquema y el catalogo
+
+**El hueco.** Una tool se declaraba en cinco sitios, y el maestro publicaba una copia escrita a
+mano de la forma de sus argumentos. La copia era la que se roia: cuatro tools aceptaban un
+argumento que el esquema publicado nunca mencionaba, asi que un cliente que construia su llamada
+desde el esquema no podia pasarlos, y un cliente que leia el codigo si.
+
+**La correccion.** Los argumentos de una tool se declaran en el struct que el servidor lee. De ese
+struct se deriva el `inputSchema` que el runtime anuncia
+(`crates/cognicode-core/src/interface/mcp/input_contracts.rs`, con `schemars` y
+`SchemaSettings::draft2020_12`), y el maestro publica ese mismo shape. La cadena queda asi:
+
+    struct que lee los argumentos -> schema derivado -> lo que el runtime anuncia
+        -> la captura de `tools/list` -> el espejo del maestro -> el check
+
+El maestro sigue siendo escrito a mano —sus nueve campos curados no los produce ningun
+generador— pero su `input_schema` es un espejo, y la sincronizacion es una fusion que se
+comprueba: `scripts/product/sync_tool_catalog_with_the_capture.py` (antes
+`sync_tool_catalog_runtime_metadata.py`, que solo copiaba el `runtime_metadata`) mezcla el
+`input_schema` de la captura sin tocar lo que el runtime no publica, y `--check` prueba que el
+maestro commiteado es un punto fijo de esa fusion.
+
+**AC3, medido.** El check que falla si el maestro versionado difiere del derivado vive en
+`crates/cognicode-core/tests/it/the_published_arguments_are_the_declared_ones.rs` (comparacion
+byte a byte del shape publicado) y en `scripts/ci/test_the_consumer_can_declare_the_version.py`
+(10 checks). Anti-vacuidad medida: perturbado el enum de `read_file.mode` en
+`product/tools.json`, el check cae con «the catalogue publishes a shape the server does not
+read. The published shape is the derived one; regenerate the catalogue from the derivation».
+
+**Los cuatro parametros ocultos.** MEDIDO: `export_mermaid.module_filter`,
+`get_call_hierarchy.include_external`, `reparse_on_edit.edit_ranges` y
+`validate_contract.source_file` — propiedades que el maestro no publicaba y el servidor si leia.
+MEDIDO tambien: 68 de los 78 shapes del maestro cambian; 8 tools sin argumentos publican
+`properties: {}` en vez de no publicar `properties`; 78 derives de `schemars::JsonSchema`
+anadidos.
+
+**El vocabulario, y lo que se pierde.** El maestro publicaba 9 enums escritos a mano. La
+derivacion conserva 5 y retira 4. Sobreviven los tres cuyo struct ya tenia un tipo enumerado
+(`build_call_subgraph.direction`, `get_call_hierarchy.direction`, `safe_refactor.action`), el
+del dominio (`read_file.mode`) y el de la interfaz (`codebase_map.format`). Se retiran cuatro, y
+cada uno por su motivo:
+
+- **FALSO.** `build_lightweight_index.strategy` publicaba `per_file`, y la fabrica lo rechaza:
+  `GraphStrategyFactory::create` solo acepta `lightweight`, `on_demand` y `full`, y lo prueba
+  `the_index_tool_only_offers_strategies_that_index`. El enum prometia un valor que el servidor
+  rechaza. Ahora el texto dice la lista verdadera.
+- **VACIO.** `export_callflow.format` (el handler nunca lo lee) y `project_overview.detail` (se
+  copia a la respuesta y no cambia nada) no son vocabularios: son parametros muertos.
+- **TRES CAPAS.** `export_mermaid.format` lo declaran el schema MCP, el renderizador del dominio
+  y el CLI —que ademas admite `png`, que no es un formato de renderizado—. Enumerarlo en la
+  interfaz seria una segunda declaracion, y en el dominio tendria que admitir el `png` del CLI.
+
+**Dos servidores que ahora cumplen lo que ya publicaban.** El dominio rechaza los modos de
+lectura que no existen (`ReadMode::from_str`), y la interfaz se tragaba ese rechazo:
+`mode: input.mode.map(|s| s.parse().unwrap_or(ReadMode::Raw))` — un `read_file` con un modo que
+no existe volvia con el fichero entero y sin que nadie dijera nada. Y `codebase_map` leia
+cualquier formato como `detailed`. Los dos rechazan ahora lo que su esquema ya excluia: el
+`From` de `ReadFileInput` pasa a ser `TryFrom`, y el formato del mapa es un tipo (`MapFormat`) en
+la interfaz, que es el mismo tipo que lee el handler y el que publica el esquema.
+
+**RED medido (antes del cambio).**
+
+| Test | Resultado | Lo que decia |
+|---|---|---|
+| `a_rejection_arrives_as_a_rejection` (arnes existente de 5 casos, con el caso nuevo) | **1 test run: 0 passed, 1 failed** | «read_file_modo_inexistente: la peticion deberia haberse rechazado» — el modo `contorno` se aceptaba |
+| `consolidated_handlers::tests::a_map_format_that_does_not_exist_is_refused` | **1 test run: 0 passed, 1 failed** | «un formato que no existe no se puede leer: CodebaseMapInput { format: "xml" }» |
+
+El caso del modo se salio del arnes de rechazos: ese arnes afirma sobre las categorias de la
+APLICACION, y el rechazo de un modo es de la INTERFAZ («invalid input: Unknown read mode:
+contorno»). Su prueba vive en `the_published_arguments_are_the_declared_ones.rs`, que ata el enum
+publicado con el rechazo del servidor: si el esquema pierde el enum, el test falla; si el
+servidor deja de rechazar, el test falla.
+
+**Verificacion (medida en esta rama, `feature/task-82-goal-registry`, base `7e0faf5b`).**
+
+| Comprobacion | Resultado |
+|---|---|
+| `cargo nextest run -p cognicode-core` | **3527 tests run: 3527 passed, 4 skipped** |
+| `cargo nextest run -p cognicode-cli` | **628 tests run: 628 passed, 1 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0 |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — 9 de 780 fuentes sobre 2000 lineas, ninguna crece |
+| `python3 scripts/ci/test_comment_standard.py` | OK |
+| `python3 scripts/ci/test_cr06_ratchet.py` | PASS — 28 -> 28 (0 added, 0 retired) |
+| Captura del runtime | **78 tools** |
+
+**Gate: NOT_RUN (lote).** El gate se pasa por lotes de diez, y esta unidad es la segunda desde el
+ultimo gate. El paso de mutacion mide `cognicode-graph-algos`, un crate que esta rama no toca,
+asi que su veredicto es el ya medido; el resto del gate (unitarios e integracion) esta medido
+arriba, con los tres pasos del gate en la misma forma en que los ejecuta `scripts/test-gate.sh`.
+
+**Lo que queda de TASK-82.** La mitad de salida de AC1 —el goal completo, con nombre, descripcion
+con ejemplos, autoridad, fase minima y dueno, declarados en un solo sitio, de donde salgan el
+comando clap y la ayuda— y AC2 (los 78 alias con aviso de deprecacion), que depende de los 9
+goals de TASK-84. AC3 queda cerrado.
+
+**Residuos (enrutados, con su medicion).** Lo que esta unidad midio y no se arregla de paso:
+
+- **TASK-121** — `export_callflow` publica dos argumentos que no cambian nada: `max_sections` se
+  descarta (`let _max = ...`) y `format` no se lee nunca. Sin consumidor medido.
+- **TASK-122** — `project_overview` publica un nivel que no tiene: el titulo promete «quick,
+  medium, or detailed levels» y `detail` se copia a la respuesta sin cambiar nada. Sin consumidor
+  medido.
+- **TASK-123** — el formato del mermaid lo declaran tres capas (schema MCP, dominio, CLI).
+- **TASK-124** — la estrategia del indice la declara la fabrica, que es infraestructura: el
+  shape la publica como texto mientras el enum viejo prometia un valor rechazado.
+- **TASK-125** — la superficie RIG lee en crudo un modo que no existe (`_ => ReadMode::Raw`),
+  el mismo defecto que esta unidad corrigio en la superficie MCP.
+
+**Creditos.** La autoria de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los creditos a `AUTHORS.md`, que este repositorio no
+tiene; el credito queda aqui, en el recibo, en vez de en un trailer que el hook rechaza.

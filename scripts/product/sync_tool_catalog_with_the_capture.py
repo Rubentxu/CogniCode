@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
-"""Synchronize the master catalog's runtime metadata with the runtime's own report.
+"""Synchronize the master catalog with the runtime's own report.
 
 `product/tools.json` is the hand-authored master: every tool the product
-publishes, including the fields no generator owns. Its `runtime_metadata` block
-is the mirror of what the runtime publishes in `_meta.cognicode` — including
-`tool_version`, which the runtime injects from `CARGO_PKG_VERSION` on every
-response (`interface/mcp/rmcp_adapter.rs`).
+publishes, including the fields no generator owns. Two of its blocks are
+mirrors of what the runtime publishes:
+
+* `runtime_metadata` is the mirror of `_meta.cognicode` — including
+  `tool_version`, which the runtime injects from `CARGO_PKG_VERSION` on every
+  response (`interface/mcp/rmcp_adapter.rs`);
+* `input_schema` is the mirror of the `inputSchema` the runtime advertises,
+  which the runtime derives from the struct that reads the arguments
+  (`interface/mcp/input_contracts.rs`).
 
 A mirror that is written once and never revisited drifts. The master's
 `tool_version` froze at the version of the runtime that was current when each
 entry was authored: 73 of the 78 entries still read `0.99.2`, the version of
 the workspace at `ebdb62fe`, while the runtime reports `0.101.31`. The
 published document then says of its runtime a version that is not the runtime's,
-and `cognicode capabilities --json` publishes that block verbatim.
+and `cognicode capabilities --json` publishes that block verbatim. The
+argument schema drifted the same way, and further: four tools accepted an
+argument the published schema never named, so a client that builds its call
+from the schema could not pass them.
 
-This script owns exactly one rule:
+This script owns two rules, and they are the same rule:
 
     every key the runtime publishes in `_meta.cognicode` is present in the
-    master's `runtime_metadata` with the runtime's own value
+    master's `runtime_metadata` with the runtime's own value, and the
+    master's `input_schema` is the `inputSchema` the runtime advertises
 
 It is a merge, never a replacement. The master may carry curated keys the
 runtime does not publish — `check_architecture` carries `gate_authority` and
@@ -33,8 +42,8 @@ Use it after a capture is refreshed, or with `--check` to prove that the
 committed master is a fixed point of the merge: synchronizing it would change
 nothing.
 
-    python3 scripts/product/sync_tool_catalog_runtime_metadata.py
-    python3 scripts/product/sync_tool_catalog_runtime_metadata.py --check
+    python3 scripts/product/sync_tool_catalog_with_the_capture.py
+    python3 scripts/product/sync_tool_catalog_with_the_capture.py --check
 """
 
 from __future__ import annotations
@@ -123,13 +132,91 @@ def merge_runtime_metadata(
     return merged, findings
 
 
-def drifted_tools(master: dict[str, Any], merged: dict[str, Any]) -> list[str]:
-    """The tools whose runtime metadata the merge changes."""
-    before = {t["name"]: t.get("runtime_metadata") for t in master.get("tools", [])}
-    changed = []
+def capture_input_schemas(capture: Any) -> dict[str, dict[str, Any]]:
+    """The argument schema the runtime advertises, by tool name.
+
+    The capture is a real `tools/list`: each entry carries the `inputSchema`
+    the runtime put on the wire, which the runtime derives from the struct
+    that reads the arguments.
+    """
+    if not isinstance(capture, list) or not capture:
+        raise ValueError("the capture must be a non-empty tools/list array")
+    published: dict[str, dict[str, Any]] = {}
+    for entry in capture:
+        if not isinstance(entry, dict):
+            raise ValueError("every tools/list entry must be an object")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise ValueError("tool name must be a non-empty string")
+        schema = entry.get("inputSchema")
+        if not isinstance(schema, dict):
+            raise ValueError(f"tool {name!r} is missing its inputSchema")
+        published[name] = schema
+    return published
+
+
+def merge_input_schemas(
+    master: dict[str, Any], capture: Any
+) -> tuple[dict[str, Any], list[str]]:
+    """Mirror the runtime's argument schema into the master's.
+
+    The published shape is the shape the server reads. A copy of it that is
+    written by hand is a second description of the same thing, and it rots:
+    four tools accepted an argument the published schema never named, so a
+    client that builds its call from the schema could not pass them.
+
+    Pure: the inputs are not mutated, the merged document is a new object.
+    """
+    published = capture_input_schemas(capture)
+    merged = copy.deepcopy(master)
+    findings: list[str] = []
+    matched: set[str] = set()
     for tool in merged.get("tools", []):
         name = tool.get("name")
-        if before.get(name) != tool.get("runtime_metadata"):
+        if not isinstance(name, str) or not name:
+            raise ValueError("every master entry must carry a non-empty name")
+        schema = published.get(name)
+        if schema is None:
+            findings.append(
+                f"{name}: the master publishes it and the capture does not; its "
+                "argument schema cannot be synchronized"
+            )
+            continue
+        matched.add(name)
+        tool["input_schema"] = copy.deepcopy(schema)
+    for name in published:
+        if name not in matched:
+            findings.append(
+                f"{name}: the runtime publishes it and the master does not"
+            )
+    return merged, findings
+
+
+def merge_with_the_capture(
+    master: dict[str, Any], capture: Any
+) -> tuple[dict[str, Any], list[str]]:
+    """Synchronize every field the runtime owns.
+
+    The runtime metadata and the argument schema are the two mirrors. The
+    curated fields — the nine no generator owns, and the runtime metadata
+    keys the runtime does not publish — are not the runtime's to change, and
+    this merge leaves them alone.
+    """
+    merged, findings = merge_runtime_metadata(master, capture)
+    merged, schema_findings = merge_input_schemas(merged, capture)
+    return merged, findings + schema_findings
+
+
+def drifted_tools(master: dict[str, Any], merged: dict[str, Any]) -> list[str]:
+    """The tools whose mirror the merge changes."""
+    before = {
+        t["name"]: (t.get("runtime_metadata"), t.get("input_schema"))
+        for t in master.get("tools", [])
+    }
+    changed = []
+    for tool in merged.get("tools", []):
+        name = tool["name"]
+        if before.get(name) != (tool.get("runtime_metadata"), tool.get("input_schema")):
             changed.append(name)
     return changed
 
@@ -147,7 +234,7 @@ def main() -> int:
     try:
         master = load_json(args.master)
         capture = load_json(args.capture)
-        merged, findings = merge_runtime_metadata(master, capture)
+        merged, findings = merge_with_the_capture(master, capture)
         rendered = render(merged)
         if args.check:
             current = args.master.read_text(encoding="utf-8")

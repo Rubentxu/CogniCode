@@ -225,7 +225,7 @@ pub async fn handle_smart_search(
 
 // ── project_overview ─────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ProjectOverviewInput {
     #[serde(default = "default_overview_detail")]
     pub detail: String,
@@ -336,13 +336,38 @@ pub async fn handle_project_overview(
 
 // ── codebase_map ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
-pub struct CodebaseMapInput {
-    #[serde(default = "default_map_format")]
-    pub format: String,
+/// The shape of the map the tool publishes.
+///
+/// The vocabulary is the type: the handler reads the format and the
+/// published schema reads the same type, so the two cannot disagree about
+/// which formats exist. A format that does not exist is refused, not read
+/// as one that does.
+#[derive(
+    Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum MapFormat {
+    #[default]
+    Compact,
+    Detailed,
 }
-fn default_map_format() -> String {
-    "compact".into()
+
+impl MapFormat {
+    /// The name the wire and the published schema use.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MapFormat::Compact => "compact",
+            MapFormat::Detailed => "detailed",
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CodebaseMapInput {
+    /// The shape of the map: `compact` (a single line) or `detailed` (the
+    /// project, its edges, its entry points and its hot symbols).
+    #[serde(default)]
+    pub format: MapFormat,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -373,12 +398,12 @@ pub async fn handle_codebase_map(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let map = match input.format.as_str() {
-        "compact" => format!(
+    let map = match input.format {
+        MapFormat::Compact => format!(
             "Project: {} symbols, {} edges | Entry points: {} | Leaves: {} | Hot: {}",
             symbols, edges, entries, leaves, hot
         ),
-        _ => format!(
+        MapFormat::Detailed => format!(
             "Project: {} symbols | {} edges | {} entry points | {} leaf functions | Hot symbols: {}\nPipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report→Refresh→Notify",
             symbols, edges, entries, leaves, hot
         ),
@@ -391,7 +416,7 @@ pub async fn handle_codebase_map(
         map.len() / 4
     );
     Ok(CodebaseMapOutput {
-        format: input.format,
+        format: input.format.as_str().to_string(),
         token_estimate: map.len() / 4,
         map,
         summary,
@@ -402,7 +427,7 @@ pub async fn handle_codebase_map(
 
 use crate::application::services::graph_insights::{GraphInsightsService, InsightsReport};
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ProjectInsightsInput {}
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -523,8 +548,9 @@ pub fn hot_paths(graph: &CallGraph, report: &InsightsReport) -> Vec<HotPath> {
 
 // ── review_pr ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ReviewPrInput {
+    /// Changed file paths
     pub files: Vec<String>,
 }
 
@@ -587,9 +613,11 @@ pub async fn handle_review_pr(
 
 // ── iac_query ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct IacQueryInput {
+    /// Resource ID: bare name (aws_instance.web) or canonical (tf:main.tf:aws_instance.web)
     pub resource_id: String,
+    /// Max traversal depth (default: 2)
     #[serde(default = "default_iac_depth")]
     pub depth: usize,
 }
@@ -847,7 +875,7 @@ pub async fn handle_iac_query(
 
 // ── graph_checkpoint ──────────────────────────────────────────────────────────
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphCheckpointInput {
     /// Operation: create (build graph + checkpoint), current (get latest), restore (get by id)
     pub operation: Option<String>,
@@ -1599,5 +1627,23 @@ mod tests {
                 out_tight.degraded_sources
             );
         });
+    }
+
+    /// Un formato que no existe no es un formato.
+    ///
+    /// El esquema publicado dice quais formatos existen, y el servidor tiene
+    /// que rechazar los demas en vez de leerlos como `detailed`: un cliente
+    /// que pidiera un mapa que el servidor no tiene recibia un mapa de otro
+    /// tipo sin que nadie le dijera nada.
+    #[test]
+    fn a_map_format_that_does_not_exist_is_refused() {
+        let error = serde_json::from_value::<CodebaseMapInput>(serde_json::json!({
+            "format": "xml"
+        }))
+        .expect_err("un formato que no existe no se puede leer");
+        assert!(
+            error.to_string().contains("xml"),
+            "el rechazo tiene que decir que formato es: {error}"
+        );
     }
 }

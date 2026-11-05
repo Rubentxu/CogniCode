@@ -26,16 +26,27 @@ use crate::interface::mcp::schemas::{
 // Read File
 // ============================================================================
 
-impl From<ReadFileInput> for ReadFileRequest {
-    fn from(input: ReadFileInput) -> Self {
-        ReadFileRequest {
+impl TryFrom<ReadFileInput> for ReadFileRequest {
+    type Error = String;
+
+    /// A read mode that does not exist is a rejection, not a `raw` read.
+    ///
+    /// The domain knows the four modes and refuses the rest; the interface
+    /// used to swallow that refusal and answer with the whole file, so a
+    /// client that asked for a mode the server does not have received a
+    /// different read, and nobody told it.
+    fn try_from(input: ReadFileInput) -> Result<Self, Self::Error> {
+        Ok(ReadFileRequest {
             path: input.path,
             start_line: input.start_line,
             end_line: input.end_line,
-            mode: input.mode.map(|s| s.parse().unwrap_or(ReadMode::Raw)),
+            mode: match input.mode {
+                Some(mode) => Some(mode.parse::<ReadMode>()?),
+                None => None,
+            },
             chunk_size: input.chunk_size,
             continuation_token: input.continuation_token,
-        }
+        })
     }
 }
 
