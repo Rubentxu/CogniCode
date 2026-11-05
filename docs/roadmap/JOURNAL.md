@@ -34827,3 +34827,102 @@ El gate entero no se paga por tarea: se paga por lotes de diez (`AGENTS.md`).
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-133: la detección de comunidades da la misma partición en cada corrida
+
+**El encargo.** La detección de comunidades publicaba una partición distinta en
+cada corrida del mismo proyecto. `graph_communities` publica la cuenta, las
+comunidades y sus identificadores, así que dos corridas del mismo proyecto
+daban dos respuestas distintas y un consumidor no podía distinguir «cambió el
+código» de «cambió el azar». `export_callflow` (TASK-121) hereda la variación:
+su diagrama es fiel a la detección que recibió, pero la detección no era
+repetible.
+
+**Lo que se midió antes de tocar nada** (base `5b0e623b`, dominio del core,
+5.971 símbolos):
+
+| Medición | Resultado |
+|---|---|
+| tres procesos distintos, el mismo grafo | 4.958, 4.968 y 4.972 comunidades |
+| dos construcciones independientes, un mismo proceso | 4.960 vs 4.935 comunidades |
+
+**La causa, medida (no supuesta).** `call_graph_projection.rs::from_call_graph`
+numeraba los nodos en el orden de iteración de `cg.symbol_ids()`, que es un
+`HashMap`: la semilla es distinta por instancia, así que dos grafos con el
+mismo conjunto de símbolos se numeraban distinto. El desempate de etiquetas de
+Label Propagation está documentado en el código como «gana el id de nodo más
+bajo» (`cognicode-graph-algos/src/algorithms/communities.rs`), y ese «id de
+nodo» es el índice que asigna la proyección: al cambiar la numeración cambia
+el reparto. El doc-comment del constructor ya afirmaba «The constructor is
+non-mutating and deterministic»: era falso.
+
+**Lo que entrega ahora.** Dos puntos, el mismo defecto:
+
+1. `from_call_graph` numera los nodos por el **symbol id ordenado**. El otro
+   constructor del mismo fichero ya lo hacía (`from_facts`: «deterministically
+   ordered by the sorted identity strings»): hay precedente en la casa, no se
+   inventa una convención.
+2. `community_detector.rs` ordena por **symbol id** los miembros de cada
+   comunidad. La partición no lo cambia, pero el detalle de comunidad los
+   publica, y su orden salía del hash map.
+
+**Medido después.** Tres procesos distintos dan **4.952 comunidades y el mismo
+digest (`6d81c1370102ffd1`)**. Dos construcciones independientes del mismo
+proyecto dan la misma cuenta, la misma partición, los mismos miembros y **la
+misma respuesta publicada** de `graph_communities` (el testigo mira los dos
+niveles: la detección y la publicación).
+
+**El RED, medido.** Con el código viejo restaurado por sustitución exacta del
+fichero (`git show HEAD:<ruta> > <ruta>`; el hook del repositorio rechaza
+`git stash` y no se usa `git checkout HEAD -- .`): la prueba de integración
+falla con `left: 4956, right: 4953`; la unitaria de la numeración falla
+porque el id no cae en el nodo que le toca; la de los miembros falla porque
+salen desordenados.
+
+**Las pruebas.** Tres, y son las mínimas (lente `change-impact`: radio
+acotado — el núcleo, un adaptador y un detector; lente `regression-promotion`:
+no hay nada que retirar, el detector no tenía ninguna prueba de determinismo):
+
+| Prueba | Nivel | Qué fija |
+|---|---|---|
+| `the_nodes_are_numbered_by_the_sorted_symbol_id` | unitaria, `call_graph_projection.rs` | la numeración sigue el symbol id ordenado |
+| `the_members_of_a_community_are_sorted` | unitaria, `community_detector.rs` | los miembros de una comunidad salen ordenados |
+| `the_same_project_gives_the_same_communities` | integración, `tests/it/` | dos construcciones independientes del código real dan la misma detección y la misma respuesta publicada |
+
+**Lo que se midió y NO se arregla aquí.** El orden de las **aristas** en la
+proyección sigue siendo el de `cg.edges_with_metadata()`, que es el orden de
+iteración de un hash map. Medido, sobre el dominio del core, con la numeración
+ya estable:
+
+| Superficie | Medido |
+|---|---|
+| `graph_god_nodes` | 299 nodos en ambas corridas, pero **no en el mismo orden**; la mayor diferencia absoluta de puntuación es 5,551e-17 (0,07343747397235591 frente a 0,07343747397235596) |
+| ciclos del dominio (`CycleDetector::detect_cycles`) | 62 ciclos en ambas, **el mismo conjunto**, distinto orden publicado: 61 de 62 posiciones difieren |
+| componentes fuertemente conexas de la proyección (`impact_detect_cycles`) | 5.971 en ambas, **el mismo conjunto**, distinto orden publicado: 148 de 5.971 posiciones difieren |
+
+La cuenta y el conjunto de comunidades ya son reproducibles; el **orden** y la
+**exactitud** de las puntuaciones no. Es el mismo tipo de defecto en otra ruta
+—el `CycleDetector` del dominio no usa la proyección— y queda medido en
+**TASK-134**.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3531 tests run: 3531 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer --lib --tests` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 (0 añadidas, 0 retiradas) |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121 y TASK-133 van dos de diez, así que el gate de esta
+unidad es **NOT_RUN**. La allowlist de CR-06 no crece: el arreglo no introduce
+ningún import nuevo entre capas.
+
+**Entrega.** PR #617 → `694eb592`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
