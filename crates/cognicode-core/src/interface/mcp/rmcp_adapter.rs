@@ -5,10 +5,12 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::collapsible_if, clippy::manual_async_fn)]
 
+use crate::application::freshness::FreshnessOracle;
 use crate::application::graph_cache::default_cache_root;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::get_global_metrics;
 use crate::infrastructure::verification::RustVerifier;
+use crate::interface::daemon::DaemonOracle;
 use crate::interface::mcp::cancellation::CancellationRegistry;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
@@ -20,10 +22,24 @@ use rmcp::model::{
 };
 use rmcp::service::RoleServer;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+/// The oracle that asks the daemon watching this workspace.
+///
+/// The daemon's socket lives in the product's cache, keyed by the
+/// workspace, so a client that has both can ask. A client with no cache
+/// has no socket to ask at: it decides the freshness by itself, exactly
+/// as it always did —and the answer says so.
+fn daemon_oracle(
+    cache_root: Option<PathBuf>,
+    workspace: &Path,
+) -> Option<Arc<dyn FreshnessOracle>> {
+    let root = cache_root?;
+    Some(Arc::new(DaemonOracle::for_workspace(&root, workspace)))
+}
 
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
@@ -136,12 +152,16 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = HandlerContext::builder()
-            .with_working_dir(project_root)
+        let cache_root = default_cache_root();
+        let mut builder = HandlerContext::builder()
+            .with_working_dir(project_root.clone())
             .with_graph_store_arc(store)
             .with_cancellation_token(cancellation_token)
-            .with_cache_root(default_cache_root())
-            .build();
+            .with_cache_root(cache_root.clone());
+        if let Some(oracle) = daemon_oracle(cache_root, &project_root) {
+            builder = builder.with_freshness_oracle(oracle);
+        }
+        let ctx = builder.build();
         Self {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),
@@ -158,14 +178,18 @@ impl CogniCodeHandler {
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = HandlerContext::builder()
-            .with_working_dir(project_root)
+        let cache_root = default_cache_root();
+        let mut builder = HandlerContext::builder()
+            .with_working_dir(project_root.clone())
             .with_graph_store_arc(store)
             .with_cancellation_token(cancellation_token)
-            .with_cache_root(default_cache_root());
+            .with_cache_root(cache_root.clone());
+        if let Some(oracle) = daemon_oracle(cache_root, &project_root) {
+            builder = builder.with_freshness_oracle(oracle);
+        }
         let ctx = match iac_repo {
-            Some(repo) => ctx.with_iac_repo(repo),
-            None => ctx,
+            Some(repo) => builder.with_iac_repo(repo),
+            None => builder,
         };
         let ctx = ctx.build();
         Self {
@@ -210,10 +234,17 @@ impl CogniCodeHandler {
             ),
         ));
 
+        // The cache is where the product keeps what it derives, and the
+        // daemon's socket lives in it: a client that has a cache has a
+        // daemon it can ask whether the index still describes the tree.
+        let cache_root = default_cache_root();
         let mut builder = HandlerContext::builder()
-            .with_working_dir(canonical_root)
+            .with_working_dir(canonical_root.clone())
             .with_file_ops_service(file_ops_service)
-            .with_cache_root(default_cache_root());
+            .with_cache_root(cache_root.clone());
+        if let Some(oracle) = daemon_oracle(cache_root, &canonical_root) {
+            builder = builder.with_freshness_oracle(oracle);
+        }
         if let Some(read_only) = read_only {
             builder = builder.with_read_only(read_only);
         }

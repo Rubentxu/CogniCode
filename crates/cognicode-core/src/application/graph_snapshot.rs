@@ -280,6 +280,37 @@ pub fn manifest_digest(manifest: &FileManifest) -> String {
     hex_digest(&hasher.finalize())
 }
 
+/// The digest of the sources a manifest describes.
+///
+/// The manifest says what was read from each file; this digest is over
+/// that —the relative paths and the content hashes, sorted, because the
+/// map itself is not ordered— and it is the identity of the *sources*:
+/// two analyses that read the same files with the same contents have the
+/// same digest, and a file whose content changed has a different one.
+///
+/// It is not the digest of the tree *state*: the times a file was read at
+/// are a different fact, and they are checked against the tree by
+/// [`manifest_mtimes_agree`]. A digest that mixed the two would say that
+/// a file nobody touched was read again.
+pub fn source_digest(manifest: &FileManifest) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut entries: Vec<(
+        &PathBuf,
+        &crate::domain::value_objects::file_manifest::FileEntry,
+    )> = manifest.entries.iter().collect();
+    entries.sort_by(|left, right| left.0.cmp(right.0));
+
+    let mut hasher = Sha256::new();
+    for (relative, entry) in entries {
+        hasher.update(relative.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
+        hasher.update(entry.content_hash.as_bytes());
+        hasher.update(b"\n");
+    }
+    hex_digest(&hasher.finalize())
+}
+
 /// Atomically persist the graph + manifest snapshot to
 /// `db_path` (temp file + rename, so an interrupted write never leaves a
 /// half-written snapshot that could be mistaken for valid evidence).

@@ -26,10 +26,14 @@ use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, Analyze, GraphSource, GraphValue,
 };
 use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
+use cognicode_core::application::freshness::FreshnessOracle;
 use cognicode_core::application::graph_cache;
 use cognicode_core::application::graph_snapshot;
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::interface::daemon::{self, DaemonOracle, DaemonState};
+use cognicode_core::interface::mcp::handlers::{
+    BuildGraphInput, HandlerContext, handle_build_graph,
+};
 
 /// A workspace with one file the product can read.
 fn rust_workspace(dir: &Path) {
@@ -202,5 +206,98 @@ fn without_a_daemon_the_same_tree_gives_the_same_graph_and_claims_no_daemon() {
         Some(GraphSource::Cache),
         "without a daemon the product serves the snapshot it checked itself: \
          claiming a daemon served it would be a lie"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The MCP surface: the daemon's word reaches the published basis
+// ---------------------------------------------------------------------------
+
+/// The MCP's context over a workspace, with the daemon it can ask.
+///
+/// The cache is the test's own: the snapshot is the product's state, and a
+/// test that wrote it into the cache of whoever runs it would leave entries
+/// nobody can clean.
+fn mcp_ctx(
+    workspace: &Path,
+    cache: &Path,
+    oracle: Option<Arc<dyn FreshnessOracle>>,
+) -> HandlerContext {
+    let mut builder = HandlerContext::builder()
+        .with_working_dir(workspace.to_path_buf())
+        .with_cache_root(cache.to_path_buf());
+    if let Some(oracle) = oracle {
+        builder = builder.with_freshness_oracle(oracle);
+    }
+    builder.build()
+}
+
+/// The word the MCP publishes about where the graph came from.
+///
+/// The assertion is over the JSON the client sees, and not over the typed
+/// field: a test that names a field that does not exist yet fails to
+/// compile, and a test that fails to compile does not say what is missing.
+async fn published_source(ctx: &HandlerContext) -> String {
+    let output = handle_build_graph(ctx, BuildGraphInput { directory: None })
+        .await
+        .expect("build_graph answers");
+    let value = serde_json::to_value(&output).expect("the answer is JSON");
+    value["basis"]["graph_source"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the basis publishes where the graph came from: {value}"))
+        .to_string()
+}
+
+#[tokio::test]
+async fn the_mcp_publishes_the_daemon_that_served_the_graph() {
+    let (_root, workspace, cache) = fixture();
+    let (_state, socket) = start_daemon(&cache, &workspace);
+
+    let ctx = mcp_ctx(&workspace, &cache, Some(Arc::new(DaemonOracle::at(socket))));
+
+    assert_eq!(
+        published_source(&ctx).await,
+        "daemon",
+        "a live daemon vouched for the index, and the MCP says who served it"
+    );
+}
+
+#[tokio::test]
+async fn without_a_daemon_the_mcp_does_not_claim_one() {
+    let (_root, workspace, cache) = fixture();
+    let (_state, _socket) = start_daemon(&cache, &workspace);
+
+    // The daemon is there, but this context does not ask it: the answer
+    // has to say that the product checked by itself.
+    let ctx = mcp_ctx(&workspace, &cache, None);
+
+    assert_eq!(
+        published_source(&ctx).await,
+        "cache",
+        "without a daemon the MCP serves the snapshot it checked itself: \
+         claiming a daemon served it would be a lie"
+    );
+}
+
+#[tokio::test]
+async fn the_mcp_does_not_publish_a_daemon_that_cannot_see_the_change() {
+    let (_root, workspace, cache) = fixture();
+    let (_state, socket) = start_daemon(&cache, &workspace);
+
+    // The tree changes. The daemon has not rebuilt yet, so it does not
+    // know; the client can see the change, so the client decides.
+    write_with_mtime(
+        &workspace.join("src").join("main.rs"),
+        "fn helper() -> u32 { 1 }\nfn other() -> u32 { 2 }\nfn main() { helper(); other(); }\n",
+        1_000_000,
+    );
+
+    let ctx = mcp_ctx(&workspace, &cache, Some(Arc::new(DaemonOracle::at(socket))));
+
+    assert_eq!(
+        published_source(&ctx).await,
+        "built",
+        "the daemon's word is about a tree that no longer exists: the tree \
+         was read again, and the answer says so"
     );
 }

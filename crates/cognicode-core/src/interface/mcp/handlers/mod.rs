@@ -58,7 +58,6 @@ use crate::application::dto::{
     SystemPromptContext,
 };
 use crate::application::error::AppError;
-use crate::application::graph_snapshot::{build_manifest, hex_digest};
 use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::graph_queries::GraphQueryError;
@@ -69,8 +68,7 @@ use crate::domain::services::{CycleDetector, resolve_target};
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
 use crate::domain::value_objects::{
-    AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind, TargetResolution,
-    published_column, published_line,
+    ClientIdentity, SymbolKind, TargetResolution, published_column, published_line,
 };
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
@@ -577,6 +575,12 @@ pub struct HandlerContextBuilder {
     /// the production default (60s); tests can set a sub-second value
     /// to force the timeout branch without sleeping 60s in CI.
     sub_handler_timeout: Option<std::time::Duration>,
+    /// Somebody who is watching the tree and can say that a manifest
+    /// still describes it.
+    ///
+    /// `None` means nobody is watching, and the product decides the
+    /// freshness by itself —which is what it always did.
+    freshness_oracle: Option<Arc<dyn crate::application::freshness::FreshnessOracle>>,
 }
 
 impl HandlerContextBuilder {
@@ -623,6 +627,20 @@ impl HandlerContextBuilder {
     /// Sets a custom AnalysisService.
     pub fn with_analysis_service(mut self, service: AnalysisService) -> Self {
         self.analysis_service = Some(Arc::new(service));
+        self
+    }
+
+    /// Names the watcher of the tree this context analyses.
+    ///
+    /// The oracle is a port of the application layer: the context hands
+    /// it to the analysis service and never learns how the answer travels.
+    /// Without one, the product decides the freshness by itself, exactly
+    /// as it always did —and the answer says so.
+    pub fn with_freshness_oracle(
+        mut self,
+        oracle: Arc<dyn crate::application::freshness::FreshnessOracle>,
+    ) -> Self {
+        self.freshness_oracle = Some(oracle);
         self
     }
 
@@ -783,9 +801,19 @@ impl HandlerContextBuilder {
             validator: self.validator.unwrap_or_else(|| {
                 Arc::new(InputValidator::new().with_workspace(vec![canonical_working_dir]))
             }),
-            analysis_service: self
-                .analysis_service
-                .unwrap_or_else(|| Arc::new(AnalysisService::new())),
+            analysis_service: {
+                // The watcher of the tree, if anybody named one: the
+                // service asks it before it reads the content of every
+                // file to find out whether the index still describes the
+                // tree.
+                let service = self
+                    .analysis_service
+                    .unwrap_or_else(|| Arc::new(AnalysisService::new()));
+                if let Some(oracle) = self.freshness_oracle {
+                    service.set_freshness_oracle(oracle);
+                }
+                service
+            },
             refactor_service: self
                 .refactor_service
                 .unwrap_or_else(|| Arc::new(RefactorService::new())),
@@ -1105,40 +1133,6 @@ pub struct BuildGraphOutput {
     pub basis: Option<BasisDto>,
 }
 
-/// Provenance basis for a build_graph result.
-#[derive(Debug, serde::Serialize, JsonSchema)]
-pub struct BasisDto {
-    /// Canonicalized workspace path the graph was built from.
-    pub workspace: String,
-    /// Digest over the effective configuration relevant to the build.
-    /// Stable across identical configurations; changes when config changes.
-    pub config_digest: String,
-    /// Digest over the source manifest (sorted relative paths + content
-    /// hashes). Same sources ⇒ same digest; any source change ⇒ different
-    /// digest. Empty when the manifest could not be computed.
-    pub source_manifest_digest: String,
-    /// The version of the analyzer that produced this analysis.
-    ///
-    /// The provider's version, not the consumer's: it says which build
-    /// calculated the answer, which is what a cached answer has to be
-    /// checked against before it can be served again.
-    pub analyzer_version: String,
-    /// The commit the analyzer was built from, when it could be known.
-    ///
-    /// `null` when the binary was built outside a checkout. That is a
-    /// fact about the binary, not a value invented to fill the field.
-    pub analyzer_commit: Option<String>,
-    /// The capabilities the analyzer was built with, in a stable order.
-    pub analyzer_features: Vec<String>,
-    /// The shape the snapshot was written in.
-    pub snapshot_schema: String,
-    /// `true` only when every identity component was established and
-    /// there was material to identify. A workspace with nothing to
-    /// analyze has an established identity of an empty tree, which
-    /// describes no analysis: the basis is not complete.
-    pub complete: bool,
-}
-
 /// Per-file skipped-file record surfaced through `build_graph`.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct SkippedFileDto {
@@ -1211,9 +1205,13 @@ pub async fn handle_build_graph(
     // of a cached answer is computed against the tree the consumer is
     // asking about, not against the tree the snapshot was taken from.
     let current_holes = loaded.tree.holes;
-    if let Some(manifest) = loaded.manifest {
+    // The manifest the answer carries: it says which files the graph was
+    // built from, and it is what the basis describes. It is kept here
+    // because the basis needs it after the store has taken its copy.
+    let manifest = loaded.manifest;
+    if let Some(manifest) = manifest.as_ref() {
         let store = ctx.get_graph_store();
-        let _ = store.save_manifest(&manifest);
+        let _ = store.save_manifest(manifest);
     }
 
     if ctx.is_cancelled() {
@@ -1357,7 +1355,7 @@ pub async fn handle_build_graph(
     let source = graph_source.published_message();
     // Identity basis for this result. With nothing to analyze, the basis
     // identifies an empty tree: it does not describe an analysis.
-    let mut basis = compute_basis(ctx, &directory);
+    let mut basis = compute_basis(ctx, &directory, manifest.as_ref(), graph_source);
     if no_material {
         basis.complete = false;
     }
@@ -1388,79 +1386,6 @@ pub async fn handle_build_graph(
         rejected_relationships,
         basis: Some(basis),
     })
-}
-
-/// Compute the identity basis for a build_graph result.
-/// - `workspace`: canonicalized project directory.
-/// - `config_digest`: SHA-256 over the effective build-relevant config
-///   (currently the log level; the config surface grows as handlers do).
-/// - `source_manifest_digest`: SHA-256 over sorted (rel_path, content_hash)
-///   pairs of the source manifest.
-/// - `analyzer_*`: who produced the analysis —version, commit and
-///   capabilities— and the shape the snapshot is written in.
-/// Any component that cannot be established leaves `complete: false`
-/// and uses an empty string for that component — never a fabricated value.
-///
-/// The analyzer identity comes from the **key**, the same one the snapshot
-/// is written with. One key, one truth: the basis cannot describe an
-/// analyzer that the snapshot does not name.
-fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
-    use sha2::{Digest, Sha256};
-
-    let (workspace, workspace_ok) = match project_dir.canonicalize() {
-        Ok(p) => (p.to_string_lossy().to_string(), true),
-        Err(_) => (project_dir.to_string_lossy().to_string(), false),
-    };
-
-    // Config digest: stable serialization of effective config knobs.
-    let config_key = format!(
-        "log_level={}",
-        ctx.log_level
-            .try_read()
-            .map(|l| l.to_string())
-            .unwrap_or_else(|_| "unreadable".into())
-    );
-    let config_digest = hex_digest(&Sha256::digest(config_key.as_bytes()));
-
-    // Source manifest digest: sorted (rel_path, content_hash) pairs.
-    //
-    // The manifest is the same one the snapshot is the freshness key of,
-    // and it is built from the files the walk found: the tree is walked
-    // once, and the walk says both what the manifest holds and what holes
-    // the tree has.
-    let tree = ctx.analysis_service.tree_state(project_dir);
-    let manifest = build_manifest(project_dir, &tree.files);
-    let (source_manifest_digest, manifest_ok) = {
-        let mut pairs: Vec<(String, &String)> = manifest
-            .entries
-            .iter()
-            .map(|(p, e)| (p.to_string_lossy().to_string(), &e.content_hash))
-            .collect();
-        pairs.sort();
-        let mut hasher = Sha256::new();
-        for (p, h) in &pairs {
-            hasher.update(p.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(h.as_bytes());
-            hasher.update(b"\n");
-        }
-        (hex_digest(&hasher.finalize()), true)
-    };
-
-    // The key of the analysis: who produced it, over what, and with which
-    // shape. It is the same key the snapshot is written with.
-    let key = SnapshotKey::new(workspace.clone(), AnalyzerBuild::current(), SNAPSHOT_SCHEMA);
-
-    BasisDto {
-        workspace,
-        config_digest,
-        source_manifest_digest,
-        analyzer_version: key.analyzer.version,
-        analyzer_commit: key.analyzer.commit,
-        analyzer_features: key.analyzer.features,
-        snapshot_schema: key.schema,
-        complete: workspace_ok && manifest_ok,
-    }
 }
 
 /// Handler for get_call_hierarchy tool
@@ -2087,7 +2012,11 @@ pub async fn handle_check_architecture(
     })
 }
 
+/// The identity basis of an answer, and the shape it is published with.
+mod basis;
 mod complexity_handlers;
+pub use basis::BasisDto;
+use basis::compute_basis;
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -3701,10 +3630,11 @@ pub mod findings_handlers;
 mod tests {
     use super::*;
     use crate::application::graph_snapshot::{
-        is_manifest_stale, load_durable_snapshot, load_durable_snapshot_capped,
+        hex_digest, is_manifest_stale, load_durable_snapshot, load_durable_snapshot_capped,
         save_durable_snapshot, tmp_path_for,
     };
     use crate::application::services::analysis_service::TreeFile;
+    use crate::domain::value_objects::{SNAPSHOT_SCHEMA, SnapshotKey};
 
     /// Los ficheros del árbol TAL COMO ESTÁ AHORA.
     ///

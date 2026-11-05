@@ -243,12 +243,20 @@ async fn main() -> anyhow::Result<()> {
     // The cache is the user's: this server keeps what it derives in the
     // same place the stdio server does, so the two agree on what the
     // product reuses and the analysed tree stays untouched.
-    let shared_ctx: Arc<HandlerContext> = Arc::new(
-        HandlerContext::builder()
-            .with_working_dir(cwd.clone())
-            .with_cache_root(cognicode_core::application::graph_cache::default_cache_root())
-            .build(),
-    );
+    let cache_root = cognicode_core::application::graph_cache::default_cache_root();
+    let mut ctx_builder = HandlerContext::builder()
+        .with_working_dir(cwd.clone())
+        .with_cache_root(cache_root.clone());
+    // This server is the daemon: it is the one that watches the tree, and
+    // its word is about the index it keeps. Asking it is not a second
+    // opinion —it is the only watcher there is— and the answer says who
+    // served the graph.
+    if let Some(root) = cache_root.as_ref() {
+        ctx_builder = ctx_builder.with_freshness_oracle(Arc::new(
+            cognicode_core::interface::daemon::DaemonOracle::for_workspace(root, &cwd),
+        ));
+    }
+    let shared_ctx: Arc<HandlerContext> = Arc::new(ctx_builder.build());
 
     // Prometheus wiring (fix for bug-prometheus-027).
     //

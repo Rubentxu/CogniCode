@@ -129,13 +129,14 @@ pub fn report_graph_full(outcome: &AnalysisOutcome<AnalysisValue>, result: &Grap
     // y uno servido del snapshot son la misma respuesta solo cuando el
     // arbol no cambio, y quien consume es quien tiene que saber que el
     // producto lo comprobo —y quien lo comprobo.
+    //
+    // The phrase is the one the provenance enum publishes: the CLI and the
+    // MCP say the same thing about the same source, and a word that means
+    // two things is a lie the consumer cannot see.
     match outcome.provenance().graph_source {
-        Some(GraphSource::Cache) => eprintln!(
-            "Graph loaded from cache (durable snapshot): {symbols} symbols, {dependencies} relationships"
-        ),
-        Some(GraphSource::Daemon) => eprintln!(
-            "Graph loaded from cache (durable snapshot, vouched by a live daemon): \
-             {symbols} symbols, {dependencies} relationships"
+        Some(source) if source != GraphSource::Built => eprintln!(
+            "Graph loaded from {}: {symbols} symbols, {dependencies} relationships",
+            source.published_message()
         ),
         _ => {}
     }

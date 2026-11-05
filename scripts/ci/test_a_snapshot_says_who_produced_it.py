@@ -44,6 +44,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 KEY_OWNER = "crates/cognicode-core/src/domain/value_objects/snapshot_key.rs"
 HANDLERS = "crates/cognicode-core/src/interface/mcp/handlers/mod.rs"
+# The published basis has its own module: it is a document with a
+# published shape, and the contract follows the code to wherever the
+# owner is.
+BASIS = "crates/cognicode-core/src/interface/mcp/handlers/basis.rs"
 # The persistence lives in its own module, and the owner is the
 # application layer: it decides, writes and reads the file, so that the MCP
 # and the CLI go through the same decision. The contract follows the code
@@ -322,7 +326,7 @@ def the_published_basis_declares_the_analyzer(text: str) -> list[str]:
     for component in PUBLISHED_COMPONENTS:
         if not re.search(rf"(?m)^\s*pub {component}:", text):
             findings.append(
-                f"{HANDLERS}: la base publicada no declara `{component}`"
+                f"{BASIS}: la base publicada no declara `{component}`"
             )
     return findings
 
@@ -405,7 +409,7 @@ def test_the_interfaces_use_the_owners_decision() -> None:
 
 def test_the_published_basis_declares_the_analyzer() -> None:
     """La base publicada declara el analizador."""
-    findings = the_published_basis_declares_the_analyzer(source(HANDLERS))
+    findings = the_published_basis_declares_the_analyzer(source(BASIS))
     assert not findings, "FAIL: " + "; ".join(findings)
 
 
