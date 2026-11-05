@@ -34481,3 +34481,242 @@ AC2**. El gate entero se corre a continuación y su recibo va aparte.
 del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
 `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
 recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-131: el paso de mutantes del gate mide de uno en uno
+
+**El encargo.** No estaba en el tablero: salió al cerrar TASK-130 AC2, cuando el
+gate entero dio rojo por ocho mutantes «supervivientes». Siete estaban en un
+fichero que nadie había tocado desde el último gate en verde —lo que ya era una
+pista— y el octavo en el fichero que TASK-130 acababa de escribir. Este recibo
+cuenta lo que la medición enseñó: que el veredicto de esa corrida no era de
+fiar, y por qué el paso de mutantes mide ahora de uno en uno.
+
+**La evidencia, y es de dos clases.**
+
+La primera es el código de la herramienta. `cargo-mutants` 27.1.0 trabaja sobre
+**una única copia del árbol** —un `BuildDir` compartido— y sus trabajadores la
+mutan **sin cerrojo**: `lab.rs` hace `apply` → `build` → `test` → `revert`, sin
+ningún mutex alrededor de la ventana de mutación. Con ocho trabajos a la vez,
+escriben sobre el mismo fichero: uno aplica su mutación, otro la sobrescribe,
+un tercero la revierte mientras el primero compila.
+
+La segunda es la medición:
+
+| Medición (base `c755b6b4`) | Resultado |
+|---|---|
+| Gate entero en paralelo (`-j 8`) | 629 mutantes en 10 min: **8 supervivientes** —7 en `god_nodes.rs`, 1 en `feedback_vertex_set.rs` |
+| Los 10 mutantes de `god_nodes.rs` de una vez | **10 atrapados** |
+| Los 34 mutantes de `feedback_vertex_set.rs` de una vez | **34 atrapados** |
+
+Los siete de `god_nodes.rs` no eran un agujero: eran mutantes medidos sin
+mutación, porque otro trabajo había devuelto el fichero a su estado original
+mientras compilaban. El octavo —el `!=` invertido en `take_out`— **sí** era un
+agujero real, y se corrigió aparte (PR #611 → `48e02e0b`): la lista de llamantes
+que se mantenía a mano sólo alimentaba el desempate por grado, así que
+invertir la comparación no se veía. La corrección no fue una prueba más: quitar
+el estado que había que mantener a mano (los llamantes se leen del grafo vivo en
+cada pasada) hace que comparar `==` destruya el grafo y lo mate cualquier
+prueba.
+
+Una tercera señal, ya anotada en el recibo de TASK-116: el número de mutantes
+**inviables** cambia entre corridas sobre el mismo árbol (1, 2, 4). Un paso que
+mide lo mismo dos veces y da tres números distintos no está midiendo una sola
+cosa.
+
+**Lo que se afirmó antes y era falso.** La regla 9 del `AGENTS.md` decía: «el
+veredicto —atrapado, sobrevivido, colgado— sí coincide entre paralelo y serie;
+lo que no es de fiar en paralelo es la atribución». La medición desmiente la
+primera mitad: el veredicto tampoco coincide. Queda corregida con la medición
+que la desmiente, no con una opinión.
+
+**La decisión.** La certificación del gate es **por mutante**: «este mutante lo
+mata este test». Un veredicto que puede venir de la mutación de otro trabajo no
+es una certificación: un gate que reporta un agujero que no existe es un gate en
+el que nadie cree, y un gate que reporta una presa que vino de la mutación de
+otro es un gate que no vigila nada. Así que **el paso de mutantes mide un
+mutante a la vez** (`MUTANTS_JOBS=1` en `scripts/test-gate.sh`).
+
+El precio es una hora de gate en vez de quince minutos. Es el precio de una
+medición atribuible, y el lote de diez tareas lo paga una vez.
+
+**Lo que la medición en serie dio, y lo que la paralela no distinguía.** La
+primera corrida en serie del alcance (`911dc274`): **627 mutantes en 56 min,
+617 atrapados, 9 inviables, 1 superviviente, 0 tiempos agotados**. La corrida
+en paralelo había dado **ocho** supervivientes: siete artefactos de la carrera
+(los de `god_nodes.rs`, atrapados de uno en uno) y **uno real** —el `&&` → `||`
+de `longest_chain.rs:107`, que ninguna prueba del fichero mataba y que se
+cerró en el recibo de TASK-132. La diferencia entre «ocho» y «uno» es
+exactamente lo que la carrera estaba falseando.
+
+Los **9 inviables** son mutantes que la mutación deja sin compilar (`Default`
+que no existe, `||` en un let-chain): nadie los midió. No son equivalentes y
+no se esconden detrás de `exclude_re`; quedan anotados en el recibo de
+TASK-132, con el motivo de cada uno.
+
+**La corrida que certifica el lote**, con el agujero ya cerrado (PR #613 →
+`019b1dfd`): **627 mutantes en 57 min: 618 atrapados, 9 inviables, 0 supervivientes, 0 tiempos agotados**
+
+Lo que se conserva: `cargo mutants --file <ruta> -j 8` sigue diciendo lo mismo
+en segundos, y es una **mirada**, no una certificación. No pasa por el script a
+propósito, para que la palabra «gate» no amanezca significando dos cosas
+distintas.
+
+**El contrato.** `scripts/ci/test_mutant_memory_budget.py` fija ahora las dos
+cosas: el techo × trabajos cabe en el presupuesto de memoria (2 GiB × 1 ≤
+16 GiB) y el paralelismo por defecto es **uno**. Los dos detectores tienen
+dientes, y se comprobó:
+
+| Chequeo | Resultado |
+|---|---|
+| `python3 scripts/ci/test_mutant_memory_budget.py` | **PASS** |
+| El mismo contrato con un gate plantado en `-j 8` | **FAIL** — «el paso de mutantes lanza 8 trabajos a la vez y el veredicto por mutante deja de ser atribuible» |
+| El mismo contrato con un techo plantado de 6 GiB | **FAIL** — «el paso de mutantes pide 49152 MiB a la vez (techo 6144 MiB x 8 trabajos)» |
+
+**Entrega.** PR #612 → `911dc274`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg`
+del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
+`AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
+recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-132: la cadena más larga mide el orden topológico
+
+**El encargo.** No estaba en el tablero: salió del gate entero sobre
+`911dc274`, la primera vez que el paso de mutantes se midió **en serie** (la
+corrección de TASK-131). El gate dio rojo, y esta vez el rojo era de verdad.
+
+**La medición** (base `911dc274`, alcance `cognicode-graph-algos`):
+
+| Cifra | Valor |
+|---|---|
+| Mutantes probados | **627** en **56 min** |
+| Atrapados | **617** |
+| Inviables | **9** |
+| **Supervivientes** | **1** |
+| Tiempos agotados | **0** |
+
+La corrida anterior, en paralelo, había dado **8** supervivientes. Siete de
+ellos estaban en `god_nodes.rs` y son artefactos de la carrera (medidos de uno
+en uno, los diez son atrapados). **El octavo era real**, y este es su recibo.
+
+**El agujero.** `crates/cognicode-graph-algos/src/algorithms/longest_chain.rs:107`,
+mutación `&&` → `||` en
+
+```rust
+if incoming[to] == 0 && !queued[to] {
+```
+
+La línea está dentro del recorrido en orden topológico de la condensación
+(Kahn). Con `&&`, un grupo entra en la cola cuando le llega a cero el número de
+llamantes por detrás, o sea cuando **todos** sus llamantes han sido medidos. Con
+`||`, entra en cuanto lo llama su **primer** llamante: el recorrido puede
+medir un grupo antes de que esté medido su llamado, y la cadena se queda
+corta.
+
+**Por qué ninguna prueba lo mataba.** Las trece pruebas del fichero miden
+grafos donde el orden topológico **no cambia**: cadenas, un diamante, ciclos,
+un grupo al que entra una cadena, dos cadenas sueltas, un self-loop. En ninguno
+de ellos hay un nodo con **dos** llamantes cuyo llamado esté en medio de la
+cadena: sin esa forma, el orden erróneo y el orden bueno dan la misma respuesta.
+
+**La prueba.** Un grafo acíclico con esa forma:
+
+```
+0 → 3        1 → 2        2 → 3        3 → 4        3 → 5
+```
+
+El camino más largo es `1 → 2 → 3 → 4`: **cuatro** símbolos. El mutante
+responde **tres**.
+
+**El RED, medido con la mutación aplicada a mano** (la línea editada a `||` y
+revertida con `Edit`, nunca con `git checkout`, que ya destruyó un arreglo una
+vez en este repositorio):
+
+| Comprobación | Con el mutante | Sin el mutante |
+|---|---|---|
+| `the_chain_counts_a_path_whose_middle_node_has_two_callers` | **FAIL** — `left: 3, right: 4` | **PASS** |
+| Las otras once pruebas del fichero | PASS | PASS |
+| `cargo nextest run --profile gate -p cognicode-graph-algos --lib` | — | **267 tests run: 267 passed** |
+| `cargo mutants --file …/longest_chain.rs -j 1` | — | **19 mutants tested in 2m: 19 caught** (antes: uno sobrevivía) |
+
+Lo que se arregla es la prueba que no lo mata, no el umbral: un mutante que
+sobrevive es un agujero de la suite, y un agujero se cierra con una prueba.
+
+**Los nueve inviables.** Un mutante inviable es un mutante que nadie midió, y
+aquí la razón es de la herramienta, no del código: **la mutación no compila**.
+
+| Fichero | Motivo |
+|---|---|
+| `cfg.rs:75` | `the trait bound 'Cfg: Default' is not satisfied` |
+| `communities.rs:66` (cuatro variantes) | `the trait bound 'CommunitiesMeta: Default' is not satisfied` |
+| `dfg.rs:66` | `the trait bound 'DefUseEdge: Default' is not satisfied` |
+| `dominators_cfg.rs:45` | `the trait bound 'DominatorInfo: Default' is not satisfied` |
+| `interproc_summary.rs:105` | `the trait bound 'InterprocSummary: Default' is not satisfied` |
+| `interproc_summary.rs:169` | `'\|\|' operators are not supported in let chain conditions` |
+
+Son los que el recibo de TASK-116 ya anotaba como «un agujero pequeño y
+conocido en la cobertura de la medición»: nadie midió esos nueve. No se
+declaran equivalentes —no lo son: no son código válido— y por eso no se
+esconden detrás de `exclude_re`, que es la lista de los mutantes **equivalentes**
+(aquellos que ningún dato puede distinguir). Quedan anotados.
+
+**Entrega.** PR #613 → `019b1dfd`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg`
+del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
+`AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
+recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — Gate sobre `019b1dfd`: el lote de diez, medido en serie
+
+**El encargo.** El gate se paga por lotes de diez tareas (`AGENTS.md`). Con
+TASK-130 AC2 el lote llegó a diez y tocaba el gate entero; lo que se mide aquí
+es ese gate, sobre el árbol que lleva las dos reparaciones que el propio lote
+destapó: el agujero de mutantes de `feedback_vertex_set.rs` (PR #611 →
+`48e02e0b`) y la medición del paso de mutantes (PR #612 → `911dc274`), más la
+prueba que cierra el agujero real que esa medición encontró (PR #613 →
+`019b1dfd`).
+
+**El lote, en orden.** TASK-79 AC1 · TASK-82 por la mitad · TASK-79 AC4 ·
+TASK-92 rebanada 1 · TASK-92 rebanada 2 · TASK-70 grupo 1 · TASK-128 ·
+TASK-70 grupo 2 · TASK-130 rebanada 1 · TASK-130 AC2.
+
+**Lo que se midió, con las cifras del log.**
+
+| Paso | Resultado |
+|---|---|
+| Tests unitarios (`cargo nextest run --profile gate --workspace --lib`) | **4688 tests run: 4688 passed, 0 skipped** |
+| Tests de integración (`cargo nextest run --profile gate --workspace --tests`) | **6763 tests run: 6763 passed, 3 skipped** |
+| Mutantes (`cargo mutants -p cognicode-graph-algos`, en serie) | **627 mutants tested in 57m: 618 caught, 9 unviable** — 0 supervivientes, 0 tiempos agotados |
+
+**Por qué el paso de mutantes ahora es en serie.** `cargo-mutants` 27.1.0
+comparte **un único** árbol copiado entre todos sus trabajadores y lo muta
+**sin cerrojo** (`lab.rs`: `apply` → `build` → `test` → `revert`). Medido el
+mismo día: una corrida en paralelo con ocho trabajos reportó **siete**
+supervivientes en `god_nodes.rs`, y los diez mutantes de ese fichero salen
+**atrapados** medidos de uno en uno. El veredicto del gate es por mutante, y
+un veredicto que puede venir de la mutación de otro trabajo no es una
+certificación. El detalle, con el código de la herramienta y los plantados del
+contrato, está en el recibo de TASK-131, en este mismo JOURNAL.
+
+**Lo que la medición en serie encontró que la paralela no distinguía.** La
+primera corrida en serie dio **un** superviviente, y era real: el mutante
+`&&` → `||` de `longest_chain.rs:107`. La corrida en paralelo había dado
+ocho: siete artefactos de la carrera y ese. Está cerrado en el recibo de
+TASK-132, con el RED medido y la prueba que lo mata.
+
+**El coste, dicho con la cifra.** El paso de mutantes pasó de **10 min** en
+paralelo a **57 min** en serie: se pagan ~628 reconstrucciones de un
+crate y ~628 corridas de su suite, de una en una. Es el precio de una
+medición atribuible, y el lote de diez lo paga una vez.
+
+**Infraestructura local, no regresión.** La suite de integración necesita los
+bytes del perfil `release` (`cognicode`, `cognicode-mcp`, `cogh` y
+`cognicode-release`); la corrida anterior falló con «missing release binary»
+porque el árbol no los tenía compilados, y la de ahora los tenía
+(`ls -la /var/home/rubentxu/cargo-targets/release/`, 20:21–20:28 de hoy). Se
+anota porque el número de un fallo que no es del cambio se lee como si lo fuera.
+
+**Entrega.** Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta medición es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
