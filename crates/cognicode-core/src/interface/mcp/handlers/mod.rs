@@ -68,6 +68,7 @@ use crate::domain::services::{CycleDetector, resolve_target};
 // the contract cannot drift from the struct that produces the bytes.
 use crate::domain::value_objects::{
     AnalyzerBuild, ClientIdentity, SNAPSHOT_SCHEMA, SnapshotKey, SymbolKind, TargetResolution,
+    published_line,
 };
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
@@ -2455,7 +2456,7 @@ pub async fn handle_get_entry_points(
                 kind: (*symbol.kind()).into(),
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
-                    line: symbol.location().line(),
+                    line: published_line(symbol.location().line()),
                     column: symbol.location().column(),
                 },
                 signature: None,
@@ -2509,7 +2510,7 @@ pub async fn handle_get_leaf_functions(
                 kind: (*symbol.kind()).into(),
                 location: SourceLocation {
                     file: symbol.location().file().to_string(),
-                    line: symbol.location().line(),
+                    line: published_line(symbol.location().line()),
                     column: symbol.location().column(),
                 },
                 signature: None,
@@ -2650,7 +2651,7 @@ fn path_entries(path: &[crate::domain::aggregates::Symbol]) -> Vec<PathEntry> {
         .map(|symbol| PathEntry {
             symbol: symbol.name().to_string(),
             file: symbol.location().file().to_string(),
-            line: symbol.location().line(),
+            line: published_line(symbol.location().line()),
             column: symbol.location().column(),
         })
         .collect()
@@ -3217,7 +3218,7 @@ pub async fn handle_build_call_subgraph(
     let root_info = HierarchySymbolInfo {
         name: result.root_symbol.name().to_string(),
         file: result.root_symbol.location().file().to_string(),
-        line: result.root_symbol.location().line(),
+        line: published_line(result.root_symbol.location().line()),
         column: result.root_symbol.location().column(),
         symbol_kind: format!("{:?}", result.root_symbol.kind()),
     };
@@ -3229,7 +3230,7 @@ pub async fn handle_build_call_subgraph(
             symbol: HierarchySymbolInfo {
                 name: entry.symbol.name().to_string(),
                 file: entry.symbol.location().file().to_string(),
-                line: entry.symbol.location().line(),
+                line: published_line(entry.symbol.location().line()),
                 column: entry.symbol.location().column(),
                 symbol_kind: format!("{:?}", entry.symbol.kind()),
             },
@@ -3268,7 +3269,7 @@ pub async fn handle_get_per_file_graph(
                 .symbols()
                 .map(|s| SymbolLocationEntry {
                     file: s.location().file().to_string(),
-                    line: s.location().line(),
+                    line: published_line(s.location().line()),
                     column: s.location().column(),
                     symbol_kind: format!("{:?}", s.kind()),
                 })
@@ -3282,7 +3283,7 @@ pub async fn handle_get_per_file_graph(
                     Some(DependencyInfo {
                         caller: src.name().to_string(),
                         caller_file: src.location().file().to_string(),
-                        caller_line: src.location().line(),
+                        caller_line: published_line(src.location().line()),
                         callee: tgt.name().to_string(),
                     })
                 })
@@ -3418,7 +3419,7 @@ pub async fn handle_merge_graphs(
         .symbols()
         .map(|s| SymbolLocationEntry {
             file: s.location().file().to_string(),
-            line: s.location().line(),
+            line: published_line(s.location().line()),
             column: s.location().column(),
             symbol_kind: format!("{:?}", s.kind()),
         })
@@ -3432,7 +3433,7 @@ pub async fn handle_merge_graphs(
             Some(DependencyInfo {
                 caller: src.name().to_string(),
                 caller_file: src.location().file().to_string(),
-                caller_line: src.location().line(),
+                caller_line: published_line(src.location().line()),
                 callee: tgt.name().to_string(),
             })
         })
@@ -3504,7 +3505,7 @@ fn convert_outline_node(node: &crate::infrastructure::semantic::OutlineNode) -> 
     OutlineNodeDto {
         name: node.name.clone(),
         kind: format!("{:?}", node.kind).to_lowercase(),
-        line: node.location.line() + 1, // Convert to 1-indexed
+        line: published_line(node.location.line()),
         column: node.location.column(),
         signature: node.signature.clone(),
         children: node.children.iter().map(convert_outline_node).collect(),
@@ -3605,16 +3606,14 @@ pub async fn handle_semantic_search(
     // Convert to DTOs
     let results_dto: Vec<SearchResultDto> = results
         .iter()
-        .map(|r| {
-            SearchResultDto {
-                name: r.symbol.name().to_string(),
-                kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
-                file: r.symbol.location().file().to_string(),
-                line: r.symbol.location().line() + 1, // 1-indexed
-                column: r.symbol.location().column(),
-                score: r.score,
-                match_type: format!("{:?}", r.match_type).to_lowercase(),
-            }
+        .map(|r| SearchResultDto {
+            name: r.symbol.name().to_string(),
+            kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
+            file: r.symbol.location().file().to_string(),
+            line: published_line(r.symbol.location().line()),
+            column: r.symbol.location().column(),
+            score: r.score,
+            match_type: format!("{:?}", r.match_type).to_lowercase(),
         })
         .collect();
 

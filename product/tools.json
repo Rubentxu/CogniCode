@@ -313,7 +313,7 @@
                 "type": "string"
               },
               "line": {
-                "description": "The line the reference is written on, counting from one.",
+                "description": "The line the reference is written on (1-indexed): the line a person reads.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": [
@@ -1272,6 +1272,7 @@
             "type": "boolean"
           },
           "line": {
+            "description": "Line number (1-indexed): the line a person reads.",
             "type": "integer"
           }
         },
@@ -1335,6 +1336,7 @@
             "type": "string"
           },
           "line": {
+            "description": "Line number (1-indexed): the line a person reads.",
             "type": "integer"
           },
           "new_name": {
@@ -2156,7 +2158,7 @@
             "type": "string"
           },
           "line": {
-            "description": "Line number (1-indexed)",
+            "description": "Line number (1-indexed): the line a person reads.",
             "type": "integer"
           }
         },
@@ -2330,6 +2332,7 @@
             "type": "string"
           },
           "line": {
+            "description": "Line number (1-indexed): the line a person reads.",
             "type": "integer"
           }
         },
@@ -2730,6 +2733,7 @@
                 "type": "string"
               },
               "line": {
+                "description": "Line number (1-indexed): the line a person reads.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -3552,6 +3556,7 @@
             "type": "string"
           },
           "line": {
+            "description": "Line number (1-indexed): the line a person reads.",
             "type": "integer"
           }
         },

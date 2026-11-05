@@ -1400,6 +1400,9 @@ fn present_graph_result(result: &GraphResult, w: &mut dyn Write) -> io::Result<(
         GraphResult::Hierarchy { .. } => present_graph_hierarchy(result, w),
         GraphResult::Complexity { .. } => present_graph_complexity(result, w),
         GraphResult::Impact { .. } => present_graph_impact(result, w),
+        // The composite answer has a shape of its own; the top-level
+        // dispatcher writes it as it is.
+        GraphResult::CompositeImpact { .. } => Ok(()),
     }
 }
 
@@ -1416,6 +1419,12 @@ pub fn present_output(
     w: &mut dyn Write,
 ) -> io::Result<()> {
     match (output, format) {
+        // The composite impact answer has a shape of its own: the
+        // presenter writes it as it is, once.
+        (CommandOutput::Graph(GraphResult::CompositeImpact { body }), _) => {
+            writeln!(w, "{body}")
+        }
+        (CommandOutput::Rendered { text, .. }, _) => write!(w, "{text}"),
         (CommandOutput::Index(r), CliFormat::Text) => present_index_result(r, w),
         (CommandOutput::Index(r), CliFormat::Json) => present_index_result_json(r, w),
         (CommandOutput::Graph(r), CliFormat::Text) => present_graph_result(r, w),

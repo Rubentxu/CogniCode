@@ -1194,7 +1194,9 @@ mod tests {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GoToDefinitionInput {
     pub file_path: String,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
+    /// Column number (1-indexed): the character a person counts.
     pub column: u32,
 }
 
@@ -1217,7 +1219,9 @@ pub struct GoToDefinitionOutput {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HoverInput {
     pub file_path: String,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
+    /// Column number (1-indexed): the character a person counts.
     pub column: u32,
 }
 
@@ -1234,8 +1238,11 @@ pub struct HoverOutput {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FindReferencesInput {
     pub file_path: String,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
+    /// Column number (1-indexed): the character a person counts.
     pub column: u32,
+
     #[serde(default = "default_true")]
     pub include_declaration: bool,
 }
@@ -1256,8 +1263,11 @@ pub struct FindReferencesOutput {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RenamePreviewInput {
     pub file_path: String,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
+    /// Column number (1-indexed): the character a person counts.
     pub column: u32,
+
     /// Name the symbol would take. The preview never applies it.
     pub new_name: String,
 }

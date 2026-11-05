@@ -221,6 +221,7 @@ pub struct ExplainNode {
     pub label: String,
     pub kind: String,
     pub source_path: Option<String>,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
 }
 

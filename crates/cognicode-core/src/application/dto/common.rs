@@ -3,7 +3,7 @@
 //! These types are transport-neutral and can be used by any interface
 //! (MCP, REST, gRPC, etc.) without coupling to a specific protocol.
 
-use crate::domain::value_objects::Location;
+use crate::domain::value_objects::{Location, published_line};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -129,7 +129,7 @@ pub struct ListFilesResult {
 // Domain Value Conversions
 // ============================================================================
 
-/// Represents a location in source code (1-indexed for display)
+/// Represents a location in source code, in the base the product publishes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SourceLocation {
     pub file: String,
@@ -138,11 +138,15 @@ pub struct SourceLocation {
 }
 
 impl From<&Location> for SourceLocation {
-    /// Converts from domain Location (zero-indexed) to DTO SourceLocation (1-indexed for display)
+    /// Converts a domain `Location` into the location the product publishes.
+    ///
+    /// The line crosses the base here, and only here: the graph's
+    /// positions are zero-indexed and the published line is the one a
+    /// person reads.
     fn from(loc: &Location) -> Self {
         Self {
             file: loc.file().to_string(),
-            line: loc.line() + 1,
+            line: published_line(loc.line()),
             column: loc.column() + 1,
         }
     }

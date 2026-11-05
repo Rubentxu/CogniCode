@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 pub struct PendingReferenceInfo {
     /// The file that writes the reference.
     pub file: String,
-    /// The line the reference is written on, counting from one.
+    /// The line the reference is written on (1-indexed): the line a person reads.
     pub line: Option<u32>,
     /// The name the reference names.
     pub target: String,

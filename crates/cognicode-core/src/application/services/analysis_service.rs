@@ -23,7 +23,7 @@ use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::{RejectedRelation, WalkFilter};
+use crate::domain::value_objects::{RejectedRelation, WalkFilter, published_line};
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
@@ -1848,7 +1848,7 @@ impl AnalysisService {
                 Some(DeadCodeEntry {
                     symbol: symbol.fully_qualified_name().to_string(),
                     file: symbol.location().file().to_string(),
-                    line: symbol.location().line() + 1,
+                    line: published_line(symbol.location().line()),
                     column: symbol.location().column() + 1,
                     kind,
                     reason: DeadCodeReason::NoIncomingEdges,
@@ -2223,7 +2223,7 @@ impl AnalysisService {
 
                     usages.push(UsageResult {
                         file: path.to_string_lossy().into_owned(),
-                        line: occ.line + 1,
+                        line: published_line(occ.line),
                         column: occ.column,
                         context: occ.context.clone(),
                         is_definition,

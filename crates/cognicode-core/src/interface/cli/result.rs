@@ -185,9 +185,50 @@ pub enum CommandOutput {
     /// `gate_authority: false` + `produces_observations_only: true` so an
     /// MCP client can verify the contract without reading the prompt.
     Architecture(crate::architecture::ArchitectureDiagnostic),
+    /// An answer the core rendered and the presenter writes.
+    ///
+    /// The core does not write to the standard output: it returns the
+    /// answer and the presenter decides the channel. The rendering
+    /// lives in the core for these commands because their format is
+    /// chosen by the command's own `--format` flag, not by the
+    /// top-level one — the presenter is not the one that knows which
+    /// format the command was asked for.
+    ///
+    /// The commands that answer with a typed result (`Index`, `Graph`,
+    /// `Navigate`) do not use this: there the presenter formats.
+    Rendered {
+        /// The answer, ready to write.
+        text: String,
+        /// The code the process ends with, when the command's outcome
+        /// is an exit code and not only an answer.
+        exit_code: Option<i32>,
+    },
     /// Sub-comando no migrado a `*Result` aún. El texto ya fue
     /// emitido internamente por `execute_*`; el bin no hace nada.
     Other,
+}
+
+impl CommandOutput {
+    /// An answer the core rendered, with no exit code of its own.
+    pub fn rendered(text: impl Into<String>) -> Self {
+        CommandOutput::Rendered {
+            text: text.into(),
+            exit_code: None,
+        }
+    }
+
+    /// The code the process ends with, when the command's outcome is
+    /// an exit code and not only an answer.
+    ///
+    /// The doctor is the case: its report is the answer, and a missing
+    /// installation is also a failure, so the process ends with a code
+    /// the consumer reads.
+    pub fn exit_code(&self) -> Option<i32> {
+        match self {
+            CommandOutput::Rendered { exit_code, .. } => *exit_code,
+            _ => None,
+        }
+    }
 }
 
 // ===================================================================
@@ -458,6 +499,20 @@ pub enum GraphResult {
         path: String,
         metrics: ComplexityMetrics,
         elapsed_ms: u128,
+    },
+    /// `cognicode graph impact-composite <symbol> <path>`
+    ///
+    /// The composite impact query answers with a shape of its own —
+    /// it is the query's own answer, not a summary of the graph — so
+    /// the body travels as it is and the presenter writes it once.
+    ///
+    /// It used to travel twice: the core printed the answer and then
+    /// returned an empty `PerFile` that the presenter printed after
+    /// it, so the command published two documents where one was
+    /// wanted.
+    CompositeImpact {
+        /// The answer, as the query produced it.
+        body: String,
     },
     /// `cognicode graph impact <symbol> <path>`
     /// `impacted_symbols` / `impacted_files` están SIN truncar;

@@ -5,6 +5,7 @@
 use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::services::CallGraphAnalyzer;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use crate::domain::value_objects::published_line;
 use crate::infrastructure::graph::{
     GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
@@ -581,7 +582,8 @@ pub enum GraphCommand {
 pub enum NavigateCommand {
     /// Go to the definition of the symbol at the given file:line:column position
     Definition {
-        /// Position as file:line:column (e.g., src/main.rs:42:10)
+        /// Position as file:line:column (e.g., src/main.rs:42:10).
+        /// The line is 1-indexed: the line a person reads.
         position: String,
         /// Workspace root directory
         #[arg(default_value = ".")]
@@ -589,7 +591,8 @@ pub enum NavigateCommand {
     },
     /// Show hover information (type + docs) for the symbol at the given position
     Hover {
-        /// Position as file:line:column (e.g., src/main.rs:42:10)
+        /// Position as file:line:column (e.g., src/main.rs:42:10).
+        /// The line is 1-indexed: the line a person reads.
         position: String,
         /// Workspace root directory
         #[arg(default_value = ".")]
@@ -597,7 +600,8 @@ pub enum NavigateCommand {
     },
     /// Find all references to the symbol at the given position
     References {
-        /// Position as file:line:column (e.g., src/main.rs:42:10)
+        /// Position as file:line:column (e.g., src/main.rs:42:10).
+        /// The line is 1-indexed: the line a person reads.
         position: String,
         /// Include the declaration itself in results
         #[arg(long, default_value = "true")]
@@ -651,8 +655,7 @@ impl CommandExecutor {
                 // contract was retired with the class on 2026-10-15
                 // (ADR-TH-006); the exit-code contract itself lives in
                 // `crates/cognicode-cli/tests/cli_exit_code_propagation.rs`.
-                Self::execute_analyze(path).await?;
-                Ok(CommandOutput::Other)
+                Ok(Self::execute_analyze(path).await?)
             }
             // B1.W2 — `cognicode identity` returns Other; the bin
             // detects the variant from a clone of cli.command (in
@@ -710,9 +713,7 @@ impl CommandExecutor {
                         "--apply requires --authorization-token <token> \
                          received out-of-band (B5.W3 / AAT-B5-03)",
                     )?;
-                    return Self::execute_refactor_apply(plan_path, token_value, format)
-                        .await
-                        .map(|_| CommandOutput::Other);
+                    return Self::execute_refactor_apply(plan_path, token_value, format).await;
                 }
                 // PRF-CLI-05 / B5.W1: without --apply this is
                 // preview-only and must never mutate files.
@@ -740,8 +741,7 @@ impl CommandExecutor {
                     );
                     return Ok(CommandOutput::Other);
                 }
-                Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?;
-                Ok(CommandOutput::Other)
+                Ok(Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?)
             }
             Some(CliCommand::Index { command }) => {
                 // T1-5.5d: the presenter has moved to
@@ -780,9 +780,10 @@ impl CommandExecutor {
                 // (overrides_with en clap). Si ninguno aparece,
                 // include_declaration=true (default).
                 let include = !no_include_declaration && *include_declaration;
-                Self::execute_find_usages(symbol, cwd, include, *context_lines, format, *quiet)
-                    .await?;
-                Ok(CommandOutput::Other)
+                Ok(
+                    Self::execute_find_usages(symbol, cwd, include, *context_lines, format, *quiet)
+                        .await?,
+                )
             }
             Some(CliCommand::Navigate { command }) => {
                 // T1-5.6a: execute_navigate returns NavigateResult so
@@ -792,8 +793,7 @@ impl CommandExecutor {
                 Ok(CommandOutput::Navigate(result))
             }
             Some(CliCommand::Doctor { format, cwd }) => {
-                Self::execute_doctor(format, cwd).await?;
-                Ok(CommandOutput::Other)
+                Ok(Self::execute_doctor(format, cwd).await?)
             }
             Some(CliCommand::ExportAssurance { command }) => {
                 Self::execute_export_assurance(command).await?;
@@ -801,35 +801,27 @@ impl CommandExecutor {
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::DocsIngest { path, recursive }) => {
-                Self::execute_docs_ingest(path, *recursive).await?;
-                Ok(CommandOutput::Other)
+                Ok(Self::execute_docs_ingest(path, *recursive).await?)
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::IssuesIngest {
                 owner,
                 repo,
                 include_git_log,
-            }) => {
-                Self::execute_issues_ingest(owner, repo, *include_git_log).await?;
-                Ok(CommandOutput::Other)
-            }
+            }) => Ok(Self::execute_issues_ingest(owner, repo, *include_git_log).await?),
             #[cfg(feature = "evidence-cli-ladybug")]
-            Some(CliCommand::Evidence(cmd)) => {
-                Self::execute_evidence(cmd).await?;
-                Ok(CommandOutput::Other)
-            }
+            Some(CliCommand::Evidence(cmd)) => Ok(Self::execute_evidence(cmd).await?),
             Some(CliCommand::Capabilities { format, json }) => {
                 let effective = if *json { "json" } else { format.as_str() };
-                Self::execute_capabilities(effective).await?;
-                Ok(CommandOutput::Other)
+                Ok(Self::execute_capabilities(effective).await?)
             }
             None => {
                 info!("CogniCode CLI initialized");
-                // Print help if no command given
+                // The help, if no command was given. The core renders
+                // it and returns it; the presenter writes it.
                 let mut cmd = Cli::command();
-                cmd.print_help()?;
-                println!();
-                Ok(CommandOutput::Other)
+                let help = cmd.render_help().to_string();
+                Ok(CommandOutput::rendered(format!("{help}\n")))
             }
         }
     }
@@ -1018,7 +1010,7 @@ impl CommandExecutor {
                     elapsed_ms: elapsed,
                     root_name: result.root_symbol.name().to_string(),
                     root_file: result.root_symbol.location().file().to_string(),
-                    root_line: result.root_symbol.location().line(),
+                    root_line: published_line(result.root_symbol.location().line()),
                     root_column: result.root_symbol.location().column(),
                     entries_len: result.entries.len(),
                 };
@@ -1217,7 +1209,7 @@ impl CommandExecutor {
                     .map(|sym| SymbolRef {
                         name: sym.name().to_string(),
                         file: sym.location().file().to_string(),
-                        line: sym.location().line(),
+                        line: published_line(sym.location().line()),
                         column: sym.location().column(),
                     })
                     .collect();
@@ -1248,7 +1240,7 @@ impl CommandExecutor {
                     .map(|sym| SymbolRef {
                         name: sym.name().to_string(),
                         file: sym.location().file().to_string(),
-                        line: sym.location().line(),
+                        line: published_line(sym.location().line()),
                         column: sym.location().column(),
                     })
                     .collect();
@@ -1294,7 +1286,7 @@ impl CommandExecutor {
                                     position: (i + 1) as u32,
                                     name: sym.name().to_string(),
                                     file: sym.location().file().to_string(),
-                                    line: sym.location().line(),
+                                    line: published_line(sym.location().line()),
                                 });
                             }
                             GR::TracePathFound {
@@ -1477,7 +1469,7 @@ impl CommandExecutor {
                     depth: *depth,
                     direction: direction.clone(),
                     root_file: root.location().file().to_string(),
-                    root_line: root.location().line(),
+                    root_line: published_line(root.location().line()),
                     root_column: root.location().column(),
                     buckets,
                     total_entries: entries.len(),
@@ -1586,7 +1578,15 @@ impl CommandExecutor {
                 };
                 let result = execute_composite(&query);
 
-                // Serialise the result and emit to stdout.
+                // The composite answer has a shape of its own — it is
+                // the query's own answer, not a graph summary — so it
+                // travels as it is and the presenter writes it once.
+                //
+                // It used to be printed here AND returned as a
+                // `PerFile` with nothing in it, so the command
+                // published two documents: the answer, and a second
+                // one that described no graph at all.
+                //
                 // `verdict_refused: true` travels as the JSON
                 // `true` literal — the consumer can pattern-match
                 // it without parsing the response.
@@ -1594,18 +1594,7 @@ impl CommandExecutor {
                     serde_json::to_string(&result).map_err(|e| -> Box<dyn std::error::Error> {
                         Box::new(std::io::Error::other(e))
                     })?;
-                println!("{body}");
-                // Returns `CommandOutput::Other` (the bin does not
-                // re-emit). Result intentionally not migrated to
-                // `GraphResult::CompositeImpact { .. }`; that variant
-                // can be added in a follow-up without changing the
-                // command's wire shape.
-                Ok(GR::PerFile {
-                    file: "composite_impact".to_string(),
-                    symbols: 0,
-                    dependencies: 0,
-                    pending_references: Vec::new(),
-                })
+                Ok(GR::CompositeImpact { body })
             }
         }
     }
@@ -1662,15 +1651,21 @@ impl CommandExecutor {
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
-                let location = Location::new(file.clone(), line.saturating_sub(1), column);
+                // The position the user typed is the line a person
+                // reads, and the code-intelligence paths speak that
+                // base: the line travels to the backend as it is.
+                // The arithmetic that used to sit here (`line - 1` on
+                // the way in) asked the backend about the line above
+                // the one the user named.
+                let location = Location::new(file.clone(), line, column);
 
                 let def_location = match provider.get_definition(&location).await {
                     Ok(Some(def)) => Some(DefinitionLocation {
                         file: def.file().to_string(),
-                        // Storage is 0-indexed; CLI is 1-indexed.
-                        // The data side carries 1-indexed so the
-                        // presenter doesn't have to do arithmetic.
-                        line: def.line() + 1,
+                        // The backend answers in the base the product
+                        // publishes, so the data side carries it as it
+                        // is and the presenter does no arithmetic.
+                        line: def.line(),
                         column: def.column(),
                     }),
                     Ok(None) => None,
@@ -1708,7 +1703,10 @@ impl CommandExecutor {
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
-                let location = Location::new(file.clone(), line.saturating_sub(1), column);
+                // The position the user typed is the line a person
+                // reads, and the code-intelligence paths speak that
+                // base: the line travels to the backend as it is.
+                let location = Location::new(file.clone(), line, column);
 
                 let hover_info = match provider.hover(&location).await {
                     Ok(Some(info)) => Some(HoverResult {
@@ -1749,7 +1747,10 @@ impl CommandExecutor {
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
-                let location = Location::new(file.clone(), line.saturating_sub(1), column);
+                // The position the user typed is the line a person
+                // reads, and the code-intelligence paths speak that
+                // base: the line travels to the backend as it is.
+                let location = Location::new(file.clone(), line, column);
 
                 let refs: Vec<DomainReference> = match provider
                     .find_references(&location, *include_declaration)
@@ -1778,7 +1779,7 @@ impl CommandExecutor {
                     .into_iter()
                     .map(|r| ReferenceEntry {
                         file: r.location.file().to_string(),
-                        line: r.location.line() + 1,
+                        line: r.location.line(),
                         column: r.location.column(),
                         kind: r.reference_kind,
                         container: r.container.unwrap_or_else(|| "(unknown)".to_string()),
@@ -1940,7 +1941,18 @@ impl CommandExecutor {
         Ok(())
     }
 
-    async fn execute_doctor(format: &str, cwd: &str) -> Result<(), Box<dyn std::error::Error>> {
+    /// Execute the doctor subcommand.
+    ///
+    /// The core renders the report and returns it; the presenter
+    /// writes it and the bin ends the process with the code the
+    /// report implies. The core does not write to the standard
+    /// output: the doctor is the command a script reads the exit
+    /// code of, and its answer has to arrive before the process
+    /// ends.
+    async fn execute_doctor(
+        format: &str,
+        cwd: &str,
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::interface::cli::doctor::{
             format_doctor_json, format_doctor_text, run_doctor_checks,
         };
@@ -1954,16 +1966,12 @@ impl CommandExecutor {
 
         let report = run_doctor_checks(workspace_path);
 
-        match format {
-            "json" => {
-                println!("{}", format_doctor_json(&report));
-            }
-            _ => {
-                println!("{}", format_doctor_text(&report));
-            }
-        }
+        let text = match format {
+            "json" => format_doctor_json(&report),
+            _ => format_doctor_text(&report),
+        };
 
-        // Set exit code based on overall status
+        // The exit code follows the overall status.
         let exit_code = match report.overall_status() {
             crate::interface::cli::doctor::DoctorStatus::Missing => 1,
             crate::interface::cli::doctor::DoctorStatus::Ok
@@ -1971,7 +1979,10 @@ impl CommandExecutor {
             | crate::interface::cli::doctor::DoctorStatus::Info => 0,
         };
 
-        std::process::exit(exit_code);
+        Ok(CommandOutput::Rendered {
+            text: format!("{text}\n"),
+            exit_code: Some(exit_code),
+        })
     }
 
     /// Execute the capabilities subcommand (A-014 / CP2.4).
@@ -1982,7 +1993,9 @@ impl CommandExecutor {
     /// human summary. Either way stderr stays clean unless an
     /// error is reported (the warning path for missing
     /// `product/*.json` is the one exception).
-    async fn execute_capabilities(format: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_capabilities(
+        format: &str,
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         // Build the doc in memory first so any error in construction
         // is reported as a structured envelope and never leaks a
         // partial document to stdout. JSON emission keeps stderr
@@ -1990,9 +2003,8 @@ impl CommandExecutor {
         // inventory warning is a text-mode diagnostic only.
         let doc = build_capabilities_doc(format == "json");
 
-        if format == "json" {
-            let serialized = serde_json::to_string(&doc)?;
-            println!("{}", serialized);
+        let text = if format == "json" {
+            format!("{}\n", serde_json::to_string(&doc)?)
         } else {
             let tools = doc["tools"].as_array().map(|a| a.len()).unwrap_or(0);
             let profiles = doc["profiles"].as_array().map(|a| a.len()).unwrap_or(0);
@@ -2000,22 +2012,24 @@ impl CommandExecutor {
                 .as_array()
                 .map(|a| a.len())
                 .unwrap_or(0);
-            println!("CogniCode Capabilities");
-            println!(
-                "  cli_version:    {}",
+            let mut text = String::new();
+            text.push_str("CogniCode Capabilities\n");
+            text.push_str(&format!(
+                "  cli_version:    {}\n",
                 doc["cli_version"].as_str().unwrap_or("")
-            );
-            println!(
-                "  source_commit:  {}",
+            ));
+            text.push_str(&format!(
+                "  source_commit:  {}\n",
                 doc["source_commit"].as_str().unwrap_or("")
-            );
-            println!("  tools:          {}", tools);
-            println!("  profiles:       {}", profiles);
-            println!("  mutating_tools: {} (runtime)", mutating);
-            println!();
-            println!("Pass `--format json` for the machine-readable contract.");
-        }
-        Ok(())
+            ));
+            text.push_str(&format!("  tools:          {tools}\n"));
+            text.push_str(&format!("  profiles:       {profiles}\n"));
+            text.push_str(&format!("  mutating_tools: {mutating} (runtime)\n"));
+            text.push('\n');
+            text.push_str("Pass `--format json` for the machine-readable contract.\n");
+            text
+        };
+        Ok(CommandOutput::rendered(text))
     }
 
     /// Execute the `docs-ingest` subcommand (T15). Walks
@@ -2035,7 +2049,7 @@ impl CommandExecutor {
     async fn execute_docs_ingest(
         path: &str,
         _recursive: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::domain::traits::source_extractor::{SourceExtractor, SourcePath};
         use crate::infrastructure::extraction::docs_extractor::DocsExtractor;
         use std::path::PathBuf;
@@ -2071,9 +2085,6 @@ impl CommandExecutor {
             .len();
         let nodes_created = result.len();
         let edges_created: usize = result.iter().map(|n| n.potential_edges.len()).sum();
-        println!("docs-ingest: files_processed = {files_processed}");
-        println!("docs-ingest: nodes_created   = {nodes_created}");
-        println!("docs-ingest: edges_created   = {edges_created}");
         // The structured JSON form is the wire-level contract
         // (matches the MCP `docs_ingest` envelope payload).
         let payload = serde_json::json!({
@@ -2082,12 +2093,19 @@ impl CommandExecutor {
             "edges_created":   edges_created,
             "errors":          Vec::<String>::new(),
         });
-        println!("docs-ingest: payload = {payload}");
-        // Exit 0 when the extractor produced at least one
+        // The core renders the answer and returns it; the presenter
+        // writes it. Exit 0 when the extractor produced at least one
         // candidate OR the input was a non-empty directory
         // (recursive walks of empty dirs are also exit 0 —
         // the operation is a no-op success).
-        Ok(())
+        let mut text = String::new();
+        text.push_str(&format!(
+            "docs-ingest: files_processed = {files_processed}\n"
+        ));
+        text.push_str(&format!("docs-ingest: nodes_created   = {nodes_created}\n"));
+        text.push_str(&format!("docs-ingest: edges_created   = {edges_created}\n"));
+        text.push_str(&format!("docs-ingest: payload = {payload}\n"));
+        Ok(CommandOutput::rendered(text))
     }
 
     /// Execute the `issues-ingest` subcommand (T13). Fetches
@@ -2106,7 +2124,7 @@ impl CommandExecutor {
         owner: &str,
         repo: &str,
         _include_git_log: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::domain::traits::source_extractor::{SourceExtractor, SourcePath};
         use crate::infrastructure::extraction::issues_extractor::IssuesExtractor;
         use crate::infrastructure::github::client::GitHubClient;
@@ -2137,17 +2155,24 @@ impl CommandExecutor {
         let issues_processed = result.len();
         let nodes_created = result.len();
         let edges_created: usize = result.iter().map(|n| n.potential_edges.len()).sum();
-        println!("issues-ingest: issues_processed = {issues_processed}");
-        println!("issues-ingest: nodes_created   = {nodes_created}");
-        println!("issues-ingest: edges_created   = {edges_created}");
         let payload = serde_json::json!({
             "issues_processed": issues_processed,
             "nodes_created":    nodes_created,
             "edges_created":    edges_created,
             "errors":           Vec::<String>::new(),
         });
-        println!("issues-ingest: payload = {payload}");
-        Ok(())
+        let mut text = String::new();
+        text.push_str(&format!(
+            "issues-ingest: issues_processed = {issues_processed}\n"
+        ));
+        text.push_str(&format!(
+            "issues-ingest: nodes_created   = {nodes_created}\n"
+        ));
+        text.push_str(&format!(
+            "issues-ingest: edges_created   = {edges_created}\n"
+        ));
+        text.push_str(&format!("issues-ingest: payload = {payload}\n"));
+        Ok(CommandOutput::rendered(text))
     }
 
     /// L1.4 / F0.1 — execute `cognicode find-usages <symbol>`.
@@ -2178,7 +2203,7 @@ impl CommandExecutor {
         context_lines: Option<usize>,
         format: &str,
         quiet: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
         use crate::interface::mcp::schemas::{FindUsagesOutput, UsageEntry};
         use crate::interface::mcp::security::InputValidator;
@@ -2244,36 +2269,44 @@ impl CommandExecutor {
                 .to_string(),
         };
 
-        // 4) Format output to stdout.
-        match format {
+        // 4) Render the answer. The core does not write to the
+        // standard output; the presenter writes what the core
+        // returns.
+        let text = match format {
             "json" => {
                 let json = serde_json::to_string_pretty(&out)
                     .map_err(|e| format!("find-usages: json serialization: {e}"))?;
-                println!("{json}");
+                format!("{json}\n")
             }
             "text" => {
+                let mut text = String::new();
                 if !quiet {
-                    println!("# find-usages symbol={symbol} total={}", out.total);
+                    text.push_str(&format!(
+                        "# find-usages symbol={symbol} total={}\n",
+                        out.total
+                    ));
                 }
-                print_text_render(&out);
+                text.push_str(&render_text(&out));
+                text
             }
             other => {
                 return Err(
                     format!("find-usages: unknown format '{other}' (expected: text|json)").into(),
                 );
             }
-        }
+        };
 
-        Ok(())
+        Ok(CommandOutput::rendered(text))
     }
 
     /// Execute analyze subcommand
-    async fn execute_analyze(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_analyze(path: &str) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::WorkspaceSession;
         use crate::interface::mcp::security::InputValidator;
         use std::sync::Arc;
 
-        println!("Analyzing code at: {}", path);
+        let mut text = String::new();
+        text.push_str(&format!("Analyzing code at: {path}\n"));
 
         // ST-02: the composition that names the validator lives HERE, in the
         // interface layer, because `application` sits below it and may not
@@ -2289,7 +2322,7 @@ impl CommandExecutor {
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 
         // Architecture check
-        println!("\n=== Architecture Check ===");
+        text.push_str("\n=== Architecture Check ===\n");
         // A valid directory with nothing to analyze is an operation that
         // ran, not a failure of the command: the exit code stays 0. But
         // the command must not publish a score about nothing — a perfect
@@ -2297,10 +2330,10 @@ impl CommandExecutor {
         // about a project nobody looked at. The reason is said instead.
         match session.check_architecture(None).await {
             Ok(result) => {
-                println!("  Score: {:.1}/100", result.score);
-                println!("  Summary: {}", result.summary);
-                println!("  Cycles: {}", result.cycles.len());
-                println!("  Violations: {}", result.violations.len());
+                text.push_str(&format!("  Score: {:.1}/100\n", result.score));
+                text.push_str(&format!("  Summary: {}\n", result.summary));
+                text.push_str(&format!("  Cycles: {}\n", result.cycles.len()));
+                text.push_str(&format!("  Violations: {}\n", result.violations.len()));
             }
             Err(e) => {
                 eprintln!("  Architecture check: {}", e);
@@ -2308,7 +2341,7 @@ impl CommandExecutor {
         }
 
         // Complexity check on key files
-        println!("\n=== Complexity Analysis ===");
+        text.push_str("\n=== Complexity Analysis ===\n");
         let session_ref = &session;
         let path_str = path.to_string();
 
@@ -2339,15 +2372,15 @@ impl CommandExecutor {
 
         for name in &file_names {
             if let Ok(c) = session_ref.get_complexity(name, None).await {
-                println!(
-                    "  {}: cyclomatic={}, cognitive={}, loc={}",
+                text.push_str(&format!(
+                    "  {}: cyclomatic={}, cognitive={}, loc={}\n",
                     name, c.cyclomatic, c.cognitive, c.lines_of_code
-                );
+                ));
             }
         }
 
-        println!("\nAnalysis complete.");
-        Ok(())
+        text.push_str("\nAnalysis complete.\n");
+        Ok(CommandOutput::rendered(text))
     }
 
     /// Execute refactor subcommand
@@ -2356,7 +2389,7 @@ impl CommandExecutor {
         symbol: &str,
         new_name: Option<&str>,
         format: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::WorkspaceSession;
         use crate::interface::mcp::security::InputValidator;
         use std::sync::Arc;
@@ -2385,6 +2418,10 @@ impl CommandExecutor {
             );
         }
 
+        // The core renders the answer and returns it; the presenter
+        // writes it.
+        let mut text = String::new();
+
         match operation {
             RefactorOperation::Rename => {
                 let new_name =
@@ -2392,7 +2429,7 @@ impl CommandExecutor {
                 if json_mode {
                     eprintln!("Renaming '{}' to '{}'...", symbol, new_name);
                 } else {
-                    println!("Renaming '{}' to '{}'...", symbol, new_name);
+                    text.push_str(&format!("Renaming '{symbol}' to '{new_name}'...\n"));
                 }
                 match session.rename_symbol(symbol, new_name, "<unknown>").await {
                     Ok(result) => {
@@ -2414,14 +2451,17 @@ impl CommandExecutor {
                                 changes: result.changes,
                                 error: result.error_message.as_deref(),
                             };
-                            println!("{}", serde_json::to_string(&doc)?);
+                            text.push_str(&format!("{}\n", serde_json::to_string(&doc)?));
                         } else if result.success {
-                            println!("  Success: {} change(s) made", result.changes.len());
+                            text.push_str(&format!(
+                                "  Success: {} change(s) made\n",
+                                result.changes.len()
+                            ));
                         } else {
-                            println!(
-                                "  Failed: {}",
+                            text.push_str(&format!(
+                                "  Failed: {}\n",
                                 result.error_message.as_deref().unwrap_or("unknown error")
-                            );
+                            ));
                         }
                     }
                     Err(e) => {
@@ -2430,16 +2470,16 @@ impl CommandExecutor {
                 }
             }
             RefactorOperation::Inline => {
-                println!("Inlining '{}'...", symbol);
+                text.push_str(&format!("Inlining '{symbol}'...\n"));
                 match session.inline_symbol(symbol, "<unknown>").await {
                     Ok(result) => {
                         if result.success {
-                            println!("  Success");
+                            text.push_str("  Success\n");
                         } else {
-                            println!(
-                                "  Failed: {}",
+                            text.push_str(&format!(
+                                "  Failed: {}\n",
                                 result.error_message.as_deref().unwrap_or("unknown error")
-                            );
+                            ));
                         }
                     }
                     Err(e) => {
@@ -2451,19 +2491,19 @@ impl CommandExecutor {
                 let target = new_name.ok_or_else(|| {
                     anyhow::anyhow!("Move requires a target path (use -- new-name)")
                 })?;
-                println!("Moving '{}' to '{}'...", symbol, target);
+                text.push_str(&format!("Moving '{symbol}' to '{target}'...\n"));
                 match session.move_symbol(symbol, "<unknown>", target).await {
                     Ok(result) => {
                         if result.success {
-                            println!(
-                                "  Success: {}",
+                            text.push_str(&format!(
+                                "  Success: {}\n",
                                 result.validation_result.warnings.join("; ")
-                            );
+                            ));
                         } else {
-                            println!(
-                                "  Failed: {}",
+                            text.push_str(&format!(
+                                "  Failed: {}\n",
                                 result.error_message.as_deref().unwrap_or("unknown error")
-                            );
+                            ));
                         }
                     }
                     Err(e) => {
@@ -2475,22 +2515,22 @@ impl CommandExecutor {
                 let name = new_name.ok_or_else(|| {
                     anyhow::anyhow!("Extract requires a function name (use -- new-name)")
                 })?;
-                println!("Extracting function '{}'...", name);
+                text.push_str(&format!("Extracting function '{name}'...\n"));
                 match session
                     .extract_function("<unknown>", (0, 0, 0, 0), name)
                     .await
                 {
                     Ok(result) => {
                         if result.success {
-                            println!(
-                                "  Success: {}",
+                            text.push_str(&format!(
+                                "  Success: {}\n",
                                 result.validation_result.warnings.join("; ")
-                            );
+                            ));
                         } else {
-                            println!(
-                                "  Failed: {}",
+                            text.push_str(&format!(
+                                "  Failed: {}\n",
                                 result.error_message.as_deref().unwrap_or("unknown error")
-                            );
+                            ));
                         }
                     }
                     Err(e) => {
@@ -2500,7 +2540,7 @@ impl CommandExecutor {
             }
         }
 
-        Ok(())
+        Ok(CommandOutput::rendered(text))
     }
 
     /// B5.W3 — Apply con autoridad.
@@ -2519,7 +2559,7 @@ impl CommandExecutor {
         plan_file: &std::path::Path,
         authorization_token: &str,
         format: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::refactor::apply::{AuthorizationToken, apply, compute_workspace_state_digest};
         use chrono::Utc;
 
@@ -2568,6 +2608,9 @@ impl CommandExecutor {
                     &workspace_root,
                 );
 
+                // The core renders the answer and returns it; the
+                // presenter writes it.
+                let mut text = String::new();
                 if format == "json" {
                     #[derive(serde::Serialize)]
                     struct ApplyOkJson {
@@ -2588,18 +2631,18 @@ impl CommandExecutor {
                             .collect(),
                         revalidation,
                     };
-                    println!("{}", serde_json::to_string_pretty(&doc)?);
+                    text.push_str(&format!("{}\n", serde_json::to_string_pretty(&doc)?));
                 } else {
                     eprintln!(
                         "Apply committed: {} file(s) modified",
                         outcome.applied_files.len()
                     );
                     for f in &outcome.applied_files {
-                        println!("  + {}", f.display());
+                        text.push_str(&format!("  + {}\n", f.display()));
                     }
-                    println!("  Revalidation: {}", revalidation.summary());
+                    text.push_str(&format!("  Revalidation: {}\n", revalidation.summary()));
                 }
-                Ok(())
+                Ok(CommandOutput::rendered(text))
             }
             Err(e) => Err(Box::new(e) as Box<dyn std::error::Error>),
         }
@@ -2618,7 +2661,9 @@ impl CommandExecutor {
     ///      `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`
     ///      can byte-compare JSON outputs.
     #[cfg(feature = "evidence-cli-ladybug")]
-    async fn execute_evidence(cmd: &EvidenceCommand) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_evidence(
+        cmd: &EvidenceCommand,
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         use crate::domain::ports::evidence_store::EvidenceKind;
         use crate::interface::cli::evidence_backend;
         use std::path::PathBuf;
@@ -2686,8 +2731,7 @@ impl CommandExecutor {
             }
         };
 
-        render_evidence_rows(rows, format);
-        Ok(())
+        Ok(CommandOutput::rendered(render_evidence_rows(rows, format)))
     }
 }
 
@@ -2753,18 +2797,21 @@ pub(crate) fn render_evidence_rows_json(
 fn render_evidence_rows(
     rows: Vec<crate::domain::ports::evidence_store::EvidenceSummary>,
     format: &str,
-) {
+) -> String {
     use crate::domain::ports::evidence_store::EvidenceKind;
 
     if format == "json" {
-        println!("{}", render_evidence_rows_json(rows));
-        return;
+        return format!("{}\n", render_evidence_rows_json(rows));
     }
+    let mut text = String::new();
     if rows.is_empty() {
-        println!("(no evidence rows match the query)");
-        return;
+        text.push_str("(no evidence rows match the query)\n");
+        return text;
     }
-    println!("{:<60}  {:<12}  {:<7}  TITLE", "ID", "KIND", "CONF");
+    text.push_str(&format!(
+        "{:<60}  {:<12}  {:<7}  TITLE\n",
+        "ID", "KIND", "CONF"
+    ));
     for r in rows {
         let kind = match r.kind {
             EvidenceKind::Log => "log",
@@ -2772,11 +2819,12 @@ fn render_evidence_rows(
             EvidenceKind::Measurement => "measurement",
             EvidenceKind::External => "external",
         };
-        println!(
-            "{:<60}  {:<12}  {:<7.2}  {}",
+        text.push_str(&format!(
+            "{:<60}  {:<12}  {:<7.2}  {}\n",
             r.id, kind, r.confidence, r.title
-        );
+        ));
     }
+    text
 }
 
 /// Prints the outline tree with indentation
@@ -2803,21 +2851,28 @@ fn render_evidence_rows(
 ///   - blank line if no results, preceded by `(no usages found)`
 ///
 /// Machine consumers should use `--format json`.
-fn print_text_render(out: &crate::interface::mcp::schemas::FindUsagesOutput) {
+/// The text answer of `find-usages`, rendered and not printed.
+///
+/// The core returns it and the presenter writes it: a core that
+/// prints its own answer can interleave it with the document a
+/// consumer is parsing.
+fn render_text(out: &crate::interface::mcp::schemas::FindUsagesOutput) -> String {
+    let mut text = String::new();
     if out.usages.is_empty() {
-        println!("(no usages found)");
-        return;
+        text.push_str("(no usages found)\n");
+        return text;
     }
     for u in &out.usages {
         let prefix = if u.is_definition { "def " } else { "    " };
-        println!(
-            "{prefix}{file}:{line}:{col}: {ctx}",
+        text.push_str(&format!(
+            "{prefix}{file}:{line}:{col}: {ctx}\n",
             file = u.file,
             line = u.line,
             col = u.column,
             ctx = u.context,
-        );
+        ));
     }
+    text
 }
 
 // ============================================================================
