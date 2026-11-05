@@ -19,6 +19,7 @@
 //! RED→GREEN: before this change `tools/list` carried no `outputSchema` at
 //! all, so the black-box assertions below could not even be written.
 
+use cognicode_core::interface::catalog::tool_feature_enabled;
 use cognicode_core::interface::mcp::output_contracts::{
     output_schema_for, published_output_schemas, tools_with_output_schema,
 };
@@ -476,6 +477,12 @@ fn type_matches(declared: &str, value: &Value) -> bool {
 /// contract. `product/tools.json` is the artefact an adopter reads; if it
 /// says `null` for a tool that now answers with a schema, the documentation
 /// is stale and A-012 has only half landed.
+///
+/// The comparison covers the tools **this build advertises**. A
+/// feature-gated tool is in the catalogue in every build, and the runtime
+/// derives its contract only in the builds that ship it; comparing the
+/// whole catalogue against the whole runtime would report a drift in every
+/// build that lacks one of the features.
 #[test]
 fn published_catalogue_matches_the_runtime_contracts() {
     let runtime: std::collections::BTreeSet<String> = tools_with_output_schema()
@@ -485,6 +492,9 @@ fn published_catalogue_matches_the_runtime_contracts() {
     let mut mismatches = Vec::new();
     for tool in tool_document()["tools"].as_array().expect("tools array") {
         let name = tool["name"].as_str().expect("tool name");
+        if !tool_feature_enabled(&tool["feature"].as_str().map(str::to_owned)) {
+            continue;
+        }
         let published_has = !tool["output_schema"].is_null();
         if published_has != runtime.contains(name) {
             mismatches.push(format!(

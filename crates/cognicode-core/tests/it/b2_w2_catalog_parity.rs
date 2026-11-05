@@ -227,6 +227,7 @@ fn cfg_match(feature: &str) -> bool {
         "persistence" => cfg!(feature = "persistence"),
         "program-analysis-server" => cfg!(feature = "program-analysis-server"),
         "evidence-cli-ladybug" => cfg!(feature = "evidence-cli-ladybug"),
+        "evidence-kernel" => cfg!(feature = "evidence-kernel"),
         _ => false,
     }
 }

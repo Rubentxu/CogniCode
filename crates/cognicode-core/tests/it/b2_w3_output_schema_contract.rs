@@ -48,11 +48,19 @@ use serde_json::{Map, Value};
 // Catalog/runtime parity for output schemas
 // ---------------------------------------------------------------------------
 
-/// The 15 tools with an `output_schema` in `product/tools.json` are exactly
-/// the same 15 tools that publish a schema in
+/// The tools with an `output_schema` in `product/tools.json` are exactly the
+/// same tools that publish a schema in
 /// `output_contracts::published_output_schemas()`. A tool in one set but not
 /// the other means either the catalog drifted, or the runtime drifted;
 /// both are silenced by this assertion.
+///
+/// The comparison is made over the tools **this build advertises**. A
+/// feature-gated tool is in the catalog whether or not the build carries
+/// the feature, and the runtime derives its contract only in the builds
+/// that ship it. Comparing the whole catalog against the whole runtime
+/// would therefore report a drift every time a build is made without one
+/// of the features — a drift that is not a drift, and a contract that
+/// cries wolf is a contract nobody reads.
 #[test]
 fn catalog_and_runtime_agree_on_output_schema_coverage() {
     let runtime: std::collections::BTreeSet<String> = tools_with_output_schema()
@@ -63,7 +71,7 @@ fn catalog_and_runtime_agree_on_output_schema_coverage() {
     assert!(
         !catalog.is_empty(),
         "no tools in product/tools.json advertise an output_schema; B2.W3 \
-         starts from the 15 tools that already publish a contract"
+         starts from the tools that already publish a contract"
     );
     let only_in_catalog: Vec<&String> = catalog.difference(&runtime).collect();
     let only_in_runtime: Vec<&String> = runtime.difference(&catalog).collect();
@@ -378,7 +386,13 @@ fn a_partial_response_payload_still_satisfies_the_typed_schema() {
 // helpers
 // ---------------------------------------------------------------------------
 
+/// The catalog entries that publish a schema **in this build**.
+///
+/// The feature gate is resolved the same way the catalogue loader resolves
+/// it, so the set measured here is the set the runtime is asked about.
 fn catalog_tools_with_output_schema() -> std::collections::BTreeSet<String> {
+    use cognicode_core::interface::catalog::tool_feature_enabled;
+
     let path = catalog_path();
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("cannot read catalog file {:?}: {e}", path));
@@ -389,6 +403,9 @@ fn catalog_tools_with_output_schema() -> std::collections::BTreeSet<String> {
         .unwrap_or_else(|| panic!("catalog file {:?} has no `tools` array", path))
         .iter()
         .filter(|t| !t.get("output_schema").map(|s| s.is_null()).unwrap_or(true))
+        .filter(|t| {
+            tool_feature_enabled(&t.get("feature").and_then(|f| f.as_str()).map(str::to_owned))
+        })
         .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
         .map(|s| s.to_string())
         .collect()

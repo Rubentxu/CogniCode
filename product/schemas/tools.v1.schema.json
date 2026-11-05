@@ -80,7 +80,7 @@
 
         "feature": {
           "type": "string",
-          "enum": ["contract-store", "evidence-cli-ladybug", "persistence", "program-analysis-server"]
+          "enum": ["contract-store", "evidence-cli-ladybug", "evidence-kernel", "persistence", "program-analysis-server"]
         },
         "impact_direction_floor": {
           "type": "string",

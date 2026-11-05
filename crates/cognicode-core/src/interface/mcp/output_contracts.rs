@@ -98,6 +98,15 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("project_insights", schema_of::<ProjectInsightsOutput>());
     m.insert("project_overview", schema_of::<ProjectOverviewOutput>());
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
+    // The findings answer is derived only in the builds that ship the tool:
+    // the findings pipeline grounds its findings in the canonical evidence
+    // kernel, and a contract for a tool this build does not advertise would
+    // be a promise to nobody.
+    #[cfg(feature = "evidence-kernel")]
+    m.insert(
+        "explain_finding",
+        schema_of::<crate::interface::mcp::handlers::findings_handlers::ExplainFindingOutput>(),
+    );
     m
 }
 

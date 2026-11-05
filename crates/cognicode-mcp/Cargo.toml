@@ -40,7 +40,11 @@ default = []
 multimodal = ["cognicode-core/multimodal"]
 
 [dependencies]
-cognicode-core = { workspace = true }
+# The canonical evidence kernel is what grounds a finding, and the tool that
+# answers «¿por qué se reporta este hallazgo?» publishes grounded findings.
+# The server therefore carries the kernel: without it the tool is not
+# published, and the product would answer the question with nothing.
+cognicode-core = { workspace = true, features = ["evidence-kernel"] }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

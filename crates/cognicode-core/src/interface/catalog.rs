@@ -158,6 +158,7 @@ pub fn tool_feature_enabled(feature: &Option<String>) -> bool {
         Some("program-analysis-server") => cfg!(feature = "program-analysis-server"),
         Some("contract-store") => cfg!(feature = "contract-store"),
         Some("evidence-cli-ladybug") => cfg!(feature = "evidence-cli-ladybug"),
+        Some("evidence-kernel") => cfg!(feature = "evidence-kernel"),
         Some(_) => false,
     }
 }
@@ -559,6 +560,10 @@ mod tests {
         assert_eq!(
             tool_feature_enabled(&Some("evidence-cli-ladybug".into())),
             cfg!(feature = "evidence-cli-ladybug")
+        );
+        assert_eq!(
+            tool_feature_enabled(&Some("evidence-kernel".into())),
+            cfg!(feature = "evidence-kernel")
         );
         // No feature: always available.
         assert!(tool_feature_enabled(&None));

@@ -1,7 +1,7 @@
 ---
 name: cognicode-mcp
 description: >
-  Drive CogniCode's 77-tool MCP server effectively: tool selection,
+  Drive CogniCode's 78-tool MCP server effectively: tool selection,
   graph prerequisites, read-before-write, incremental re-analysis,
   error recovery. Trigger: When an agent is doing multi-step graph
   exploration, impact analysis, quality audits, or safe refactoring
@@ -29,7 +29,7 @@ skill teaches **decision-making**, not tool enumeration.
 
 ## Capability domains (from `tools/list`)
 
-Group the 77 tools by what the user wants to do, not by MCP method
+Group the 78 tools by what the user wants to do, not by MCP method
 prefix. The runtime's `_meta.category` is informative; the user
 intent is what matters.
 
@@ -46,9 +46,12 @@ intent is what matters.
 
 Experimental tools (`ask_about_code`, `find_pattern_by_intent`,
 `graph_suggest_questions`, `slice_*`, `cfg_per_function`,
-`dominators_cfg`, `taint_flow`) are real but not part of the
-recommended flows below. Use them when you have a specific need
-that no stable tool covers.
+`dominators_cfg`, `taint_flow`, `explain_finding`) are real but not
+part of the recommended flows below. Use them when you have a specific
+need that no stable tool covers. `explain_finding` answers «why is this
+finding reported?» for one source file: it runs the findings pipeline
+over that file and names each finding's message, causal chain and
+detector, and says whether the grounding behind it could be verified.
 
 ## Read vs mutate (UX guardrail)
 
@@ -240,7 +243,7 @@ There is no version-pinned reference in this skill.
 ## What this skill does NOT do
 
 - It does not teach you how to **install** CogniCode. Use `cogh`.
-- It does not list all 77 tools. Use `tools/list`.
+- It does not list all 78 tools. Use `tools/list`.
 - It does not promise internal CogniCode subsystems (e77
   architecture, LSI facts/evidence, governed promotion) as public
   MCP capabilities.
