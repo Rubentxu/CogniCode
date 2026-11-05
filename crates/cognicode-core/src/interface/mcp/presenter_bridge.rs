@@ -4,9 +4,9 @@
 //! La caché/manifests del handler `handle_build_graph` sigue siendo
 //! suya (es política de transporte, no del caso de uso); este módulo
 //! existe para que el MISMO outcome que consume el SDK/CLI pueda
-//! presentarse por MCP con la misma semántica de estado: "complete" /
-//! "partial" / "unknown", y `skipped_files: Some(..)` sólo cuando hubo
-//! walk con omisiones.
+//! presentarse por MCP con la misma semántica de estado: la palabra la
+//! nombra el estado (`OutcomeState::published_label`), y
+//! `skipped_files: Some(..)` sólo cuando hubo walk con omisiones.
 
 use crate::application::analysis_basis::{AnalysisOutcome, AnalysisValue, OutcomeState};
 use crate::interface::mcp::handlers::{BuildGraphOutput, SkippedFileDto};
@@ -43,7 +43,7 @@ pub fn present_build_graph(
 
     let (status, skipped) = match outcome.state() {
         OutcomeState::Partial => (
-            "partial".to_string(),
+            OutcomeState::Partial.published_label().to_string(),
             Some(
                 outcome
                     .gaps()
@@ -66,9 +66,17 @@ pub fn present_build_graph(
                     .collect::<Vec<_>>(),
             ),
         ),
-        OutcomeState::Complete if loaded_from_cache => ("unknown".to_string(), None),
-        OutcomeState::Complete => ("complete".to_string(), Some(Vec::new())),
-        _ => ("unknown".to_string(), None),
+        OutcomeState::Complete if loaded_from_cache => {
+            (OutcomeState::Unknown.published_label().to_string(), None)
+        }
+        OutcomeState::Complete => (
+            OutcomeState::Complete.published_label().to_string(),
+            Some(Vec::new()),
+        ),
+        // La palabra la nombra el estado: un árbol sin nada que leer es
+        // "unsupported" aquí y en el handler, y no "unknown" en uno de
+        // los dos.
+        other => (other.published_label().to_string(), None),
     };
 
     BuildGraphOutput {

@@ -21,6 +21,10 @@ use crate::interface::coverage::{PendingReferenceInfo, RejectedRelationInfo};
 ///   presentador, no el consumidor).
 /// - `Failed`   → el caller maneja el error ANTES de llamar aquí;
 ///   este presentador solo recibe outcomes con valor.
+/// - `Unsupported` → `status: "unsupported"`: el walk corrió y no
+///   encontró nada que leer. La palabra la nombra el estado y no este
+///   módulo, para que las tres superficies publiquen el mismo
+///   vocabulario sobre el mismo árbol.
 ///
 /// Las tres coberturas se publican en su sitio: los ficheros que no se
 /// pudieron leer van en `skipped_files`, las referencias que no se pudieron
@@ -50,37 +54,31 @@ pub fn present_graph_full(
         _ => (0, 0, 0, Vec::new(), Vec::new()),
     };
 
-    let (status, skipped_files) = match outcome.state() {
-        OutcomeState::Partial => (
-            "partial".to_string(),
-            outcome
-                .gaps()
-                .iter()
-                // Cada gap dice la cobertura que falta. Los de ficheros
-                // saltados son los únicos que describen un fichero; el de
-                // referencias pendientes describe otra cosa, y leerlo como
-                // un fichero saltado sería inventar un hueco que no está.
-                .filter(|gap| {
-                    gap.capability.as_deref()
-                        == Some(crate::application::analysis_basis::SKIPPED_FILE_CAPABILITY)
+    let status = outcome.state().published_label().to_string();
+
+    // Los gaps de un Partial son las coberturas que faltan. Los de
+    // ficheros saltados son los únicos que describen un fichero; el de
+    // referencias pendientes describe otra cosa, y leerlo como un
+    // fichero saltado sería inventar un hueco que no está.
+    let skipped_files = match outcome.state() {
+        OutcomeState::Partial => outcome
+            .gaps()
+            .iter()
+            .filter(|gap| {
+                gap.capability.as_deref()
+                    == Some(crate::application::analysis_basis::SKIPPED_FILE_CAPABILITY)
+            })
+            .filter_map(|gap| {
+                // El gap message llega como "path: reason" cuando
+                // viene de un fichero saltado; capability es el
+                // nombre de la capability afectada.
+                gap.message.split_once(": ").map(|(p, r)| SkippedFile {
+                    path: p.to_string(),
+                    reason: r.to_string(),
                 })
-                .filter_map(|gap| {
-                    // El gap message llega como "path: reason" cuando
-                    // viene de un fichero saltado; capability es el
-                    // nombre de la capability afectada.
-                    gap.message.split_once(": ").map(|(p, r)| SkippedFile {
-                        path: p.to_string(),
-                        reason: r.to_string(),
-                    })
-                })
-                .collect(),
-        ),
-        OutcomeState::Complete => ("complete".to_string(), Vec::new()),
-        // Un veredicto que no es un veredicto no es "complete". El
-        // consumidor tiene que poder distinguir "lo sé todo" de "no he
-        // podido responder", y el MCP usa la misma palabra para las dos
-        // cosas que no son un veredicto.
-        _ => ("unknown".to_string(), Vec::new()),
+            })
+            .collect(),
+        _ => Vec::new(),
     };
 
     GraphResult::Full {
@@ -135,6 +133,13 @@ pub fn report_graph_full(outcome: &AnalysisOutcome<AnalysisValue>, result: &Grap
         eprintln!(
             "Graph loaded from cache (durable snapshot): {symbols} symbols, {dependencies} relationships"
         );
+    }
+
+    // El motivo va a stderr, que es donde vive la observabilidad: el
+    // documento de stdout lleva el estado y el motivo se explica al
+    // que mira la tubería.
+    if let Some(reason) = outcome.reason() {
+        eprintln!("  {reason}");
     }
 
     if status == "partial" {

@@ -300,6 +300,40 @@ async fn the_cli_and_the_mcp_say_the_same_thing_about_the_coverage() {
     );
 }
 
+/// A tree with nothing to read has ONE state, and both surfaces publish
+/// it.
+///
+/// The walk ran and the tree is there; there is simply nothing in it
+/// that this product can read. That is a state and not an error, and the
+/// two surfaces used to answer the same directory differently: the CLI
+/// exited with an error and an empty stdout, while the MCP answered
+/// `unsupported`. A consumer that asks two surfaces about one tree got
+/// two verdicts about it, and could not tell which one was wrong.
+#[tokio::test]
+async fn the_cli_and_the_mcp_publish_the_same_state_over_a_tree_without_code() {
+    let project = fresh_dir("no-material");
+    std::fs::write(project.join("notes.txt"), "sin codigo\n").expect("write the fixture");
+
+    let from_cli = run_cli(&["graph", "full", &project.to_string_lossy()]);
+    let cli_status = from_cli["status"]
+        .as_str()
+        .expect("the CLI answers with a status")
+        .to_string();
+
+    let (mcp_status, _) = mcp_verdict(&project).await;
+
+    assert_eq!(
+        cli_status, mcp_status,
+        "the CLI and the MCP answer with different states about the same \
+         directory: the CLI says {cli_status}, the MCP says {mcp_status}"
+    );
+    assert_eq!(
+        cli_status, "unsupported",
+        "a tree with nothing to read is `unsupported`, and both surfaces \
+         have to say it the same way"
+    );
+}
+
 // ─── The Kotlin/Java corpus ───────────────────────────────────────────
 //
 // The corpus that M2.T03 (TASK-13) built, and the one where the

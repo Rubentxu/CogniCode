@@ -33361,3 +33361,121 @@ goals de TASK-84. AC3 queda cerrado.
 **Creditos.** La autoria de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los creditos a `AUTHORS.md`, que este repositorio no
 tiene; el credito queda aqui, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-79 (AC4): un árbol sin nada que leer tiene un estado, y las dos superficies lo dicen igual
+
+**El hueco.** Medido en las notas de la tarea: sobre un directorio sin código analizable,
+`cognicode --format json graph full` salía con rc=1, con «no produjo símbolos» en stderr y con el
+stdout vacío; el MCP `build_graph` respondía con éxito y con `status: "unsupported"`. Dos superficies,
+un directorio, dos respuestas. Y no era solo el resultado: eran dos decisiones distintas sobre la
+misma pregunta.
+
+La divergencia tenía tres fuentes, y ninguna era la que un consumidor puede ver:
+
+1. **La respuesta de la capa de aplicación.** `ServiceAnalyzer::graph_full` traducía «no hay
+   material» a `Failed` con un `io_failure`, mientras el handler del MCP calculaba su propio
+   «no hay material» (`symbols == 0`) y lo forzaba a `unsupported`. Dos copias del mismo hecho.
+2. **El vocabulario.** La palabra publicada la tenía escrita cada capa por su cuenta: el `catch-all`
+   de la CLI («todo lo que no sea Complete o Partial es *unknown*»), los literales del handler del
+   MCP, la copia privada de `output_contracts::state_discriminant` y la del puente de presentación
+   del MCP. Cuatro listas para cinco palabras.
+3. **El documento.** La CLI no publicaba estado porque publicaba un error: sin documento no hay
+   estado que comparar. Un consumidor que compara dos superficies no puede comparar un documento
+   con una cadena vacía.
+
+**La dirección.** No hubo que inventarla: ya estaba escrita en el repositorio. AGENTS.md dice que un
+resultado `Partial`/`Unknown`/`Unsupported`/`Failed` nunca se presenta como `Complete`/`clean`/`no
+impact`, y SPEC-CU-001.5 dice que «un proveedor que no puede crear un grafo debe devolver
+`Unsupported` o `Partial` con gaps, nunca `Complete(empty_graph)`». `Unsupported` era lo que la
+especificación nombra y lo que el MCP ya publicaba; `Failed` era una tercera palabra que nadie
+había elegido. La dirección es, por tanto, la del MCP, y el operador había dado permiso implícito
+para tomarla.
+
+**La corrección.**
+
+- **El hecho tiene un dueño.** `application/services/analyze.rs` —la capa donde ya vivía la frase
+  «no produjo símbolos»— gana `holds_material(symbol_count)` y `no_material_outcome(path)`. El
+  adaptador de producción y el handler del MCP preguntan ahora lo mismo a la misma función: si el
+  árbol tiene algo que leer.
+- **La respuesta es un estado, y el estado lo nombra el estado.** El adaptador traduce «no hay
+  material» a `Unsupported` con su motivo (antes `Failed`), que es lo que SPEC-CU-001.5 pide.
+  `OutcomeState` gana `published_label()`, y con él el vocabulario deja de estar copiado: la lista
+  privada de `output_contracts::state_discriminant` desaparece, y el `catch-all` de la CLI
+  («unknown» para todo lo que no sea Complete o Partial) también.
+- **La CLI publica el estado.** `presenter_bridge::present_graph_full` toma la palabra del estado,
+  así que un árbol sin nada que leer se publica como `unsupported` y no como `unknown`; el motivo va
+  a stderr, que es donde vive la observabilidad. El presentador de texto dice el estado cuando no es
+  un veredicto sobre la cobertura, para que «Total symbols: 0» no se lea como un grafo construido.
+- **El código de salida.** La operación corrió, así que sale con 0 y con el documento: es el mismo
+  criterio que ya fijaba `analysis_result_is_honest.rs` para `analyze` —«un directorio válido sin
+  nada que analizar es una operación que corrió»—. Un directorio que no existe sigue saliendo distinto
+  de 0, y `cli_exit_code_propagation.rs` lo sigue fijando.
+- **El MCP pregunta.** `handle_build_graph` deja de calcular `symbols == 0` y pregunta a la
+  aplicación; sus palabras publicadas salen del estado que las nombra. El handler del MCP baja de
+  3707 a 3701 líneas de producción (el razonamiento se mudó a su dueño), y el ratchet de tamaño
+  sigue en verde.
+
+**CAMBIO DE CONTRATO (deliberado).** El SDK cambia: un workspace sin material Rust devuelve
+`Unsupported` con motivo, donde devolvía `Failed` con error. El contrato de
+`cu1_w2_service_analyzer_contract.rs` se reconcilia a conciencia y con su razón: la especificación
+nombra `Unsupported` para este caso, y el MCP ya publicaba esa palabra sobre el mismo directorio.
+Un consumidor del SDK que miraba `state()` verá `Unsupported` en vez de `Failed`; el motivo sigue
+viajando, ahora en `reason()`.
+
+**RED medido (antes del cambio).**
+
+| Test | Resultado | Lo que decía |
+|---|---|---|
+| `crates/cognicode-cli/tests/it/graph_cli_mcp_equivalence.rs::the_cli_and_the_mcp_publish_the_same_state_over_a_tree_without_code` | **1 test run: 0 passed, 1 failed** | «the CLI exited with exit status: 1: … Error building full graph: workspace … no produjo símbolos» — la CLI no publicaba estado |
+| `crates/cognicode-core/tests/it/cu1_w2_service_analyzer_contract.rs::graph_full_without_rust_material_is_unsupported_and_says_why` | **1 test run: 0 passed, 1 failed** | «left: Failed, right: Unsupported» |
+
+Verdes después: **1 test run: 1 passed** y **1 test run: 1 passed**. El test unitario del
+vocabulario (`the_published_word_is_the_word_the_wire_writes`) viene con la función: no hay función
+previa que pueda fallar, y decirlo «RED» sería inventar una medida.
+
+**Ejecución real (medida sobre el binario, no sobre el test).** `cognicode --format json graph full`
+sobre un directorio con un único `notes.txt`:
+
+```json
+{ "kind": "full", "symbols": 0, "dependencies": 0, "status": "unsupported", "skipped_files": [] }
+```
+
+rc=0, y el motivo en stderr: «workspace … no produjo símbolos (sin material Rust analizable)». En
+texto: «Full graph built in 7ms / Status: unsupported / Total symbols: 0». Por el otro lado, el
+servidor MCP arrancado de verdad y llamado por JSON-RPC responde `success: true`,
+`status: "unsupported"` y `basis.complete: false` sobre el mismo directorio.
+
+**Verificación (medida en esta rama, `feature/task-79-ac4-one-state-for_a_tree_without_code`, base `4e4218e3`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate --workspace --lib` | **4655 tests run: 4655 passed, 2 skipped** |
+| `cargo nextest run --profile gate --workspace --tests` | **6745 tests run: 6745 passed, 10 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `npm test --prefix apps/explorer-ui` | **944 tests passed** (86 ficheros), rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, 0 fallos |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `handlers/mod.rs` 3707 → 3701 |
+| `python3 scripts/ci/test_comment_standard.py` | OK |
+| `python3 scripts/ci/test_cr06_ratchet.py` | PASS — 28 → 28 (0 added, 0 retired) |
+
+**Gate: NOT_RUN (lote).** El gate se pasa por lotes de diez, y esta unidad es la tercera desde el
+último gate (AC1, AC2 y TASK-82). El paso de mutación mide `cognicode-graph-algos`, un crate que
+esta rama no toca, así que su veredicto es el ya medido; el resto del gate (unitarios e integración
+del workspace) está medido arriba, con los tres pasos del gate en la misma forma en que los ejecuta
+`scripts/test-gate.sh`.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **La otra divergencia de la misma familia.** `check_architecture` del MCP responde `NotFound`
+  («No source code found in the project directory») sobre un árbol sin material, mientras la CLI
+  `analyze` sale con 0 y explica el motivo en stderr. No es el par medido por AC4 —`graph full`
+  contra `build_graph`— y unificarlo tocaría el esquema publicado de `check_architecture`, que es
+  una decisión de contrato y no un arreglo de paso. Queda medido y sin dueño: es la siguiente
+  unidad de esta familia.
+- **La caché del producto no tiene política de caducidad** (residuo heredado de AC2): no hay nada
+  que limpie `~/.cache/cognicode/<hash>`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
+el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

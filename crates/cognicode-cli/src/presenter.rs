@@ -918,7 +918,7 @@ pub fn present_graph_full(
         elapsed_ms,
         symbols,
         dependencies,
-        status: _,
+        status,
         skipped_files: _,
         pending_references: _,
         rejected_relations: _,
@@ -935,6 +935,13 @@ pub fn present_graph_full(
         )?;
         // Result block.
         writeln!(w, "Full graph built in {}ms", elapsed_ms)?;
+        // The state is published when it is not a verdict about the
+        // coverage: "complete" and "partial" are the business of the
+        // counts below, and a state that says nothing about the
+        // coverage has to be said out loud.
+        if !matches!(status.as_str(), "complete" | "partial") {
+            writeln!(w, "  Status: {}", status)?;
+        }
         writeln!(w, "  Total symbols: {}", symbols)?;
         writeln!(w, "  Total dependencies: {}", dependencies)?;
         // Skipped lines NOT emitted here — see the doc

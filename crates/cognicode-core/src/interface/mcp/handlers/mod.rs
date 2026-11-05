@@ -15,6 +15,7 @@
 // actually implies, so the next unfailable assertion in this file becomes a
 // compile error instead of a silent pass.
 
+use crate::application::analysis_basis::OutcomeState;
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -1223,19 +1224,12 @@ pub async fn handle_build_graph(
     let symbols = graph.symbol_count();
     let edges_count = graph.edge_count();
 
-    // A build that produced no symbols is the absence of material, not a
-    // complete graph. The SDK and the CLI already refuse to call an empty
-    // graph a success, and the same directory cannot get two different
-    // answers depending on who asked: a consumer that hears "complete"
-    // over an empty graph will believe it knows a project it has never
-    // seen.
-    //
-    // The answer is a state and not an error: the walk ran, the tree is
-    // there, there is simply nothing in it that this product can read.
-    // An error would also hide the reason from a caller that only reads
-    // successful payloads, and it would break the rebuild of a project
-    // whose last source file was deleted.
-    let no_material = symbols == 0;
+    // Whether the workspace holds anything this product can read is a
+    // fact the application layer owns: the SDK adapter and this handler
+    // ask it the same question about the same tree, and two answers for
+    // one directory is how the CLI and the MCP came to disagree about
+    // it.
+    let no_material = !crate::application::services::analyze::holds_material(symbols);
 
     let elapsed = start.elapsed().as_millis() as u64;
 
@@ -1265,9 +1259,9 @@ pub async fn handle_build_graph(
         // that graph.
         let mapped: Vec<SkippedFileDto> = current_holes.iter().map(skipped_file_dto).collect();
         let status = if mapped.is_empty() {
-            "complete"
+            OutcomeState::Complete.published_label()
         } else {
-            "partial"
+            OutcomeState::Partial.published_label()
         };
         (
             Some(mapped),
@@ -1282,7 +1276,7 @@ pub async fn handle_build_graph(
                 Some(Vec::new()),
                 Some(Vec::new()),
                 Some(Vec::new()),
-                "complete".to_string(),
+                OutcomeState::Complete.published_label().to_string(),
             ),
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
@@ -1302,7 +1296,7 @@ pub async fn handle_build_graph(
                     Some(mapped),
                     Some(pending),
                     Some(rejected),
-                    "partial".to_string(),
+                    OutcomeState::Partial.published_label().to_string(),
                 )
             }
             None => {
@@ -1314,7 +1308,7 @@ pub async fn handle_build_graph(
                     Some(Vec::new()),
                     Some(Vec::new()),
                     Some(Vec::new()),
-                    "complete".to_string(),
+                    OutcomeState::Complete.published_label().to_string(),
                 )
             }
         }
@@ -1324,7 +1318,7 @@ pub async fn handle_build_graph(
     // can read. "Unsupported" says that without pretending the graph is
     // complete.
     let status = if no_material {
-        "unsupported".to_string()
+        OutcomeState::Unsupported.published_label().to_string()
     } else {
         status
     };
