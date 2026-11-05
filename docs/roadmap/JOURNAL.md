@@ -34337,3 +34337,147 @@ consumidor: es una función de biblioteca. La tarea queda abierta con 3 de 4 AC.
 del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
 `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
 recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-130 (AC2): el conjunto de retroalimentación termina y dice la verdad
+
+**El encargo.** La segunda rebanada de TASK-130: `AnalysisService::find_minimal_feedback_set`,
+la función que responde «¿qué símbolos, si se fueran, dejarían el grafo sin
+ciclos?». La primera rebanada (la complejidad) llegó al consumidor; esta no:
+medido, **0 apariciones** de la función fuera de
+`application/services/analysis_service.rs` y `domain/services/cycle_detector.rs`,
+así que hoy sólo la alcanza quien llame a la biblioteca. No se expone por el
+MCP ni por el CLI en esta rebanada: inventar una herramienta nueva tocaría el
+catálogo publicado de herramientas, y el encargo no lo pedía.
+
+**El estado medido antes de decidir (`main` @ `39536a1f`).**
+
+| Grafo | Símbolos | Aristas | Ciclos | Antes |
+|---|---|---|---|---|
+| `src/infrastructure/lsp` | 784 | 406 | 19 | **no termina en 20 s** |
+| `src/domain` | 5.971 | 2.051 | 62 | **no termina en 20 s** |
+| `src/application/services` | 2.272 | 1.063 | 21 | **no termina en 20 s** |
+| `src` (el core entero) | 28.611 | 12.158 | 300 | **no termina** |
+
+**Las tres cosas que estaban mal, medidas (no deducidas del título).**
+
+1. **El criterio estaba invertido.** `breakage` es el número de ciclos que
+   *quedan* tras quitar el candidato, y se elegía al que **más ciclos dejaba**
+   (`if breakage > best_breakage`). Como el mejor valor empezaba en 0, un
+   candidato que rompe *todos* los ciclos —deja 0— nunca ganaba. Medido: el
+   primer símbolo elegido era siempre el inofensivo, el que no rompe nada.
+2. **No era mínimo.** En un grafo con un par que se llama y un self-loop,
+   devolvía 3 o 4 símbolos donde bastan 2, y metía el símbolo inofensivo.
+3. **No era el mismo entre procesos.** Cinco corridas en cinco procesos
+   distintos: tres dieron `[c,a,b,d]`, una dio `[c,d,b]` y otra `[c,d,a]`. La
+   causa: los candidatos salen de `graph.symbol_ids()`, y el hash map que
+   guarda los símbolos no tiene orden —la semilla cambia en cada proceso—.
+
+**El coste, leído en el árbol.** En cada iteración clonaba el grafo entero y,
+por cada candidato, clonaba **otro** grafo y volvía a ejecutar el Tarjan
+recursivo: `(iteraciones × candidatos) × O(V + E)`, con un `SymbolId` (una
+cadena) por clave y cuatro clonas por nodo. Medido: el Tarjan recursivo sobre
+`SymbolId` es lo que hace que la detección de ciclos sea lenta, y por eso el
+mismo grafo con 784 símbolos no terminaba en 20 s.
+
+**La decisión.** El conjunto mínimo de retroalimentación (*feedback vertex
+set*) es NP-hard: no hay mínimo exacto en tiempo polinomial. Así que el nombre
+público `find_minimal_feedback_set` **no cambia** —es un contrato—, pero su
+documentación dice ahora con exactitud qué garantiza:
+
+- un conjunto que **rompe todos los ciclos** que el detector del producto
+  reporta,
+- de tamaño **aproximado** por una heurística voraz,
+- **siempre el mismo** para el mismo grafo, sea cual sea el orden en que el
+  grafo guarde sus símbolos.
+
+El núcleo del voraz vive en `cognicode-graph-algos`
+(`feedback_vertex_set`), que camina el grafo como **índices** y se apoya en la
+**condensación de Tarjan iterativa** que ya era el algoritmo del crate (y que
+el gate de mutantes ya cubría). El coste es `O(F · (V + E))`, con `F` = tamaño
+del conjunto, y cada pasada saca un símbolo de un ciclo: **termina siempre**,
+sin temporizador y sin estado «no cabe». El dominio proyecta: numera los
+símbolos **por su identificador**, para que el desempate (participa en más
+ciclos → grado menor → identificador menor) no dependa del hash map.
+
+**El RED, medido con el código viejo** (restaurado por sustitución exacta del
+texto, nunca con `git checkout`):
+
+| Prueba | Con el código viejo |
+|---|---|
+| `the_feedback_set_holds_only_the_symbols_that_break_a_cycle` | **FAIL** — el conjunto era `[c, b, a, d]`: metía el símbolo que no rompe nada |
+| `the_feedback_set_does_not_depend_on_the_order_of_the_symbols` | **FAIL** — el mismo grafo, dos órdenes de inserción, dos conjuntos |
+| `the_feedback_set_of_a_real_project_answers_within_a_deadline` | **FAIL a los 10,8 s** — «the feedback set of a real project did not answer in 10s» |
+
+**Después, medido sobre el mismo árbol.**
+
+| Grafo | Símbolos | Aristas | Ciclos | Conjunto | Tiempo | Ciclos que quedan |
+|---|---|---|---|---|---|---|
+| `src/infrastructure/lsp` | 784 | 406 | 19 | 24 | **10,4 ms** | 0 |
+| `src/domain` | 5.971 | 2.051 | 62 | 62 | **155 ms** | 0 |
+| `src/application/services` | 2.272 | 1.063 | 21 | 20 | **25,8 ms** | 0 |
+| `src` (el core entero) | 28.611 | 12.158 | 300 | 301 | **3,08 s** | 0 |
+
+La última columna no es una cifra del algoritmo: es lo que responde el
+**detector del propio producto** (`detect_cycles`) sobre el grafo al que se le
+ha quitado el conjunto. La garantía se comprueba con la misma voz que la
+publica.
+
+**Las mutaciones focales** de `feedback_vertex_set`, medidas sobre este mismo
+árbol, con la reversión en el mismo comando:
+
+| Mutación | Qué rompe | Muertos |
+|---|---|---|
+| M1 | la cuenta de ciclos es inerte (`+= 1` → `= 1`) | **1 de 10** |
+| M2 | el desempate por grado (`<` → `<=`) | **2 de 10** |
+| M3 | todo nodo cuenta como ciclo (`len() > 1` → `len() >= 1`) | **2 de 10** |
+| M4 | el nodo que se llama a sí mismo no cuenta como ciclo | **2 de 10** |
+
+**Lo que queda de la tarea.** Los cuatro AC quedan cubiertos: AC2 era «lo mismo
+que AC1 para `find_minimal_feedback_set`» —una medición con plazo que dice
+qué ocurre—, y lo que ocurre ahora es que **termina**, medido, y en un tiempo
+acotado por construcción.
+
+**Hallazgos anotados, no tocados.**
+
+- El producto tiene **dos** implementaciones de las componentes fuertemente
+  conexas: el Tarjan recursivo de `detect_cycles` (en el dominio) y la
+  condensación iterativa de `cognicode-graph-algos`. Unificarlas cambia el
+  **orden publicado** de los símbolos dentro de un ciclo —lo publican
+  `interface/mcp/handlers/mod.rs`, `interface/mcp/handlers/aix_handlers.rs` y
+  `application/workspace_session.rs`, y de ahí sale el `from`/`to` de cada
+  violación—, y ese orden sale hoy del hash map que guarda los símbolos. Es
+  una unidad aparte, con sus pruebas de consumidor.
+- `CallGraph::find_path` se documenta como «(BFS)» y hace una búsqueda en
+  profundidad (`Vec::pop()` es LIFO). La mentira sigue anotada, no tocada.
+- `WorkspaceSession::get_project_diagnostics` sigue **sin ningún llamador**
+  fuera de su fichero.
+
+**Verificación (medida en esta rama, base `39536a1f`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-graph-algos -p cognicode-core --lib --tests` | **3794 tests run: 3794 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli --tests` | **629 tests run: 629 passed, 1 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-graph-algos -p cognicode-core --all-targets -- -D warnings` | limpio |
+
+La primera corrida de esas dos suites dio **9 y 4 fallos**, todos con el mismo
+motivo: `missing release binary`. No es una regresión: la suite del release
+contrato necesita los bytes del perfil `release` (`cognicode`,
+`cognicode-mcp`, `cogh` y `cognicode-release`), y este árbol no los tenía
+compilados. Compilados (`cargo build --release --bin …`), las dos suites
+quedaron en verde. Se anotan porque el número de un fallo que no es del
+cambio se lee como si lo fuera.
+
+**Entrega.** PR #609 (producto y pruebas) → `c0f62467`. Este recibo es su
+propio PR.
+
+**Gate: NOT_RUN, y toca.** El gate se paga por lotes de diez tareas
+(`AGENTS.md`), y con esta unidad el lote llega a **diez**: TASK-79 AC1,
+TASK-82 por la mitad, TASK-79 AC4, TASK-92 rebanada 1, TASK-92 rebanada 2,
+TASK-70 grupo 1, TASK-128, TASK-70 grupo 2, TASK-130 rebanada 1 y **TASK-130
+AC2**. El gate entero se corre a continuación y su recibo va aparte.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg`
+del repositorio no admite trailers `Co-Authored-By` y remite los créditos a
+`AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el
+recibo, en vez de en un trailer que el hook rechaza.
