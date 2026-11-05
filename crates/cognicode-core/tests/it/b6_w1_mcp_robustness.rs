@@ -17,7 +17,6 @@
 
 #![allow(clippy::needless_raw_string_hashes)]
 
-use cognicode_core::interface::mcp::rmcp_adapter::build_all_tools;
 use cognicode_core::interface::mcp::robustness::{
     collect_diagnostics, default_limits, note_request_finished, note_request_started,
 };
@@ -556,15 +555,23 @@ fn initialize_then_clean_shutdown_no_orphan() {
 /// three things that a "server that quietly loses a page" cannot
 /// survive:
 ///
-///   1. the **union of every page is exactly the advertised
-///      catalogue** — compared against `build_all_tools()`, the same
-///      function the server paginates;
+///   1. the **union of every page is the whole catalogue the product
+///      declares** — every tool the master declares without a feature
+///      gate is on the wire, and nothing is on the wire that the
+///      master does not declare;
 ///   2. the cursor is a **real, contiguous offset**: base64 of
 ///      `0, PAGE_SIZE, 2*PAGE_SIZE, …`. A server that returned a
 ///      constant cursor, or advanced by the wrong stride, still walks
 ///      without duplicates but loses or repeats rows;
 ///   3. every page but the last is **exactly `PAGE_SIZE` long**, so a
 ///      truncated middle page cannot hide behind a non-empty union.
+///
+/// The oracle is the master, not the catalogue computed in this
+/// process, and the reason is measured, not assumed: the server is a
+/// different build (it carries `evidence-kernel`, this process does
+/// not), so the two catalogues are not the same set. The master is the
+/// document the server ships inside the binary, and it is the one
+/// declaration both sides can be held to.
 ///
 /// The MCP SDK already handles pagination at the framing level; what
 /// we are pinning is that *our* server exposes the contract honestly.
@@ -676,28 +683,98 @@ fn large_response_uses_pagination() {
          and this test is not testing pagination"
     );
 
-    // The load-bearing assertion: the union of every page is the
-    // advertised catalogue, item for item. `build_all_tools()` is the
-    // function the server itself paginates, so this is "the whole
-    // catalogue", not a hand-copied list that can drift.
-    let advertised: BTreeSet<String> = build_all_tools()
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
-    let missing: Vec<&String> = advertised.difference(&seen).collect();
-    let extra: Vec<&String> = seen.difference(&advertised).collect();
+    // The load-bearing assertion: the union of every page is the whole
+    // catalogue the product declares.
+    //
+    // The oracle is the master (`product/tools.json`), NOT
+    // `build_all_tools()` computed in this process. MEDIDO 2026-11-05: the
+    // two are the same code but not the same build. The server is compiled
+    // as `cognicode-mcp`, whose dependency on the core turns the
+    // `evidence-kernel` feature ON; this test binary is compiled as the
+    // core, with that feature OFF. So the server announces 73 tools and
+    // this process announces 72, and the difference is `explain_finding`
+    // —the tool that feature gates. The comparison the test wanted —"the
+    // walk reproduces the catalogue the server paginates"— cannot be made
+    // from a catalogue computed in another build.
+    //
+    // The master is the right oracle because it is what the server ships
+    // INSIDE the binary: the server publishes the catalogue it carries, and
+    // the product's declaration is the one document both sides agree on.
+    //
+    // Two directions, and they are not the same kind of assertion:
+    //
+    //   * The walk publishes NOTHING the master does not declare. A tool
+    //     on the wire that the product does not declare is a contract
+    //     violation: the operator's CLI cannot reference it.
+    //
+    //   * The walk publishes EVERY tool the master declares WITHOUT a
+    //     feature gate. A tool with no gate is published by every build,
+    //     so its absence means the walk lost a page — or the binary under
+    //     test is older than the master and does not know the tool yet.
+    //
+    // The gated tools are the documented gap: which of them a build
+    // publishes depends on the features that build carries, and the test
+    // cannot know the features of a binary it did not compile.
+    let (declared, ungated) = master_catalogue();
+    // The coverage assertion below is vacuous on an empty set, and an
+    // empty set would mean the master declares nothing at all. The
+    // catalogue is not empty: the assertion has something to say.
     assert!(
-        missing.is_empty() && extra.is_empty(),
-        "walking the cursor did not reproduce the advertised catalogue \
-         ({} walked, {} advertised, {pages} pages).\n\
-         missing from the walk: {missing:?}\n\
-         walked but not advertised: {extra:?}\n\
-         If the server binary under test is stale, rebuild it with \
-         `cargo build --bin cognicode-mcp` before reading this as a \
-         server bug.",
-        seen.len(),
-        advertised.len()
+        !ungated.is_empty() && !declared.is_empty(),
+        "the master declares no tools: the coverage assertion would be vacuous"
     );
+    let undocumented: Vec<&String> = seen.difference(&declared).collect();
+    assert!(
+        undocumented.is_empty(),
+        "the walk published tools that the master does not declare: \
+         {undocumented:?}.\n\
+         The server announces a name the operator's source of truth does \
+         not have. If the binary under test is older than the master, \
+         rebuild it with `cargo build --bin cognicode-mcp`; if it is not, \
+         the server is advertising a tool the product does not declare."
+    );
+    let lost: Vec<&String> = ungated.difference(&seen).collect();
+    assert!(
+        lost.is_empty(),
+        "the walk did not publish {} tool(s) the master declares without a \
+         feature gate: {lost:?}.\n\
+         The cursor lost a page, or the binary under test is older than the \
+         master. Rebuild it with `cargo build --bin cognicode-mcp` before \
+         reading this as a server bug.\n\
+         Measured: {} walked, {} declared, {pages} pages.",
+        lost.len(),
+        seen.len(),
+        declared.len(),
+    );
+}
+
+/// The master catalogue: every tool the product declares, and the ones
+/// that every build publishes.
+///
+/// The second set is the tools with no `feature` gate: a build publishes
+/// them whatever features it carries, so their absence on the wire is a
+/// fact about the walk, not about the build.
+fn master_catalogue() -> (BTreeSet<String>, BTreeSet<String>) {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("product")
+        .join("tools.json");
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let v: Value = serde_json::from_slice(&bytes).expect("parse tools.json");
+    let tools = v["tools"].as_array().expect("tools[]");
+
+    let mut declared = BTreeSet::new();
+    let mut ungated = BTreeSet::new();
+    for tool in tools {
+        let name = tool["name"].as_str().expect("tool name").to_string();
+        let gated = tool.get("feature").map(|f| !f.is_null()).unwrap_or(false);
+        if !gated {
+            ungated.insert(name.clone());
+        }
+        declared.insert(name);
+    }
+    (declared, ungated)
 }
 
 // ===========================================================================
