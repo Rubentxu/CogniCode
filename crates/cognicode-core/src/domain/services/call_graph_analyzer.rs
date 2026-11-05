@@ -5,6 +5,7 @@
 #![allow(clippy::unnecessary_sort_by)]
 
 use crate::domain::aggregates::{CallEntry, CallGraph, SymbolId};
+use std::collections::HashMap;
 
 /// Service for analyzing call graphs
 pub struct CallGraphAnalyzer;
@@ -53,6 +54,10 @@ impl CallGraphAnalyzer {
     /// Calculates complexity metrics for the call graph
     ///
     /// Returns a CallGraphComplexityReport with various complexity indicators.
+    ///
+    /// The cost of the report is linear in the size of the graph: it
+    /// answers for a project of any size, in a time that grows with the
+    /// graph and not with its square.
     pub fn calculate_complexity(&self, graph: &CallGraph) -> CallGraphComplexityReport {
         let total_symbols = graph.symbol_count();
         let total_edges = graph.edge_count();
@@ -104,33 +109,17 @@ impl CallGraphAnalyzer {
     }
 
     /// Calculates the maximum depth of the call graph
+    ///
+    /// The depth is the **longest chain of calls**, counted in symbols.
+    /// The chain is measured over the condensation of the graph, so a
+    /// group of mutually recursive symbols is entered once and counts
+    /// once — a graph with cycles has chains that could be walked for
+    /// ever, and the condensation is what makes the question answerable.
+    ///
+    /// The cost is linear in the size of the graph.
     fn calculate_max_depth(&self, graph: &CallGraph) -> usize {
-        let mut max_depth = 0;
-
-        for symbol in graph.symbols() {
-            let id = SymbolId::new(symbol.fully_qualified_name());
-            let depth = self.depth_from_roots(graph, &id);
-            max_depth = std::cmp::max(max_depth, depth);
-        }
-
-        max_depth
-    }
-
-    /// Calculates the depth of a symbol from root nodes
-    fn depth_from_roots(&self, graph: &CallGraph, target: &SymbolId) -> usize {
-        let roots = graph.roots();
-        if roots.is_empty() {
-            return 0;
-        }
-
-        let mut max_depth = 0;
-        for root in roots {
-            if let Some(path) = graph.find_path(&root, target) {
-                max_depth = std::cmp::max(max_depth, path.len());
-            }
-        }
-
-        max_depth
+        let (adjacency, node_count) = call_adjacency(graph);
+        cognicode_graph_algos::longest_chain(&adjacency, node_count)
     }
 
     /// Analyzes entry points (functions with no callers)
@@ -180,6 +169,32 @@ impl Default for CallGraphAnalyzer {
     }
 }
 
+/// The adjacency of the graph, indexed: `adjacency[u]` holds the callees
+/// of `u` as indices, and the second value is the number of nodes.
+///
+/// The algorithms of `cognicode-graph-algos` work over flat slices, so
+/// the symbols are numbered once and the edges are translated into that
+/// numbering. An edge whose endpoint is not a symbol of the graph is
+/// left out: the graph's own invariants allow it, and an edge that names
+/// nothing is not a call.
+fn call_adjacency(graph: &CallGraph) -> (Vec<Vec<usize>>, usize) {
+    let mut index: HashMap<SymbolId, usize> = HashMap::with_capacity(graph.symbol_count());
+    for (id, _) in graph.symbol_ids() {
+        let next = index.len();
+        index.entry(id.clone()).or_insert(next);
+    }
+    let node_count = index.len();
+
+    let mut adjacency: Vec<Vec<usize>> = vec![Vec::new(); node_count];
+    for (source, target, _, _, _) in graph.edges_with_metadata() {
+        if let (Some(&from), Some(&to)) = (index.get(&source), index.get(&target)) {
+            adjacency[from].push(to);
+        }
+    }
+
+    (adjacency, node_count)
+}
+
 /// Represents a hot path (frequently called function sequence)
 #[derive(Debug, Clone)]
 pub struct HotPath {
@@ -206,7 +221,11 @@ pub struct CallGraphComplexityReport {
     pub total_edges: usize,
     /// Estimated cyclomatic complexity
     pub cyclomatic_complexity: usize,
-    /// Maximum depth of the call graph
+    /// Maximum depth of the call graph: the longest chain of calls,
+    /// counted in symbols.
+    ///
+    /// A group of mutually recursive symbols is entered once, and its
+    /// symbols are counted once each.
     pub max_depth: usize,
     /// Number of entry points (roots)
     pub entry_point_count: usize,
@@ -366,5 +385,64 @@ mod tests {
 
         assert_eq!(leaf_functions.len(), 1);
         assert_eq!(leaf_functions[0].symbol_name, "leaf");
+    }
+
+    /// A symbol of a fixture graph.
+    fn symbol_of(name: &str, line: u32) -> Symbol {
+        Symbol::new(
+            name,
+            SymbolKind::Function,
+            Location::new("test.rs", line, 1),
+        )
+    }
+
+    #[test]
+    fn the_depth_of_the_graph_is_its_longest_chain_of_calls() {
+        // a → b → c, and d → c: the longest chain is a, b, c.
+        let mut graph = CallGraph::new();
+        let a = graph.add_symbol(symbol_of("a", 1));
+        let b = graph.add_symbol(symbol_of("b", 2));
+        let c = graph.add_symbol(symbol_of("c", 3));
+        let d = graph.add_symbol(symbol_of("d", 4));
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &c, DependencyType::Calls).unwrap();
+        graph.add_dependency(&d, &c, DependencyType::Calls).unwrap();
+
+        let report = CallGraphAnalyzer::new().calculate_complexity(&graph);
+
+        assert_eq!(
+            report.max_depth, 3,
+            "the longest chain of the fixture is a, b, c"
+        );
+    }
+
+    #[test]
+    fn a_group_of_mutually_recursive_symbols_is_counted_once() {
+        // a → b, b → c, c → b: b and c call each other, so the chain is
+        // a plus the group {b, c}.
+        let mut graph = CallGraph::new();
+        let a = graph.add_symbol(symbol_of("a", 1));
+        let b = graph.add_symbol(symbol_of("b", 2));
+        let c = graph.add_symbol(symbol_of("c", 3));
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &c, DependencyType::Calls).unwrap();
+        graph.add_dependency(&c, &b, DependencyType::Calls).unwrap();
+
+        let report = CallGraphAnalyzer::new().calculate_complexity(&graph);
+
+        assert_eq!(
+            report.max_depth, 3,
+            "the chain is a plus the group of the two symbols that call each other"
+        );
+    }
+
+    #[test]
+    fn a_graph_without_calls_has_a_depth_of_one() {
+        let mut graph = CallGraph::new();
+        graph.add_symbol(symbol_of("a", 1));
+
+        let report = CallGraphAnalyzer::new().calculate_complexity(&graph);
+
+        assert_eq!(report.max_depth, 1, "a lone symbol is a chain of one");
     }
 }
