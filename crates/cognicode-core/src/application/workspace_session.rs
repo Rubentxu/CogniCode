@@ -1250,13 +1250,13 @@ impl WorkspaceSession {
                 id: format!(
                     "{}:{}:{}",
                     sym.location().file(),
-                    sym.location().line(),
+                    published_line(sym.location().line()),
                     sym.location().column()
                 ),
                 name: sym.name().to_string(),
                 kind: sym.kind().to_string(),
                 file_path: sym.location().file().to_string(),
-                line: sym.location().line(),
+                line: published_line(sym.location().line()),
                 column: sym.location().column(),
                 documentation: None,
                 signature: None,

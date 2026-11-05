@@ -24,10 +24,16 @@
 
 use std::path::{Path, PathBuf};
 
-use cognicode_core::interface::mcp::handlers::{
-    BuildGraphInput, HandlerContext, handle_build_graph, handle_get_entry_points,
+use cognicode_core::interface::mcp::handlers::graph_query_handlers::{
+    GraphExplainInput, handle_graph_explain,
 };
-use cognicode_core::interface::mcp::schemas::GetEntryPointsInput;
+use cognicode_core::interface::mcp::handlers::{
+    BuildGraphInput, HandlerContext, handle_build_graph, handle_get_call_hierarchy,
+    handle_get_entry_points, handle_get_hot_paths,
+};
+use cognicode_core::interface::mcp::schemas::{
+    CallDirection, GetCallHierarchyInput, GetEntryPointsInput, GetHotPathsInput,
+};
 
 /// A file whose declarations are on known lines.
 ///
@@ -101,6 +107,94 @@ async fn the_mcp_publishes_the_line_the_file_declares() {
             entry.location.line, declared,
             "the published line of {} is not the line the file declares it on",
             entry.name
+        );
+    }
+}
+
+/// The graph tools publish the line the file declares.
+///
+/// The graph counts from zero; the product counts from one. Every tool
+/// that answers with a graph position has to cross that difference
+/// before it publishes, and each one that forgets answers with the
+/// line above the one the file declares.
+///
+/// The three tools are measured together because they are three
+/// surfaces of the same fact: where a symbol lives.
+#[tokio::test]
+async fn the_graph_tools_publish_the_line_the_file_declares() {
+    let dir = fixture();
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir.clone())
+        .build();
+    handle_build_graph(
+        &ctx,
+        BuildGraphInput {
+            directory: Some(dir.to_string_lossy().into_owned()),
+        },
+    )
+    .await
+    .expect("the MCP builds the graph");
+
+    // The explanation of a symbol says where the symbol lives.
+    let explained = handle_graph_explain(
+        &ctx,
+        GraphExplainInput {
+            symbol: "beta".to_string(),
+            depth: 2,
+        },
+    )
+    .await
+    .expect("the MCP explains beta");
+    assert_eq!(
+        explained.node.line,
+        declared_line("beta").expect("the fixture declares beta"),
+        "the explanation publishes a line that is not the line the file declares"
+    );
+
+    // The hot paths say where each hot symbol lives.
+    let hot = handle_get_hot_paths(
+        &ctx,
+        GetHotPathsInput {
+            limit: 10,
+            min_fan_in: 1,
+        },
+    )
+    .await
+    .expect("the MCP answers with the hot paths");
+    assert!(!hot.hot_paths.is_empty(), "the fixture declares a hot path");
+    for entry in &hot.hot_paths {
+        let Some(declared) = declared_line(&entry.symbol) else {
+            continue;
+        };
+        assert_eq!(
+            entry.line, declared,
+            "the hot path of {} publishes a line that is not the line the file declares",
+            entry.symbol
+        );
+    }
+
+    // The call hierarchy says where each caller lives.
+    let hierarchy = handle_get_call_hierarchy(
+        &ctx,
+        GetCallHierarchyInput {
+            symbol_name: "beta".to_string(),
+            direction: CallDirection::Incoming,
+            depth: 1,
+            include_external: false,
+            compressed: false,
+        },
+    )
+    .await
+    .expect("the MCP answers with the call hierarchy");
+    assert!(!hierarchy.calls.is_empty(), "the fixture declares a caller");
+    for call in &hierarchy.calls {
+        let Some(declared) = declared_line(&call.symbol) else {
+            continue;
+        };
+        assert_eq!(
+            call.line, declared,
+            "the call to {} publishes a line that is not the line the file declares",
+            call.symbol
         );
     }
 }

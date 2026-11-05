@@ -42,7 +42,7 @@ use crate::domain::traits::code_intelligence::{
     PrecisionTier, ProviderDiagnostic, Reference, ReferenceKind, TieredCodeIntelligenceProvider,
     TieredOutcome,
 };
-use crate::domain::value_objects::SymbolKind;
+use crate::domain::value_objects::{SymbolKind, published_line};
 
 /// Producer stamped on every provider-derived observation (design D1).
 const PRODUCER: ProducerKind = ProducerKind::RuntimeObserver;
@@ -102,9 +102,10 @@ impl SubjectIndex {
             let fqn = SymbolFqn::from_fact_side(
                 location.file(),
                 symbol.name(),
-                // Declared 0-based → 1-based re-base (the `Symbol` legacy
-                // line onto the extractor's fact-side convention).
-                location.line() + 1,
+                // The declared 0-based line crosses to the 1-based
+                // convention the fact side uses, in the one place that
+                // knows the difference.
+                published_line(location.line()),
             )
             .assemble();
             candidates
@@ -140,9 +141,9 @@ fn symbol_fact_side_fqn(symbol: &Symbol) -> String {
     SymbolFqn::from_fact_side(
         symbol.location().file(),
         symbol.name(),
-        // Declared 0-based → 1-based re-base (the `Symbol` legacy line onto
-        // the extractor's fact-side convention).
-        symbol.location().line() + 1,
+        // The declared 0-based line crosses to the 1-based convention the
+        // fact side uses, in the one place that knows the difference.
+        published_line(symbol.location().line()),
     )
     .assemble()
 }

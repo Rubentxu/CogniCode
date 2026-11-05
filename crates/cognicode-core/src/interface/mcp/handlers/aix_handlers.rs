@@ -24,10 +24,9 @@
 //! Plus 2 Phase 3A proactive tool handlers:
 //! suggest_context, reparse_on_edit.
 
-use super::*;
+use super::{published_line, *};
 
 use crate::domain::value_objects::file_time::observed_mtime;
-use crate::domain::value_objects::published_line;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
 // AIX Tool Handlers
@@ -82,7 +81,7 @@ pub async fn handle_smart_overview(
         .map(|hp| HotPathDto {
             symbol_name: hp.symbol_name.clone(),
             file: hp.file.clone(),
-            line: hp.line,
+            line: published_line(hp.line),
             fan_in: hp.fan_in,
             fan_out: hp.fan_out,
         })
@@ -1776,7 +1775,7 @@ pub async fn handle_suggest_context(
                     name: hp.symbol_name.clone(),
                     kind: "function".to_string(),
                     file: hp.file.clone(),
-                    line: hp.line,
+                    line: published_line(hp.line),
                     score: calculate_hotness_score(hp.fan_in, hp.fan_out),
                     context: format!("Hot path (fan_in={}, fan_out={})", hp.fan_in, hp.fan_out),
                 });
