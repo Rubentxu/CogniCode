@@ -156,12 +156,23 @@ vive en el gate.
    2026-11-04: `single_community_top_node` fallaba de forma fantasma después de
    una corrida de mutantes, y `touch` sobre el fichero —o un directorio de
    destino distinto— lo devolvía a verde.
-9. **La medición de mutación se lee en serie cuando se lee el log.** En
-   paralelo (`-j N`), los jobs comparten el directorio de destino y los logs
-   por mutante se mezclan: el log de un mutante puede traer la salida de otro.
-   El veredicto —atrapado, sobrevivido, colgado— sí coincide entre paralelo y
-   serie; lo que no es de fiar en paralelo es la atribución. Para atribuir un
-   mutante a un test concreto, la corrida es en serie (`-j 1`).
+9. **La medición de mutación es EN SERIE, porque el veredicto es por
+   mutante.** `cargo-mutants` trabaja sobre una única copia del árbol y sus
+   trabajadores la mutan **sin cerrojo** (`lab.rs`: apply → build → test →
+   revert). En paralelo (`-j N`), dos trabajos escriben sobre el mismo
+   fichero: uno aplica su mutación, otro la sobrescribe, un tercero la
+   revierte mientras el primero compila. Los logs por mutante se mezclan, y
+   —esto es lo que se midió el 2026-11-05— **el veredicto tampoco coincide**:
+   una corrida en paralelo con ocho trabajos reportó siete mutantes de
+   `god_nodes.rs` como *supervivientes*, y los diez mutantes de ese fichero
+   salen **atrapados** medidos de uno en uno. La misma corrida cambió además
+   el número de mutantes *inviables* entre corridas (1, 2, 4) sobre el mismo
+   árbol. Por eso el paso de mutantes del gate mide **un mutante a la vez**
+   (`MUTANTS_JOBS=1` en `scripts/test-gate.sh`, con un contrato que lo fija):
+   la certificación es por mutante, y para que sea atribuible la medición es
+   serial. Para una ojeada rápida a un fichero, `cargo mutants --file <ruta>
+   -j 8` dice lo mismo en segundos: es una *mirada*, no una certificación, y
+   no pasa por el script a propósito.
 
 **Comandos sueltos** (el gate los agrupa):
 
