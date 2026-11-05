@@ -34,13 +34,16 @@
 //!    byte — checked at EVERY boundary, not only at the end;
 //! 5. every page declares the lines it brings, so a client knows where each
 //!    piece goes without counting lines by hand;
-//! 6. a file that fits in a page is read in one page, with no token.
+//! 6. every page publishes the digest of the file it belongs to, so a client
+//!    can tell that the pages it holds belong to the same version of it;
+//! 7. a file that fits in a page is read in one page, with no token.
 
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::rmcp_adapter::call_tool_handler;
 use cognicode_core::interface::mcp::tool_response::success_result;
 use rmcp::model::CallToolRequestParams;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// How many pages the chain may bring at most.
@@ -130,6 +133,7 @@ struct Page {
     end_line: u32,
     has_more: bool,
     next_token: Option<String>,
+    content_hash: Option<String>,
 }
 
 impl Page {
@@ -154,12 +158,14 @@ impl Page {
             .as_str()
             .filter(|token| !token.is_empty())
             .map(str::to_string);
+        let content_hash = answer["content_hash"].as_str().map(str::to_string);
         Self {
             content,
             start_line,
             end_line,
             has_more,
             next_token,
+            content_hash,
         }
     }
 
@@ -198,6 +204,17 @@ async fn follow_chain(ctx: &HandlerContext, path: &str) -> Vec<Page> {
              offering a page that does not advance"
         );
     }
+}
+
+/// The digest of a byte sequence, as the product publishes it.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Where two byte sequences part company.
@@ -317,6 +334,23 @@ async fn a_file_longer_than_a_page_is_read_in_pages_that_rebuild_it_byte_exact()
         "the pages do not rebuild the file: {}",
         first_difference(accumulated.as_bytes(), content.as_bytes())
     );
+
+    // 5. Every page publishes the digest of the file it belongs to. The chain
+    //    spans several requests, and the client may hold the pages for a while
+    //    before reading them: the digest is what says that those pages come
+    //    from the same version of the file. Comparing each page against the
+    //    digest of the file also says they agree with each other.
+    let digest = sha256_hex(content.as_bytes());
+    for (index, page) in pages.iter().enumerate() {
+        let published = page.content_hash.as_deref().unwrap_or_else(|| {
+            panic!("page {index} publishes no digest: the client cannot tell which file it reads")
+        });
+        assert_eq!(
+            published, digest,
+            "page {index} publishes a digest that is not the digest of the file: the pages \
+             would not all belong to the same version of it"
+        );
+    }
 }
 
 /// A file that fits in a page is read in one page, with no token.
@@ -343,5 +377,10 @@ async fn a_file_that_fits_in_a_page_is_read_in_one_page_without_a_token() {
         content.as_bytes(),
         "the page is not the file: {}",
         first_difference(page.content.as_bytes(), content.as_bytes())
+    );
+    assert_eq!(
+        page.content_hash.as_deref(),
+        Some(sha256_hex(content.as_bytes()).as_str()),
+        "the page does not publish the digest of the file it brings"
     );
 }
