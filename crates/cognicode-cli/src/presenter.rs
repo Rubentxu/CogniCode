@@ -39,6 +39,39 @@
 //! T1-5.5 will move this to `cognicode-cli` and add JSON dispatch.
 //! That move is a path change, not a logic change: the text path
 //! stays byte-identical.
+//!
+//! Los dos canales, y qué va en cada uno
+//! --------------------------------------
+//!
+//! El CLI tiene dos salidas y dos clases de cosa:
+//!
+//!   - La **salida estándar** lleva el producto: el documento JSON, o
+//!     el texto de la respuesta. Un consumidor que lee el canal entero
+//!     tiene que poder parsearlo: el contrato es «un documento», no «un
+//!     documento y algo más».
+//!   - La **salida de error** lleva la observabilidad: las líneas de
+//!     progreso y los avisos.
+//!
+//! De ahí sale dónde va cada línea de progreso:
+//!
+//!   - La que el presenter emite (`writeln!(w, ...)`) es parte del
+//!     **formato publicado** del modo texto, y por eso va en `w`. Los
+//!     tests de snapshot la fijan byte a byte.
+//!   - La que el presenter **no puede** emitir —porque la variante del
+//!     resultado no lleva el camino del proyecto— la escribe la función
+//!     que la calcula, y sigue la misma regla de canal: la salida
+//!     estándar en modo texto —es el formato publicado— y la salida de
+//!     error en modo JSON, donde la salida estándar es el documento
+//!     entero.
+//!
+//! La regla vive en `cognicode_core::interface::cli::progress`; los
+//! cuatro sitios que la usan son `trace-path`, `mermaid`, `hierarchy` e
+//! `impact`, los comandos cuyo resultado no lleva el camino del
+//! proyecto.
+//!
+//! La línea sale igual en la terminal del usuario en los dos modos: la
+//! salida de error se ve en la terminal. Lo que cambia es el canal, y el
+//! canal es lo que un consumidor parsea.
 
 use std::io::{self, Write};
 
@@ -545,9 +578,11 @@ pub fn present_graph_tracepath_found(
         // TracePathFound variant doesn't carry the project
         // path (it's a side-channel in the function; the
         // data side cares only about from/to/hops), so the
-        // presenter can't reproduce it. The progress line
-        // stays in commands.rs as a println! (T1-5.5 will
-        // move it to the bin's text path or a tracing event).
+        // presenter can't reproduce it. The function that
+        // calculates it writes it, and it follows the rule of
+        // the channel: the standard output in text mode (the
+        // published format) and the standard error in JSON
+        // mode, where the standard output is the document.
         //
         // The presenter emits only the result block + summary.
         writeln!(w)?;
@@ -578,9 +613,13 @@ pub fn present_graph_tracepath_found(
 ///   [blank line]
 ///   Trace completed in {elapsed}ms
 ///
-/// The progress line 'Tracing path from ...' stays in the
-/// function (same reason as TracePathFound: the project
-/// path is not in the data side's variant). The presenter
+/// The progress line 'Tracing path from ...' is written by
+/// the function that calculates it (same reason as
+/// TracePathFound: the project path is not in the data side's
+/// variant, so the presenter can't reproduce it). It follows
+/// the rule of the channel: the standard output in text mode
+/// —the published format— and the standard error in JSON mode,
+/// where the standard output is the document. The presenter
 /// emits the result block + summary.
 pub fn present_graph_tracepath_notfound(
     result: &cognicode_core::interface::cli::result::GraphResult,
@@ -648,9 +687,11 @@ pub fn present_graph_mermaid(
         elapsed_ms,
     } = result
     {
-        // Progress line stays in the function: the Mermaid
-        // variant doesn't carry the project path (same
-        // pattern as TracePath, T1-5.4g).
+        // Progress line: the function writes it (the Mermaid
+        // variant doesn't carry the project path —same
+        // pattern as TracePath—), and it follows the rule of
+        // the channel: the standard output in text mode, the
+        // standard error in JSON mode.
         //
         // Result block header.
         writeln!(w)?;
@@ -802,8 +843,10 @@ pub fn present_graph_hierarchy(
         // in: PATH' progress line is NOT emitted by the
         // presenter. The Hierarchy variant doesn't carry the
         // project path (same pattern as TracePath/Mermaid);
-        // the function emits the progress line. The presenter
-        // emits the result block + summary.
+        // the function writes it, and it follows the rule of
+        // the channel: the standard output in text mode, the
+        // standard error in JSON mode. The presenter emits the
+        // result block + summary.
         //
         // Result block + per-depth entries.
         writeln!(w)?;
@@ -940,7 +983,10 @@ pub fn present_graph_full(
 /// The progress line 'Analyzing impact of changing X in: PATH'
 /// is NOT emitted by the presenter (the Impact variant
 /// doesn't carry the project path; same pattern as
-/// TracePath, Mermaid, Hierarchy).
+/// TracePath, Mermaid, Hierarchy). The function writes it, and
+/// it follows the rule of the channel: the standard output in
+/// text mode —the published format— and the standard error in
+/// JSON mode, where the standard output is the document.
 ///
 /// The data side carries the FULL impacted_symbols/files
 /// lists (not truncated to 20/10). The presenter applies

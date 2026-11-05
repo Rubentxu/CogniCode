@@ -11,6 +11,7 @@ use crate::infrastructure::graph::{
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
+use crate::interface::cli::progress::progress_line;
 use crate::interface::cli::result::{
     CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
 };
@@ -757,12 +758,9 @@ impl CommandExecutor {
                 // parse / unsupported-extension failures as `Err`, and the
                 // UAT (see `w2_uat_tests` below) requires those to
                 // propagate so that scripts and CI can detect them.
-                // T1-5.4b: execute_graph now returns GraphResult.
-                // T1-5.5: bind the result (was `let _result`) so the bin
-                // can consume it. The inline presenter calls inside
-                // `execute_graph` (12 sites) still emit text; T1-5.5d
-                // removes them and the bin takes over.
-                let result = Self::execute_graph(command).await?;
+                // The graph commands return their data; the bin formats
+                // it (text or JSON per `--format`).
+                let result = Self::execute_graph(command, cli.format).await?;
                 Ok(CommandOutput::Graph(result))
             }
             Some(CliCommand::FindUsages {
@@ -980,6 +978,7 @@ impl CommandExecutor {
     /// Execute graph subcommand
     async fn execute_graph(
         command: &GraphCommand,
+        output_format: Format,
     ) -> Result<GraphResult, Box<dyn std::error::Error>> {
         use crate::interface::cli::result::{
             DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SymbolRef,
@@ -992,15 +991,8 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
-                // Progress line — same text as the
-                // pre-migration println!; the presenter
-                // re-emits it (T1-5.4i). The println! here
-                // is removed.
-                //
-                // (Note: we DON'T call the presenter's
-                // progress line from inside this function;
-                // the presenter writes the whole stdout
-                // byte stream when called.)
+                // The progress line belongs to the presenter: this
+                // function returns the data and the bin formats it.
 
                 let dir = PathBuf::from(path);
                 let mut strategy = OnDemandStrategy::new();
@@ -1277,12 +1269,13 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
-                // Progress line stays in the function: the
-                // TracePathFound/NotFound variants don't carry
-                // the project path, so the presenter (T1-5.4g)
-                // can't reproduce it. T1-5.5 may move this
-                // progress to a tracing event.
-                println!("Tracing path from '{}' to '{}' in: {}", from, to, path);
+                // Progress line: the presenter can't reproduce it (the
+                // variant doesn't carry the project path), so the
+                // function that calculates it writes it.
+                progress_line(
+                    output_format,
+                    &format!("Tracing path from '{}' to '{}' in: {}", from, to, path),
+                );
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
@@ -1343,10 +1336,12 @@ impl CommandExecutor {
             }
             GraphCommand::Mermaid { path, format } => {
                 let start = Instant::now();
-                // Progress line stays in the function: the
-                // Mermaid variant doesn't carry the project
-                // path (same pattern as TracePath, T1-5.4g).
-                println!("Exporting to Mermaid format from: {}", path);
+                // Progress line: the presenter can't reproduce it (the
+                // variant doesn't carry the project path).
+                progress_line(
+                    output_format,
+                    &format!("Exporting to Mermaid format from: {}", path),
+                );
 
                 let dir = PathBuf::from(path);
                 // The root is checked before the walk so the failure is
@@ -1417,12 +1412,14 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
-                // Progress line stays in the function: the
-                // Hierarchy variant doesn't carry the project
-                // path (same pattern as TracePath, Mermaid).
-                println!(
-                    "Getting call hierarchy for '{}' (depth={}, direction={}) in: {}",
-                    symbol, depth, direction, path
+                // Progress line: the presenter can't reproduce it (the
+                // variant doesn't carry the project path).
+                progress_line(
+                    output_format,
+                    &format!(
+                        "Getting call hierarchy for '{}' (depth={}, direction={}) in: {}",
+                        symbol, depth, direction, path
+                    ),
                 );
 
                 let dir = PathBuf::from(path);
@@ -1523,11 +1520,12 @@ impl CommandExecutor {
             }
             GraphCommand::Impact { symbol, path } => {
                 let start = Instant::now();
-                // Progress line stays in the function (the
-                // Impact variant doesn't carry the project
-                // path; same pattern as TracePath, Mermaid,
-                // Hierarchy).
-                println!("Analyzing impact of changing '{}' in: {}", symbol, path);
+                // Progress line: the presenter can't reproduce it (the
+                // variant doesn't carry the project path).
+                progress_line(
+                    output_format,
+                    &format!("Analyzing impact of changing '{}' in: {}", symbol, path),
+                );
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.

@@ -6,6 +6,8 @@ pub mod doctor;
 pub mod project_graph;
 // CU-1.3 — presentadores puros AnalysisOutcome → GraphResult N−1.
 pub mod presenter_bridge;
+/// The two channels of the CLI, and the rule that decides between them.
+pub mod progress;
 pub mod result;
 
 #[cfg(feature = "evidence-cli-ladybug")]

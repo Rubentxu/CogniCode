@@ -598,12 +598,13 @@ fn fresh_dir(label: &str) -> PathBuf {
     dir
 }
 
-/// The real binary, as a sub-process.
+/// The real binary, as a sub-process, and its JSON answer.
 ///
-/// Some commands print a progress line before the document, so the
-/// document is read from its first brace. The line is on the standard
-/// output: the JSON contract of the CLI is "a document", not "a
-/// document and something else", and that is worth a task of its own.
+/// The answer is read from the WHOLE standard output: the JSON contract
+/// of the CLI is "a document", not "a document and something else". This
+/// reader used to look for the first brace, because some commands wrote
+/// a progress line in front of the document; the reader that had to know
+/// the trick was the proof that the contract was the other thing.
 fn run_cli_json(args: &[&str]) -> Value {
     let binary = common::binary_path("cognicode");
     let output = Command::new(&binary)
@@ -617,11 +618,103 @@ fn run_cli_json(args: &[&str]) -> Value {
         output.status,
         String::from_utf8_lossy(&output.stderr)
     );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+        panic!(
+            "the CLI did not answer with a JSON document: {e}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+/// The standard output of `--format json` is a document, and only a
+/// document.
+///
+/// The commands that wrote a progress line wrote it in the standard
+/// output, in front of the document. A consumer that reads the whole
+/// output cannot parse it, and the test that had to look for the first
+/// brace was living proof of the breach. In JSON mode the progress
+/// line is observability, and it goes to the standard error, where the
+/// user still sees it: the standard output is the document and nothing
+/// else.
+///
+/// The document has to be the WHOLE output: not a document with a line
+/// in front of it, and not a document with a line behind it.
+#[tokio::test]
+async fn the_json_answer_is_a_document_and_nothing_else() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+
+    let cases: Vec<Vec<&str>> = vec![
+        vec!["graph", "trace-path", "middle", "leaf_a", path],
+        vec!["graph", "mermaid", path],
+        vec!["graph", "hierarchy", "middle", path],
+        vec!["graph", "impact", "middle", path],
+    ];
+
+    for args in &cases {
+        let binary = common::binary_path("cognicode");
+        let output = Command::new(&binary)
+            .args(["--format", "json"])
+            .args(args)
+            .output()
+            .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let document: Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+            panic!("`{args:?}` did not answer with a JSON document: {e}: {stdout}")
+        });
+        assert!(
+            document.is_object(),
+            "`{args:?}` did not answer with a JSON object: {stdout}"
+        );
+        assert!(
+            !stdout.contains("Tracing path from")
+                && !stdout.contains("Exporting to Mermaid")
+                && !stdout.contains("Getting call hierarchy")
+                && !stdout.contains("Analyzing impact of changing"),
+            "`{args:?}` put something that is not the document in the standard \
+             output: {stdout}"
+        );
+        // The line did not vanish: it went to the channel of the
+        // observability, which is on the terminal too.
+        assert!(
+            stderr.contains("Tracing path from")
+                || stderr.contains("Exporting to Mermaid")
+                || stderr.contains("Getting call hierarchy")
+                || stderr.contains("Analyzing impact of changing"),
+            "`{args:?}` did not report the progress anywhere: {stderr}"
+        );
+    }
+}
+
+/// The text format keeps the progress line where it published it.
+///
+/// The progress line is part of the published text format, and the
+/// format says it is in the standard output. Fixing the JSON contract
+/// does not move it: the format that a consumer of the text output
+/// already knows stays the same. What the JSON mode changes is the
+/// channel of the DOCUMENT, not the channel of the text.
+#[tokio::test]
+async fn the_text_format_keeps_the_progress_line_it_published() {
+    let dir = rust_project();
+    let path = dir.to_str().expect("a path");
+    let binary = common::binary_path("cognicode");
+
+    let output = Command::new(&binary)
+        .args(["graph", "trace-path", "middle", "leaf_a", path])
+        .output()
+        .expect("the CLI runs");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let start = stdout
-        .find('{')
-        .expect("the CLI answers with a JSON object");
-    serde_json::from_str(&stdout[start..]).expect("the CLI answer parses")
+
+    assert!(
+        stdout.contains("Tracing path from 'middle' to 'leaf_a'"),
+        "the published text format keeps the progress line: {stdout}"
+    );
+    assert!(
+        stdout.contains("Path found") || stdout.contains("No path found"),
+        "the standard output still carries the product text: {stdout}"
+    );
 }
 
 /// The rows of a hot-paths answer, in the order they were published.
