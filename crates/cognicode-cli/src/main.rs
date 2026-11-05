@@ -112,6 +112,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !matches!(output, CommandOutput::Other) {
         let mut stdout = std::io::stdout();
         cognicode_cli::presenter::present_output(&output, cli_format, &mut stdout)?;
+        // The answer is on the wire before the process ends with the
+        // code the command implies: the doctor is the case, and its
+        // report is what the consumer reads.
+        use std::io::Write;
+        stdout.flush()?;
+    }
+    if let Some(code) = output.exit_code() {
+        std::process::exit(code);
     }
 
     Ok(())

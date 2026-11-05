@@ -111,6 +111,7 @@ mod mcp_failures_arrive_as_failures;
 mod mcp_newly_dispatched_tools;
 mod one_owner_for_the_graph_questions;
 mod one_owner_for_the_impact_question;
+mod one_published_line_base;
 mod per_file_surfaces_publish_pending_references;
 mod prf_sec_07_adversarial_campaign;
 mod provider_conformance;

@@ -24,7 +24,7 @@
 //! Plus 2 Phase 3A proactive tool handlers:
 //! suggest_context, reparse_on_edit.
 
-use super::*;
+use super::{published_line, *};
 
 use crate::domain::value_objects::file_time::observed_mtime;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
@@ -81,7 +81,7 @@ pub async fn handle_smart_overview(
         .map(|hp| HotPathDto {
             symbol_name: hp.symbol_name.clone(),
             file: hp.file.clone(),
-            line: hp.line,
+            line: published_line(hp.line),
             fan_in: hp.fan_in,
             fan_out: hp.fan_out,
         })
@@ -182,7 +182,7 @@ pub async fn handle_ranked_symbols(
         ranked.push(RankedSymbolDto {
             name: symbol_name,
             file: r.symbol.location().file().to_string(),
-            line: r.symbol.location().line() + 1,
+            line: published_line(r.symbol.location().line()),
             kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
             relevance_score,
             fan_in,
@@ -540,7 +540,7 @@ pub async fn handle_nl_to_symbol(
             matches.push(NlSymbolMatch {
                 symbol_name: r.symbol.name().to_string(),
                 file: r.symbol.location().file().to_string(),
-                line: r.symbol.location().line() + 1,
+                line: published_line(r.symbol.location().line()),
                 kind: format!("{:?}", r.symbol.kind()).to_lowercase(),
                 confidence,
                 match_reason: format!(
@@ -616,7 +616,7 @@ pub async fn handle_ask_about_code(
                 .map(|s| CodePathStep {
                     symbol: s.name().to_string(),
                     file: s.location().file().to_string(),
-                    line: s.location().line() + 1,
+                    line: published_line(s.location().line()),
                     kind: format!("{:?}", s.kind()).to_lowercase(),
                     role: "intermediate".to_string(),
                     snippet: None,
@@ -1125,7 +1125,7 @@ pub async fn handle_detect_god_functions(
             god_functions.push(GodFunctionDto {
                 symbol: symbol.name().to_string(),
                 file: symbol.location().file().to_string(),
-                line: symbol.location().line() + 1,
+                line: published_line(symbol.location().line()),
                 size_proxy: lines,
                 fan_out_proxy: complexity,
                 fan_in,
@@ -1197,7 +1197,7 @@ pub async fn handle_detect_long_parameter_lists(
             long_param_functions.push(LongParamFunctionDto {
                 symbol: symbol.name().to_string(),
                 file: symbol.location().file().to_string(),
-                line: symbol.location().line() + 1,
+                line: published_line(symbol.location().line()),
                 parameter_count: param_count,
                 parameter_names: vec![],
                 suggestion: "Consider grouping parameters into a struct".to_string(),
@@ -1385,7 +1385,7 @@ fn get_hot_paths_from_graph(graph: &CallGraph, limit: usize) -> Vec<HotPathDto> 
             HotPathDto {
                 symbol_name: s.name().to_string(),
                 file: s.location().file().to_string(),
-                line: s.location().line() + 1,
+                line: published_line(s.location().line()),
                 fan_in,
                 fan_out,
             }
@@ -1775,7 +1775,7 @@ pub async fn handle_suggest_context(
                     name: hp.symbol_name.clone(),
                     kind: "function".to_string(),
                     file: hp.file.clone(),
-                    line: hp.line,
+                    line: published_line(hp.line),
                     score: calculate_hotness_score(hp.fan_in, hp.fan_out),
                     context: format!("Hot path (fan_in={}, fan_out={})", hp.fan_in, hp.fan_out),
                 });
@@ -1798,7 +1798,7 @@ pub async fn handle_suggest_context(
                     name: result.symbol.name().to_string(),
                     kind: format!("{:?}", result.symbol.kind()).to_lowercase(),
                     file: result.symbol.location().file().to_string(),
-                    line: result.symbol.location().line() + 1,
+                    line: published_line(result.symbol.location().line()),
                     score: (result.score * 0.6 + hotness_score * 0.4).min(1.0),
                     context: format!("Score: {:.2}, fan_in: {}", result.score, fan_in),
                 });

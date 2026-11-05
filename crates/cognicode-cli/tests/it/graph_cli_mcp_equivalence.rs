@@ -25,6 +25,7 @@
 use crate::common;
 
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
+use cognicode_core::domain::value_objects::published_line;
 use cognicode_core::interface::coverage::{PendingReason, PendingReferenceInfo};
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_analyze_impact, handle_build_graph,
@@ -118,6 +119,11 @@ async fn mcp_graph(dir: &Path) -> Arc<CallGraph> {
 /// in the command, and two cuts that happen to agree hide the difference
 /// between two surfaces: the command publishes every leaf, so this
 /// reference has to publish every leaf too.
+///
+/// The line is the PUBLISHED one: the graph's positions are zero-indexed
+/// and the line the product publishes is the one a person reads. The
+/// conversion happens in one place, and this reference crosses it exactly
+/// like the command does.
 fn leaves(graph: &CallGraph) -> Vec<(String, String, u64)> {
     graph
         .leaves()
@@ -127,7 +133,7 @@ fn leaves(graph: &CallGraph) -> Vec<(String, String, u64)> {
             Some((
                 symbol.name().to_string(),
                 symbol.location().file().to_string(),
-                symbol.location().line() as u64,
+                published_line(symbol.location().line()) as u64,
             ))
         })
         .collect()

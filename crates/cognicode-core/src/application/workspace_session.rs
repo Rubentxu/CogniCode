@@ -37,6 +37,7 @@ use crate::domain::value_objects::Location;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::file_time::measured_seconds;
+use crate::domain::value_objects::published_line;
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 
 /// Error type for workspace operations
@@ -1249,13 +1250,13 @@ impl WorkspaceSession {
                 id: format!(
                     "{}:{}:{}",
                     sym.location().file(),
-                    sym.location().line(),
+                    published_line(sym.location().line()),
                     sym.location().column()
                 ),
                 name: sym.name().to_string(),
                 kind: sym.kind().to_string(),
                 file_path: sym.location().file().to_string(),
-                line: sym.location().line(),
+                line: published_line(sym.location().line()),
                 column: sym.location().column(),
                 documentation: None,
                 signature: None,
@@ -1289,7 +1290,7 @@ impl WorkspaceSession {
             .map(|hp| HotPathDto {
                 symbol_name: hp.symbol_name,
                 file: hp.file,
-                line: hp.line,
+                line: published_line(hp.line),
                 fan_in: hp.fan_in,
                 fan_out: hp.fan_out,
             })

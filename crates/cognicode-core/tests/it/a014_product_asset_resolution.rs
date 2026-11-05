@@ -106,7 +106,7 @@ fn walk_up_for_product_data(start: &Path) -> Option<PathBuf> {
 /// control. The source is the stable thing to pin.
 ///
 /// **Scope.** The rule applies to every function that participates in
-/// product-asset resolution, in both files that take part: `commands.rs`
+/// product-asset resolution, in both files that take part: `capabilities.rs`
 /// (CLI capabilities document) and `catalog.rs` (the catalogue the MCP
 /// `tools/list` is derived from). Checking only `commands.rs` is what let
 /// the MCP regression through — the two had separate resolvers, one of
@@ -116,14 +116,14 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     // Inspect every function that together resolves the assets. In
-    // `commands.rs` that is `resolve_product_assets_root` (the search) and
-    // `build_capabilities_doc` (the caller). Inspecting only the former let
+    // `capabilities.rs` that is `resolve_product_assets_root` (the search)
+    // and `build_capabilities_doc` (the caller). Inspecting only the former let
     // the defect through: restoring `env!("CARGO_MANIFEST_DIR")` in the
     // caller while leaving the resolver defined still passed 3/3, which is a
     // contract that proves nothing.
     let inspected: &[(&str, &[&str])] = &[
         (
-            "src/interface/cli/commands.rs",
+            "src/interface/cli/capabilities.rs",
             &[
                 "fn build_capabilities_doc",
                 "fn resolve_product_assets_root",

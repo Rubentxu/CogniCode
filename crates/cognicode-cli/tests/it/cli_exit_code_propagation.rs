@@ -639,58 +639,52 @@ fn index_build_on_real_empty_dir_still_exits_zero() {
 // ===========================================================================
 // Ratchet: `std::process::exit` dentro de la libreria.
 //
-// MEDIDO 2026-10-04. B1 hizo que los brazos de `CommandExecutor::execute`
+// MEDIDO sobre el binario publicado. Los brazos de `CommandExecutor::execute`
 // propaguen `Result` hasta el limite del proceso, y esa cadena solo tiene
-// sentido si la libreria no mata el proceso a mitad. Hay seis llamadas, todas
-// en `commands.rs`, y se dividen en dos grupos que no valen lo mismo:
+// sentido si la libreria no mata el proceso a mitad.
 //
-//   * UNA viva: `execute_doctor` (linea 1503). Calcula el codigo desde
-//     `DoctorStatus::Missing` y sale. MEDIDO: la rama es alcanzable —
-//     `overall_status()` devuelve `Missing` si core, lsp o parsers esta
-//     missing— y el binario publicado sale con 1 en ese caso. El brazo de
-//     dispatch (linea 542) propaga con `?` como los que B1 arreglo, asi que ese
-//     `?` es codigo muerto y la firma `Result` de la funcion miente: nunca
-//     retorna.
+// El ratchet baja de seis a cinco: la llamada viva de `execute_doctor`
+// desaparecio. El comando devuelve el
+// informe Y el codigo de salida —`CommandOutput::Rendered` lleva las dos
+// cosas—, el presentador escribe el informe, y `main` sale con el codigo que
+// el core eligio. El contrato publicado del doctor —"informe en stdout,
+// salida 1, stderr vacio"— se cumple igual, y ahora la libreria es una
+// libreria: no mata el proceso.
 //
-//   * CINCO tras `#[cfg(feature = "multimodal")]`, que el binario publicado no
-//     habilita. MEDIDO sobre el binario real del candidato:
-//     `cognicode docs-ingest` responde `unrecognized subcommand`. Solo existen
-//     en un build de workspace, donde la unificacion de features de Cargo los
-//     enciende desde otro crate.
+// Las cinco llamadas que quedan estan tras `#[cfg(feature = "multimodal")]`,
+// que el binario publicado no habilita. MEDIDO sobre el binario real del
+// candidato: `cognicode docs-ingest` responde `unrecognized subcommand`. Solo
+// existen en un build de workspace, donde la unificacion de features de Cargo
+// los enciende desde otro crate.
 //
 // Este test no arregla nada: hace la deuda ENUMERABLE y la acota. Un ratchet
-// que solo puede bajar convierte "hay seis" en un hecho que se puede revisar, y
-// sobre todo impide que pasen a siete. Un numero que se puede subir en la misma
-// respiracion en que se escribe no es un ratchet: es un changelog — que es
-// exactamente el defecto del ratchet de CR-06, y alli esta escrito.
+// que solo puede bajar convierte "hay cinco" en un hecho que se puede revisar,
+// y sobre todo impide que pasen a seis. Un numero que se puede subir en la
+// misma respiracion en que se escribe no es un ratchet: es un changelog — que
+// es exactamente el defecto del ratchet de CR-06, y alli esta escrito.
 //
-// Por que la deuda de doctor NO se arregla aqui, medido y no supuesto: el
-// contrato publicado es "informe en stdout, salida 1, stderr vacio", y
-// `main` es `async fn main() -> Result<..>` con `?`, con lo que enrutar por `Err`
-// anade una linea `Error: ..` a stderr. Para que el codigo llegue a `main` sin
-// cambiar eso hay que cambiar la firma de `CommandExecutor::execute` y sus
-// ~20 brazos, que es superficie publicada, en mitad de un corte. El contrato de
-// usuario se cumple hoy. Lo que no se cumple es que la libreria sea una
-// libreria.
+// Por que la deuda de doctor se arreglo sin tocar el contrato publicado: el
+// contrato es "informe en stdout, salida 1, stderr vacio", y `main` es
+// `async fn main() -> Result<..>` con `?`, con lo que enrutar por `Err` anade
+// una linea `Error: ..` a stderr. La via que no anade nada es que el codigo
+// viaje como DATO —no como `Err`— desde el comando hasta `main`, que es lo que
+// hace `CommandOutput::Rendered`. El informe lo escribe el presentador, que
+// es donde vivian los `println!` del core, y el codigo lo aplica `main`. La
+// firma de `CommandExecutor::execute` no cambio: cambio lo que devuelve.
 // ===========================================================================
 
-/// Las seis llamadas, agrupadas por la funcion que las contiene, y por que
+/// Las cinco llamadas, agrupadas por la funcion que las contiene, y por que
 /// cada grupo esta donde esta.
 ///
 /// Una fila por FUNCION, no por llamada: las cinco llamadas de
 /// `multimodal` comparten la misma razon, y repetirla cinco veces no la
 /// hace mas cierta, solo mas largo de mantener —`cargo fmt` la despliega a
-/// once lineas para que las seis quepan en una pantalla—.
+/// once lineas para que las cinco quepan en una pantalla—.
 ///
 /// Subir cualquiera de estos numeros exige la razon de la nueva, en el mismo
 /// commit. Un `process::exit` nuevo en la libreria que no aparece aqui es un
 /// fallo de este test, no una excepcion nueva.
-const CORE_PROCESS_EXITS: [(&str, usize, &str); 3] = [
-    (
-        "execute_doctor",
-        1,
-        "vivo: el codigo de salida de `cogh doctor` es contrato publicado",
-    ),
+const CORE_PROCESS_EXITS: [(&str, usize, &str); 2] = [
     (
         "execute_docs_ingest",
         2,
@@ -844,18 +838,18 @@ fn the_library_terminates_the_process_only_where_the_ratchet_says() {
 }
 
 #[test]
-fn the_live_exit_is_doctor_and_only_doctor() {
-    // Una llamada viva, y es `execute_doctor`. Las otras cinco viven en
-    // funciones cerradas por `#[cfg(feature = \"multimodal\")]`, que el binario
-    // publicado no habilita —MEDIDO sobre el binario del candidato:
-    // `cognicode docs-ingest` responde `unrecognized subcommand`— asi que la
-    // unica razon por la que un `cogh` publicado puede salir con un codigo que
-    // la libreria eligio es `doctor`.
+fn the_library_does_not_kill_the_process_and_the_doctor_travels_as_data() {
+    // CERO llamadas vivas: la de `execute_doctor` ya no
+    // esta —el comando devuelve el informe y el codigo de salida, y `main`
+    // sale con el codigo— y las cinco que quedan viven en funciones cerradas
+    // por `#[cfg(feature = \"multimodal\")]`, que el binario publicado no
+    // habilita —MEDIDO sobre el binario del candidato:
+    // `cognicode docs-ingest` responde `unrecognized subcommand`—.
     //
     // Y por que se mide por duena y no por posicion: comparar con la primera
     // anotacion `multimodal` del fichero no mide nada. MEDIDO: la primera esta
     // en la linea 95, sobre las variantes del enum de subcomandos, muy por
-    // encima de las seis salidas, y da 0 salidas vivas cuando hay 1. Un
+    // encima de las salidas, y da 0 salidas vivas cuando hay 1. Un
     // contador de llaves tampoco: abre, aplica y cierra en la primera llave
     // que encuentra, asi que produce un numero que PARECE medido y no lo esta
     // —esa version dio 4 en vez de 1—, y un ratchet con un numero inventado es
@@ -869,8 +863,7 @@ fn the_live_exit_is_doctor_and_only_doctor() {
     // sobre el artefacto publicado, porque un binario puede llevar una
     // combinacion de features que ningun test sobre texto predice. Lo que este
     // test puede afirmar sin mentir es lo mas fuerte que el fuente sostiene:
-    // hay exactamente una salida alcanzable sin `multimodal`, y es la de
-    // `doctor`.
+    // no hay ninguna salida alcanzable sin `multimodal`.
     let measured = measured_process_exits();
 
     let live: Vec<&str> = measured
@@ -879,15 +872,14 @@ fn the_live_exit_is_doctor_and_only_doctor() {
         .map(|(_, owner, _)| owner.as_str())
         .collect();
 
-    assert_eq!(
-        live,
-        vec!["execute_doctor"],
-        "se esperaba UNA sola llamada a `std::process::exit` alcanzable sin la feature \
-         `multimodal`, y que fuera la de `execute_doctor`. Hay {live:?}.\n\
+    assert!(
+        live.is_empty(),
+        "se esperaba NINGUNA llamada a `std::process::exit` alcanzable sin la feature \
+         `multimodal`, y hay {live:?}.\n\
          Medido entero: {measured:?}.\n\
          Si anades una salida nueva fuera de una funcion cerrada por la feature, \
          anadela a `CORE_PROCESS_EXITS` CON SU RAZON en el mismo commit. Si lo que \
-         hay es una septima, esto no es una excepcion nueva: es este test fallando."
+         hay es una sexta, esto no es una excepcion nueva: es este test fallando."
     );
 
     // Y la tabla del ratchet tiene que seguir nombrando las funciones que
@@ -907,4 +899,38 @@ fn the_live_exit_is_doctor_and_only_doctor() {
              buena noticia y hay que reflejarla."
         );
     }
+}
+
+/// El codigo de salida del doctor llega al proceso.
+///
+/// El doctor era el comando que mas se acercaba a matar el proceso desde la
+/// libreria: devolvia el informe y salia con 1 desde el core. Ahora el
+/// comando devuelve el informe Y el codigo, el
+/// presentador escribe el informe, y `main` sale con el codigo que el core
+/// eligio. El contrato publicado no cambio —"informe en stdout, salida 1
+/// cuando algo falta"—; lo que cambio es donde se decide.
+///
+/// Y el codigo no se inventa aqui: se contrasta con el informe que el propio
+/// comando publica. Un doctor que dice "falta algo" tiene que salir con 1, y
+/// uno que no lo dice tiene que salir con 0, en el MISMO entorno. Asi el
+/// contrato se cumple en cualquier maquina, con o sin servidores de lenguaje.
+#[test]
+fn the_doctors_exit_code_reaches_the_process() {
+    let out = run(&["doctor", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!("the doctor did not answer with a JSON document: {e}: {stdout}")
+    });
+
+    let summary = &report["summary"];
+    let missing = ["core", "lsp", "parsers"]
+        .iter()
+        .any(|section| summary[*section] == "missing");
+    let expected = if missing { 1 } else { 0 };
+
+    assert_eq!(
+        exit_code(&out),
+        expected,
+        "the doctor published {stdout} and the process exited with another code"
+    );
 }

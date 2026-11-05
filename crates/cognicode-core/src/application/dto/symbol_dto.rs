@@ -1,6 +1,7 @@
 //! Symbol DTO - Data Transfer Objects for symbol information
 
 use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::value_objects::published_line;
 use crate::infrastructure::semantic::symbol_code::extract_docstring;
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +39,7 @@ impl SymbolDto {
 
         let documentation = source.and_then(|src| {
             // Use 1-indexed line number for extract_docstring
-            extract_docstring(&src, symbol.location().line() + 1)
+            extract_docstring(&src, published_line(symbol.location().line()))
         });
 
         Self {
@@ -46,7 +47,7 @@ impl SymbolDto {
             name: symbol.name().to_string(),
             kind: symbol.kind().to_string(),
             file_path: file_path.to_string(),
-            line: symbol.location().line() + 1, // Convert to 1-indexed
+            line: published_line(symbol.location().line()),
             column: symbol.location().column() + 1, // Convert to 1-indexed
             documentation,
             signature: symbol.signature().map(|s| s.to_string()),
@@ -80,7 +81,7 @@ impl From<&Symbol> for SymbolLocationDto {
             id: symbol.fully_qualified_name().to_string(),
             name: symbol.name().to_string(),
             file_path: symbol.location().file().to_string(),
-            line: symbol.location().line() + 1, // Convert to 1-indexed
+            line: published_line(symbol.location().line()),
             column: symbol.location().column() + 1, // Convert to 1-indexed
         }
     }

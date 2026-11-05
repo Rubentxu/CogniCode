@@ -49,7 +49,7 @@ pub use edge_kind::EdgeKind;
 pub use edge_metadata::EdgeMetadata;
 pub use file_manifest::{FileEntry, FileManifest};
 pub use language::{Language, LanguageSymbols, NameRule};
-pub use location::Location;
+pub use location::{Location, PUBLISHED_LINE_BASE, published_line};
 pub use node_kind::NodeKind;
 pub use pending_reference::{PendingClass, PendingReference};
 pub use provenance::Provenance;

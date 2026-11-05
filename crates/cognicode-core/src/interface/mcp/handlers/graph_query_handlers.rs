@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 
 use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::value_objects::published_line;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::symbol_identity::{
     Precision, default_provider_for_tool, precision_floor_for_tool,
@@ -221,6 +222,7 @@ pub struct ExplainNode {
     pub label: String,
     pub kind: String,
     pub source_path: Option<String>,
+    /// Line number (1-indexed): the line a person reads.
     pub line: u32,
 }
 
@@ -261,7 +263,7 @@ pub async fn handle_graph_explain(
         label: sym.name().to_string(),
         kind: sym.kind().name().to_string(),
         source_path: Some(loc.file().to_string()),
-        line: loc.line(),
+        line: published_line(loc.line()),
     };
 
     let fan_in = graph.fan_in(&sid);

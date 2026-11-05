@@ -1,14 +1,56 @@
 //! Location - Value object representing a location in source code
+//!
+//! ## The base of a line
+//!
+//! Two representations of a position live in the product, and they do
+//! not share a base:
+//!
+//!   - The **graph's** positions are zero-indexed, because that is
+//!     what the parser that reads a file hands out.
+//!   - The **code-intelligence** positions — this `Location` — are
+//!     one-indexed, because that is the base the product publishes:
+//!     the line a person reads in their editor.
+//!
+//! The gap between the two is closed in exactly one place:
+//! [`published_line`]. Every surface that publishes a graph position
+//! goes through it, and the code-intelligence paths carry the
+//! published base already.
+//!
+//! A second copy of that arithmetic is a second truth about where a
+//! line is. It was there, and it is why one product published the
+//! line of the same symbol with two bases: a consumer that compared
+//! two tools of the same surface got two different positions and
+//! nothing told it which was which.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// The base of every line the product publishes: one.
+///
+/// The line a person reads in their editor is the line one, and every
+/// surface that publishes a line publishes it that way.
+pub const PUBLISHED_LINE_BASE: u32 = 1;
+
+/// The line as the product publishes it.
+///
+/// The graph's positions are zero-indexed and this is where they
+/// become the line a consumer reads. It is the only place the
+/// arithmetic lives.
+pub fn published_line(internal_line: u32) -> u32 {
+    internal_line + PUBLISHED_LINE_BASE
+}
 
 /// Represents a location in source code defined by file path, line, and column.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Location {
     /// Path to the source file
     file: String,
-    /// Zero-indexed line number
+    /// The line of the position.
+    ///
+    /// The code-intelligence paths carry the base the product
+    /// publishes — one-indexed — because that is the line a person
+    /// reads. The graph's positions are zero-indexed, and they reach
+    /// a consumer through [`published_line`].
     line: u32,
     /// Zero-indexed column number
     column: u32,
@@ -29,7 +71,7 @@ impl Location {
         &self.file
     }
 
-    /// Returns the line number (zero-indexed).
+    /// Returns the line number.
     pub fn line(&self) -> u32 {
         self.line
     }
@@ -80,5 +122,14 @@ mod tests {
     fn test_location_fully_qualified_name() {
         let loc = Location::new("test.rs", 10, 5);
         assert_eq!(loc.fully_qualified_name(), "test.rs:10:5");
+    }
+
+    #[test]
+    fn the_published_line_is_the_line_a_person_reads() {
+        // The graph's first line is its zero; the line a person reads
+        // is one. The conversion is the only place the arithmetic
+        // lives, and it is the same for every caller.
+        assert_eq!(published_line(0), 1);
+        assert_eq!(published_line(41), 42);
     }
 }
