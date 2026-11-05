@@ -7,9 +7,12 @@
 # Only the test binary is capped; rustc and the linker are not.
 #
 # WHY 2 GiB AND NOT 6: the ceiling is paid by every mutant at the same time.
-# The gate runs eight mutants in parallel, and eight test binaries growing to
-# 6 GiB each ask for 48 GiB of address space at once — more than the machine
-# has free (measured 2026-11-05: 94 GiB in total, about 39 GiB free). The
+# The gate measures the mutants ONE AT A TIME — the reason is attribution, and
+# it is written in `scripts/test-gate.sh` — so the ceiling is paid by a single
+# test binary. It was 2 GiB for a different reason first: the gate used to run
+# eight mutants in parallel, and eight test binaries growing to 6 GiB each ask
+# for 48 GiB of address space at once — more than the machine has free
+# (measured 2026-11-05: 94 GiB in total, about 39 GiB free). The
 # oversubscription is not paid by the mutant that overshoots: it is paid by its
 # neighbours, and a mutant the tests kill in seconds gets reported as a
 # TIMEOUT. That is a red gate that says nothing about the code.
@@ -20,8 +23,9 @@
 # it stays a knob (`MUTANT_TEST_VMEM_KB`) for a crate whose own tests need
 # more. What it may not do is grow back without re-measuring the whole scope:
 # `scripts/ci/test_mutant_memory_budget.py` keeps the two numbers from
-# drifting apart. On a machine with less free memory than this one, the
-# parallelism is what comes down (`MUTANTS_JOBS`), not the ceiling.
+# drifting apart, and it is also what fixes the parallelism at one job. On a
+# machine with less free memory than this one, the ceiling is what comes down,
+# not the attribution: the measurement stays serial.
 set -euo pipefail
 ulimit -v "${MUTANT_TEST_VMEM_KB:-2097152}"
 exec "$@"

@@ -18,10 +18,12 @@
 # a `package` table is rejected outright rather than ignored. The scope is:
 #
 #   cognicode-graph-algos   5.6k lines — the graph algorithms the analysis
-#                             is built on. 601 mutants, and the step takes
-#                             minutes, not hours: the crate depends on
-#                             nothing from the workspace, so a mutant is a
-#                             rebuild of one crate and one test run.
+#                             is built on. 629 mutants, and the step takes
+#                             about an hour: the crate depends on nothing
+#                             from the workspace, so a mutant is a rebuild
+#                             of one crate and one test run — but the
+#                             mutants are measured ONE AT A TIME, for the
+#                             reason given in the step itself.
 #
 # WHAT IS NOT IN THE SCOPE, AND WHY IT IS NOT A LIE
 # --------------------------------------------------
@@ -171,15 +173,30 @@ if $RUN_MUTANTS; then
     printf 'FAIL: cargo-mutants no esta instalado. Instálalo con: cargo install cargo-mutants --locked\n' >&2
     overall_rc=1
   else
-    # `--jobs` defaults to ONE mutant at a time, which on this scope is a
-    # gate measured in hours. The parallelism is bounded by the machine, not
-    # by a constant that is wrong everywhere but one — and the bound is
-    # eight, which is what cargo-mutants itself calls safe: every job is a
-    # separate cargo process that starts its own threads, and the builds
-    # serialise on the cargo lock anyway, so more jobs buy contention and
-    # memory pressure, not speed.
-    MUTANTS_JOBS="${MUTANTS_JOBS:-$(nproc 2>/dev/null || echo 4)}"
-    if [ "${MUTANTS_JOBS}" -gt 8 ]; then MUTANTS_JOBS=8; fi
+    # The mutants are measured ONE AT A TIME, and this is not a taste: it is
+    # what the tool can certify. cargo-mutants works on a single copy of the
+    # tree — one BuildDir, shared by every worker — and its workers mutate
+    # that copy without a lock (lab.rs: apply -> build -> test -> revert).
+    # With more than one worker, they write to the same file: one applies
+    # its mutation, another overwrites it, a third reverts it while the
+    # first is still compiling. The verdict of a mutant then stops being
+    # attributable to that mutant.
+    #
+    # Measured 2026-11-05 on this scope: a run with eight workers reported
+    # SEVEN survivors in `god_nodes.rs`, and all ten mutants of that file
+    # are CAUGHT when they are measured on their own. The same run also
+    # reported a number of unviable mutants that changed from one run to
+    # the next (1, 2, 4) over the very same tree.
+    #
+    # A gate that reports a hole that is not there is a gate nobody trusts,
+    # and a gate that reports a catch that came from somebody else's
+    # mutation is a gate that watches nothing. The certificate here is per
+    # mutant, so the measurement is serial.
+    #
+    # For a quick look at one file, `cargo mutants --file <path> -j 8` says
+    # the same thing in seconds; that is a LOOK, not a certificate, and it
+    # does not go through this script on purpose.
+    MUTANTS_JOBS=1
     # The mutants build gets its own target directory, derived from the one
     # cargo already uses on this machine rather than hardcoded, so the script
     # works on a machine whose cache lives somewhere else. cargo-mutants
@@ -225,7 +242,9 @@ if $RUN_MUTANTS; then
     # machine has free. When it does not fit, the mutants that the tests kill
     # in seconds are reported as timeouts instead — a red gate that says
     # nothing about the code. `scripts/ci/test_mutant_memory_budget.py` keeps
-    # the two numbers from drifting apart.
+    # the two numbers from drifting apart, and it is also the contract that
+    # fixes the parallelism at ONE job: the measurement has to be
+    # attributable to be a certificate.
     run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
       cargo mutants -j "${MUTANTS_JOBS}" \
