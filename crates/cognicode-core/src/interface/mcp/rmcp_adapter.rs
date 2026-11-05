@@ -840,7 +840,14 @@ impl ServerHandler for CogniCodeHandler {
 /// M1.1: All tool calls flow through this single instrumentation boundary.
 /// Timing, call count, and error classification are recorded here — no
 /// per-handler timing or record_tool_usage calls needed.
-pub(crate) async fn call_tool_handler(
+///
+/// The boundary is reachable from outside the crate on purpose: it is where a
+/// published tool becomes the answer a client reads, and a caller that wants
+/// that answer without a transport — an in-process client, a test that has to
+/// see what the client sees — has to be able to come through here. Reaching
+/// the handler directly instead would leave the caller reading a copy of the
+/// dispatch rather than the dispatch itself.
+pub async fn call_tool_handler(
     ctx: &HandlerContext,
     request: CallToolRequestParams,
 ) -> InterfaceResult<String> {

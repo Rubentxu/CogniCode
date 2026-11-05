@@ -134,6 +134,7 @@ mod t1_5_4_graph_result_serde;
 mod the_analysed_tree_keeps_no_state;
 mod the_broken_file_is_not_published;
 mod the_consumer_can_declare_the_version;
+mod the_continuation_chain_is_byte_exact;
 mod the_declaration_knows_where_it_is;
 mod the_fact_path_does_not_invent_the_place_of_a_declaration;
 mod the_filtered_route_says_what_it_covered;
