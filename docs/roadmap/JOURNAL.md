@@ -32838,3 +32838,40 @@ regenera el snapshot contra la punta de `main` después de fusionar esta unidad.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-119: el snapshot vuelve a estar dentro de la ventana que su contrato acepta
+
+**El defecto.** El ratchet del snapshot (`scripts/ci/test_roadmap_version_ratchet.py`) acepta
+como máximo `SNAPSHOT_MAX_DRIFT = 5` commits de deriva, medidos contra la base con `main`.
+`docs/roadmap/CURRENT.md` declaraba el SHA `a88e2ca2`, y la distancia a la base (`44a10776`)
+quedó en **6** commits cuando TASK-117 entró en `main` con un commit más.
+
+**RED medido.** `bash scripts/ci/run-all-contracts.sh` salía rc=1 con dos fallos, los dos del
+ratchet: `test_current_sha_matches_head` («CURRENT.md declara SHA a88e2ca2aca3, HEAD es … y la
+base con main es 44a10776a311») y su agregador `test_control_all_green`. El rojo estaba en `main`
+antes de tocar la rama de TASK-80: lo trajo el commit de más que entró con TASK-117, no el cambio
+de TASK-80.
+
+**La corrección.** El arreglo no es tocar una cabecera: un snapshot que nombra un árbol y describe
+otro es una mentira nueva, del mismo tipo que las que este proyecto retira. El snapshot se
+regenera sobre la punta real (`0eeffa17`):
+
+- la cabecera declara ese SHA y la fecha del día;
+- la prosa acumula lo que llegó desde el snapshot anterior con el commit que lo midió: la línea
+  publicada es una y el presentador es el único que escribe (`0eeffa17`), el MCP contesta donde el
+  contrato lo puso (`5830bbe1`), el MCP dice por qué se reporta un hallazgo (`78829037`), la
+  paginación se compara con el catálogo maestro (`44a10776`), el gate no confunde un mutante
+  atrapado con un tiempo agotado (`ed50133e`) y el JSON es un documento (`fadf5e6a`);
+- la sección «Qué cambió desde el snapshot anterior» cuenta los **7 commits** de distancia
+  (`git rev-list --count a88e2ca2..0eeffa17`) con una tabla donde cada fila dice qué se movió y en
+  qué commit está medido. Los SHA que cita la tabla viven en `main`.
+
+**Verificación.** Rama `docs/snapshot-2026-11-05`, base `0eeffa17` (la punta de `main`), commit
+`6185e591`. `python3 scripts/ci/test_roadmap_version_ratchet.py` → `ROADMAP version ratchet: OK`.
+`bash scripts/ci/run-all-contracts.sh` → rc=0 (antes rc=1 con dos fallos), 43 contratos.
+
+Es un cambio de documentación: no toca código de producción, así que la suite y el gate no lo
+tocan.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
