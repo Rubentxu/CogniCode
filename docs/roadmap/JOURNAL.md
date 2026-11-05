@@ -32666,3 +32666,50 @@ versión que no existe, y lo que llega es la declaración.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda
 aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-117: la paginación se compara con el catálogo maestro, no con otro build
+
+**El defecto.** `b6_w1_mcp_robustness::large_response_uses_pagination` recorre la paginación de
+`tools/list` del servidor MCP que lanza y compara la unión de todas las páginas con
+`build_all_tools()` calculado **en el proceso de test**. Los dos son el mismo código, pero no el
+mismo build: el servidor se compila como `cognicode-mcp`, cuya dependencia del core enciende la
+feature `evidence-kernel`, y el binario de integración del core se compila sin ella.
+
+Medido 2026-11-05: el servidor anuncia **73** tools y el proceso de test anuncia **72**. La
+diferencia es `explain_finding`, la tool que esa feature enciende. El test está rojo desde que esa
+tool llegó al catálogo maestro (TASK-111, `78829037`), y el rojo no tenía nada que ver con el
+cambio que se estuviera midiendo: el gate entero estaba rojo por una comparación entre dos builds.
+
+**La corrección.** El oráculo pasa a ser el maestro (`product/tools.json`), que es el documento que
+el servidor lleva **dentro** del binario (`include_str!`) y la única declaración que las dos
+partes pueden sostener. Dos direcciones, y no son del mismo tipo:
+
+- El cable **no** puede anunciar nada que el maestro no declare: un nombre en el cable que el
+  producto no declara es un contrato roto, porque el CLI del operador no puede referenciarlo.
+- El cable **tiene que** anunciar toda tool que el maestro declara **sin feature**: una tool sin
+  gate la publica cualquier build, así que su ausencia es un hecho del recorrido, no del build.
+
+Las tools con gate son el hueco documentado: cuáles publica un build depende de las features que
+lleva, y el test no puede conocer las features de un binario que no compiló. Esta es la misma
+doctrina que ya aplicaba el test 9 de este mismo fichero (dirección 1 dura, dirección 2 blanda).
+
+**RED medido.** Con una tool que el recorrido pierde, el test cae con el mensaje que dice que se
+construya el binario: «the walk did not publish 1 tool(s) the master declares without a feature
+gate». Antes de la corrección, ese recorrido perdido sólo se veía como una diferencia de
+conjuntos contra un catálogo que no era el del servidor.
+
+**Verificación.** Rama `fix/task-117-catalogue-oracle`, base `5830bbe1` (la punta de `main`),
+commit `c6a481a2`. `cargo nextest run --profile gate -p cognicode-core --tests`: **3488 OK**,
+4 ignorados. `cargo fmt --all --check` limpio.
+
+**Gate.** `bash scripts/test-gate.sh` sobre la punta de la rama, en solitario: unitarios
+**4640 OK** (2 ignorados), integración **6694 OK** (10 ignorados) y mutantes **574 en 11m:
+571 atrapados, 3 inviables, 0 supervivientes, 0 tiempos agotados** — rc=0.
+
+El lote anterior de este mismo gate (TASK-65) contó **2** inviables sobre el mismo alcance, y aquí
+son **3**. La diferencia no es de esta rama: el paso de mutación mide `cognicode-graph-algos`, un
+crate que esta rama no toca (el cambio es un test del core), y el log del gate no nombra los
+mutantes inviables. Se deja dicho con la cifra, sin atribuirle una causa que no se midió.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
