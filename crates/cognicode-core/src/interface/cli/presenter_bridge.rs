@@ -128,11 +128,16 @@ pub fn report_graph_full(outcome: &AnalysisOutcome<AnalysisValue>, result: &Grap
     // La fuente del grafo viaja con la respuesta: un grafo calculado ahora
     // y uno servido del snapshot son la misma respuesta solo cuando el
     // arbol no cambio, y quien consume es quien tiene que saber que el
-    // producto lo comprobo.
-    if outcome.provenance().graph_source == Some(GraphSource::Cache) {
-        eprintln!(
+    // producto lo comprobo —y quien lo comprobo.
+    match outcome.provenance().graph_source {
+        Some(GraphSource::Cache) => eprintln!(
             "Graph loaded from cache (durable snapshot): {symbols} symbols, {dependencies} relationships"
-        );
+        ),
+        Some(GraphSource::Daemon) => eprintln!(
+            "Graph loaded from cache (durable snapshot, vouched by a live daemon): \
+             {symbols} symbols, {dependencies} relationships"
+        ),
+        _ => {}
     }
 
     // El motivo va a stderr, que es donde vive la observabilidad: el

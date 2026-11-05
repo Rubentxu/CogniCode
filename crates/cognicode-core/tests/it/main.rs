@@ -55,6 +55,7 @@ mod cu1_w3_presenter_parity;
 mod cu2_w2_finding_projection;
 mod cu2_w3_guard_transfer;
 mod cu2_w4_live_consumer;
+mod daemon_freshness;
 mod e2_w1_canonical_control_query;
 mod e2e;
 mod e91_w7_regression_budget;

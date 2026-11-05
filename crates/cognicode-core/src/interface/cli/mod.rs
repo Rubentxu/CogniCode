@@ -1,5 +1,6 @@
 //! CLI Interface - Command-line interface implementation
 
+pub mod analyzer;
 pub mod capabilities;
 pub mod commands;
 pub mod doctor;

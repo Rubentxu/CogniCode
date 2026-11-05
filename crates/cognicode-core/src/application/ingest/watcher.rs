@@ -125,8 +125,25 @@ pub fn start_watcher(root: PathBuf) -> (WatcherHandle, mpsc::UnboundedReceiver<V
 /// Collects events for `window_ms` milliseconds, then emits a single
 /// deduplicated batch.
 pub async fn debounce_changes(
+    rx: mpsc::UnboundedReceiver<Vec<PathBuf>>,
+    window_ms: u64,
+) -> mpsc::Receiver<Vec<PathBuf>> {
+    debounce_changes_reporting(rx, window_ms, || {}).await
+}
+
+/// Debounce a stream of file change events into batches, and report every
+/// change as soon as it is seen.
+///
+/// The batch and the report are two different things. The batch is the
+/// rebuild's cue, and it waits for the window so that a burst of edits is
+/// one rebuild. The report says the tree has changed, and it is true the
+/// moment the change is seen: a daemon that says "my index is still
+/// fresh" has to stop saying it at that moment, not half a second
+/// later.
+pub async fn debounce_changes_reporting(
     mut rx: mpsc::UnboundedReceiver<Vec<PathBuf>>,
     window_ms: u64,
+    on_change: impl Fn() + Send + 'static,
 ) -> mpsc::Receiver<Vec<PathBuf>> {
     let (tx, out_rx) = mpsc::channel(64);
 
@@ -137,6 +154,7 @@ pub async fn debounce_changes(
         loop {
             tokio::select! {
                 Some(paths) = rx.recv() => {
+                    on_change();
                     buffer.extend(paths);
                 }
                 _ = timer.tick() => {

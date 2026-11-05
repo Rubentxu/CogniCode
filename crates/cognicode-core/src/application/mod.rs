@@ -46,6 +46,10 @@ pub mod graph_cache;
 // whether it is served or calculated again. It lives in the application
 // layer so that the MCP and the CLI share it.
 pub mod graph_snapshot;
+// TASK-92 (slice 1) — the port that lets something that is watching the
+// tree say that a manifest still describes it, so the product does not
+// have to read the content of every file to find out.
+pub mod freshness;
 pub mod ports;
 // e69 WU3 — PolicyGate (application-layer; the only authority that
 // turns an EvidenceBundle into a structured decision). Gated by

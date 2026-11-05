@@ -132,6 +132,14 @@ pub struct AnalysisService {
     /// changes where the repository comes from and nothing else: what a
     /// build publishes is decided by the rules, not by the factory.
     repository_factory: RepositoryFactory,
+    /// Somebody who is watching the tree and can say that a manifest
+    /// still describes it.
+    ///
+    /// `None` when nobody is watching: the product then decides the
+    /// freshness by itself, which is what it always did. The oracle is a
+    /// port, not an implementation: the service never learns how the
+    /// answer travels.
+    freshness_oracle: Option<Arc<dyn crate::application::freshness::FreshnessOracle>>,
 }
 
 /// What the service remembers between builds about what the last one proved.
@@ -196,6 +204,7 @@ impl AnalysisService {
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
+            freshness_oracle: None,
         }
     }
 
@@ -214,7 +223,28 @@ impl AnalysisService {
             last_build_report: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
+            freshness_oracle: None,
         }
+    }
+
+    /// The service that asks `oracle` whether the tree it holds is still
+    /// fresh.
+    ///
+    /// The oracle is a port: the service asks it a question and takes the
+    /// answer, and it never learns where the answer came from.
+    pub fn with_freshness_oracle(
+        mut self,
+        oracle: Option<Arc<dyn crate::application::freshness::FreshnessOracle>>,
+    ) -> Self {
+        self.freshness_oracle = oracle;
+        self
+    }
+
+    /// The oracle that watches the tree, if somebody is watching it.
+    pub fn freshness_oracle(
+        &self,
+    ) -> Option<&Arc<dyn crate::application::freshness::FreshnessOracle>> {
+        self.freshness_oracle.as_ref()
     }
 
     /// Replaces the factory that creates the repository of a build.

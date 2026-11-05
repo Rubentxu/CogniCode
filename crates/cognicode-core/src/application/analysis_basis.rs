@@ -480,6 +480,40 @@ pub enum GraphSource {
     Built,
     /// El grafo se sirvió del snapshot durable.
     Cache,
+    /// El grafo se sirvió del snapshot durable, y un daemon vivo dijo que
+    /// su indice sigue describiendo el arbol.
+    ///
+    /// El grafo sale del mismo sitio que en `Cache` —el snapshot durable—
+    /// pero la comprobacion de frescura no la hizo el producto: la hizo
+    /// quien esta mirando el arbol, y por eso no se leyo el contenido de
+    /// cada fichero otra vez. Es una palabra distinta porque el consumidor
+    /// tiene que saber quien comprobo.
+    Daemon,
+}
+
+impl GraphSource {
+    /// The word this source is published with.
+    ///
+    /// One owner for the vocabulary: the CLI, the MCP and the SDK publish
+    /// the same word for the same source, and a word that means two things
+    /// is a lie the consumer cannot see.
+    pub fn published_label(self) -> &'static str {
+        match self {
+            GraphSource::Built => "built",
+            GraphSource::Cache => "cache",
+            GraphSource::Daemon => "daemon",
+        }
+    }
+
+    /// The phrase this source is published with, when a surface says
+    /// where the graph came from in a sentence.
+    pub fn published_message(self) -> &'static str {
+        match self {
+            GraphSource::Built => "built",
+            GraphSource::Cache => "cache (durable snapshot)",
+            GraphSource::Daemon => "cache (durable snapshot, vouched by a live daemon)",
+        }
+    }
 }
 
 impl AnalysisProvenance {

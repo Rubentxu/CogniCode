@@ -33479,3 +33479,180 @@ del workspace) está medido arriba, con los tres pasos del gate en la misma form
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
 el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-92 (rebanada 1): un daemon vivo dice que su índice está fresco, y el cliente lo sirve sin releer el contenido del árbol
+
+**El hueco.** La tarea se titula «Daemon compartido para CLI y MCP stdio», y el árbol ya tenía
+la mitad de eso desde TASK-79: el snapshot durable ya es del producto y ya lo comparten la CLI
+y el MCP (`load_or_build_graph` es la decisión ÚNICA de «servir o construir»). Lo que NO existía
+era lo que un daemon puede aportar por encima de un fichero compartido: **la frescura**.
+
+Medido en el árbol antes de tocar nada:
+
+| Hecho | Dónde | Qué cuesta |
+|---|---|---|
+| El snapshot durable ya lo comparten CLI y MCP | `application/graph_snapshot.rs` (`load_or_build_graph`) | nada: es lo de AC1 de TASK-79 |
+| La comprobación de frescura hashea el CONTENIDO de cada fichero | `application/graph_snapshot.rs` (`is_manifest_stale`) | una lectura + un SHA-256 por fichero, **por cada cliente nuevo** |
+| El recorrido (`tree_state`) sólo enumera rutas y mtimes, y además dice qué huecos tiene el árbol AHORA | `application/services/analysis_service.rs` | barato |
+| El watcher del daemon observa EXACTAMENTE los mismos ficheros que el recorrido (`Observation::of(root)` / `observation.observes(path)`) | `application/ingest/watcher.rs` | — |
+
+O sea: **lo caro no es el recorrido, es el hash**. Y el daemon es el que ya sabe si el árbol se
+movió, porque su watcher lo ve. Ese es el trabajo que sobra, y esta rebanada lo quita.
+
+**La rebanada, contra la evidencia y no contra el título.** El daemon es el binario
+`cognicode-mcp-server` (`crates/cognicode-mcp/src/server.rs`): HTTP/Streamable en loopback,
+token bearer si se expone, `/health` `/ready` `/metrics` `/watch`, y un watcher de notify con
+debounce de 500 ms. No había socket unix ni fichero de endpoint. La rebanada:
+
+1. **Dónde vive el daemon**: `application/graph_cache.rs` gana `daemon_socket_path(cache_root,
+   workspace)` = `<cache>/cognicode/daemon/<clave>.sock`. 0600, en la cache del usuario, nunca
+   dentro del árbol analizado (el mismo criterio que el snapshot). Un socket por workspace.
+2. **El protocolo**: una línea JSON por intercambio. Petición `{"op":"status"}`; respuesta
+   `{"ok":..,"fresh":..,"manifest_digest":..}`. El grafo NO viaja por el socket: viaja por el
+   snapshot que el daemon ya escribe en la cache. Un solo formato de snapshot, no un segundo.
+3. **El daemon**: abre el socket, lo sirve, y su veredicto lo mantiene su watcher. El watcher
+   marca «el árbol se movió» en el momento en que ve el cambio, no cuando termina la
+   reconstrucción: para eso `debounce_changes` se ha partido en dos
+   (`debounce_changes_reporting`), porque el lote es la señal de reconstruir y el aviso es la
+   señal de no-fresco, y son cosas distintas.
+4. **El cliente** (`interface/daemon/`): pregunta al socket CON PLAZO (500 ms). Sin daemon, o
+   con un daemon que no contesta, el cliente sigue como hasta ahora.
+5. **La decisión se queda donde estaba**: `load_or_build_graph` no cambia de firma. La
+   application's `FreshnessOracle` (un puerto, `application/freshness.rs`) es lo que pregunta;
+   el adaptador que habla el socket es de la interface. El core sigue sin red: el socket unix es
+   un canal LOCAL, y la aplicación recibe datos planos.
+6. **La palabra de la procedencia**: `GraphSource` gana `Daemon` (`Built | Cache | Daemon`), y
+   `LoadedGraph.loaded_from_cache: bool` se sustituye por `LoadedGraph.source: GraphSource` —
+   un bool y un enum habrían sido dos verdades sobre lo mismo. La CLI lo dice en stderr.
+
+**El contrato de confianza, escrito porque es lo que puede mentir.** La palabra del daemon
+sólo cuenta si se cumplen DOS cosas, y las dos están medidas:
+
+- **Que el daemon hable de ESTE manifiesto.** El digest del manifiesto (SHA-256 sobre las
+  entradas ordenadas por ruta) es lo que ata la palabra a un estado del árbol. Un daemon que
+  vigila otro build no dice nada de éste. El digest se calcula en un solo sitio
+  (`graph_snapshot::manifest_digest`), y las entradas del manifiesto están ordenadas porque el
+  manifiesto es un `HashMap` y sin ordenar dos manifiestos del mismo árbol darían digests
+  distintos.
+- **Que el cliente no esté viendo un árbol más nuevo.** Eso lo decide el propio cliente, y es
+  gratis: la comparación de mtimes (`manifest_mtimes_agree`), que es la primera mitad de
+  `is_manifest_stale`, separada ahora de la mitad cara. Un fichero que cambió después del
+  manifiesto tiene un mtime posterior, y un manifiesto que no conoce un fichero es el manifiesto
+  de otro árbol.
+
+Lo que la palabra del daemon SÍ cubre (y el hash no) es el cambio que deja el mtime intacto
+(`touch -r`): el watcher lo ve porque ve la escritura. Lo que NO cubre: un daemon sin watcher,
+o un watcher que dejó de ver. Por eso el daemon sin índice no dice «fresco» sino que no dice
+nada, y por eso el watcher que muere deja al daemon sin fresco para siempre.
+
+**RED medido (antes del cambio).** El RED de esta rebanada es de compilación: la API que el
+test usa no existía. `cargo test -p cognicode-core --test it daemon_freshness`:
+
+```
+error[E0432]: unresolved import `cognicode_core::interface::daemon`
+error[E0599]: no method named `with_oracle` found for struct `ServiceAnalyzer`
+error[E0599]: no variant, associated function, or constant named `Daemon` found for enum `GraphSource`
+error[E0599]: no function or associated item named `daemon_socket_path` found in `graph_cache`
+→ error: could not compile `cognicode-core` (test "it") due to 6 previous errors
+```
+
+**Verdes después** (`cargo test -p cognicode-core --test it daemon_freshness`): **3 passed; 0
+failed** (983 filtered out).
+
+| Test | Qué fija |
+|---|---|
+| `daemon_freshness::a_live_daemon_serves_the_index_and_says_so` | con un daemon vivo, la procedencia es `Daemon` y el grafo es el del árbol |
+| `daemon_freshness::the_daemons_word_does_not_survive_a_change_the_client_can_see` | la palabra del daemon NO sobrevive a un cambio que el cliente ve: decide el cliente |
+| `daemon_freshness::without_a_daemon_the_same_tree_gives_the_same_graph_and_claims_no_daemon` | sin daemon, el mismo árbol da el mismo grafo y la procedencia NO dice `daemon` |
+| `application::graph_cache::tests::the_daemon_socket_is_one_per_workspace_and_lives_in_the_cache` (unitario) | un socket por workspace, dentro de la cache y fuera del árbol |
+
+El test del cambio fija el mtime a mano (`FileTimes`), porque dos escrituras en el mismo
+milisegundo dejarían el mismo tiempo detrás y el test dependería de la velocidad de la máquina.
+
+**Ejecución real (binarios de verdad, no tests).** Daemon arrancado de verdad sobre un árbol y
+CLI de verdad:
+
+```
+$ XDG_CACHE_HOME=/tmp/t92-cache cognicode-mcp-server --cwd /tmp/t92-ws --listen 127.0.0.1:19847
+$ XDG_CACHE_HOME=/tmp/t92-cache cognicode --format json graph full /tmp/t92-ws
+stdout: {"kind":"full","symbols":2,"dependencies":1,"status":"complete", …}
+stderr: Graph loaded from cache (durable snapshot, vouched by a live daemon): 2 symbols, 1 relationships
+```
+
+Sin daemon, el mismo comando en el mismo árbol:
+
+```
+stderr: Graph loaded from cache (durable snapshot): 2 symbols, 1 relationships
+```
+
+El JSON de stdout no cambia: el documento publicado es el mismo con daemon y sin daemon ✓.
+
+**Lo que esto quita, medido.** Árbol sintético de 1000 ficheros `.rs`, 12 MB, 400 000 símbolos,
+`elapsed_ms` del propio comando `graph full` (el número que publica la CLI):
+
+| Escenario | `elapsed_ms` medidos |
+|---|---|
+| Construye el grafo (sin snapshot todavía) | **12 972** |
+| Sirve del snapshot, comprobando la frescura **sin daemon** (hash del contenido) | **6 704** y **6 768** |
+| Sirve del snapshot con la palabra del daemon (sin hash) | **5 696**, **5 613**, **5 843** |
+| Tras un cambio de fichero: el primer cliente reconstruye | **17 813** |
+| Tras el cambio: el siguiente cliente lo sirve | **5 787** (400 001 símbolos) |
+
+La diferencia entre servir comprobando y servir con la palabra del daemon es de ~1,0 s sobre
+6,7 s: **el hash del contenido del árbol**, que es exactamente lo que esta rebanada quita. Lo
+que queda (el recorrido y la decodificación del snapshot, 103 MB en este árbol) NO lo quita
+nadie todavía. Y en un árbol pequeño (300 ficheros, 1,2 MB) la diferencia es de ~10 ms sobre
+81 ms: el ahorro es del orden del tamaño del árbol que se hasheaba.
+
+**Verificación (medida en esta rama, `feature/task-92-daemon-freshness-slice`, base `da2848e2`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test -p cognicode-core --lib` | **2545 tests run: 2545 passed, 2 ignored** |
+| `cargo test -p cognicode-core --test it` | **984 tests run: 984 passed, 2 ignored** |
+| `cargo test -p cognicode-cli` | **15 + 332 + 44 + 228 + 10 passed, 0 failed** (1 ignored) |
+| `cargo test -p cognicode-mcp` | **13 + 88 passed, 0 failed** (5 ignored) |
+| `cargo check --workspace --all-targets` | rc=0 |
+| `cargo fmt --all` | aplicado; `cargo fmt --all --check` limpio |
+| `cargo clippy -p cognicode-core -p cognicode-mcp -p cognicode-cli --all-targets` | rc=0, sin avisos |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, **0 fallos** en los 10 contratos |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `commands.rs` 2956 → 2955, `handlers/mod.rs` 3701 → 3699 |
+| `python3 scripts/ci/test_comment_standard.py` | OK |
+| `python3 scripts/ci/test_cr06_ratchet.py` | PASS — 28 → 28 (0 added, 0 retired) |
+
+**Gate: NOT_RUN (lote).** El gate se pasa por lotes de diez (AGENTS.md), y esta unidad es la
+cuarta desde el último gate (AC1, AC2 y TASK-79 AC4, más esta). El paso de mutación mide
+`cognicode-graph-algos`, un crate que esta rama no toca; su veredicto es el ya medido. El resto
+del gate (unitarios e integración del workspace) está medido arriba, crate por crate, con los
+tres pasos del gate en la misma forma en que los ejecuta `scripts/test-gate.sh`.
+
+**Lo que esta rebanada NO hace (queda escrito para que no se lea más de lo que es).**
+
+- **AC1 sigue ABIERTA.** El MCP por stdio no usa el daemon todavía. El camino es el mismo
+  cliente y el mismo veredicto, pero en el MCP el veredicto tiene que aparecer en el `basis`, y
+  el `basis` es un esquema publicado (`product/tools.json` lo deriva del tipo): anadirle un
+  campo es recapturar `tools/list` y resincronizar el maestro. Eso es su propia unidad, con su
+  propio recibo, no un remiendo de esta.
+- **El daemon sólo ayuda cuando el build es COMPLETO.** La regla es la de siempre («sólo se
+  persiste un snapshot cuando el build es completo»): un árbol con ficheros que no se pueden
+  leer no deja snapshot, y entonces el daemon no tiene índice que respaldar y no dice nada.
+  Medido: sobre `crates/cognicode-core` (build parcial) el daemon no deja índice y el cliente
+  reconstruye, igual que antes.
+- **El transporte HTTP del daemon y su exposición no se tocan.** El socket unix es un canal
+  LOCAL nuevo, con 0600, al lado del HTTP que ya existía.
+- **El coste que queda**: el recorrido y la decodificación del snapshot. La palabra del daemon
+  quita el hash, no la carga del snapshot.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **El socket que queda cuando el daemon muere.** `bind` borra el socket viejo antes de
+  enlazarlo, así que un daemon nuevo lo reclama; mientras tanto el cliente que lo encuentra
+  falla al conectar y sigue sin daemon (medido: el comando sin daemon dice «cache (durable
+  snapshot)» y no «vouched by a live daemon»). El fichero residual está anotado en el código;
+  no hay limpieza periódica de sockets viejos.
+- **La caché del producto no tiene política de caducidad** (residuo heredado de AC2): no hay
+  nada que limpie `~/.cache/cognicode/<hash>`.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

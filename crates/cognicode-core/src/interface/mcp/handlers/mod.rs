@@ -15,7 +15,7 @@
 // actually implies, so the next unfailable assertion in this file becomes a
 // compile error instead of a silent pass.
 
-use crate::application::analysis_basis::OutcomeState;
+use crate::application::analysis_basis::{GraphSource, OutcomeState};
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -1198,7 +1198,7 @@ pub async fn handle_build_graph(
         false,
     )
     .map_err(HandlerError::App)?;
-    let loaded_from_cache = loaded.loaded_from_cache;
+    let graph_source = loaded.source;
     // The holes the tree has RIGHT NOW: what the walk declines, what it
     // cannot do and what it cannot read yet.
     //
@@ -1241,7 +1241,9 @@ pub async fn handle_build_graph(
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
-    let (skipped_files, pending_references, rejected_relationships, status) = if loaded_from_cache {
+    let (skipped_files, pending_references, rejected_relationships, status) = if graph_source
+        != GraphSource::Built
+    {
         // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
         // unreadable-file detection), so the FILES the graph is built from
@@ -1328,7 +1330,7 @@ pub async fn handle_build_graph(
         symbols,
         edges_count,
         elapsed,
-        if loaded_from_cache { "cache" } else { "built" }
+        graph_source.published_label()
     );
 
     // Collect actual edges with base names for correctness evaluation
@@ -1352,11 +1354,7 @@ pub async fn handle_build_graph(
     let mut edges = edges;
     edges.sort_by(|a, b| (&a.from, &a.to).cmp(&(&b.from, &b.to)));
 
-    let source = if loaded_from_cache {
-        "cache (durable snapshot)"
-    } else {
-        "built"
-    };
+    let source = graph_source.published_message();
     // Identity basis for this result. With nothing to analyze, the basis
     // identifies an empty tree: it does not describe an analysis.
     let mut basis = compute_basis(ctx, &directory);
@@ -1900,7 +1898,7 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     .map_err(HandlerError::App)?;
     let count = loaded.graph.symbols().count();
     let elapsed = start.elapsed().as_millis() as u64;
-    if loaded.loaded_from_cache {
+    if loaded.source != GraphSource::Built {
         info!(
             "ensure_graph_built: the durable snapshot was served — {} symbols in {}ms",
             count, elapsed
