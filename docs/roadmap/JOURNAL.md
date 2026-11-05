@@ -33135,3 +33135,115 @@ cerraron TASK-113, 114, 116, 111, 65, 117, 80, 119, 120 y 118 —diez— y esta 
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
 el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-79 (AC1): una sola decisión sobre el grafo, y lo que uno calcula el otro lo sirve
+
+**El hueco.** El snapshot del grafo es estado del producto, y su dueño estaba en la capa de
+interfaz: `interface/mcp/handlers/graph_snapshot.rs`. Un dueño en la interfaz es un dueño que la
+otra interfaz no alcanza, y así fue:
+
+- `ensure_graph_built` —la función que cada tool de consulta llama antes de leer el grafo—
+  reconstruía desde las fuentes siempre que la sesión encontraba su grafo vacío, que es
+  exactamente lo que hace una sesión nueva. El snapshot se escribía y no se leía nunca.
+- `ServiceAnalyzer::graph_full` construía siempre, y la CLI no escribía nada: cada
+  `cognicode graph full` era un parseo completo del árbol.
+- El resto de comandos de grafo de la CLI (`hot-paths`, `entry-points`, `leaf-functions`, …) tenían
+  su propia copia de «construir el grafo del proyecto».
+
+**El contrato (AC1).** «Una función `load_or_build_graph(dir)` sirve las fases index y link a MCP y
+CLI». Hoy la decisión está en un sitio, en la capa de aplicación, y las dos interfaces pasan por
+ella.
+
+**La corrección.**
+
+- Módulo nuevo `crates/cognicode-core/src/application/graph_snapshot.rs`: el dueño del snapshot
+  durable (guardar, cargar, el límite de 256 MiB) más `LoadedGraph { graph, manifest,
+  loaded_from_cache, tree }` y `pub fn load_or_build_graph(service, dir, cache_root,
+  session_manifest, force_rebuild)`. El que decide ya no es una interfaz: es la aplicación, y por
+  eso la CLI puede alcanzarlo.
+- `handle_build_graph` y `ensure_graph_built` (MCP) llaman a `load_or_build_graph`.
+  `ensure_graph_built` distingue los dos casos: la sesión ya tenía grafo y el árbol no cambió → se
+  sirve; la sesión está vacía → se sirve el snapshot durable si su productor es el mismo y el árbol
+  no cambió; en cualquier otro caso, el árbol se lee otra vez.
+- `ServiceAnalyzer::graph_full` (CLI) llama a `load_or_build_graph` con `default_cache_root()`, y
+  `--rebuild` sigue forzando la construcción. Lo mismo hace `interface/cli/project_graph.rs`, que
+  es la ruta de los demás comandos de grafo de la CLI: la copia duplicada de «construir el grafo»
+  desaparece.
+- La fuente del grafo viaja con la respuesta: `AnalysisProvenance` gana `graph_source`
+  (`built` / `cache`), y la CLI lo dice en stderr —«Graph loaded from cache (durable snapshot): N
+  symbols, M relationships»— con las mismas palabras que usa el MCP. El documento de stdout no
+  cambia ni un byte: la respuesta es la respuesta de las dos maneras.
+- `interface/mcp/handlers/graph_snapshot.rs` desaparece; el contrato
+  `scripts/ci/test_a_snapshot_says_who_produced_it.py` sigue al código hasta su dueño y además
+  comprueba que **las dos interfaces** pasan por la decisión del dueño.
+
+**RED medido (antes del cambio).**
+
+| Test | Resultado | Lo que decía |
+|---|---|---|
+| `crates/cognicode-core/tests/it/a_new_session_serves_what_the_last_one_calculated.rs` | **2 tests run: 1 passed, 1 failed** | «the second session served the graph the first one calculated, and the answer says so… Summary: **Graph auto-built (2 symbols, 1ms)**.» |
+| `crates/cognicode-cli/tests/it/the_cli_serves_the_snapshot_the_mcp_wrote.rs` | **1 test run: 0 passed, 1 failed** | «the CLI keeps what it calculated: the snapshot is in the cache the CLI was given, at …» |
+
+Verdes después: **2 tests run: 2 passed** y **1 test run: 1 passed**. El test unitario de
+`load_or_build_graph` (la segunda llamada sirve lo que la primera calculó; la llamada forzada lee el
+árbol otra vez; un árbol que cambió se lee otra vez) viene con la función: no hay función previa
+que pueda fallar, y decirlo «RED» sería inventar una medida.
+
+**Lo que esta unidad encontró y arregló por el camino.**
+
+1. **La capa de aplicación no puede tocar la infraestructura, y el módulo movido la tocaba.** Al
+   mudar la persistencia a `application/graph_snapshot.rs`, el evaluador de arquitectura caída:
+   `architecture.application_no_infrastructure` × 5 sobre `application/graph_snapshot.rs`
+   (`infrastructure::graph::per_file_graph`, `infrastructure::graph::source_files::inventory`,
+   `…::SourceInventory`). La correction **no** es una entrada en la lista de excepciones: el
+   servicio es la ventana de la aplicación al árbol, y ahora lo es de verdad —
+   `AnalysisService::tree_state()` dice qué ficheros tiene el árbol y qué huecos declara, y
+   `AnalysisService::last_build_was_complete()` dice si el último build cubrió todo. El módulo de
+   aplicación nombra solo tipos de aplicación y de dominio, y `TreeState` —el tipo que lleva los
+   huecos— vive en el servicio, que es donde la arquitectura permite nombrar el informe del
+   recorrido. Verde después: `self_host_evaluator_finds_zero_drift_on_clean_source` PASS y
+   `wire_canonical_control_query_evaluates_self_host_to_zero_drift` PASS. La deuda de CR-06 sigue
+   en cero en vez de crecer.
+2. **El ratchet de tamaño no deja crecer un fichero que ya es grande.** `interface/cli/commands.rs`
+   medía 2980 líneas de producción y esta unidad lo empujaba a 3004. La salida de stderr del
+   `graph full` —la línea de la fuente y las de «Skipped:»/«Pending:»— se muda al puente de
+   presentación (`interface/cli/presenter_bridge.rs::report_graph_full`), que es donde ya vive la
+   traducción del outcome a lo que la CLI publica. Resultado: **2980 → 2956**.
+3. **Un comentario que citaba el papeleo.** El estándar de comentarios no admite identificadores
+   de tarea (`ST-03`); el comentario que lo nombraba se reescribió explicando el código.
+4. **El contrato que mira el snapshot.** Sigue al dueño, y gana una comprobación que antes no
+   existía: las dos interfaces tienen que pasar por la decisión del dueño. Un contrato que solo
+   mira que el snapshot lleve la clave no ve a una interfaz que decide por su cuenta.
+
+**Verificación (medida en esta rama, `feature/task-79-ac1-load-or-build-graph`, base `d51d3265`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --workspace --lib --tests` | **6734 tests run: 6734 passed, 10 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `npm test --prefix apps/explorer-ui` | **944 tests passed** (86 ficheros), rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, **304 casos** en verde, 0 fallos |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `commands.rs` 2980 → 2956, `handlers/mod.rs` 3954 → 3707 |
+| `python3 scripts/ci/test_comment_standard.py` | OK |
+
+**Gate: NOT_RUN (lote).** El gate se pasa por lotes de diez, y esta unidad es la primera desde el
+gate de AC2 (que ya Passó sobre este árbol). El paso de mutación mide `cognicode-graph-algos`, un
+crate que esta unidad no toca, así que su veredicto es el ya medido; el resto del gate (unitarios e
+integración del workspace) está medido arriba, con los tres pasos del gate en la misma forma en que
+los ejecuta `scripts/test-gate.sh`. El lote cierra con la unidad que lo complete.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **AC4** sigue necesitando la decisión del operador (ya medida en las notas de la tarea): sobre un
+  directorio sin código analizable la CLI sale con rc=1 y «no produjo símbolos», y el MCP responde
+  con éxito y estado `unsupported`. Unificar cambia un comportamiento publicado de uno de los dos.
+- La caché del producto no tiene política de caducidad: `~/.cache/cognicode/<hash>` se reescribe
+  cuando el árbol cambia, y no hay nada que la limpie.
+- La CLI ahora persiste el snapshot en cualquier comando de grafo, y el primer run sobre un árbol
+  grande paga un hash de contenido extra (el manifiesto). Es el mismo coste que el MCP ya pagaba;
+  lo que se compra es que el segundo run no vuelve a parsear el árbol.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
+el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

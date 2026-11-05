@@ -178,6 +178,21 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// A cache of its own, for a test that runs the product.
+///
+/// The product keeps what it calculates in the user's cache
+/// (`~/.cache/cognicode`). A test that ran the real binary against the
+/// real cache would leave entries in the cache of whoever runs the suite —
+/// nobody can clean them, and nobody knows which project they describe —
+/// and it would read a snapshot that another run left behind, so the
+/// answer would depend on what ran before.
+///
+/// The caller keeps the returned directory alive for as long as the test
+/// needs it; dropping it takes the cache with it.
+pub fn isolated_cache() -> tempfile::TempDir {
+    tempfile::tempdir().expect("a temporary cache")
+}
+
 /// Canonical workspace version, derived from `[workspace.package]` (or
 /// the legacy `[workspace]` section) of the workspace `Cargo.toml`.
 /// Panics if not found — tests must NOT bake the version into the

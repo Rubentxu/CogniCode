@@ -57,6 +57,7 @@ use crate::application::dto::{
     SystemPromptContext,
 };
 use crate::application::error::AppError;
+use crate::application::graph_snapshot::{build_manifest, hex_digest};
 use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::graph_queries::GraphQueryError;
@@ -964,17 +965,6 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// - If `input` is `None`, returns `working_dir` unchanged.
 /// - If `input` is an absolute path, returns it unchanged.
 /// - If `input` is a relative path (including "."), joins it to `working_dir`.
-/// El workspace canónico: el mismo string en la clave y en la base.
-///
-/// Un solo sitio lo decide, para que la clave que se guarda y la que se
-/// compara no puedan separarse por una canonicalización distinta.
-fn canonical_workspace(project_dir: &Path) -> String {
-    project_dir
-        .canonicalize()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| project_dir.to_string_lossy().to_string())
-}
-
 pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
     match input {
         None => working_dir.to_path_buf(),
@@ -1022,130 +1012,6 @@ fn skipped_file_dto(
             }
         },
     }
-}
-
-/// Checks whether any source file has changed since the manifest was saved.
-///
-/// Staleness is decided on three independent signals, in order of cost:
-///
-/// 1. Filesystem walk to enumerate the current source tree.
-/// 2. `mtime` (millisecond precision) of each source file compared to
-///    the snapshot entry. A mismatch is conclusive evidence of change.
-/// 3. `content_hash` (SHA-256 over the file bytes) compared to the
-///    snapshot entry, **only when mtime coincides**. mtime alone is
-///    insufficient: a tool that overwrites the bytes while preserving
-///    the timestamp (a restore from backup, `touch -r`, a wrong writer)
-///    would otherwise be silently served as the cached graph while
-///    reporting `status: complete`.
-///
-/// A source file that cannot be read at all (permissions revoked,
-/// deleted mid-scan) is treated as a change: serving the cached graph
-/// would hide the loss of coverage behind a stale "complete" result.
-///
-/// New files not in the manifest and files in the manifest but absent
-/// from disk also invalidate the snapshot.
-///
-/// The inventory is passed in rather than walked here: the walk is the
-/// cost the cache exists to avoid paying twice, and the same walk also
-/// says what holes the tree has right now.
-fn is_manifest_stale(
-    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
-    project_dir: &Path,
-    inventory: &crate::infrastructure::graph::source_files::SourceInventory,
-) -> bool {
-    use sha2::{Digest, Sha256};
-
-    // The files that can change the graph are decided by the same rule
-    // the graph builder uses. A manifest that covered a different set
-    // would miss the files it does not know about, and a change in one
-    // of those would leave the cached graph in place while the product
-    // reported a complete build over sources that no longer exist.
-    let mut checked = 0usize;
-    for file in inventory.source_files() {
-        let path = &file.path;
-        let rel = path.strip_prefix(project_dir).unwrap_or(path);
-        checked += 1;
-        match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == file.mtime_millis => {
-                // Mtime alone is not sufficient. A tool
-                // can rewrite the file bytes while keeping the original
-                // timestamp (e.g. restoring a backup, partial restore,
-                // `touch -r`). Compare the on-disk content_hash against
-                // the stored one to detect that case.
-                //
-                // A file whose content can no longer be
-                // read (e.g. permissions revoked after the snapshot)
-                // invalidates the snapshot — serving it would hide the
-                // loss of coverage behind a stale "complete" result.
-                //
-                // A file whose clock nobody read has no time to compare:
-                // both sides are absent, the times agree, and the file
-                // does not invalidate the snapshot by itself. What decides
-                // is the content hash.
-                let bytes = match std::fs::read(path) {
-                    Ok(b) => b,
-                    Err(_) => return true,
-                };
-                let on_disk_hash = hex_digest(&Sha256::digest(&bytes));
-                if on_disk_hash != entry.content_hash {
-                    return true;
-                }
-                continue; // unchanged
-            }
-            _ => return true, // new, modified, or missing from manifest
-        }
-    }
-    // If manifest has more entries than files checked, files were deleted → stale
-    let manifest_source_count = manifest.entries.len();
-    checked != manifest_source_count
-}
-
-/// Builds a FileManifest for the given project directory.
-/// La marca de un fichero que se enumero pero no se pudo leer.
-///
-/// No puede coincidir con un digest real, porque un digest hexadecimal no
-/// lleva letras fuera de `a`..`f`.
-const UNREADABLE_CONTENT: &str = "unreadable";
-
-fn build_manifest(
-    project_dir: &Path,
-) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
-    use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-    use sha2::{Digest, Sha256};
-
-    let mut manifest = FileManifest::new(project_dir.to_path_buf());
-
-    // The same rule the graph builder walks with, so the manifest
-    // describes the graph it is the freshness key of.
-    let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
-
-    for file in inventory.source_files() {
-        let rel = file
-            .path
-            .strip_prefix(project_dir)
-            .unwrap_or(&file.path)
-            .to_path_buf();
-        // Content_hash must hash CONTENT, not metadata.
-        // The previous mtime proxy produced identical digests for
-        // different files written in the same millisecond.
-        //
-        // A file that cannot be read has no content hash. What is stored
-        // then is the mark of not having read it, which no real digest
-        // can collide with; the freshness of the snapshot is decided by
-        // the real hash, when the file can be read.
-        let content_hash = std::fs::read(&file.path)
-            .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
-            .unwrap_or_else(|_| UNREADABLE_CONTENT.to_string());
-        let _ = manifest.entries.insert(
-            rel,
-            FileEntry {
-                content_hash,
-                mtime: file.mtime_millis,
-                symbol_count: 0,
-            },
-        );
-    }
-    Ok(manifest)
 }
 
 /// Input for build_graph
@@ -1313,15 +1179,25 @@ pub async fn handle_build_graph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    // --- In-memory store for current session (no persistence across restarts) ---
-    //
     // The snapshot is the product's own state: it lives in the user's
     // cache, keyed by the workspace, and never inside the tree that was
     // analysed. When the environment says nothing about where a cache is,
     // there is nowhere honest to write, and the product keeps no state:
     // it rebuilds on every request instead of guessing a place.
-    let snapshot_path = ctx.snapshot_path(&directory);
-    let mut loaded_from_cache = false;
+    //
+    // The decision —serve the snapshot or read the tree again— belongs to
+    // the application layer, and the CLI makes the same one: what one of
+    // them calculates, the other one serves.
+    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
+    let loaded = crate::application::graph_snapshot::load_or_build_graph(
+        &ctx.analysis_service,
+        &directory,
+        ctx.cache_root(),
+        session_manifest.as_ref(),
+        false,
+    )
+    .map_err(HandlerError::App)?;
+    let loaded_from_cache = loaded.loaded_from_cache;
     // The holes the tree has RIGHT NOW: what the walk declines, what it
     // cannot do and what it cannot read yet.
     //
@@ -1333,145 +1209,10 @@ pub async fn handle_build_graph(
     // holes are therefore taken from the current tree, and the verdict
     // of a cached answer is computed against the tree the consumer is
     // asking about, not against the tree the snapshot was taken from.
-    let mut current_holes: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
-        Vec::new();
-
-    // Only hydrate from the durable snapshot when this process has not
-    // already built a graph (fresh session / restart). Repeated calls in
-    // the same session keep their existing rebuild-from-source semantics.
-    let cache_is_empty = {
-        let g = ctx.analysis_service.graph_cache().get();
-        g.symbol_count() == 0 && g.edge_count() == 0
-    };
-    let existing_snapshot = snapshot_path.as_ref().filter(|path| path.exists());
-    if cache_is_empty && let Some(db_path) = existing_snapshot {
-        // The durable snapshot is the source for both
-        // graph and manifest. A corrupt snapshot is treated as absent.
-        let snapshot = load_durable_snapshot(db_path);
-        // Who produced the snapshot, and who is asking now.
-        let current_key = SnapshotKey::new(
-            canonical_workspace(&directory),
-            AnalyzerBuild::current(),
-            SNAPSHOT_SCHEMA,
-        );
-        let is_stale = match snapshot.as_ref() {
-            Some((key, _, manifest)) => {
-                // The first question is about the producer, and it costs
-                // nothing: it is answered without reading the tree. A
-                // snapshot written by another analyzer —another version,
-                // another commit, another capability set — describes a
-                // graph this analyzer did not calculate, so it is not
-                // evidence of anything here.
-                if !key.same_producer_as(&current_key) {
-                    tracing::warn!(
-                        "the durable snapshot was produced by another analyzer \
-                         (version {}, commit {:?}); it is rebuilt",
-                        key.analyzer.version,
-                        key.analyzer.commit
-                    );
-                    true
-                } else {
-                    // Scan source files and compare hashes. The walk
-                    // that decides the freshness also says what holes
-                    // the tree has now, so it is done once.
-                    let inventory =
-                        crate::infrastructure::graph::source_files::inventory(&directory);
-                    let stale = is_manifest_stale(manifest, &directory, &inventory);
-                    current_holes = inventory.coverage_holes();
-                    stale
-                }
-            }
-            None => true, // No/corrupt snapshot → stale (rebuild)
-        };
-
-        if !is_stale && let Some((_key, graph, manifest)) = snapshot {
-            ctx.analysis_service.graph_cache().replace(graph);
-            let store = ctx.get_graph_store();
-            let _ = store.save_manifest(&manifest);
-            loaded_from_cache = true;
-        }
-    }
-
-    // A same-session repeat call
-    // with a fresh manifest (unchanged sources, content-vs-content) serves
-    // the in-memory cached graph without a rebuild. Same staleness gate as
-    // the durable snapshot path: a stale manifest falls through to the
-    // full rebuild below. The stored manifest is updated on every build.
-    if !loaded_from_cache {
+    let current_holes = loaded.tree.holes;
+    if let Some(manifest) = loaded.manifest {
         let store = ctx.get_graph_store();
-        if let Some(manifest) = store.load_manifest().ok().flatten() {
-            let inventory = crate::infrastructure::graph::source_files::inventory(&directory);
-            if !is_manifest_stale(&manifest, &directory, &inventory) {
-                loaded_from_cache = true;
-                current_holes = inventory.coverage_holes();
-            }
-        }
-    }
-
-    // Build from source if cache miss
-    if !loaded_from_cache {
-        // The manifest is taken BEFORE the build. A manifest written
-        // after the graph could describe a tree the graph never saw: a
-        // file that appeared between the two would be in the manifest
-        // and missing from the graph, and the next call would find the
-        // manifest fresh and serve a graph that does not cover the
-        // tree. Taken first, the manifest is always at or before the
-        // graph, so anything that changes in between invalidates it.
-        let manifest = build_manifest(&directory).ok();
-
-        if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
-            return Err(HandlerError::App(e));
-        }
-        // build_project_graph() already updates analysis_service.graph_cache()
-        // (which CachedGraphStore reads from). The dual-write
-        // to the inner InMemoryGraphStore is no longer needed.
-        //
-        // Build and save manifest (stored in inner InMemoryGraphStore via
-        // CachedGraphStore — used for staleness check on next build_graph).
-        // Only persist a snapshot when the build is
-        // Complete. A Partial build (unreadable/failed files) must not
-        // leave behind a snapshot that a later session could mistake
-        // for full coverage — rebuild-every-time is the safe default.
-        let build_complete = matches!(
-            ctx.analysis_service.get_last_build_report(),
-            Some(crate::infrastructure::graph::per_file_graph::BuildReport {
-                status: crate::infrastructure::graph::per_file_graph::BuildStatus::Complete,
-                ..
-            })
-        );
-        if build_complete {
-            if let Some(manifest) = manifest {
-                let store = ctx.get_graph_store();
-                let _ = store.save_manifest(&manifest);
-                // Persist the snapshot atomically so a
-                // restart can reuse it; best-effort, never blocks the build.
-                let graph = ctx.analysis_service.get_project_graph();
-                // The snapshot is written with the key of the analyzer that
-                // just calculated it. A snapshot that does not name its
-                // producer cannot be told apart from one written by
-                // another build.
-                let key = SnapshotKey::new(
-                    canonical_workspace(&directory),
-                    AnalyzerBuild::current(),
-                    SNAPSHOT_SCHEMA,
-                );
-                if let Some(db_path) = &snapshot_path {
-                    if let Err(e) = save_durable_snapshot(db_path, &key, &graph, &manifest) {
-                        tracing::warn!("durable snapshot save failed: {}", e);
-                    }
-                } else {
-                    tracing::warn!(
-                        "no cache root is configured: the graph snapshot is not persisted, \
-                         and every request rebuilds the graph"
-                    );
-                }
-            }
-        } else {
-            // A stale/partial snapshot must not survive a failed rebuild.
-            if let Some(db_path) = &snapshot_path {
-                let _ = std::fs::remove_file(db_path);
-            }
-        }
+        let _ = store.save_manifest(&manifest);
     }
 
     if ctx.is_cancelled() {
@@ -1690,24 +1431,28 @@ fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
     let config_digest = hex_digest(&Sha256::digest(config_key.as_bytes()));
 
     // Source manifest digest: sorted (rel_path, content_hash) pairs.
-    let (source_manifest_digest, manifest_ok) = match build_manifest(project_dir) {
-        Ok(manifest) => {
-            let mut pairs: Vec<(String, &String)> = manifest
-                .entries
-                .iter()
-                .map(|(p, e)| (p.to_string_lossy().to_string(), &e.content_hash))
-                .collect();
-            pairs.sort();
-            let mut hasher = Sha256::new();
-            for (p, h) in &pairs {
-                hasher.update(p.as_bytes());
-                hasher.update(b"\0");
-                hasher.update(h.as_bytes());
-                hasher.update(b"\n");
-            }
-            (hex_digest(&hasher.finalize()), true)
+    //
+    // The manifest is the same one the snapshot is the freshness key of,
+    // and it is built from the files the walk found: the tree is walked
+    // once, and the walk says both what the manifest holds and what holes
+    // the tree has.
+    let tree = ctx.analysis_service.tree_state(project_dir);
+    let manifest = build_manifest(project_dir, &tree.files);
+    let (source_manifest_digest, manifest_ok) = {
+        let mut pairs: Vec<(String, &String)> = manifest
+            .entries
+            .iter()
+            .map(|(p, e)| (p.to_string_lossy().to_string(), &e.content_hash))
+            .collect();
+        pairs.sort();
+        let mut hasher = Sha256::new();
+        for (p, h) in &pairs {
+            hasher.update(p.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(h.as_bytes());
+            hasher.update(b"\n");
         }
-        Err(_) => (String::new(), false),
+        (hex_digest(&hasher.finalize()), true)
     };
 
     // The key of the analysis: who produced it, over what, and with which
@@ -1724,10 +1469,6 @@ fn compute_basis(ctx: &HandlerContext, project_dir: &Path) -> BasisDto {
         snapshot_schema: key.schema,
         complete: workspace_ok && manifest_ok,
     }
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Handler for get_call_hierarchy tool
@@ -2146,18 +1887,32 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
         );
         return Ok(EnsureResult::already_present(count));
     }
-    // Auto-build the graph
+    // The session holds nothing: the durable snapshot may hold what
+    // another session calculated over the same tree, and the tree is read
+    // again when the snapshot cannot answer for it.
     info!(
-        "ensure_graph_built: graph empty, auto-building from {:?}",
+        "ensure_graph_built: graph empty, serving the snapshot or building from {:?}",
         ctx.working_dir
     );
     let start = std::time::Instant::now();
-    ctx.analysis_service
-        .build_project_graph(&ctx.working_dir)
-        .map_err(HandlerError::App)?;
-    let graph = ctx.analysis_service.get_project_graph();
-    let count = graph.symbols().count();
+    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
+    let loaded = crate::application::graph_snapshot::load_or_build_graph(
+        &ctx.analysis_service,
+        &ctx.working_dir,
+        ctx.cache_root(),
+        session_manifest.as_ref(),
+        false,
+    )
+    .map_err(HandlerError::App)?;
+    let count = loaded.graph.symbols().count();
     let elapsed = start.elapsed().as_millis() as u64;
+    if loaded.loaded_from_cache {
+        info!(
+            "ensure_graph_built: the durable snapshot was served — {} symbols in {}ms",
+            count, elapsed
+        );
+        return Ok(EnsureResult::already_present(count));
+    }
     info!(
         "ensure_graph_built: auto-build complete — {} symbols in {}ms",
         count, elapsed
@@ -2341,8 +2096,6 @@ pub async fn handle_check_architecture(
 }
 
 mod complexity_handlers;
-mod graph_snapshot;
-use graph_snapshot::{load_durable_snapshot, save_durable_snapshot};
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -3955,18 +3708,20 @@ pub mod findings_handlers;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use graph_snapshot::{load_durable_snapshot_capped, tmp_path_for};
+    use crate::application::graph_snapshot::{
+        is_manifest_stale, load_durable_snapshot, load_durable_snapshot_capped,
+        save_durable_snapshot, tmp_path_for,
+    };
+    use crate::application::services::analysis_service::TreeFile;
 
-    /// El inventario de un árbol TAL COMO ESTÁ AHORA.
+    /// Los ficheros del árbol TAL COMO ESTÁ AHORA.
     ///
     /// La comprobación de frescura de una instantánea y la lista de
     /// huecos del árbol son la misma pasada: el recorrido que decide si
     /// la instantánea sigue siendo válida dice también qué huecos tiene
     /// el árbol ahora. El test la toma del árbol, no de un manifiesto.
-    fn tree_inventory(
-        project: &Path,
-    ) -> crate::infrastructure::graph::source_files::SourceInventory {
-        crate::infrastructure::graph::source_files::inventory(project)
+    fn tree_files(project: &Path) -> Vec<TreeFile> {
+        AnalysisService::new().tree_state(project).files
     }
 
     /// La clave que llevan los snapshots de prueba: la del analizador de
@@ -7703,7 +7458,7 @@ mod tests {
             // Sanity: before rewriting, the snapshot must be considered
             // FRESH (file content unchanged, mtime matches, hash matches).
             assert!(
-                !is_manifest_stale(&manifest, project, &tree_inventory(project)),
+                !is_manifest_stale(&manifest, project, &tree_files(project)),
                 "baseline check: freshly-built manifest must NOT be stale \
                  (mtime={}, file content matches manifest)",
                 pinned_millis
@@ -7727,7 +7482,7 @@ mod tests {
             // the actual bytes against the hash). After the fix it MUST
             // return `true`.
             assert!(
-                is_manifest_stale(&manifest, project, &tree_inventory(project)),
+                is_manifest_stale(&manifest, project, &tree_files(project)),
                 "snapshot must be stale when on-disk content differs \
                  from manifest content_hash, even if mtime matches"
             );
@@ -7775,7 +7530,7 @@ mod tests {
             {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
-                let stale = is_manifest_stale(&manifest, project, &tree_inventory(project));
+                let stale = is_manifest_stale(&manifest, project, &tree_files(project));
                 // Restore so the tempdir cleanup works.
                 std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
                 assert!(
@@ -7788,7 +7543,7 @@ mod tests {
                 // Non-unix platforms: just exercise the read-error branch
                 // by deleting the file mid-snapshot. Coverage is best-effort.
                 std::fs::remove_file(&file).unwrap();
-                let stale = is_manifest_stale(&manifest, project, &tree_inventory(project));
+                let stale = is_manifest_stale(&manifest, project, &tree_files(project));
                 assert!(
                     stale,
                     "snapshot must be stale when a source file is removed"
@@ -7832,7 +7587,7 @@ mod tests {
             std::fs::write(project.join("src").join("b.rs"), b"fn b() {}\n").unwrap();
 
             assert!(
-                is_manifest_stale(&manifest, project, &tree_inventory(project)),
+                is_manifest_stale(&manifest, project, &tree_files(project)),
                 "snapshot must be stale when a new file appears"
             );
         }
@@ -7875,7 +7630,7 @@ mod tests {
             std::fs::rename(&original, &renamed).unwrap();
 
             assert!(
-                is_manifest_stale(&manifest, project, &tree_inventory(project)),
+                is_manifest_stale(&manifest, project, &tree_files(project)),
                 "snapshot must be stale when a tracked file is renamed"
             );
         }

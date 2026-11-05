@@ -49,30 +49,50 @@ pub struct ProjectGraph {
 ///
 /// The service is the authority for what the graph contains; this
 /// function only asks it and carries what it said.
+///
+/// The graph comes from the same decision the MCP takes: the snapshot is
+/// served when it can answer for the tree, and the tree is read again
+/// when it cannot. A command that builds its own graph is a command that
+/// ignores what the product already calculated.
 pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
     let service = AnalysisService::new();
-    service.build_project_graph(dir).map_err(|e| {
+    let loaded = crate::application::graph_snapshot::load_or_build_graph(
+        &service,
+        dir,
+        crate::application::graph_cache::default_cache_root().as_deref(),
+        None,
+        false,
+    )
+    .map_err(|e| {
         format!(
             "failed to build the graph of {}: {e}",
             dir.to_string_lossy()
         )
     })?;
 
-    let (skipped, pending, rejected) = match service.get_last_build_report() {
-        Some(BuildReport {
-            status:
-                BuildStatus::Partial {
-                    skipped,
-                    pending,
-                    rejected,
-                },
-            ..
-        }) => (skipped, pending, rejected),
-        _ => (Vec::new(), Vec::new(), Vec::new()),
+    // A served graph carries the holes of the tree as it is NOW —the
+    // persisted graph cannot know about them— and its references and
+    // relations are the graph's own, which are empty because a snapshot
+    // only exists for a build that had none of them.
+    let (skipped, pending, rejected) = if loaded.loaded_from_cache {
+        (loaded.tree.holes, Vec::new(), Vec::new())
+    } else {
+        match service.get_last_build_report() {
+            Some(BuildReport {
+                status:
+                    BuildStatus::Partial {
+                        skipped,
+                        pending,
+                        rejected,
+                    },
+                ..
+            }) => (skipped, pending, rejected),
+            _ => (Vec::new(), Vec::new(), Vec::new()),
+        }
     };
 
     Ok(ProjectGraph {
-        graph: service.get_project_graph(),
+        graph: loaded.graph,
         skipped,
         pending,
         rejected,

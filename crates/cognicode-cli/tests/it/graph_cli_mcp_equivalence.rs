@@ -79,10 +79,16 @@ fn copy_tree(source: &Path, target: &Path) {
 /// Runs the CLI as a sub-process and returns its JSON answer.
 fn run_cli(args: &[&str]) -> Value {
     let binary = common::binary_path("cognicode");
+    // The product keeps what it calculates in the user's cache. The test
+    // gives it a cache of its own, so the run neither writes in the cache
+    // of whoever runs the suite nor reads a snapshot another run left
+    // behind.
+    let cache = common::isolated_cache();
     let output = Command::new(&binary)
         .arg("--format")
         .arg("json")
         .args(args)
+        .env("XDG_CACHE_HOME", cache.path())
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));
     assert!(

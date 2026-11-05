@@ -6,7 +6,9 @@
 //! byte-compatible con lo que `CommandExecutor::execute_graph`
 //! producía a mano (T1-5.5): ningún consumidor N−1 cambia.
 
-use crate::application::analysis_basis::{AnalysisOutcome, AnalysisValue, OutcomeState};
+use crate::application::analysis_basis::{
+    AnalysisOutcome, AnalysisValue, GraphSource, OutcomeState,
+};
 use crate::interface::cli::result::{GraphResult, SkippedFile};
 use crate::interface::coverage::{PendingReferenceInfo, RejectedRelationInfo};
 
@@ -97,5 +99,60 @@ pub fn present_graph_full(
             .iter()
             .map(RejectedRelationInfo::from_rejection)
             .collect(),
+    }
+}
+
+/// Dice, en stderr, de donde salio el grafo y que no cubrio.
+///
+/// El documento de stdout no cambia: la respuesta es la respuesta de las
+/// dos maneras. Lo que cambia es lo que la CLI dice sobre como llego a
+/// ella, y eso es observabilidad: va a stderr, donde el que lee una tuberia
+/// lo ve y el que consume el documento no se confunde.
+///
+/// Las lineas de "Skipped" y "Pending" van a stderr (como el eprintln!
+/// anterior a la migracion). El presentador de texto del binario las
+/// emite tambien via los campos `status` y `skipped_files`; mantenerlas
+/// aqui conserva el flujo de stderr historico para las tuberias que
+/// grepean "Building ..." o "Skipped:" por separado de stdout.
+pub fn report_graph_full(outcome: &AnalysisOutcome<AnalysisValue>, result: &GraphResult) {
+    let GraphResult::Full {
+        skipped_files,
+        pending_references,
+        status,
+        symbols,
+        dependencies,
+        ..
+    } = result
+    else {
+        return;
+    };
+
+    // La fuente del grafo viaja con la respuesta: un grafo calculado ahora
+    // y uno servido del snapshot son la misma respuesta solo cuando el
+    // arbol no cambio, y quien consume es quien tiene que saber que el
+    // producto lo comprobo.
+    if outcome.provenance().graph_source == Some(GraphSource::Cache) {
+        eprintln!(
+            "Graph loaded from cache (durable snapshot): {symbols} symbols, {dependencies} relationships"
+        );
+    }
+
+    if status == "partial" {
+        for s in skipped_files {
+            eprintln!("  Skipped: {}: {}", s.path, s.reason);
+        }
+        for reference in pending_references {
+            // Una referencia sin linea no esta en la linea cero: esta en
+            // una linea que el lector no conocia, y decir "0" nombraria un
+            // sitio que no existe.
+            let origin = match reference.line {
+                Some(line) => format!("{}:{}", reference.file, line),
+                None => reference.file.clone(),
+            };
+            eprintln!(
+                "  Pending: {} -> {} ({:?})",
+                origin, reference.target, reference.reason
+            );
+        }
     }
 }

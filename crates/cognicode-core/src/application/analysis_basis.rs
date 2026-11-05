@@ -439,6 +439,27 @@ pub struct AnalysisProvenance {
     pub capability: Option<String>,
     #[serde(default)]
     pub elapsed_ms: u128,
+    /// De donde salio el grafo, cuando la operacion produjo uno.
+    ///
+    /// `None` en las operaciones que no producen grafo. La distincion no es
+    /// cosmetica: un grafo calculado ahora y un grafo calculado antes son la
+    /// misma respuesta solo cuando el arbol no cambio, y quien consume es
+    /// quien tiene que saber que el producto lo comprobo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_source: Option<GraphSource>,
+}
+
+/// De donde salio un grafo.
+///
+/// Dos respuestas que no son la misma respuesta: la calculada ahora y la
+/// servida de antes coinciden solo cuando el arbol no cambio entre las dos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphSource {
+    /// El arbol se leyó otra vez.
+    Built,
+    /// El grafo se sirvió del snapshot durable.
+    Cache,
 }
 
 impl AnalysisProvenance {
@@ -448,11 +469,18 @@ impl AnalysisProvenance {
             operation: Some(operation.to_string()),
             capability: Some(capability.to_string()),
             elapsed_ms: 0,
+            graph_source: None,
         }
     }
 
     pub fn with_elapsed_ms(mut self, elapsed_ms: u128) -> Self {
         self.elapsed_ms = elapsed_ms;
+        self
+    }
+
+    /// Dice de donde salio el grafo que esta respuesta publica.
+    pub fn with_graph_source(mut self, source: GraphSource) -> Self {
+        self.graph_source = Some(source);
         self
     }
 }
