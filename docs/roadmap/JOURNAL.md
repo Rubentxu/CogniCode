@@ -35031,3 +35031,151 @@ no introduce ningún import nuevo entre capas.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-135: los llamantes y los caminos calientes se publican en el mismo orden en cada corrida
+
+**El encargo.** El mismo proyecto publicaba los caminos calientes en otro orden
+en cada corrida, y no siempre los mismos diez símbolos: el corte caía dentro
+de un grupo de símbolos con el mismo número de llamantes, así que la lista
+publicada era distinta, no solo reordenada.
+
+Medido antes, sobre el dominio del core, dos construcciones independientes del
+mismo proyecto dentro de un mismo proceso:
+
+```
+["iter", "as_ref", "default", "match_snapshots", "default", "detector", "new", "caps", "symbol_id", "new"]
+["iter", "as_ref", "default", "match_snapshots", "default", "detector", "caps", "new", "symbol_id", "new"]
+```
+
+Los mismos diez símbolos, en otro orden. Un consumidor que lee la lista dos
+veces no puede distinguir «cambió el código» de «cambió el azar».
+
+**La causa, medida (no supuesta).** Dos cosas distintas:
+
+- **El agregado.** `CallGraph` guardaba sus aristas inversas en
+  `reverse_edges: HashMap<SymbolId, HashSet<SymbolId>>` y las directas en
+  `edges: HashMap<SymbolId, HashMap<(SymbolId, DependencyType), (Provenance,
+  f64)>>` (`domain/aggregates/call_graph.rs:65-67`). `callers()` clonaba el
+  conjunto en un `Vec` y `dependents()` lo iteraban: los dos en el orden de
+  iteración de un hash map, distinto por instancia. `callees()` idem con el
+  mapa interior.
+- **Dos superficies que respondían la pregunta por su cuenta.** `project_overview`
+  (`interface/mcp/handlers/consolidated_handlers.rs:269`) y el handler de AIX
+  (`interface/mcp/handlers/aix_handlers.rs:1374`) ordenaban los caminos
+  calientes por número de llamantes **solo**, con un orden estable. Los empates
+  conservaban el orden de iteración del grafo, y el corte caía dentro de un
+  empate: por eso la lista cambiaba y no solo se reordenaba.
+
+Lo segundo tiene un nombre en este repositorio: la pregunta de los caminos
+calientes tiene un dueño desde TASK-78 (`AnalysisService::hot_paths`, que
+ordena por número de llamantes, nombre, fichero y línea). Estas dos
+superficies no llegaban a él.
+
+**Lo que entrega ahora.** Cada causa, en su dueño:
+
+1. **El agregado** publica su forma en un orden canónico: `reverse_edges` pasa
+   a `BTreeSet` y el mapa interior de `edges` a `BTreeMap`. Los llamantes, los
+   dependientes y los llamados salen por symbol id —sin coste en la lectura, no
+   hay que ordenar nada al leer— y el coste se paga una vez por arista, al
+   construir. El contrato queda escrito en el agregado y en sus tres accesores.
+2. **Las dos superficies** dejan de responder por su cuenta y preguntan al
+   dueño: `project_overview` publica la lista de nombres del dueño, y el
+   handler de AIX traduce las filas del dueño a su DTO. El test estructural de
+   TASK-78 (`one_owner_for_the_graph_questions.rs`) ahora cubre las dos
+   superficies con el token `AnalysisService::hot_paths`, para que las copias no
+   vuelvan.
+3. **El detector de ciclos** deja de ordenar los sucesores por su cuenta: ahora
+   se apoya en el contrato del agregado. Una sola fuente de la verdad.
+
+**El RED, medido.** Con el código viejo en el árbol —ficheros copiados a `/tmp`
+y repuestos con `git show HEAD:<ruta> > <ruta>`, porque el hook `git-control` no
+admite `git stash`—:
+
+- los llamantes salían `["t.rs:caller_e:10", "t.rs:caller_i:10",
+  "t.rs:caller_d:10", "t.rs:caller_j:10", …]` en vez de ordenados por symbol id;
+- las dos corridas publicaban listas distintas:
+  `["new", "assign", "new", "detect_cycles", "target_score", …]` frente a
+  `["assign", "new", "new", "detect_cycles", "graph_of", …]`;
+- el test estructural fallaba en `aix_handlers` y en `consolidated_handlers`.
+
+**Las pruebas.** Tres, y son las mínimas (lente `change-impact`: radio
+acotado — el agregado del dominio, sus tres accesores y los consumidores
+directos: el handler de `project_overview`, el de AIX y el repositorio de
+grafos del explorer; lente `regression-promotion`: no hay nada que retirar, el
+agregado no tenía ninguna prueba de determinismo de sus llamantes, y no hay
+UAT que promover porque el defecto es de reproducibilidad):
+
+| Prueba | Nivel | Qué fija |
+|---|---|---|
+| `callers_and_callees_are_canonically_ordered` | unitaria, `domain/aggregates/call_graph.rs` | los llamantes, los dependientes y los llamados salen por symbol id |
+| `the_same_project_gives_the_same_hot_paths` | integración, `tests/it/` | dos construcciones independientes del código real dan la misma respuesta **publicada** de caminos calientes |
+| `the_surfaces_call_the_one_owner` | integración, `tests/it/` (TASK-78, ampliado) | las dos superficies llegan a la puerta del dueño |
+
+El testigo de la prueba unitaria son **diez** llamantes y **diez** llamados, no
+tres: con tres, un hash map puede devolver el orden esperado por azar (una de
+seis); con diez, esa probabilidad es una de tres millones, así que un rojo ahí
+es el defecto y no la suerte.
+
+El testigo de la prueba de integración son **cuatro pares** de construcciones
+independientes, no uno. Un par es una moneda al aire: la lista publicada lleva
+un grupo de símbolos con el mismo número de llamantes, y dos construcciones
+coinciden solo cuando los dos órdenes del grupo coinciden. Medido sobre este
+testigo antes del arreglo: las dos listas difieren en **8 de 8** pares. Cuatro
+pares bajan la coincidencia accidental por debajo de una en diez mil.
+
+**El coste, medido antes y después (AC4).** Sobre el grafo real del dominio
+del core (5.995 símbolos, 2.058 aristas), con el mismo arnés antes y después:
+
+| Vía | Antes | Después |
+|---|---|---|
+| Inserción de aristas (escritura) | 16,74 / 17,01 / 16,48 ms | **10,28 / 10,72 / 9,95 ms** |
+| Inserción de símbolos (escritura) | 55,65 / 56,45 / 55,11 ms | 50,17 / 50,80 / 48,99 ms |
+| Pasada de fan-in (lectura) | 9,82 / 7,74 / 7,27 ms | 9,60 / 7,20 / 7,32 ms |
+| Pasada de dependientes (lectura) | 7,28 / 7,77 / 7,47 ms | 7,69 / 7,54 / 7,47 ms |
+
+El orden va en el **lado de la escritura**, y la razón está en las cifras: la
+lectura se repite en cada publicación —el fan-in recorre los 5.995 símbolos y
+llama a `callers()` una vez por símbolo—, mientras que la escritura ocurre una
+sola vez por arista. El resultado es que el orden **no se paga en la lectura**:
+la lectura no se mueve, y la inserción de aristas incluso baja, porque un mapa
+ordenado con una o dos aristas por símbolo reserva menos que una tabla de hash.
+
+**Medido después.** Dos construcciones independientes del mismo proyecto dan el
+mismo orden de llamantes (`callers published order equal = true`) y la misma
+lista de caminos calientes (`hot paths published order equal = true`). Las
+superficies que publican los llamantes, los llamados o los dependientes heredan
+el orden canónico sin cambiar una línea: 103 puntos de llamada en 26 ficheros
+de `crates/*/src/` leen ya esos accesores (el explorer entre ellos), y el
+recorrido de los llamantes y los llamados (`traverse_callers`,
+`traverse_callees`) también sale ordenado.
+
+**Lo que se midió y NO se arregla aquí.** Las iteraciones sobre el mapa
+**exterior** (`symbols`, `edges` y `reverse_edges` como `HashMap<SymbolId, _>`)
+siguen siendo de hash map. Medido sobre el mismo grafo: la lista de módulos y
+los ciclos de módulos de `find_module_dependencies()` se publican **distintos**
+en dos construcciones (`module list equal = false`, `module cycles equal =
+false`); el documento del diagrama mermaid, en cambio, sale igual tanto en el
+grafo entero como en el subgrafo con raíz, porque sus aristas ya se ordenan.
+Queda encaminado en **TASK-136**.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3536 tests run: 3536 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer --lib --tests` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 (0 añadidas, 0 retiradas) |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134 y TASK-135 van cuatro de diez,
+así que el gate de esta unidad es **NOT_RUN**. La allowlist de CR-06 no crece:
+el arreglo no introduce ningún import nuevo entre capas.
+
+**Entrega.** PR #621 → `3cefb4cb`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
