@@ -32713,3 +32713,128 @@ mutantes inviables. Se deja dicho con la cifra, sin atribuirle una causa que no 
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+## 2026-11-05 — TASK-80: la línea base es una, y el presentador es el único que escribe
+
+**AC1 — la base de línea se convierte en un solo sitio y el esquema la documenta.** El producto
+publicaba dos bases: el grafo cuenta desde cero (lo que entrega el parser) y las rutas de
+code-intelligence cuentan desde uno (lo que publica el producto), y cada superficie publicaba la
+suya. El esquema, además, no lo decía: `get_symbol_code` declaraba «Line number (1-indexed)» y
+`read_file` «(1-indexed)», mientras que `hover`, `go_to_definition`, `find_references` y
+`rename_preview` no decían nada y las tools del grafo publicaban la línea desde cero.
+
+La conversión vive ahora en un sitio: `published_line()` en el dominio
+(`domain/value_objects/location.rs`), con `PUBLISHED_LINE_BASE = 1` al lado. Todo lo que publica
+una línea la cruza, y la línea publicada es la que la persona lee.
+
+El `navigate` de la CLI estaba desviado en las dos direcciones: pedía al backend la línea de
+encima de la que el usuario nombraba (`line.saturating_sub(1)` al entrar) y publicaba la de
+debajo (`+ 1` al salir). Ahora la posición viaja al backend tal como la escribió la persona, y
+sale como el backend la contesta.
+
+El esquema lo documenta ahora en los dos lados: el maestro `product/tools.json` (que es lo que el
+runtime publica para las entradas) lleva la descripción de la base en cada propiedad que publica
+una línea, y los contratos de salida, que el runtime deriva del tipo que serializa la respuesta,
+la llevan en su `description` (`graph_explain` y `build_graph`).
+
+**Lo que faltaba cruzar (segunda pasada, medida).** La primera pasada cruzo la línea en las
+superficies que la construían en el momento de responder. La auditoría de la rama encontró cinco
+que la publicaban sin cruzar, y el test nuevo las midió:
+
+| Sitio | Qué publicaba | Dónde se cruza ahora |
+|---|---|---|
+| `graph_explain` (`graph_query_handlers.rs`) | la línea del grafo, desde cero, bajo una descripción que decía «1-indexed» | en el handler, al publicar el nodo |
+| `get_hot_paths` (MCP) y `graph hot-paths` (CLI) | la línea interna: las dos superficies de la misma pregunta decían dos bases | en `AnalysisService::hot_paths`, el servicio que las dos preguntan |
+| `get_call_hierarchy` (MCP) y `graph hierarchy` (CLI) | ídem | en `AnalysisService::call_hierarchy` |
+| el índice de símbolos (`ask_about_code`) | la línea desde cero en un DTO que declara «Line number (1-indexed)»; su `id` lleva la misma línea, así que el objeto se contradecía a sí mismo | en el DTO, en el `id` y en el campo |
+| el FQN del fact side | su propia aritmética (`+ 1`) en un segundo sitio | en la misma función `published_line` |
+
+La conversión ocurre donde el dato cruza del grafo a la respuesta: en el servicio de aplicación
+que responde la pregunta y en el punto donde la superficie publica. El `+1` del fact side es la
+misma función, y no queda ninguna aritmética de base en el producto.
+
+**AC2 — el core solo devuelve resultados; `cognicode-cli/src/presenter.rs` imprime.** El core
+imprimía sus propias respuestas —**55 `println!`** medidos en `interface/cli/` al empezar la
+unidad: 54 en `commands.rs` y 1 en la regla de canal (`progress.rs`), que se queda— y el
+presentador imprimía después. `graph impact-composite` publicaba dos documentos donde se pedía
+uno: la respuesta de la consulta y, detrás, un `PerFile` vacío que describía un grafo que no
+existía. El documento JSON no era un documento.
+
+Ahora el core devuelve el resultado y el presentador lo escribe: `CommandOutput::Rendered` lleva
+el texto ya renderizado y, cuando el comando tiene un código de salida, lo lleva también. El
+doctor es el caso: su informe lo escribe el presentador y el código de salida viaja como dato
+hasta `main`, que es quien termina el proceso. El único sitio del módulo que escribe en stdout es
+la regla de canal (`progress.rs`), y un test lo vigila leyendo las fuentes: cualquier `println!`
+que se añada a un comando sin test sigue siendo un `println!`.
+
+**Lo que cambia en el cable, dicho explícitamente.** Las tools del grafo publicaban la línea desde
+cero y la publican desde uno; el `navigate` de la CLI pedía una línea y contestaba otra. Es un
+cambio de contrato publicado, y es el que pedía el criterio de aceptación: una base, un sitio, y el
+esquema que la dice. La columna **no** entra en este cambio (ver residuo).
+
+**RED medido.**
+
+- `cognicode-cli/tests/it/one_published_line_base.rs`: las tres pruebas nuevas fallaban con «the
+  published line of beta is not the line the file declares it on» (4 contra 5) y «the answer does
+  not say where the definition lives» (`location: null`).
+- `cognicode-core/tests/it/one_published_line_base.rs`: el MCP publicaba la línea del grafo desde
+  cero, y el inventario de `println!` del core daba los 55 sitios medidos arriba.
+- `cognicode-cli/tests/it/one_answer_one_document.rs`: `graph impact-composite` publicaba dos
+  documentos y el segundo no se podía parsear como JSON.
+- `cognicode-core/tests/it/one_published_line_base.rs::the_graph_tools_publish_the_line_the_file_declares`
+  (segunda pasada): «the explanation publishes a line that is not the line the file declares»
+  (4 contra 5) antes del arreglo, y pasa después.
+
+**Verificación.** Rama `feature/task-80-one-line-base`, base `5830bbe1` (la punta de `main` de
+entonces), con `main` (`44a10776`) dentro. Commits `a3d95891` (la unidad), `4b45b906` (las líneas
+que faltaban) y `6fb83cbe` (el módulo de capacidades). `cargo nextest run --profile gate
+-p cognicode-core --tests`: **3493 OK**, 4 ignorados. `cargo nextest run --profile gate
+-p cognicode-cli --tests`: **623 OK**, 1 ignorado. `cargo clippy --workspace --all-targets
+-- -D warnings` rc=0 y `cargo fmt --all --check` limpio. `npm test --prefix apps/explorer-ui`:
+**944 OK** en 86 ficheros. La captura del runtime (`tools/list` con los tres features) publica
+**78 tools**, y su `hover` ya lleva la base de la línea en el esquema de entrada.
+
+El texto de las respuestas se comparó byte a byte contra la captura previa al cambio: la ayuda,
+el doctor (texto y JSON) y las capacidades (texto y JSON) son idénticos, y el doctor sigue
+saliendo con 1.
+
+**El ratchet de tamaño obligó a mover el documento de capacidades.** `commands.rs` estaba en 3098
+líneas de producción en la base y la unidad lo hizo crecer 55: cada `println!` convertido en texto
+acumulado añadió su línea de construcción. Un fichero de más de 2000 líneas sólo puede
+encogerse, así que el documento de capacidades y el resolvedor que busca los assets que lo componen
+salen a su propio módulo (`interface/cli/capabilities.rs`) y `commands.rs` baja a 2980. El
+contrato que lee el código de la resolución de assets (`a014`) apunta ahora al módulo donde vive.
+El comentario del ratchet de `std::process::exit` explicaba el cambio citando la tarea y la fecha;
+un comentario explica el código, y el contrato de comentarios lo mide: la deuda baja de dos a
+una.
+
+**Gate.** `bash scripts/test-gate.sh` sobre la punta de la rama, en solitario: unitarios **4641 OK**
+(2 ignorados), integración **6704 OK** (10 ignorados) y mutantes **574 en 9m: 570 atrapados,
+4 inviables, 0 supervivientes, 0 tiempos agotados** — rc=0.
+
+Los inviables de este paso se mueven entre lotes sobre el mismo alcance: **2** en el lote de
+TASK-65, **3** en el de TASK-117 y **4** aquí. El paso mide `cognicode-graph-algos`, un crate que
+esta rama no toca, y el log del gate no nombra los mutantes: la cifra se dice como se midió, sin
+atribuirle una causa que no se midió. Lo que el gate sí afirma aquí es lo que importa para esta
+unidad: **0 supervivientes y 0 tiempos agotados**.
+
+**Contratos de producto.** `bash scripts/ci/run-all-contracts.sh`: **1 rojo de 4** — el ratchet
+del snapshot (`test_roadmap_version_ratchet`), que no es de esta unidad: `CURRENT.md` declara el
+SHA `a88e2ca2` y la ventana del contrato es de cinco commits, y el merge de TASK-117 (un commit
+más en `main`) dejó la distancia en seis. El rojo estaba en `main` antes de tocar esta rama. Se
+regenera el snapshot contra la punta de `main` después de fusionar esta unidad.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- La **columna** no está unificada: `get_symbol_code` la publica desde cero y las tools de LSP la
+  toman desde uno. Unificarla cambia la entrada publicada de `get_symbol_code`, y eso es una tarea
+  propia con su propio recibo (TASK-118). La columna de los `file:line:column` compuestos
+  (`ask_about_code`, el FQN del fact side) sigue en la base interna, por la misma razón.
+- El `Location` del dominio sigue teniendo dos caras: el código de inteligencia artificial lo
+  toma desde uno y el grafo lo produce desde cero. La conversión pública está en un sitio; la
+  unificación interna del tipo es un trabajo mayor, con radio grande sobre los proveedores de LSP.
+- La API propia del explorer (`cognicode-explorer`) tiene su semántica de línea y no la cambia
+  esta unidad.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
