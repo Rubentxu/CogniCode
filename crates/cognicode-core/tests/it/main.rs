@@ -141,6 +141,7 @@ mod the_filtered_route_says_what_it_covered;
 mod the_graph_changes_where_the_code_changed;
 mod the_graph_does_not_depend_on_the_directory_order;
 mod the_graph_is_rebuilt_only_where_it_changed;
+mod the_graph_over_real_code_answers;
 mod the_identity_the_product_writes_is_the_one_it_reads;
 mod the_index_tool_only_offers_strategies_that_index;
 mod the_product_observes_one_set_of_files;
