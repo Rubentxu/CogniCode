@@ -34720,3 +34720,110 @@ anota porque el número de un fallo que no es del cambio se lee como si lo fuera
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-121: `export_callflow` dibuja las comunidades que dice
+
+**El encargo.** El maestro publica `export_callflow` como una tool **estable**,
+en el perfil `reviewer`, con el título «Export a community-level Mermaid
+architecture call-flow diagram. Shows module-level relationships.». El tool no
+entregaba nada de eso.
+
+**Lo que se midió antes de tocar nada** (`crates/cognicode-core/src/interface/mcp/handlers/graph_query_handlers.rs:753`, base `a24aa404`):
+
+| Lo que publicaba | Lo que entregaba |
+|---|---|
+| un diagrama de relaciones entre módulos | una caja: `A["workspace\nN symbols"]` |
+| `community_count` | 1 si hay símbolos, 0 si no — una constante, no una medida |
+| `max_sections` | `let _max = input.max_sections.unwrap_or(8);` — leído y tirado |
+| `format` | nunca leído |
+
+**Lo que entrega ahora.** Una caja por comunidad dibujada (con su etiqueta y su
+tamaño), una arista por relación entre comunidades con el número de llamadas
+que la lleva, `community_count` como la cuenta **medida** de la detección,
+`sections_drawn` como las que se dibujan, y un `summary` que dice los mismos
+números. Diagrama real, medido sobre el dominio del core (5.971 símbolos):
+
+```
+graph LR
+    %% Call flow between 8 communities
+    C0["program_analysis\n29 symbols"]
+    C1["value_objects\n29 symbols"]
+    C2["findings\n26 symbols"]
+    C3["continuity\n25 symbols"]
+    C4["aggregates\n22 symbols"]
+    C5["aggregates\n21 symbols"]
+    C6["architecture\n20 symbols"]
+    C7["aggregates\n19 symbols"]
+    C0 -->|2| C7
+    C3 -->|6| C7
+    C4 -->|2| C7
+    classDef community fill:#e1f5fe,stroke:#01579b
+    class C0,C1,C2,C3,C4,C5,C6,C7 community
+```
+
+**El RED, medido.** Con el código viejo restaurado por sustitución exacta del
+fichero (nunca con `git checkout HEAD -- .`, que ya destruyó un fix una vez):
+la prueba de integración falla con `left: 1` (la constante) y `right: 4968`
+(las comunidades medidas). Con el código nuevo, verde.
+
+**Las pruebas.** Dos unitarias del servicio (una caja por comunidad y la
+arista que la cruza; `max_sections` limita y la cuenta no cambia) y tres de
+integración sobre el código real del dominio del core: el conteo publicado es
+el medido y el diagrama no es una caja; el resumen dice lo que dicen los
+campos; y un cliente que sigue mandando el argumento retirado (`format`) no se
+rompe. El testigo es el código real porque un grafo de unos pocos símbolos
+tiene una sola comunidad, y un diagrama de una comunidad no tiene nada que
+enseñar.
+
+**Dónde vive la semántica, y por qué no en la capa de aplicación.** La función
+`community_callflow` vive en `application/services/graph_queries.rs`, que es
+donde las demás preguntas del grafo se responden una vez. La **detección**, en
+cambio, se llama desde el adaptador: la capa de aplicación no puede importar
+la infraestructura (CR-06), y la allowlist de producción sólo puede encogerse
+—crecerla exige una aprobación nombrada en `APPROVED_PRODUCTION_ENTRIES`, que
+está vacía. El detector es un adaptador de infraestructura y la capa MCP es
+donde el producto ya lo alcanzaba (`graph_handlers.rs`, el tool
+`graph_communities`): el diagrama y ese tool describen las mismas comunidades
+porque las detectan con el mismo algoritmo y con el mismo tope de iteraciones.
+Ratchet medido: **28 → 28**, 0 añadidas, 0 retiradas.
+
+**El shape publicado.** `format` sale: el tool tiene un solo formato, y un
+argumento que promete una elección que no existe es una promesa falsa. El
+maestro se refresca con la captura real (`tools/list` capturado con las tres
+features, 78 tools): `product/tool-catalog-runtime.json` y
+`product/tools.json` (`input_schema` sincronizada por el script; `output_schema`
+escrita a mano, como la de los otros 15 tools que el runtime publica). Un
+cliente que siga mandando `format` no se rompe — serde ignora el campo
+desconocido — y hay una prueba que fija esa compatibilidad.
+
+**Lo que se midió y NO se arregla aquí.** La detección de comunidades **no es
+repetible entre procesos**: el mismo proyecto dio 4.958, 4.968 y 4.972
+comunidades en tres corridas, y dentro de un mismo proceso tres detecciones
+seguidas coinciden. La causa está medida: la proyección numera los símbolos
+iterando un hash map, y el desempate de etiquetas de Label Propagation —que el
+código documenta como «gana el id de nodo más bajo»— depende de ese índice. Es
+un defecto previo que también afecta a `graph_communities`, y queda en
+**TASK-133**. El diagrama es fiel a la detección que recibió: no hace la
+detección repetible, y el comentario del servicio lo dice en vez de prometer
+lo contrario.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3528 tests run: 3528 passed, 2 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_the_consumer_can_declare_the_version.py` | 10/10 |
+| `python3 scripts/product/test_product_tool_catalog.py` | PASS |
+| `python3 scripts/product/sync_tool_catalog_with_the_capture.py --check` | PASS |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 |
+
+El gate entero no se paga por tarea: se paga por lotes de diez (`AGENTS.md`).
+
+**Entrega.** PR #615 → `7d526f2b`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
