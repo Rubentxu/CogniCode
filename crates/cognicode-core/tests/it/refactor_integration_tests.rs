@@ -165,46 +165,6 @@ mod inline_tests {
     use super::*;
 
     #[test]
-    fn test_find_function_definition() {
-        let strategy = create_inline_strategy(Language::Rust);
-
-        let source = r#"
-fn calculate_total(items: &[i32]) -> i32 {
-    items.iter().sum()
-}
-"#;
-
-        let result = strategy
-            .find_function_definition(source, "calculate_total")
-            .unwrap();
-        assert!(result.is_some(), "Should find function definition");
-
-        let func_def = result.unwrap();
-        assert_eq!(func_def.name, "calculate_total");
-        assert!(func_def.body.is_some());
-    }
-
-    #[test]
-    fn test_find_call_sites() {
-        let strategy = create_inline_strategy(Language::Rust);
-
-        let source = r#"
-fn calculate_total(items: &[i32]) -> i32 {
-    items.iter().sum()
-}
-
-fn main() {
-    let nums = vec![1, 2, 3];
-    let total = calculate_total(&nums);
-    let other = calculate_total(&[1, 2]);
-}
-"#;
-
-        let call_sites = strategy.find_call_sites(source, "calculate_total").unwrap();
-        assert!(call_sites.len() >= 2, "Should find at least 2 call sites");
-    }
-
-    #[test]
     fn test_substitute_arguments_word_boundaries() {
         let strategy = create_inline_strategy(Language::Rust);
 

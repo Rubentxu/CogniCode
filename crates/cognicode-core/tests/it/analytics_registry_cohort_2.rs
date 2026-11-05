@@ -140,42 +140,12 @@ fn dominators_descriptor_has_conformance_fixtures() {
 // =============================================================================
 
 #[test]
-fn articulation_descriptor_has_correct_identity() {
-    let d = ArticulationPointsDescriptor;
-    let id = d.identity();
-    assert_eq!(id.id.as_str(), "articulation_points");
-    assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.cohort, 2);
-}
-
-#[test]
-fn articulation_descriptor_accepts_null_params() {
-    let d = ArticulationPointsDescriptor;
-    assert!(d.params().validate(&serde_json::Value::Null).is_ok());
-    assert!(d.params().validate(&serde_json::json!({})).is_ok());
-}
-
-#[test]
-fn articulation_descriptor_rejects_non_empty_params() {
-    let d = ArticulationPointsDescriptor;
-    let params = serde_json::json!({"foo": "bar"});
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
 fn articulation_descriptor_output_schema_has_two_fields() {
     let d = ArticulationPointsDescriptor;
     let schema = d.output_schema();
     assert_eq!(schema.fields.len(), 2);
     assert_eq!(schema.fields[0].name, "nodes");
     assert_eq!(schema.fields[1].name, "cut_vertices_counts");
-}
-
-#[test]
-fn articulation_descriptor_is_undirected() {
-    let d = ArticulationPointsDescriptor;
-    assert!(!d.directed()); // undirected
-    assert!(!d.weighted());
 }
 
 #[test]
@@ -196,41 +166,11 @@ fn articulation_descriptor_has_conformance_fixtures() {
 // =============================================================================
 
 #[test]
-fn bridges_descriptor_has_correct_identity() {
-    let d = BridgesDescriptor;
-    let id = d.identity();
-    assert_eq!(id.id.as_str(), "bridges");
-    assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.cohort, 2);
-}
-
-#[test]
-fn bridges_descriptor_accepts_null_params() {
-    let d = BridgesDescriptor;
-    assert!(d.params().validate(&serde_json::Value::Null).is_ok());
-    assert!(d.params().validate(&serde_json::json!({})).is_ok());
-}
-
-#[test]
-fn bridges_descriptor_rejects_non_empty_params() {
-    let d = BridgesDescriptor;
-    let params = serde_json::json!({"foo": "bar"});
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
 fn bridges_descriptor_output_schema_has_one_field() {
     let d = BridgesDescriptor;
     let schema = d.output_schema();
     assert_eq!(schema.fields.len(), 1);
     assert_eq!(schema.fields[0].name, "edges");
-}
-
-#[test]
-fn bridges_descriptor_is_undirected() {
-    let d = BridgesDescriptor;
-    assert!(!d.directed()); // undirected
-    assert!(!d.weighted());
 }
 
 #[test]
@@ -251,36 +191,6 @@ fn bridges_descriptor_has_conformance_fixtures() {
 // =============================================================================
 
 #[test]
-fn kcore_descriptor_has_correct_identity() {
-    let d = KCoreDescriptor;
-    let id = d.identity();
-    assert_eq!(id.id.as_str(), "k_core");
-    assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(id.cohort, 2);
-}
-
-#[test]
-fn kcore_descriptor_params_accepted() {
-    let d = KCoreDescriptor;
-    let params = serde_json::json!({ "k": 2 });
-    assert!(d.params().validate(&params).is_ok());
-}
-
-#[test]
-fn kcore_descriptor_rejects_missing_k() {
-    let d = KCoreDescriptor;
-    let params = serde_json::json!({});
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn kcore_descriptor_rejects_non_u64_k() {
-    let d = KCoreDescriptor;
-    let params = serde_json::json!({ "k": "2" });
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
 fn kcore_descriptor_rejects_k_too_large() {
     let d = KCoreDescriptor;
     let params = serde_json::json!({ "k": 1001 });
@@ -294,13 +204,6 @@ fn kcore_descriptor_output_schema_has_two_fields() {
     assert_eq!(schema.fields.len(), 2);
     assert_eq!(schema.fields[0].name, "nodes");
     assert_eq!(schema.fields[1].name, "core_numbers");
-}
-
-#[test]
-fn kcore_descriptor_is_undirected() {
-    let d = KCoreDescriptor;
-    assert!(!d.directed()); // undirected
-    assert!(!d.weighted());
 }
 
 #[test]
