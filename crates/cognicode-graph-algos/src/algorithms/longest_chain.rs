@@ -213,6 +213,27 @@ mod tests {
     }
 
     #[test]
+    fn the_chain_counts_a_path_whose_middle_node_has_two_callers() {
+        // 0 → 3, 1 → 2, 2 → 3, 3 → 4, 3 → 5. The longest path is
+        // 1 → 2 → 3 → 4: four symbols.
+        //
+        // Node 3 is called by two symbols, so it only becomes ready
+        // when the second of them is measured. A traversal that takes
+        // the group as soon as the FIRST caller reaches it measures 2
+        // before 3, and the chain stops at three symbols instead of
+        // four.
+        let graph = vec![
+            vec![3],
+            vec![2],
+            vec![3],
+            vec![4, 5],
+            Vec::new(),
+            Vec::new(),
+        ];
+        assert_eq!(longest_chain_within(&graph, 6), 4);
+    }
+
+    #[test]
     fn a_self_loop_is_a_chain_of_one() {
         assert_eq!(longest_chain_within(&[vec![0]], 1), 1);
     }
