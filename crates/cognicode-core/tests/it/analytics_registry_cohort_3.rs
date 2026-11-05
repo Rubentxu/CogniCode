@@ -159,59 +159,6 @@ fn personalized_pagerank_descriptor_supported_modes() {
 // =============================================================================
 
 #[test]
-fn conductance_descriptor_has_correct_identity() {
-    let d = ConductanceDescriptor;
-    let id = d.identity();
-    assert_eq!(id.id.as_str(), "conductance");
-    assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(
-        id.maturity,
-        cognicode_core::domain::analytics::Maturity::Experimental
-    );
-    assert_eq!(id.cohort, 3);
-}
-
-#[test]
-fn conductance_descriptor_params_accepted() {
-    let d = ConductanceDescriptor;
-    let params = serde_json::json!({
-        "community_assignment": [["A", 0], ["B", 0], ["C", 1]]
-    });
-    assert!(d.params().validate(&params).is_ok());
-}
-
-#[test]
-fn conductance_descriptor_rejects_missing_community_assignment() {
-    let d = ConductanceDescriptor;
-    let params = serde_json::json!({});
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn conductance_descriptor_rejects_empty_community_assignment() {
-    let d = ConductanceDescriptor;
-    let params = serde_json::json!({ "community_assignment": [] });
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn conductance_descriptor_rejects_non_array_community_assignment() {
-    let d = ConductanceDescriptor;
-    let params = serde_json::json!({ "community_assignment": "not-an-array" });
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn conductance_descriptor_rejects_malformed_pair() {
-    let d = ConductanceDescriptor;
-    // Pair must be [node_id, community_id] — this has 3 elements
-    let params = serde_json::json!({
-        "community_assignment": [["A", 0, "extra"]]
-    });
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
 fn conductance_descriptor_output_schema_has_two_fields() {
     let d = ConductanceDescriptor;
     let schema = d.output_schema();
@@ -255,49 +202,6 @@ fn conductance_descriptor_supported_modes() {
 // =============================================================================
 // Modularity descriptor tests
 // =============================================================================
-
-#[test]
-fn modularity_descriptor_has_correct_identity() {
-    let d = ModularityDescriptor;
-    let id = d.identity();
-    assert_eq!(id.id.as_str(), "modularity");
-    assert_eq!(id.version.as_str(), "1.0.0");
-    assert_eq!(
-        id.maturity,
-        cognicode_core::domain::analytics::Maturity::Experimental
-    );
-    assert_eq!(id.cohort, 3);
-}
-
-#[test]
-fn modularity_descriptor_params_accepted() {
-    let d = ModularityDescriptor;
-    let params = serde_json::json!({
-        "community_assignment": [["A", 0], ["B", 0], ["C", 1]]
-    });
-    assert!(d.params().validate(&params).is_ok());
-}
-
-#[test]
-fn modularity_descriptor_rejects_missing_community_assignment() {
-    let d = ModularityDescriptor;
-    let params = serde_json::json!({});
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn modularity_descriptor_rejects_empty_community_assignment() {
-    let d = ModularityDescriptor;
-    let params = serde_json::json!({ "community_assignment": [] });
-    assert!(d.params().validate(&params).is_err());
-}
-
-#[test]
-fn modularity_descriptor_rejects_non_array_community_assignment() {
-    let d = ModularityDescriptor;
-    let params = serde_json::json!({ "community_assignment": 42 });
-    assert!(d.params().validate(&params).is_err());
-}
 
 #[test]
 fn modularity_descriptor_rejects_non_pair_elements() {

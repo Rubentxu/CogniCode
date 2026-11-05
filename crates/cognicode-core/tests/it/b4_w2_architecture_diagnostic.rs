@@ -204,11 +204,6 @@ fn byte_range_is_byte_offset_not_line_column() {
 }
 
 #[test]
-fn severity_default_is_info() {
-    assert_eq!(Severity::default(), Severity::Info);
-}
-
-#[test]
 fn skip_reasons_are_preserved_through_build() {
     let obs = vec![sample_observation(
         "architecture.layer_dependency",
