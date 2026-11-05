@@ -33721,3 +33721,126 @@ tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hoo
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
 
 **Verificación posterior al merge (sobre `cf82cab5`).** Con la rama ya integrada se corrió la suite del workspace entero en paralelo —`cargo nextest run --workspace --lib --tests`: **6754 tests run: 6754 passed, 10 skipped**— en cinco corridas. Una de las cinco tuvo un fallo: `cognicode-cli::bin/cogh layout::tests::t_debt4_t2_uninstall_active_clears_tracker_and_journal`, que pasa sola y en las otras cuatro. No es una regresión de esta rebanada (el cambio es del MCP y del core; el test es del layout del CLI), pero puede hacer rojo un gate por lote, que corre la suite del workspace en paralelo. El mensaje del fallo no quedó capturado en aquella corrida —la salida estaba filtrada—, así que la causa es una hipótesis y no una medida: el test redirige `HOME` con `redirect_home` (una variable del proceso) y lleva `#[serial]`, que serializa sólo entre los tests que también lo llevan. Queda en TASK-127.
+## 2026-11-05 — TASK-70 (grupo 1): los duplicados de comportamiento dejan de estar en la suite
+
+**El encargo.** TASK-70 dice «borrar ~21.000 líneas de tests de proceso, duplicados, maquinaria y UAT
+caducada». El encargo que llegó con la unidad era explícito: *plan contra la evidencia real, no contra
+el título*. Este es el primer grupo, y lo que mide es que **la cifra del título no sobrevive al árbol
+de hoy**; lo que sí sobrevive es una clase pequeña, duplicada y demostrablemente sustituible, y esa
+es la que se retira aquí.
+
+**Por qué el título se quedó corto.** El informe que origina la tarea es del **2026-11-03**. Entre
+esa fecha y hoy la clase UAT ya no existe (`ADR-TH-006`, recibo del `JOURNAL` del 2026-10-15), la
+suite de navegador (`apps/explorer-ui/e2e/`) y las cuatro lanes de CI (`merge-gate`, `product-fast`,
+`release-candidate`, `release`) se retiraron el **2026-11-04** (ROADMAP §12.1), y con ellas
+`scripts/ci/publish-merge-gate.sh`, `scripts/test-fast.sh` y `scripts/test-full.sh`. La misma clase
+que el título llama «UAT caducada» ya no tiene dónde estar caducada.
+
+**La medición (2026-11-05, `main` @ `d2ce9d11`).**
+
+| Hecho medido | Valor | Dónde se midió |
+|---|---|---|
+| El gate son tres pasos, y sólo tres | unitarios, integración, mutantes | `scripts/test-gate.sh` |
+| Los contratos Python **no** están en el gate | son un comando suelto | `scripts/ci/run-all-contracts.sh` |
+| La batería de contratos | **61,79 s** con 8 trabajos en paralelo; **61,53 s** después de este PR | corrida medida, dos veces |
+| Ficheros de contrato | 45 (`scripts/ci/` 40 + `scripts/product/` 5), **15.154 líneas** | `wc -l` |
+| De ellos, los que miden la gobernanza del repositorio | 14 ficheros, **3.724 líneas** | inventariados uno a uno |
+| Objetivos de test del árbol | 38, **77.871 líneas** de código de test | `crates/*/tests/` |
+| `crates/cognicode-core/tests/it/` | 46.668 líneas en **un solo binario** | 152 ficheros con un `main.rs` |
+| `crates/spike-ladybug/` | 2.446 líneas, y el crate está **fuera** del workspace | `Cargo.toml:21` (`exclude`) |
+| Coste de un binario de test | ~1,16 s de enlazado (273 s / 235 binarios) | TASK-69, AC2 |
+| `#[ignore]` en el árbol | 23 | `grep -rn "#\[ignore" crates/` |
+
+**La categoría por categoría, contra el informe del 2026-11-03.**
+
+| Categoría del título | Informe | Medido hoy | Veredicto |
+|---|---|---|---|
+| Contratos Python de proceso | 8.646 (22 ficheros) | 15.154 líneas en 45 contratos; 3.724 en los 14 que guardan la gobernanza | **DEFER (grupo 2)** — cada uno es el guardián de una regla viva del `AGENTS.md` (tamaño de fichero, estándar de comentarios, CR-06, coherencia del ROADMAP). No se borra la regla; se mide su coste, que es 61 s en total |
+| Tests Rust que leen prosa o pipelines | 4.662 (14) | ~4.000 líneas en 10 ficheros que sí miran la gobernanza del repositorio | **DEFER** — `test_taxonomy_contract` (707) fija el gate de tres pasos, `qw04_preflight_contract` (828) fija que un borrado fallido se reporta y no se traga, `backtick_provenance_contract` (738) fija que cada ruta citada existe, `action_register_identity_contract` (321) y `roadmap_claims_contract` (298) fijan que el registro y la agenda no se contradigan. Son guardas de garantías reales, notests de proceso sin dueño |
+| Duplicados de comportamiento | 2.147 (9) | **184 líneas de cuerpos idénticos, 27 tests, 9 ficheros** | **REPLACE — este PR** |
+| Maquinaria de selección y known failures | ~1.850 | 23 `#[ignore]`; dos de ellos son scans de >5 min dentro del crate (223 líneas) que nadie ejecuta | grupo 2/3 |
+| UAT caducada | 3.867 | la clase ya no existe; lo que queda con su forma son 666 líneas de `evidence/` y 3.205 de documentos de programas cerrados | **DEFER con motivo**: es **registro**, no pruebas; el `JOURNAL` es append-only y una certificación cerrada sigue cerrada (ROADMAP §12.3) |
+
+**El grupo 1: 27 duplicados, 238 líneas.**
+
+Los 27 tests borrados tienen un test unitario **del propio crate** con el mismo nombre y un cuerpo
+idéntico. Donde la copia de integración afirmaba `id`, `version` y `cohort`, el unitario afirma además
+`maturity`: **el sustituto es un superconjunto**, no una copia más débil.
+
+| Fichero | Tests | Dueño que queda |
+|---|---|---|
+| `crates/cognicode-core/tests/it/analytics_registry_cohort_2.rs` | 13 | `src/domain/analytics/{articulation,bridges,kcore}_descriptor.rs` |
+| `crates/cognicode-core/tests/it/analytics_registry_cohort_3.rs` | 11 | `src/domain/analytics/{conductance,modularity}_descriptor.rs` |
+| `crates/cognicode-core/tests/it/refactor_integration_tests.rs` | 2 | `src/infrastructure/refactor/inline_strategy.rs` |
+| `crates/cognicode-core/tests/it/b4_w2_architecture_diagnostic.rs` | 1 | `src/architecture/diagnostic.rs` |
+
+**El rojo discriminante (la regla de retirada: no se borra una prueba porque tenga el mismo nombre
+que otra).** Medido con **22 mutaciones focales** sobre el código de producción: el `cohort` de los
+cinco descriptores, el `validate()` de sus parámetros, el flag `directed`, el `Severity::default()` y
+dos funciones de `inline_strategy`.
+
+| Ronda | Qué se midió | Resultado |
+|---|---|---|
+| 1 — con las mutaciones, **antes** del borrado | los 27 tests seleccionados en el objetivo unitario y en el de integración | **21 rojos** en cada objetivo, y **los dos conjuntos son el mismo** (21 = 21, diferencia vacía) |
+| 2 — mutaciones revertidas, **con** el borrado | `cognicode-core` completo | **2545 unitarios passed**, **960 de integración passed** |
+| 3 — mutaciones de vuelta, **con** el borrado | los 30 tests unitarios seleccionados | **21 rojos**: los mismos 21 de la ronda 1 |
+
+La ronda 3 es la que cierra la pregunta: **la garantía sigue viva sin la copia de integración**, porque
+la detecta el test que se queda. Sin ese rojo, el borrado habría sido `DEFER`.
+
+**Lo que este grupo NO toca.** `*_output_schema_has_*`, `*_has_conformance_fixtures`, `registry_*` y
+los descriptores que no tienen test unitario (`dominators`, `pagerank`, `personalized_pagerank`) siguen
+siendo la única cobertura de su garantía.
+
+**AC3 reconciliado con el ROADMAP.** AC3 pedía «el carril nocturno completo está en marcha antes de
+borrar los duplicados de comportamiento». El 2026-11-04 se retiraron las lanes (ROADMAP §12.1): no hay
+carril nocturno. El AC se reescribió con la forma de hoy —el gate de tres pasos más
+`scripts/ci/run-all-contracts.sh`— y el cambio queda anotado en la tarea. La cifra del carril está
+medida: **61,53 s** de contratos y **2545 + 960** tests del crate tocado.
+
+**Verificación (medida en esta rama, base `d2ce9d11`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2545 tests run: 2545 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-core --test it` | **960 tests run: 960 passed, 2 skipped** (antes eran 989 en el objetivo: 27 menos) |
+| `cargo build -p cognicode-core --tests` | sin avisos nuevos |
+| `cargo fmt --all --check` | limpio |
+| `bash scripts/ci/run-all-contracts.sh` | **302 PASS**, 2 FAIL **preexistentes**: `test_current_sha_matches_head` y `test_control_all_green` (el snapshot `docs/roadmap/CURRENT.md`, ya enrutado como TASK-126) |
+
+**Gate: NOT_RUN (lote).** El gate se paga por lotes de diez tareas (`AGENTS.md`), y esta es la sexta
+unidad desde el último gate (TASK-79 AC1, TASK-82 por la mitad, TASK-79 AC4, TASK-92 rebanada 1,
+TASK-92 rebanada 2, más esta). El paso de mutación mide `cognicode-graph-algos`, un crate que esta
+rama no toca.
+
+**Lo que queda para los grupos siguientes (con lo medido, no con lo supuesto).**
+
+1. **Grupo 2 — la maquinaria que la lane retirada dejó detrás.** `crates/cognicode-mcp/tests/it/continuation_e2e.rs`
+   (609 líneas) son cinco tests `#[ignore]`d que necesitan el servidor real y las fixtures del sandbox,
+   y su runner era la «certification lane», que ya no existe: el único que los invoca hoy es
+   `scripts/ci/preflight-clean-clone.sh`, un script que ninguna lane ejecuta. La garantía (la cadena de
+   continuación del MCP) **no** está cubierta por otro test: `continuation_e2e.rs` es su único dueño.
+   Retirarlo sin sustituirlo sería perder una garantía, así que ese grupo es un **REPLACE de verdad**:
+   un test de integración con la cadena escrita en casa, o nada.
+2. **Grupo 2 — los dos tests de >5 min** de `crates/cognicode-core/src/application/services/analysis_service.rs`
+   (223 líneas, `#[ignore]`d): su propio motivo de `ignore` nombra la cobertura que los sustituye
+   (`test_debug_call_relationships_in_real_code`, `test_lightweight_index_real_project_benchmark`,
+   `test_on_demand_graph_real_project_benchmark`, los tres presentes en el árbol). Son «una tarea
+   disfrazada de test» por la regla 6 del `AGENTS.md`, y no los ejecuta nadie.
+3. **Grupo 3 — los contratos Python de proceso** (3.724 líneas): uno a uno, con el sustituto nombrado,
+   empezando por los que ya no tienen consumidor (`test_preflight_passed_ratchet` y
+   `test_preflight_clone_ref` miden un script que ninguna lane ejecuta).
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **El ROADMAP afirma una poda que no ocurrió.** La nota 2 de §11.1 dice que
+  `docs/adr/ADR-D1-006-uat-retirement.md` lo retirada la poda documental (PR #399). El fichero **existe**
+  y `git log --diff-filter=D` no registra ninguna baja de esa ruta: lo añadió `4996246e` (PR #354) y
+  nunca se borró. La nota cita una ruta que sí está, y quien lea el ROADMAP creerá que la decisión
+  vive en un sitio que no la tiene. Enrutado como tarea aparte.
+- **`docs/roadmap/CURRENT.md` sigue atrasado** y el ratchet que lo vigila está en rojo en `main`
+  (TASK-126, ya enrutado).
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
