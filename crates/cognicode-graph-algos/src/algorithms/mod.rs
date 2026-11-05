@@ -17,6 +17,7 @@ pub mod god_nodes;
 pub mod interproc_summary;
 pub mod k_core;
 pub mod k_shortest_paths_helper;
+pub mod longest_chain;
 pub mod modularity;
 pub mod multi_source_reachability_helper;
 pub mod page_rank;
@@ -45,6 +46,7 @@ pub use interproc_summary::{
 };
 pub use k_core::k_core;
 pub use k_shortest_paths_helper::k_shortest_paths;
+pub use longest_chain::longest_chain;
 pub use modularity::modularity;
 pub use multi_source_reachability_helper::multi_source_reachability;
 pub use page_rank::page_rank;
