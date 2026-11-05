@@ -265,22 +265,17 @@ pub async fn handle_project_overview(
     let cycle_penalty = cycle_result.symbols_in_cycles() * 5;
     let architecture_score = Some((100.0 - cycle_penalty as f64).max(0.0));
 
-    // Build hot paths (symbols with fan_in >= 2, sorted by fan_in desc)
-    let mut hot_paths: Vec<(String, usize)> = graph
-        .symbols()
-        .map(|s| {
-            let id = crate::domain::aggregates::SymbolId::new(s.fully_qualified_name());
-            let fan_in = graph.callers(&id).len();
-            (s.name().to_string(), fan_in)
-        })
-        .filter(|(_, fan_in)| *fan_in >= 2)
-        .collect();
-    hot_paths.sort_by(|a, b| b.1.cmp(&a.1));
-    let hot_paths: Vec<String> = hot_paths
-        .into_iter()
-        .take(10)
-        .map(|(name, _)| name)
-        .collect();
+    // The hot paths are the owner's answer, not a second one: the same
+    // question the `get_hot_paths` tool asks, of the same graph. The copy
+    // that answered here ordered the list by the number of callers
+    // alone, so the ties — and the cut, which fell inside a tie — were
+    // decided by the order the graph happened to hold its symbols in, and
+    // the published list came out different on every run.
+    let hot_paths: Vec<String> =
+        crate::application::services::analysis_service::AnalysisService::hot_paths(&graph, 10, 2)
+            .into_iter()
+            .map(|row| row.name)
+            .collect();
 
     // Entry point names
     let entry_point_names: Vec<String> = entry_points.iter().map(|ep| ep.name.clone()).collect();

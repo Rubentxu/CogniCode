@@ -5,7 +5,7 @@
 #![allow(clippy::type_complexity)]
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use super::symbol::Symbol;
@@ -53,6 +53,19 @@ pub struct MermaidOptions {
 }
 
 /// A directed graph representing call dependencies between symbols
+///
+/// The graph publishes its shape in a canonical order: the callers of a
+/// symbol come out ordered by symbol id, and so do its callees.
+///
+/// The order lives in the storage and not in the read. The maps that
+/// hold the edges are ordered ones, so a read costs nothing extra and a
+/// build pays once per edge.
+///
+/// The reason is that a published order that changes between runs is
+/// not an answer: a hash map iterates in an order that differs per
+/// instance, so the same graph published a different list of callers on
+/// every run — and a different list of hot paths, which are ordered by
+/// how many callers a symbol has.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CallGraph {
     /// Map from symbol identifier to symbol
@@ -62,9 +75,15 @@ pub struct CallGraph {
     /// than a `HashSet`) keeps the identity tuple (which is `Hash + Eq`) as
     /// the key and stores the per-edge metadata as the value. `f64` has no
     /// `Hash` impl, so it can never be part of the key.
-    edges: HashMap<SymbolId, HashMap<(SymbolId, DependencyType), (Provenance, f64)>>,
+    ///
+    /// The inner map is ordered: the callees of a symbol come out
+    /// ordered by symbol id, and then by dependency type.
+    edges: HashMap<SymbolId, BTreeMap<(SymbolId, DependencyType), (Provenance, f64)>>,
     /// Reverse index: which symbols call this symbol (incoming edges)
-    reverse_edges: HashMap<SymbolId, HashSet<SymbolId>>,
+    ///
+    /// The set is ordered: the callers of a symbol come out ordered by
+    /// symbol id.
+    reverse_edges: HashMap<SymbolId, BTreeSet<SymbolId>>,
     /// Auxiliary index: base_name (lowercase) -> list of SymbolIds
     name_index: HashMap<String, Vec<SymbolId>>,
 }
@@ -423,6 +442,10 @@ impl CallGraph {
     }
 
     /// Returns all dependents (incoming edges) for a symbol
+    ///
+    /// The dependents come out ordered by symbol id: the graph
+    /// publishes its shape in a canonical order, so the same graph
+    /// gives the same list on every run.
     pub fn dependents(&self, id: &SymbolId) -> impl Iterator<Item = &SymbolId> + '_ {
         self.reverse_edges
             .get(id)
@@ -534,6 +557,10 @@ impl CallGraph {
     }
 
     /// Returns the direct callers of a symbol
+    ///
+    /// The callers come out ordered by symbol id: the graph publishes
+    /// its shape in a canonical order, so the same graph gives the same
+    /// list on every run.
     pub fn callers(&self, id: &SymbolId) -> Vec<SymbolId> {
         self.reverse_edges
             .get(id)
@@ -542,6 +569,9 @@ impl CallGraph {
     }
 
     /// Returns the direct callees of a symbol
+    ///
+    /// The callees come out ordered by symbol id and then by dependency
+    /// type, the same canonical order the callers come out in.
     pub fn callees(&self, id: &SymbolId) -> Vec<(SymbolId, DependencyType)> {
         self.edges
             .get(id)
@@ -1359,6 +1389,100 @@ mod tests {
             assert_eq!(r, first_r, "roots order must be stable across iterations");
             assert_eq!(l, first_l, "leaves order must be stable across iterations");
         }
+    }
+
+    /// The aggregate publishes its callers and its callees in a canonical
+    /// order: by symbol id.
+    ///
+    /// A hash set iterates in an order that differs per instance, so the
+    /// same graph published a different list of callers on every run.
+    /// The hot paths, which are ordered by the number of callers, inherit
+    /// that order wherever the number ties — and ties are the common
+    /// case, not the exception.
+    ///
+    /// The witness is ten callers and ten callees: the chance that a hash
+    /// set of ten symbols happens to iterate in the sorted order is one
+    /// in 3,6 million, so this is a check and not a lottery.
+    #[test]
+    fn callers_and_callees_are_canonically_ordered() {
+        let mut graph = CallGraph::new();
+        let target = graph.add_symbol(Symbol::new(
+            "target",
+            SymbolKind::Function,
+            Location::new("t.rs", 1, 0),
+        ));
+        let source = graph.add_symbol(Symbol::new(
+            "source",
+            SymbolKind::Function,
+            Location::new("t.rs", 2, 0),
+        ));
+
+        // The callers are added in the OPPOSITE order of the one they are
+        // published in: the order of a hash set does not depend on the
+        // order of insertion, but the witness must not look like it does.
+        let mut callers = Vec::new();
+        for name in [
+            "caller_j", "caller_i", "caller_h", "caller_g", "caller_f", "caller_e", "caller_d",
+            "caller_c", "caller_b", "caller_a",
+        ] {
+            let id = graph.add_symbol(Symbol::new(
+                name,
+                SymbolKind::Function,
+                Location::new("t.rs", 10, 0),
+            ));
+            graph
+                .add_dependency(&id, &target, DependencyType::Calls)
+                .expect("direct call");
+            callers.push(id);
+        }
+        callers.reverse();
+
+        let published: Vec<String> = graph
+            .callers(&target)
+            .iter()
+            .map(|id| id.as_str().to_string())
+            .collect();
+        let expected: Vec<String> = callers.iter().map(|id| id.as_str().to_string()).collect();
+        assert_eq!(published, expected, "callers are published by symbol id");
+
+        let iterated: Vec<String> = graph
+            .dependents(&target)
+            .map(|id| id.as_str().to_string())
+            .collect();
+        assert_eq!(
+            iterated, expected,
+            "dependents are published by symbol id, the same order as the callers"
+        );
+
+        // The callees, the other side of the same aggregate.
+        let mut callees = Vec::new();
+        for name in [
+            "callee_j", "callee_i", "callee_h", "callee_g", "callee_f", "callee_e", "callee_d",
+            "callee_c", "callee_b", "callee_a",
+        ] {
+            let id = graph.add_symbol(Symbol::new(
+                name,
+                SymbolKind::Function,
+                Location::new("t.rs", 20, 0),
+            ));
+            graph
+                .add_dependency(&source, &id, DependencyType::Calls)
+                .expect("direct call");
+            callees.push(id);
+        }
+        callees.reverse();
+
+        let published_callees: Vec<String> = graph
+            .callees(&source)
+            .iter()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect();
+        let expected_callees: Vec<String> =
+            callees.iter().map(|id| id.as_str().to_string()).collect();
+        assert_eq!(
+            published_callees, expected_callees,
+            "callees are published by symbol id"
+        );
     }
 
     #[test]
