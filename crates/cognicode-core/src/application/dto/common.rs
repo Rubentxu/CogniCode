@@ -33,7 +33,7 @@ pub struct FileMetadata {
 
 /// A single file edit operation.
 /// Used by both MCP protocol and internal DTOs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEdit {
     pub old_string: String,

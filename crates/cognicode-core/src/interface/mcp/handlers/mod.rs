@@ -1016,12 +1016,12 @@ fn skipped_file_dto(
 
 /// Input for build_graph
 ///
-/// Unknown arguments are a typed error, never silently
-/// ignored (a misspelled `directory` must not silently rebuild the
-/// default workspace).
-#[derive(Debug, Clone, serde::Deserialize)]
+/// Unknown arguments are a typed error, never silently ignored (a misspelled
+/// `directory` must not silently rebuild the default workspace).
+#[derive(Debug, Clone, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BuildGraphInput {
+    /// Path to project directory to analyze (default: current working directory)
     pub directory: Option<String>,
 }
 

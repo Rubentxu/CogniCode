@@ -14,7 +14,8 @@
       "input_schema": {
         "properties": {
           "compressed": {
-            "description": "Return compressed summary",
+            "default": false,
+            "description": "Return compressed natural language summary instead of JSON (default: false)",
             "type": "boolean"
           },
           "symbol_name": {
@@ -72,9 +73,12 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Input for ask_about_code tool",
         "properties": {
           "limit": {
-            "description": "Maximum number of answers (default: 10)",
+            "default": 10,
+            "description": "Maximum number of answers",
+            "minimum": 0,
             "type": "integer"
           },
           "question": {
@@ -130,11 +134,14 @@
       "input_schema": {
         "properties": {
           "depth": {
+            "default": 3,
             "description": "Traversal depth (default: 3)",
+            "minimum": 0,
             "type": "integer"
           },
           "direction": {
-            "description": "Traversal direction (default: both)",
+            "default": "both",
+            "description": "Direction: in, out, or both (default: both)",
             "enum": [
               "in",
               "out",
@@ -144,7 +151,10 @@
           },
           "directory": {
             "description": "Directory to search in (default: current working directory)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "symbol_name": {
             "description": "Symbol name to build subgraph around",
@@ -198,10 +208,15 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "additionalProperties": false,
+        "description": "Input for build_graph\n\nUnknown arguments are a typed error, never silently ignored (a misspelled\n`directory` must not silently rebuild the default workspace).",
         "properties": {
           "directory": {
             "description": "Path to project directory to analyze (default: current working directory)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -513,17 +528,15 @@
       "input_schema": {
         "properties": {
           "directory": {
-            "description": "Directory to index (default: cwd)",
-            "type": "string"
+            "description": "Directory to build the index for (default: current working directory)",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "strategy": {
-            "description": "Indexing strategy (default: lightweight)",
-            "enum": [
-              "lightweight",
-              "on_demand",
-              "per_file",
-              "full"
-            ],
+            "default": "lightweight",
+            "description": "Strategy to use: lightweight, on_demand, full",
             "type": "string"
           }
         },
@@ -568,14 +581,84 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "description": "Per-tool parameters (see conformance corpus)",
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "description": "Optional PlanLimits override",
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -623,7 +706,10 @@
         "properties": {
           "scope": {
             "description": "Optional scope to filter analysis (e.g., module name)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -682,6 +768,8 @@
       "input_schema": {
         "properties": {
           "format": {
+            "default": "compact",
+            "description": "The shape of the map: `compact` (a single line) or `detailed` (the\nproject, its edges, its entry points and its hot symbols).",
             "enum": [
               "compact",
               "detailed"
@@ -762,6 +850,7 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Input for detect_drift tool",
         "properties": {
           "file_path": {
             "description": "Path to the source file to analyze (required)",
@@ -769,10 +858,14 @@
           },
           "function_name": {
             "description": "Optional function name to scope analysis to a single function",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "threshold": {
-            "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included.",
+            "default": 0.5,
+            "description": "Minimum drift score threshold (default: 0.5)\nOnly findings with drift_score >= threshold are included",
             "type": "number"
           }
         },
@@ -820,17 +913,24 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for detect_god_functions tool",
         "properties": {
           "min_complexity": {
-            "description": "Minimum cyclomatic complexity threshold (default: 15)",
+            "default": 15,
+            "description": "Minimum fan-out-proxy threshold (callees plus one, not cyclomatic)",
+            "minimum": 0,
             "type": "integer"
           },
           "min_fan_in": {
-            "description": "Minimum fan-in threshold (default: 5)",
+            "default": 5,
+            "description": "Minimum fan-in threshold",
+            "minimum": 0,
             "type": "integer"
           },
           "min_lines": {
-            "description": "Minimum lines of code threshold (default: 50)",
+            "default": 50,
+            "description": "Minimum size-proxy threshold (file-size estimate, not measured lines)",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -882,9 +982,12 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for detect_long_parameter_lists tool",
         "properties": {
           "max_params": {
-            "description": "Maximum number of parameters allowed (default: 5)",
+            "default": 5,
+            "description": "Maximum number of parameters allowed",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -936,12 +1039,84 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -986,17 +1161,17 @@
       "authority": "mutating",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for edit_file tool",
         "properties": {
           "edits": {
             "description": "Edits to apply (required)",
             "items": {
+              "description": "A single file edit operation.\nUsed by both MCP protocol and internal DTOs.",
               "properties": {
                 "newString": {
-                  "description": "The replacement text (required)",
                   "type": "string"
                 },
                 "oldString": {
-                  "description": "The exact text to replace (required)",
                   "type": "string"
                 }
               },
@@ -1009,8 +1184,11 @@
             "type": "array"
           },
           "expected_content_hash": {
-            "description": "Digest of the content that was read; the edit is refused if the file no longer holds that version (optional)",
-            "type": "string"
+            "description": "The digest of the content the caller read, if it wants the edit to be\nconditional on the file still holding that version.\n\nWhen it is declared and the file has moved on, the edit is refused\ninstead of overwriting whatever is there now.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "path": {
             "description": "Path to the file to edit (required)",
@@ -1064,14 +1242,18 @@
       "input_schema": {
         "properties": {
           "format": {
-            "enum": [
-              "code"
-            ],
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "max_sections": {
             "description": "Max architecture sections (default: 8)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -1137,28 +1319,45 @@
       "input_schema": {
         "properties": {
           "format": {
-            "description": "Output format",
-            "enum": [
-              "code",
-              "svg"
-            ],
-            "type": "string"
+            "description": "Output format: \"code\" (default, returns mermaid source) or \"svg\" (renders to SVG).\nIf omitted and theme is provided, defaults to \"svg\".",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "include_external": {
-            "description": "Include external dependencies (default: false)",
+            "default": false,
+            "description": "Include external dependencies (crates/packages)",
             "type": "boolean"
           },
           "max_depth": {
+            "default": 1,
             "description": "Maximum depth for traversal (default: 3)",
+            "maximum": 255,
+            "minimum": 0,
             "type": "integer"
+          },
+          "module_filter": {
+            "default": null,
+            "description": "Filter symbols by file path substring match (case-sensitive).\nOnly symbols whose source file path contains this substring will be included.\nExample: \"handlers\" matches \"src/handlers/auth.rs\". None means no filtering.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "root_symbol": {
             "description": "Subgraph root symbol (optional - if not provided, exports entire graph)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "theme": {
-            "description": "Theme for SVG rendering",
-            "type": "string"
+            "description": "Theme for SVG rendering. If provided, renders the diagram as SVG.\nAvailable: catppuccin-mocha, catppuccin-latte, dracula, tokyo-night, tokyo-night-light,\ntokyo-night-storm, nord, nord-light, github-light, github-dark, solarized-light,\nsolarized-dark, one-dark, zinc-dark. Default when rendering: tokyo-night-light.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -1204,19 +1403,22 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Input for find_pattern_by_intent tool",
         "properties": {
           "intent": {
-            "description": "Natural language intent description",
+            "default": "",
+            "description": "Natural language intent description (optional when listing all patterns)",
             "type": "string"
           },
           "list_patterns": {
+            "default": null,
             "description": "Whether to list all available patterns",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
-        "required": [
-          "intent"
-        ],
         "type": "object"
       },
       "output_schema": null,
@@ -1260,9 +1462,11 @@
       "stability": "stable",
       "precision_floor": "lsp",
       "input_schema": {
+        "description": "Input for find_references tool",
         "properties": {
           "column": {
-            "description": "Column number (1-indexed): the column a person reads.",
+            "description": "Column number (1-indexed): the character a person counts.",
+            "minimum": 0,
             "type": "integer"
           },
           "file_path": {
@@ -1274,6 +1478,7 @@
           },
           "line": {
             "description": "Line number (1-indexed): the line a person reads.",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -1329,9 +1534,11 @@
       "stability": "stable",
       "precision_floor": "lsp",
       "input_schema": {
+        "description": "Input for rename_preview tool",
         "properties": {
           "column": {
-            "description": "Column number (1-indexed): the column a person reads.",
+            "description": "Column number (1-indexed): the character a person counts.",
+            "minimum": 0,
             "type": "integer"
           },
           "file_path": {
@@ -1339,6 +1546,7 @@
           },
           "line": {
             "description": "Line number (1-indexed): the line a person reads.",
+            "minimum": 0,
             "type": "integer"
           },
           "new_name": {
@@ -1403,10 +1611,16 @@
       "input_schema": {
         "properties": {
           "context_lines": {
+            "default": null,
             "description": "Number of surrounding source lines to include per usage (default: none)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "include_declaration": {
+            "default": true,
             "description": "Include definition (default: true)",
             "type": "boolean"
           },
@@ -1462,6 +1676,7 @@
       "authority": "read",
       "stability": "gated",
       "input_schema": {
+        "description": "Input for generate_contract tool",
         "properties": {
           "file_path": {
             "description": "Path to the source file containing the function",
@@ -1519,23 +1734,32 @@
       "input_schema": {
         "properties": {
           "compressed": {
-            "description": "Return compressed summary",
+            "default": false,
+            "description": "Return compressed natural language summary instead of JSON (default: false)",
             "type": "boolean"
           },
           "depth": {
-            "description": "Traversal depth (default: 1)",
+            "default": 1,
+            "description": "Depth of traversal (default: 1, max: 10)",
+            "maximum": 255,
+            "minimum": 0,
             "type": "integer"
           },
           "direction": {
-            "description": "Traverse direction",
+            "description": "Direction: incoming (who calls this) or outgoing (what this calls)",
             "enum": [
               "incoming",
               "outgoing"
             ],
             "type": "string"
           },
+          "include_external": {
+            "default": false,
+            "description": "Include external dependencies (crates/packages)",
+            "type": "boolean"
+          },
           "symbol_name": {
-            "description": "Fully qualified symbol name",
+            "description": "Fully qualified name (e.g., 'module::function' or 'Class.method')",
             "type": "string"
           }
         },
@@ -1596,7 +1820,10 @@
           },
           "function_name": {
             "description": "Optional specific function",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1654,6 +1881,7 @@
       "input_schema": {
         "properties": {
           "compressed": {
+            "default": false,
             "description": "Return compressed natural language summary instead of JSON (default: false)",
             "type": "boolean"
           }
@@ -1701,6 +1929,7 @@
       "input_schema": {
         "properties": {
           "compressed": {
+            "default": false,
             "description": "Return compressed natural language summary instead of JSON (default: false)",
             "type": "boolean"
           },
@@ -1709,7 +1938,8 @@
             "type": "string"
           },
           "hierarchical": {
-            "description": "Group symbols by nesting (parent→children tree) (default: false)",
+            "default": false,
+            "description": "If true, group symbols by nesting (parent→children tree). If false, flat list (default: false)",
             "type": "boolean"
           }
         },
@@ -1759,11 +1989,15 @@
       "input_schema": {
         "properties": {
           "limit": {
+            "default": 10,
             "description": "Number of hot paths to return (default: 10)",
+            "minimum": 0,
             "type": "integer"
           },
           "min_fan_in": {
+            "default": 2,
             "description": "Minimum fan-in threshold (default: 2)",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -1978,6 +2212,7 @@
       "input_schema": {
         "properties": {
           "compressed": {
+            "default": false,
             "description": "Return compressed natural language summary instead of JSON (default: false)",
             "type": "boolean"
           }
@@ -2150,9 +2385,11 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for get_symbol_code tool",
         "properties": {
           "col": {
             "description": "Column number (1-indexed): the column a person reads.",
+            "minimum": 0,
             "type": "integer"
           },
           "file": {
@@ -2160,7 +2397,8 @@
             "type": "string"
           },
           "line": {
-            "description": "Line number (1-indexed): the line a person reads.",
+            "description": "Line number (1-indexed)",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -2326,9 +2564,11 @@
       "stability": "stable",
       "precision_floor": "lsp",
       "input_schema": {
+        "description": "Input for go_to_definition tool",
         "properties": {
           "column": {
-            "description": "Column number (1-indexed): the column a person reads.",
+            "description": "Column number (1-indexed): the character a person counts.",
+            "minimum": 0,
             "type": "integer"
           },
           "file_path": {
@@ -2336,6 +2576,7 @@
           },
           "line": {
             "description": "Line number (1-indexed): the line a person reads.",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -2390,17 +2631,20 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_all_paths` — every simple path between two symbols\nwithin a hop budget.",
         "properties": {
           "from_symbol": {
-            "description": "Source symbol name (substring match, case-insensitive)",
+            "description": "Source symbol name (substring match, case-insensitive).",
             "type": "string"
           },
           "max_hops": {
-            "description": "Maximum number of intermediate nodes (default: 5)",
+            "default": 5,
+            "description": "Maximum number of intermediate hops (default: 5).",
+            "minimum": 0,
             "type": "integer"
           },
           "to_symbol": {
-            "description": "Target symbol name (substring match, case-insensitive)",
+            "description": "Target symbol name (substring match, case-insensitive).",
             "type": "string"
           }
         },
@@ -2458,12 +2702,19 @@
       "input_schema": {
         "properties": {
           "checkpoint_id": {
-            "description": "Checkpoint ID for restore operation",
-            "type": "integer"
+            "description": "Checkpoint ID to restore (required for 'restore' operation)",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "operation": {
-            "description": "Operation: create, current, restore, list (default: create)",
-            "type": "string"
+            "description": "Operation: create (build graph + checkpoint), current (get latest), restore (get by id)",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -2541,9 +2792,12 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_communities` — Label Propagation community detection\nover the call graph.",
         "properties": {
           "max_iterations": {
-            "description": "Max label propagation iterations (default: 100)",
+            "default": 100,
+            "description": "Max label propagation iterations (default: 100).",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -2590,13 +2844,17 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_community_detail` — fetch the details of a single\ncommunity detected by `graph_communities`.",
         "properties": {
           "community_id": {
-            "description": "Sequential community id from graph_communities output",
+            "description": "Sequential community id (from `graph_communities` output).",
+            "minimum": 0,
             "type": "integer"
           },
           "max_iterations": {
-            "description": "Max label propagation iterations used to re-detect communities (default: 100)",
+            "default": 100,
+            "description": "Max iterations for the underlying Label Propagation run\n(default: 100). Kept in the input so the caller can control\ndeterminism on the same `CallGraph`.",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -2646,6 +2904,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_condensed` — SCC condensation of the call graph.\nTakes no arguments; everything is inferred from the current call graph.",
         "properties": {},
         "type": "object"
       },
@@ -2688,7 +2947,9 @@
       "input_schema": {
         "properties": {
           "depth": {
+            "default": 2,
             "description": "Neighbor depth (default: 2)",
+            "minimum": 0,
             "type": "integer"
           },
           "symbol": {
@@ -2842,6 +3103,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_feedback_arcs` — find edges whose removal makes the graph acyclic.\nTakes no arguments; everything is inferred from the current call graph.",
         "properties": {},
         "type": "object"
       },
@@ -2883,9 +3145,11 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_god_nodes` — symbols whose PageRank sits above\nthe requested percentile.",
         "properties": {
           "percentile": {
-            "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned.",
+            "default": 0.95,
+            "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols\nwhose PageRank is at or above this percentile are returned.",
             "type": "number"
           }
         },
@@ -2929,6 +3193,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_insights` — unified architecture health report.\n\nCombines: god nodes, cycles, communities, surprising connections,\na 0-100 health score, and natural-language questions. The tool\nitself takes no arguments; everything is inferred from the\ncurrent call graph.",
         "properties": {},
         "type": "object"
       },
@@ -2970,13 +3235,17 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_pagerank` — PageRank importance scores for every\nsymbol in the call graph.",
         "properties": {
           "alpha": {
+            "default": 0.85,
             "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0].",
             "type": "number"
           },
           "max_iterations": {
-            "description": "Max fixed-point iterations (default: 100)",
+            "default": 100,
+            "description": "Maximum iterations for the fixed-point loop (default: 100).",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -3024,11 +3293,15 @@
       "input_schema": {
         "properties": {
           "budget": {
+            "default": 1500,
             "description": "Maximum nodes to collect (default: 1500)",
+            "minimum": 0,
             "type": "integer"
           },
           "max_depth": {
+            "default": 3,
             "description": "Maximum BFS depth from seed nodes (default: 3)",
+            "minimum": 0,
             "type": "integer"
           },
           "question": {
@@ -3183,31 +3456,51 @@
           "filters": {
             "properties": {
               "community_id": {
-                "type": "integer"
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "exclude_kinds": {
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": [
+                  "array",
+                  "null"
+                ]
               },
               "node_kinds": {
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": [
+                  "array",
+                  "null"
+                ]
               },
               "provenance": {
                 "items": {
                   "type": "string"
                 },
-                "type": "array"
+                "type": [
+                  "array",
+                  "null"
+                ]
               }
             },
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "limit": {
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "question": {
             "type": "string"
@@ -3362,6 +3655,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_reduced` — transitive reduction of the call graph.\nTakes no arguments; everything is inferred from the current call graph.",
         "properties": {},
         "type": "object"
       },
@@ -3403,13 +3697,16 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_search_idf` — IDF-weighted symbol search.\n\nEach symbol name is tokenised (snake/camel/path boundaries) and\nscored against the query using the same formula as classic\ninformation retrieval: rare terms count more than common ones.\nThe 95th-percentile-degree hub bypass demotes overly-connected\n\"switchboard\" nodes.",
         "properties": {
           "max_results": {
-            "description": "Max results (default: 20)",
+            "default": 20,
+            "description": "Max number of results to return (default: 20).",
+            "minimum": 0,
             "type": "integer"
           },
           "query": {
-            "description": "Search query (symbol name or partial)",
+            "description": "Free-text search query (full or partial symbol name).",
             "type": "string"
           }
         },
@@ -3460,6 +3757,7 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Input for `graph_suggest_questions` — natural-language prompts\nfor an AI agent to drive a refactoring conversation.\n\nLike `graph_insights` but only returns the `suggested_questions`\narray, so callers can ingest the questions without parsing the\nfull report.",
         "properties": {},
         "type": "object"
       },
@@ -3501,13 +3799,18 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for `graph_surprising_connections` — find edges that cross\ncommunity boundaries (indicating unexpected coupling).",
         "properties": {
           "max_iterations": {
-            "description": "Max label propagation iterations (default: 100)",
+            "default": 100,
+            "description": "Max iterations for the underlying Label Propagation run\n(default: 100).",
+            "minimum": 0,
             "type": "integer"
           },
           "top_n": {
-            "description": "Max connections to return (default: 20)",
+            "default": 20,
+            "description": "Maximum number of cross-community edges to return (default: 20).",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -3551,9 +3854,11 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for hover tool",
         "properties": {
           "column": {
-            "description": "Column number (1-indexed): the column a person reads.",
+            "description": "Column number (1-indexed): the character a person counts.",
+            "minimum": 0,
             "type": "integer"
           },
           "file_path": {
@@ -3561,6 +3866,7 @@
           },
           "line": {
             "description": "Line number (1-indexed): the line a person reads.",
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -3618,6 +3924,7 @@
           "depth": {
             "default": 2,
             "description": "Max traversal depth (default: 2)",
+            "minimum": 0,
             "type": "integer"
           },
           "resource_id": {
@@ -3748,30 +4055,52 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for list_files tool",
         "properties": {
           "glob": {
-            "description": "Glob pattern to filter results (e.g., '**/*.rs')",
-            "type": "string"
+            "description": "Glob pattern to filter results (e.g., \"**/*.rs\")",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "limit": {
             "description": "Maximum number of results (default: 100)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "max_depth": {
-            "description": "Maximum depth for recursive traversal",
-            "type": "integer"
+            "description": "Maximum depth for recursive traversal. None means unlimited.\nOnly effective when recursive is true.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "offset": {
             "description": "Pagination offset (default: 0)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "path": {
             "description": "Path to list (optional, defaults to workspace root)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "recursive": {
             "description": "Whether to list files recursively (default: true)",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -3811,6 +4140,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for list_view_specs (empty for v1).",
         "properties": {},
         "type": "object"
       },
@@ -3851,7 +4181,7 @@
       "input_schema": {
         "properties": {
           "file_paths": {
-            "description": "List of source file paths to merge",
+            "description": "List of file paths to merge",
             "items": {
               "type": "string"
             },
@@ -3900,13 +4230,16 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for nl_to_symbol tool",
         "properties": {
           "limit": {
-            "description": "Maximum number of results (default: 20)",
+            "default": 20,
+            "description": "Maximum number of results",
+            "minimum": 0,
             "type": "integer"
           },
           "query": {
-            "description": "Natural language description of symbol to find",
+            "description": "Natural language query",
             "type": "string"
           }
         },
@@ -4134,11 +4467,7 @@
       "input_schema": {
         "properties": {
           "detail": {
-            "enum": [
-              "quick",
-              "medium",
-              "detailed"
-            ],
+            "default": "medium",
             "type": "string"
           }
         },
@@ -4243,7 +4572,10 @@
         "properties": {
           "directory": {
             "description": "Directory to search in (default: current working directory)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "symbol_name": {
             "description": "Symbol name to query (case-insensitive)",
@@ -4300,28 +4632,44 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for read_file tool",
         "properties": {
           "chunk_size": {
             "description": "Chunk size for streaming reads (optional)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "continuation_token": {
             "description": "Continuation token for pagination (optional)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "end_line": {
             "description": "End line for partial read (1-indexed, default: last line)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "mode": {
-            "description": "Read mode",
+            "description": "Read mode: raw, outline, symbols, compressed (default: raw).\nA mode that is not one of these is refused.",
             "enum": [
               "raw",
               "outline",
               "symbols",
-              "compressed"
+              "compressed",
+              null
             ],
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "path": {
             "description": "Path to the file to read (required)",
@@ -4329,7 +4677,11 @@
           },
           "start_line": {
             "description": "Start line for partial read (1-indexed, default: 1)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4384,6 +4736,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for read_view_spec.",
         "properties": {
           "id": {
             "description": "ViewSpec id (built-in kebab id or UUID)",
@@ -4430,9 +4783,43 @@
       "authority": "mutating",
       "stability": "experimental",
       "input_schema": {
+        "description": "Input for reparse_on_edit tool (Phase 3A)",
         "properties": {
+          "edit_ranges": {
+            "default": null,
+            "description": "Optional edit ranges for more precise reindexing",
+            "items": {
+              "description": "Edit range within a file",
+              "properties": {
+                "end_line": {
+                  "description": "End line (1-indexed)",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "file": {
+                  "description": "File path",
+                  "type": "string"
+                },
+                "start_line": {
+                  "description": "Start line (1-indexed)",
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "file",
+                "start_line",
+                "end_line"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "file_paths": {
-            "description": "List of changed file paths to reindex",
+            "description": "File paths that were edited (required)",
             "items": {
               "type": "string"
             },
@@ -4485,13 +4872,17 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for retrieve_and_verify tool",
         "properties": {
           "language": {
-            "description": "Language filter (reserved for future use, defaults to 'rust')",
+            "default": "rust",
+            "description": "Language filter (reserved for future use, defaults to \"rust\")",
             "type": "string"
           },
           "max_results": {
+            "default": 20,
             "description": "Maximum number of results to return (default: 20)",
+            "minimum": 0,
             "type": "integer"
           },
           "query": {
@@ -4499,6 +4890,7 @@
             "type": "string"
           },
           "verify": {
+            "default": true,
             "description": "Whether to verify Rust files via rustc compilation (default: true)",
             "type": "boolean"
           }
@@ -4635,6 +5027,8 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "additionalProperties": false,
+        "description": "Read-only refactor request.\n\n`deny_unknown_fields` is the AAT-B5-03 guarantee, and it is load-bearing:\nthis is the *preview* input, the one that crosses the read-only MCP\nboundary, and `apply` takes its `AuthorizationToken` over a separate\nchannel. Without it, serde silently drops an `authorization_token` field\na caller sent — the preview would accept a write-authority field and\nignore it, and the caller would believe it had done something.\n\nThe test that pins this (`b5_w3_apply_with_authority::\nread_only_mcp_tool_cannot_acquire_write_authority`) was written before the\nattribute was here. It never reported the gap because it lives in\n`core-unrestricted-evidence-kernel`, which had never completed a run.",
         "properties": {
           "action": {
             "description": "Refactor action",
@@ -4648,8 +5042,7 @@
             "type": "string"
           },
           "params": {
-            "description": "Action-specific parameters",
-            "type": "object"
+            "description": "Action-specific parameters"
           },
           "target": {
             "description": "Target symbol name",
@@ -4703,28 +5096,26 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "additionalProperties": false,
+        "description": "`safe_refactor_preview` input, in the shape the catalogue publishes.\n\n`plan_path` and `plan_json` are alternatives (the catalogue's `oneOf`), so\nexactly one has to arrive. Resolving which one is a precondition, not a\ndefault: silently preferring one would mean a caller who sent the other got\na preview of the wrong thing.",
         "properties": {
-          "plan_path": {
-            "description": "Absolute path to a RefactorPlan JSON file (B5.W1 shape).",
-            "type": "string"
-          },
           "plan_json": {
+            "default": null,
             "description": "Inline RefactorPlan JSON (alternative to plan_path).",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan_path": {
+            "default": null,
+            "description": "Absolute path to a RefactorPlan JSON file.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "oneOf": [
-          {
-            "required": [
-              "plan_path"
-            ]
-          },
-          {
-            "required": [
-              "plan_json"
-            ]
-          }
-        ],
         "type": "object"
       },
       "output_schema": null,
@@ -4770,26 +5161,44 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for search_content tool",
         "properties": {
           "case_insensitive": {
             "description": "Case insensitive search (default: false)",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "context_lines": {
             "description": "Number of context lines around matches (default: 2)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "file_glob": {
-            "description": "Glob pattern to filter files (e.g., '*.rs')",
-            "type": "string"
+            "description": "Glob pattern to filter files (e.g., \"*.rs\")",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "max_results": {
             "description": "Maximum number of results to return (default: 50)",
-            "type": "integer"
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "path": {
             "description": "Path to search within (optional, defaults to workspace root)",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "pattern": {
             "description": "Search pattern (required)",
@@ -4797,7 +5206,10 @@
           },
           "regex": {
             "description": "Whether to treat pattern as regex (default: true)",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4848,12 +5260,84 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4898,12 +5382,84 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4948,10 +5504,16 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for smart_search tool",
         "properties": {
           "limit": {
-            "description": "Maximum number of results (default: 20)",
-            "type": "integer"
+            "default": null,
+            "description": "Maximum number of results to return (default: 20)",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "query": {
             "description": "Search query string",
@@ -5056,12 +5618,84 @@
       "authority": "read",
       "stability": "experimental",
       "input_schema": {
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5108,11 +5742,15 @@
       "input_schema": {
         "properties": {
           "all": {
+            "default": false,
             "description": "If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)",
             "type": "boolean"
           },
           "max_depth": {
+            "default": 1,
             "description": "Maximum depth for path search (default: 10)",
+            "maximum": 255,
+            "minimum": 0,
             "type": "integer"
           },
           "source": {
@@ -5174,6 +5812,7 @@
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for validate_contract tool",
         "properties": {
           "contract_id": {
             "description": "ID of the contract to validate against",
@@ -5182,6 +5821,14 @@
           "generated_code": {
             "description": "The code to validate",
             "type": "string"
+          },
+          "source_file": {
+            "default": null,
+            "description": "Source file path for audit trail (optional)",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5225,6 +5872,7 @@
       "authority": "mutating",
       "stability": "stable",
       "input_schema": {
+        "description": "Input for write_file tool",
         "properties": {
           "content": {
             "description": "Content to write (required)",
@@ -5232,11 +5880,17 @@
           },
           "create_dirs": {
             "description": "Whether to create parent directories if they don't exist (default: false)",
-            "type": "boolean"
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "expected_content_hash": {
-            "description": "Digest of the content that was read; the write is refused if the destination no longer holds that version (optional)",
-            "type": "string"
+            "description": "The digest of the content the caller read, if it wants the write to be\nconditional on the destination still holding that version.\n\nWhen it is declared and the destination has moved on, the write is\nrefused instead of overwriting whatever is there now.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "path": {
             "description": "Path to the file to write (required)",
@@ -5289,18 +5943,90 @@
       "stability": "experimental",
       "feature": "program-analysis-server",
       "input_schema": {
-        "type": "object",
+        "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
         "properties": {
           "algorithm_params": {
-            "type": "object"
+            "description": "Algorithm-specific parameters (shape per tool)."
           },
           "limits": {
-            "type": "object"
+            "default": null,
+            "description": "Optional [`PlanLimits`] override. `None` (or empty) → defaults.",
+            "properties": {
+              "max_depth": {
+                "description": "Maximum traversal depth (for subgraph/recursive queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_hops": {
+                "description": "Maximum hop count (for shortest-path queries).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_memory_bytes": {
+                "description": "Maximum memory usage in bytes (soft limit — executor may estimate).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_path_count": {
+                "description": "Maximum number of paths returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_result_rows": {
+                "description": "Maximum result rows returned (truncation boundary).",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_edges": {
+                "description": "Maximum number of visited edges before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_visited_nodes": {
+                "description": "Maximum number of visited nodes before aborting.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "time_ms": {
+                "description": "Maximum wall-clock time in milliseconds.",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
           }
         },
         "required": [
           "algorithm_params"
-        ]
+        ],
+        "type": "object"
       },
       "output_schema": null,
       "requirements": {
@@ -5341,17 +6067,17 @@
       "stability": "stable",
       "feature": "evidence-cli-ladybug",
       "input_schema": {
-        "type": "object",
         "properties": {
-          "workspace": {
-            "type": "string",
-            "description": "Workspace identifier (default: empty)"
-          },
           "kind": {
-            "type": "string",
-            "description": "Filter by kind: log | trace | measurement | external (optional)"
+            "description": "Filter by kind: log | trace | measurement | external (optional)",
+            "type": "string"
+          },
+          "workspace": {
+            "description": "Workspace identifier (default: empty)",
+            "type": "string"
           }
-        }
+        },
+        "type": "object"
       },
       "output_schema": null,
       "requirements": {
@@ -5388,24 +6114,24 @@
       "stability": "stable",
       "feature": "evidence-cli-ladybug",
       "input_schema": {
-        "type": "object",
         "properties": {
-          "workspace": {
-            "type": "string",
-            "description": "Workspace identifier (default: empty)"
+          "limit": {
+            "description": "Max rows returned (default: 25)",
+            "type": "integer"
           },
           "query": {
-            "type": "string",
-            "description": "Substring query against title + excerpt"
+            "description": "Substring query against title + excerpt",
+            "type": "string"
           },
-          "limit": {
-            "type": "integer",
-            "description": "Max rows returned (default: 25)"
+          "workspace": {
+            "description": "Workspace identifier (default: empty)",
+            "type": "string"
           }
         },
         "required": [
           "query"
-        ]
+        ],
+        "type": "object"
       },
       "output_schema": null,
       "requirements": {
@@ -5464,7 +6190,6 @@
         "required": [
           "path"
         ],
-        "title": "ExplainFindingInput",
         "type": "object"
       },
       "output_schema": {

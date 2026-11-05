@@ -96,7 +96,7 @@ pub type PlanLimit = PlanLimitKind;
 /// All fields are optional. A plan with all `None` fields is valid but
 /// represents an unbounded execution — the executor may reject it or apply
 /// internal defaults.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct PlanLimits {
     /// Maximum wall-clock time in milliseconds.
     pub time_ms: Option<u64>,
