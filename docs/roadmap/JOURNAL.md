@@ -34926,3 +34926,108 @@ ningún import nuevo entre capas.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-134: los ciclos y los god nodes se publican en el mismo orden en cada corrida
+
+**El encargo.** Dos respuestas publicadas cambiaban en cada corrida del mismo
+proyecto: los ciclos (61 de las 62 posiciones cambiaban) y los god nodes (las
+puntuaciones se movían en el último decimal, 5,551e-17, y con ellas el orden
+de la lista). Una respuesta cuyo orden cambia sin que haya cambiado el código
+hace que un consumidor no pueda distinguir «cambió el código» de «cambió el
+azar», y una puntuación que se mueve en el último decimal hace que dos
+corridas del mismo proyecto no se puedan comparar.
+
+**La causa, medida (no supuesta).** Dos rutas distintas:
+
+- **La proyección.** `call_graph_projection.rs::from_call_graph` insertaba las
+  aristas en el orden de `cg.edges_with_metadata()`, que es el orden de
+  iteración de `HashMap<SymbolId, HashMap<(SymbolId, DependencyType), …>>`
+  (`domain/aggregates/call_graph.rs:65`): dos hash maps anidados, semilla
+  distinta por instancia. Ese orden decide el orden de las listas de
+  adyacencia que leen los algoritmos, y de ahí salen (a) el recorrido del
+  Tarjan de graph-algos —las componentes que publica `impact_detect_cycles`— y
+  (b) el acumulado de PageRank: `page_rank` suma `ranks[u] / od` en el orden
+  de `in_neighbors[v]`, y una suma en coma flotante no es asociativa.
+- **El detector de ciclos del dominio.** No usa la proyección: recorre el
+  grafo directamente. El orden de arranque salía de `graph.symbol_ids()` y el
+  de los sucesores de `graph.callees(id)`, los dos de un hash map.
+
+**Lo que entrega ahora.** Cada causa, en su dueño:
+
+1. La **proyección** ordena las aristas por symbol id de origen, symbol id de
+   destino y tipo de dependencia antes de insertarlas. La clave es total (el
+   grafo indexa sus aristas por destino y tipo, así que no hay dos aristas
+   con la misma clave) y el constructor lo documenta como parte de su
+   contrato.
+2. El **detector de ciclos** ordena por symbol id los símbolos (el orden de
+   arranque) y los sucesores de cada nodo (el orden de recorrido).
+
+`DependencyType` gana `PartialOrd, Ord` derivados: el orden de las variantes
+es el orden natural, y hace falta para que la clave del punto 1 sea total. Hay
+precedente en el dominio (`CheckpointId`, `RevisionId`) y no hay `impl` manual
+que choque.
+
+**El RED, medido.** Con el código viejo en el árbol: la proyección insertaba
+las aristas sin ordenar (`[(3,0,Imports), (3,0,Calls), (2,3,Calls),
+(0,1,Calls), (1,2,Imports)]` frente al orden esperado `[(0,1,Calls),
+(1,2,Imports), (2,3,Calls), (3,0,Calls), (3,0,Imports)]`); el detector
+publicaba los ciclos en el orden del hash map (`c05a, c04a, c01a, c07a, …` en
+vez de `c00a, c01a, c02a, …`); y las dos construcciones independientes
+publicaban ciclos distintos.
+
+**Las pruebas.** Tres, y son las mínimas (lente `change-impact`: radio
+acotado — la proyección, un servicio del dominio y sus consumidores directos:
+el handler de god nodes, el de `check_architecture` y el de SCC del explorer;
+lente `regression-promotion`: no hay nada que retirar, ni god nodes ni el
+detector tenían ninguna prueba de determinismo, y no hay UAT que promover
+porque el defecto es de reproducibilidad):
+
+| Prueba | Nivel | Qué fija |
+|---|---|---|
+| `the_edges_are_inserted_in_a_deterministic_order` | unitaria, `call_graph_projection.rs` | las aristas salen ordenadas por origen, destino y tipo |
+| `the_cycles_are_published_in_a_deterministic_order` | unitaria, `domain/services/cycle_detector.rs` | el detector publica los ciclos en el orden del recorrido, que arranca en el symbol id más bajo |
+| `the_same_project_gives_the_same_cycles_and_god_nodes` | integración, `tests/it/` | dos construcciones independientes del código real dan la misma respuesta publicada de ciclos y de god nodes, y la misma lista de componentes de la proyección |
+
+El testigo del test unitario del detector son **diez** ciclos disjuntos, no
+tres: con tres, un hash map podía devolver el orden esperado por azar (una de
+seis, y así pasó en la primera medición); con diez, esa probabilidad es una de
+tres millones, así que un rojo ahí es el defecto y no la suerte.
+
+**Medido después.** Dos construcciones independientes del mismo proyecto dan:
+
+| Superficie | Antes | Después |
+|---|---|---|
+| comunidades | el orden cambiaba en cada corrida | la misma cuenta y el mismo orden |
+| puntuaciones de god nodes | diferían en 5,551e-17 | **bit a bit idénticas** |
+| ciclos del dominio | 61 de 62 posiciones cambiaban | los mismos, en el mismo orden |
+| componentes de la proyección | 148 de 5.971 posiciones cambiaban | las mismas, en el mismo orden |
+
+**Lo que se midió y NO se arregla aquí.** `CallGraph::callers()` sigue
+devolviendo los llamantes en el orden de un hash set
+(`reverse_edges: HashMap<SymbolId, HashSet<SymbolId>>`), y con ello los
+caminos calientes de `project_overview` se publican en otro orden: los mismos
+diez símbolos, en otro orden (`[…, "detector", "new", "caps", …]` frente a
+`[…, "detector", "caps", "new", …]`). Es el otro lado de la arista —los
+llamantes— y queda medido en **TASK-135**.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3534 tests run: 3534 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer --lib --tests` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 (0 añadidas, 0 retiradas) |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133 y TASK-134 van tres de diez, así que el
+gate de esta unidad es **NOT_RUN**. La allowlist de CR-06 no crece: el arreglo
+no introduce ningún import nuevo entre capas.
+
+**Entrega.** PR #619 → `6676acc1`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
