@@ -33844,3 +33844,155 @@ rama no toca.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-128: la cadena de continuación del MCP tiene un dueño en casa
+
+**El encargo.** Grupo 2 de TASK-70 con decisión **REPLACE**: `crates/cognicode-mcp/tests/it/continuation_e2e.rs`
+son 609 líneas con cinco tests `#[ignore]`d que necesitan el servidor real y los repositorios del
+sandbox. Su runner era la «certification lane», retirada el 2026-11-04 con las demás lanes; hoy el
+único script que los invoca era `scripts/ci/preflight-clean-clone.sh`, que ninguna lane ejecuta. Y la
+taxonomía vigente (ROADMAP §12.1) tiene dos clases de test, no tres: un test que levanta el servidor
+real no es unitario ni integración con mocks, así que no puede quedarse como estaba.
+
+**La garantía que se retira, descompuesta.** No es «el test pasa»: es lo que el cliente necesita para
+usar la cadena.
+
+1. un fichero más largo que la página se lee en más de una página;
+2. la cadena termina: la última página no trae `has_more` ni `next_token`;
+3. toda página que dice «hay más» trae un token, y el token no se repite (un token repetido devuelve
+   la misma página para siempre);
+4. las páginas son contiguas y, concatenadas, reconstruyen el fichero byte a byte, y eso se comprueba
+   en **cada** frontera, no sólo al final;
+5. cada página declara las líneas que trae;
+6. un fichero que cabe en la página se lee en una página, sin token.
+
+**El estado medido antes de decidir (2026-11-05, `main` @ `62cab415`).**
+
+| Hecho medido | Valor | Cómo se midió |
+|---|---|---|
+| Líneas del fichero retirado | **609** | `wc -l` |
+| Tests que contiene | 5, **todos `#[ignore]`d** | lectura del fichero |
+| Sus escenarios | anyhow (730 líneas), tokio (709), serde (334), ripgrep (295), clap (53) | las rutas del sandbox que nombra |
+| Quién lo invocaba | `scripts/ci/preflight-clean-clone.sh:501`, un script que ninguna lane ejecuta | `grep -rn continuation_e2e scripts/` |
+| La cadena **por bytes** (`chunk_size`), ¿tiene dueño? | **sí**: `file_ops_integration_tests.rs` (FRC: reensamblado byte a byte) y `a_cut_never_splits_a_character.rs` | lectura de los dos ficheros |
+| La cadena **por páginas** (la página por defecto de 500 líneas), ¿tiene dueño? | **no**: su único dueño era el fichero retirado | `grep -rln "next_token" crates/` |
+| Dependencias que sólo él usaba | `sha2` en `crates/cognicode-mcp` | `grep -rn "sha2" crates/cognicode-mcp/` |
+| ¿Estaba roto? | **no**: con el sandbox presente y el binario construido, los 5 tests pasan en **0,079 s** | corrida medida (`RUST_SANDBOX_BOOTSTRAP=1`) |
+
+La fila que decide es la última: el fichero **no estaba roto**, estaba **sin dueño**. Por eso la
+decisión es REPLACE y no RETIRE: retirarlo sin sustituirlo habría perdido una garantía, y una
+garantía sin dueño es la que se pierde sin que nadie lo note.
+
+**El sustituto: `crates/cognicode-core/tests/it/the_continuation_chain_is_byte_exact.rs`** (347 líneas,
+2 tests), en el crate que posee la garantía.
+
+- El fixture lo escribe el propio test en un temporal: 1.200 líneas de contenido determinista y de
+  longitud variable (y de vez en cuando un carácter que no ocupa un byte), más un fichero de 334
+  líneas. Sin proceso, sin binario, sin sandbox, sin red y sin reloj.
+- Habla con la herramienta por el **despacho real** (`call_tool_handler` +
+  `tool_response::success_result`), o sea que lee los mismos bytes que leería un cliente MCP del
+  primer bloque de texto de la respuesta. La alternativa era reimplementar el despacho dentro del
+  test, que es duplicar la semántica del producto en la suite.
+- Para que el test llegue al despacho, `call_tool_handler` pasa de `pub(crate)` a `pub`
+  (`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs`). Cambio aditivo de una palabra.
+
+**El rojo discriminante (AC2).** Cuatro mutaciones focales de la paginación, medidas **sobre el mismo
+árbol**: la suite retirada (con el sandbox presente y el binario construido) y la nueva.
+
+| Mutación | Suite retirada | Suite nueva |
+|---|---|---|
+| M1 **solapamiento**: el token reanuda en la última línea de la página | 2 rojos (`anyhow`, `tokio` — `BoundaryMismatch` en la página 2) | 1 rojo (*page 1 does not continue where the previous one stopped: at byte 17360*) |
+| M2 **hueco**: el token reanuda dos líneas más allá | 2 rojos (`anyhow`, `tokio`) | 1 rojo (*page 1 does not continue… at byte 17360*) |
+| M3 **la cadena no continúa** (`has_more` nunca es verdad) | 2 rojos (`anyhow`, `tokio`) | 1 rojo (*a file of 1,200 lines has to be read in more than one page; it came back in 1*) |
+| M4 **el token de la página reanudada se salta una línea** | **5 verdes: no lo ve** | 1 rojo (*page 2 does not continue… at byte 34966*) |
+
+En M1, M2 y M3 los **tres escenarios de una sola página siguen verdes** en las dos suites: una
+paginación rota no les afecta. M4 es la medida de que el sustituto **cubre más** que el fichero
+retirado: las fixtures de aquel tienen dos páginas (anyhow: 730), así que el token de su última
+página nunca se emite y el defecto que nace ahí es código muerto para ellas; el fixture nuevo tiene
+1.200 líneas y tres páginas, y lo ve.
+
+Una quinta mutación midió lo contrario, y también se declara: **cambiar el tamaño de la página**
+(`page_lines - 1` → `page_lines`) **no la mata ninguna de las dos suites**, porque no cambia el
+contenido: las páginas siguen siendo contiguas y el fichero se reconstruye igual. El tamaño de la
+página no lo publica ningún contrato (`read_file` no tiene `output_schema`), así que queda **fuera
+del alcance de esta garantía** y no se fija en el test: un test que fijara el 500 ataría una
+constante de implementación que ningún contrato declara.
+
+**Un defecto que el test nuevo encontró.** La primera versión del test afirmaba que cada página
+declara las líneas que trae. Falló **antes** de tocarse el producto:
+
+```
+assertion `left == right` failed: page 1 declares it starts at line 1 and it starts at 501
+  left: 1
+ right: 501
+```
+
+La página de continuación publicaba la línea inicial de la petición (1) en vez de la primera línea que
+traía (501). `ReadFileOutput.start_line` dice «The first line number returned (1-indexed)», así que el
+código no cumplía su propio contrato: un cliente que quisiera saber dónde empieza cada página no
+podía, y tenía que contar líneas a mano. El arreglo es el mínimo —el camino de la página en crudo
+devuelve también la línea por la que empieza y la publica— y **no cambia ningún otro valor
+publicado**: en la ruta de lectura por bytes el valor ya era el correcto (`chunk_start_line ==
+start`), y en la ruta de página por defecto también.
+
+**Lo que sale del árbol.**
+
+| Sale | Medida | Por qué |
+|---|---|---|
+| `crates/cognicode-mcp/tests/it/continuation_e2e.rs` | 609 líneas, 5 tests | su garantía ya tiene dueño |
+| `sha2` en `crates/cognicode-mcp/Cargo.toml` | 1 línea | medido: no había ningún otro uso en ese crate |
+| `scripts/ci/preflight-clean-clone.sh`: Stage 5b (bootstrap Tier-1, con red) y Stage 5.1 (la invocación de los tests retirados) | 45 líneas | su único motivo era el fichero retirado; la garantía ahora la cubre la corrida ordinaria del Stage 5, sin binario, sin fixtures y sin red |
+| `scripts/sandbox/bootstrap-tier1-rust.sh` | 84 líneas | su único llamante era ese Stage 5b; los escenarios del sandbox se staged por su cuenta (`just sandbox-setup` → `sandbox/scripts/clone_repos.sh`, que incluye anyhow, ripgrep, serde, tokio y clap) |
+
+**Los dos PR de la unidad.**
+
+| PR | Qué lleva | SHA |
+|---|---|---|
+| **#600** | el sustituto (test nuevo), el arreglo del `start_line`, la retirada del fichero y el `sha2` | `d39b686c` |
+| **#601** | el residuo del preflight (Stage 5b y Stage 5.1) y el script que stageaba los repos del sandbox | `22358503` |
+
+El residuo va en un PR aparte porque es un cambio de scripts que no toca el producto: mezclado con el
+test, un revisor tendría que leer dos cosas que no se perturban. El segundo PR no es un extra: es la
+limpieza que hace que la retirada del fichero **no deje un paso vacuo** detrás.
+
+**Verificación (medida en esta rama, base `62cab415`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2545 tests run: 2545 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-core --test it` | **962 tests run: 962 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-mcp` | **101 tests run: 101 passed** (el objetivo `it` del crate tenía 5 tests `#[ignore]`d más, que salen con el fichero) |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy --workspace --all-targets -- -D warnings` | limpio |
+| `bash scripts/ci/run-all-contracts.sh` | **302 PASS**, 2 FAIL **preexistentes**: `test_current_sha_matches_head` y `test_control_all_green` (el snapshot `docs/roadmap/CURRENT.md`, ya enrutado como TASK-126) |
+| `bash -n scripts/ci/preflight-clean-clone.sh` | sintaxis válida |
+| Las dos suites, con las mutaciones revertidas | verdes |
+
+**Gate: NOT_RUN (lote).** El gate se paga por lotes de diez tareas (`AGENTS.md`), y esta es la
+**séptima** unidad desde el último gate (TASK-79 AC1, TASK-82 por la mitad, TASK-79 AC4, TASK-92
+rebanada 1, TASK-92 rebanada 2, TASK-70 grupo 1, más esta).
+
+**Lo que queda de TASK-70 (la unidad sigue abierta: AC1 y AC2 sin cerrar).**
+
+1. **Grupo 2 — los dos tests de >5 min** de `crates/cognicode-core/src/application/services/analysis_service.rs`
+   (223 líneas, `#[ignore]`d): su propio motivo de `ignore` nombra la cobertura que los sustituye
+   (`test_debug_call_relationships_in_real_code`, `test_lightweight_index_real_project_benchmark`,
+   `test_on_demand_graph_real_project_benchmark`, los tres presentes en el árbol). Son «una tarea
+   disfrazada de test» por la regla 6 del `AGENTS.md`, y no los ejecuta nadie.
+2. **Grupo 3 — los contratos Python de proceso** (3.724 líneas): uno a uno, con el sustituto nombrado,
+   empezando por los que ya no tienen consumidor (`test_preflight_passed_ratchet` y
+   `test_preflight_clone_ref` miden un script que ninguna lane ejecuta).
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **El ROADMAP afirma una poda que no ocurrió** (nota 2 de §11.1): `docs/adr/ADR-D1-006-uat-retirement.md`
+  existe y `git log --diff-filter=D` no registra ninguna baja de esa ruta. Ya enrutado como TASK-129.
+- **`docs/roadmap/CURRENT.md` sigue atrasado** y su ratchet está en rojo en `main` (TASK-126).
+- **El baseline del preflight cuenta cinco tests menos** desde que Stage 5.1 no corre. El baseline es
+  del operador (`PREFLIGHT_BASELINE_*`): re-baselinar es una decisión explícita, no un efecto
+  secundario de retirar una suite.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
+el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
