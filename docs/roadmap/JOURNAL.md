@@ -33027,3 +33027,111 @@ paso de mutación mide `cognicode-graph-algos`, un crate que esta rama no toca.
 repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que
 este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que
 el hook rechaza.
+
+## 2026-11-05 — TASK-79 (AC2): el snapshot vive en la caché del usuario, y el árbol analizado no guarda nada
+
+**El hueco.** El snapshot del grafo es **estado del producto**: se deriva del árbol, se puede tirar
+sin perder nada y no dice nada del árbol. Vivía dentro del árbol —`<repo>/.cognicode/graph.cache`—,
+así que analizar un repositorio escribía dentro de él. Analizar es leer, y una lectura que deja un
+fichero detrás no es una lectura.
+
+**El contrato (AC2).** «El snapshot vive en `~/.cache/cognicode/<hash>` y bincode tiene límite de
+tamaño». La mitad del tamaño ya estaba (el lector acepta como mucho 256 MiB, en `8ed2817b`); esta
+unidad pone la otra mitad: dónde vive.
+
+**La corrección.**
+
+- Módulo nuevo `crates/cognicode-core/src/application/graph_cache.rs`: la raíz de la caché del
+  usuario (`XDG_CACHE_HOME`, o `~/.cache`), el directorio `<raíz>/cognicode` y la ruta del snapshot
+  `<raíz>/cognicode/<hash>`, donde `<hash>` es el sha256 de la ruta **canónica** del workspace (32
+  hex). Dos repositorios nunca comparten entrada; el mismo repositorio siempre encuentra la suya.
+- `HandlerContext` gana `cache_root` (y `with_cache_root`), y `snapshot_path(workspace)` dice dónde
+  está el snapshot de ese workspace. Un contexto al que no le dicen dónde guardar estado no guarda
+  estado: lo dice en el log («no cache root is configured: the graph snapshot is not persisted, and
+  every request rebuilds the graph») en vez de escribir en un directorio que nadie eligió.
+- `handle_build_graph` persiste y lee el snapshot en esa ruta. Antes leía y escribía
+  `<repo>/.cognicode/graph.cache`.
+- Los puntos de entrada del producto nombran la caché del usuario: los tres constructores de
+  `rmcp_adapter` (`default_cache_root()`) y el servidor HTTP `cognicode-mcp-server`
+  (`crates/cognicode-mcp/src/server.rs`), que hasta ahora no guardaba nada.
+
+**RED medido.** Test nuevo `crates/cognicode-core/tests/it/the_analysed_tree_keeps_no_state.rs` (el
+árbol vuelve como se encontró, y la caché existe):
+`cargo nextest run --profile gate -p cognicode-core --test it the_analysed_tree_keeps_no_state` →
+**1 test run: 0 passed, 1 failed**, con el mensaje del propio defecto:
+
+```
+the product wrote [".cognicode"] inside the tree it was asked to read
+```
+
+Verde después: **3 tests run: 3 passed**. Los tres casos: el árbol sin estado del producto; dos
+workspaces con entradas distintas en la caché; y un workspace al que no se le nombra caché, que no
+guarda estado en ninguna parte.
+
+**Lo que esta unidad encontró y arregló por el camino.** Tres rojos que no eran del cambio, y que
+habrían datado verde al que cierra:
+
+1. **El log de etapa se había perdido.** El refactor de AC3 (`3cfe32e5`) quitó de
+   `build_project_graph` la instrumentación `stage=walk/parse/resolve/done` al delegar en la ruta
+   filtrada. El test `m0_t03_graph_publishes_unconfirmed_edges::the_log_publishes_the_same_relation_count_as_the_response`
+   cayó: **1 test run: 0 passed, 1 failed**, y el log capturado no traía `stage=resolve`:
+   `el build debe registrar cuántas relaciones resolvió; log capturado: "… Building project graph for
+   directory: \"/tmp/.tmp7w4tds\""`. La ruta filtrada es la que tiene el pipeline, así que las cuatro
+   etapas vuelven **en la ruta que las ejecuta**, y el log vuelve a decir lo mismo que la respuesta.
+   El recibo de AC3 ya lo anotaba como pérdida («Se pierden los logs de etapa»); esta unidad lo paga.
+2. **El ratchet de tamaño medía una mentira.** `handlers/mod.rs` medía «3985 → 2345»: el
+   `#[cfg(test)]` de un `use` —`#[cfg(test)] use graph_snapshot::{…}`— lo tomaba el script por el
+   final del código de producción. El número bueno, con el `use` de test dentro del módulo de test,
+   es **3985 → 3954** (el commit `8ed2817b` movió la persistencia a su propio módulo). Un ratchet que
+   ve un encogimiento que no ocurrió es un ratchet que no mide.
+3. **Un contrato miraba un fichero que ya no guarda lo que dice guardar.** El commit `8ed2817b`
+   movió la persistencia del snapshot a `handlers/graph_snapshot.rs`, y
+   `scripts/ci/test_a_snapshot_says_who_produced_it.py` seguía buscando `save_durable_snapshot` y
+   `load_durable_snapshot` en `handlers/mod.rs`: rojo con «no se encuentra el guardado del snapshot».
+   El contrato sigue al código hasta su dueño: ahora mira el fichero que guarda, y sigue mirando en
+   los handlers el sitio que **decide** (el que compara la clave).
+
+**Los tests que dependían de dónde vivía el snapshot.** `cached_coverage_is_honest` (dos casos) y el
+test unitario `test_handle_build_graph_rebuilds_on_second_call_different_context` montaban un
+contexto sin caché y esperaban que la segunda llamada saliera del snapshot. Ahora nombran una caché
+propia —un test que escribe en la caché de quien ejecuta la suite deja entradas que nadie puede
+limpiar— y la garantía que medían sigue siendo la misma: la segunda respuesta es la de la caché.
+
+**Verificación (medida en esta rama, `feature/task-79-load-or-build-graph`).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate --workspace --lib --tests` | **6728 tests run: 6728 passed, 10 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `npm test --prefix apps/explorer-ui` | **944 tests passed** (86 ficheros), rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, **303 casos** en verde, 0 fallos |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `handlers/mod.rs` 3985 → 3954, `aix_handlers.rs` 2565 → 2561 |
+
+**Gate: PASS (lote).** `bash scripts/test-gate.sh` rc=0, los tres pasos, sobre el árbol de esta rama:
+
+| Paso | Salida |
+|---|---|
+| Unitarios | `4647 tests run: 4647 passed, 2 skipped` |
+| Integración | `6728 tests run: 6728 passed, 10 skipped` |
+| Mutantes (`cognicode-graph-algos`) | `574 mutants tested in 9m: 573 caught, 1 unviable` |
+
+El gate se pasó por lotes, no por tarea, y este lote estaba lleno: desde el gate sobre `14f71609` se
+cerraron TASK-113, 114, 116, 111, 65, 117, 80, 119, 120 y 118 —diez— y esta unidad es la undécima.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- **AC1** sigue abierta: `ensure_graph_built` ignora el snapshot y la CLI reconstruye siempre. La
+  función `load_or_build_graph(dir)` que sirva las fases index y link a MCP y CLI es el trabajo
+  grande de esta tarea, y probablemente exige mover la serialización del snapshot fuera de
+  `interface/mcp/handlers/graph_snapshot.rs` hacia la capa de aplicación.
+- **AC4** necesita una decisión del operador (ya medida en las notas de la tarea): sobre un
+  directorio sin código analizable la CLI sale con rc=1 y «no produjo símbolos», y el MCP responde
+  con éxito y estado `unsupported`. Unificar cambia un comportamiento publicado de uno de los dos.
+- La caché del producto no tiene política de caducidad: `~/.cache/cognicode/<hash>` se reescribe
+  cuando el árbol cambia, y no hay nada que la limpie. Es el comportamiento normal de una caché,
+  pero el producto todavía no dice qué la limpia.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene;
+el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

@@ -307,6 +307,14 @@ pub struct HandlerContext {
     /// build time, so a caller cannot lengthen or shorten it once dispatch has
     /// started.
     sub_handler_timeout: std::time::Duration,
+    /// Where the product keeps what it derives from the workspace.
+    ///
+    /// The snapshot of the graph is the product's own state, so it lives
+    /// in the user's cache and not inside the tree that was analysed.
+    /// Read through [`HandlerContext::cache_root`]; `None` means the
+    /// environment says nothing about where a cache is, and the product
+    /// then keeps no state at all instead of guessing a place.
+    cache_root: Option<PathBuf>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -320,6 +328,24 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
+    /// Where the product keeps what it derives from the workspace.
+    ///
+    /// `None` when the environment says nothing about where a cache is:
+    /// there is no honest place to write, and the product then keeps no
+    /// state at all instead of guessing one.
+    pub fn cache_root(&self) -> Option<&Path> {
+        self.cache_root.as_deref()
+    }
+
+    /// The path of the graph snapshot of `workspace`.
+    ///
+    /// `None` when there is no cache to keep it in: the product then
+    /// rebuilds on every request instead of persisting anything.
+    pub fn snapshot_path(&self, workspace: &Path) -> Option<PathBuf> {
+        self.cache_root()
+            .map(|root| crate::application::graph_cache::snapshot_path(root, workspace))
+    }
+
     /// The connected client's identity, or [`ClientIdentity::unknown`].
     ///
     /// Read-only by construction. `ClientIdentity` owns the three attributes
@@ -526,6 +552,9 @@ impl HandlerContext {
 #[derive(Default)]
 pub struct HandlerContextBuilder {
     working_dir: Option<PathBuf>,
+    /// Where the product keeps what it derives from the workspace. `None`
+    /// means "ask the environment", which is what a real session does.
+    cache_root: Option<PathBuf>,
     validator: Option<Arc<InputValidator>>,
     analysis_service: Option<Arc<AnalysisService>>,
     refactor_service: Option<Arc<RefactorService>>,
@@ -565,6 +594,21 @@ impl HandlerContextBuilder {
     /// If the path is not absolute, it will be canonicalized on build.
     pub fn with_working_dir(mut self, working_dir: impl Into<PathBuf>) -> Self {
         self.working_dir = Some(working_dir.into());
+        self
+    }
+
+    /// Sets where the product keeps what it derives from the workspace.
+    ///
+    /// The default is no cache at all: a context that was not told where
+    /// to keep state keeps none, instead of writing into a directory
+    /// nobody chose. The product's own entry points name the user's cache
+    /// (`XDG_CACHE_HOME`, or `~/.cache`); a test that wants its own cache
+    /// names it here, so the test never writes in the cache of the user
+    /// who is running it.
+    ///
+    /// Takes the path or the absence of one: `None` means "keep no state".
+    pub fn with_cache_root(mut self, cache_root: impl Into<Option<PathBuf>>) -> Self {
+        self.cache_root = cache_root.into();
         self
     }
 
@@ -774,6 +818,12 @@ impl HandlerContextBuilder {
             sub_handler_timeout: self
                 .sub_handler_timeout
                 .unwrap_or_else(|| std::time::Duration::from_secs(60)),
+            // No cache unless the session names one. The product's own
+            // entry points name the user's cache; a context built by a
+            // test, or by a consumer that did not ask for persistence,
+            // keeps no state rather than writing into a directory
+            // nobody chose.
+            cache_root: self.cache_root,
         }
     }
 }
@@ -914,105 +964,6 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// - If `input` is `None`, returns `working_dir` unchanged.
 /// - If `input` is an absolute path, returns it unchanged.
 /// - If `input` is a relative path (including "."), joins it to `working_dir`.
-/// Generate a graph cache directory path based on the target directory.
-/// The .cognicode directory is placed inside the analyzed project directory.
-fn graph_db_path(directory: &Path) -> PathBuf {
-    let canonical_dir = directory
-        .canonicalize()
-        .unwrap_or_else(|_| directory.to_path_buf());
-    canonical_dir.join(".cognicode").join("graph.cache")
-}
-
-/// Atomically persist the graph + manifest snapshot to
-/// `db_path` (temp file + rename, so an interrupted write never leaves a
-/// half-written snapshot that could be mistaken for valid evidence).
-///
-/// The temp file uses a per-process unique name
-/// (`cache.tmp.<pid>.<seq>`), not a fixed slot. Two writers on the same
-/// workspace never share a temp path; an interrupted writer leaves a
-/// file whose name identifies the dying process for post-mortem.
-///
-/// The snapshot carries the **key** —who produced it, over what, and with
-/// which shape— next to the graph and the manifest. Without it, a snapshot
-/// is a graph with no author, and any other build would serve it as its own.
-fn save_durable_snapshot(
-    db_path: &Path,
-    key: &SnapshotKey,
-    graph: &crate::domain::aggregates::call_graph::CallGraph,
-    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
-) -> std::io::Result<()> {
-    use bincode::config::standard;
-    use bincode::serde::encode_to_vec;
-
-    // The version says what the snapshot means, and the meaning of a
-    // snapshot changed three times: a graph is now only "complete" when its
-    // references are tied too, and a snapshot written before that says
-    // complete about a graph that had holes in it; the manifest now records
-    // a modification time that can be absent, a shape the previous layout
-    // cannot hold; and the snapshot now names the analyzer that produced
-    // it, a shape the previous layout cannot hold either. A snapshot of an
-    // older version is therefore not evidence of anything: it is rebuilt.
-    let snapshot = (SNAPSHOT_SCHEMA, key, graph, manifest);
-    let bytes = encode_to_vec(snapshot, standard())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = tmp_path_for(db_path);
-    std::fs::write(&tmp, &bytes)?;
-    std::fs::rename(&tmp, db_path)
-}
-
-/// Returns a unique tmp path for `db_path`.
-///
-/// Each call appends `<pid>.<seq>` so concurrent writers on the same
-/// workspace never collide on the temp slot. The sequence counter is
-/// an atomic monotonic per-process counter (no two consecutive calls
-/// from the same process produce the same path even after many
-/// snapshots).
-fn tmp_path_for(db_path: &Path) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    let file_name = format!(
-        "{}.tmp.{}.{}",
-        db_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("graph.cache"),
-        pid,
-        seq
-    );
-    db_path.with_file_name(file_name)
-}
-
-/// Load a durable snapshot. Returns `None` on any
-/// parse failure — a corrupt snapshot is treated as absent (rebuild),
-/// never as valid evidence.
-///
-/// The key comes back with the graph: who produced it is part of what the
-/// snapshot says, and the caller decides whether that producer is the one
-/// standing here.
-fn load_durable_snapshot(
-    db_path: &Path,
-) -> Option<(
-    SnapshotKey,
-    crate::domain::aggregates::call_graph::CallGraph,
-    crate::domain::value_objects::file_manifest::FileManifest,
-)> {
-    use bincode::config::standard;
-    use bincode::serde::decode_from_slice;
-
-    let bytes = std::fs::read(db_path).ok()?;
-    let (snapshot, _): ((String, _, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != SNAPSHOT_SCHEMA {
-        return None;
-    }
-    Some((snapshot.1, snapshot.2, snapshot.3))
-}
-
 /// El workspace canónico: el mismo string en la clave y en la base.
 ///
 /// Un solo sitio lo decide, para que la clave que se guarda y la que se
@@ -1363,7 +1314,13 @@ pub async fn handle_build_graph(
     }
 
     // --- In-memory store for current session (no persistence across restarts) ---
-    let db_path = graph_db_path(&directory);
+    //
+    // The snapshot is the product's own state: it lives in the user's
+    // cache, keyed by the workspace, and never inside the tree that was
+    // analysed. When the environment says nothing about where a cache is,
+    // there is nowhere honest to write, and the product keeps no state:
+    // it rebuilds on every request instead of guessing a place.
+    let snapshot_path = ctx.snapshot_path(&directory);
     let mut loaded_from_cache = false;
     // The holes the tree has RIGHT NOW: what the walk declines, what it
     // cannot do and what it cannot read yet.
@@ -1386,10 +1343,11 @@ pub async fn handle_build_graph(
         let g = ctx.analysis_service.graph_cache().get();
         g.symbol_count() == 0 && g.edge_count() == 0
     };
-    if db_path.exists() && cache_is_empty {
+    let existing_snapshot = snapshot_path.as_ref().filter(|path| path.exists());
+    if cache_is_empty && let Some(db_path) = existing_snapshot {
         // The durable snapshot is the source for both
         // graph and manifest. A corrupt snapshot is treated as absent.
-        let snapshot = load_durable_snapshot(&db_path);
+        let snapshot = load_durable_snapshot(db_path);
         // Who produced the snapshot, and who is asking now.
         let current_key = SnapshotKey::new(
             canonical_workspace(&directory),
@@ -1497,13 +1455,22 @@ pub async fn handle_build_graph(
                     AnalyzerBuild::current(),
                     SNAPSHOT_SCHEMA,
                 );
-                if let Err(e) = save_durable_snapshot(&db_path, &key, &graph, &manifest) {
-                    tracing::warn!("durable snapshot save failed: {}", e);
+                if let Some(db_path) = &snapshot_path {
+                    if let Err(e) = save_durable_snapshot(db_path, &key, &graph, &manifest) {
+                        tracing::warn!("durable snapshot save failed: {}", e);
+                    }
+                } else {
+                    tracing::warn!(
+                        "no cache root is configured: the graph snapshot is not persisted, \
+                         and every request rebuilds the graph"
+                    );
                 }
             }
         } else {
             // A stale/partial snapshot must not survive a failed rebuild.
-            let _ = std::fs::remove_file(&db_path);
+            if let Some(db_path) = &snapshot_path {
+                let _ = std::fs::remove_file(db_path);
+            }
         }
     }
 
@@ -2374,6 +2341,8 @@ pub async fn handle_check_architecture(
 }
 
 mod complexity_handlers;
+mod graph_snapshot;
+use graph_snapshot::{load_durable_snapshot, save_durable_snapshot};
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -3986,6 +3955,7 @@ pub mod findings_handlers;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use graph_snapshot::{load_durable_snapshot_capped, tmp_path_for};
 
     /// El inventario de un árbol TAL COMO ESTÁ AHORA.
     ///
@@ -4007,6 +3977,45 @@ mod tests {
     /// se ocupa el test de la superficie publicada.
     fn test_snapshot_key() -> SnapshotKey {
         SnapshotKey::for_current_analyzer("/tmp/cognicode-test-workspace")
+    }
+
+    /// A snapshot lives inside the analysed tree, so whoever controls the
+    /// tree controls its bytes. A valid prefix followed by a container that
+    /// claims 2^64 elements must come back as "absent", not as an allocation.
+    #[test]
+    fn a_snapshot_claiming_a_huge_container_is_refused() {
+        use bincode::config::standard;
+        use bincode::serde::encode_to_vec;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        let mut bytes = encode_to_vec((SNAPSHOT_SCHEMA, test_snapshot_key()), standard()).unwrap();
+        // bincode varint marker 253 introduces a u64; the rest is a length no
+        // file could back.
+        bytes.push(253);
+        bytes.extend_from_slice(&[0xFF; 8]);
+        bytes.extend_from_slice(&[0u8; 64]);
+        std::fs::write(&db, &bytes).unwrap();
+
+        assert!(load_durable_snapshot(&db).is_none());
+    }
+
+    /// The reader decides from the file length before it reads: a snapshot
+    /// above the cap is never pulled into memory.
+    #[test]
+    fn a_snapshot_above_the_size_cap_is_not_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        save_durable_snapshot(&db, &test_snapshot_key(), &graph, &manifest).unwrap();
+        let len = std::fs::metadata(&db).unwrap().len();
+
+        assert!(load_durable_snapshot_capped(&db, len).is_some());
+        assert!(load_durable_snapshot_capped(&db, len - 1).is_none());
     }
 
     /// Un snapshot con versión de esquema desconocida
@@ -4847,6 +4856,12 @@ mod tests {
     async fn test_handle_build_graph_rebuilds_on_second_call_different_context() {
         let tempdir = tempfile::tempdir().unwrap();
         let tempdir_path = tempdir.path();
+        // The cache where the product keeps what it derives: the two
+        // sessions below share it, which is what makes the second one a
+        // restart of the first. It is the test's own cache: a test that
+        // wrote in the cache of whoever runs it would leave entries
+        // nobody can clean.
+        let cache = tempfile::tempdir().unwrap();
 
         // Create a simple Rust file
         let rust_file = tempdir_path.join("hello.rs");
@@ -4855,6 +4870,7 @@ mod tests {
         // First context
         let ctx1 = HandlerContext::builder()
             .with_working_dir(tempdir_path.to_path_buf())
+            .with_cache_root(cache.path().to_path_buf())
             .build();
         let input1 = BuildGraphInput { directory: None };
         let result1 = handle_build_graph(&ctx1, input1).await;
@@ -4867,6 +4883,7 @@ mod tests {
         // Second call with DIFFERENT context (simulates restart)
         let ctx2 = HandlerContext::builder()
             .with_working_dir(tempdir_path.to_path_buf())
+            .with_cache_root(cache.path().to_path_buf())
             .build();
         let input2 = BuildGraphInput { directory: None };
         let result2 = handle_build_graph(&ctx2, input2).await;
@@ -7868,14 +7885,14 @@ mod tests {
     ///
     /// Pinned characterization for the F4 criterion: "two workspaces
     /// independientes y demuestran que no comparten estado". The
-    /// persistence layer stores snapshots at
-    /// `<workspace>/.cognicode/graph.cache` (see `graph_db_path`), so
-    /// the filesystem layout is the primary isolation guarantee. This
+    /// persistence layer stores snapshots in the user's cache, keyed by
+    /// the workspace (see `crate::application::graph_cache`), so the
+    /// filesystem layout is the primary isolation guarantee. This
     /// module pins that contract:
     ///
     /// - `isolated_workspaces_have_distinct_snapshot_paths`: building
-    ///   the graph in workspace A creates a `.cognicode/graph.cache`
-    ///   file inside A, not anywhere accessible from B.
+    ///   the graph in workspace A creates a cache entry for A, not
+    ///   anywhere accessible from B.
     /// - `snapshot_in_workspace_a_unaffected_by_workspace_b_build`:
     ///   a fresh build in B does not modify A's snapshot bytes
     ///   (the snapshot is per-workspace, not global).
@@ -7884,11 +7901,10 @@ mod tests {
     ///   successfully, while B's snapshot remains independent
     ///   (byte-equal to its post-first-build state).
     ///
-    /// The persistence layer is filesystem-isolated by
-    /// construction (`graph_db_path` joins `.cognicode` to the
-    /// canonicalized working directory). This module does not need
-    /// to test the filesystem itself; it only pins that the public
-    /// API honors the per-workspace contract.
+    /// The persistence layer is filesystem-isolated by construction: the
+    /// cache entry is named after the canonicalized working directory.
+    /// This module does not need to test the filesystem itself; it only
+    /// pins that the public API honors the per-workspace contract.
     mod prf_f4_w1_workspace_isolation_tests {
         use super::*;
         use std::path::{Path, PathBuf};
@@ -7896,7 +7912,10 @@ mod tests {
         /// Run `handle_build_graph` once over a fresh workspace,
         /// returning the resulting graph cache file path and the
         /// byte-length of the snapshot after build.
-        async fn build_once(workspace: &Path) -> (PathBuf, usize) {
+        ///
+        /// The cache is the one the caller names, so the test never
+        /// writes in the cache of the user who runs it.
+        async fn build_once(workspace: &Path, cache: &Path) -> (PathBuf, usize) {
             // Stage a minimal corpus so the build has something to
             // parse and produce a non-empty graph.
             let src_dir = workspace.join("src");
@@ -7909,16 +7928,15 @@ mod tests {
 
             let ctx = HandlerContext::builder()
                 .with_working_dir(workspace.to_path_buf())
+                .with_cache_root(cache.to_path_buf())
                 .build();
             let input = BuildGraphInput { directory: None };
             let result = handle_build_graph(&ctx, input).await.unwrap();
             assert!(result.success, "build must succeed: {:?}", result.message);
 
-            let db_path = workspace
-                .canonicalize()
-                .unwrap_or_else(|_| workspace.to_path_buf())
-                .join(".cognicode")
-                .join("graph.cache");
+            let db_path = ctx
+                .snapshot_path(workspace)
+                .expect("the context has a cache to keep the snapshot in");
             let bytes =
                 std::fs::read(&db_path).expect("snapshot must exist after successful build");
             (db_path, bytes.len())
@@ -7931,8 +7949,9 @@ mod tests {
         async fn isolated_workspaces_have_distinct_snapshot_paths() {
             let ws_a = tempfile::tempdir().unwrap();
             let ws_b = tempfile::tempdir().unwrap();
-            let (path_a, _) = build_once(ws_a.path()).await;
-            let (path_b, _) = build_once(ws_b.path()).await;
+            let cache = tempfile::tempdir().unwrap();
+            let (path_a, _) = build_once(ws_a.path(), cache.path()).await;
+            let (path_b, _) = build_once(ws_b.path(), cache.path()).await;
 
             assert!(
                 path_a.exists(),
@@ -7969,12 +7988,13 @@ mod tests {
         async fn snapshot_in_workspace_a_unaffected_by_workspace_b_build() {
             let ws_a = tempfile::tempdir().unwrap();
             let ws_b = tempfile::tempdir().unwrap();
+            let cache = tempfile::tempdir().unwrap();
 
-            let (path_a, len_a_initial) = build_once(ws_a.path()).await;
+            let (path_a, len_a_initial) = build_once(ws_a.path(), cache.path()).await;
             let bytes_a_initial = std::fs::read(&path_a).unwrap();
 
             // Build B (creates B's snapshot; should not touch A's).
-            let _ = build_once(ws_b.path()).await;
+            let _ = build_once(ws_b.path(), cache.path()).await;
 
             // A's snapshot must be byte-equal to its post-first-build
             // state.
@@ -7998,15 +8018,17 @@ mod tests {
         async fn simulated_restart_in_a_does_not_affect_b() {
             let ws_a = tempfile::tempdir().unwrap();
             let ws_b = tempfile::tempdir().unwrap();
+            let cache = tempfile::tempdir().unwrap();
 
-            let (path_a, _) = build_once(ws_a.path()).await;
-            let (path_b, _) = build_once(ws_b.path()).await;
+            let (path_a, _) = build_once(ws_a.path(), cache.path()).await;
+            let (path_b, _) = build_once(ws_b.path(), cache.path()).await;
 
             let bytes_b_before = std::fs::read(&path_b).unwrap();
 
             // Simulate restart in A: new HandlerContext, fresh build.
             let ctx_a_new = HandlerContext::builder()
                 .with_working_dir(ws_a.path().to_path_buf())
+                .with_cache_root(cache.path().to_path_buf())
                 .build();
             let result = handle_build_graph(&ctx_a_new, BuildGraphInput { directory: None })
                 .await

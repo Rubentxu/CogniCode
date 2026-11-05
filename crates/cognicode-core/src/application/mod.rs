@@ -38,6 +38,10 @@ pub mod evidence_bundle;
 #[cfg(feature = "evidence-kernel")]
 pub mod fact_bridge;
 pub mod findings;
+// TASK-79 AC2 — where the product keeps what it derives from a
+// repository: the user's cache, keyed by the workspace, and never
+// inside the tree that was analysed.
+pub mod graph_cache;
 pub mod ports;
 // e69 WU3 — PolicyGate (application-layer; the only authority that
 // turns an EvidenceBundle into a structured decision). Gated by

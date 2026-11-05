@@ -44,7 +44,23 @@ use std::path::PathBuf;
 /// externally. Returns the workspace path so the test can
 /// inspect the aftermath.
 async fn spawn_run_kill(ws: &Path, tool: &str, args: serde_json::Value) -> PathBuf {
-    let mut s = McpSession::spawn(ws).await.expect("spawn");
+    spawn_run_kill_with_cache(ws, &ws.with_extension("cache"), tool, args).await
+}
+
+/// The same kill, with the server's cache pointed at `cache`.
+///
+/// The product keeps what it derives from the workspace in the user's
+/// cache; the test tells the server which cache is its own, so the suite
+/// never writes in the cache of whoever runs it.
+async fn spawn_run_kill_with_cache(
+    ws: &Path,
+    cache: &Path,
+    tool: &str,
+    args: serde_json::Value,
+) -> PathBuf {
+    let mut s = McpSession::spawn_with_cache(ws, cache)
+        .await
+        .expect("spawn");
     // Run the tool so the build pipeline actually creates files.
     let _resp = s.call_tool(tool, args).await.expect(tool);
     // Drop without calling shutdown() — emulates an out-of-band
@@ -102,6 +118,7 @@ async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_lock() {
     );
 
     let _ = std::fs::remove_dir_all(&ws_copy);
+    let _ = std::fs::remove_dir_all(ws_copy.with_extension("cache"));
 }
 
 /// F5.W3 / test 2: SIGKILL after a build_graph leaves no stale
@@ -124,9 +141,21 @@ async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_tmp_cache() {
     )
     .await;
 
-    // Post-condition: no graph.cache.tmp.* files anywhere in
-    // the workspace.
-    let stale_tmps: Vec<PathBuf> = walkdir_files(&ws_copy)
+    // The tmp file of an interrupted atomic rename lives next to the
+    // snapshot, and the snapshot lives in the cache: the workspace is not
+    // where the product keeps what it derives.
+    let cache = ws_copy.with_extension("cache");
+
+    // Non-vacuity guard: the build really wrote its snapshot, so the tmp
+    // slot was in use and a leftover would have been there to find.
+    let snapshot = cognicode_core::application::graph_cache::snapshot_path(&cache, &ws_copy);
+    assert!(
+        snapshot.exists(),
+        "the build wrote its snapshot in the cache: {snapshot:?}"
+    );
+
+    // Post-condition: no graph.cache.tmp.* files anywhere in the cache.
+    let stale_tmps: Vec<PathBuf> = walkdir_files(&cache)
         .into_iter()
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -139,6 +168,7 @@ async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_tmp_cache() {
     );
 
     let _ = std::fs::remove_dir_all(&ws_copy);
+    let _ = std::fs::remove_dir_all(ws_copy.with_extension("cache"));
 }
 
 /// F5.W3 / test 3: after SIGKILL, a fresh MCP session can acquire
@@ -177,6 +207,7 @@ async fn prf_f5_w3_sigkill_then_fresh_session_recovers() {
     s2.shutdown().await;
 
     let _ = std::fs::remove_dir_all(&ws_copy);
+    let _ = std::fs::remove_dir_all(ws_copy.with_extension("cache"));
 }
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 KEY_OWNER = "crates/cognicode-core/src/domain/value_objects/snapshot_key.rs"
 HANDLERS = "crates/cognicode-core/src/interface/mcp/handlers/mod.rs"
+# The persistence lives in its own module: the handlers decide, and the
+# module that owns the file writes and reads it. The contract follows the
+# code to wherever the owner is — a contract que mire un fichero que ya no
+# guarda lo que dice guardar deja de comprobar nada.
+SNAPSHOT_STORE = "crates/cognicode-core/src/interface/mcp/handlers/graph_snapshot.rs"
 CORE_MANIFEST = "crates/cognicode-core/Cargo.toml"
 CATALOG = "product/tools.json"
 
@@ -225,13 +230,19 @@ def the_declared_capabilities_match_the_manifest(
     return findings
 
 
-def the_snapshot_carries_the_key(text: str) -> list[str]:
+def the_snapshot_carries_the_key(text: str, store_text: str | None = None) -> list[str]:
     """El snapshot se guarda con la clave y se decide con la clave.
 
     Un snapshot sin clave es un grafo sin autor, y cualquier otro build lo
     serviria como suyo. Y una decision que no compara la clave deja el
     defecto por la puerta de atras en cuanto se toca el formato.
+
+    `text` es el sitio que DECIDE (los handlers); `store_text` es el sitio
+    que GUARDA (el modulo que posee el fichero). Los dos son distintos
+    ficheros, y cada detector mira al que le toca.
     """
+    if store_text is None:
+        store_text = source(SNAPSHOT_STORE)
     findings: list[str] = []
     if "SNAPSHOT_SCHEMA" not in text:
         findings.append(
@@ -243,21 +254,25 @@ def the_snapshot_carries_the_key(text: str) -> list[str]:
             f"{HANDLERS}: el sitio que carga el snapshot no compara la clave; "
             "un snapshot de otro analizador se serviria como suyo"
         )
-    save = re.search(r"(?s)fn save_durable_snapshot\((.*?)\) -> std::io::Result", text)
+    save = re.search(
+        r"(?s)fn save_durable_snapshot\((.*?)\) -> std::io::Result", store_text
+    )
     if not save:
-        findings.append(f"{HANDLERS}: no se encuentra el guardado del snapshot")
+        findings.append(
+            f"{SNAPSHOT_STORE}: no se encuentra el guardado del snapshot"
+        )
     elif "key: &SnapshotKey" not in save.group(1):
         findings.append(
-            f"{HANDLERS}: el snapshot se guarda sin la clave; queda un grafo "
-            "sin autor"
+            f"{SNAPSHOT_STORE}: el snapshot se guarda sin la clave; queda un "
+            "grafo sin autor"
         )
-    load = re.search(r"(?s)fn load_durable_snapshot\((.*?)\) -> Option", text)
+    load = re.search(r"(?s)fn load_durable_snapshot\((.*?)\) -> Option", store_text)
     if not load:
-        findings.append(f"{HANDLERS}: no se encuentra la carga del snapshot")
-    elif "SnapshotKey" not in text.split("fn load_durable_snapshot", 1)[1][:800]:
+        findings.append(f"{SNAPSHOT_STORE}: no se encuentra la carga del snapshot")
+    elif "SnapshotKey" not in store_text.split("fn load_durable_snapshot", 1)[1][:800]:
         findings.append(
-            f"{HANDLERS}: la carga no devuelve la clave; el producto no puede "
-            "saber quien produjo lo que carga"
+            f"{SNAPSHOT_STORE}: la carga no devuelve la clave; el producto no "
+            "puede saber quien produjo lo que carga"
         )
     return findings
 
@@ -385,7 +400,10 @@ def test_the_detectors_see_a_violation_when_there_is_one() -> None:
         ),
         (
             the_snapshot_carries_the_key,
-            ("fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",),
+            (
+                "fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",
+                "fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",
+            ),
         ),
         (
             the_published_basis_declares_the_analyzer,

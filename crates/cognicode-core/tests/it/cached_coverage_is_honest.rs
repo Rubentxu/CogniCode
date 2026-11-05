@@ -231,8 +231,15 @@ fn answer_of(output: &BuildGraphOutput, root: &Path) -> Answer {
 }
 
 /// La respuesta del MCP para un proyecto, como la recibe un consumidor.
-async fn mcp_answer(dir: &Path) -> BuildGraphOutput {
-    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+///
+/// La caché es la del test: el snapshot es estado del producto, y un test
+/// que lo escribiera en la caché de quien lo ejecuta dejaría entradas que
+/// nadie puede limpiar.
+async fn mcp_answer(dir: &Path, cache: &Path) -> BuildGraphOutput {
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir)
+        .with_cache_root(cache.to_path_buf())
+        .build();
     handle_build_graph(
         &ctx,
         BuildGraphInput {
@@ -256,8 +263,9 @@ fn decline_a_symlink(root: &Path) {
 #[tokio::test]
 async fn the_cached_answer_is_the_answer_a_fresh_build_would_have_given() {
     let (_tmp, root) = clean_corpus();
+    let cache = tempfile::tempdir().expect("a temporary cache");
 
-    let cold = mcp_answer(&root).await;
+    let cold = mcp_answer(&root, cache.path()).await;
     assert_eq!(
         cold.status, "complete",
         "the corpus is read whole, so the first answer is a complete one: {cold:?}"
@@ -268,7 +276,7 @@ async fn the_cached_answer_is_the_answer_a_fresh_build_would_have_given() {
          equality measures nothing"
     );
 
-    let warm = mcp_answer(&root).await;
+    let warm = mcp_answer(&root, cache.path()).await;
     assert!(
         warm.message.contains("cache"),
         "the second answer really came from the cache and not from a \
@@ -290,9 +298,10 @@ async fn the_cached_answer_is_the_answer_a_fresh_build_would_have_given() {
 #[tokio::test]
 async fn a_tree_the_walk_declines_is_not_complete_when_it_is_served_from_the_cache() {
     let (_tmp, root) = clean_corpus();
+    let cache = tempfile::tempdir().expect("a temporary cache");
 
     // La primera respuesta construye el grafo y persiste la instantánea.
-    let cold = mcp_answer(&root).await;
+    let cold = mcp_answer(&root, cache.path()).await;
     assert_eq!(
         cold.status, "complete",
         "the corpus is read whole, so the first answer is a complete one: {cold:?}"
@@ -308,7 +317,7 @@ async fn a_tree_the_walk_declines_is_not_complete_when_it_is_served_from_the_cac
     // segunda copia, para que la caché no pueda responder por él.
     let (_tmp_truth, truth_root) = clean_corpus();
     decline_a_symlink(&truth_root);
-    let truth = mcp_answer(&truth_root).await;
+    let truth = mcp_answer(&truth_root, cache.path()).await;
     assert_eq!(
         truth.status, "partial",
         "a hole the walk leaves is not a complete coverage: {truth:?}"
@@ -324,7 +333,7 @@ async fn a_tree_the_walk_declines_is_not_complete_when_it_is_served_from_the_cac
     );
 
     // La respuesta de la caché, sobre el árbol que tiene el hueco.
-    let warm = mcp_answer(&root).await;
+    let warm = mcp_answer(&root, cache.path()).await;
     assert!(
         warm.message.contains("cache"),
         "the second answer really came from the cache and not from a \
