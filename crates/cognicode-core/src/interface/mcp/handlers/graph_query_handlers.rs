@@ -42,6 +42,8 @@ pub struct GraphQueryOutput {
     pub nodes: Vec<GraphQueryNode>,
     pub edges: Vec<GraphQueryEdge>,
     pub explanation: String,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -85,6 +87,10 @@ pub async fn handle_graph_query(
             explanation: "No keywords extracted from question.".into(),
             nodes: Vec::new(),
             edges: Vec::new(),
+            summary: format!(
+                "No keywords extracted from \"{}\": 0 nodes, 0 edges.",
+                input.question
+            ),
         });
     }
 
@@ -168,11 +174,18 @@ pub async fn handle_graph_query(
         input.question
     );
 
+    let summary = format!(
+        "{} nodes, {} edges for \"{}\"",
+        query_nodes.len(),
+        query_edges.len(),
+        input.question
+    );
     Ok(GraphQueryOutput {
         question: input.question,
         nodes: query_nodes,
         edges: query_edges,
         explanation,
+        summary,
     })
 }
 
@@ -198,6 +211,8 @@ pub struct GraphExplainOutput {
     pub callees: Vec<ExplainNeighbor>,
     pub fan_in: usize,
     pub fan_out: usize,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -274,12 +289,21 @@ pub async fn handle_graph_explain(
         })
         .collect();
 
+    let summary = format!(
+        "{}: {} callers, {} callees (fan-in {}, fan-out {})",
+        node.label,
+        callers.len(),
+        callees.len(),
+        fan_in,
+        fan_out
+    );
     Ok(GraphExplainOutput {
         node,
         callers,
         callees,
         fan_in,
         fan_out,
+        summary,
     })
 }
 
@@ -372,6 +396,8 @@ pub struct GetTypeRefsOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct TypeRefRecord {
@@ -410,11 +436,17 @@ pub async fn handle_get_type_references(
         }
     }
 
+    let summary = format!(
+        "{} type references to {}",
+        references.len(),
+        input.symbol_name
+    );
     Ok(GetTypeRefsOutput {
         symbol: input.symbol_name,
         references,
         precision: precision_floor_for_tool("get_type_references"),
         provider: default_provider_for_tool("get_type_references").to_string(),
+        summary,
     })
 }
 
@@ -426,6 +458,8 @@ pub struct GetImportsInput {
 pub struct GetImportsOutput {
     pub file_path: String,
     pub imports: Vec<String>,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_get_imports(
@@ -475,9 +509,11 @@ pub async fn handle_get_imports(
         }
     }
 
+    let summary = format!("{} imports in {}", imports.len(), input.file_path);
     Ok(GetImportsOutput {
         file_path: input.file_path,
         imports,
+        summary,
     })
 }
 
@@ -493,6 +529,8 @@ pub struct GetImplementorsOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_get_implementors(
@@ -529,11 +567,17 @@ pub async fn handle_get_implementors(
         }
     }
 
+    let summary = format!(
+        "{} implementors of {}",
+        implementors.len(),
+        input.trait_name
+    );
     Ok(GetImplementorsOutput {
         trait_name: input.trait_name,
         implementors,
         precision: precision_floor_for_tool("get_implementors"),
         provider: default_provider_for_tool("get_implementors").to_string(),
+        summary,
     })
 }
 
@@ -546,6 +590,8 @@ pub struct GetMembersOutput {
     pub class_name: String,
     pub methods: Vec<String>,
     pub fields: Vec<String>,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_get_members(
@@ -591,10 +637,17 @@ pub async fn handle_get_members(
         }
     }
 
+    let summary = format!(
+        "{} methods, {} fields in {}",
+        methods.len(),
+        fields.len(),
+        input.class_name
+    );
     Ok(GetMembersOutput {
         class_name: input.class_name,
         methods,
         fields,
+        summary,
     })
 }
 
@@ -619,6 +672,8 @@ pub struct GraphQueryFilteredOutput {
     pub edges: Vec<GraphQueryEdge>,
     pub explanation: String,
     pub applied_filters: Vec<String>,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_graph_query_filtered(
@@ -648,8 +703,15 @@ pub async fn handle_graph_query_filtered(
             applied.push(format!("community: {}", f.community_id.unwrap()));
         }
     }
+    let question = input.question;
+    let summary = format!(
+        "0 nodes, 0 edges for \"{}\" ({} keywords, {} filters applied)",
+        question,
+        keywords.len(),
+        applied.len()
+    );
     Ok(GraphQueryFilteredOutput {
-        question: input.question,
+        question,
         nodes: vec![],
         edges: vec![],
         explanation: format!(
@@ -658,6 +720,7 @@ pub async fn handle_graph_query_filtered(
             applied.to_vec().join("; ")
         ),
         applied_filters: applied,
+        summary,
     })
 }
 
@@ -671,6 +734,8 @@ pub struct ExportCallflowInput {
 pub struct ExportCallflowOutput {
     pub mermaid: String,
     pub community_count: usize,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_export_callflow(
@@ -691,8 +756,14 @@ pub async fn handle_export_callflow(
         mermaid.push_str("    A[Empty workspace]\n");
     }
     mermaid.push_str(&"    classDef community fill:#e1f5fe,stroke:#01579b\n".to_string());
+    let community_count = if symbols > 0 { 1 } else { 0 };
+    let summary = format!(
+        "Callflow diagram of {} symbols over {} communities",
+        symbols, community_count
+    );
     Ok(ExportCallflowOutput {
         mermaid,
-        community_count: if symbols > 0 { 1 } else { 0 },
+        community_count,
+        summary,
     })
 }

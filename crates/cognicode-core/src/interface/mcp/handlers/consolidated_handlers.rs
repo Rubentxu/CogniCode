@@ -243,6 +243,8 @@ pub struct ProjectOverviewOutput {
     pub coverage_estimate: Option<f64>,
     pub recommendations: Vec<String>,
     pub system_prompt_context: Option<String>,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_project_overview(
@@ -308,6 +310,15 @@ pub async fn handle_project_overview(
     let symbol_count = stats.symbol_count;
     let edge_count = stats.edge_count;
 
+    let summary = format!(
+        "{} symbols, {} entry points, {} hot paths, architecture score {}",
+        symbol_count,
+        entry_point_names.len(),
+        hot_paths.len(),
+        architecture_score
+            .map(|s| format!("{s:.2}"))
+            .unwrap_or_else(|| "unknown".to_string())
+    );
     Ok(ProjectOverviewOutput {
         detail: detail.into(),
         architecture_score,
@@ -319,6 +330,7 @@ pub async fn handle_project_overview(
             "CogniCode project: {} symbols, {} edges. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
             symbol_count, edge_count
         )),
+        summary,
     })
 }
 
@@ -338,6 +350,8 @@ pub struct CodebaseMapOutput {
     pub format: String,
     pub map: String,
     pub token_estimate: usize,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 pub async fn handle_codebase_map(
@@ -369,10 +383,18 @@ pub async fn handle_codebase_map(
             symbols, edges, entries, leaves, hot
         ),
     };
+    let summary = format!(
+        "{} symbols, {} edges, {} entry points, ~{} tokens",
+        symbols,
+        edges,
+        entries,
+        map.len() / 4
+    );
     Ok(CodebaseMapOutput {
         format: input.format,
         token_estimate: map.len() / 4,
         map,
+        summary,
     })
 }
 
@@ -581,6 +603,8 @@ pub struct IacQueryOutput {
     pub resource_type: String,
     pub dependencies: Vec<IacRelation>,
     pub dependents: Vec<IacRelation>,
+    /// One line saying what the answer says.
+    pub summary: String,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -659,7 +683,7 @@ pub async fn handle_iac_query(
                 ))
             })?;
 
-        let dependencies = iac_repo
+        let dependencies: Vec<IacRelation> = iac_repo
             .get_dependencies(&input.resource_id, Some(input.depth as u32))
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
@@ -684,7 +708,7 @@ pub async fn handle_iac_query(
             })
             .collect();
 
-        let dependents = iac_repo
+        let dependents: Vec<IacRelation> = iac_repo
             .get_dependents(&input.resource_id, Some(input.depth as u32))
             .await
             .map_err(|e| HandlerError::Internal(e.to_string()))?
@@ -707,11 +731,19 @@ pub async fn handle_iac_query(
             })
             .collect();
 
+        let summary = format!(
+            "{} {}: {} dependencies, {} dependents",
+            resource.resource_type,
+            resource.id,
+            dependencies.len(),
+            dependents.len()
+        );
         return Ok(IacQueryOutput {
             resource_id: resource.id,
             resource_type: resource.resource_type,
             dependencies,
             dependents,
+            summary,
         });
     }
 
@@ -797,11 +829,19 @@ pub async fn handle_iac_query(
         })
         .collect();
 
+    let summary = format!(
+        "{} {}: {} dependencies, {} dependents",
+        resource_type,
+        resolved_id,
+        dependencies.len(),
+        dependents.len()
+    );
     Ok(IacQueryOutput {
         resource_id: resolved_id,
         resource_type,
         dependencies,
         dependents,
+        summary,
     })
 }
 

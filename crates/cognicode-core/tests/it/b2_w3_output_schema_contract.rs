@@ -111,6 +111,110 @@ fn every_published_schema_describes_an_object_with_properties() {
     }
 }
 
+/// The published contract must be the derived one, byte for byte.
+///
+/// The catalogue is the document an adopter reads. When it carries a
+/// hand-written copy of a contract, there are two descriptions of the same
+/// shape, and the copy is the one that rots: nothing forces it to follow
+/// the type that actually serialises the answer. The coverage check above
+/// cannot see that — a tool with a schema in both places passes it whether
+/// the two schemas agree or not.
+///
+/// This is the check that makes the catalogue a mirror instead of a copy.
+/// It fails on a published copy that lost a field its type still carries:
+/// the tool is then promising less than it delivers.
+#[test]
+fn every_published_contract_is_the_derived_one() {
+    let catalog = catalog_output_schemas();
+    for tool in tools_with_output_schema() {
+        let derived = output_schema_for(tool).expect("derived contract");
+        let published = catalog
+            .get(tool)
+            .unwrap_or_else(|| panic!("{tool} publishes no contract in the catalogue"));
+        let differences = differing_paths(&Value::Object(derived), published);
+        assert!(
+            differences.is_empty(),
+            "{tool}: the catalogue publishes a contract that differs from the \
+             derived one. These paths differ: {differences:?} — publish the \
+             derived contract, not a copy of it"
+        );
+    }
+}
+
+/// The JSON paths where two schemas differ.
+///
+/// A derived contract is a document with hundreds of lines, and a failure
+/// that prints both of them says nothing about what changed. This says
+/// *where* they differ, which is the only thing a reader needs to know
+/// which copy to throw away.
+fn differing_paths(left: &Value, right: &Value) -> Vec<String> {
+    let mut paths = Vec::new();
+    collect_differences(left, right, "$", &mut paths);
+    paths
+}
+
+fn collect_differences(left: &Value, right: &Value, path: &str, out: &mut Vec<String>) {
+    match (left, right) {
+        (Value::Object(l), Value::Object(r)) => {
+            let mut keys: Vec<&String> = l.keys().chain(r.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for key in keys {
+                match (l.get(key), r.get(key)) {
+                    (Some(lv), Some(rv)) => {
+                        collect_differences(lv, rv, &format!("{path}.{key}"), out)
+                    }
+                    (Some(_), None) => out.push(format!("{path}.{key} (only in the derived one)")),
+                    (None, Some(_)) => {
+                        out.push(format!("{path}.{key} (only in the published one)"))
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+        (Value::Array(l), Value::Array(r)) => {
+            if l.len() != r.len() {
+                out.push(format!(
+                    "{path} (different lengths: {} and {})",
+                    l.len(),
+                    r.len()
+                ));
+                return;
+            }
+            for (index, (lv, rv)) in l.iter().zip(r).enumerate() {
+                collect_differences(lv, rv, &format!("{path}[{index}]"), out);
+            }
+        }
+        _ => {
+            if left != right {
+                out.push(path.to_string());
+            }
+        }
+    }
+}
+
+/// The contracts the catalogue publishes, by tool name.
+fn catalog_output_schemas() -> std::collections::BTreeMap<String, Value> {
+    let path = catalog_path();
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read catalog file {:?}: {e}", path));
+    let v: Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("catalog file {:?} is not valid JSON: {e}", path));
+    v["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("catalog file {:?} has no `tools` array", path))
+        .iter()
+        .filter_map(|t| {
+            let name = t.get("name").and_then(|n| n.as_str())?;
+            let schema = t.get("output_schema")?;
+            if schema.is_null() {
+                return None;
+            }
+            Some((name.to_string(), schema.clone()))
+        })
+        .collect()
+}
+
 /// The published count is at least the 15 tools the goal doc targets.
 ///
 /// A future commit that quietly drops a tool from

@@ -2,7 +2,7 @@
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
   "version": "0.101.31",
-  "source_commit": "c87340f0355d3f91ab908e0f3e3c0cbfc37b3f81",
+  "source_commit": "73235889409afea43bc18cb0122a3966676dbb85",
   "public_surface": {
     "binaries": [
       {
@@ -56,7 +56,7 @@
     ],
     "mcp": {
       "transport": "stdio",
-      "protocol_revision": "2025-03-26",
+      "protocol_revision": "2025-11-25",
       "tool_catalog": "tools.json"
     }
   },

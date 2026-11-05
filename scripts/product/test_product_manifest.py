@@ -93,7 +93,7 @@ def test_current_provenance_and_public_surface() -> None:
         ]
         assert manifest["public_surface"]["profiles"][0]["install"] is True
         assert manifest["public_surface"]["profiles"][1]["install"] is False
-        assert manifest["public_surface"]["mcp"]["protocol_revision"] == "2025-03-26"
+        assert manifest["public_surface"]["mcp"]["protocol_revision"] == "2025-11-25"
 
 
 def test_generation_is_deterministic() -> None:

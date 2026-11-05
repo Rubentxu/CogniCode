@@ -115,7 +115,7 @@
               "const": "stdio"
             },
             "protocol_revision": {
-              "const": "2025-03-26"
+              "const": "2025-11-25"
             },
             "tool_catalog": {
               "const": "tools.json"

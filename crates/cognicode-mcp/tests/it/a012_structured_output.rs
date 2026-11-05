@@ -91,6 +91,32 @@ fn no_contract_carries_a_dialect_declaration() {
     }
 }
 
+/// Every published contract must carry a one-line summary.
+///
+/// The summary the wire publishes is read out of the payload, so a payload
+/// with no summary line answers with no summary: the client is told a
+/// shape and gets none of the prose, and the promise of a summary becomes
+/// a promise about a field that is not there.
+///
+/// The check is on the derived schema because the schema is derived from
+/// the type that serialises the answer — the payload and the contract
+/// cannot disagree about whether there is a summary.
+#[test]
+fn every_published_contract_carries_a_summary_line() {
+    for tool in tools_with_output_schema() {
+        let schema = output_schema_for(tool).expect("derived contract");
+        let properties = schema
+            .get("properties")
+            .and_then(|p| p.as_object())
+            .unwrap_or_else(|| panic!("{tool} advertises no properties"));
+        assert!(
+            properties.contains_key("summary") || properties.contains_key("message"),
+            "{tool} publishes no summary line: its answer would arrive with \
+             no summary at all"
+        );
+    }
+}
+
 // --- Runtime level: the catalog must actually carry the contract ---
 
 /// The schema the catalog advertises must be the derived one, byte for byte.
@@ -393,6 +419,73 @@ async fn a_real_response_satisfies_the_advertised_schema() {
         .unwrap_or_else(|| panic!("graph_query must advertise a non-null outputSchema"));
 
     assert_object_contract_holds(&schema, &payload, "graph_query");
+}
+
+/// A tool with a contract must answer with the payload **and** a summary.
+///
+/// Two clients read the same answer. One is a program: it wants the object,
+/// and it wants it where the contract says it is — `structuredContent`. The
+/// other is an agent reading the answer as text: it wants one line that says
+/// what the answer says, without parsing the whole object first.
+///
+/// The text block that carries the JSON stays where it was — the
+/// compatibility clause of the specification, and the contract the existing
+/// consumers read. The summary is published beside it, in its own block.
+#[tokio::test]
+async fn a_contract_tool_returns_structured_content_and_a_summary() {
+    let build = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": { "name": "build_graph", "arguments": {} },
+    })
+    .to_string();
+
+    let responses = rpc(spawn_server(true), &[INIT, INITIALIZED, &build]).await;
+    let result = result_of(&responses, 3);
+    assert!(
+        !result["isError"].as_bool().unwrap_or(false),
+        "build_graph must succeed: {result}"
+    );
+
+    let structured = result
+        .get("structuredContent")
+        .expect("a tool with a contract answers with structuredContent");
+    assert!(
+        structured.is_object(),
+        "structuredContent must be an object: {result}"
+    );
+
+    // The text block and the structured content are the same answer: a
+    // client that reads either one reads the same thing.
+    let text = result["content"][0]["text"]
+        .as_str()
+        .expect("text content")
+        .to_string();
+    let payload: Value =
+        serde_json::from_str(&text).unwrap_or_else(|e| panic!("payload is JSON ({e})"));
+    assert_eq!(
+        &payload, structured,
+        "the text block and the structured content must be the same answer"
+    );
+
+    // The summary is the payload's own line, not a second copy of it.
+    let summary = result["content"][1]["text"]
+        .as_str()
+        .expect("the answer carries a summary block");
+    let own_line = payload
+        .get("summary")
+        .or_else(|| payload.get("message"))
+        .and_then(|v| v.as_str())
+        .expect("the payload carries its own summary line");
+    assert_eq!(
+        summary, own_line,
+        "the summary block must be the payload's own line, not a second source of truth"
+    );
+    assert!(
+        !summary.trim().is_empty(),
+        "an empty summary says nothing: {result}"
+    );
 }
 
 /// The tool's advertised output schema, or `None` when it advertises none.

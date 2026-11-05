@@ -64,6 +64,26 @@ Default to READ. Only mutate when the user's request explicitly
 requires a code change. After any mutation, run
 `reparse_on_edit` to incrementally reindex.
 
+`tools/list` also publishes the behaviour of every tool as
+annotations: `readOnlyHint`, `destructiveHint`, `idempotentHint` and
+`openWorldHint`. They come from the same authority as the table above,
+so a tool that says `readOnlyHint` is one you can offer without asking.
+
+## Reading a tool's answer
+
+A tool that publishes an `outputSchema` answers in three places:
+
+- `structuredContent` — the answer as the object the contract describes.
+  Read it when you want fields; do not parse them out of the text.
+- `content[0].text` — the same answer serialised as JSON. It is there
+  for clients that only read text, and it is the same answer, not a
+  second one.
+- `content[1].text` — one line saying what the answer says. Read it
+  when you want to report the result without reading the whole object.
+
+A tool with no `outputSchema` answers with its text alone. That is not
+a degraded mode: it is a tool that promised no shape.
+
 ## Tool composition — the four canonical flows
 
 ### PROJECT DISCOVERY

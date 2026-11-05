@@ -230,7 +230,7 @@
                 "type": "string"
               },
               "complete": {
-                "description": "`true` only when every identity component was established.",
+                "description": "`true` only when every identity component was established and\nthere was material to identify. A workspace with nothing to\nanalyze has an established identity of an empty tree, which\ndescribes no analysis: the basis is not complete.",
                 "type": "boolean"
               },
               "config_digest": {
@@ -398,7 +398,7 @@
                 "type": "null"
               }
             ],
-            "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable."
+            "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable, or\nwhen the workspace had nothing to analyze."
           },
           "edges": {
             "items": {
@@ -699,6 +699,10 @@
           "map": {
             "type": "string"
           },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
+          },
           "token_estimate": {
             "format": "uint",
             "minimum": 0,
@@ -708,7 +712,8 @@
         "required": [
           "format",
           "map",
-          "token_estimate"
+          "token_estimate",
+          "summary"
         ],
         "title": "CodebaseMapOutput",
         "type": "object"
@@ -1080,11 +1085,16 @@
           },
           "mermaid": {
             "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
           "mermaid",
-          "community_count"
+          "community_count",
+          "summary"
         ],
         "title": "ExportCallflowOutput",
         "type": "object"
@@ -1805,6 +1815,17 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Precision": {
+            "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
+            "enum": [
+              "lsp",
+              "ast-heuristic",
+              "index"
+            ],
+            "type": "string"
+          }
+        },
         "properties": {
           "implementors": {
             "items": {
@@ -1812,13 +1833,28 @@
             },
             "type": "array"
           },
+          "precision": {
+            "$ref": "#/$defs/Precision",
+            "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
+          },
+          "provider": {
+            "description": "B4.W1 — provider that produced the result.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
+          },
           "trait_name": {
             "type": "string"
           }
         },
         "required": [
           "trait_name",
-          "implementors"
+          "implementors",
+          "precision",
+          "provider",
+          "summary"
         ],
         "title": "GetImplementorsOutput",
         "type": "object"
@@ -1883,11 +1919,16 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
           "file_path",
-          "imports"
+          "imports",
+          "summary"
         ],
         "title": "GetImportsOutput",
         "type": "object"
@@ -2003,12 +2044,17 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
           "class_name",
           "methods",
-          "fields"
+          "fields",
+          "summary"
         ],
         "title": "GetMembersOutput",
         "type": "object"
@@ -2178,6 +2224,15 @@
       },
       "output_schema": {
         "$defs": {
+          "Precision": {
+            "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
+            "enum": [
+              "lsp",
+              "ast-heuristic",
+              "index"
+            ],
+            "type": "string"
+          },
           "TypeRefRecord": {
             "properties": {
               "context": {
@@ -2195,11 +2250,23 @@
           }
         },
         "properties": {
+          "precision": {
+            "$ref": "#/$defs/Precision",
+            "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
+          },
+          "provider": {
+            "description": "B4.W1 — provider that produced the result.",
+            "type": "string"
+          },
           "references": {
             "items": {
               "$ref": "#/$defs/TypeRefRecord"
             },
             "type": "array"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           },
           "symbol": {
             "type": "string"
@@ -2207,7 +2274,10 @@
         },
         "required": [
           "symbol",
-          "references"
+          "references",
+          "precision",
+          "provider",
+          "summary"
         ],
         "title": "GetTypeRefsOutput",
         "type": "object"
@@ -2705,6 +2775,10 @@
           },
           "node": {
             "$ref": "#/$defs/ExplainNode"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
@@ -2712,7 +2786,8 @@
           "callers",
           "callees",
           "fan_in",
-          "fan_out"
+          "fan_out",
+          "summary"
         ],
         "title": "GraphExplainOutput",
         "type": "object"
@@ -3040,13 +3115,18 @@
           },
           "question": {
             "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
           "question",
           "nodes",
           "edges",
-          "explanation"
+          "explanation",
+          "summary"
         ],
         "title": "GraphQueryOutput",
         "type": "object"
@@ -3218,6 +3298,10 @@
           },
           "question": {
             "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
@@ -3225,7 +3309,8 @@
           "nodes",
           "edges",
           "explanation",
-          "applied_filters"
+          "applied_filters",
+          "summary"
         ],
         "title": "GraphQueryFilteredOutput",
         "type": "object"
@@ -3595,13 +3680,18 @@
           },
           "resource_type": {
             "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
           }
         },
         "required": [
           "resource_id",
           "resource_type",
           "dependencies",
-          "dependents"
+          "dependents",
+          "summary"
         ],
         "title": "IacQueryOutput",
         "type": "object"
@@ -4082,6 +4172,10 @@
             },
             "type": "array"
           },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
+          },
           "system_prompt_context": {
             "type": [
               "string",
@@ -4093,7 +4187,8 @@
           "detail",
           "hot_paths",
           "entry_points",
-          "recommendations"
+          "recommendations",
+          "summary"
         ],
         "title": "ProjectOverviewOutput",
         "type": "object"

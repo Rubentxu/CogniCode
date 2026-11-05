@@ -133,6 +133,16 @@ pub fn tools_with_output_schema() -> Vec<&'static str> {
     published_output_schemas().keys().copied().collect()
 }
 
+/// Whether `tool` publishes an output contract.
+///
+/// The answer without the schema: a caller that only wants to know *whether*
+/// there is a contract should not pay for a copy of it. The contract itself
+/// is a [`Map`], and copying one per tool call is a cost the wire pays on
+/// every answer.
+pub fn publishes_contract(tool: &str) -> bool {
+    published_output_schemas().contains_key(tool)
+}
+
 /// B2.W3 — compat layer for the output contract.
 ///
 /// Every schema this module publishes is derived from the Rust DTO
