@@ -32414,3 +32414,114 @@ lo que son: un agujero pequeño y conocido en la cobertura de la medición, no u
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-111: el MCP dice por qué se reporta un hallazgo
+
+**Qué.** Una tool MCP nueva, `explain_finding`, y con ella un camino de respuesta **publicado**
+para la pregunta que un agente hace con frecuencia: «¿por qué se reporta este hallazgo?».
+
+**El hueco que dejó TASK-64.** `composite_impact_query` prometía un paquete de evidencia con
+`impact`, `architecture` y `findings`, y su bundle de findings fue siempre `[]`: nada lo producía
+en ese camino. Al retirarlo de la superficie anunciada no se perdió una capacidad que funcionara,
+pero quedó sin cubrir una pregunta. El dominio de hallazgos sí era rico —`domain/findings/` con
+`Finding`, `admission`, `verifier`, `detector_ir`; `application/findings/` con el flujo grounded—:
+lo que no existía era el camino de **respuesta**.
+
+**Una tool, y no un menú.** La pregunta tiene una respuesta, y la respuesta tiene una forma: el
+`message` del hallazgo, su `causal_chain`, el `detector` que lo produjo, su `severity`, su `status`
+y su `evidence_class`. Todo eso sale de un `Finding`, y el `Finding` lo produce el flujo grounded.
+La tool no calcula nada nuevo: **proyecta** lo que el flujo ya dijo.
+
+**El grounding y el gate son dos preguntas, y el flujo contestaba una.** `GroundedFindingReport`
+publicaba `gateable`: si el hallazgo *puede bloquear*. Eso no es lo mismo que si su grounding *se
+pudo verificar*. Un consumidor que solo lee la primera cree que «no bloquea» significa «no se apoya
+en nada», y las dos cosas son distintas: un hallazgo cuya evidencia no resuelve es un hallazgo
+**cuyo grounding no se pudo establecer**, y la diferencia es la diferencia entre «no se encontró
+nada» y «nadie miró». El flujo publica ahora las dos respuestas —`grounding` junto a `gateable`— y
+la tool las publica juntas.
+
+**Los tres desenlaces, y por qué una lista vacía no basta.** `explained` (el pipeline reportó y la
+respuesta lo explica), `no_findings` (el pipeline corrió sobre el fichero y no reportó nada) y
+`not_reported` (corrió y reportó hallazgos, pero no el que se pidió). Una lista vacía sin desenlace
+es indistinguible de «no hay hallazgos», y esa es exactamente la indistinción que el hueco arrastraba.
+
+**La tool se publica solo donde puede responder.** El flujo grounded apoya sus hechos en el kernel
+de evidencia canónico, que es una parte opt-in del build. Un build sin kernel no puede producir un
+hallazgo, así que ahí la tool no se anuncia: el catálogo declara la puerta
+(`feature: "evidence-kernel"`), el brazo de dispatch lleva la misma, y el contrato de salida se
+deriva solo en los builds que la publican. El servidor MCP —el que se instala— la lleva.
+
+**El contrato de salida es el tipo, no una copia.** El `output_schema` de `product/tools.json` es el
+esquema **derivado** del `ExplainFindingOutput` que serializa la respuesta, byte a byte, y un test
+lo comprueba: el catálogo publica el contrato que el runtime deriva, no una copia escrita a mano que
+puede divergir sin que nadie lo note. El catálogo pasa de 77 a 78 tools, y el `runtime_tool_count`
+con él; `README.md`, `README.es.md` y las dos skills que dicen el número dicen 78.
+
+**Un handicap del repo, pagado.** `crates/cognicode-core/src/interface/mcp/handlers/mod.rs` tiene
+más de 2000 líneas de producción y el ratchet de tamaño dice que un fichero así **solo puede
+encogerse**. Las tres funciones que decidían qué fichero puede leer un handler
+(`anchor_and_validate`, `authorise_file_path`, `resolve_file_path`) vivían en ese fichero; ahora
+viven en su propio módulo, `path_authorisation`, con su por qué. El fichero grande: 4008 → 3986
+líneas de producción.
+
+**Los contratos de paridad son conscientes de la puerta.** El catálogo publica 78 tools; el runtime
+deriva 16 contratos de salida en un build con kernel y 15 sin él. Comparar el catálogo entero contra
+el runtime entero reportaba una deriva que no era una deriva en cada build sin la feature. Los dos
+contratos comparan ahora **las tools que este build anuncia**, que es la pregunta que tiene
+sentido.
+
+**Una línea que cambió de forma.** El brazo de dispatch devuelve JSON **compacto**, como los 42
+brazos que ya lo hacen, y no como los 33 que siguen pretty. La respuesta es la misma; lo que cambia
+es el tamaño de lo que viaja.
+
+**RED medido.**
+
+- `b6_w1_mcp_robustness::large_response_uses_pagination`: «walking the cursor did not reproduce the
+  advertised catalogue (72 walked, 73 advertised, 4 pages). missing from the walk:
+  ["explain_finding"]» — el catálogo anunciaba una tool que el servidor no despachaba: un ghost. El
+  diagnóstico del propio test era el correcto («si el binario bajo prueba está viejo, reconstruye
+  con `cargo build --bin cognicode-mcp`»), y el binario en release lo estaba.
+- `test_file_size_ratchet.py`: «4015 production lines > 4008 at the base» — el módulo nuevo no cabía
+  en el fichero grande, y la respuesta no era recortarlo, sino mover las reglas de autorización de
+  rutas a su sitio.
+- El test de integración nuevo falló dos veces por lo que encontró: la tool no salía en la primera
+  página de `tools/list` —el catálogo está paginado, y una página es una vista parcial— y el
+  rechazo de una ruta fuera del workspace dice «Path traversal attempt detected», no la palabra que
+  el test buscaba.
+
+**El test muerde, medido por mutación.** Cuatro mutaciones, cada una vista caer por el test que
+debe:
+
+| Mutación | Qué felló |
+|---|---|
+| la respuesta se queda sin hallazgos | `the_answer_names_the_finding_and_carries_its_grounding` y `asking_for_one_finding_returns_that_finding` (la respuesta llegó con `"findings":[]` y `"outcome":"no_findings"`) |
+| el grounding nunca se verifica | `the_answer_names_the_finding_and_carries_its_grounding`, con la respuesta entera en el fallo: `"gateable":true` junto a `"verified":false` — las dos preguntas, separadas |
+| la tool no se anuncia | `the_tool_is_advertised_with_its_output_contract` |
+| el contrato publicado no es el derivado | `the_catalogue_publishes_the_derived_contract` |
+
+**Verificación.** Rama `feature/task-111-explain-findings`, base `ed50133e` (la punta de `main` con el
+arreglo del gate, TASK-116), commit `eb910239`.
+`cargo nextest run --profile gate --workspace --lib`: **4630 OK**, 2 ignorados.
+`cargo nextest run --profile gate --workspace --tests`: **6679 OK**, 10 ignorados.
+`cargo clippy --workspace --all-targets -- -D warnings` rc=0 y `cargo fmt --all --check` limpio.
+Ratchet de tamaño de fichero PASS (`handlers/mod.rs` 4008 → 3986). `bash scripts/ci/run-all-contracts.sh`
+rc=0. `npm test --prefix apps/explorer-ui`: **944 OK** en 86 ficheros.
+
+**Gate.** `bash scripts/test-gate.sh` sobre la punta de la rama: unitarios **4630 OK** (2
+ignorados), integración **6679 OK** (10 ignorados) y mutantes **574 en 9m: 570 atrapados, 4
+inviables, 0 supervivientes, 0 tiempos agotados** — rc=0. Ningún mutante sobrevivió, que es la cifra
+que el gate mide, y los 4 inviables son mutantes que el runner no pudo ejecutar.
+
+**Un defecto del gate que esta unidad destapó.** La primera vez que se corrió el gate sobre esta
+rama, el paso de mutantes dio un veredicto distinto según quién corría al lado: dentro del gate,
+`570 atrapados, 4 inviables`; en solitario, `565 atrapados, 1 inviable, 8 tiempos agotados` — con
+rc=1. Los ocho con tiempo agotado eran de `condensation.rs`, un fichero que esta unidad no toca.
+La causa era el techo de memoria del runner del paso de mutantes (6 GiB por binario) multiplicado
+por los ocho trabajos en paralelo: 48 GiB de espacio de direcciones para una máquina con ~39 GiB
+libres. Se corrigió en su propia unidad (TASK-116), con su propio recibo, y desde entonces el paso
+de mutantes da el mismo veredicto con y sin carga alrededor. La cifra que este recibo cita es la
+de esa medición estable, no la de una corrida que dependía de la máquina.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

@@ -1037,42 +1037,6 @@ pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> Pa
     }
 }
 
-/// Anchors `raw` on the session working directory, validates the anchored
-/// path and returns the canonical path the validator authorised.
-///
-/// Anchoring comes first: the validator resolves a bare relative path
-/// against the workspace roots, which need not be the session directory, so
-/// validating the raw string and then joining it would authorise one file
-/// and read another.
-fn anchor_and_validate(
-    validator: &InputValidator,
-    working_dir: &Path,
-    raw: &str,
-) -> Result<PathBuf, crate::interface::mcp::security::SecurityError> {
-    let anchored = resolve_file_path(raw, working_dir);
-    validator.validate_file_path(&anchored.to_string_lossy())
-}
-
-fn authorise_file_path(
-    ctx: &HandlerContext,
-    raw: &str,
-) -> Result<PathBuf, crate::interface::mcp::security::SecurityError> {
-    anchor_and_validate(&ctx.validator, &ctx.working_dir, raw)
-}
-
-/// Resolves a file path relative to a working directory.
-///
-/// - If `input_path` is absolute, returns it unchanged.
-/// - If `input_path` is relative, joins it to `working_dir`.
-fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
-    let p = Path::new(input_path);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        working_dir.join(p)
-    }
-}
-
 /// The published shape of one hole in the coverage.
 ///
 /// One mapping for both routes that publish holes: the one that built
@@ -4004,7 +3968,21 @@ pub mod consolidated_handlers;
 pub mod graph_handlers;
 pub mod graph_query_handlers;
 pub mod program_analysis_handlers;
+
+// Path authorisation — the rules that decide which file a handler may
+// read. They live in one module so that no handler answers "is this path
+// safe?" with a shortcut of its own.
+mod path_authorisation;
 pub mod retired;
+
+use self::path_authorisation::{anchor_and_validate, authorise_file_path, resolve_file_path};
+
+// Findings handlers — the answer to «¿por qué se reporta este hallazgo?».
+// Gated with the canonical evidence kernel, which is the only thing that
+// can ground a finding: the tool publishes findings the pipeline produced,
+// and the pipeline needs the kernel to produce them.
+#[cfg(feature = "evidence-kernel")]
+pub mod findings_handlers;
 
 #[cfg(test)]
 mod tests {

@@ -9,6 +9,7 @@ mod a012_structured_output;
 mod a016_tools_runtime_consistency;
 mod continuation_e2e;
 mod cr07_metrics_exposition_contract;
+mod explain_finding_answers_why;
 mod find_usages_compat_0_97;
 mod mcp_cancel_belongs_to_its_request;
 mod mcp_catalog_anchor;

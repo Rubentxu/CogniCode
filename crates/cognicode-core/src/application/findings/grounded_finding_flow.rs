@@ -110,8 +110,35 @@ pub struct GroundedFindingReport {
     /// The gate decision per finding: `true` means `verifier.can_block(gate)`
     /// returned `true`, `false` means it returned `false` (for any reason).
     pub gateable: Vec<bool>,
+    /// The grounding verdict per finding, index-aligned with `findings`.
+    ///
+    /// The gate decision says whether a finding *may block*; this says
+    /// whether the finding's grounding could be **verified** at all. The two
+    /// are different questions, and a consumer that only reads the first
+    /// one can mistake "it does not block" for "it rests on nothing".
+    pub grounding: Vec<FindingGrounding>,
     /// The deserialized fact ids committed by WU1's ingest, for traceability.
     pub committed_fact_ids: Vec<crate::domain::kernel_ids::FactId>,
+}
+
+/// The grounding of one finding, as the verifier saw it.
+///
+/// A finding that claims evidence whose canonical truth cannot be resolved
+/// is not a finding without grounding: it is a finding whose grounding
+/// could not be established. The difference is the difference between
+/// "nothing was found" and "nobody looked", and a consumer that renders
+/// both as an empty list has thrown the distinction away.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindingGrounding {
+    /// Whether the verifier resolved the claimed evidence and checked that
+    /// the causal chain agrees with it.
+    pub verified: bool,
+    /// Why it could not be verified, when it could not.
+    pub reason: Option<String>,
+    /// The evidence handles the finding claims.
+    pub evidence: Vec<crate::domain::kernel_ids::EvidenceId>,
+    /// The canonical facts the causal chain rests on.
+    pub facts: Vec<crate::domain::kernel_ids::FactId>,
 }
 
 /// Errors raised by the composed flow.
@@ -220,10 +247,6 @@ pub async fn run_grounded_finding_flow(
     let permit = crate::domain::findings::admission::DetectorAdmission::promote(&permit, verified)
         .map_err(|e| GroundedFindingFlowError::Admit(e.to_string()))?;
 
-    let mut registry = BackendRegistry::new();
-    registry.register(Box::new(AstBackend));
-    let executor = DetectorExecutor::new(&registry);
-
     let scope = AnalysisScope::new(workspace.clone(), snapshot);
     let input = AnalysisInput {
         scope: Some(scope.clone()),
@@ -238,9 +261,19 @@ pub async fn run_grounded_finding_flow(
         CorrelationId::new("e67-wu3").expect("valid correlation id"),
     );
 
-    let prepared = executor
-        .prepare(&permit, &input, request)
-        .map_err(|e| GroundedFindingFlowError::Execution(e.to_string()))?;
+    // The registry and the executor are scoped to the preparation: the
+    // backend they hold is not `Send`, and the evidence write below is an
+    // `await`. Holding them across it would make this function's future
+    // un-sendable, and a future that cannot cross a thread boundary cannot
+    // be awaited from a server.
+    let prepared = {
+        let mut registry = BackendRegistry::new();
+        registry.register(Box::new(AstBackend));
+        let executor = DetectorExecutor::new(&registry);
+        executor
+            .prepare(&permit, &input, request)
+            .map_err(|e| GroundedFindingFlowError::Execution(e.to_string()))?
+    };
 
     // ---- Canonical evidence write (kernel) -------------------------------
     let writer = CanonicalEvidenceWriter::new(fact_store.as_ref(), evidence_store.as_ref());
@@ -274,10 +307,31 @@ pub async fn run_grounded_finding_flow(
     let verifier = FindingVerifier::new(&read_model);
 
     let mut gateable = Vec::with_capacity(record.findings.len());
+    let mut grounding = Vec::with_capacity(record.findings.len());
     for finding in &record.findings {
         // Gate decision is the existing verifier's verdict. No e67-specific
         // branch: if the verifier says the finding can block, we report true.
         gateable.push(verifier.can_block(finding, &gate));
+
+        // The grounding verdict is the verifier's *referential* answer, kept
+        // apart from the gate decision: a finding whose evidence does not
+        // resolve is a finding whose grounding could not be established, and
+        // saying only "it does not block" would hide that difference.
+        let verdict = verifier.verify_for_gate(finding);
+        let mut facts = Vec::new();
+        for step in &finding.causal_chain {
+            if let Some(fact) = step.fact
+                && !facts.contains(&fact)
+            {
+                facts.push(fact);
+            }
+        }
+        grounding.push(FindingGrounding {
+            verified: verdict.is_ok(),
+            reason: verdict.err().map(|e| e.to_string()),
+            evidence: finding.evidence.clone(),
+            facts,
+        });
     }
 
     Ok(GroundedFindingReport {
@@ -286,6 +340,7 @@ pub async fn run_grounded_finding_flow(
         ungrounded_count,
         findings: record.findings,
         gateable,
+        grounding,
         committed_fact_ids: receipt.fact_ids,
     })
 }

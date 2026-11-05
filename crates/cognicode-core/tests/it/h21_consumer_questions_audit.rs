@@ -101,13 +101,9 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
          a drift means the catalog the operator maintains is no longer the catalog the MCP \
          server ships"
     );
-    // TASK-64 retired `graph_analyze` and `composite_impact_query` from the
-    // advertised surface: the code behind them computed nothing.
-    assert_eq!(
-        hand_names.len(),
-        77,
-        "the surface is 77 tools after TASK-64"
-    );
+    // `graph_analyze` and `composite_impact_query` left the advertised
+    // surface: the code behind them computed nothing.
+    assert_eq!(hand_names.len(), 78, "the surface is 78 tools");
 }
 
 #[test]

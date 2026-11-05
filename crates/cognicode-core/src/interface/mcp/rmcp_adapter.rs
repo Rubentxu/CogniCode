@@ -1722,6 +1722,21 @@ pub(crate) async fn call_tool_handler(
                 crate::interface::mcp::handlers::program_analysis_handlers::handle_interproc_summary(input)
                     .map_err(InterfaceError::Internal)
             }
+            // The findings pipeline grounds its findings in the canonical
+            // evidence kernel, so the tool is dispatched only in the builds
+            // that carry it. The catalogue declares the same gate, so a
+            // build without the kernel does not advertise it either.
+            #[cfg(feature = "evidence-kernel")]
+            "explain_finding" => {
+                let input: crate::interface::mcp::handlers::findings_handlers::ExplainFindingInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::findings_handlers::handle_explain_finding(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
 
             _ => Err(InterfaceError::ToolNotFound(tool_name.to_string())),
         }

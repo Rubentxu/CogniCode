@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 77,
+  "runtime_tool_count": 78,
   "tools": [
     {
       "name": "analyze_impact",
@@ -5331,6 +5331,348 @@
       "limitations": [
         "requires evidence-cli-ladybug feature",
         "substring match"
+      ]
+    },
+    {
+      "name": "explain_finding",
+      "title": "Explain why a finding is reported",
+      "description": "Explain why a finding is reported. Takes the path of a source file; the findings pipeline runs over that file and the answer names each finding's kind, severity, status, message, causal chain and detector, and states whether the grounding behind it could be verified. A file with no findings says so instead of returning an empty list.",
+      "category": "quality",
+      "authority": "read",
+      "stability": "experimental",
+      "feature": "evidence-kernel",
+      "input_schema": {
+        "description": "Input for `explain_finding`.",
+        "properties": {
+          "finding_id": {
+            "default": null,
+            "description": "Only explain this finding.\n\nAbsent means \"every finding the pipeline reports for the file\". The\nids the answer publishes are the ones to ask about.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "The source file whose findings are explained.\n\nRelative to the workspace root, or absolute inside it. The path is\nvalidated before it is read: a path that leaves the workspace is\nrefused, and a path that cannot be read is an error, not an empty\nanswer.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ExplainFindingInput",
+        "type": "object"
+      },
+      "output_schema": {
+        "$defs": {
+          "CausalStepExplanation": {
+            "description": "One step of a finding's causal chain.",
+            "properties": {
+              "detail": {
+                "description": "The human-readable detail of the step.",
+                "type": "string"
+              },
+              "evidence": {
+                "description": "The evidence handle the step rests on, when it rests on one.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "fact": {
+                "description": "The canonical fact the step rests on, when it rests on one.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "description": "The role the step plays in the explanation.",
+                "type": "string"
+              },
+              "subject": {
+                "description": "The entity the step concerns, when it names one.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "detail"
+            ],
+            "type": "object"
+          },
+          "DetectorExplanation": {
+            "description": "The detector as it was executed.",
+            "properties": {
+              "authority": {
+                "description": "The authority the detector held when it produced the finding.",
+                "type": "string"
+              },
+              "id": {
+                "description": "The detector's id.",
+                "type": "string"
+              },
+              "instance_digest": {
+                "description": "The digest of the whole definition.",
+                "type": "string"
+              },
+              "logic_digest": {
+                "description": "The digest of the detector's logic.",
+                "type": "string"
+              },
+              "policy_digest": {
+                "description": "The digest of the detector's finding policy.",
+                "type": "string"
+              },
+              "semantic_digest": {
+                "description": "The digest of logic and policy together.",
+                "type": "string"
+              },
+              "version": {
+                "description": "The detector's version at production time.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "authority",
+              "logic_digest",
+              "policy_digest",
+              "semantic_digest",
+              "instance_digest"
+            ],
+            "type": "object"
+          },
+          "ExplainOutcome": {
+            "description": "What the answer is.",
+            "oneOf": [
+              {
+                "const": "explained",
+                "description": "The pipeline reported the finding(s) and the answer explains them.",
+                "type": "string"
+              },
+              {
+                "const": "no_findings",
+                "description": "The pipeline ran over the file and reported nothing.",
+                "type": "string"
+              },
+              {
+                "const": "not_reported",
+                "description": "The pipeline ran and reported findings, but not the one that was\nasked for.",
+                "type": "string"
+              }
+            ]
+          },
+          "FindingCoverage": {
+            "description": "What the run looked at.",
+            "properties": {
+              "constructs_grounded": {
+                "description": "Constructs whose canonical fact was resolved.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "constructs_observed": {
+                "description": "Source constructs the detector observed.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "constructs_ungrounded": {
+                "description": "Constructs with no canonical fact, or with an ambiguous one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "constructs_observed",
+              "constructs_grounded",
+              "constructs_ungrounded"
+            ],
+            "type": "object"
+          },
+          "FindingExplanation": {
+            "description": "One finding, with the reason it is reported.",
+            "properties": {
+              "causal_chain": {
+                "description": "The causal chain, in order.",
+                "items": {
+                  "$ref": "#/$defs/CausalStepExplanation"
+                },
+                "type": "array"
+              },
+              "detector": {
+                "$ref": "#/$defs/DetectorExplanation",
+                "description": "The detector as it was executed."
+              },
+              "evidence_class": {
+                "description": "The strength of the supporting evidence.",
+                "type": "string"
+              },
+              "gateable": {
+                "description": "Whether the finding may block the gate.",
+                "type": "boolean"
+              },
+              "grounding": {
+                "$ref": "#/$defs/GroundingExplanation",
+                "description": "The grounding behind the finding."
+              },
+              "id": {
+                "description": "The finding's id, as the pipeline minted it.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "What was found.",
+                "type": "string"
+              },
+              "message": {
+                "description": "The human-readable message the detector produced.",
+                "type": "string"
+              },
+              "risk": {
+                "description": "Evaluated risk.",
+                "type": "string"
+              },
+              "severity": {
+                "description": "Display severity.",
+                "type": "string"
+              },
+              "status": {
+                "description": "Lifecycle status.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "severity",
+              "risk",
+              "status",
+              "message",
+              "evidence_class",
+              "causal_chain",
+              "detector",
+              "grounding",
+              "gateable"
+            ],
+            "type": "object"
+          },
+          "GroundingExplanation": {
+            "description": "The grounding behind a finding.",
+            "properties": {
+              "evidence": {
+                "description": "The evidence handles the finding claims.",
+                "items": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "facts": {
+                "description": "The canonical facts the causal chain rests on.",
+                "items": {
+                  "format": "uint64",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "reason": {
+                "description": "Why the grounding could not be verified, when it could not.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "verified": {
+                "description": "Whether the grounding could be verified: the evidence resolves and\nthe causal chain agrees with it.\n\n`false` with an empty evidence list means the finding claims nothing;\n`false` with a reason means it claims something that could not be\nresolved. The two are not the same, and the reason says which.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "verified",
+              "evidence",
+              "facts"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "Output of `explain_finding`.",
+        "properties": {
+          "coverage": {
+            "$ref": "#/$defs/FindingCoverage",
+            "description": "What the run looked at, and what it could establish."
+          },
+          "findings": {
+            "description": "The findings, each with its reason.\n\nEmpty when `outcome` is `NoFindings` or `NotReported` — and in those\ncases the outcome says which of the two it is, so an empty list is\nnever the whole answer.",
+            "items": {
+              "$ref": "#/$defs/FindingExplanation"
+            },
+            "type": "array"
+          },
+          "outcome": {
+            "$ref": "#/$defs/ExplainOutcome",
+            "description": "What the answer is."
+          },
+          "path": {
+            "description": "The file the answer is about, as it was asked for.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One line saying what the answer says.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "path",
+          "findings",
+          "summary",
+          "coverage"
+        ],
+        "title": "ExplainFindingOutput",
+        "type": "object"
+      },
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 120,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 120,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.101.31"
+      },
+      "required_args": [
+        "path"
+      ],
+      "limitations": [
+        "requires evidence-kernel feature",
+        "explains the findings the pipeline reports for one file at a time",
+        "the grounding verdict says whether the grounding could be verified, not whether the finding may block the gate"
       ]
     }
   ]
