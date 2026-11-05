@@ -1,5 +1,6 @@
 //! CLI Interface - Command-line interface implementation
 
+pub mod capabilities;
 pub mod commands;
 pub mod doctor;
 /// The project's graph, from the same authority the MCP uses.

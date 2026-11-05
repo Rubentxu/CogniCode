@@ -639,12 +639,12 @@ fn index_build_on_real_empty_dir_still_exits_zero() {
 // ===========================================================================
 // Ratchet: `std::process::exit` dentro de la libreria.
 //
-// MEDIDO 2026-10-04. B1 hizo que los brazos de `CommandExecutor::execute`
+// MEDIDO sobre el binario publicado. Los brazos de `CommandExecutor::execute`
 // propaguen `Result` hasta el limite del proceso, y esa cadena solo tiene
 // sentido si la libreria no mata el proceso a mitad.
 //
-// MEDIDO 2026-11-05. TASK-80 (AC2) bajo el ratchet de seis a cinco: la
-// llamada viva de `execute_doctor` desaparecio. El comando devuelve el
+// El ratchet baja de seis a cinco: la llamada viva de `execute_doctor`
+// desaparecio. El comando devuelve el
 // informe Y el codigo de salida —`CommandOutput::Rendered` lleva las dos
 // cosas—, el presentador escribe el informe, y `main` sale con el codigo que
 // el core eligio. El contrato publicado del doctor —"informe en stdout,
@@ -839,7 +839,7 @@ fn the_library_terminates_the_process_only_where_the_ratchet_says() {
 
 #[test]
 fn the_library_does_not_kill_the_process_and_the_doctor_travels_as_data() {
-    // CERO llamadas vivas. MEDIDO 2026-11-05: la de `execute_doctor` ya no
+    // CERO llamadas vivas: la de `execute_doctor` ya no
     // esta —el comando devuelve el informe y el codigo de salida, y `main`
     // sale con el codigo— y las cinco que quedan viven en funciones cerradas
     // por `#[cfg(feature = \"multimodal\")]`, que el binario publicado no
@@ -904,8 +904,8 @@ fn the_library_does_not_kill_the_process_and_the_doctor_travels_as_data() {
 /// El codigo de salida del doctor llega al proceso.
 ///
 /// El doctor era el comando que mas se acercaba a matar el proceso desde la
-/// libreria: devolvia el informe y salia con 1 desde el core. MEDIDO
-/// 2026-11-05: ahora el comando devuelve el informe Y el codigo, el
+/// libreria: devolvia el informe y salia con 1 desde el core. Ahora el
+/// comando devuelve el informe Y el codigo, el
 /// presentador escribe el informe, y `main` sale con el codigo que el core
 /// eligio. El contrato publicado no cambio —"informe en stdout, salida 1
 /// cuando algo falta"—; lo que cambio es donde se decide.
