@@ -140,7 +140,9 @@ impl CallGraphProjection {
     /// - Every symbol known to `cg` becomes a node, numbered by its sorted
     ///   symbol id.
     /// - Every edge from `cg.edges_with_metadata()` becomes an edge with
-    ///   weight `(dependency_type, sanitize_confidence(confidence))`.
+    ///   weight `(dependency_type, sanitize_confidence(confidence))`,
+    ///   inserted in the order of source symbol id, target symbol id and
+    ///   dependency type.
     /// - The side-lookup maps every `SymbolId` to its full
     ///   [`Symbol`](crate::domain::aggregates::Symbol).
     ///
@@ -174,9 +176,30 @@ impl CallGraphProjection {
             symbol_lookup.insert(id.clone(), symbol.clone());
         }
 
-        // Populate edges. Iterate the metadata iterator to preserve
-        // dependency-type fidelity.
-        for (source_id, target_id, dep_type, _provenance, confidence) in cg.edges_with_metadata() {
+        // Populate edges, in a deterministic order.
+        //
+        // The graph hands its edges over in the iteration order of a hash
+        // map — two levels of it — and that order is different for every
+        // instance of the graph: the same project would come out with its
+        // edges in a different order on every run, and with them the
+        // order of the adjacency lists every algorithm reads. That order
+        // decides the traversal of Tarjan, and the accumulation of
+        // PageRank, whose sum in floating point is not associative: the
+        // scores of the same project differed in the last decimal, and
+        // with them the order of the published list.
+        //
+        // The edges are sorted by source, target and dependency type. The
+        // key is total — the graph indexes its edges by target and type,
+        // so no two edges share it — and the projection is therefore the
+        // same for the same graph, every time.
+        let mut edges: Vec<_> = cg.edges_with_metadata().collect();
+        edges.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.2.cmp(&right.2))
+        });
+        for (source_id, target_id, dep_type, _provenance, confidence) in edges {
             // Skip edges whose endpoints are not in the symbol set; this
             // mirrors CallGraph's invariants and protects the projection
             // from orphan edge references.
@@ -1138,6 +1161,54 @@ mod tests {
                 "the nodes are numbered by the sorted symbol id: {id} is not the node {expected}"
             );
         }
+    }
+
+    /// The edges are inserted in a deterministic order.
+    ///
+    /// The edge order decides the order of the adjacency lists every
+    /// algorithm reads, and from there two published answers: the
+    /// traversal of Tarjan (the strongly connected components) and the
+    /// accumulation of PageRank, whose sum in floating point is not
+    /// associative. That is why the same project published god-node
+    /// scores that differed in the last decimal (5.551e-17) and, with
+    /// them, a different order.
+    #[test]
+    fn the_edges_are_inserted_in_a_deterministic_order() {
+        let graph = build_graph(|g| {
+            // Added in an order that is NOT the sorted one, and with two
+            // parallel edges between the same pair: the order has to be
+            // decided by the projection, not by the order the graph
+            // happens to hold its edges in.
+            add_edge(g, "delta", "alpha", DependencyType::Calls);
+            add_edge(g, "bravo", "charlie", DependencyType::Imports);
+            add_edge(g, "alpha", "bravo", DependencyType::Calls);
+            add_edge(g, "delta", "alpha", DependencyType::Imports);
+            add_edge(g, "charlie", "delta", DependencyType::Calls);
+        });
+
+        let projection = CallGraphProjection::from_call_graph(&graph);
+
+        let edges: Vec<(usize, usize, DependencyType)> = projection
+            .graph()
+            .edge_indices()
+            .map(|edge| {
+                let (source, target) = projection.graph().edge_endpoints(edge).expect("edge");
+                let (dep_type, _) = projection.graph()[edge];
+                (source.index(), target.index(), dep_type)
+            })
+            .collect();
+
+        let mut expected = edges.clone();
+        expected.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        assert_eq!(
+            edges, expected,
+            "the edges are inserted sorted by source, target and dependency type"
+        );
     }
 
     // 3.1

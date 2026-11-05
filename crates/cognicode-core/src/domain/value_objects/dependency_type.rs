@@ -5,7 +5,15 @@ use std::fmt;
 use std::str::FromStr;
 
 /// Represents the type of dependency relationship between symbols in the code graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+///
+/// The variants are ordered: the order of the declaration is the order of
+/// the type, so two dependency types can always be compared. That is what
+/// lets a graph be put in a canonical order — the projection of the call
+/// graph sorts its edges by source, target and dependency type, and the
+/// type has to be comparable for the sort to be a total one.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
+)]
 pub enum DependencyType {
     #[default]
     Calls,

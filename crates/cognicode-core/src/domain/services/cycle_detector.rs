@@ -16,9 +16,19 @@ impl CycleDetector {
     }
 
     /// Detects all cycles in the call graph and returns the strongly connected components
+    ///
+    /// The answer does not depend on the order the graph happens to hold
+    /// its symbols in: the traversal starts at the smallest symbol id and
+    /// visits the successors of each node in symbol id order, so the same
+    /// graph always publishes its cycles in the same order.
     pub fn detect_cycles(&self, graph: &CallGraph) -> CycleDetectionResult {
         let mut state = TarjanState::new();
-        let symbol_ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
+        // The symbols come out of a hash map, so their order is different
+        // for every instance of the graph. Sorted by identifier, the
+        // traversal starts at the smallest one and the published cycles
+        // come out in the same order every time.
+        let mut symbol_ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
+        symbol_ids.sort();
 
         // Initialize index for all symbols
         for id in &symbol_ids {
@@ -123,8 +133,13 @@ impl CycleDetector {
         state.stack.push(node.clone());
         state.in_stack.insert(node.clone());
 
-        // Consider all successors
-        for (successor, _) in graph.callees(node) {
+        // Consider all successors, in symbol id order: the graph hands
+        // them over in the iteration order of a hash map, and the order
+        // the traversal visits them in decides the order the cycles are
+        // published in.
+        let mut successors = graph.callees(node);
+        successors.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        for (successor, _) in successors {
             if !state.node_index.contains_key(&successor) {
                 // Successor has not yet been visited
                 self.tarjanStronglyConnected(&successor, graph, state);
@@ -274,6 +289,79 @@ mod tests {
     use super::*;
     use crate::domain::aggregates::{CallGraph, Symbol};
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+
+    /// The cycles are published in a deterministic order.
+    ///
+    /// The traversal starts at the smallest symbol id and visits each
+    /// node's callees in symbol id order, so the published list does not
+    /// depend on the order the graph happens to hold its symbols and
+    /// edges in — which is the iteration order of a hash map, different
+    /// for every instance of the graph.
+    ///
+    /// The witness is TEN disjoint cycles: the published order is the
+    /// order the traversal finds them in, which starts at the smallest
+    /// symbol id. Ten, and not three, because a hash map could hand back
+    /// the sorted order by chance — with ten cycles that chance is one in
+    /// three million, so a red here means the defect and not the luck.
+    #[test]
+    fn the_cycles_are_published_in_a_deterministic_order() {
+        const CYCLES: usize = 10;
+
+        let detector = CycleDetector::new();
+        let mut graph = CallGraph::new();
+
+        // The symbols are added in an order that is NOT the sorted one,
+        // so the published order cannot come from the order of the
+        // additions either.
+        let mut names: Vec<String> = (0..CYCLES)
+            .flat_map(|cycle| [format!("c{cycle:02}a"), format!("c{cycle:02}b")])
+            .collect();
+        names.sort();
+        names.reverse();
+        for name in &names {
+            graph.add_symbol(Symbol::new(
+                name,
+                SymbolKind::Function,
+                Location::new("test.rs", 1, 1),
+            ));
+        }
+
+        for cycle in 0..CYCLES {
+            let from = SymbolId::new(format!("test.rs:c{cycle:02}a:1"));
+            let to = SymbolId::new(format!("test.rs:c{cycle:02}b:1"));
+            graph
+                .add_dependency(&from, &to, DependencyType::Calls)
+                .expect("the dependency is added");
+            graph
+                .add_dependency(&to, &from, DependencyType::Calls)
+                .expect("the dependency is added");
+        }
+
+        let result = detector.detect_cycles(&graph);
+
+        let published: Vec<String> = result
+            .cycles
+            .iter()
+            .map(|cycle| {
+                let mut members: Vec<String> = cycle
+                    .symbols()
+                    .iter()
+                    .map(|s| s.as_str().to_string())
+                    .collect();
+                members.sort();
+                members.join(",")
+            })
+            .collect();
+
+        let expected: Vec<String> = (0..CYCLES)
+            .map(|cycle| format!("test.rs:c{cycle:02}a:1,test.rs:c{cycle:02}b:1"))
+            .collect();
+
+        assert_eq!(
+            published, expected,
+            "the cycles are published in the order the traversal finds them, starting at the smallest symbol id"
+        );
+    }
 
     #[test]
     fn test_no_cycles() {
