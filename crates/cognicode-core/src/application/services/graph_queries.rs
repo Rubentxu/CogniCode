@@ -39,7 +39,9 @@ use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::aggregates::Symbol;
 use crate::domain::aggregates::call_graph::{CallGraph, MermaidOptions, SymbolId};
 use crate::domain::services::resolve_target;
-use crate::domain::value_objects::{TargetResolution, published_column, published_line};
+use crate::domain::value_objects::{
+    DependencyType, TargetResolution, published_column, published_line,
+};
 
 /// Which way a hierarchy question walks the graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,6 +335,148 @@ pub fn mermaid(graph: &CallGraph, options: &MermaidOptions) -> MermaidDiagram {
     }
 }
 
+/// One detected community, as the call-flow diagram needs it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunitySection {
+    /// The community's own identifier, as the detection published it.
+    pub id: u32,
+    /// The community's label.
+    pub label: String,
+    /// How many symbols the community holds.
+    pub size: usize,
+}
+
+/// A community detection, as the call-flow diagram needs it.
+///
+/// The detection is an algorithm the infrastructure layer owns; this is
+/// what the diagram needs of it, and nothing more.
+#[derive(Debug, Clone, Default)]
+pub struct CommunityDetection {
+    /// The communities, in the order the detection published them.
+    pub communities: Vec<CommunitySection>,
+    /// Which community each symbol belongs to, by the symbol's identifier.
+    pub node_communities: std::collections::HashMap<String, u32>,
+}
+
+/// The call flow between the project's communities.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityCallflow {
+    /// The Mermaid document.
+    pub mermaid: String,
+    /// How many communities the detection found.
+    pub community_count: usize,
+    /// How many of them the diagram draws.
+    pub sections_drawn: usize,
+}
+
+/// The call flow between the project's communities.
+///
+/// The communities are the SECTIONS of the diagram: one box per
+/// community, one arrow per relation between communities, labelled with
+/// the calls that carry it.
+///
+/// `max_sections` is how many communities the diagram draws. The ones it
+/// leaves out are not dropped in silence: `community_count` says how many
+/// the detection found.
+///
+/// The document is a function of the graph and of the detection it is
+/// given: the boxes come out in the order the detection published, and
+/// the arrows in the order of their ends.
+///
+/// Known limitation: the detection itself is not stable across runs — the
+/// node indexes it works on come from a hash map, so the same project
+/// yields a different partition each time. The diagram is faithful to
+/// the detection it was given; it does not make the detection repeatable.
+pub fn community_callflow(
+    graph: &CallGraph,
+    detection: &CommunityDetection,
+    max_sections: usize,
+) -> CommunityCallflow {
+    use std::collections::{BTreeMap, HashMap};
+
+    let drawn: Vec<&CommunitySection> = detection.communities.iter().take(max_sections).collect();
+
+    // The position of each drawn community in the diagram, by the
+    // community's own id.
+    let position_of: HashMap<u32, usize> = drawn
+        .iter()
+        .enumerate()
+        .map(|(position, community)| (community.id, position))
+        .collect();
+
+    // The calls between the drawn communities, counted. A `BTreeMap` so
+    // the arrows come out in the same order every time: the diagram is
+    // published, and its order is a promise.
+    let mut relations: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for (source, _) in graph.symbol_ids() {
+        let Some(&source_community) = detection.node_communities.get(source.as_str()) else {
+            continue;
+        };
+        let Some(&source_position) = position_of.get(&source_community) else {
+            continue;
+        };
+        for (callee, dependency) in graph.callees(source) {
+            if dependency != DependencyType::Calls {
+                continue;
+            }
+            let Some(&callee_community) = detection.node_communities.get(callee.as_str()) else {
+                continue;
+            };
+            let Some(&callee_position) = position_of.get(&callee_community) else {
+                continue;
+            };
+            if source_position == callee_position {
+                continue;
+            }
+            *relations
+                .entry((source_position, callee_position))
+                .or_insert(0) += 1;
+        }
+    }
+
+    let mut mermaid = String::from("graph LR\n");
+    mermaid.push_str(&format!(
+        "    %% Call flow between {} communities\n",
+        drawn.len()
+    ));
+    for (position, community) in drawn.iter().enumerate() {
+        mermaid.push_str(&format!(
+            "    C{position}[\"{}\\n{} symbols\"]\n",
+            mermaid_label(&community.label),
+            community.size
+        ));
+    }
+    for ((from, to), calls) in &relations {
+        mermaid.push_str(&format!("    C{from} -->|{calls}| C{to}\n"));
+    }
+    mermaid.push_str("    classDef community fill:#e1f5fe,stroke:#01579b\n");
+    if !drawn.is_empty() {
+        let names: Vec<String> = (0..drawn.len())
+            .map(|position| format!("C{position}"))
+            .collect();
+        mermaid.push_str(&format!("    class {} community\n", names.join(",")));
+    }
+
+    CommunityCallflow {
+        mermaid,
+        community_count: detection.communities.len(),
+        sections_drawn: drawn.len(),
+    }
+}
+
+/// The label of a box, in a form Mermaid can read.
+///
+/// A quote would close the box and a newline would break the document:
+/// the label is text that came from a file path, and neither may reach
+/// the diagram as it is.
+fn mermaid_label(label: &str) -> String {
+    label
+        .replace('"', "'")
+        .replace(['\n', '\r'], " ")
+        .trim()
+        .to_string()
+}
+
 /// The shortest call path between two symbols, up to `max_depth`.
 ///
 /// `max_depth` of zero means no limit.
@@ -533,5 +677,112 @@ impl AnalysisService {
     /// The project as a Mermaid diagram.
     pub fn mermaid_diagram(graph: &CallGraph, options: &MermaidOptions) -> MermaidDiagram {
         self::mermaid(graph, options)
+    }
+
+    /// The call flow between the project's communities.
+    pub fn community_callflow(
+        graph: &CallGraph,
+        detection: &CommunityDetection,
+        max_sections: usize,
+    ) -> CommunityCallflow {
+        self::community_callflow(graph, detection, max_sections)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::aggregates::Symbol;
+    use crate::domain::value_objects::{Location, SymbolKind};
+    use std::collections::HashMap;
+
+    fn sym(name: &str, file: &str) -> Symbol {
+        Symbol::new(name, SymbolKind::Function, Location::new(file, 1, 1))
+    }
+
+    /// Two modules, each with two symbols that call each other, and one
+    /// call from the first module to the second.
+    fn two_modules() -> (CallGraph, Vec<SymbolId>) {
+        let mut graph = CallGraph::new();
+        let a = graph.add_symbol(sym("a", "src/one.rs"));
+        let b = graph.add_symbol(sym("b", "src/one.rs"));
+        let c = graph.add_symbol(sym("c", "src/two.rs"));
+        let d = graph.add_symbol(sym("d", "src/two.rs"));
+        graph
+            .add_dependency(&a, &b, DependencyType::Calls)
+            .expect("a calls b");
+        graph
+            .add_dependency(&c, &d, DependencyType::Calls)
+            .expect("c calls d");
+        graph
+            .add_dependency(&a, &c, DependencyType::Calls)
+            .expect("a calls c");
+        (graph, vec![a, b, c, d])
+    }
+
+    /// The detection of that graph: two communities, and one call between
+    /// them.
+    fn detection(ids: &[SymbolId]) -> CommunityDetection {
+        let mut node_communities = HashMap::new();
+        node_communities.insert(ids[0].as_str().to_string(), 0);
+        node_communities.insert(ids[1].as_str().to_string(), 0);
+        node_communities.insert(ids[2].as_str().to_string(), 1);
+        node_communities.insert(ids[3].as_str().to_string(), 1);
+        CommunityDetection {
+            communities: vec![
+                CommunitySection {
+                    id: 0,
+                    label: "one".to_string(),
+                    size: 2,
+                },
+                CommunitySection {
+                    id: 1,
+                    label: "two".to_string(),
+                    size: 2,
+                },
+            ],
+            node_communities,
+        }
+    }
+
+    #[test]
+    fn the_callflow_draws_a_section_per_community_and_the_calls_between_them() {
+        let (graph, ids) = two_modules();
+        let flow = community_callflow(&graph, &detection(&ids), 8);
+
+        assert_eq!(
+            flow.community_count, 2,
+            "the count says how many there were"
+        );
+        assert_eq!(flow.sections_drawn, 2, "both sections are drawn");
+        assert_eq!(
+            flow.mermaid.matches('[').count(),
+            2,
+            "one box per community: {}",
+            flow.mermaid
+        );
+        assert!(
+            flow.mermaid.contains("C0 -->|1| C1"),
+            "the diagram draws the call that crosses the communities: {}",
+            flow.mermaid
+        );
+    }
+
+    #[test]
+    fn the_callflow_draws_only_the_sections_it_is_asked_for_and_says_how_many_there_were() {
+        let (graph, ids) = two_modules();
+        let flow = community_callflow(&graph, &detection(&ids), 1);
+
+        assert_eq!(
+            flow.community_count, 2,
+            "the count says how many there were, not how many were drawn"
+        );
+        assert_eq!(flow.sections_drawn, 1, "only one section is drawn");
+        assert_eq!(
+            flow.mermaid.matches('[').count(),
+            1,
+            "one box, and no arrow to a section that is not drawn: {}",
+            flow.mermaid
+        );
     }
 }
