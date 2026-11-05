@@ -497,7 +497,9 @@ pub enum GraphResult {
     /// `cognicode graph full [--rebuild] [--format text|json] <path>`
     /// El pre-migration code ya tenía un `FullGraphJson` ad-hoc; este
     /// variant lo absorbe y elimina la duplicación. El campo `status`
-    /// es "complete" o "partial" (matches el `if skipped.is_empty()`).
+    /// es la palabra del estado: "complete", "partial", "unknown" o
+    /// "unsupported". Un árbol sin nada que leer es "unsupported", y lo
+    /// dice con la misma palabra que dice el servidor MCP.
     Full {
         path: String,
         rebuild: bool,

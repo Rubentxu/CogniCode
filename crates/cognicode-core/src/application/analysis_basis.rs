@@ -169,6 +169,26 @@ pub enum OutcomeState {
     Failed,
 }
 
+impl OutcomeState {
+    /// The word this state is published with.
+    ///
+    /// One owner for the vocabulary: the SDK, the CLI and the MCP server
+    /// publish the same words for the same states, and a word that means
+    /// two things is a lie the consumer cannot see. The three surfaces
+    /// used to disagree about a directory with nothing to read —the CLI
+    /// said "unknown" where the MCP said "unsupported"— because each of
+    /// them had its own copy of this list.
+    pub fn published_label(self) -> &'static str {
+        match self {
+            OutcomeState::Complete => "complete",
+            OutcomeState::Partial => "partial",
+            OutcomeState::Unknown => "unknown",
+            OutcomeState::Unsupported => "unsupported",
+            OutcomeState::Failed => "failed",
+        }
+    }
+}
+
 /// A name the graph does not hold. Impact and call queries on it have no
 /// answer: reporting "no impact" or "no calls" would pass the absence off as a
 /// finding, so every interface fails with this message instead.
@@ -733,4 +753,40 @@ pub enum GraphValue {
         direct_dependents: usize,
         total_impacted_symbols: usize,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutcomeState;
+
+    /// The published word of every state, and the wire's own name.
+    ///
+    /// The word the surfaces publish and the name the serializer writes
+    /// are the same promise told twice: a consumer that reads one of
+    /// them has to read the same thing. The check below is what keeps
+    /// the two from drifting apart.
+    #[test]
+    fn the_published_word_is_the_word_the_wire_writes() {
+        let cases = [
+            (OutcomeState::Complete, "complete"),
+            (OutcomeState::Partial, "partial"),
+            (OutcomeState::Unknown, "unknown"),
+            (OutcomeState::Unsupported, "unsupported"),
+            (OutcomeState::Failed, "failed"),
+        ];
+        for (state, expected) in cases {
+            assert_eq!(
+                state.published_label(),
+                expected,
+                "the state {state:?} is published with another word"
+            );
+            let wire = serde_json::to_string(&state).expect("the state serialises");
+            assert_eq!(
+                wire,
+                format!("\"{expected}\""),
+                "the wire writes {wire} where the surfaces publish {expected}: \
+                 the two are the same promise"
+            );
+        }
+    }
 }

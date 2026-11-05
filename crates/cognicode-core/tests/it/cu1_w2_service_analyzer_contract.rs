@@ -9,8 +9,9 @@
 //! 1. `graph.full` sobre un workspace Rust real ejecuta
 //!    `build_full_graph` + `get_graph_stats` y devuelve
 //!    `Complete(GraphValue::Full)` con contadores reales.
-//! 2. Workspace sin material Rust → `Failed` con mensaje honesto (no
-//!    `Complete` con grafo vacío; SPEC-CU-001.5).
+//! 2. Workspace sin material Rust → `Unsupported` con el motivo (no
+//!    `Complete` con grafo vacío; SPEC-CU-001.5: un proveedor que no
+//!    puede crear un grafo devuelve `Unsupported` o `Partial` con gaps).
 //! 3. Ops no implementadas por el adaptador → `Unsupported` con
 //!    reason, jamás panic ni `Unknown` silencioso.
 //! 4. El outcome lleva `AnalysisProvenance` con elapsed medido.
@@ -107,8 +108,15 @@ fn graph_full_over_real_workspace_completes_with_real_counts() {
     }
 }
 
+/// A workspace with nothing to read is `Unsupported`, and says why.
+///
+/// The walk ran and the tree is there; there is simply nothing in it
+/// that this product can read. SPEC-CU-001.5 names `Unsupported` for a
+/// provider that cannot build a graph, and it is the state the MCP
+/// server already publishes for the same directory: an error would hide
+/// the reason from a caller that only reads successful payloads.
 #[test]
-fn graph_full_without_rust_material_fails_honestly() {
+fn graph_full_without_rust_material_is_unsupported_and_says_why() {
     let tmp = tempdir(); // vacío: sin Cargo.toml, sin .rs
     let basis = AnalysisBasis::for_workspace(tmp.clone());
     let analyzer = ServiceAnalyzer::new();
@@ -123,10 +131,21 @@ fn graph_full_without_rust_material_fails_honestly() {
 
     assert_eq!(
         outcome.state(),
-        OutcomeState::Failed,
-        "sin material Rust el resultado es Failed honesto, no Complete vacío"
+        OutcomeState::Unsupported,
+        "sin material Rust el resultado es Unsupported honesto, no Complete \
+         vacío ni Failed: el walk corrió y no encontró nada que leer"
     );
-    assert!(outcome.error().is_some());
+    assert!(
+        outcome
+            .reason()
+            .is_some_and(|reason| reason.contains("no produjo símbolos")),
+        "el motivo dice por qué no hay grafo: {:?}",
+        outcome.reason()
+    );
+    assert!(
+        outcome.value().is_none(),
+        "Unsupported no lleva valor: un grafo vacío no es una respuesta"
+    );
 }
 
 #[test]

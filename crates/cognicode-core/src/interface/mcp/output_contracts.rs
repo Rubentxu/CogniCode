@@ -245,7 +245,7 @@ pub mod compat {
         // consumer never has to guess.
         object.insert(
             "state".to_string(),
-            Value::String(state_discriminant(state).to_string()),
+            Value::String(state.published_label().to_string()),
         );
 
         // Only `Complete` and `Partial` carry a value. The other three
@@ -295,21 +295,6 @@ pub mod compat {
         }
 
         Value::Object(object)
-    }
-
-    /// The string discriminator emitted on the wire.
-    ///
-    /// Same lowercase string `OutcomeState` already uses; repeated
-    /// here so callers that hand-roll a `Value` do not have to know
-    /// the convention.
-    fn state_discriminant(state: OutcomeState) -> &'static str {
-        match state {
-            OutcomeState::Complete => "complete",
-            OutcomeState::Partial => "partial",
-            OutcomeState::Unknown => "unknown",
-            OutcomeState::Unsupported => "unsupported",
-            OutcomeState::Failed => "failed",
-        }
     }
 
     #[cfg(test)]

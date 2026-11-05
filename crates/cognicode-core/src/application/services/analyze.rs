@@ -10,8 +10,12 @@
 //!
 //! Semántica de fallo honesto (SPEC-CU-001.5): `build_full_graph`
 //! sobre un workspace sin material Rust devuelve error upstream; el
-//! adaptador lo traduce a `Failed` con el mensaje real, sin convertirlo
-//! en éxito con grafo vacío.
+//! adaptador lo traduce a `Unsupported` con el motivo real, sin
+//! convertirlo en éxito con grafo vacío. `Unsupported` es lo que la
+//! especificación nombra para un proveedor que no puede crear un grafo,
+//! y es el estado que el servidor MCP ya publica sobre el mismo
+//! directorio: un error escondería el motivo de quien solo lee
+//! respuestas con éxito.
 
 use std::time::Instant;
 
@@ -33,6 +37,28 @@ pub fn no_material_reason(path: &std::path::Path) -> String {
         "workspace {} no produjo símbolos (sin material Rust analizable)",
         path.display()
     )
+}
+
+/// Whether a workspace with this many symbols holds anything this
+/// product can read.
+///
+/// The fact lives here once. The SDK adapter and the MCP server ask the
+/// same question about the same directory, and two answers for one tree
+/// is how the CLI and the MCP came to disagree about it: the CLI said
+/// "unknown" where the MCP said "unsupported".
+pub fn holds_material(symbol_count: usize) -> bool {
+    symbol_count > 0
+}
+
+/// The answer for a workspace that holds nothing to read.
+///
+/// It is a state and not an error: the walk ran, the tree is there, and
+/// there is simply nothing in it that this product can read.
+/// SPEC-CU-001.5 names `Unsupported` for a provider that cannot build a
+/// graph, and an error would hide the reason from a caller that only
+/// reads successful payloads.
+pub fn no_material_outcome(path: &std::path::Path) -> AnalysisOutcome<AnalysisValue> {
+    AnalysisOutcome::unsupported(&no_material_reason(path))
 }
 
 /// Adaptador de producción: `Analyze` sobre el `AnalysisService` real.
@@ -163,13 +189,10 @@ impl ServiceAnalyzer {
         });
 
         let graph = self.service.get_project_graph();
-        if graph.symbol_count() == 0 {
+        if !holds_material(graph.symbol_count()) {
             // El build "exitoso" con cero símbolos es ausencia de
             // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
-            return (
-                AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path))),
-                None,
-            );
+            return (no_material_outcome(path), None);
         }
 
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
@@ -248,8 +271,8 @@ impl ServiceAnalyzer {
             )));
         }
         let graph = self.service.get_project_graph();
-        if graph.symbol_count() == 0 {
-            return AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path)));
+        if !holds_material(graph.symbol_count()) {
+            return no_material_outcome(path);
         }
 
         // Complejidad por símbolo sobre el grafo real: el analyzer puro
