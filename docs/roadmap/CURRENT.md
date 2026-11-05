@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-05, sobre `a88e2ca2aca3afb0321642988a6a217d51d6b0ba` (la
+> **Snapshot**: 2026-11-05, sobre `0eeffa1754c80f265ec5ab491a12c28cd6dc1f91` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -74,6 +74,26 @@
 > rápido **ya no existe**: se retiró con las puertas de merge, y lo que queda
 > es un gate de tres pasos —unitarios, integración con mocks y mutantes— que
 > se corre entero y no por subconjunto;
+> y la línea publicada es una: el grafo contaba desde cero y el producto desde
+> uno, y cada superficie publicaba la suya; la conversión vive ahora en un
+> sitio —`published_line()`— y el esquema lo dice en cada propiedad que publica
+> una línea; el `navigate` de la CLI pedía al backend la línea de encima de la
+> que la persona nombraba, y ahora la posición viaja tal como se escribió; y el
+> core no imprime: devuelve el resultado y el presentador lo escribe, así que
+> `--format json` produce un documento y nada más, y el doctor sale con 1 sin
+> que la biblioteca mate el proceso;
+> y el MCP contesta donde el contrato lo puso: una tool que publica un
+> `outputSchema` entrega su respuesta en `structuredContent` y su resumen en el
+> segundo bloque de texto, el protocolo declarado es `2025-11-25`, las tools
+> publican sus pistas de comportamiento y el JSON ya no lleva saltos de línea;
+> y el MCP dice por qué se reporta un hallazgo: `explain_finding` publica el
+> mensaje, la cadena causal, el detector y el veredicto de grounding de cada
+> hallazgo, y una lista vacía sin desenlace ya no es indistinguible de «no hay
+> hallazgos»;
+> y la paginación se compara con el catálogo maestro: el oráculo del recorrido
+> es la declaración del producto —la que el servidor lleva dentro del binario— y
+> no un catálogo calculado en otro build, que es lo que tenía el gate entero en
+> rojo;
 > y desde entonces: la complejidad y el conteo de parámetros tienen una sola
 > medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
 > servidor real exige el token en `/mcp` y `/watch`;
@@ -82,32 +102,20 @@
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`39beacb` → `a88e2ca2`)
+## Qué cambió desde el snapshot anterior (`a88e2ca2` → `0eeffa1754c80f265ec5ab491a12c28cd6dc1f91`)
 
-El snapshot anterior se regeneró sobre `39beacb` (2026-11-03). Entre una
-punta y otra entró **45 commits** (`git rev-list --count 39beacb..a88e2ca2`).
+Entre una punta y otra entraron **7 commits** (`git rev-list --count a88e2ca2..0eeffa1754c80f265ec5ab491a12c28cd6dc1f91`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| Las preguntas del grafo tienen un dueño | `4efba8d6` (TASK-78) | Los hot paths, los entry points, las leaf functions, el camino, la jerarquía y el diagrama se responden en `AnalysisService`: el CLI y el MCP dicen lo mismo del mismo proyecto. El MCP ahora **honra la `direction` y la `depth` que su propia tool declara** y se niega a contestar por un homónimo. Un solo renderizador de Mermaid, con orden determinista: dos corridas sobre el mismo proyecto publican la misma tabla. |
-| «¿De qué depende este nombre?» tiene una sola respuesta | `bf707ee9` (TASK-77) | El impacto tiene un dueño, y el CLI, el MCP y la sesión del workspace preguntan al mismo servicio. Un nombre que varios símbolos llevan es una ambigüedad que **se dice**, con sus candidatos. |
-| La revalidación dice la verdad, y el apply la publica | `f5933b4` (TASK-112) | `executed_checks` nombra solo lo que corrió —hoy nada— y el motivo queda escrito; el bloque de hallazgos distingue «se buscó y no se encontró» de «nadie miró»; y `refactor --apply` publica el informe en su salida. |
-| Los tests que comparten el árbol se turnan | `14f71609` (TASK-115) | Los tres tests del contrato de SBOM comparten el árbol del workspace, no el `HOME`; bajo nextest la anotación `#[serial]` no serializa nada, y los tests se borraban los ficheros unos a otros. El grupo `sbom-workspace` los contiene, y un contrato exige que todo módulo que escriba en el árbol tenga su grupo de un hilo. |
-| La superficie anunciada retira lo que no calcula | `ec1e457e` | Una tool que no calcula no se anuncia: anunciar sin brazo de dispatch es publicar un ghost. |
-| El LSP llega a las operaciones de edición y de jerarquía | `13b5ca02`, `c18b237a`, `e056dbc0`, `e7a89107`, `c5e3bf1a` | `rename`, `callHierarchy`, `typeHierarchy` y `prepareRename` los reenvía el `CompositeProvider`; `find_references` declara el nivel que sirvió como proveedor; `rename_preview` previsualiza sin aplicar. Con `csharp-ls`, `kotlin-lsp` y `groovy-language-server` como servidores por defecto (`8e821042`, `e22ceaf0`), el producto sirve esos lenguajes. |
-| Jenkinsfile, `pipeline.kts` y `build.gradle` se leen | `25576d45`, `2bab8222`, `3e863221`, `c7604c90`, `4d59931a` | Un stage de Jenkinsfile es un símbolo que posee sus llamadas, y `vars/<n>.groovy` es el paso `<n>`; los stages de `pipeline.kts` son símbolos y se consultan sus comandos `sh`; las tareas de `build.gradle` son símbolos de `get_file_symbols`. |
-| El constructor que Groovy se traga ya no se traga | `92de49ab`, `cb81b428` (TASK-108) | El constructor sin tipo de Groovy se leía mal; el test que lo fijaba estaba tragándose el defecto. |
-| El oro de símbolos es escrito a mano | `6940a1b0`, `7cff4373`, `c0d701f8`, `29d5264b` | `get_implementors` se fija contra goldens de herencia escritos a mano para Groovy, Kotlin y C#; `support_level` se deriva de ellos; y las aristas `Inherits` de esos tres lenguajes ya no dependen de que el LSP esté. |
-| El refactor dice la verdad en Kotlin, Groovy y C# | `fe69c420` | `rename`, `extract` y `change-signature` declaran lo que van a hacer, y lo que no pueden hacer se dice. |
-| La maquinaria de puertas y carriles se retiró | `67c474e2`, `6e4a5549` (TASK-72), `a9ba12bc` (TASK-73) | UAT, e2e de navegador, lanes de CI y puertas de merge fuera. El gate que queda son tres pasos y se corre con `cargo nextest`, una invocación por paso. Con el publicador se fue también el juicio del snapshot que precedía a la compilación (`b4b4d0e8`): hoy quien vigila el snapshot es el contrato, no el publicador. |
-| Un binario de tests de integración por crate | `b0d3926b` (TASK-71) | Los tests de integración de cada crate viven en un binario, y los que se comparten, en un módulo compartido. |
-| La ruta que se lee es la ruta que se autorizó | `51b23855`, `e7a33c2f` (TASK-61), `9a2f922b`, `6d58bb68`, `a928659e`, `c59f581c` | `hover`, `go_to_definition` y `find_references` confinan la ruta; un símbolo ausente es `NotFound` y no una respuesta vacía; y «función» tiene un solo criterio por lenguaje. |
-| La capacidad se publica con su capacidad | `24c51fe6` | Una tool sin su capacidad no se publica, y la listada sin almacén responde `gated`: anunciar una herramienta que no puede calcular es publicar un ghost. |
-| Los algoritmos del grafo se miden con mutantes | `6ebbc316` (TASK-96), `6ff7749e` (TASK-105), `49473e55` (TASK-106), `661a486c` (TASK-107) | `conductance` cuenta una arista mutua una vez; y tres algoritmos —`feedback_arc_set`, `taint` y `transitive_reduction`— quedan sin mutantes supervivientes. |
-| El gate del lote 10/10 pasó | `87b72433` | Recibo del gate en verde sobre `f5f23f14`. |
-| El gate vuelve a estar en verde | `a88e2ca2` | Los tres pasos, medidos: 4630 unitarios, 6670 de integración y 574 mutantes con 0 supervivientes. Es el primer gate en verde desde que los tests corren con nextest. |
+| La línea publicada es una, y el presentador es el único que escribe | `0eeffa17` (TASK-80) | El grafo contaba desde cero y el producto desde uno, y cada superficie publicaba la suya. La conversión vive ahora en un sitio —`published_line()`— y el esquema maestro dice la base en cada propiedad que publica una línea; el `navigate` de la CLI pedía al backend la línea de encima de la que la persona nombraba, y ahora la posición viaja tal como se escribió. El core tampoco imprime: devuelve el resultado y el presentador lo escribe, así que `--format json` produce un documento y nada más, y el doctor sale con 1 sin que la biblioteca mate el proceso. |
+| El MCP contesta donde el contrato lo puso | `5830bbe1` (TASK-65) | Una tool que publica un `outputSchema` entrega su respuesta en `structuredContent` y su resumen en el segundo bloque de texto —el resumen no se inventa en el cable—, las tools publican sus pistas de comportamiento, el protocolo declarado es `2025-11-25` y el JSON ya no lleva saltos de línea dentro. |
+| El MCP dice por qué se reporta un hallazgo | `78829037` (TASK-111) | La tool `explain_finding` publica el mensaje, la cadena causal, el detector y el veredicto de grounding de cada hallazgo; `gateable` y `grounding` son dos preguntas distintas, y una lista vacía sin desenlace ya no es indistinguible de «no hay hallazgos». |
+| La paginación se compara con el catálogo maestro | `44a10776` (TASK-117) | El recorrido de `tools/list` se compara con la declaración del producto —la que el servidor lleva dentro del binario— y no con un catálogo calculado en otro build: por eso el gate entero estaba rojo por una comparación entre dos builds. |
+| El gate no confunde un mutante atrapado con un tiempo agotado | `ed50133e` (TASK-116) | El veredicto del tercer paso dependía de la carga de la máquina: el techo de memoria del runner bajó a 2 GiB y un contrato nuevo fija la aritmética del presupuesto. |
+| El JSON es un documento, y el texto conserva su formato | `fadf5e6a` (TASK-114) | Cuatro comandos de grafo escribían su línea de progreso en la salida estándar, delante del documento; la regla del canal manda la línea al error en modo JSON. |
 
 ## Release: la última publicada es la v0.101.30
 
