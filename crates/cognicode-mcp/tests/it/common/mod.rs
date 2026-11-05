@@ -167,8 +167,27 @@ pub struct McpSession {
 impl McpSession {
     /// Spawn + initialize. `kill_on_drop` como red de seguridad.
     pub async fn spawn(ws: &Path) -> Result<Self, String> {
+        Self::spawn_with_env(ws, &[]).await
+    }
+
+    /// Spawn + initialize, with the cache the server keeps pointed at
+    /// `cache`.
+    ///
+    /// El producto guarda en la caché del usuario lo que deriva del
+    /// workspace. Un test que no dice dónde está esa caché escribe en la
+    /// caché de quien ejecuta la suite, así que este spawn lo dice: el
+    /// servidor lee `XDG_CACHE_HOME`, y el hijo recibe el suyo.
+    pub async fn spawn_with_cache(ws: &Path, cache: &Path) -> Result<Self, String> {
+        Self::spawn_with_env(ws, &[("XDG_CACHE_HOME", cache)]).await
+    }
+
+    /// The spawn body shared by [`Self::spawn`] and [`Self::spawn_with_cache`].
+    async fn spawn_with_env(ws: &Path, env: &[(&str, &Path)]) -> Result<Self, String> {
         let mut cmd = Command::new(binary_path());
         cmd.arg("--cwd").arg(ws);
+        for (name, value) in env {
+            cmd.env(name, value);
+        }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

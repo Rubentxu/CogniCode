@@ -85,10 +85,11 @@ pub(super) fn load_durable_snapshot(
     load_durable_snapshot_capped(db_path, MAX_SNAPSHOT_BYTES)
 }
 
-/// Largest snapshot the reader will pull into memory. The snapshot sits in
-/// the analysed tree, so its size is not ours to trust; bincode cannot
-/// allocate beyond what the bytes it is given can back, so bounding the
-/// bytes bounds the decode.
+/// Largest snapshot the reader will pull into memory. The bytes come from
+/// a file on disk that this run did not necessarily write: a truncated
+/// write, a foreign file or a corrupted cache are all possible, and
+/// bincode cannot allocate beyond what the bytes it is given can back, so
+/// bounding the bytes bounds the decode.
 const MAX_SNAPSHOT_BYTES: u64 = 256 * 1024 * 1024;
 
 pub(super) fn load_durable_snapshot_capped(

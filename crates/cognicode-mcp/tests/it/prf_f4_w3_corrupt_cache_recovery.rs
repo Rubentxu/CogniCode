@@ -1,8 +1,8 @@
-//! PRF-F4-W3: corrupt cache recovery — the durable snapshot at
-//! `<workspace>/.cognicode/graph.cache` must never be presented as
-//! valid evidence. Any parse failure (truncated, random bytes, wrong
-//! schema version, foreign file type) must be treated as absent and
-//! the next build must rebuild and leave a valid snapshot.
+//! PRF-F4-W3: corrupt cache recovery — the durable snapshot the product
+//! keeps in the user's cache must never be presented as valid evidence.
+//! Any parse failure (truncated, random bytes, wrong schema version,
+//! foreign file type) must be treated as absent and the next build must
+//! rebuild and leave a valid snapshot.
 //!
 //! Comparison surface (narrowest observable shared between an MCP
 //! session and its successor after corruption): the
@@ -28,8 +28,10 @@ use std::path::{Path, PathBuf};
 
 /// Spawn MCP, run build_graph, shut down. Returns the parsed
 /// JSON payload the tool returned.
-async fn build(ws: &Path) -> Value {
-    let mut s = McpSession::spawn(ws).await.expect("spawn");
+async fn build(ws: &Path, cache: &Path) -> Value {
+    let mut s = McpSession::spawn_with_cache(ws, cache)
+        .await
+        .expect("spawn");
     let p = s
         .call_tool("build_graph", serde_json::json!({}))
         .await
@@ -38,9 +40,18 @@ async fn build(ws: &Path) -> Value {
     p
 }
 
+/// Where the server keeps what it derives from the workspace.
+///
+/// El producto guarda el snapshot en la caché del usuario, no en el árbol
+/// analizado; el test le dice al servidor cuál es la suya, para no escribir
+/// en la caché de quien ejecuta la suite.
+fn cache_for(ws: &Path) -> PathBuf {
+    ws.with_extension("cache")
+}
+
 /// Path to the durable snapshot file the build pipeline writes.
-fn snapshot_path(ws: &Path) -> PathBuf {
-    ws.join(".cognicode").join("graph.cache")
+fn snapshot_path(cache: &Path, ws: &Path) -> PathBuf {
+    cognicode_core::application::graph_cache::snapshot_path(cache, ws)
 }
 
 /// Make a small corpus so the first build actually produces a
@@ -93,11 +104,15 @@ fn assert_loaded_from_snapshot(payload: &Value, ctx: &str) {
 #[tokio::test]
 async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
     let ws = std::env::temp_dir().join(format!("prf-f4-w3-random-{}", std::process::id()));
+    let cache = cache_for(&ws);
     write_corpus(&ws);
 
-    let _p1 = build(&ws).await;
-    assert!(snapshot_path(&ws).exists(), "first build must persist");
-    let orig = std::fs::read(snapshot_path(&ws)).expect("read original");
+    let _p1 = build(&ws, &cache).await;
+    assert!(
+        snapshot_path(&cache, &ws).exists(),
+        "first build must persist"
+    );
+    let orig = std::fs::read(snapshot_path(&cache, &ws)).expect("read original");
     assert!(
         orig.len() > 50,
         "non-vacuity: snapshot too small to corrupt meaningfully: {} bytes",
@@ -114,14 +129,14 @@ async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
         orig, corrupted,
         "non-vacuity: corrupted bytes must differ from original"
     );
-    std::fs::write(snapshot_path(&ws), &corrupted).unwrap();
+    std::fs::write(snapshot_path(&cache, &ws), &corrupted).unwrap();
 
-    let p2 = build(&ws).await;
+    let p2 = build(&ws, &cache).await;
     assert_built_from_source(&p2, "corrupt random bytes");
 
     // Non-vacuity: rebuild must restore the snapshot to its
     // original size (faithful rebuild, not a stub).
-    let rebuilt = std::fs::read(snapshot_path(&ws)).expect("read rebuilt");
+    let rebuilt = std::fs::read(snapshot_path(&cache, &ws)).expect("read rebuilt");
     assert_eq!(
         rebuilt.len(),
         orig.len(),
@@ -129,6 +144,7 @@ async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
     );
 
     let _ = std::fs::remove_dir_all(&ws);
+    let _ = std::fs::remove_dir_all(&cache);
 }
 
 /// F4.W3 / test 2: corruption = completely empty file. The next
@@ -136,28 +152,33 @@ async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
 #[tokio::test]
 async fn prf_f4_w3_corrupt_empty_file_triggers_rebuild() {
     let ws = std::env::temp_dir().join(format!("prf-f4-w3-empty-{}", std::process::id()));
+    let cache = cache_for(&ws);
     write_corpus(&ws);
 
-    let _p1 = build(&ws).await;
-    assert!(snapshot_path(&ws).exists(), "first build must persist");
-    let orig_len = std::fs::metadata(snapshot_path(&ws)).unwrap().len();
+    let _p1 = build(&ws, &cache).await;
+    assert!(
+        snapshot_path(&cache, &ws).exists(),
+        "first build must persist"
+    );
+    let orig_len = std::fs::metadata(snapshot_path(&cache, &ws)).unwrap().len();
     assert!(
         orig_len > 0,
         "non-vacuity: original snapshot must be non-empty"
     );
 
-    std::fs::write(snapshot_path(&ws), b"").unwrap();
+    std::fs::write(snapshot_path(&cache, &ws), b"").unwrap();
 
-    let p2 = build(&ws).await;
+    let p2 = build(&ws, &cache).await;
     assert_built_from_source(&p2, "empty file");
 
-    let rebuilt_len = std::fs::metadata(snapshot_path(&ws)).unwrap().len();
+    let rebuilt_len = std::fs::metadata(snapshot_path(&cache, &ws)).unwrap().len();
     assert_eq!(
         rebuilt_len, orig_len,
         "non-vacuity: rebuilt snapshot must match original size"
     );
 
     let _ = std::fs::remove_dir_all(&ws);
+    let _ = std::fs::remove_dir_all(&cache);
 }
 
 /// F4.W3 / test 3: corruption = wrong schema version. The snapshot
@@ -168,11 +189,15 @@ async fn prf_f4_w3_corrupt_empty_file_triggers_rebuild() {
 #[tokio::test]
 async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
     let ws = std::env::temp_dir().join(format!("prf-f4-w3-version-{}", std::process::id()));
+    let cache = cache_for(&ws);
     write_corpus(&ws);
 
-    let _p1 = build(&ws).await;
-    assert!(snapshot_path(&ws).exists(), "first build must persist");
-    let orig = std::fs::read(snapshot_path(&ws)).expect("read original");
+    let _p1 = build(&ws, &cache).await;
+    assert!(
+        snapshot_path(&cache, &ws).exists(),
+        "first build must persist"
+    );
+    let orig = std::fs::read(snapshot_path(&cache, &ws)).expect("read original");
 
     // Replace the first 32 bytes with the bincode encoding of a
     // known-bad version string `"cognicode.graph.cache/v999\n"`.
@@ -190,12 +215,12 @@ async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
         corrupted.push(0xFF);
     }
     assert_ne!(orig, corrupted);
-    std::fs::write(snapshot_path(&ws), &corrupted).unwrap();
+    std::fs::write(snapshot_path(&cache, &ws), &corrupted).unwrap();
 
-    let p2 = build(&ws).await;
+    let p2 = build(&ws, &cache).await;
     assert_built_from_source(&p2, "wrong schema version");
 
-    let rebuilt = std::fs::read(snapshot_path(&ws)).expect("read rebuilt");
+    let rebuilt = std::fs::read(snapshot_path(&cache, &ws)).expect("read rebuilt");
     assert_eq!(
         rebuilt.len(),
         orig.len(),
@@ -203,6 +228,7 @@ async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
     );
 
     let _ = std::fs::remove_dir_all(&ws);
+    let _ = std::fs::remove_dir_all(&cache);
 }
 
 /// F4.W3 / test 4: positive control — on a clean restart with an
@@ -213,14 +239,19 @@ async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
 #[tokio::test]
 async fn prf_f4_w3_intact_cache_loads_from_snapshot() {
     let ws = std::env::temp_dir().join(format!("prf-f4-w3-intact-{}", std::process::id()));
+    let cache = cache_for(&ws);
     write_corpus(&ws);
 
-    let _p1 = build(&ws).await;
-    assert!(snapshot_path(&ws).exists(), "first build must persist");
+    let _p1 = build(&ws, &cache).await;
+    assert!(
+        snapshot_path(&cache, &ws).exists(),
+        "first build must persist"
+    );
 
     // Clean restart: cache is intact.
-    let p2 = build(&ws).await;
+    let p2 = build(&ws, &cache).await;
     assert_loaded_from_snapshot(&p2, "intact cache");
 
     let _ = std::fs::remove_dir_all(&ws);
+    let _ = std::fs::remove_dir_all(&cache);
 }

@@ -34,7 +34,7 @@ use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tracing::info;
+use tracing::{info, warn};
 
 /// How a build obtains the repository that holds the relations.
 ///
@@ -535,6 +535,15 @@ impl AnalysisService {
             }
         }
 
+        // What the walk saw and what the route keeps: the two are
+        // different numbers, and the log has to say which is which.
+        let seen_files = inventory.files.len();
+        let files_with_lang = inventory
+            .files
+            .iter()
+            .filter(|file| file.language.is_some())
+            .count();
+
         let files: Vec<_> = inventory
             .files
             .into_iter()
@@ -549,6 +558,18 @@ impl AnalysisService {
             .collect();
 
         let total_files = files.len();
+
+        info!(
+            "build_project_graph_filtered: stage=walk — {} files seen, {} included",
+            seen_files, total_files
+        );
+        if files_with_lang == 0 && seen_files > 0 {
+            warn!(
+                "build_project_graph_filtered: stage=walk — {} total files but 0 recognized languages. \
+                 Check that source files have supported extensions (.rs, .py, .go, .java, .ts, .js, etc.)",
+                seen_files
+            );
+        }
 
         // The skips are collected from the parallel pass, so they live
         // behind a lock.
@@ -636,6 +657,41 @@ impl AnalysisService {
         // must not depend on where the tree happens to live.
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Stage: parse — what the pass read, and what it took from the
+        // cache of files. The log says both, because a build that reads
+        // nothing and a build that reuses everything look the same from
+        // the outside.
+        let files_cached = results
+            .iter()
+            .filter(|(_, _, _, _, _, was_parsed)| !was_parsed)
+            .count();
+        let files_parsed = results.len() - files_cached;
+        let total_symbols_extracted: usize = results
+            .iter()
+            .map(|(_, _, _, _, facts, _)| facts.symbols.len())
+            .sum();
+        let total_relationships_found: usize = results
+            .iter()
+            .map(|(_, _, _, _, facts, _)| facts.identified.len() + facts.calls.len())
+            .sum();
+
+        info!(
+            "build_project_graph_filtered: stage=parse — {} files ({} parsed, {} cached), {} symbols, {} relationships",
+            results.len(),
+            files_parsed,
+            files_cached,
+            total_symbols_extracted,
+            total_relationships_found
+        );
+
+        if files_parsed == 0 && files_cached == 0 && files_with_lang > 0 {
+            warn!(
+                "build_project_graph_filtered: stage=parse — {} language files found but 0 parsed or cached. \
+                 Possible tree-sitter parsing failure.",
+                files_with_lang
+            );
+        }
 
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
@@ -759,6 +815,17 @@ impl AnalysisService {
 
         let call_graph = store.get_call_graph();
 
+        // Stage: resolve — the number the log publishes is the number the
+        // graph holds, the same number the response publishes. What did
+        // not make it is named, not hidden: the references that could not
+        // be tied to a declaration, and the relations the store refused.
+        info!(
+            "build_project_graph_filtered: stage=resolve — {} relationships, {} unresolved, {} refused",
+            call_graph.edge_count(),
+            unresolved_edges,
+            rejected.len()
+        );
+
         // The status carries the three coverages: the files the walk could
         // not process, the references it could not tie to a declaration,
         // and the relations the store refused.
@@ -781,6 +848,27 @@ impl AnalysisService {
         let coverage =
             GraphCoverageMetrics::new(total_files, parsed_files, cached_files, unresolved_edges);
         *self.coverage_metrics.lock().unwrap() = Some(coverage);
+
+        // Stage: done — the graph, and the languages it was built from.
+        let mut lang_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for symbol in call_graph.symbols() {
+            let file = symbol.location().file();
+            let lang = std::path::Path::new(file)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            *lang_counts.entry(lang).or_default() += 1;
+        }
+        info!(
+            "build_project_graph_filtered: stage=done — {} symbols, {} edges ({} parsed files, {} unresolved). Languages: {:?}",
+            call_graph.symbol_count(),
+            call_graph.edge_count(),
+            parsed_files,
+            unresolved_edges,
+            lang_counts
+        );
 
         Ok(crate::infrastructure::graph::per_file_graph::BuildReport {
             graph: call_graph,

@@ -823,9 +823,7 @@ pub async fn handle_compare_call_graphs(
 
     // Try to load baseline if provided
     let (has_baseline, baseline_symbols, baseline_edges, arch_score_before) =
-        if let Some(baseline_dir) = input.baseline_dir {
-            let baseline_path = ctx.working_dir.join(baseline_dir);
-            let _store_path = graph_db_path(&baseline_path);
+        if input.baseline_dir.is_some() {
             let store = InMemoryGraphStore::new();
             match store.load_graph() {
                 Ok(Some(baseline_graph)) => {
@@ -924,9 +922,7 @@ pub async fn handle_detect_api_breaks(
         .filter_map(|id| current_graph.get_symbol(id).map(|s| s.name().to_string()))
         .collect();
 
-    let (has_baseline, _baseline_entries, breaks) = if let Some(baseline_dir) = input.baseline_dir {
-        let baseline_path = ctx.working_dir.join(baseline_dir);
-        let _store_path = graph_db_path(&baseline_path);
+    let (has_baseline, _baseline_entries, breaks) = if input.baseline_dir.is_some() {
         let store = InMemoryGraphStore::new();
         match store.load_graph() {
             Ok(Some(baseline_graph)) => {

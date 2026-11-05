@@ -219,9 +219,14 @@ async fn main() -> anyhow::Result<()> {
     // `graph_loaded` flag is set by `call_tool_handler` after a
     // successful `build_graph` and read by `ready_handler` via the
     // shared Arc<HandlerContext>.
+    //
+    // The cache is the user's: this server keeps what it derives in the
+    // same place the stdio server does, so the two agree on what the
+    // product reuses and the analysed tree stays untouched.
     let shared_ctx: Arc<HandlerContext> = Arc::new(
         HandlerContext::builder()
             .with_working_dir(cwd.clone())
+            .with_cache_root(cognicode_core::application::graph_cache::default_cache_root())
             .build(),
     );
 

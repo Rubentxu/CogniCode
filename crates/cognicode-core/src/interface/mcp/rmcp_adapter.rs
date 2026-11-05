@@ -5,6 +5,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::collapsible_if, clippy::manual_async_fn)]
 
+use crate::application::graph_cache::default_cache_root;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::get_global_metrics;
 use crate::infrastructure::verification::RustVerifier;
@@ -139,6 +140,7 @@ impl CogniCodeHandler {
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
             .with_cancellation_token(cancellation_token)
+            .with_cache_root(default_cache_root())
             .build();
         Self {
             ctx: Arc::new(ctx),
@@ -159,7 +161,8 @@ impl CogniCodeHandler {
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
-            .with_cancellation_token(cancellation_token);
+            .with_cancellation_token(cancellation_token)
+            .with_cache_root(default_cache_root());
         let ctx = match iac_repo {
             Some(repo) => ctx.with_iac_repo(repo),
             None => ctx,
@@ -209,7 +212,8 @@ impl CogniCodeHandler {
 
         let mut builder = HandlerContext::builder()
             .with_working_dir(canonical_root)
-            .with_file_ops_service(file_ops_service);
+            .with_file_ops_service(file_ops_service)
+            .with_cache_root(default_cache_root());
         if let Some(read_only) = read_only {
             builder = builder.with_read_only(read_only);
         }

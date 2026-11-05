@@ -39,10 +39,15 @@ use cognicode_core::interface::mcp::handlers::{
 use serde_json::Value;
 use std::path::Path;
 
-/// Un contexto con el workspace en un directorio.
-fn ctx_for(workspace: &Path) -> HandlerContext {
+/// Un contexto con el workspace en un directorio, y la caché que usa.
+///
+/// La caché es la del test: el snapshot es estado del producto, y un test
+/// que lo escribiera en la caché de quien lo ejecuta dejaría entradas que
+/// nadie puede limpiar.
+fn ctx_for(workspace: &Path, cache: &Path) -> HandlerContext {
     HandlerContext::builder()
         .with_working_dir(workspace.to_path_buf())
+        .with_cache_root(cache.to_path_buf())
         .build()
 }
 
@@ -52,22 +57,27 @@ fn ctx_for(workspace: &Path) -> HandlerContext {
 /// workspace acaba dentro del snapshot, y un temporal con nombre aleatorio
 /// podría—by descuido—contener los bytes de la versión que el test usa para
 /// reconocer al analizador.
-fn workspace_with_root() -> (tempfile::TempDir, std::path::PathBuf) {
+fn workspace_with_root() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let root = tempfile::tempdir().expect("temporal");
     let ws = root.path().join("ws");
     std::fs::create_dir_all(&ws).expect("se crea el workspace");
     std::fs::write(ws.join("a.rs"), "fn a() {}\n").expect("se escribe el fuente");
-    (root, ws)
+    let cache = root.path().join("cache");
+    (root, ws, cache)
 }
 
 /// Dónde persiste el producto el snapshot del grafo.
-fn snapshot_path(workspace: &Path) -> std::path::PathBuf {
-    workspace.join(".cognicode").join("graph.cache")
+///
+/// El snapshot es estado del producto, y el producto lo guarda en la caché
+/// del usuario, con una entrada por workspace: no dentro del árbol que se
+/// analizó.
+fn snapshot_path(cache: &Path, workspace: &Path) -> std::path::PathBuf {
+    cognicode_core::application::graph_cache::snapshot_path(cache, workspace)
 }
 
 /// Construye el grafo del workspace y devuelve la salida publicada.
-async fn build(workspace: &Path) -> Value {
-    let ctx = ctx_for(workspace);
+async fn build(workspace: &Path, cache: &Path) -> Value {
+    let ctx = ctx_for(workspace, cache);
     let output = handle_build_graph(&ctx, BuildGraphInput { directory: None })
         .await
         .expect("build_graph responde");
@@ -87,9 +97,9 @@ fn occurrences(haystack: &[u8], needle: &[u8]) -> usize {
 
 #[tokio::test]
 async fn the_basis_declares_the_analyzer_that_produced_the_analysis() {
-    let (_root, workspace) = workspace_with_root();
+    let (_root, workspace, cache) = workspace_with_root();
 
-    let json = build(&workspace).await;
+    let json = build(&workspace, &cache).await;
     let basis = &json["basis"];
 
     assert_eq!(
@@ -134,11 +144,11 @@ async fn the_basis_declares_the_analyzer_that_produced_the_analysis() {
 
 #[tokio::test]
 async fn the_persisted_snapshot_declares_the_analyzer_that_produced_it() {
-    let (_root, workspace) = workspace_with_root();
+    let (_root, workspace, cache) = workspace_with_root();
 
-    let _ = build(&workspace).await;
-    let path = snapshot_path(&workspace);
-    let bytes = std::fs::read(&path).expect("el snapshot se persiste en el workspace");
+    let _ = build(&workspace, &cache).await;
+    let path = snapshot_path(&cache, &workspace);
+    let bytes = std::fs::read(&path).expect("el snapshot se persiste en la cache");
 
     let version = env!("CARGO_PKG_VERSION");
     assert_eq!(
@@ -152,11 +162,11 @@ async fn the_persisted_snapshot_declares_the_analyzer_that_produced_it() {
 
 #[tokio::test]
 async fn a_snapshot_from_another_analyzer_is_not_served() {
-    let (_root, workspace) = workspace_with_root();
+    let (_root, workspace, cache) = workspace_with_root();
 
     // 1. Un análisis deja un snapshot en el workspace.
-    let _ = build(&workspace).await;
-    let path = snapshot_path(&workspace);
+    let _ = build(&workspace, &cache).await;
+    let path = snapshot_path(&cache, &workspace);
     let original = std::fs::read(&path).expect("el snapshot se persiste");
 
     // 2. Se simula otro analizador: la versión que el snapshot declara pasa
@@ -191,12 +201,12 @@ async fn a_snapshot_from_another_analyzer_is_not_served() {
     // 3. Otra sesión pide el grafo. Las fuentes no han cambiado, así que la
     //    única razón para no servir el snapshot es que lo produjo otro
     //    analizador.
-    let _ = build(&workspace).await;
+    let _ = build(&workspace, &cache).await;
 
     // 4. Si el producto hubiera servido el snapshot, el fichero seguiría
     //    declarando al otro analizador. Si lo rechazó, lo reconstruyó y el
     //    snapshot vuelve a declarar a quien está ahora.
-    let after = std::fs::read(&path).expect("el snapshot sigue en el workspace");
+    let after = std::fs::read(&path).expect("el snapshot sigue en la cache");
     assert_eq!(
         occurrences(&after, version.as_bytes()),
         1,
@@ -207,14 +217,14 @@ async fn a_snapshot_from_another_analyzer_is_not_served() {
 
 #[tokio::test]
 async fn a_cold_analysis_and_a_warm_one_declare_the_same_identity() {
-    let (_root, workspace) = workspace_with_root();
+    let (_root, workspace, cache) = workspace_with_root();
 
     // En frío: el grafo se construye desde las fuentes.
-    let cold = build(&workspace).await;
+    let cold = build(&workspace, &cache).await;
 
     // En caliente: otra sesión, mismo workspace, mismas fuentes. El
     // snapshot está al día, así que se sirve.
-    let warm = build(&workspace).await;
+    let warm = build(&workspace, &cache).await;
 
     assert_eq!(
         cold["basis"], warm["basis"],
