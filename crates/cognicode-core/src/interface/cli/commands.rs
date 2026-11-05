@@ -1091,7 +1091,13 @@ impl CommandExecutor {
                 // (ServiceAnalyzer implements the Analyze port); the CLI is
                 // a presenter. Same AnalysisService pipeline underneath
                 // (PRF-EXT-02 / H-03 constraint preserved).
-                let analyzer = crate::application::consumer_analysis::ServiceAnalyzer::new();
+                //
+                // The CLI names the user's cache: what it calculates is kept
+                // there, and the next run over the same tree is served.
+                let analyzer =
+                    crate::application::consumer_analysis::ServiceAnalyzer::with_cache_root(
+                        crate::application::graph_cache::default_cache_root(),
+                    );
                 let dir = PathBuf::from(&path);
                 let basis = crate::application::analysis_basis::AnalysisBasis::for_workspace(
                     std::path::PathBuf::from(&path),
@@ -1115,42 +1121,12 @@ impl CommandExecutor {
                         Err(msg.into())
                     }
                     _ => {
-                        // Skipped lines go to stderr (matches the
-                        // pre-migration eprintln!). The bin's text
-                        // presenter emits them too via the `status`
-                        // and `skipped_files` fields; keeping them
-                        // here preserves the historical stderr stream
-                        // for shell pipelines that grep "Building ..."
-                        // or "Skipped:" independently of stdout.
                         let result = crate::interface::cli::presenter_bridge::present_graph_full(
                             &outcome, path, *rebuild,
                         );
-                        if let crate::interface::cli::result::GraphResult::Full {
-                            skipped_files,
-                            pending_references,
-                            status,
-                            ..
-                        } = &result
-                            && status == "partial"
-                        {
-                            for s in skipped_files {
-                                eprintln!("  Skipped: {}: {}", s.path, s.reason);
-                            }
-                            for reference in pending_references {
-                                // A reference without a line is not on line
-                                // zero: it is on a line the reader did not
-                                // know, and saying "0" would name a place
-                                // that does not exist.
-                                let origin = match reference.line {
-                                    Some(line) => format!("{}:{}", reference.file, line),
-                                    None => reference.file.clone(),
-                                };
-                                eprintln!(
-                                    "  Pending: {} -> {} ({:?})",
-                                    origin, reference.target, reference.reason
-                                );
-                            }
-                        }
+                        crate::interface::cli::presenter_bridge::report_graph_full(
+                            &outcome, &result,
+                        );
                         Ok(result)
                     }
                 }

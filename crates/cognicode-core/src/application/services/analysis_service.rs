@@ -32,9 +32,44 @@ use crate::infrastructure::graph::per_file_graph::{
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
+
+/// A source file of the tree, and the time it was written.
+///
+/// The application's own name for what the walk found: the path, and the
+/// time whose absence does not condemn the file. The infrastructure's
+/// source file carries more —the language, the size— and the application
+/// does not need it.
+#[derive(Debug, Clone)]
+pub struct TreeFile {
+    /// The path, as the walk found it.
+    pub path: PathBuf,
+    /// The modification time, in milliseconds since the epoch.
+    ///
+    /// `None` when the filesystem did not report one: an absent time is
+    /// not the epoch, and it does not condemn the file by itself — the
+    /// content hash decides.
+    pub mtime_millis: Option<i64>,
+}
+
+/// The tree as it is right now.
+///
+/// The files the graph is built from, and the holes the walk declares. One
+/// walk says both: the walk that decides whether a snapshot is still fresh
+/// is the same walk that says what the tree cannot offer.
+pub struct TreeState {
+    /// The source files the walk found.
+    pub files: Vec<TreeFile>,
+    /// The holes the walk declares.
+    ///
+    /// The type is the infrastructure's, and it is named here on purpose:
+    /// this is the one place in the application that looks at the tree,
+    /// and the report types live there until the architecture programme
+    /// moves them behind a port.
+    pub holes: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+}
 
 /// How a build obtains the repository that holds the relations.
 ///
@@ -199,6 +234,40 @@ impl AnalysisService {
     /// Returns the graph cache for accessing the project graph
     pub fn graph_cache(&self) -> Arc<dyn SharedGraph> {
         self.graph_cache.clone()
+    }
+
+    /// The tree as it is right now.
+    ///
+    /// The application layer does not walk the tree: the service is the
+    /// window to the infrastructure that does. What comes back is what the
+    /// application needs —the files, and the holes— and nothing else.
+    pub fn tree_state(&self, project_dir: &Path) -> TreeState {
+        let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
+        TreeState {
+            files: inventory
+                .source_files()
+                .map(|file| TreeFile {
+                    path: file.path.clone(),
+                    mtime_millis: file.mtime_millis,
+                })
+                .collect(),
+            holes: inventory.coverage_holes(),
+        }
+    }
+
+    /// Whether the last build covered the whole tree.
+    ///
+    /// A build with holes is not a build that can be persisted: a snapshot
+    /// of it would be served later as if it were complete.
+    pub fn last_build_was_complete(&self) -> bool {
+        matches!(
+            self.last_build_report
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|report| &report.status),
+            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete)
+        )
     }
 
     /// Replaces the symbol index with a pre-built one (e.g. from spawn_blocking).

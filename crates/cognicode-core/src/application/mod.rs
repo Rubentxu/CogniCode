@@ -42,6 +42,10 @@ pub mod findings;
 // repository: the user's cache, keyed by the workspace, and never
 // inside the tree that was analysed.
 pub mod graph_cache;
+// TASK-79 AC1 — the durable snapshot and the one decision that says
+// whether it is served or calculated again. It lives in the application
+// layer so that the MCP and the CLI share it.
+pub mod graph_snapshot;
 pub mod ports;
 // e69 WU3 — PolicyGate (application-layer; the only authority that
 // turns an EvidenceBundle into a structured decision). Gated by

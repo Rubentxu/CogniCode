@@ -19,7 +19,10 @@ Este contrato mira cuatro cosas y ninguna ejecuta el servicio:
    anadida y no declarada es un analizador que no se puede identificar.
 3. El snapshot persistido lleva la clave, y el sitio que decide si se sirve
    compara la clave antes de servirlo.
-4. La base que el producto publica declara el analizador, y el catalogo
+4. Las dos interfaces --el MCP y la CLI-- deciden con la misma funcion del
+   dueno: una interface que decide por su cuenta puede servir un snapshot
+   que nadie comparo con la clave.
+5. La base que el producto publica declara el analizador, y el catalogo
    publicado declara lo mismo: un documento que describe una forma que el
    producto ya no tiene es una promesa falsa.
 
@@ -41,11 +44,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 KEY_OWNER = "crates/cognicode-core/src/domain/value_objects/snapshot_key.rs"
 HANDLERS = "crates/cognicode-core/src/interface/mcp/handlers/mod.rs"
-# The persistence lives in its own module: the handlers decide, and the
-# module that owns the file writes and reads it. The contract follows the
-# code to wherever the owner is — a contract que mire un fichero que ya no
+# The persistence lives in its own module, and the owner is the
+# application layer: it decides, writes and reads the file, so that the MCP
+# and the CLI go through the same decision. The contract follows the code
+# to wherever the owner is — a contract que mire un fichero que ya no
 # guarda lo que dice guardar deja de comprobar nada.
-SNAPSHOT_STORE = "crates/cognicode-core/src/interface/mcp/handlers/graph_snapshot.rs"
+SNAPSHOT_OWNER = "crates/cognicode-core/src/application/graph_snapshot.rs"
+# The CLI's use case: the other half of the product that has to go through
+# the same decision.
+ANALYZER = "crates/cognicode-core/src/application/services/analyze.rs"
 CORE_MANIFEST = "crates/cognicode-core/Cargo.toml"
 CATALOG = "product/tools.json"
 
@@ -230,49 +237,76 @@ def the_declared_capabilities_match_the_manifest(
     return findings
 
 
-def the_snapshot_carries_the_key(text: str, store_text: str | None = None) -> list[str]:
+def the_snapshot_carries_the_key(owner_text: str | None = None) -> list[str]:
     """El snapshot se guarda con la clave y se decide con la clave.
 
     Un snapshot sin clave es un grafo sin autor, y cualquier otro build lo
     serviria como suyo. Y una decision que no compara la clave deja el
     defecto por la puerta de atras en cuanto se toca el formato.
 
-    `text` es el sitio que DECIDE (los handlers); `store_text` es el sitio
-    que GUARDA (el modulo que posee el fichero). Los dos son distintos
-    ficheros, y cada detector mira al que le toca.
+    `owner_text` es el sitio que GUARDA y DECIDE: el dueno del snapshot es
+    uno solo, y vive en la capa de aplicacion.
     """
-    if store_text is None:
-        store_text = source(SNAPSHOT_STORE)
+    if owner_text is None:
+        owner_text = source(SNAPSHOT_OWNER)
     findings: list[str] = []
-    if "SNAPSHOT_SCHEMA" not in text:
+    if "SNAPSHOT_SCHEMA" not in owner_text:
         findings.append(
-            f"{HANDLERS}: el snapshot no se escribe con el esquema que declara "
-            "la clave"
+            f"{SNAPSHOT_OWNER}: el snapshot no se escribe con el esquema que "
+            "declara la clave"
         )
-    if "same_producer_as" not in text:
+    if "same_producer_as" not in owner_text:
         findings.append(
-            f"{HANDLERS}: el sitio que carga el snapshot no compara la clave; "
-            "un snapshot de otro analizador se serviria como suyo"
+            f"{SNAPSHOT_OWNER}: el sitio que carga el snapshot no compara la "
+            "clave; un snapshot de otro analizador se serviria como suyo"
         )
     save = re.search(
-        r"(?s)fn save_durable_snapshot\((.*?)\) -> std::io::Result", store_text
+        r"(?s)fn save_durable_snapshot\((.*?)\) -> std::io::Result", owner_text
     )
     if not save:
         findings.append(
-            f"{SNAPSHOT_STORE}: no se encuentra el guardado del snapshot"
+            f"{SNAPSHOT_OWNER}: no se encuentra el guardado del snapshot"
         )
     elif "key: &SnapshotKey" not in save.group(1):
         findings.append(
-            f"{SNAPSHOT_STORE}: el snapshot se guarda sin la clave; queda un "
+            f"{SNAPSHOT_OWNER}: el snapshot se guarda sin la clave; queda un "
             "grafo sin autor"
         )
-    load = re.search(r"(?s)fn load_durable_snapshot\((.*?)\) -> Option", store_text)
+    load = re.search(r"(?s)fn load_durable_snapshot\((.*?)\) -> Option", owner_text)
     if not load:
-        findings.append(f"{SNAPSHOT_STORE}: no se encuentra la carga del snapshot")
-    elif "SnapshotKey" not in store_text.split("fn load_durable_snapshot", 1)[1][:800]:
+        findings.append(f"{SNAPSHOT_OWNER}: no se encuentra la carga del snapshot")
+    elif "SnapshotKey" not in owner_text.split("fn load_durable_snapshot", 1)[1][:800]:
         findings.append(
-            f"{SNAPSHOT_STORE}: la carga no devuelve la clave; el producto no "
+            f"{SNAPSHOT_OWNER}: la carga no devuelve la clave; el producto no "
             "puede saber quien produjo lo que carga"
+        )
+    return findings
+
+
+def the_interfaces_use_the_owners_decision(
+    handlers_text: str | None = None, analyzer_text: str | None = None
+) -> list[str]:
+    """Las dos interfaces deciden con la misma funcion.
+
+    Una interface que decide por su cuenta es una interface que puede
+    servir un snapshot que nadie comparo con la clave. Las dos --el MCP y
+    la CLI-- tienen que pasar por el dueno: es lo que hace que lo que una
+    calcula, la otra lo sirva.
+    """
+    if handlers_text is None:
+        handlers_text = source(HANDLERS)
+    if analyzer_text is None:
+        analyzer_text = source(ANALYZER)
+    findings: list[str] = []
+    if "load_or_build_graph" not in handlers_text:
+        findings.append(
+            f"{HANDLERS}: los handlers no preguntan al dueno del snapshot; "
+            "pueden servir un grafo que nadie comparo con la clave"
+        )
+    if "load_or_build_graph" not in analyzer_text:
+        findings.append(
+            f"{ANALYZER}: la CLI no pregunta al dueno del snapshot; reconstruye "
+            "el arbol en cada run y nada de lo que calcula se guarda"
         )
     return findings
 
@@ -359,7 +393,13 @@ def test_the_declared_capabilities_match_the_manifest() -> None:
 
 def test_the_snapshot_carries_the_key() -> None:
     """El snapshot lleva la clave y se decide con la clave."""
-    findings = the_snapshot_carries_the_key(source(HANDLERS))
+    findings = the_snapshot_carries_the_key()
+    assert not findings, "FAIL: " + "; ".join(findings)
+
+
+def test_the_interfaces_use_the_owners_decision() -> None:
+    """Las dos interfaces pasan por el dueno del snapshot."""
+    findings = the_interfaces_use_the_owners_decision()
     assert not findings, "FAIL: " + "; ".join(findings)
 
 
@@ -400,10 +440,11 @@ def test_the_detectors_see_a_violation_when_there_is_one() -> None:
         ),
         (
             the_snapshot_carries_the_key,
-            (
-                "fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",
-                "fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",
-            ),
+            ("fn save_durable_snapshot(db_path: &Path, graph: &CallGraph) {}\n",),
+        ),
+        (
+            the_interfaces_use_the_owners_decision,
+            ("fn build_project_graph() {}\n", "fn build_project_graph() {}\n"),
         ),
         (
             the_published_basis_declares_the_analyzer,
@@ -440,6 +481,7 @@ def main() -> int:
         test_the_analyzer_declares_a_real_identity,
         test_the_declared_capabilities_match_the_manifest,
         test_the_snapshot_carries_the_key,
+        test_the_interfaces_use_the_owners_decision,
         test_the_published_basis_declares_the_analyzer,
         test_the_published_catalog_declares_the_same,
         test_the_detectors_see_a_violation_when_there_is_one,

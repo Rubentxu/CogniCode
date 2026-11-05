@@ -16,7 +16,7 @@
 use std::time::Instant;
 
 use crate::application::analysis_basis::{
-    AnalysisBasis, AnalysisError, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze,
+    AnalysisBasis, AnalysisError, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze, GraphSource,
 };
 use crate::application::services::analysis_service::AnalysisService;
 
@@ -42,12 +42,33 @@ pub fn no_material_reason(path: &std::path::Path) -> String {
 /// consumidor) pueda reutilizar la misma instancia entre ops.
 pub struct ServiceAnalyzer {
     service: std::sync::Arc<AnalysisService>,
+    /// Where the product keeps what it calculates.
+    ///
+    /// `None` when the caller names nowhere: the analyzer then calculates
+    /// and keeps nothing, and says so in the log. A consumer that names
+    /// the cache gets the snapshot the MCP also serves, and what one of
+    /// them calculates the other one serves.
+    cache_root: Option<std::path::PathBuf>,
 }
 
 impl ServiceAnalyzer {
     pub fn new() -> Self {
         Self {
             service: std::sync::Arc::new(AnalysisService::new()),
+            cache_root: None,
+        }
+    }
+
+    /// The analyzer that keeps what it calculates in `cache_root`.
+    ///
+    /// The cache root is a parameter and not a constant because the
+    /// product's cache is the user's, and a test that wrote into it would
+    /// leave entries nobody can clean. The CLI names the user's cache; a
+    /// test names its own.
+    pub fn with_cache_root(cache_root: impl Into<Option<std::path::PathBuf>>) -> Self {
+        Self {
+            service: std::sync::Arc::new(AnalysisService::new()),
+            cache_root: cache_root.into(),
         }
     }
 
@@ -70,18 +91,28 @@ impl Analyze for ServiceAnalyzer {
         let started = Instant::now();
         let workspace = basis.workspace_root().to_path_buf();
 
-        let mut outcome = match op.clone() {
+        // The source travels with the answer: a graph calculated now and a
+        // graph served from the snapshot are the same answer only when the
+        // tree did not change, and the consumer is the one who has to know
+        // that the product checked.
+        let (mut outcome, source) = match op.clone() {
             AnalysisOp::GraphFull { path, rebuild } => self.graph_full(&path, rebuild),
-            AnalysisOp::GraphComplexity { path } => self.graph_complexity(&path),
-            other => AnalysisOutcome::unsupported(&format!(
-                "op `{}` aún no está cableada al adaptador de producción (CU-1.2 cubre graph.full y graph.complexity)",
-                other.operation_id()
-            )),
+            AnalysisOp::GraphComplexity { path } => (self.graph_complexity(&path), None),
+            other => (
+                AnalysisOutcome::unsupported(&format!(
+                    "op `{}` aún no está cableada al adaptador de producción (CU-1.2 cubre graph.full y graph.complexity)",
+                    other.operation_id()
+                )),
+                None,
+            ),
         };
 
-        let provenance =
+        let mut provenance =
             AnalysisProvenance::new(workspace, op.operation_id(), capability_for_op(&op))
                 .with_elapsed_ms(started.elapsed().as_millis());
+        if let Some(source) = source {
+            provenance = provenance.with_graph_source(source);
+        }
 
         outcome = outcome.with_provenance(provenance);
         outcome
@@ -91,31 +122,54 @@ impl Analyze for ServiceAnalyzer {
 use crate::application::analysis_basis::AnalysisProvenance;
 
 impl ServiceAnalyzer {
-    fn graph_full(&self, path: &std::path::Path, rebuild: bool) -> AnalysisOutcome<AnalysisValue> {
+    /// El grafo del workspace, servido del snapshot cuando se puede y
+    /// calculado cuando no.
+    ///
+    /// La decisión es una sola y es la del producto: la función
+    /// `load_or_build_graph` la toma, y el MCP toma la misma. Lo que uno de
+    /// ellos calcula, el otro lo sirve.
+    ///
+    /// `rebuild` es la exigencia del consumidor de leer el arbol otra vez,
+    /// y es lo que `--rebuild` significa en la CLI.
+    fn graph_full(
+        &self,
+        path: &std::path::Path,
+        rebuild: bool,
+    ) -> (AnalysisOutcome<AnalysisValue>, Option<GraphSource>) {
         use crate::application::analysis_basis::GraphValue;
 
-        if rebuild {
-            if let Err(e) = self.service.build_full_graph(path) {
-                return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
-                    "build_full_graph falló sobre {}: {e:?}",
-                    path.display()
-                )));
+        let loaded = match crate::application::graph_snapshot::load_or_build_graph(
+            &self.service,
+            path,
+            self.cache_root.as_deref(),
+            None,
+            rebuild,
+        ) {
+            Ok(loaded) => loaded,
+            Err(e) => {
+                return (
+                    AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
+                        "build_full_graph falló sobre {}: {e:?}",
+                        path.display()
+                    ))),
+                    None,
+                );
             }
-        } else if self.service.get_project_graph().symbol_count() == 0 {
-            // Sin rebuild explícito y sin caché: construir una vez.
-            if let Err(e) = self.service.build_full_graph(path) {
-                return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
-                    "build_full_graph falló sobre {}: {e:?}",
-                    path.display()
-                )));
-            }
-        }
+        };
+        let source = Some(if loaded.loaded_from_cache {
+            GraphSource::Cache
+        } else {
+            GraphSource::Built
+        });
 
         let graph = self.service.get_project_graph();
         if graph.symbol_count() == 0 {
             // El build "exitoso" con cero símbolos es ausencia de
             // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
-            return AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path)));
+            return (
+                AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path))),
+                None,
+            );
         }
 
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
@@ -132,19 +186,36 @@ impl ServiceAnalyzer {
         // "lo sabes todo?". La referencia y la relación rechazada viajan
         // con el valor —donde el consumidor lee lo que sí se resolvió— y el
         // gap dice qué cobertura no está completa.
-        let Some((skipped, pending, rejected)) = self.partial_coverage() else {
-            // No hay reporte: no se midio nada. Eso no es lo mismo que
-            // medir y no encontrar nada, asi que la respuesta no dice
-            // "complete": dice "unknown", y el consumidor lo sabe.
-            let stats = self.service.get_graph_stats();
-            return AnalysisOutcome::unknown_with(AnalysisValue::Graph(GraphValue::Full {
-                path: path.to_path_buf(),
-                symbols: stats.symbol_count,
-                dependencies: stats.edge_count,
-                elapsed_ms: 0,
-                pending_references: Vec::new(),
-                rejected_relations: Vec::new(),
-            }));
+        //
+        // Un grafo servido del snapshot no tiene BuildReport: este proceso
+        // no lo construyó. Sus huecos son los del arbol de AHORA —un
+        // hueco no es uno de los ficheros del grafo, asi que el manifiesto
+        // no lo ve— y sus referencias y relaciones son las del grafo
+        // servido, que son vacias porque un snapshot solo existe para un
+        // build completo.
+        let (skipped, pending, rejected) = if loaded.loaded_from_cache {
+            (loaded.tree.holes, Vec::new(), Vec::new())
+        } else {
+            match self.partial_coverage() {
+                Some(coverage) => coverage,
+                None => {
+                    // No hay reporte: no se midio nada. Eso no es lo mismo que
+                    // medir y no encontrar nada, asi que la respuesta no dice
+                    // "complete": dice "unknown", y el consumidor lo sabe.
+                    let stats = self.service.get_graph_stats();
+                    return (
+                        AnalysisOutcome::unknown_with(AnalysisValue::Graph(GraphValue::Full {
+                            path: path.to_path_buf(),
+                            symbols: stats.symbol_count,
+                            dependencies: stats.edge_count,
+                            elapsed_ms: 0,
+                            pending_references: Vec::new(),
+                            rejected_relations: Vec::new(),
+                        })),
+                        source,
+                    );
+                }
+            }
         };
         let stats = self.service.get_graph_stats();
         let value = AnalysisValue::Graph(GraphValue::Full {
@@ -157,9 +228,9 @@ impl ServiceAnalyzer {
         });
         let gaps = coverage_gaps(&skipped, &pending, &rejected);
         if gaps.is_empty() {
-            return AnalysisOutcome::complete(value);
+            return (AnalysisOutcome::complete(value), source);
         }
-        AnalysisOutcome::partial(value, gaps)
+        (AnalysisOutcome::partial(value, gaps), source)
     }
 
     fn graph_complexity(&self, path: &std::path::Path) -> AnalysisOutcome<AnalysisValue> {

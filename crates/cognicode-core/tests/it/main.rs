@@ -8,6 +8,7 @@ mod a014_product_asset_resolution;
 mod a_cut_never_splits_a_character;
 mod a_date_is_published_only_when_it_was_measured;
 mod a_name_with_two_symbols_is_refused_not_chosen;
+mod a_new_session_serves_what_the_last_one_calculated;
 mod a_project_under_a_skipped_name_is_still_read;
 mod a_rejection_arrives_as_a_rejection;
 mod a_snapshot_says_who_produced_it;
