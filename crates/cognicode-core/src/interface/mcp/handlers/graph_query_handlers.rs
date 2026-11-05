@@ -7,8 +7,12 @@
 
 use std::collections::HashSet;
 
+use crate::application::services::graph_queries::{
+    CommunityDetection, CommunitySection, community_callflow,
+};
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::value_objects::published_line;
+use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::symbol_identity::{
     Precision, default_provider_for_tool, precision_floor_for_tool,
@@ -740,15 +744,20 @@ pub async fn handle_graph_query_filtered(
 pub struct ExportCallflowInput {
     /// Max architecture sections (default: 8)
     pub max_sections: Option<usize>,
-    pub format: Option<String>,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ExportCallflowOutput {
     pub mermaid: String,
+    /// How many communities the detection found.
     pub community_count: usize,
+    /// How many of them the diagram draws.
+    pub sections_drawn: usize,
     /// One line saying what the answer says.
     pub summary: String,
 }
+
+/// The number of sections the diagram draws when the caller does not say.
+const DEFAULT_MAX_SECTIONS: usize = 8;
 
 pub async fn handle_export_callflow(
     ctx: &HandlerContext,
@@ -758,24 +767,38 @@ pub async fn handle_export_callflow(
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
-    let _max = input.max_sections.unwrap_or(8);
-    let mut mermaid = String::from("graph LR\n");
-    let symbols = graph.symbol_count();
-    if symbols > 0 {
-        mermaid.push_str(&format!("    A[\"workspace\\n{} symbols\"]\n", symbols));
-        mermaid.push_str("    style A fill:#f9f,stroke:#333\n");
-    } else {
-        mermaid.push_str("    A[Empty workspace]\n");
-    }
-    mermaid.push_str(&"    classDef community fill:#e1f5fe,stroke:#01579b\n".to_string());
-    let community_count = if symbols > 0 { 1 } else { 0 };
+    let max_sections = input.max_sections.unwrap_or(DEFAULT_MAX_SECTIONS);
+
+    // The detection is the one the product already uses for
+    // `graph_communities`: the diagram and that tool describe the same
+    // communities, so they are detected once and the same way. The
+    // detector is an infrastructure adapter, and this is the adapter
+    // layer — where the product already reaches it.
+    let detection = CommunityDetector::detect(&graph, CommunityDetector::MAX_ITERATIONS);
+    let communities = CommunityDetection {
+        communities: detection
+            .communities
+            .iter()
+            .map(|community| CommunitySection {
+                id: community.id,
+                label: community.label.clone(),
+                size: community.nodes.len(),
+            })
+            .collect(),
+        node_communities: detection.node_communities.clone(),
+    };
+
+    let callflow = community_callflow(&graph, &communities, max_sections);
     let summary = format!(
-        "Callflow diagram of {} symbols over {} communities",
-        symbols, community_count
+        "Call-flow diagram of {} symbols over {} communities ({} drawn)",
+        graph.symbol_count(),
+        callflow.community_count,
+        callflow.sections_drawn
     );
     Ok(ExportCallflowOutput {
-        mermaid,
-        community_count,
+        mermaid: callflow.mermaid,
+        community_count: callflow.community_count,
+        sections_drawn: callflow.sections_drawn,
         summary,
     })
 }

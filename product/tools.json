@@ -1246,12 +1246,6 @@
       "stability": "stable",
       "input_schema": {
         "properties": {
-          "format": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "max_sections": {
             "description": "Max architecture sections (default: 8)",
             "minimum": 0,
@@ -1266,12 +1260,19 @@
       "output_schema": {
         "properties": {
           "community_count": {
+            "description": "How many communities the detection found.",
             "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "mermaid": {
             "type": "string"
+          },
+          "sections_drawn": {
+            "description": "How many of them the diagram draws.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           },
           "summary": {
             "description": "One line saying what the answer says.",
@@ -1281,6 +1282,7 @@
         "required": [
           "mermaid",
           "community_count",
+          "sections_drawn",
           "summary"
         ],
         "title": "ExportCallflowOutput",
