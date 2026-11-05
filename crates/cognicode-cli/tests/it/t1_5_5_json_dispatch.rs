@@ -48,8 +48,8 @@ use cognicode_cli::presenter::{
     present_graph_result_json, present_index_result_json, present_output,
 };
 use cognicode_core::domain::value_objects::SymbolKind;
-use cognicode_core::infrastructure::graph::SymbolLocation;
 use cognicode_core::interface::cli::commands::Format;
+use cognicode_core::interface::cli::result::PublishedLocation;
 use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, IndexResult};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -93,7 +93,7 @@ fn json_index_query_shape() {
     let r = IndexResult::Query {
         symbol: "main".to_string(),
         path: PathBuf::from("/tmp/proj"),
-        locations: vec![SymbolLocation {
+        locations: vec![PublishedLocation {
             file: "/tmp/proj/src/main.rs".to_string(),
             line: 1,
             column: 1,

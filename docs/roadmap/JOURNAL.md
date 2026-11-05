@@ -32930,3 +32930,100 @@ la CLI), y el resto de la suite del workspace no se ve afectada por un fichero d
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-05 — TASK-118: la columna publicada es una, como la línea
+
+**El hueco.** La línea encontró su base en TASK-80: el producto publica la línea que una
+persona lee, y la aritmética vive en un solo sitio (`published_line`). La columna se quedó
+atrás, y se quedó atrás de dos maneras a la vez.
+
+**La salida publicada.** El grafo cuenta desde cero —lo que entrega el parser— y las
+superficies que publican una posición del grafo publicaban la columna tal como la llevaba el
+grafo, al lado de una línea que ya era la que se lee. Dos números en un objeto, en dos bases.
+Los **26** puntos de cruce que convertían una columna cruda o un `+ 1` suelto están contados
+en el diff de la rama: `interface/mcp/handlers/mod.rs` (10), `interface/cli/commands.rs` (4),
+`application/workspace_session.rs` (3), `interface/cli/result.rs` (2),
+`application/services/graph_queries.rs` (2), `application/dto/symbol_dto.rs` (2), y uno en cada
+uno de `application/dto/common.rs`, `application/dto/analysis.rs` y
+`application/services/analysis_service.rs`.
+
+**La entrada publicada.** `get_symbol_code` tomaba la columna como la cuenta el parser, y el
+catálogo lo decía: «Column number (0-indexed)». Mientras tanto las tools de inteligencia de
+código —`hover`, `go_to_definition`, `find_references`, `rename_preview`— la tomaban como la
+lee una persona, y el catálogo no decía nada. El cruce de `get_symbol_code` ocurre ahora
+junto al de la línea, en el mismo sitio.
+
+**La CLI.** `index query` e `index outline` publicaban las posiciones crudas del índice
+(`SymbolLocation` es 0-indexed en línea y en columna), mientras el MCP publicaba la línea
+desde uno. La CLI y el MCP publicaban bases distintas para lo mismo.
+
+**RED medido.** El test nuevo
+(`crates/cognicode-core/tests/it/one_published_column_base.rs`, seis casos) cayó entero
+antes del cambio: `cargo nextest run --profile gate -p cognicode-core --test it
+one_published_column_base` → **6 tests run: 0 passed, 6 failed**. Los mensajes que lo
+dicen son del propio defecto, no del armazón:
+
+```
+the hot path of beta publishes a column that is not the column the file declares
+the catalogue still declares `get_symbol_code.col` in the retired base: "Column number (0-indexed)"
+the catalogue does not say which base the column of `find_references` is in: ""
+```
+
+El fixture son dos declaraciones en la misma línea y la segunda no empieza en el primer
+carácter: una columna que cuenta desde cero apunta al carácter anterior a la declaración,
+que no es la columna de nadie.
+
+**La corrección.**
+
+- `published_column` vive al lado de `published_line`, en
+  `domain/value_objects/location.rs`: un sitio, una aritmética, `PUBLISHED_COLUMN_BASE = 1`.
+- El cruce se hace donde se publica, no donde se recoge: `SourceLocation::from(&Location)`
+  (ya existía para la línea) y `DeadCodeEntry::from_symbol` (nuevo, en la capa de DTO)
+  construyen la posición publicada; `IndexResult::published_query` y
+  `IndexResult::published_outline` (nuevos, en `interface/cli/result.rs`) hacen lo mismo para
+  la CLI, y el presentador consume tipos ya publicados.
+- El catálogo declara la base de toda columna que publica (**16** descripciones en
+  `product/tools.json` y su captura de runtime) y retira la base vieja de `get_symbol_code`.
+
+**El ratchet de tamaño, que esta unidad puso rojo y arregló.** El crecimiento de la propia
+unidad hizo que `scripts/ci/test_file_size_ratchet.py` saliera en rojo:
+
+```
+- crates/cognicode-core/src/application/services/analysis_service.rs: 2241 production lines > 2239 at the base (4976b700f2ed). A file over 2000 may only shrink.
+- crates/cognicode-core/src/interface/cli/commands.rs: 2990 production lines > 2980 at the base (4976b700f2ed). A file over 2000 may only shrink.
+```
+
+Un fichero que ya está en el límite no puede crecer, ni siquiera para arreglar un defecto de
+la base. La respuesta no fue unas pocas líneas de YAML ni un fichero más: fue mover cada cruce a
+la capa que publica —el DTO y el resultado de la CLI—, que es donde debe estar. Resultado
+medido: `analysis_service.rs` **2239 → 2234** y `commands.rs` **2980 → 2973** líneas de
+producción; el contrato vuelve a verde (`test_no_file_grew_past_its_base_or_crossed_the_limit`
+PASS).
+
+**Verificación.** Rama `feature/task-118-one-column-base`, base `4976b700` (la punta de
+`main`). `cargo nextest run --profile gate -p cognicode-core --lib --tests` → **3499 tests
+run: 3499 passed, 4 skipped**. `cargo nextest run --profile gate -p cognicode-cli --lib
+--tests` → **627 tests run: 627 passed, 1 skipped**. `cargo nextest run --profile gate
+-p cognicode-mcp --lib --tests` → **101 tests run: 101 passed, 5 skipped**. El test nuevo,
+aislado: **6 tests run: 6 passed**. `cargo fmt --all --check` limpio. `cargo clippy
+--workspace --all-targets -- -D warnings` rc=0. `npm test --prefix apps/explorer-ui` →
+**944 tests passed** (86 ficheros), rc=0. `bash scripts/ci/run-all-contracts.sh` → rc=0,
+**43 contratos** y 303 casos en verde.
+
+**Gate: NOT_RUN (lote).** El gate entero se pasa por lotes de diez tareas, no por tarea: su
+paso de mutación mide `cognicode-graph-algos`, un crate que esta rama no toca.
+
+**Residuos (fuera del alcance, con dueño).**
+
+- La columna de los `file:line:column` compuestos (`ask_about_code`, el FQN del fact side)
+  sigue en la base interna: es una posición que no se publica como campo de la salida, y
+  unificarla es un trabajo propio.
+- El `Location` del dominio sigue teniendo dos caras —el grafo lo produce desde cero y el
+  código de inteligencia artificial lo toma desde uno—, igual que después de TASK-80. La
+  conversión pública está en un sitio; la unificación interna del tipo es un trabajo mayor,
+  con radio grande sobre los proveedores de LSP.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del
+repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que
+este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que
+el hook rechaza.

@@ -34,9 +34,79 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
+use crate::domain::value_objects::{SymbolKind, published_column, published_line};
+
 pub use crate::domain::traits::code_intelligence::ReferenceKind;
 pub use crate::infrastructure::graph::SymbolLocation;
 pub use crate::infrastructure::semantic::outline::OutlineNode;
+
+/// Una posición como la publica el producto.
+///
+/// El índice y el outline cuentan desde cero —lo que entrega el
+/// parser— y el producto cuenta desde uno: la línea y la columna que
+/// lee una persona. El cruce vive aquí, y no en el presenter.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublishedPosition {
+    pub file: String,
+    /// Line number (1-indexed): the line a person reads.
+    pub line: u32,
+    /// Column number (1-indexed): the column a person reads.
+    pub column: u32,
+}
+
+/// Una localización como la publica el producto.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublishedLocation {
+    pub file: String,
+    /// Line number (1-indexed): the line a person reads.
+    pub line: u32,
+    /// Column number (1-indexed): the column a person reads.
+    pub column: u32,
+    pub symbol_kind: SymbolKind,
+}
+
+/// Un nodo del outline como lo publica el producto.
+#[derive(Debug, Clone, Serialize)]
+pub struct PublishedOutlineNode {
+    pub name: String,
+    pub kind: SymbolKind,
+    pub location: PublishedPosition,
+    pub signature: Option<String>,
+    pub children: Vec<PublishedOutlineNode>,
+    pub is_private: bool,
+}
+
+impl From<&SymbolLocation> for PublishedLocation {
+    fn from(location: &SymbolLocation) -> Self {
+        Self {
+            file: location.file.clone(),
+            line: published_line(location.line),
+            column: published_column(location.column),
+            symbol_kind: location.symbol_kind,
+        }
+    }
+}
+
+impl From<&OutlineNode> for PublishedOutlineNode {
+    fn from(node: &OutlineNode) -> Self {
+        Self {
+            name: node.name.clone(),
+            kind: node.kind,
+            location: PublishedPosition {
+                file: node.location.file().to_string(),
+                line: published_line(node.location.line()),
+                column: published_column(node.location.column()),
+            },
+            signature: node.signature.clone(),
+            children: node
+                .children
+                .iter()
+                .map(PublishedOutlineNode::from)
+                .collect(),
+            is_private: node.is_private,
+        }
+    }
+}
 
 /// Resultado exitoso de un `cognicode index <subcommand>`.
 ///
@@ -62,7 +132,7 @@ pub enum IndexResult {
     Query {
         symbol: String,
         path: PathBuf,
-        locations: Vec<SymbolLocation>,
+        locations: Vec<PublishedLocation>,
     },
     /// `cognicode index query <symbol> <path>` — symbol not found.
     /// Variante separada de `Query { locations: vec![] }` para
@@ -72,7 +142,7 @@ pub enum IndexResult {
     /// `cognicode index outline <file>` — outline extracted.
     Outline {
         file: PathBuf,
-        symbols: Vec<OutlineNode>,
+        symbols: Vec<PublishedOutlineNode>,
     },
     /// `cognicode index symbol-code <file>:<line>:<col>` — source
     /// extracted for a symbol.
@@ -85,6 +155,30 @@ pub enum IndexResult {
         doc: Option<String>,
         code: String,
     },
+}
+
+impl IndexResult {
+    /// Publishes the positions of an index query.
+    ///
+    /// The index counts from zero —what the parser hands out— and the
+    /// product counts from one: the line and the column a person
+    /// reads. The crossing happens here, once, and the CLI publishes
+    /// the same base the rest of the product publishes.
+    pub fn published_query(symbol: String, path: PathBuf, locations: &[SymbolLocation]) -> Self {
+        Self::Query {
+            symbol,
+            path,
+            locations: locations.iter().map(PublishedLocation::from).collect(),
+        }
+    }
+
+    /// Publishes the nodes of an outline, with the same base.
+    pub fn published_outline(file: PathBuf, nodes: &[OutlineNode]) -> Self {
+        Self::Outline {
+            file,
+            symbols: nodes.iter().map(PublishedOutlineNode::from).collect(),
+        }
+    }
 }
 
 /// Error tipado de un `cognicode index <subcommand>`.
@@ -279,7 +373,7 @@ impl CommandOutput {
 //     o un campo opcional en cada variant. Decidirlo entonces,
 //     no ahora — el pilot (PerFile) no emite esa warning.
 
-use crate::domain::value_objects::{Location, SymbolKind};
+use crate::domain::value_objects::Location;
 
 /// A flat reference to a symbol in the graph (used by `EntryPoints`,
 /// `LeafFunctions`, and as a step in path traces). The presenter

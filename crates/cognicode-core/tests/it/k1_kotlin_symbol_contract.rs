@@ -377,9 +377,9 @@ fn the_kotlin_package_is_published_as_its_own_declaration() {
 
 /// El código que el producto publica para el símbolo de ese nombre.
 ///
-/// La columna es la que publica el lector —base 0, como la línea que
-/// cuenta—, porque lo que se prueba aquí es QUÉ código se devuelve, no
-/// en qué base se cuentan las coordenadas.
+/// La línea y la columna cruzan a la base que publica el producto —la
+/// que lee una persona—, porque lo que se prueba aquí es QUÉ código se
+/// devuelve, no en qué base se cuentan las coordenadas.
 fn code_of(service: &SymbolCodeService, path: &Path, source: &str, name: &str) -> String {
     let parser = TreeSitterParser::new(Language::Kotlin).expect("la gramática de Kotlin se carga");
     let tree = parser.parse_tree(source).expect("el corpus Kotlin parsea");
@@ -395,7 +395,7 @@ fn code_of(service: &SymbolCodeService, path: &Path, source: &str, name: &str) -
         .get_symbol_code(
             path.to_str().unwrap(),
             location.line() + 1,
-            location.column(),
+            location.column() + 1,
         )
         .unwrap_or_else(|error| panic!("el código de `{name}` se lee: {error}"))
         .code

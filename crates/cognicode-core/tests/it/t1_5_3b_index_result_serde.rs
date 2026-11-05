@@ -20,11 +20,10 @@
 //!   - Adding a new variant without declaring its wire
 //!     form is caught (the test enumerates the known kinds).
 
-use cognicode_core::domain::value_objects::Location;
 use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
-use cognicode_core::infrastructure::graph::SymbolLocation;
-use cognicode_core::infrastructure::semantic::outline::OutlineNode;
-use cognicode_core::interface::cli::result::{IndexError, IndexResult};
+use cognicode_core::interface::cli::result::{
+    IndexError, IndexResult, PublishedLocation, PublishedOutlineNode, PublishedPosition,
+};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -33,7 +32,7 @@ fn index_result_query_with_locations_serializes_with_kind_query() {
     let result = IndexResult::Query {
         symbol: "main".to_string(),
         path: PathBuf::from("/tmp/proj"),
-        locations: vec![SymbolLocation {
+        locations: vec![PublishedLocation {
             file: "/tmp/proj/src/main.rs".to_string(),
             line: 1,
             column: 1,
@@ -96,15 +95,23 @@ fn index_result_outline_serializes_recursive_tree() {
     // emit the hierarchical tree.
     let result = IndexResult::Outline {
         file: PathBuf::from("/lib/foo.rs"),
-        symbols: vec![OutlineNode {
+        symbols: vec![PublishedOutlineNode {
             name: "outer".to_string(),
             kind: SymbolKind::Function,
-            location: Location::new("/lib/foo.rs", 1, 1),
+            location: PublishedPosition {
+                file: "/lib/foo.rs".to_string(),
+                line: 1,
+                column: 1,
+            },
             signature: None,
-            children: vec![OutlineNode {
+            children: vec![PublishedOutlineNode {
                 name: "inner".to_string(),
                 kind: SymbolKind::Function,
-                location: Location::new("/lib/foo.rs", 5, 1),
+                location: PublishedPosition {
+                    file: "/lib/foo.rs".to_string(),
+                    line: 5,
+                    column: 1,
+                },
                 signature: None,
                 children: vec![],
                 is_private: false,

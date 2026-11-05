@@ -123,7 +123,7 @@
     {
       "name": "build_call_subgraph",
       "title": "Build an on-demand call subgraph centered on a symbol",
-      "description": "Build an on-demand call subgraph centered on a symbol.",
+      "description": "Build an on-demand call subgraph centered on a symbol. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -1262,6 +1262,7 @@
       "input_schema": {
         "properties": {
           "column": {
+            "description": "Column number (1-indexed): the column a person reads.",
             "type": "integer"
           },
           "file_path": {
@@ -1330,6 +1331,7 @@
       "input_schema": {
         "properties": {
           "column": {
+            "description": "Column number (1-indexed): the column a person reads.",
             "type": "integer"
           },
           "file_path": {
@@ -1393,7 +1395,7 @@
     {
       "name": "find_usages",
       "title": "Find all usages of a symbol across the project",
-      "description": "Find all usages of a symbol across the project.",
+      "description": "Find all usages of a symbol across the project. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "search",
       "authority": "read",
       "stability": "stable",
@@ -1509,7 +1511,7 @@
     {
       "name": "get_call_hierarchy",
       "title": "Traverse call graph to find callers (incoming) or callees (outgoing)",
-      "description": "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
+      "description": "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -1645,7 +1647,7 @@
     {
       "name": "get_entry_points",
       "title": "Find symbols with no incoming edges (entry points in the call graph)",
-      "description": "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
+      "description": "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -1691,7 +1693,7 @@
     {
       "name": "get_file_symbols",
       "title": "Extract symbols (functions, classes, variables) from a source file",
-      "description": "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
+      "description": "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "file",
       "authority": "read",
       "stability": "stable",
@@ -1750,7 +1752,7 @@
     {
       "name": "get_hot_paths",
       "title": "Find functions with highest fan-in (most called functions)",
-      "description": "Find functions with highest fan-in (most called functions).",
+      "description": "Find functions with highest fan-in (most called functions). The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -1969,7 +1971,7 @@
     {
       "name": "get_leaf_functions",
       "title": "Find symbols with no outgoing edges (leaf functions in the call graph)",
-      "description": "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
+      "description": "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -2095,7 +2097,7 @@
     {
       "name": "get_per_file_graph",
       "title": "Get the call graph for a specific file",
-      "description": "Get the call graph for a specific file.",
+      "description": "Get the call graph for a specific file. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -2150,7 +2152,7 @@
       "input_schema": {
         "properties": {
           "col": {
-            "description": "Column number (0-indexed)",
+            "description": "Column number (1-indexed): the column a person reads.",
             "type": "integer"
           },
           "file": {
@@ -2326,6 +2328,7 @@
       "input_schema": {
         "properties": {
           "column": {
+            "description": "Column number (1-indexed): the column a person reads.",
             "type": "integer"
           },
           "file_path": {
@@ -3550,6 +3553,7 @@
       "input_schema": {
         "properties": {
           "column": {
+            "description": "Column number (1-indexed): the column a person reads.",
             "type": "integer"
           },
           "file_path": {
@@ -3840,7 +3844,7 @@
     {
       "name": "merge_graphs",
       "title": "Merge per-file call graphs into a consolidated project graph",
-      "description": "Merge per-file call graphs into a consolidated project graph.",
+      "description": "Merge per-file call graphs into a consolidated project graph. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -4230,7 +4234,7 @@
     {
       "name": "query_symbol_index",
       "title": "Query the symbol index to find locations of a symbol by name (case-insensitive)",
-      "description": "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+      "description": "Query the symbol index to find locations of a symbol by name (case-insensitive). The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "search",
       "authority": "read",
       "stability": "stable",
@@ -5097,7 +5101,7 @@
     {
       "name": "trace_path",
       "title": "Find execution path between two symbols using BFS",
-      "description": "Find execution path between two symbols using BFS.",
+      "description": "Find execution path between two symbols using BFS. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",

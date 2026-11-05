@@ -131,6 +131,11 @@ impl SymbolCodeService {
     }
 
     /// Gets the source code of a symbol at the given location
+    ///
+    /// The line and the column arrive in the base the product
+    /// publishes: the ones a person reads. The parser that reads the
+    /// file counts from zero, and the crossing happens here, in the
+    /// one place that knows the difference.
     pub fn get_symbol_code(
         &self,
         file_path: &str,
@@ -165,7 +170,8 @@ impl SymbolCodeService {
             .map_err(|e| format!("Failed to parse: {}", e))?;
 
         let target_line = line.saturating_sub(1);
-        let node = find_node_at_position(tree.root_node(), target_line, column);
+        let target_column = column.saturating_sub(1);
+        let node = find_node_at_position(tree.root_node(), target_line, target_column);
 
         if let Some(node) = node {
             // Walk ancestors to find enclosing function/class/method instead of

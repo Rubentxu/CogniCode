@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 
-use super::common::{AnalysisMetadata, RiskLevel, SourceLocation, SymbolSummary};
+use super::common::{AnalysisMetadata, RiskLevel, SourceLocation, SymbolKind, SymbolSummary};
+use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::value_objects::{published_column, published_line};
 use serde::{Deserialize, Serialize};
 
 /// Refactor action type
@@ -309,6 +311,31 @@ pub struct DeadCodeEntry {
     pub reason: DeadCodeReason,
     /// Confidence score (0.0-1.0) — higher = more likely dead
     pub confidence: f32,
+}
+
+impl DeadCodeEntry {
+    /// Builds the entry from the symbol it names.
+    ///
+    /// The position it carries is the one the product publishes: the
+    /// line and the column a person reads. The crossing lives here,
+    /// with the DTO that carries the published position, and not in
+    /// the service that finds the dead code.
+    pub fn from_symbol(
+        symbol: &Symbol,
+        kind: SymbolKind,
+        reason: DeadCodeReason,
+        confidence: f32,
+    ) -> Self {
+        Self {
+            symbol: symbol.fully_qualified_name().to_string(),
+            file: symbol.location().file().to_string(),
+            line: published_line(symbol.location().line()),
+            column: published_column(symbol.location().column()),
+            kind,
+            reason,
+            confidence,
+        }
+    }
 }
 
 /// Result of dead code detection

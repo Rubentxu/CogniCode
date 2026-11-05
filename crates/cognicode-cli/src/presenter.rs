@@ -77,11 +77,11 @@ use std::io::{self, Write};
 
 use cognicode_core::application::text_boundary::truncate_at_boundary;
 use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
-use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
 use cognicode_core::interface::cli::result::{
     CommandOutput, GraphResult, HoverResult, IndexResult, NavigateResult, ReferenceEntry,
 };
+use cognicode_core::interface::cli::result::{PublishedOutlineNode, PublishedPosition};
 
 /// Render an `IndexResult` as text into `w`.
 ///
@@ -154,7 +154,7 @@ pub fn present_index_result(result: &IndexResult, w: &mut dyn Write) -> std::io:
 /// matches the pre-migration version byte-for-byte; the T1-5.3d
 /// test pins the `Outline` variant end-to-end.
 fn write_outline_tree(
-    nodes: &[OutlineNode],
+    nodes: &[PublishedOutlineNode],
     indent: usize,
     w: &mut dyn Write,
 ) -> std::io::Result<()> {
@@ -198,22 +198,25 @@ fn write_outline_tree(
 #[doc(hidden)]
 pub mod test_helpers {
     use super::*;
-    use cognicode_core::domain::value_objects::Location;
+    use cognicode_core::domain::value_objects::SymbolKind;
 
-    /// Build an `OutlineNode` from public fields. Exists only so the
-    /// snapshot test in `tests/t1_5_3d_index_presenter_snapshot.rs`
-    /// can construct a tree without depending on `Location`'s private
-    /// fields.
+    /// Build an outline node from public fields. Exists only so the
+    /// snapshot test can construct a tree without depending on the
+    /// private fields of a position.
     pub fn outline_node(
         name: &str,
-        kind: cognicode_core::domain::value_objects::SymbolKind,
+        kind: SymbolKind,
         line: u32,
-        children: Vec<OutlineNode>,
-    ) -> OutlineNode {
-        OutlineNode {
+        children: Vec<PublishedOutlineNode>,
+    ) -> PublishedOutlineNode {
+        PublishedOutlineNode {
             name: name.to_string(),
             kind,
-            location: Location::new("/lib/foo.rs", line, 1),
+            location: PublishedPosition {
+                file: "/lib/foo.rs".to_string(),
+                line,
+                column: 1,
+            },
             signature: None,
             children,
             is_private: false,
