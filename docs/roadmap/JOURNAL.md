@@ -35426,3 +35426,112 @@ Queda encaminado en **TASK-139**, con sus cifras y sus consumidores.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-138: el gate del release sale con 141 cuando awk cierra la tubería antes de que printf termine
+
+**El encargo.** `scripts/ci/release-tag-coherence.sh` salía con 141 (SIGPIPE) en
+vez de responder, y el rojo se veía en el contrato Rust
+`b6_w5_distribution_certification::cp5_release_tag_coherence` de
+`cognicode-core`, dentro de la suite paralela. El mismo test pasaba cuando se
+ejecutaba solo.
+
+Medido antes: con la traza `bash -x` y la suite corriendo en paralelo, el script
+salía con 141 en **9 de 400** invocaciones; sin carga, 0 de 40. La stdout se
+quedaba en la línea `validate-mode  expected.version=… sha=…`, y la línea
+`workspace.version=…` nunca llegaba.
+
+**La causa, medida (no supuesta).** El gate leía la versión del workspace con:
+
+```bash
+WORKSPACE_VERSION="$(printf '%s\n' "$CARGO_TOML_BLOB" \
+  | awk -F'"' '/^\[workspace\.package\]/{found=1} found && /^version[ \t]*=/{print $2; exit}')"
+```
+
+El `exit` de awk cerraba la tubería de lectura mientras printf podía que
+todavía estuviera escribiendo el manifiesto. Con `set -euo pipefail`, el estado
+de la tubería pasa a ser el del proceso muerto por SIGPIPE —141— y el script
+tumba en vez de responder.
+
+Por qué era intermitente y no constante: el manifiesto del repositorio son
+9.071 bytes, que caben de sobra en el búfer de una tubería, así que el escritor
+terminaba antes de que el lector saliera. La carrera solo se daba cuando la
+máquina estaba cargada y los dos procesos se planificaban distinto.
+
+**La reproducción determinista (la clave de la unidad).** Si el manifiesto que
+lee el gate no cabe en el búfer de una tubería, la carrera deja de ser una
+lotería: `printf` tiene que escribir en varias veces y el lector se va con la
+primera. Medido con un repositorio de usar y tirar cuyo `Cargo.toml` ocupa
+278.990 bytes: el gate sale con **141**, con la stdout cortada antes de
+`workspace.version=`. Con el arreglo, sale con **0**.
+
+**Lo que entrega ahora.** El arreglo es la causa, no el síntoma: awk lee **todo**
+el manifiesto y se queda con la primera línea `version =` posterior a
+`[workspace.package]` (`&& !printed {print $2; printed=1}`), sin salir nunca.
+El lector ya no cierra la tubería antes de tiempo, así que la carrera desaparece
+por construcción.
+
+El gate sigue **fallando cerrado**: si awk falla, el estado de la tubería es
+distinto de cero y `set -euo pipefail` tumba el gate; si la versión no se puede
+leer, el script sale con 1 y su mensaje. La semántica de la lectura no cambia:
+medido sobre cuatro manifiestos, `[workspace.package]` sigue ganando a un
+`version =` de paquete anterior, la primera `version =` posterior sigue siendo
+la que vale, un manifiesto sin `[workspace.package]` sigue siendo un fallo con
+su mensaje, y una versión que no es la del workspace sigue siendo rechazada.
+
+**El coste, medido antes y después (AC4).** El gate real, en modo
+`--from-version` contra el HEAD del repositorio, treinta invocaciones cada vez:
+
+| Medida | Antes | Después |
+|---|---|---|
+| Duración mediana del gate | 22,7 ms | **22,5 ms** |
+
+El arreglo no cuesta nada: el manifiesto se leía entero de todos modos. La
+diferencia está en que ahora el lector se queda hasta el final.
+
+**Las pruebas, y por qué son las mínimas.** El defecto estaba en la tubería
+del script, así que un test del programa awk por separado no lo detectaría: la
+protección mínima es **ejecutar el gate real**. No hay nada que retirar —el
+contrato no tenía ninguna comprobación de esta clase— ni UAT que promover.
+
+- **De contrato**, en `scripts/ci/test_release_truth_convergence.py`: el gate
+  real se ejecuta contra un repositorio de usar y tirar con un manifiesto que
+  no cabe en una tubería, y se exige rc 0 y la línea `OK: validate-mode`. El
+  RED se midió de las dos maneras: con el arreglo revertido, el contrato falla
+  con «el gate del release sale con 141 en vez de 0» y el fichero sale con 1.
+
+El radio está medido: el script lo nombran el contrato de la verdad del
+release, el contrato Rust `cp5_release_tag_coherence`, el README (que lo cita
+como el chequeo de coherencia, R8) y la certificación `cp2-cp4-cp5.json`.
+Ninguno más. La configuración de git del repositorio de la prueba se
+neutraliza, como hace el runner de contratos: un contrato tiene que dar el
+mismo veredicto en cualquier máquina.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3540 tests run: 3540 passed, 2 skipped** (antes 3539 de 3540) |
+| `cargo nextest run --profile gate -p cognicode-cli --lib --tests` | **629 tests run: 629 passed, 1 skipped** |
+| `bash scripts/ci/run-all-contracts.sh` | rojo SOLO por `test_roadmap_version_ratchet.py` (el snapshot `CURRENT.md` pide regenerarse; TASK-126, abierto) |
+| El gate real con la suite en paralelo, 400 invocaciones | **0 de 400** salidas con 141 (antes 9 de 400) |
+| Coste del gate real (mediana de 30) | 22,7 ms → 22,5 ms |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134, TASK-135, TASK-136, TASK-137
+y TASK-138 van **siete de diez**, así que el gate de esta unidad es
+**NOT_RUN**.
+
+**Dos rojos que no son de esta unidad, medidos y encaminados.** El contrato
+`test_roadmap_version_ratchet.py` pide regenerar el snapshot `CURRENT.md`
+—declara un SHA que ya no está a más de cinco commits del HEAD—, y eso está
+abierto en **TASK-126**. Los tres fallos de `test_provenance_generation.py`
+que aparecieron al empezar eran la ausencia local del `cosign` fijado
+(`bash scripts/ci/install-cosign.sh`, infraestructura local y no regresión);
+instalado, ese contrato pasa entero.
+
+**Entrega.** PR #627 → `dc832cd2`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
