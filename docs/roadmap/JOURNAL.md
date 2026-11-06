@@ -37382,3 +37382,152 @@ esta unidad, +5 los del contrato nuevo).
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-86: el impacto nombra los tests que alcanza, y el comando que los corre
+
+**El encargo.** AC1 pedía que `impact` devolviese los tests afectados y el comando exacto para
+ejecutarlos. AC2, que la recall de la selección se midiese con un comando que se pide a propósito —la
+selección frente a la ejecución completa—, fuera de la suite y del gate, y que cada cifra se anotase en
+este journal con su SHA. AC3, que la selección sólo se promueva a filtro para tests unitarios tras
+varias mediciones registradas con recall del 100 %, y que mientras tanto sólo ordene.
+
+**Lo que hay al cerrar.** La faceta `affected_tests` viaja en la respuesta del impacto y la publican
+las tres superficies —el MCP (`analyze_impact`), el CLI (`cognicode graph impact`) y la sesión de
+workspace—. Cada test nombrado lleva su nombre, el fichero donde vive, la línea, y el comando exacto
+que lo corre. Donde el lenguaje no decide su runner —Java, C#, Kotlin— no hay comando, y la respuesta
+lo dice en vez de inventar uno.
+
+### Quién decide qué es un test: el lector, y por qué no una regla por nombre
+
+El **lector** decide, porque es el único que puede ver la marca: un fichero de Rust la dice con
+`#[test]`, uno de Java con `@Test`, uno de C# con `[Fact]`, uno de Kotlin con `@Test`. La tabla por
+lenguaje vive en el dominio (`domain/services/test_conventions.rs`) y el lector la consulta
+(`infrastructure/parser/test_markers.rs`); el símbolo viaja marcado (`Symbol::is_test`) y la respuesta
+lo nombra.
+
+Una regla por nombre —`test_*`, `*_test`— no habría servido, y no por gusto: en este repositorio los
+tests de integración se llaman `the_answer_is_ordered` y los unitarios viven en `#[cfg(test)] mod tests`
+dentro de `src/**`. Una regla de nombre no ve ninguno de los dos, y una regla de fichero tampoco ve
+los unitarios. La marca es lo único que los ve.
+
+Los lenguajes que **nombran** sus tests —Python, Go, JavaScript y TypeScript— no tienen marca: su
+convención es la respuesta, y el dominio la aplica al fichero y al nombre que el lector ya tiene.
+
+### El comando de la medición: la selección contra la ejecución completa
+
+`scripts/affected-tests-recall.py` es un comando que **se pide a propósito**. No está en la suite ni en
+el gate, y el contrato del gate lo comprueba: si el gate lo corriera, pagaría su precio en cada lote.
+
+Las dos caras de la comparación tienen que venir de sitios que no dependan la una de la otra:
+
+| Cara | De dónde sale |
+|---|---|
+| **La selección** | Lo que publica el producto: `cognicode --format json graph impact <símbolo> <dir>` y su `affected_tests`. |
+| **La ejecución** | La suite **entera** del paquete, corrida dos veces: una como está, y otra con el contrato del símbolo roto —su cuerpo entra en pánico antes de hacer nada—. La diferencia entre las dos corridas es la verdad: los tests que ya fallaban se restan, para que una suite que estaba roja antes no diga nada. |
+
+El oráculo rompe el **contrato** y no el **valor** a propósito: una mutación que cambiara el valor
+devuelto sólo fallaría en los tests que **afirman** sobre ese valor, así que contaría de menos —un test
+que llama a la función e ignora el resultado sí alcanza el cambio y no se contaría—. Un pánico falla a
+todo el que llama, afirme o no, que es lo que la pregunta es: *qué tests alcanzan el cambio*.
+
+El fichero que se rompe se restaura **byte a byte** después, y la restauración se verifica: una
+medición que deja el árbol modificado es peor que no medir.
+
+### La cifra
+
+Medido sobre `a68bfbc86d430e237109fbfc9f98125f8b705caf` (el árbol de `main` con el comando ya
+corregido), en `cognicode-core`:
+
+| Símbolo | Seleccionados | Alcanzados | Emparejados | **Recall** | Precisión |
+|---|---|---|---|---|---|
+| `mark_as_test` | 359 | 30 | 21 | **70,0 %** | 5,8 % |
+| `find_all_symbols_with_path` | 77 | 185 | 53 | **28,6 %** | 68,8 % |
+
+Las dos cifras se leen con su oráculo delante, porque **el oráculo también es una medida**:
+
+- En `mark_as_test` la precisión es del 5,8 % porque el oráculo es **estrecho**: romper el distintivo
+  sólo duele al lector cuando el fuente tiene un símbolo marcado como test, así que la ejecución sólo
+  puede confirmar 30 de los 359 que la selección nombra. Los 338 restantes no son falsos positivos de la
+  selección: son tests que el grafo dice que alcanzan el cambio y que la ejecución **no puede**
+  confirmar. Sobre-nombrar es lo seguro; mentir no.
+- En `find_all_symbols_with_path` el oráculo es **ancho** —romper la entrada del lector duele a todo
+  test que parsea algo— y ahí la selección se queda corta: 53 de 185, **28,6 %**.
+
+Las dos cifras apuntan al mismo sitio y por eso son las dos: **la recall no es 100 %**, y la razón son
+las aristas que el grafo no lleva. Las nueve faltas de `mark_as_test` están en cuatro ficheros, y seis de
+ellas son los tests de esta misma unidad —`the_impact_names_the_tests_it_reaches` (4) y
+`the_snapshot_carries_what_the_reader_read` (2)—: el grafo no lleva la arista desde el test hasta
+`mark_as_test`, ni cuando el test lo llama de propósito a través de un ayudante.
+
+El límite del oráculo, dicho para que no se lea más de lo que es: el oráculo ve las llamadas que hace
+el runtime. Un test que alcanza el cambio por un camino que el grafo no lleva —una llamada dinámica, una
+macro, un objeto de trait— sale como falta, y el informe las nombra una a una en vez de esconderlas.
+
+### AC3: la selección ORDENA, y no se promueve a filtro
+
+Dos mediciones registradas, con **70,0 %** y **28,6 %** de recall. La promoción a filtro pide *varias*
+mediciones con recall del 100 %, y aquí no hay ni una: **la selección sólo ordena**. Es lo que el
+producto puede afirmar hoy con lo que tiene delante.
+
+### Dos defectos que la propia medición destapó — en el comando, no en el producto
+
+La primera corrida dio «reached 0»: un oráculo vacío, y una cifra que no mide nada presentada como una
+medición. La causa estaba en el comando, en dos sitios, y los dos son el mismo género: **miraba donde no
+hay nada**.
+
+1. `nextest` imprime la línea de un test que falla como `FAIL [ 0.220s] ( 471/3606) <binario> <test>`,
+   con el contador del progreso entre el tiempo y el binario. El lector buscaba el binario justo
+   después del tiempo, así que la línea no encajaba.
+2. `nextest` escribe **todo** en **stderr** —como cargo— y su stdout queda vacío. El lector buscaba las
+   líneas de fallo en stdout.
+
+Los dos están corregidos (PR #662 y PR #663), y el contrato del comando imprime ahora la línea **y** en
+el canal **que el runner real usa**: un contrato que fija un formato o un canal que nadie usa no fija el
+formato ni el canal. La cifra de esta entrada es la de la tercera corrida, con el comando ya corregido;
+las dos anteriores no se publican porque no medían nada.
+
+### El defecto que la medición destapó en el producto: el snapshot no decodificaba
+
+El distintivo tiene que viajar al snapshot durable —si no, el grafo servido desde la caché perdería los
+tests y la respuesta vaciaría la faceta—, y ahí salió un fallo real: el snapshot se escribe con
+**bincode**, que no se autodescribe. El campo se escribía sólo cuando era verdad
+(`skip_serializing_if`), así que el lector del snapshot esperaba un campo que no estaba, el snapshot
+**dejaba de decodificar**, el producto reconstruía el grafo en cada run y el distintivo se perdía por el
+camino. Lo cazó el test de la CLI que sirve el snapshot
+(`the_second_run_of_the_cli_serves_the_snapshot_the_first_one_wrote`).
+
+El arreglo es escribir el campo siempre, y el esquema del snapshot pasa a **v5**: la forma del fichero
+cambió, y un snapshot de otra versión no dice nada del árbol que describe —se reconstruye, que es lo
+que ya se hacía con las versiones anteriores—. El RED está medido: `the_snapshot_carries_what_the_reader_read`
+fallaba 2 de 2 contra el código anterior («the snapshot decodes») y pasa 2 de 2 después.
+
+### Lo que esta unidad NO dice
+
+- **No dice que la selección baste para filtrar.** Está al 70,0 % y al 28,6 %; y el AC3 no se cumple.
+- **No dice que la precisión del 5,8 % sea un defecto de la selección.** Es una propiedad del oráculo de
+  esa medición, y el informe dice cuál es: 338 de los 359 tests nombrados no los puede confirmar una
+  ejecución que rompe el distintivo, porque no duelen al leer un fuente sin tests marcados.
+- **No dice que el command exista para un lenguaje que no sea Rust.** La tabla cubre siete lenguas, pero
+  lo medido es Rust: el resto tiene su comando publicado, no su recall medida.
+- **No dice que el grafo lleve todas las aristas.** Al contrario: las nueve faltas son aristas que no
+  lleva, y nombrarlas es el resultado de la medición.
+
+### La unidad anterior y la que sigue
+
+- TASK-77 dio al impacto **un único dueño** (`impact_of`), y esta unidad le añade la faceta que faltaba
+  sin tocar el dueño: la misma pregunta, contestada en el mismo sitio, por el CLI y por el MCP.
+- La que sigue no se abre aquí. Esta unidad deja dos cosas measured y ninguna abierta: la recall
+  medida (dos cifras, con su SHA) y la lista de las faltas, que es la cola natural de un arreglo del
+  grafo —si alguien decide que merece la pena, la lista está aquí.
+
+**Gate del lote: PASS.** `bash scripts/test-gate.sh` sobre `d68e5844` (base `9fa7d525`): **4448 tests
+unitarios** y **6551 de integración**, todos en verde, `rc=0`. El paso de mutación **no** se midió, y el
+log lo dice por qué: el lote tocó `cognicode-cli` y `cognicode-core`, y ninguno de los dos es mutable
+por coste (el core son 217k líneas), y el crate del calendario (`cognicode-graph-algos`) no está en su
+turno —va en 26 fusiones desde el marcador `fb526521`, de 50—. Los dos arreglos del comando de medición
+(PR #662 y PR #663) son Python y no se vuelven a pasar por el gate: el gate mide el árbol de Rust, que no
+ha cambiado desde aquella corrida, y su verificación es la suite de contratos —**330 checks, 0 fallos**—.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
+crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

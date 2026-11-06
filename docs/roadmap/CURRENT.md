@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `e518823cbfc667cd3f3a7c99ed0664e0747cdff5` (la
+> **Snapshot**: 2026-11-06, sobre `a68bfbc86d430e237109fbfc9f98125f8b705caf` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -197,14 +197,30 @@
 > entiende), y `sccache` queda activo con su tasa de aciertos visible, aunque
 > aquí su beneficio es limitado: no cachea los binarios, y su clave incluye el
 > *fingerprint* de cargo, que cambia con el mtime de las fuentes;
+> y el impacto nombra los tests que alcanza, y el comando que los corre: la
+> pregunta «qué depende de este nombre» ya tenía un dueño y respondía con los
+> símbolos que dependen y con el riesgo, y le faltaba la mitad que el
+> consumidor pide —qué tests hay que correr antes de tocar el cambio—; ahora la
+> respuesta trae la faceta `affected_tests` con el nombre del test, el
+> fichero, la línea y el comando exacto que lo corre, en el MCP, en el CLI y en
+> la sesión de workspace; el que decide qué es un test es el LECTOR, porque es
+> el único que puede ver la marca —`#[test]`, `@Test`, `[Fact]`—, y una regla
+> por nombre no serviría: aquí los tests de integración se llaman
+> `the_answer_is_ordered` y los unitarios viven en `#[cfg(test)] mod tests`
+> dentro de `src/**`; donde el lenguaje no decide su runner —Java, C#, Kotlin—
+> no hay comando, y la respuesta lo dice en vez de inventar uno; y la recall de
+> esa selección se mide con un comando que se pide a propósito, fuera de la
+> suite y del gate, contra la ejecución completa del paquete: **70,0 %** y
+> **28,6 %** en dos símbolos, con las faltas nombradas una a una, así que la
+> selección **ordena** y no se promueve a filtro;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`05cded61` → `e518823cbfc667cd3f3a7c99ed0664e0747cdff5`)
+## Qué cambió desde el snapshot anterior (`e518823c` → `a68bfbc86d430e237109fbfc9f98125f8b705caf`)
 
-Entre una punta y otra entraron **2 commits** (`git rev-list --count 05cded613db5c711dd7752350d3e9be63b9db59b..e518823cbfc667cd3f3a7c99ed0664e0747cdff5`).
+Entre una punta y otra entraron **4 commits** (`git rev-list --count e518823cbfc667cd3f3a7c99ed0664e0747cdff5..a68bfbc86d430e237109fbfc9f98125f8b705caf`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
@@ -212,6 +228,9 @@ en qué commit está medido.
 |---|---|---|
 | El recibo de TASK-142 | `ab08c7a6` (TASK-142) | El recibo append-only de la unidad que acota el gate al lote, con la comparación de las dos suites sobre el mismo lote. |
 | El entorno de compilación está declarado | `e518823c` (TASK-76) | El perfil, el linker del host y la caché de compilación viven en la configuración global de cargo de la máquina, porque en el workspace no pueden: un `[profile.test]` ahí invalidaría la caché compartida. Con `debug = "line-tables-only"` en vez de `debug = 1`, el trabajo del compilador baja a la mitad: el build en frío pasa de 746,75 s a 370,40 s de CPU y la reconstrucción del core de 482,15 s a 300,99 s, medido en series alternadas antes/después con la máquina compartida. `mold` queda declarado como linker del host (0,77 s frente a 0,94 s de `lld` sobre los mismos objetos) y `sccache` activo, con su tasa de aciertos visible y su límite dicho: no cachea los binarios. |
+| El recibo de TASK-76 | `9fa7d525` (TASK-76) | El recibo append-only de la unidad que declaró el entorno de compilación, con las series alternadas antes/después y la lista de lo que la cifra **no** dice. |
+| El impacto nombra los tests que alcanza | `b229cdcd` (TASK-86) | La faceta `affected_tests` en la respuesta del impacto —MCP, CLI y sesión de workspace—, con el comando exacto que corre cada test, y el lector como único que puede decir qué es un test. La recall se midió contra la ejecución completa del paquete, con el contrato del símbolo roto: **70,0 %** en `mark_as_test` y **28,6 %** en `find_all_symbols_with_path`, sobre `a68bfbc8`, con las nueve faltas nombradas una a una. La selección **ordena** y no se promueve a filtro. |
+| El comando de medición lee lo que el runner escribe | `96088fac`, `a68bfbc8` (TASK-86) | Los dos defectos que la propia medición destapó en el comando: el lector no entendía el contador del progreso de la línea de fallo, y la buscase en stdout cuando `nextest` escribe todo en stderr. Con ellos, la primera medición publicaba «reached 0» —un oráculo vacío— como si fuera una cifra. |
 
 ## Release: la última publicada es la v0.101.30
 
