@@ -36901,3 +36901,134 @@ habría dejado a seis. Este recibo es su propio PR.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-69: la línea base de tiempos del gate que existe
+
+**El encargo.** AC1 pide «tabla en el JOURNAL con la duración de cada etapa en limpio y con caché». La
+tabla que la unidad tenía (`e83f1ae5`) midió las etapas del `merge-gate.pipeline.kts`: un pipeline que
+**se retiró el 2026-11-04** junto con las cuatro lanes de CI. El gate que existe hoy es
+`scripts/test-gate.sh`, y son tres pasos. Una línea base de unas etapas que ya no existen no mide nada
+que exista, así que esta unidad mide el gate vigente.
+
+**Alcance.** Solo medición: no se cambia ninguna etapa, ni el script del gate, ni su autoridad. El
+gate del lote de diez se corre aparte, cuando el lote cierre.
+
+### Qué se midió, y cómo
+
+| Hecho | Dónde sale |
+|---|---|
+| La duración de cada etapa | `scripts/test-gate.sh` escribe `--- <paso> ---` antes y `OK: <paso>` / `FAIL (rc=N): <paso>` después, con `printf` (escritura directa, sin búfer): la marca de tiempo de esas dos líneas mide el paso |
+| El log es la evidencia | cada línea del log lleva su marca; el log se selló con un lector que antepone la marca a la línea original (`/tmp/t69/cold.log`, `/tmp/t69/warm.log`) |
+| La temperatura | dos corridas con el mismo árbol: una en un `CARGO_TARGET_DIR` nuevo (fría) y otra sobre el mismo directorio ya construido (con caché) |
+| Los ejecutables de test | `cargo test --workspace --no-run`: la salida de cargo enumera cada `Executable` que enlaza, y su línea `Finished` da el tiempo |
+
+**El entorno (para que los números no se lean como universales).** Xeon E5-2682 v4 @ 2,50 GHz, 64 CPU,
+94 GB de RAM; Linux 7.2.15; cargo 1.96.0, cargo-nextest 0.9.149, cargo-mutants 27.1.0; `jobs = 4` en la
+config global de cargo (compartida con otros workspaces, y **no se toca**); `/var/home` con 796 GB
+libres; workspace `0.101.31`. Los binarios de release se compilaron **fuera de la medida** (5 m 28 s),
+porque el paso de integración ejecuta bytes de release a propósito y un binario ausente se confunde con
+una regresión.
+
+**El árbol.** `main` @ `595f6cd4`, limpio salvo `backlog-import-producto-v2.sh` (fichero del operador:
+sin tocar, sin commitear). Las dos corridas del gate y la medición de binarios son sobre ese mismo
+árbol, y en ningún momento se editó código mientras una medida corría.
+
+### La tabla
+
+El gate que existe (`scripts/test-gate.sh`), medido dos veces sobre el mismo árbol.
+
+| Etapa del gate | En frío | Con caché | Qué es la etapa |
+|---|---|---|---|
+| `unit tests` | **228,706 s** (3 m 48,7 s) | **16,834 s** | `cargo nextest run --profile gate --workspace --lib` — **4711 tests run: 4711 passed, 0 skipped** en las dos corridas |
+| `integration tests` | **60,086 s** (1 m 0,1 s) | **22,889 s** | `cargo nextest run --profile gate --workspace --tests` — **6832 tests run: 6832 passed, 3 skipped** en las dos corridas |
+| `mutants` | **3374,848 s** (56 m 14,8 s) | **3306,185 s** (55 m 6,2 s) | `cargo mutants -j 1 -p cognicode-graph-algos` — **627 mutants tested: 618 caught, 9 unviable**, 0 supervivientes en las dos corridas |
+| **Total del gate** | **3663,858 s** (61 m 3,9 s) | **3346,139 s** (55 m 46,1 s) | los tres pasos |
+
+**El paso de mutantes es el 92,1% del gate en frío y el 98,8% con caché.** Los dos pasos de test juntos
+son 288,792 s en frío y **39,723 s con caché**. La percepción de «el gate tarda una hora» es literal y
+comprobable, y su causa está localizada en un paso: no son los tests, es la mutación.
+
+**El cache no ayuda a la mutación (1,02×) y ayuda mucho a los tests (13,6× y 2,6×).** La razón está en
+qué se cachea: `cognicode-graph-algos` no depende de nada del workspace, así que cada mutante es una
+compilación de un crate y una corrida de tests, y eso no se cachea. Lo que sí se cachea es el workspace
+entero, que es lo que tardaba.
+
+**Las dos corridas pasaron en verde** (`GATE_EXIT_RC=0`): 4711 + 6832 tests en verde, 618 mutantes
+atrapados, 9 inviables, ninguno superviviente. El veredicto de la mutación es el mismo en frío y en
+caliente, sobre el mismo árbol: 618/9/0.
+
+**La fila «en frío» incluye compilar el workspace entero**, que es lo que un `CARGO_TARGET_DIR` nuevo
+paga: los 228,706 s de los unitarios son compilación + ejecución. El gate del lote se corre en caliente,
+así que la columna con caché es la que describe el ritmo de entrega.
+
+### Los binarios de test (AC2 y AC3)
+
+`cargo test --workspace --no-run`, en un `CARGO_TARGET_DIR` nuevo (`t69-link`), sobre el mismo árbol.
+
+| Medida | Antes (`e83f1ae5`, 2026-11-03) | **Ahora (2026-11-06)** |
+|---|---|---|
+| Ejecutables con perfil test enlazados | 235 | **49** (20 de unitarios + 29 de integración y binarios) |
+| En frío (deps + workspace) | 273 s (4 m 33 s) | **218 s** (3 m 38 s) |
+| Sin cambios (2.ª vez) | 2,8 s | **0,50 s** |
+| Sin cambios (3.ª vez) | 1,1 s | **0,85 s** |
+| Tras tocar un test de integración de core | 8,7 s | **13,85 s** (1 paquete recompilado) |
+| Tras tocar `cognicode-core/src/lib.rs` | 219 s, 237 artefactos | **121 s** (2 m 1 s), 8 paquetes recompilados |
+
+**Lo que cambió es TASK-71** («un binario de integración por crate»): los ejecutables caen de 235 a 49
+(un −79%), y el reenlazado tras tocar el núcleo baja de 219 s a 121 s. Los ocho paquetes que se
+recompilan al tocar `cognicode-core/src/lib.rs` son el core y los siete crates que dependen de él:
+`cognicode-explorer`, `cognicode-ladybug`, `cognicode-cli`, `cognicode-mcp`, `cognicode`,
+`cognicode-runtime` y `cognicode-sandbox`.
+
+**El número que el recibo de TASK-70 grupo 1 cita («~1,16 s de enlazado, 273 s / 235 binarios») medía
+el árbol anterior a TASK-71 y queda superado.** Con el árbol de hoy, un ejecutable de test cuesta
+**~4,45 s** de producción en frío (218 s / 49) — y no son todos iguales: 20 son unitarios de un crate
+sin dependencias y 29 son binarios de integración que cargan el core entero. La cifra por binario no es
+un hecho del producto sino una media de dos poblaciones muy distintas.
+
+### Lo que esta unidad NO dice
+
+- **No dice que el gate sea rápido.** Dice cuánto cuesta, en esta máquina y con `jobs = 4`.
+- **No dice que el paso de mutantes sobre `cognicode-graph-algos` sea redundante.** Dice que es el 92%
+  del gate, y que es el paso que da al gate su única garantía fuerte —un mutante que sobrevive es un
+  agujero en la suite—.
+- **No separa el enlazado del compilar.** `cargo test --no-run` mide las dos cosas juntas; lo que se
+  puede decir es cuánto cuesta *volver a producir* los ejecutables, no cuánto cuesta el enlazado solo.
+- **No dice que el gate del lote vaya a durar esto.** El gate del lote se mide cuando el lote cierre, y
+  entonces se sabrá si el número de aquí aguanta.
+- **No dice que la producción de ejecutables sea gratuita.** 218 s en frío por 49 ejecutables sigue
+  siendo un coste real de cada lote que toca el núcleo.
+
+### Lo que sale de aquí (decisión del operador, no de esta unidad)
+
+El gate cuesta una hora, y el 92% (en frío) o el 99% (con caché) de esa hora es un solo paso. Medir
+eso convierte una sensación en una decisión, y la decisión ya está tomada: **política C** —el paso de
+mutantes se acota a los crates que el lote tocó, y `cognicode-graph-algos` se mide en un calendario
+declarado—, que vive en TASK-142.
+
+| Política | Qué muta | Coste del gate del lote (con caché) | Qué garantía conserva |
+|---|---|---|---|
+| A — la de hoy | siempre `cognicode-graph-algos` | **55 m 46 s** (16,8 s + 22,9 s + 55 m 6 s) | la de siempre |
+| B — por crate tocado | lo que el lote tocó (+ algoritmos si los tocó) | **~40 s** en un lote que no toca algoritmos | la misma, sobre lo que el lote puede romper |
+| **C — la elegida** | lo que el lote tocó; algoritmos en el calendario | **~40 s** en el lote típico; el crate de algoritmos en su turno | la misma, repartida: el hueco de un mutante tiene una **edad acotada en lotes** |
+
+El número que hace la decisión sostenible es este: **los dos pasos de test del gate, con caché, suman
+39,7 s**. Todo el resto de la hora es el paso de mutantes. Acotarlo no baja la calidad de las pruebas:
+baja el alcance de la medición de defectos, que es una cosa distinta y es la que la política C dosifica.
+
+### La unidad anterior y la que sigue
+
+- La tabla de `e83f1ae5` **nunca entró en `main`**: vive en la rama `chore/task-69`, que quedó sin
+  fusionar. De ella sobrevivió en el árbol un solo número derivado —«~1,16 s de enlazado (273 s / 235
+  binarios)», en el recibo de TASK-70 grupo 1— que medía el árbol **anterior** a TASK-71. La tabla de
+  arriba lo sustituye; el recibo viejo no se reescribe, se supera con una medición posterior.
+- La sucesora es **TASK-142** («Acotar el gate a lo que el lote tocó»), con la política **C** elegida por
+  el operador. Esta unidad no la implementa: le da el número del «antes».
+
+**Gate del lote: NOT_RUN.** El gate se pasa por lotes de diez tareas (AGENTS.md), y esta unidad es una
+medición, no la certificación de un lote. Las dos corridas que se hicieron aquí son las que producen la
+tabla, y las dos pasaron en verde.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
+crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
