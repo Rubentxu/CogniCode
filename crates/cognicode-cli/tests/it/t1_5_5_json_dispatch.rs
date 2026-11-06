@@ -52,6 +52,14 @@ use cognicode_core::interface::cli::commands::Format;
 use cognicode_core::interface::cli::result::PublishedLocation;
 use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, IndexResult};
 use serde_json::Value;
+
+/// The coverage of a graph that covered the whole tree, written by the
+/// owner of the word and not by hand.
+fn complete_coverage() -> cognicode_core::interface::coverage::CoverageInfo {
+    cognicode_core::interface::coverage::CoverageInfo::of(
+        &cognicode_core::application::services::analyze::Coverage::Complete,
+    )
+}
 use std::path::PathBuf;
 
 fn render_json(emit: impl FnOnce(&mut Vec<u8>) -> std::io::Result<()>) -> String {
@@ -324,10 +332,14 @@ fn json_graph_hierarchy_shape() {
         root_column: 0,
         buckets: vec![],
         total_entries: 0,
+        coverage: complete_coverage(),
         elapsed_ms: 12,
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "hierarchy");
+    // The question says what it was answered with.
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["coverage"]["status"], "complete");
 }
 
 #[test]
@@ -362,10 +374,15 @@ fn json_graph_impact_shape() {
         impacted_files_count: 3,
         impacted_symbols: vec!["bar".to_string()],
         impacted_files: vec!["/src/bar.rs".to_string()],
+        coverage: complete_coverage(),
         elapsed_ms: 15,
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "impact");
+    // The counts are what the graph holds; the coverage says whether that
+    // is what the tree holds.
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["coverage"]["status"], "complete");
 }
 
 // ===================================================================

@@ -15,7 +15,7 @@
 // actually implies, so the next unfailable assertion in this file becomes a
 // compile error instead of a silent pass.
 
-use crate::application::analysis_basis::GraphSource;
+use crate::application::analysis_basis::{GraphSource, OutcomeState};
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -1194,8 +1194,9 @@ pub async fn handle_build_graph(
     )
     .map_err(HandlerError::App)?;
     let graph_source = loaded.source;
-    // The holes the tree has RIGHT NOW: what the walk declines, what it
-    // cannot do and what it cannot read yet.
+    // The holes the tree has RIGHT NOW —what the walk declines, what it
+    // cannot do and what it cannot read yet— are what the coverage of a
+    // served answer is measured against.
     //
     // The persisted graph cannot know about them. A hole is not one of
     // the files the graph is built from, so it is not in the manifest,
@@ -1205,7 +1206,9 @@ pub async fn handle_build_graph(
     // holes are therefore taken from the current tree, and the verdict
     // of a cached answer is computed against the tree the consumer is
     // asking about, not against the tree the snapshot was taken from.
-    let current_holes = loaded.tree.holes;
+    //
+    // `load_or_build_graph` measured that with `coverage_verdict`; this
+    // handler only carries the verdict it measured.
     // The manifest the answer carries: it says which files the graph was
     // built from, and it is what the basis describes. It is kept here
     // because the basis needs it after the store has taken its copy.
@@ -1241,9 +1244,11 @@ pub async fn handle_build_graph(
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
     //
-    // Y la decisión es de un dueño: `coverage_verdict` la toma, y la CLI
-    // toma la misma. Dos reglas que se parecen son dos reglas, y la segunda
-    // se queda vieja mientras la primera se cuida.
+    // Y la decisión es de un dueño: `coverage_verdict` la toma, y la toma
+    // UNA vez —al cargar el grafo—, así que esta respuesta, la de la CLI y
+    // las de las preguntas publican la misma cobertura para el mismo árbol.
+    // Dos reglas que se parecen son dos reglas, y la segunda se queda vieja
+    // mientras la primera se cuida.
     //
     // Los hechos de la respuesta servida de la caché son los del árbol de
     // AHORA: un hueco no es uno de los ficheros del grafo, así que el
@@ -1251,13 +1256,7 @@ pub async fn handle_build_graph(
     // mismo veredicto que daría un recorrido en frío. Las referencias y las
     // relaciones rechazadas son las del grafo servido, que son vacías porque
     // una instantánea sólo existe para un build completo.
-    let report = ctx.analysis_service.get_last_build_report();
-    let coverage = crate::application::services::analyze::coverage_verdict(
-        graph_source,
-        report.as_ref(),
-        &current_holes,
-        !no_material,
-    );
+    let coverage = loaded.coverage;
     let facts = coverage.facts();
     let status = coverage.published_state().published_label().to_string();
     let skipped_files: Vec<SkippedFileDto> = facts.skipped.iter().map(skipped_file_dto).collect();
@@ -1353,7 +1352,7 @@ pub async fn handle_get_call_hierarchy(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx)?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1406,6 +1405,15 @@ pub async fn handle_get_call_hierarchy(
         },
         precision: precision_floor_for_tool("get_call_hierarchy"),
         provider: default_provider_for_tool("get_call_hierarchy").to_string(),
+        // The calls are what the GRAPH holds. Over a graph that does not
+        // cover the whole tree, that is not what the tree holds, and an
+        // empty list without that said is a finding the product did not
+        // make.
+        coverage: crate::interface::coverage::CoverageInfo::of(
+            &ensure
+                .coverage
+                .unwrap_or(crate::application::services::analyze::Coverage::Unmeasured),
+        ),
     })
 }
 
@@ -1698,18 +1706,32 @@ pub async fn handle_analyze_impact(
         String::new()
     };
 
+    // The counts are what the GRAPH holds. Over a graph that does not
+    // cover the whole tree, that is not what the tree holds, and a
+    // summary that says "0 symbols would be affected" without saying so
+    // is a finding the product did not make.
+    let coverage = ensure
+        .coverage
+        .unwrap_or(crate::application::services::analyze::Coverage::Unmeasured);
+    let coverage_note = match coverage.published_state() {
+        OutcomeState::Complete => String::new(),
+        state => format!("Over a graph with {} coverage. ", state.published_label()),
+    };
+
     Ok(AnalyzeImpactOutput {
         symbol: input.symbol_name,
         impacted_files,
         impacted_symbols,
         risk_level,
         summary: format!(
-            "{}Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
+            "{}{}Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
             auto_note,
+            coverage_note,
             start.elapsed().as_millis(),
             symbols_count,
             files_count
         ),
+        coverage: crate::interface::coverage::CoverageInfo::of(&coverage),
     })
 }
 
@@ -1722,6 +1744,13 @@ pub struct EnsureResult {
     pub message: String,
     /// Number of symbols/nodes after resolution.
     pub count: usize,
+    /// What the graph the answer was computed from covers.
+    ///
+    /// `None` when the prerequisite is not a graph —the semantic index
+    /// has no coverage to publish— and when nobody measured it: a
+    /// coverage nobody measured is not a coverage that was found to be
+    /// complete, and the answer says so with "unknown".
+    pub coverage: Option<crate::application::services::analyze::Coverage>,
 }
 
 impl EnsureResult {
@@ -1730,6 +1759,7 @@ impl EnsureResult {
             auto_built: false,
             message: String::new(),
             count,
+            coverage: None,
         }
     }
     fn auto_built(count: usize, elapsed_ms: u64) -> Self {
@@ -1737,12 +1767,19 @@ impl EnsureResult {
             auto_built: true,
             message: format!("Graph auto-built ({} symbols, {}ms). ", count, elapsed_ms),
             count,
+            coverage: None,
         }
     }
 }
 
 /// Ensures the project graph is built, building it on-demand if empty.
 /// This prevents empty callgraph results from being returned as "success with no data".
+///
+/// The result carries the coverage of the graph the answer is computed
+/// from: a question answered with a graph that does not cover the whole
+/// tree has to say so, and the coverage it says is the one that was
+/// measured when the graph was loaded —the same one the next question of
+/// this session will say.
 fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
@@ -1751,7 +1788,9 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
             "ensure_graph_built: graph already has {} symbols (cached), skipping build",
             count
         );
-        return Ok(EnsureResult::already_present(count));
+        let mut ensure = EnsureResult::already_present(count);
+        ensure.coverage = Some(held_coverage(ctx));
+        return Ok(ensure);
     }
     // The session holds nothing: the durable snapshot may hold what
     // another session calculated over the same tree, and the tree is read
@@ -1777,13 +1816,29 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
             "ensure_graph_built: the durable snapshot was served — {} symbols in {}ms",
             count, elapsed
         );
-        return Ok(EnsureResult::already_present(count));
+        let mut ensure = EnsureResult::already_present(count);
+        ensure.coverage = Some(loaded.coverage);
+        return Ok(ensure);
     }
     info!(
         "ensure_graph_built: auto-build complete — {} symbols in {}ms",
         count, elapsed
     );
-    Ok(EnsureResult::auto_built(count, elapsed))
+    let mut ensure = EnsureResult::auto_built(count, elapsed);
+    ensure.coverage = Some(loaded.coverage);
+    Ok(ensure)
+}
+
+/// The coverage of the graph the session already holds.
+///
+/// The graph was measured when it was loaded, and the service remembers
+/// it: a second question about the same graph has to publish the same
+/// coverage the first one did. A graph nobody measured has no coverage
+/// to publish, and the answer says "unknown" instead of "complete".
+fn held_coverage(ctx: &HandlerContext) -> crate::application::services::analyze::Coverage {
+    ctx.analysis_service
+        .get_last_coverage()
+        .unwrap_or(crate::application::services::analyze::Coverage::Unmeasured)
 }
 
 /// Ensures the semantic search index is populated, indexing the working directory on demand.

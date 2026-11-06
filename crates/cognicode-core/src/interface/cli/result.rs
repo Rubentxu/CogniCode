@@ -596,6 +596,12 @@ pub enum GraphResult {
         root_column: u32,
         buckets: Vec<DepthBucket>,
         total_entries: usize,
+        /// What the graph the answer was computed from covers.
+        ///
+        /// The entries are what the graph holds. Over a graph that does
+        /// not cover the whole tree, that is not what the tree holds, and
+        /// a reader that is not told so reads a zero as a finding.
+        coverage: crate::interface::coverage::CoverageInfo,
         elapsed_ms: u128,
     },
     /// `cognicode graph complexity <path>`
@@ -629,6 +635,12 @@ pub enum GraphResult {
         impacted_files_count: usize,
         impacted_symbols: Vec<String>,
         impacted_files: Vec<String>,
+        /// What the graph the answer was computed from covers.
+        ///
+        /// The counts are what the graph holds. Over a graph that does
+        /// not cover the whole tree, that is not what the tree holds, and
+        /// a reader that is not told so reads a zero as a finding.
+        coverage: crate::interface::coverage::CoverageInfo,
         elapsed_ms: u128,
     },
 }

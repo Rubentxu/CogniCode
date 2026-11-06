@@ -89,3 +89,65 @@ impl RejectedRelationInfo {
         }
     }
 }
+
+/// A file the walk could not read.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct SkippedFileInfo {
+    /// The path of the file.
+    pub path: String,
+    /// Why the walk could not read it.
+    pub reason: String,
+}
+
+/// What an answer covers, in the shape every consumer reads it.
+///
+/// The word is the coverage's, not the consumer's: it is the word the
+/// owner of the coverage publishes, so the CLI, the MCP and the SDK say
+/// the same thing about the same tree. The three lists are the three
+/// holes a build can leave open, and they travel together because a
+/// consumer that reads one of them and not the others reads half the
+/// truth.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct CoverageInfo {
+    /// The word the coverage is published with: "complete", "partial",
+    /// "unknown" or "unsupported".
+    pub status: String,
+    /// The files the walk could not read.
+    pub skipped_files: Vec<SkippedFileInfo>,
+    /// The references the graph could not tie to a declaration.
+    pub pending_references: Vec<PendingReferenceInfo>,
+    /// The relations the repository refused.
+    pub rejected_relations: Vec<RejectedRelationInfo>,
+}
+
+impl CoverageInfo {
+    /// The projection of a coverage, for every consumer that publishes it.
+    ///
+    /// The word comes from the state that owns it and the facts come from
+    /// the coverage that was measured: this function writes them down, it
+    /// does not decide anything.
+    pub fn of(coverage: &crate::application::services::analyze::Coverage) -> Self {
+        let facts = coverage.facts();
+        Self {
+            status: coverage.published_state().published_label().to_string(),
+            skipped_files: facts
+                .skipped
+                .iter()
+                .map(|file| SkippedFileInfo {
+                    path: file.path.clone(),
+                    reason: crate::application::services::analyze::skip_reason_text(&file.reason),
+                })
+                .collect(),
+            pending_references: facts
+                .pending
+                .iter()
+                .map(PendingReferenceInfo::from_reference)
+                .collect(),
+            rejected_relations: facts
+                .rejected
+                .iter()
+                .map(RejectedRelationInfo::from_rejection)
+                .collect(),
+        }
+    }
+}

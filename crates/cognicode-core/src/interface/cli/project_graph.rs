@@ -23,26 +23,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::application::services::analysis_service::AnalysisService;
+use crate::application::services::analyze::Coverage;
 use crate::domain::aggregates::call_graph::CallGraph;
-use crate::domain::value_objects::{PendingReference, RejectedRelation};
-use crate::infrastructure::graph::per_file_graph::{BuildReport, BuildStatus, SkippedFile};
 
 /// The project's graph, and what the build could not cover.
 pub struct ProjectGraph {
     /// The graph, as the service built it.
     pub graph: Arc<CallGraph>,
-    /// The files the walk skipped, if it skipped any.
-    pub skipped: Vec<SkippedFile>,
-    /// The references the graph could not tie to a declaration, if there are
-    /// any.
-    pub pending: Vec<PendingReference>,
-    /// The relations the repository refused, if it refused any.
+    /// What the graph covers, and the holes it left open.
     ///
-    /// A relation that was refused is not an edge of the graph, so the
-    /// graph's own count does not include it. Saying nothing about it
-    /// would leave a reader believing the graph holds every relation the
-    /// build found.
-    pub rejected: Vec<RejectedRelation>,
+    /// The coverage is decided by the one owner of that decision —the
+    /// same function the MCP and the SDK ask— so the command and the
+    /// server say the same thing about the same tree. This module used
+    /// to keep its own copy of the rule, and a second copy of a rule is
+    /// a rule that goes stale while the first one is kept.
+    pub coverage: Coverage,
 }
 
 /// Builds the project's graph with the service the MCP uses.
@@ -82,30 +77,12 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
     // A served graph carries the holes of the tree as it is NOW —the
     // persisted graph cannot know about them— and its references and
     // relations are the graph's own, which are empty because a snapshot
-    // only exists for a build that had none of them.
-    let (skipped, pending, rejected) =
-        if loaded.source != crate::application::analysis_basis::GraphSource::Built {
-            (loaded.tree.holes, Vec::new(), Vec::new())
-        } else {
-            match service.get_last_build_report() {
-                Some(BuildReport {
-                    status:
-                        BuildStatus::Partial {
-                            skipped,
-                            pending,
-                            rejected,
-                        },
-                    ..
-                }) => (skipped, pending, rejected),
-                _ => (Vec::new(), Vec::new(), Vec::new()),
-            }
-        };
-
+    // only exists for a build that had none of them. The coverage is
+    // measured by the one owner of that decision, when the graph is
+    // loaded; this function only carries what it said.
     Ok(ProjectGraph {
         graph: loaded.graph,
-        skipped,
-        pending,
-        rejected,
+        coverage: loaded.coverage,
     })
 }
 
@@ -117,11 +94,12 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
 /// hides the other tells half the truth, so every command says all of
 /// them, in the same words the MCP says them.
 pub fn warn_incomplete(built: &ProjectGraph) {
-    if !built.skipped.is_empty() {
+    let facts = built.coverage.facts();
+    if !facts.skipped.is_empty() {
         eprintln!(
             "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-            built.skipped.len(),
-            built
+            facts.skipped.len(),
+            facts
                 .skipped
                 .iter()
                 .map(|f| f.path.clone())
@@ -129,11 +107,11 @@ pub fn warn_incomplete(built: &ProjectGraph) {
                 .join(", ")
         );
     }
-    if !built.pending.is_empty() {
+    if !facts.pending.is_empty() {
         eprintln!(
             "Warning: graph is PARTIAL: {} reference(s) without a declaration ({})",
-            built.pending.len(),
-            built
+            facts.pending.len(),
+            facts
                 .pending
                 .iter()
                 .map(|reference| {
@@ -148,11 +126,11 @@ pub fn warn_incomplete(built: &ProjectGraph) {
                 .join(", ")
         );
     }
-    if !built.rejected.is_empty() {
+    if !facts.rejected.is_empty() {
         eprintln!(
             "Warning: graph is PARTIAL: {} relation(s) refused by the repository ({})",
-            built.rejected.len(),
-            built
+            facts.rejected.len(),
+            facts
                 .rejected
                 .iter()
                 .map(|rejection| {

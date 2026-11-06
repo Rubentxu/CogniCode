@@ -34,6 +34,17 @@ use cognicode_core::interface::cli::result::{
 };
 use serde_json::Value;
 
+/// The coverage of a graph that covered the whole tree.
+///
+/// It is the owner's word, not a literal written here: the word has one
+/// owner, and a test that writes it by hand would keep passing if the
+/// owner changed it.
+fn complete_coverage() -> cognicode_core::interface::coverage::CoverageInfo {
+    cognicode_core::interface::coverage::CoverageInfo::of(
+        &cognicode_core::application::services::analyze::Coverage::Complete,
+    )
+}
+
 #[test]
 fn graph_result_ondemand_serializes_with_kind_ondemand() {
     let result = GraphResult::OnDemand {
@@ -293,11 +304,15 @@ fn graph_result_hierarchy_serializes_recursive_buckets() {
             }],
         }],
         total_entries: 1,
+        coverage: complete_coverage(),
         elapsed_ms: 12,
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "hierarchy");
     assert_eq!(json["symbol"], "alpha");
+    // The question says what it was answered with: a hierarchy over a
+    // graph that does not cover the whole tree has to say so.
+    assert_eq!(json["coverage"]["status"], "complete");
     assert_eq!(json["depth"], 2);
     assert_eq!(json["root_file"], "/lib/a.rs");
     assert_eq!(json["buckets"][0]["depth"], 1);
@@ -358,6 +373,7 @@ fn graph_result_impact_serializes_risk_and_untruncated_lists() {
         impacted_files_count: 4,
         impacted_symbols: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         impacted_files: vec!["/lib/a.rs".to_string(), "/lib/b.rs".to_string()],
+        coverage: complete_coverage(),
         elapsed_ms: 70,
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
@@ -368,4 +384,13 @@ fn graph_result_impact_serializes_risk_and_untruncated_lists() {
     assert_eq!(json["impacted_files_count"], 4);
     assert_eq!(json["impacted_symbols"].as_array().unwrap().len(), 3);
     assert_eq!(json["impacted_files"].as_array().unwrap().len(), 2);
+    // The counts are what the graph holds; the coverage says whether
+    // that is what the tree holds.
+    assert_eq!(json["coverage"]["status"], "complete");
+    assert!(
+        json["coverage"]["skipped_files"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }

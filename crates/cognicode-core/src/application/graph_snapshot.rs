@@ -56,6 +56,49 @@ pub struct LoadedGraph {
     /// computed against the tree the consumer is asking about, not
     /// against the tree the snapshot was taken from.
     pub tree: TreeState,
+    /// What the answer covers.
+    ///
+    /// It is measured here, once, by the one owner of that decision: the
+    /// source says where the graph came from, the report is the report of
+    /// the build of THIS call, the holes are the ones the tree has NOW,
+    /// and the material says whether the tree holds anything to read.
+    ///
+    /// Every surface that answers with this graph publishes this
+    /// coverage, and they all ask the same function — two rules that look
+    /// alike are two rules, and the second one goes stale while the first
+    /// one is kept.
+    pub coverage: crate::application::services::analyze::Coverage,
+}
+
+/// The answer, with the coverage it was measured with.
+///
+/// The coverage is decided by [`coverage_verdict`] —the one owner of that
+/// decision— and the service remembers it, because the next question of
+/// the same session is answered with the graph that is already held, and
+/// that graph was measured when it was loaded.
+///
+/// [`coverage_verdict`]: crate::application::services::analyze::coverage_verdict
+fn loaded(
+    service: &AnalysisService,
+    graph: Arc<CallGraph>,
+    manifest: Option<FileManifest>,
+    source: GraphSource,
+    tree: TreeState,
+) -> LoadedGraph {
+    let coverage = crate::application::services::analyze::coverage_verdict(
+        source,
+        service.get_last_build_report().as_ref(),
+        &tree.holes,
+        crate::application::services::analyze::holds_material(graph.symbol_count()),
+    );
+    service.set_last_coverage(coverage.clone());
+    LoadedGraph {
+        graph,
+        manifest,
+        source,
+        tree,
+        coverage,
+    }
 }
 
 /// The graph of `project_dir`, served from the snapshot when it can be and
@@ -93,16 +136,17 @@ pub fn load_or_build_graph(
                 let tree = service.tree_state(project_dir);
                 let vouched = vouched_for(service, manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(manifest, project_dir, &tree.files) {
-                    return Ok(LoadedGraph {
-                        graph: service.get_project_graph(),
-                        manifest: None,
-                        source: if vouched {
+                    return Ok(loaded(
+                        service,
+                        service.get_project_graph(),
+                        None,
+                        if vouched {
                             GraphSource::Daemon
                         } else {
                             GraphSource::Cache
                         },
                         tree,
-                    });
+                    ));
                 }
             }
             // The session's graph is stale, or nothing says what it read:
@@ -132,16 +176,17 @@ pub fn load_or_build_graph(
                 let vouched = vouched_for(service, &manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(&manifest, project_dir, &tree.files) {
                     service.graph_cache().replace(graph.clone());
-                    return Ok(LoadedGraph {
-                        graph: Arc::new(graph),
-                        manifest: Some(manifest),
-                        source: if vouched {
+                    return Ok(loaded(
+                        service,
+                        Arc::new(graph),
+                        Some(manifest),
+                        if vouched {
                             GraphSource::Daemon
                         } else {
                             GraphSource::Cache
                         },
                         tree,
-                    });
+                    ));
                 }
             } else {
                 tracing::warn!(
@@ -208,12 +253,13 @@ pub fn load_or_build_graph(
         None
     };
 
-    Ok(LoadedGraph {
-        graph: service.get_project_graph(),
-        manifest: manifest_to_keep,
-        source: GraphSource::Built,
+    Ok(loaded(
+        service,
+        service.get_project_graph(),
+        manifest_to_keep,
+        GraphSource::Built,
         tree,
-    })
+    ))
 }
 
 /// Whether somebody who is watching the tree says that `manifest` still

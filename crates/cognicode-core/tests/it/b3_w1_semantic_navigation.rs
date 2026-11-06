@@ -451,6 +451,10 @@ fn sample_get_call_hierarchy_output() -> GetCallHierarchyOutput {
         },
         precision: precision_floor_for_tool("get_call_hierarchy"),
         provider: default_provider_for_tool("get_call_hierarchy").to_string(),
+        // The question says what it was answered with.
+        coverage: cognicode_core::interface::coverage::CoverageInfo::of(
+            &cognicode_core::application::services::analyze::Coverage::Complete,
+        ),
     }
 }
 

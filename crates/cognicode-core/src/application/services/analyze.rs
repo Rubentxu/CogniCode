@@ -343,7 +343,6 @@ impl ServiceAnalyzer {
         };
         let source = Some(loaded.source);
 
-        let graph = self.service.get_project_graph();
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
         // BuildReport compartido, no la mera existencia de símbolos.
         // Un walk con ficheros saltados es Partial con gaps = ficheros
@@ -352,13 +351,15 @@ impl ServiceAnalyzer {
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
         //
-        // La decisión es de un dueño: `coverage_verdict` la toma, y el MCP
-        // toma la misma. Las tres coberturas son tres hechos y los tres
-        // cuentan: un fichero que no se pudo leer, una referencia que no se
-        // pudo atar y una relación que el almacén rechazó son respuestas
-        // distintas a "lo sabes todo?". La referencia y la relación
-        // rechazada viajan con el valor —donde el consumidor lee lo que sí
-        // se resolvió— y el gap dice qué cobertura no está completa.
+        // La decisión es de un dueño: `coverage_verdict` la toma, y la
+        // toma UNA vez —al cargar el grafo—, así que la CLI, el MCP y las
+        // preguntas publishes la misma cobertura para el mismo árbol. Las
+        // tres coberturas son tres hechos y los tres cuentan: un fichero
+        // que no se pudo leer, una referencia que no se pudo atar y una
+        // relación que el almacén rechazó son respuestas distintas a "lo
+        // sabes todo?". La referencia y la relación rechazada viajan con el
+        // valor —donde el consumidor lee lo que sí se resolvió— y el gap
+        // dice qué cobertura no está completa.
         //
         // Un grafo servido del snapshot no tiene BuildReport: este proceso
         // no lo construyó. Sus huecos son los del arbol de AHORA —un
@@ -366,13 +367,7 @@ impl ServiceAnalyzer {
         // no lo ve— y sus referencias y relaciones son las del grafo
         // servido, que son vacias porque un snapshot solo existe para un
         // build completo.
-        let report = self.service.get_last_build_report();
-        let coverage = coverage_verdict(
-            loaded.source,
-            report.as_ref(),
-            &loaded.tree.holes,
-            holds_material(graph.symbol_count()),
-        );
+        let coverage = loaded.coverage;
 
         let stats = self.service.get_graph_stats();
         let facts = coverage.facts();
@@ -529,7 +524,13 @@ fn coverage_gaps(
 /// Texto estable para el motivo de skip, paralelo al `reason_kind` del
 /// DTO MCP. Proyección explícita: el ADT de infraestructura no se
 /// filtra al contrato de aplicación.
-fn skip_reason_text(reason: &crate::infrastructure::graph::per_file_graph::SkipReason) -> String {
+///
+/// `pub(crate)` porque la proyección que publica la cobertura lo usa
+/// también: el motivo que se publica tiene que ser el mismo en las dos
+/// superficies, y dos textos para un motivo son dos verdades.
+pub(crate) fn skip_reason_text(
+    reason: &crate::infrastructure::graph::per_file_graph::SkipReason,
+) -> String {
     match reason {
         crate::infrastructure::graph::per_file_graph::SkipReason::Read(d) => {
             format!("read error: {d}")
