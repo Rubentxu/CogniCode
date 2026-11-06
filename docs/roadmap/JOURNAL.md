@@ -37531,3 +37531,99 @@ ha cambiado desde aquella corrida, y su verificación es la suite de contratos �
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
 crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-129: la nota 2 del ROADMAP cita el ADR que existe, y un contrato vigila que no se declare retirado lo que sigue
+
+### Lo que estaba mal (MEDIDO contra el árbol, no supuesto)
+
+La nota 2 de §11.1 del ROADMAP afirmaba que la poda documental —PR #399— se había llevado
+`docs/adr/ADR-D1-006-uat-retirement.md`, y mandaba a quien ejecutara B2 al recibo del `JOURNAL`.
+Cuatro comprobaciones sobre el árbol:
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Existe el fichero? | **Sí**: 3 929 bytes, `status: accepted`, 2026-10-17, con la decisión dentro |
+| `git log --all --diff-filter=D -- <ruta>` | **Ninguna baja**: nunca se borró |
+| ¿Lo tocaba PR #399 (`97259133`)? | **No**: borró seis ficheros, ninguno de ellos este |
+| ¿Viven en `main` los SHAs que citaba la nota? | **No**: `08c9bd59` y `73e6c67c` son de rama; el que vive en `main` es `4996246e` (PR #354) |
+
+La nota mandaba a un sitio que ya no era el único, y escondía el fichero que sí tenía la decisión.
+
+### Lo que dice ahora
+
+La nota cita el fichero que existe —con el SHA que vive en `main`—, dice qué hizo PR #399 de verdad
+(los seis ficheros que se llevó, entre ellos `docs/roadmap/MAINTENANCE.md`) y sigue citando el recibo
+del `JOURNAL` del 2026-10-15, donde `ADR-TH-006` es el nombre de la entrada del recibo, no un fichero.
+Quien ejecute B2 lee el ADR, o el recibo: los dos existen.
+
+### El contrato que vigila la clase
+
+`scripts/ci/test_roadmap_does_not_retire_what_is_there.py`: una ruta que el ROADMAP declara retirada no
+puede seguir en el árbol. El RED se midió sobre la nota vieja y el GREEN sobre la nota nueva, con el
+mismo contrato: **1 rojo (rc=1)** y **rc=0**. Seis comprobaciones, cinco de ellas controles: una retirada
+inventada de un fichero que está sale en rojo; una retirada verdadera no sale; una negación («no fue
+retirado») no es una afirmación; el **nombre** de un fichero no es una afirmación; y el extractor ve las
+afirmaciones que dice ver.
+
+### La medición que justifies el alcance del contrato
+
+El perfil de falsos positivos se midió ANTES de escribir el contrato, con tres granularidades:
+
+| Granularidad | Casos en 69 KB de prosa |
+|---|---|
+| Párrafo (todo el bloque con un marcador de retirada) | **31** — ruido: una celda de tabla declara una retirada y otra cita rutas |
+| Frase, con tablas | **14** — el mismo ruido, fila a fila |
+| Frase, sin tablas, con negación | **1** — y es el defecto |
+
+La granularidad elegida es la última, y por eso las filas de tabla no se miran: una fila mezcla celdas que
+no hablan de lo mismo. El contrato mide su ruido, y su ruido es cero sobre el árbol.
+
+### Dos defectos que el contrato tuvo al escribirse
+
+1. **Leía el nombre de un fichero como una afirmación.** `uat-retirement.md` lleva la palabra «retirement»
+   dentro del nombre: el contrato veía una retirada donde sólo había un nombre. Sin arreglarlo, el
+   contrato no habría dejado corregir la nota que señalaba —la nota corregida tiene que poder NOMBRAR el
+   fichero—. Las rutas citadas se tapan antes de buscar verbos, y hay un control que lo fija.
+2. **La negación.** Corregir una nota sobre una retirada exige decir que NO hubo retirada; si la negación
+   contara como afirmación, el contrato no dejaría corregir la nota. La negación cerca del verbo —60
+   caracteres— lo desmiente.
+
+### Lo que el contrato NO comprueba
+
+- **Que la retirada haya ocurrido de verdad.** Mira el árbol, no la historia: una ruta declarada retirada
+  que ya no está pasa, aunque su baja no figure en el historial de git.
+- **Que el documento citado sea el mejor.** Solo que el ROADMAP no afirme que está retirado algo que está.
+- **Las filas de tabla**, por lo medido arriba.
+- **Los SHAs citados.** En el ROADMAP hay **diez** SHAs que no viven en `main` (`08c9bd59`, `73e6c67c`,
+  `6b853c19`, `91b9b22f`, `97a0c740`, `b2634ed6`, `e1dd8169`, `ede4772d`, `f428da1a`, `f86958ab`). El de esta
+  nota se corrigió porque la nota se reescribía; los otros nueve son otra unidad, y un contrato que los
+  exigiera pondría el ROADMAP en rojo por cosas que no son de esta nota.
+
+### Verificado
+
+`bash scripts/ci/run-all-contracts.sh` → **336 checks, 0 fallos** (330 antes + los 6 del contrato nuevo).
+Radio de la unidad: `docs` + `scripts/` — la suite de contratos. No se ha tocado código de producto, así
+que no hay radio de `cargo` que medir: el árbol de Rust no ha cambiado.
+
+### Una nota de operación (el operador la tiene que saber)
+
+El squash de PR #665 entró con una cabecera de **126 caracteres** —el máximo de la política es 120— porque
+GitHub le añade el sufijo `(#665)` al título. El hook local juzga la referencia que apunta al commit, así
+que `git fetch origin main` quedó bloqueado, y con él todo `fetch` posterior: el daño es el mismo que ya
+produjo un squash de 101 caracteres en #509. `main` no se reescribe —la protección de la rama no permite
+force-push y la política lo prohíbe—, así que el commit `41b855fa` se queda en la historia con su
+cabecera larga. Lo que se ha hecho es **dejar la punta conforme**: este recibo se construye encima de
+`41b855fa` con una cabecera dentro del límite, y el `fetch` vuelve a funcionar. La regla queda escrita
+para el que fusione: **contar la cabecera del `--subject` de `gh pr merge --squash` ANTES de fusionar,
+con el sufijo ` (#NNN)` dentro del presupuesto**.
+
+### La unidad anterior y la que sigue
+
+- TASK-86 dio al impacto la faceta `affected_tests`; esta unidad no toca ese camino.
+- La que sigue no se abre aquí. Esta unidad deja dos cosas: la nota corregida, y un contrato que vigila
+  la clase de defecto que la nota era —una afirmación de retirada que el árbol contradice—. El contrato
+  NO vigila la otra mitad de esa clase —que la baja esté en la historia—, y eso queda dicho.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
+crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
