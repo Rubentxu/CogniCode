@@ -1490,16 +1490,20 @@ pub fn present_output(
 /// Una orden que la terminal no entiende no se imprime: el enlace se queda
 /// en el JSON de la respuesta, que es donde un cliente MCP lo encuentra.
 fn write_follow_ups(output: &CommandOutput, w: &mut dyn Write) -> io::Result<()> {
-    let Some((tool, payload)) = payload_of(output) else {
+    let Some(projection) = payload_of(output) else {
         return Ok(());
     };
+    let tree = projection.tree.clone().unwrap_or_else(current_tree);
     let context = HandleContext {
-        workspace: std::env::current_dir()
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|_| ".".to_string()),
+        workspace: tree,
         snapshot: "none".to_string(),
     };
-    let envelope = envelope_for(tool, &serde_json::Map::new(), &payload, &context);
+    let envelope = envelope_for(
+        projection.tool,
+        &serde_json::Map::new(),
+        &projection.payload,
+        &context,
+    );
     let commands = follow_ups::annotated_commands(&envelope);
     if commands.is_empty() {
         return Ok(());
@@ -1512,9 +1516,29 @@ fn write_follow_ups(output: &CommandOutput, w: &mut dyn Write) -> io::Result<()>
     Ok(())
 }
 
+/// El árbol que se está mirando, cuando la respuesta no lo dice.
+fn current_tree() -> String {
+    std::env::current_dir()
+        .map(|path| path.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string())
+}
+
+/// La proyección de una respuesta del CLI al sobre.
+///
+/// La **tool** es la del catálogo a la que la respuesta responde; el
+/// **payload** es la respuesta en la forma que el sobre cuenta; y el
+/// **árbol** es el que la respuesta miró, cuando la respuesta lo dice:
+/// una respuesta que se hizo sobre un directorio habla de ese
+/// directorio, no del directorio desde el que se teclea.
+struct Projection {
+    tool: &'static str,
+    payload: serde_json::Value,
+    tree: Option<String>,
+}
+
 /// La tool que una respuesta del CLI responde, y la respuesta en la forma
 /// que el sobre lee.
-fn payload_of(output: &CommandOutput) -> Option<(&'static str, serde_json::Value)> {
+fn payload_of(output: &CommandOutput) -> Option<Projection> {
     match output {
         CommandOutput::Graph(GraphResult::Impact {
             symbol,
@@ -1522,15 +1546,40 @@ fn payload_of(output: &CommandOutput) -> Option<(&'static str, serde_json::Value
             impacted_files,
             coverage,
             ..
-        }) => Some((
-            "analyze_impact",
-            serde_json::json!({
+        }) => Some(Projection {
+            tool: "analyze_impact",
+            payload: serde_json::json!({
                 "symbol": symbol,
                 "risk_level": risk_level,
                 "impacted_files": impacted_files,
                 "coverage": coverage,
             }),
-        )),
+            tree: None,
+        }),
+        // La construcción del grafo es la respuesta que másholes
+        // declara: los ficheros que no se pudieron leer, las
+        // referencias que nadie declara y las relaciones que el
+        // repositorio rechazó. El sobre los cuenta, y el enlace que
+        // sale de ahí es el reindexado — que es exactamente lo que el
+        // usuario necesita después de una construcción parcial.
+        CommandOutput::Graph(GraphResult::Full {
+            path,
+            status,
+            skipped_files,
+            pending_references,
+            rejected_relations,
+            ..
+        }) => Some(Projection {
+            tool: "build_graph",
+            payload: serde_json::json!({
+                "path": path,
+                "status": status,
+                "skipped_files": skipped_files,
+                "pending_references": pending_references,
+                "rejected_relations": rejected_relations,
+            }),
+            tree: Some(path.clone()),
+        }),
         _ => None,
     }
 }

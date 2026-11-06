@@ -292,6 +292,19 @@ fn count_of(result: &Value, names: &[&str]) -> Option<usize> {
         .map(|items| items.len())
 }
 
+/// La palabra, en singular o en plural, según lo que se cuenta.
+///
+/// El motivo de un enlace se lee en una terminal y en un cliente: es una
+/// frase, no un contador. Una razón que dice «1 files» es una razón
+/// escrita por una máquina que no cuenta.
+fn plural(count: usize, word: &str) -> String {
+    if count == 1 {
+        word.to_string()
+    } else {
+        format!("{word}s")
+    }
+}
+
 /// La base de la respuesta.
 fn basis_of(result: &Value) -> Basis {
     Basis {
@@ -395,8 +408,9 @@ fn ambiguity_link(result: &Value, ctx: &HandleContext) -> Option<Link> {
         "get_symbol_code",
         args,
         format!(
-            "{} references name a symbol that several declarations carry",
-            ambiguous.len()
+            "the answer names {} ambiguous {}",
+            ambiguous.len(),
+            plural(ambiguous.len(), "reference")
         ),
         Some(mint_handle(HandleKind::Sym, ctx, &json!(target))),
     ))
@@ -444,7 +458,7 @@ fn callers_link(result: &Value, ctx: &HandleContext) -> Option<Link> {
         "inspect-callers",
         "get_call_hierarchy",
         args,
-        format!("{fan_in} callers depend on it"),
+        format!("the symbol has {} {}", fan_in, plural(fan_in, "caller")),
         Some(mint_handle(HandleKind::Sym, ctx, &json!(symbol))),
     ))
 }
@@ -463,8 +477,13 @@ fn reindex_link(result: &Value, ctx: &HandleContext) -> Option<Link> {
         "build_graph",
         args,
         format!(
-            "{} files, {} references and {} relations were left out of the answer",
-            holes.skipped, holes.pending, holes.rejected
+            "{} {}, {} {} and {} {} were left out of the answer",
+            holes.skipped,
+            plural(holes.skipped, "file"),
+            holes.pending,
+            plural(holes.pending, "reference"),
+            holes.rejected,
+            plural(holes.rejected, "relation")
         ),
         None,
     ))
@@ -489,8 +508,9 @@ fn risk_link(result: &Value, _ctx: &HandleContext) -> Option<Link> {
         "get_file_symbols",
         args,
         format!(
-            "the risk level is {risk} and it touches {} files",
-            impacted.len()
+            "the risk level is {risk} and it touches {} {}",
+            impacted.len(),
+            plural(impacted.len(), "file")
         ),
         None,
     ))
@@ -513,8 +533,9 @@ fn preview_link(result: &Value, ctx: &HandleContext) -> Option<Link> {
         "analyze_impact",
         args,
         format!(
-            "the answer proposes {} changes; this is what the change would touch",
-            recommendations.len()
+            "the answer proposes {} {}; this is what the change would touch",
+            recommendations.len(),
+            plural(recommendations.len(), "change")
         ),
         Some(mint_handle(HandleKind::Plan, ctx, &json!(subject))),
     ))

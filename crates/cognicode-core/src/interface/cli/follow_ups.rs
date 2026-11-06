@@ -37,8 +37,13 @@ pub fn annotated_commands(envelope: &Envelope) -> Vec<(String, String)> {
 fn command_for(link: &Link) -> Option<String> {
     let args = &link.required_args;
     match link.tool.as_str() {
+        // El enlace dice «reconstruye el grafo de este directorio». La
+        // orden que lo hace es la que construye el grafo de llamadas —
+        // `index build` construye el índice de símbolos, que es otra
+        // cosa — y `--rebuild` porque sin él la terminal sirve la
+        // caché y el hueco seguiría ahí.
         "build_graph" => Some(format!(
-            "cognicode index build {}",
+            "cognicode graph full --rebuild {}",
             word(args, "directory")?
         )),
         "get_symbol_code" => Some(format!(
@@ -48,8 +53,9 @@ fn command_for(link: &Link) -> Option<String> {
             number(args, "col")?
         )),
         "get_call_hierarchy" => Some(format!(
-            "cognicode graph hierarchy {} --direction in",
-            word(args, "symbol_name")?
+            "cognicode graph hierarchy {} --direction {}",
+            word(args, "symbol_name")?,
+            direction(args)?
         )),
         "get_file_symbols" => Some(format!(
             "cognicode index outline {}",
@@ -73,6 +79,23 @@ fn word(args: &Map<String, Value>, name: &str) -> Option<String> {
 fn number(args: &Map<String, Value>, name: &str) -> Option<String> {
     let value = args.get(name)?.as_i64()?;
     Some(value.to_string())
+}
+
+/// La dirección del enlace, en el vocabulario de la terminal.
+///
+/// El catálogo dice `incoming` y `outgoing`; la terminal dice `in` y
+/// `out`. La dirección se **lee** del enlace: una orden que dice una
+/// dirección que el enlace no dice es una orden que responde a otra
+/// pregunta, y una dirección que la terminal no entiende no se
+/// inventa — el enlace se queda en el JSON, donde un cliente lo
+/// encuentra.
+fn direction(args: &Map<String, Value>) -> Option<String> {
+    match args.get("direction")?.as_str()? {
+        "incoming" => Some("in".to_string()),
+        "outgoing" => Some("out".to_string()),
+        "both" => Some("both".to_string()),
+        _ => None,
+    }
 }
 
 /// Un valor con espacios es un valor entre comillas.

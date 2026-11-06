@@ -38,5 +38,6 @@ mod refactor_apply_publishes_the_revalidation;
 mod t1_5_5_json_dispatch;
 mod test_taxonomy_contract;
 mod the_cli_mermaid_format_is_the_graphs_vocabulary;
+mod the_cli_says_what_comes_next;
 mod the_cli_serves_the_snapshot_the_mcp_wrote;
 mod the_questions_say_their_coverage;
