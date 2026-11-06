@@ -37032,3 +37032,10 @@ tabla, y las dos pasaron en verde.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
 crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+**Addendum (2026-11-06, al cerrar la unidad).** La rama `chore/task-69` se retiró al cerrar esta
+unidad: el worktree que la tenía (`cog-t69`), la rama local y la rama remota. La tabla que guardaba
+—las etapas del `merge-gate.pipeline.kts`, un pipeline que no existe— queda resumida en el recibo de
+arriba, en sus tres números que sobreviven: 235 ejecutables, 273 s en frío y ~1,16 s por binario. Lo
+que se retira es la rama, no el árbol: `main` nunca la tuvo, y lo único que de ella quedaba en el árbol
+era ese número derivado del recibo de TASK-70 grupo 1, que la medición de esta unidad sustituye.
