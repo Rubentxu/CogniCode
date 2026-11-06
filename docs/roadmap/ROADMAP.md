@@ -568,14 +568,15 @@ declarar (`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:420-425`),
 y un perfil desconocido hace que el handler se niegue a arrancar
 (`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:117-124`).
 
-**Nota 2 — la cita de la retirada de UAT no abre.** El roadmap de ejecución
-remite a `ADR-D1-006` para B2. Ese fichero existió
-(`docs/adr/ADR-D1-006-uat-retirement.md`, commits `08c9bd59` y `73e6c67c`) y
-lo retiró la poda documental —PR #399—. La decisión que llevaba vive hoy en
-el recibo del `JOURNAL` del 2026-10-15, "Retirada de la clase UAT
-(ADR-TH-006)", y el nombre que sí se cita ahí es **ADR-TH-006**, que
-tampoco es un fichero: es la entrada del recibo. Quien ejecute B2 lee el
-recibo, no una ruta que ya no existe.
+**Nota 2 — la cita de la retirada de UAT abre.** El roadmap de ejecución
+remite a `ADR-D1-006` para B2. El fichero está en el árbol:
+`docs/adr/ADR-D1-006-uat-retirement.md` (`4996246e`, PR #354), con la
+decisión aceptada (`status: accepted`, 2026-10-17). La poda documental —PR
+#399 (`97259133`)— se llevó seis ficheros, entre ellos
+`docs/roadmap/MAINTENANCE.md`, y no tocó este. La decisión vive además en
+el recibo del `JOURNAL` del 2026-10-15, «Retirada de la clase UAT
+(ADR-TH-006)», donde `ADR-TH-006` es el nombre de la entrada del recibo, no
+un fichero. Quien ejecute B2 lee el ADR, o el recibo: los dos existen.
 
 **Nota 3 — hay dos caminos al permiso MCP, y la Nota 1 midió uno.** La
 Nota 1 cerró el bypass por el esquema de entrada: un `SafeRefactorInput` con
