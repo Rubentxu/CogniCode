@@ -52,12 +52,28 @@ Run:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 RUNNER = REPO / "scripts/mem-capped-runner.sh"
 GATE = REPO / "scripts/test-gate.sh"
+
+# The owner of the budget: one file, so the numbers that decide how much
+# memory the mutation step may ask for have one place to live.
+BUDGET_OWNER = REPO / "scripts/mutants-budget.sh"
+
+# The route a person takes when they want a look at one file: a focal
+# mutation run. It is the shape of run that produced the OOM of
+# 2026-11-05, because it had no ceiling at all.
+FOCAL = REPO / "scripts/mutate-file.sh"
+
+AGENTS_MD = REPO / "AGENTS.md"
+
+# A file of the workspace, used by the plan: the plan does not mutate
+# anything, so the path only has to be a plausible one.
+A_FILE = "crates/cognicode-core/src/lib.rs"
 
 # The budget the whole step may ask for at the same time. It is a quarter of
 # the memory a machine of this class has free, with room for the rest of the
@@ -172,6 +188,229 @@ def test_the_detector_sees_a_planted_parallel_measurement() -> None:
     check(
         jobs_are_attributable(1),
         "el detector ve una medición en serie como un problema",
+    )
+
+
+def owner_kib(text: str, name: str) -> int | None:
+    """A number the owner of the budget declares, in KiB."""
+    match = re.search(rf"^\s*{name}=(\d+)", text, re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def focal_plan(jobs: str | None = None) -> dict[str, str] | None:
+    """What the focal route would run, as the plan it prints.
+
+    The plan is the route's own answer, not a reading of its source: a
+    contract that greps a script can be satisfied by a comment. The plan
+    is what the route is about to do.
+    """
+    args = [str(FOCAL), "--plan", A_FILE]
+    if jobs is not None:
+        args += ["--jobs", jobs]
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    plan: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            plan[key.strip()] = value.strip()
+    return plan
+
+
+def test_the_focal_mutation_route_carries_the_ceiling() -> None:
+    """A focal run asks the machine for the same budget the gate does.
+
+    The ceiling is what keeps a runaway mutant from taking the machine
+    with it. Measured 2026-11-05 at 19:40: the kernel's OOM killer
+    killed a `cognicode-core` test binary of 37 GB resident and, in the
+    same sweep, `coredns`, a container's JVM and two processes of
+    another container — none of them this repository's.
+    """
+    check(
+        FOCAL.is_file(),
+        "scripts/mutate-file.sh no existe: la corrida focal de mutación no "
+        "lleva techo, y es la forma de corrida que produjo el OOM del "
+        "2026-11-05",
+    )
+    if not FOCAL.is_file():
+        return
+
+    plan = focal_plan()
+    check(
+        plan is not None,
+        "scripts/mutate-file.sh --plan no devuelve un plan: el contrato no "
+        "puede comprobar lo que la ruta haría",
+    )
+    if plan is None:
+        return
+
+    ceiling = int(plan.get("ceiling_kib", "0"))
+    jobs = int(plan.get("jobs", "0"))
+    budget = int(plan.get("budget_kib", "0"))
+    check(ceiling > 0, f"la ruta focal no dice qué techo usa: {plan}")
+    check(jobs > 0, f"la ruta focal no dice cuántos trabajos lanza: {plan}")
+    check(
+        budget > 0,
+        f"la ruta focal no declara el presupuesto que se respeta: {plan}",
+    )
+    if ceiling and jobs and budget:
+        check(
+            ceiling * jobs <= budget,
+            f"la ruta focal pide {ceiling * jobs // 1024} MiB a la vez "
+            f"(techo {ceiling // 1024} MiB x {jobs} trabajos) y el "
+            f"presupuesto es {budget // 1024} MiB: la máquina se queda sin "
+            f"memoria y los mutantes que los tests matan se reportan como "
+            f"tiempos agotados",
+        )
+    check(
+        plan.get("runner", "").endswith("mem-capped-runner.sh"),
+        f"la ruta focal no ejecuta el binario de test bajo el runner con "
+        f"techo: {plan}",
+    )
+    check(
+        plan.get("gitignore") == "true",
+        f"la ruta focal copia el árbol entero: son 6,6 GB de copia por "
+        f"mutante: {plan}",
+    )
+    check(
+        plan.get("target_dir", "").endswith("mutants-focal"),
+        f"la ruta focal no tiene directorio de destino propio: el binario "
+        f"del último mutante se queda en la caché compartida y la suite "
+        f"posterior ve fallos fantasma (AGENTS.md, regla 8): {plan}",
+    )
+
+
+def test_the_focal_route_caps_its_jobs_at_the_budget() -> None:
+    """Asking for more workers than the budget allows does not buy them.
+
+    The jobs are derived from the budget, not taken from the command
+    line: the person who asks for eight workers on a machine with less
+    free memory than that is the one who pays.
+    """
+    if not FOCAL.is_file():
+        return
+    plan = focal_plan(jobs="64")
+    check(
+        plan is not None,
+        "scripts/mutate-file.sh --plan no devuelve un plan: no se puede "
+        "comprobar si acota los trabajos al presupuesto",
+    )
+    if plan is None:
+        return
+
+    ceiling = int(plan.get("ceiling_kib", "0"))
+    jobs = int(plan.get("jobs", "0"))
+    budget = int(plan.get("budget_kib", "0"))
+    check(
+        jobs < 64,
+        f"la ruta focal obedece los 64 trabajos que se le piden: {plan}",
+    )
+    if ceiling and jobs and budget:
+        check(
+            ceiling * jobs <= budget,
+            f"la ruta focal pide {ceiling * jobs // 1024} MiB a la vez y el "
+            f"presupuesto es {budget // 1024} MiB: {plan}",
+        )
+
+
+def test_one_owner_for_the_budget() -> None:
+    """The numbers that decide the memory live in one file.
+
+    Two scripts naming the same budget are two sources of truth, and the
+    second one rots: the step that reads the stale one asks for more
+    memory than the machine has, and the certificate says the gate fits.
+    """
+    check(
+        BUDGET_OWNER.is_file(),
+        "scripts/mutants-budget.sh no existe: el presupuesto y los techos "
+        "no tienen un dueño único",
+    )
+    if not BUDGET_OWNER.is_file():
+        return
+
+    text = BUDGET_OWNER.read_text(encoding="utf-8")
+    budget = owner_kib(text, "MUTANTS_BUDGET_KIB")
+    gate_ceiling = owner_kib(text, "MUTANTS_GATE_VMEM_KIB")
+    focal_ceiling = owner_kib(text, "MUTANTS_FOCAL_VMEM_KIB")
+    check(
+        budget is not None,
+        "scripts/mutants-budget.sh no declara MUTANTS_BUDGET_KIB: el "
+        "presupuesto de memoria de las corridas de mutación no está escrito",
+    )
+    check(
+        gate_ceiling is not None,
+        "scripts/mutants-budget.sh no declara MUTANTS_GATE_VMEM_KIB: el "
+        "techo del paso de mutantes del gate no está escrito",
+    )
+    check(
+        focal_ceiling is not None,
+        "scripts/mutants-budget.sh no declara MUTANTS_FOCAL_VMEM_KIB: el "
+        "techo de la corrida focal no está escrito",
+    )
+    if budget is None or gate_ceiling is None or focal_ceiling is None:
+        return
+
+    check(
+        budget == BUDGET_KIB,
+        f"el presupuesto del dueño ({budget // 1024} MiB) no es el que el "
+        f"contrato conoce ({BUDGET_KIB // 1024} MiB): el contrato vigila "
+        f"un número que nadie usa",
+    )
+    check(
+        gate_ceiling <= budget,
+        f"el techo del gate ({gate_ceiling // 1024} MiB) es mayor que el "
+        f"presupuesto ({budget // 1024} MiB)",
+    )
+    check(
+        focal_ceiling <= budget,
+        f"el techo de la corrida focal ({focal_ceiling // 1024} MiB) es "
+        f"mayor que el presupuesto ({budget // 1024} MiB)",
+    )
+
+    gate_text = GATE.read_text(encoding="utf-8")
+    check(
+        "MUTANTS_GATE_VMEM_KIB" in gate_text,
+        "scripts/test-gate.sh no carga el techo del dueño: el valor del "
+        "paso de mutantes del gate vive en dos sitios",
+    )
+
+
+def test_the_detector_sees_a_planted_runaway_route() -> None:
+    # A detector that never fires is worse than no detector: it says the
+    # route fits when it does not.
+    check(
+        budget_kib(8 * 1024 * 1024, 4) > BUDGET_KIB,
+        "el detector no ve un techo que se pasa con cuatro trabajos",
+    )
+    check(
+        budget_kib(4 * 1024 * 1024, 4) <= BUDGET_KIB,
+        "el detector ve un techo que cabe como un problema",
+    )
+
+
+def test_no_document_recommends_a_mutation_run_without_a_ceiling() -> None:
+    """The command that has no ceiling is the one people copy.
+
+    `AGENTS.md` is the entry point every agent reads, and it recommends
+    a focal mutation run: the run that has no ceiling, no target
+    directory of its own and no budget. The route that carries all three
+    is the one it has to name.
+    """
+    text = AGENTS_MD.read_text(encoding="utf-8")
+    check(
+        "cargo mutants --file" not in text,
+        "AGENTS.md sigue recomendando una corrida de mutación sin techo "
+        "(`cargo mutants --file`): es la forma de corrida que produjo el "
+        "OOM del 2026-11-05",
+    )
+    check(
+        "mutate-file.sh" in text,
+        "AGENTS.md no nombra la ruta focal de mutación, que es la que lleva "
+        "el techo, el directorio de destino propio y el presupuesto",
     )
 
 
