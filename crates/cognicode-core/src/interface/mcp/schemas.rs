@@ -85,6 +85,12 @@ pub struct GetCallHierarchyOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// What the graph the answer was computed from covers.
+    ///
+    /// The calls are what the graph holds. Over a graph that does not
+    /// cover the whole tree, that is not what the tree holds, and a
+    /// reader that is not told so reads an empty list as a finding.
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +299,12 @@ pub struct AnalyzeImpactOutput {
     pub impacted_symbols: Vec<String>,
     pub risk_level: RiskLevel,
     pub summary: String,
+    /// What the graph the answer was computed from covers.
+    ///
+    /// The counts are what the graph holds. Over a graph that does not
+    /// cover the whole tree, that is not what the tree holds, and a
+    /// reader that is not told so reads a zero as a finding.
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 // ============================================================================

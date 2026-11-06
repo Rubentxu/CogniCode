@@ -118,6 +118,21 @@ pub struct AnalysisService {
     /// `build_project_graph_filtered` / `build_graph_per_file` /
     /// `build_graph_with_strategy` call.
     last_build_report: Mutex<Option<crate::infrastructure::graph::per_file_graph::BuildReport>>,
+    /// The coverage of the graph the service holds.
+    ///
+    /// The report says what a BUILD proved; this says what the graph the
+    /// service holds covers. The two are not the same fact: a graph served
+    /// from the snapshot was built by another session, and its coverage is
+    /// measured against the tree as it is NOW.
+    ///
+    /// It is remembered because a question is answered with the graph the
+    /// session already holds, and that graph was measured when it was
+    /// loaded: asking again must not answer with a different coverage than
+    /// the first question did.
+    ///
+    /// `None` until somebody measures it: a coverage nobody measured is
+    /// not "complete", and the answer says "unknown".
+    last_coverage: Mutex<Option<crate::application::services::analyze::Coverage>>,
     /// What the service remembers between builds: what the last one
     /// proved, and how much of it this one kept.
     ///
@@ -207,6 +222,7 @@ impl AnalysisService {
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
+            last_coverage: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
             freshness_oracle: std::sync::OnceLock::new(),
@@ -226,6 +242,7 @@ impl AnalysisService {
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
+            last_coverage: Mutex::new(None),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
             freshness_oracle: std::sync::OnceLock::new(),
@@ -1460,6 +1477,27 @@ impl AnalysisService {
         &self,
     ) -> Option<crate::infrastructure::graph::per_file_graph::BuildReport> {
         self.last_build_report.lock().unwrap().clone()
+    }
+
+    /// The coverage of the graph the service holds.
+    ///
+    /// `None` when nobody measured it: the graph may have arrived from
+    /// somewhere that does not say what it covers, and a coverage nobody
+    /// measured is not a coverage that was found to be complete.
+    pub fn get_last_coverage(&self) -> Option<crate::application::services::analyze::Coverage> {
+        self.last_coverage.lock().unwrap().clone()
+    }
+
+    /// Remembers the coverage of the graph the service holds.
+    ///
+    /// Whoever measured it decides the coverage —with
+    /// [`coverage_verdict`], the one owner of that decision— and this only
+    /// keeps it, so that the next question answered with the same graph
+    /// publishes the same coverage.
+    ///
+    /// [`coverage_verdict`]: crate::application::services::analyze::coverage_verdict
+    pub fn set_last_coverage(&self, coverage: crate::application::services::analyze::Coverage) {
+        *self.last_coverage.lock().unwrap() = Some(coverage);
     }
 
     /// Extracts symbols from a file

@@ -1140,7 +1140,7 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 // The question has one owner: the MCP asks it too, and both
                 // publish the same table. The threshold is applied BEFORE
@@ -1173,7 +1173,7 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 // The question has one owner: the MCP asks it too. Every
                 // entry point is published — the list used to stop at
@@ -1204,7 +1204,7 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 // The question has one owner: the MCP asks it too. Every
                 // leaf function is published — the list used to stop at
@@ -1247,7 +1247,7 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 // The question has one owner: the MCP asks it too. A name
                 // means the symbol that carries it — the trace used to
@@ -1326,7 +1326,7 @@ impl CommandExecutor {
                 }
 
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 // There is one renderer and this is it: the diagram the
                 // CLI publishes is the diagram the MCP publishes for the
@@ -1374,7 +1374,8 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let built = project_graph_of(&dir)?;
+                let graph = built.graph;
 
                 let dir_enum = match direction.to_lowercase().as_str() {
                     "in" => crate::application::services::graph_queries::Direction::Callers,
@@ -1431,6 +1432,7 @@ impl CommandExecutor {
                     root_column: published_column(root.location().column()),
                     buckets,
                     total_entries: entries.len(),
+                    coverage: crate::interface::coverage::CoverageInfo::of(&built.coverage),
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4j: text formatting is in the
@@ -1443,7 +1445,7 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let graph = project_graph_of(&dir)?.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let complexity = analyzer.calculate_complexity(&graph);
@@ -1479,7 +1481,8 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 // The graph comes from the same authority the MCP uses.
-                let graph = project_graph_of(&dir)?;
+                let built = project_graph_of(&dir)?;
+                let graph = built.graph;
 
                 // The same question, answered by the same function the MCP and
                 // the workspace session call.
@@ -1496,6 +1499,7 @@ impl CommandExecutor {
                     impacted_files_count: impact.files.len(),
                     impacted_symbols: impact.symbols,
                     impacted_files: impact.files,
+                    coverage: crate::interface::coverage::CoverageInfo::of(&built.coverage),
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4l: text formatting is in the
@@ -3213,12 +3217,9 @@ mod f0_1_find_usages_tests {
 /// command that shows one and hides the other tells half the truth.
 fn project_graph_of(
     dir: &std::path::Path,
-) -> Result<
-    std::sync::Arc<crate::domain::aggregates::call_graph::CallGraph>,
-    Box<dyn std::error::Error>,
-> {
+) -> Result<crate::interface::cli::project_graph::ProjectGraph, Box<dyn std::error::Error>> {
     let built = crate::interface::cli::project_graph::project_graph(dir)
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     crate::interface::cli::project_graph::warn_incomplete(&built);
-    Ok(built.graph)
+    Ok(built)
 }

@@ -843,6 +843,10 @@ pub fn present_graph_hierarchy(
         root_column,
         buckets,
         total_entries,
+        // The coverage travels in the published document (the JSON
+        // dispatch). The text says what the build could not cover on the
+        // side channel —stderr—, the same way `graph full` does.
+        coverage: _,
         elapsed_ms,
     } = result
     {
@@ -1019,6 +1023,10 @@ pub fn present_graph_impact(
         impacted_files_count,
         impacted_symbols,
         impacted_files,
+        // The coverage travels in the published document (the JSON
+        // dispatch). The text says what the build could not cover on the
+        // side channel —stderr—, the same way `graph full` does.
+        coverage: _,
         elapsed_ms,
     } = result
     {
