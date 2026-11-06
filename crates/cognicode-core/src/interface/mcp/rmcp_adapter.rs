@@ -806,15 +806,39 @@ impl ServerHandler for CogniCodeHandler {
             let _registration = cancellations.register(request_id, flag);
 
             // The name is needed after the request is consumed: it says
-            // whether the answer carries a published contract, and a
-            // contract is a promise about where the answer lands.
+            // which answer is being published.
             let tool_name = request.name.to_string();
+
+            // The context al que se anclan los handles: el workspace que
+            // este servidor atiende y la cabeza del grafo.
+            let handle_context = handle_context(&ctx);
+
+            // A handle in the arguments is a promise signed against this
+            // workspace and this snapshot. One that was rewritten, or that
+            // belongs to another tree, is refused with its typed error —
+            // before the tool runs, not after.
+            let mut request = request;
+            if let Some(arguments) = request.arguments.as_mut()
+                && let Err(error) =
+                    crate::interface::hateoas::resolve_handles(arguments, &handle_context)
+            {
+                let mut refused = CallToolResult::error(vec![Content::text(error.to_string())]);
+                refused.structured_content = serde_json::to_value(&error).ok();
+                return Ok(refused);
+            }
+
+            // The arguments the call was made with: the envelope's links
+            // are these arguments with what comes next filled in.
+            let arguments = request.arguments.clone().unwrap_or_default();
 
             let result = call_tool_handler(&request_ctx, request).await;
 
             match result {
                 Ok(output) => Ok(crate::interface::mcp::tool_response::success_result(
-                    &tool_name, output,
+                    &tool_name,
+                    output,
+                    &arguments,
+                    &handle_context,
                 )),
                 Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
             }
@@ -832,6 +856,26 @@ impl ServerHandler for CogniCodeHandler {
         // nobody to mark: the next request starts clean.
         self.cancellations.cancel(&notification.request_id);
         std::future::ready(())
+    }
+}
+
+/// The context al que se anclan los handles de esta llamada.
+///
+/// El workspace es el que este servidor atiende, y la instantánea es la
+/// cabeza del grafo: un handle de una página cadetuca cuando el grafo se
+/// vuelve a calcular, y eso es exactamente lo que un handle tiene que
+/// decir.
+fn handle_context(
+    ctx: &crate::interface::mcp::handlers::HandlerContext,
+) -> crate::interface::hateoas::HandleContext {
+    crate::interface::hateoas::HandleContext {
+        workspace: ctx.working_dir().to_string_lossy().to_string(),
+        snapshot: ctx
+            .analysis_service()
+            .graph_cache()
+            .current_id()
+            .map(|id| id.0.to_string())
+            .unwrap_or_else(|| "none".to_string()),
     }
 }
 

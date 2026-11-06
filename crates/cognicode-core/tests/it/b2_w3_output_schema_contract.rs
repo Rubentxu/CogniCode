@@ -457,7 +457,7 @@ fn a_complete_response_payload_satisfies_its_advertised_schema() {
         "edges": [{"from": "a", "to": "b"}],
         "message": "ok",
     });
-    assert_object_contract_holds(&schema, &payload, "build_graph");
+    assert_object_contract_holds(&result_schema_of(&schema), &payload, "build_graph");
 }
 
 /// A `Partial` response payload MUST still satisfy the advertised
@@ -483,7 +483,7 @@ fn a_partial_response_payload_still_satisfies_the_typed_schema() {
             {"path": "broken.rs", "reason_kind": "parse", "reason": "syntax error"}
         ],
     });
-    assert_object_contract_holds(&schema, &payload, "build_graph");
+    assert_object_contract_holds(&result_schema_of(&schema), &payload, "build_graph");
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +524,19 @@ fn catalog_path() -> std::path::PathBuf {
         }
     }
     panic!("could not locate product/tools.json above {:?}", manifest);
+}
+
+/// The tool's own shape, which the envelope publishes under `result`.
+///
+/// The advertised contract is the envelope: the tool's shape is one level
+/// down, and it is the one that describes the payload the client reads.
+fn result_schema_of(schema: &Map<String, Value>) -> Map<String, Value> {
+    schema
+        .get("properties")
+        .and_then(|p| p.get("result"))
+        .and_then(Value::as_object)
+        .cloned()
+        .expect("the advertised contract publishes the result under `result`")
 }
 
 fn assert_object_contract_holds(schema: &Map<String, Value>, payload: &Value, tool: &str) {

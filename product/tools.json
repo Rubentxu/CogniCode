@@ -223,6 +223,43 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "BasisDto": {
             "description": "Provenance basis for a build_graph result.",
             "properties": {
@@ -281,6 +318,69 @@
             ],
             "type": "object"
           },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
           "EdgeInfo": {
             "description": "A single edge in the build_graph response.",
             "properties": {
@@ -294,6 +394,79 @@
             "required": [
               "from",
               "to"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
             ],
             "type": "object"
           },
@@ -407,85 +580,125 @@
             "type": "object"
           }
         },
-        "description": "Output for build_graph",
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "basis": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/BasisDto"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable, or\nwhen the workspace had nothing to analyze."
-          },
-          "edges": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/EdgeInfo"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "message": {
-            "type": "string"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "pending_references": {
-            "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`Some([])` when every reference was tied. An answer served from\nthe cache publishes the references of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
-            "items": {
-              "$ref": "#/$defs/PendingReferenceInfo"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "description": "Output for build_graph",
+            "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BasisDto"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable, or\nwhen the workspace had nothing to analyze."
+              },
+              "edges": {
+                "items": {
+                  "$ref": "#/$defs/EdgeInfo"
+                },
+                "type": "array"
+              },
+              "message": {
+                "type": "string"
+              },
+              "pending_references": {
+                "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`Some([])` when every reference was tied. An answer served from\nthe cache publishes the references of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
+                "items": {
+                  "$ref": "#/$defs/PendingReferenceInfo"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "rejected_relationships": {
+                "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`Some([])` when every relation was taken. An answer served from\nthe cache publishes the relations of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
+                "items": {
+                  "$ref": "#/$defs/RejectedRelationInfo"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "relationships_found": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "The holes of the tree, as it is now.\n`Some([])` when the walk left nothing out; `Some([..])` when one\nor more paths were dropped —because of I/O / parsing failures,\nbecause the walk declined them, or because their language is one\nnobody supports yet.\n\nThe list belongs to the tree and not to the build that produced\nthe graph: an answer served from the cache publishes the holes of\nthe tree as it is NOW, so that no consumer can be told `complete`\nabout a tree the walk does not read whole.",
+                "items": {
+                  "$ref": "#/$defs/SkippedFileDto"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "status": {
+                "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: the answer describes the whole tree: no file was\n    dropped and no reference was left without a declaration.\n  - `\"partial\"`: something is missing: a file was dropped (I/O or\n    parsing failure), a reference could not be tied to a\n    declaration, or the repository refused a relation.\n  - `\"unknown\"`: the answer carries no verdict about the coverage\n    of the tree.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.\n\nThe verdict is the tree's, not the build's: an answer served from\nthe cache says what the tree looks like NOW, which is the same\nthing a fresh walk of it would say.",
+                "type": "string"
+              },
+              "success": {
+                "type": "boolean"
+              },
+              "symbols_found": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "required": [
+              "success",
+              "status",
+              "symbols_found",
+              "relationships_found",
+              "edges",
+              "message"
+            ],
+            "title": "BuildGraphOutput",
+            "type": "object"
           },
-          "rejected_relationships": {
-            "description": "The relations the repository refused.\n\nA relation that was refused is not an edge of the graph, and\n`relationships_found` counts the relations the graph holds. Naming\nthe refused ones is what keeps that number and the graph in\nagreement.\n\n`Some([])` when every relation was taken. An answer served from\nthe cache publishes the relations of the graph it serves, and a\ngraph is only persisted when it was built with none of them.",
-            "items": {
-              "$ref": "#/$defs/RejectedRelationInfo"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "relationships_found": {
-            "format": "uint",
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
-          "skipped_files": {
-            "description": "The holes of the tree, as it is now.\n`Some([])` when the walk left nothing out; `Some([..])` when one\nor more paths were dropped —because of I/O / parsing failures,\nbecause the walk declined them, or because their language is one\nnobody supports yet.\n\nThe list belongs to the tree and not to the build that produced\nthe graph: an answer served from the cache publishes the holes of\nthe tree as it is NOW, so that no consumer can be told `complete`\nabout a tree the walk does not read whole.",
-            "items": {
-              "$ref": "#/$defs/SkippedFileDto"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "status": {
-            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: the answer describes the whole tree: no file was\n    dropped and no reference was left without a declaration.\n  - `\"partial\"`: something is missing: a file was dropped (I/O or\n    parsing failure), a reference could not be tied to a\n    declaration, or the repository refused a relation.\n  - `\"unknown\"`: the answer carries no verdict about the coverage\n    of the tree.\n  - `\"unsupported\"`: the walk happened and the tree holds no\n    source this product can read. Nothing was dropped, but there\n    is nothing to be complete about.\n\nThe verdict is the tree's, not the build's: an answer served from\nthe cache says what the tree looks like NOW, which is the same\nthing a fresh walk of it would say.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          },
-          "symbols_found": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
-          "success",
-          "status",
-          "symbols_found",
-          "relationships_found",
-          "edges",
-          "message"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "BuildGraphOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -790,30 +1003,245 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "format": {
-            "type": "string"
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
+            "items": {
+              "$ref": "#/$defs/Link"
+            },
+            "type": "array"
           },
-          "map": {
-            "type": "string"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
-            "type": "string"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
           },
-          "token_estimate": {
-            "format": "uint",
+          "result": {
+            "properties": {
+              "format": {
+                "type": "string"
+              },
+              "map": {
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              },
+              "token_estimate": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "format",
+              "map",
+              "token_estimate",
+              "summary"
+            ],
+            "title": "CodebaseMapOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
+            "type": "string"
           }
         },
         "required": [
-          "format",
-          "map",
-          "token_estimate",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "CodebaseMapOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -1263,34 +1691,249 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "community_count": {
-            "description": "How many communities the detection found.",
-            "format": "uint",
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
+            "items": {
+              "$ref": "#/$defs/Link"
+            },
+            "type": "array"
+          },
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "community_count": {
+                "description": "How many communities the detection found.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mermaid": {
+                "type": "string"
+              },
+              "sections_drawn": {
+                "description": "How many of them the diagram draws.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mermaid",
+              "community_count",
+              "sections_drawn",
+              "summary"
+            ],
+            "title": "ExportCallflowOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
-          "mermaid": {
-            "type": "string"
-          },
-          "sections_drawn": {
-            "description": "How many of them the diagram draws.",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "mermaid",
-          "community_count",
-          "sections_drawn",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "ExportCallflowOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2071,6 +2714,179 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          },
           "Precision": {
             "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
             "enum": [
@@ -2081,37 +2897,77 @@
             "type": "string"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "implementors": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "precision": {
-            "$ref": "#/$defs/Precision",
-            "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "provider": {
-            "description": "B4.W1 — provider that produced the result.",
-            "type": "string"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
-            "type": "string"
+          "result": {
+            "properties": {
+              "implementors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "precision": {
+                "$ref": "#/$defs/Precision",
+                "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
+              },
+              "provider": {
+                "description": "B4.W1 — provider that produced the result.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              },
+              "trait_name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "trait_name",
+              "implementors",
+              "precision",
+              "provider",
+              "summary"
+            ],
+            "title": "GetImplementorsOutput",
+            "type": "object"
           },
-          "trait_name": {
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "trait_name",
-          "implementors",
-          "precision",
-          "provider",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GetImplementorsOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2165,27 +3021,242 @@
         "type": "object"
       },
       "output_schema": {
-        "properties": {
-          "file_path": {
-            "type": "string"
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
           },
-          "imports": {
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
+        "properties": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "file_path": {
+                "type": "string"
+              },
+              "imports": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file_path",
+              "imports",
+              "summary"
+            ],
+            "title": "GetImportsOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "file_path",
-          "imports",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GetImportsOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2285,34 +3356,249 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "class_name": {
-            "type": "string"
-          },
-          "fields": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "methods": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "class_name": {
+                "type": "string"
+              },
+              "fields": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "methods": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "class_name",
+              "methods",
+              "fields",
+              "summary"
+            ],
+            "title": "GetMembersOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "class_name",
-          "methods",
-          "fields",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GetMembersOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2483,6 +3769,179 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          },
           "Precision": {
             "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
             "enum": [
@@ -2508,37 +3967,77 @@
             "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "precision": {
-            "$ref": "#/$defs/Precision",
-            "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
-          },
-          "provider": {
-            "description": "B4.W1 — provider that produced the result.",
-            "type": "string"
-          },
-          "references": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/TypeRefRecord"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
-            "type": "string"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "symbol": {
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "precision": {
+                "$ref": "#/$defs/Precision",
+                "description": "B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry."
+              },
+              "provider": {
+                "description": "B4.W1 — provider that produced the result.",
+                "type": "string"
+              },
+              "references": {
+                "items": {
+                  "$ref": "#/$defs/TypeRefRecord"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "symbol",
+              "references",
+              "precision",
+              "provider",
+              "summary"
+            ],
+            "title": "GetTypeRefsOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "symbol",
-          "references",
-          "precision",
-          "provider",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GetTypeRefsOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2737,39 +4236,254 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "checkpoint_id": {
-            "format": "uint64",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
+            "items": {
+              "$ref": "#/$defs/Link"
+            },
+            "type": "array"
           },
-          "edges": {
-            "format": "uint",
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "checkpoint_id": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "edges": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "symbols": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "operation",
+              "symbols",
+              "edges",
+              "message"
+            ],
+            "title": "GraphCheckpointOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
-          "message": {
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
-          },
-          "operation": {
-            "type": "string"
-          },
-          "symbols": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
-          "operation",
-          "symbols",
-          "edges",
-          "message"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GraphCheckpointOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -2981,6 +4695,106 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
           "ExplainNeighbor": {
             "properties": {
               "depth": {
@@ -3033,48 +4847,161 @@
               "line"
             ],
             "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "callees": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/ExplainNeighbor"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "callers": {
-            "items": {
-              "$ref": "#/$defs/ExplainNeighbor"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "callees": {
+                "items": {
+                  "$ref": "#/$defs/ExplainNeighbor"
+                },
+                "type": "array"
+              },
+              "callers": {
+                "items": {
+                  "$ref": "#/$defs/ExplainNeighbor"
+                },
+                "type": "array"
+              },
+              "fan_in": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "fan_out": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "node": {
+                "$ref": "#/$defs/ExplainNode"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
             },
-            "type": "array"
+            "required": [
+              "node",
+              "callers",
+              "callees",
+              "fan_in",
+              "fan_out",
+              "summary"
+            ],
+            "title": "GraphExplainOutput",
+            "type": "object"
           },
-          "fan_in": {
-            "format": "uint",
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
-          "fan_out": {
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "node": {
-            "$ref": "#/$defs/ExplainNode"
-          },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "node",
-          "callers",
-          "callees",
-          "fan_in",
-          "fan_out",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GraphExplainOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -3333,6 +5260,131 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "GraphQueryEdge": {
             "properties": {
               "confidence": {
@@ -3392,40 +5444,128 @@
               "why_matched"
             ],
             "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "edges": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/GraphQueryEdge"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "explanation": {
-            "type": "string"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "nodes": {
-            "items": {
-              "$ref": "#/$defs/GraphQueryNode"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "edges": {
+                "items": {
+                  "$ref": "#/$defs/GraphQueryEdge"
+                },
+                "type": "array"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "nodes": {
+                "items": {
+                  "$ref": "#/$defs/GraphQueryNode"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
             },
-            "type": "array"
+            "required": [
+              "question",
+              "nodes",
+              "edges",
+              "explanation",
+              "summary"
+            ],
+            "title": "GraphQueryOutput",
+            "type": "object"
           },
-          "question": {
-            "type": "string"
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "question",
-          "nodes",
-          "edges",
-          "explanation",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GraphQueryOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -3530,6 +5670,131 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "GraphQueryEdge": {
             "properties": {
               "confidence": {
@@ -3589,47 +5854,135 @@
               "why_matched"
             ],
             "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "applied_filters": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "edges": {
-            "items": {
-              "$ref": "#/$defs/GraphQueryEdge"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "applied_filters": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "edges": {
+                "items": {
+                  "$ref": "#/$defs/GraphQueryEdge"
+                },
+                "type": "array"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "nodes": {
+                "items": {
+                  "$ref": "#/$defs/GraphQueryNode"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
             },
-            "type": "array"
+            "required": [
+              "question",
+              "nodes",
+              "edges",
+              "explanation",
+              "applied_filters",
+              "summary"
+            ],
+            "title": "GraphQueryFilteredOutput",
+            "type": "object"
           },
-          "explanation": {
-            "type": "string"
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
-          "nodes": {
-            "items": {
-              "$ref": "#/$defs/GraphQueryNode"
-            },
-            "type": "array"
-          },
-          "question": {
-            "type": "string"
-          },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "question",
-          "nodes",
-          "edges",
-          "explanation",
-          "applied_filters",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GraphQueryFilteredOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -3956,6 +6309,131 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "IacRelation": {
             "properties": {
               "confidence": {
@@ -3993,40 +6471,128 @@
               "edge_type"
             ],
             "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "dependencies": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/IacRelation"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "dependents": {
-            "items": {
-              "$ref": "#/$defs/IacRelation"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "dependencies": {
+                "items": {
+                  "$ref": "#/$defs/IacRelation"
+                },
+                "type": "array"
+              },
+              "dependents": {
+                "items": {
+                  "$ref": "#/$defs/IacRelation"
+                },
+                "type": "array"
+              },
+              "resource_id": {
+                "type": "string"
+              },
+              "resource_type": {
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
             },
-            "type": "array"
+            "required": [
+              "resource_id",
+              "resource_type",
+              "dependencies",
+              "dependents",
+              "summary"
+            ],
+            "title": "IacQueryOutput",
+            "type": "object"
           },
-          "resource_id": {
-            "type": "string"
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
-          "resource_type": {
-            "type": "string"
-          },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "resource_id",
-          "resource_type",
-          "dependencies",
-          "dependents",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "IacQueryOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -4315,6 +6881,72 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "CommunityOverviewDto": {
             "properties": {
               "avg_cohesion": {
@@ -4345,6 +6977,40 @@
             ],
             "type": "object"
           },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
           "CycleInfo": {
             "properties": {
               "symbols_in_cycles": {
@@ -4364,6 +7030,31 @@
             ],
             "type": "object"
           },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "HotPath": {
             "properties": {
               "score": {
@@ -4379,70 +7070,158 @@
               "score"
             ],
             "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "communities": {
-            "$ref": "#/$defs/CommunityOverviewDto",
-            "description": "Community overview from GraphInsightsService."
-          },
-          "cycles": {
-            "$ref": "#/$defs/CycleInfo",
-            "description": "Cycle clusters from GraphInsightsService."
-          },
-          "dead_code": {
-            "description": "Dead code count (symbols with no callers/dependents).",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "entry_points": {
-            "description": "Entry points (root symbols).",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "health_score": {
-            "description": "Health score 0-100 from GraphInsightsService.",
-            "format": "double",
-            "type": "number"
-          },
-          "hot_paths": {
-            "description": "Hot paths — top god node names ranked by importance score.",
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/HotPath"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "summary": {
-            "description": "Human-readable summary.",
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "communities": {
+                "$ref": "#/$defs/CommunityOverviewDto",
+                "description": "Community overview from GraphInsightsService."
+              },
+              "cycles": {
+                "$ref": "#/$defs/CycleInfo",
+                "description": "Cycle clusters from GraphInsightsService."
+              },
+              "dead_code": {
+                "description": "Dead code count (symbols with no callers/dependents).",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "entry_points": {
+                "description": "Entry points (root symbols).",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "health_score": {
+                "description": "Health score 0-100 from GraphInsightsService.",
+                "format": "double",
+                "type": "number"
+              },
+              "hot_paths": {
+                "description": "Hot paths — top god node names ranked by importance score.",
+                "items": {
+                  "$ref": "#/$defs/HotPath"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "Human-readable summary.",
+                "type": "string"
+              },
+              "total_edges": {
+                "description": "Total edges (dependencies) in the graph.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total_symbols": {
+                "description": "Total symbols in the graph.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total_symbols",
+              "total_edges",
+              "entry_points",
+              "dead_code",
+              "health_score",
+              "hot_paths",
+              "communities",
+              "cycles",
+              "summary"
+            ],
+            "title": "ProjectInsightsOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
-          },
-          "total_edges": {
-            "description": "Total edges (dependencies) in the graph.",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "total_symbols": {
-            "description": "Total symbols in the graph.",
-            "format": "uint",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
-          "total_symbols",
-          "total_edges",
-          "entry_points",
-          "dead_code",
-          "health_score",
-          "hot_paths",
-          "communities",
-          "cycles",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "ProjectInsightsOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -4510,6 +7289,179 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          },
           "OverviewDetail": {
             "description": "The level of detail an overview answer carries.\n\nThe type owns the names, so the level a client asks for is a level the\nserver knows: a level that does not exist is a refusal, not a string\nread in silence.\n\nThe three levels are the same ladder everywhere they are published:\nthe statistics of the project, then the statistics with the entry\npoints and the hot paths, and then everything the answer can carry.\nWhat each level carries is published by the tool that publishes it.",
             "oneOf": [
@@ -4531,62 +7483,102 @@
             ]
           }
         },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "architecture_score": {
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "coverage_estimate": {
-            "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "detail": {
-            "$ref": "#/$defs/OverviewDetail",
-            "description": "The level this answer carries."
-          },
-          "entry_points": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "hot_paths": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "recommendations": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "result": {
+            "properties": {
+              "architecture_score": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "coverage_estimate": {
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "detail": {
+                "$ref": "#/$defs/OverviewDetail",
+                "description": "The level this answer carries."
+              },
+              "entry_points": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "hot_paths": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "recommendations": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              },
+              "system_prompt_context": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "detail",
+              "hot_paths",
+              "entry_points",
+              "recommendations",
+              "summary"
+            ],
+            "title": "ProjectOverviewOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
-          },
-          "system_prompt_context": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
-          "detail",
-          "hot_paths",
-          "entry_points",
-          "recommendations",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "ProjectOverviewOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -5015,39 +8007,254 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "breaking_changes": {
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "files_analyzed": {
-            "format": "uint",
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "properties": {
+              "breaking_changes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "files_analyzed": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "impacted_files": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "risk_level": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "files_analyzed",
+              "impacted_files",
+              "risk_level",
+              "breaking_changes",
+              "summary"
+            ],
+            "title": "ReviewPrOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
             "minimum": 0,
             "type": "integer"
           },
-          "impacted_files": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "risk_level": {
-            "type": "string"
-          },
-          "summary": {
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "files_analyzed",
-          "impacted_files",
-          "risk_level",
-          "breaking_changes",
-          "summary"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "ReviewPrOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -5640,6 +8847,131 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
+            ],
+            "type": "object"
+          },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "GoalArgument": {
             "description": "Un argumento de un goal, tal y como el esquema lo publica.\n\nEl tipo lo produce el esquema derivado del struct que lee los\nargumentos; no se escribe a mano, para que el nombre, la descripción y\nla obligatoriedad tengan un solo dueño.",
             "properties": {
@@ -5717,6 +9049,54 @@
             ],
             "type": "object"
           },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
+          },
           "PhaseInfo": {
             "description": "Una fase del producto.",
             "properties": {
@@ -5757,53 +9137,93 @@
             "type": "object"
           }
         },
-        "description": "La respuesta del goal `status`.",
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "goal": {
-            "description": "El goal que contesta.",
-            "type": "string"
-          },
-          "goals": {
-            "description": "Los goals que este build ofrece.",
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/GoalInfo"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "phases": {
-            "description": "Las fases del producto y lo que cada una significa.",
-            "items": {
-              "$ref": "#/$defs/PhaseInfo"
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
+          },
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
+          },
+          "result": {
+            "description": "La respuesta del goal `status`.",
+            "properties": {
+              "goal": {
+                "description": "El goal que contesta.",
+                "type": "string"
+              },
+              "goals": {
+                "description": "Los goals que este build ofrece.",
+                "items": {
+                  "$ref": "#/$defs/GoalInfo"
+                },
+                "type": "array"
+              },
+              "phases": {
+                "description": "Las fases del producto y lo que cada una significa.",
+                "items": {
+                  "$ref": "#/$defs/PhaseInfo"
+                },
+                "type": "array"
+              },
+              "schema_version": {
+                "description": "La versión del esquema de esta respuesta.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Una línea que resume el estado.",
+                "type": "string"
+              },
+              "version": {
+                "description": "La versión del producto que contesta.",
+                "type": "string"
+              },
+              "workspace": {
+                "$ref": "#/$defs/WorkspaceStatus",
+                "description": "El workspace que se ha mirado."
+              }
             },
-            "type": "array"
+            "required": [
+              "summary",
+              "schema_version",
+              "goal",
+              "version",
+              "phases",
+              "workspace",
+              "goals"
+            ],
+            "title": "GoalStatus",
+            "type": "object"
           },
           "schema_version": {
-            "description": "La versión del esquema de esta respuesta.",
-            "type": "string"
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           },
-          "summary": {
-            "description": "Una línea que resume el estado.",
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
-          },
-          "version": {
-            "description": "La versión del producto que contesta.",
-            "type": "string"
-          },
-          "workspace": {
-            "$ref": "#/$defs/WorkspaceStatus",
-            "description": "El workspace que se ha mirado."
           }
         },
         "required": [
-          "summary",
           "schema_version",
-          "goal",
-          "version",
-          "phases",
-          "workspace",
-          "goals"
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "GoalStatus",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {
@@ -6466,6 +9886,72 @@
       },
       "output_schema": {
         "$defs": {
+          "Basis": {
+            "description": "Lo que sostiene la respuesta.",
+            "properties": {
+              "coverage": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CoverageBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
+              },
+              "freshness": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FreshnessBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
+              },
+              "lsp_confirmed_edges": {
+                "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Budget": {
+            "description": "Lo que la respuesta dejó fuera.",
+            "properties": {
+              "omitted": {
+                "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "page": {
+                "description": "El handle firmado por el que se sigue leyendo.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
           "CausalStepExplanation": {
             "description": "One step of a finding's causal chain.",
             "properties": {
@@ -6508,6 +9994,40 @@
             "required": [
               "kind",
               "detail"
+            ],
+            "type": "object"
+          },
+          "CoverageBasis": {
+            "description": "La cobertura de la respuesta.",
+            "properties": {
+              "pending_references": {
+                "description": "Las referencias que no se pudieron atar a una declaración.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rejected_relationships": {
+                "description": "Las relaciones que el repositorio rechazó.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "skipped_files": {
+                "description": "Los ficheros que la lectura no pudo leer.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relationships"
             ],
             "type": "object"
           },
@@ -6669,6 +10189,31 @@
             ],
             "type": "object"
           },
+          "FreshnessBasis": {
+            "description": "La frescura de la respuesta.",
+            "properties": {
+              "graph_source": {
+                "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "snapshot": {
+                "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "El workspace canónico del que se calculó.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "snapshot"
+            ],
+            "type": "object"
+          },
           "GroundingExplanation": {
             "description": "The grounding behind a finding.",
             "properties": {
@@ -6708,42 +10253,130 @@
               "facts"
             ],
             "type": "object"
+          },
+          "Link": {
+            "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
+            "properties": {
+              "authority": {
+                "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
+                "type": "string"
+              },
+              "handle": {
+                "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "precondition": {
+                "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "description": "Por qué existe este enlace.",
+                "type": "string"
+              },
+              "rel": {
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+                "type": "string"
+              },
+              "required_args": {
+                "additionalProperties": true,
+                "description": "Los argumentos con los que hay que llamarla.",
+                "type": "object"
+              },
+              "tool": {
+                "description": "La tool que responde al enlace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "tool",
+              "required_args",
+              "reason",
+              "authority"
+            ],
+            "type": "object"
           }
         },
-        "description": "Output of `explain_finding`.",
+        "description": "La respuesta, con lo que la sostiene y lo que viene después.",
         "properties": {
-          "coverage": {
-            "$ref": "#/$defs/FindingCoverage",
-            "description": "What the run looked at, and what it could establish."
-          },
-          "findings": {
-            "description": "The findings, each with its reason.\n\nEmpty when `outcome` is `NoFindings` or `NotReported` — and in those\ncases the outcome says which of the two it is, so an empty list is\nnever the whole answer.",
+          "_links": {
+            "description": "Lo que se puede hacer ahora.",
             "items": {
-              "$ref": "#/$defs/FindingExplanation"
+              "$ref": "#/$defs/Link"
             },
             "type": "array"
           },
-          "outcome": {
-            "$ref": "#/$defs/ExplainOutcome",
-            "description": "What the answer is."
+          "basis": {
+            "$ref": "#/$defs/Basis",
+            "description": "Sobre qué se apoya la respuesta."
           },
-          "path": {
-            "description": "The file the answer is about, as it was asked for.",
-            "type": "string"
+          "budget": {
+            "$ref": "#/$defs/Budget",
+            "description": "Lo que la respuesta dejó fuera."
           },
-          "summary": {
-            "description": "One line saying what the answer says.",
+          "result": {
+            "description": "Output of `explain_finding`.",
+            "properties": {
+              "coverage": {
+                "$ref": "#/$defs/FindingCoverage",
+                "description": "What the run looked at, and what it could establish."
+              },
+              "findings": {
+                "description": "The findings, each with its reason.\n\nEmpty when `outcome` is `NoFindings` or `NotReported` — and in those\ncases the outcome says which of the two it is, so an empty list is\nnever the whole answer.",
+                "items": {
+                  "$ref": "#/$defs/FindingExplanation"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "$ref": "#/$defs/ExplainOutcome",
+                "description": "What the answer is."
+              },
+              "path": {
+                "description": "The file the answer is about, as it was asked for.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "One line saying what the answer says.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "outcome",
+              "path",
+              "findings",
+              "summary",
+              "coverage"
+            ],
+            "title": "ExplainFindingOutput",
+            "type": "object"
+          },
+          "schema_version": {
+            "description": "La versión de la forma del sobre.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
             "type": "string"
           }
         },
         "required": [
-          "outcome",
-          "path",
-          "findings",
-          "summary",
-          "coverage"
+          "schema_version",
+          "state",
+          "result",
+          "basis",
+          "budget",
+          "_links"
         ],
-        "title": "ExplainFindingOutput",
+        "title": "Envelope",
         "type": "object"
       },
       "requirements": {

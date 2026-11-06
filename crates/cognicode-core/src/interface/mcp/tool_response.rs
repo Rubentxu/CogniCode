@@ -28,9 +28,23 @@
 //!
 //! So an answer with a contract is two blocks: the JSON first, where it has
 //! always been, and the summary beside it.
+//!
+//! ## El sobre
+//!
+//! Every answer also carries an **envelope**
+//! ([`crate::interface::hateoas`]): the result, what it rests on, what it
+//! left out and what can be done next. The envelope is what travels in
+//! `structuredContent`, and the lines that say what comes next travel as
+//! text blocks beside the summary — an agent reading the answer as text
+//! sees the next step without having to parse anything.
+//!
+//! The envelope does not replace the payload: the payload stays in the
+//! first text block, exactly where the consumers of this product read it.
 
 use rmcp::model::{CallToolResult, Content, ToolAnnotations};
-use serde_json::Value;
+use serde_json::{Map, Value};
+
+use crate::interface::hateoas::{HandleContext, envelope_for, follow_up_lines};
 
 /// The behaviour hints a tool publishes, derived from its declared authority.
 ///
@@ -64,35 +78,32 @@ pub fn annotations_for(authority: &str) -> ToolAnnotations {
 
 /// The answer to a tool call, shaped for the wire.
 ///
-/// `body` is the JSON the handler produced. When the tool publishes a
-/// contract and the body is a JSON object, the answer carries that object
-/// as `structuredContent` — where the contract says it is — and the body's
-/// own `summary` line as a second text block.
+/// `body` is the JSON the handler produced. The answer carries the
+/// **envelope** as `structuredContent` — the result, its basis, its budget
+/// and its links — and the body's own `summary` line as a second text
+/// block, with the "what comes next" lines beside it.
 ///
-/// A tool without a contract gets exactly what it got before: one text
-/// block and no structured content. Publishing a shape nobody promised is
-/// how a contract stops meaning anything.
-///
-/// The body is only parsed when there is a contract to answer to. The
-/// other sixty-odd tools pay nothing: they do not even look at the JSON
-/// they produced.
-pub fn success_result(tool_name: &str, body: String) -> CallToolResult {
-    let payload = if crate::interface::mcp::output_contracts::publishes_contract(tool_name) {
-        serde_json::from_str::<Value>(&body)
-            .ok()
-            .filter(|value| value.is_object())
-    } else {
-        None
-    };
+/// The first text block is still the body, byte for byte: that is the
+/// compatibility clause the existing consumers read.
+pub fn success_result(
+    tool_name: &str,
+    body: String,
+    arguments: &Map<String, Value>,
+    context: &HandleContext,
+) -> CallToolResult {
+    let payload: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    let envelope = envelope_for(tool_name, arguments, &payload, context);
 
-    let summary = payload.as_ref().and_then(summary_line);
     let mut content = vec![Content::text(body)];
-    if let Some(line) = summary {
+    if let Some(line) = summary_line(&payload) {
+        content.push(Content::text(line));
+    }
+    for line in follow_up_lines(&envelope) {
         content.push(Content::text(line));
     }
 
     let mut result = CallToolResult::success(content);
-    result.structured_content = payload;
+    result.structured_content = serde_json::to_value(&envelope).ok();
     result
 }
 
@@ -156,17 +167,34 @@ mod tests {
         assert_eq!(hints.open_world_hint, Some(true));
     }
 
+    /// El contexto al que se anclan los handles de la llamada.
+    fn context() -> HandleContext {
+        HandleContext {
+            workspace: "/repo".to_string(),
+            snapshot: "snap-1".to_string(),
+        }
+    }
+
     #[test]
-    fn a_contract_tool_answers_with_the_object_and_its_summary() {
+    fn an_answer_carries_the_envelope_with_the_result_inside() {
         let body = json!({"summary": "42 symbols", "symbols": 42}).to_string();
-        let result = success_result("build_graph", body.clone());
+        let result = success_result("build_graph", body.clone(), &Map::new(), &context());
 
         assert_eq!(result.content.len(), 2, "the JSON and the summary");
         assert_eq!(text_of(&result.content[0]), Some(body.as_str()));
         assert_eq!(text_of(&result.content[1]), Some("42 symbols"));
+
+        let envelope = result.structured_content.expect("the envelope");
+        assert_eq!(envelope["schema_version"], json!(1));
+        assert_eq!(envelope["state"], json!("complete"));
         assert_eq!(
-            result.structured_content,
-            Some(json!({"summary": "42 symbols", "symbols": 42}))
+            envelope["result"],
+            json!({"summary": "42 symbols", "symbols": 42}),
+            "the result travels whole inside the envelope"
+        );
+        assert!(
+            envelope["_links"].is_array(),
+            "the envelope names the links"
         );
         assert_eq!(result.is_error, Some(false));
     }
@@ -174,7 +202,7 @@ mod tests {
     #[test]
     fn a_payload_that_calls_its_line_message_still_publishes_it() {
         let body = json!({"message": "Graph loaded from built: 42 symbols"}).to_string();
-        let result = success_result("build_graph", body);
+        let result = success_result("build_graph", body, &Map::new(), &context());
 
         assert_eq!(result.content.len(), 2);
         assert_eq!(
@@ -184,26 +212,36 @@ mod tests {
     }
 
     #[test]
-    fn a_tool_without_a_contract_answers_with_the_text_alone() {
+    fn a_tool_without_a_contract_answers_with_the_envelope_too() {
         let body = json!({"summary": "not a contract"}).to_string();
-        let result = success_result("write_file", body);
+        let result = success_result("write_file", body, &Map::new(), &context());
 
-        assert_eq!(result.content.len(), 1);
-        assert!(result.structured_content.is_none());
+        let envelope = result.structured_content.expect("the envelope");
+        assert_eq!(envelope["result"]["summary"], json!("not a contract"));
     }
 
     #[test]
     fn a_body_that_is_not_an_object_keeps_the_text_alone() {
-        let result = success_result("build_graph", "[1, 2, 3]".to_string());
+        let result = success_result(
+            "build_graph",
+            "[1, 2, 3]".to_string(),
+            &Map::new(),
+            &context(),
+        );
 
         assert_eq!(result.content.len(), 1);
-        assert!(result.structured_content.is_none());
+        let envelope = result.structured_content.expect("the envelope");
+        assert_eq!(
+            envelope["result"],
+            json!([1, 2, 3]),
+            "the envelope carries the payload as it is"
+        );
     }
 
     #[test]
     fn an_empty_summary_publishes_no_block() {
         let body = json!({"summary": "   "}).to_string();
-        let result = success_result("build_graph", body);
+        let result = success_result("build_graph", body, &Map::new(), &context());
 
         assert_eq!(result.content.len(), 1);
         assert!(result.structured_content.is_some());

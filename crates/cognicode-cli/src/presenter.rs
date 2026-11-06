@@ -78,10 +78,12 @@ use std::io::{self, Write};
 use cognicode_core::application::text_boundary::truncate_at_boundary;
 use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
+use cognicode_core::interface::cli::follow_ups;
 use cognicode_core::interface::cli::result::{
     CommandOutput, GraphResult, HoverResult, IndexResult, NavigateResult, ReferenceEntry,
 };
 use cognicode_core::interface::cli::result::{PublishedOutlineNode, PublishedPosition};
+use cognicode_core::interface::hateoas::{HandleContext, envelope_for};
 
 /// Render an `IndexResult` as text into `w`.
 ///
@@ -1472,6 +1474,64 @@ pub fn present_output(
             present_architecture_diagnostic_json(r, w)
         }
         (CommandOutput::Other, _) => Ok(()),
+    }?;
+
+    // Los enlaces de la respuesta, como órdenes copiables. El sobre se
+    // construye con el mismo dueño que usa el MCP: la terminal y el cable
+    // no pueden decir cosas distintas sobre la misma respuesta.
+    if matches!(format, CliFormat::Text) {
+        write_follow_ups(output, w)?;
+    }
+    Ok(())
+}
+
+/// Los enlaces de la respuesta, como órdenes que la terminal entiende.
+///
+/// Una orden que la terminal no entiende no se imprime: el enlace se queda
+/// en el JSON de la respuesta, que es donde un cliente MCP lo encuentra.
+fn write_follow_ups(output: &CommandOutput, w: &mut dyn Write) -> io::Result<()> {
+    let Some((tool, payload)) = payload_of(output) else {
+        return Ok(());
+    };
+    let context = HandleContext {
+        workspace: std::env::current_dir()
+            .map(|path| path.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string()),
+        snapshot: "none".to_string(),
+    };
+    let envelope = envelope_for(tool, &serde_json::Map::new(), &payload, &context);
+    let commands = follow_ups::annotated_commands(&envelope);
+    if commands.is_empty() {
+        return Ok(());
+    }
+    writeln!(w)?;
+    writeln!(w, "Siguiente:")?;
+    for (command, reason) in commands {
+        writeln!(w, "  {command} — {reason}")?;
+    }
+    Ok(())
+}
+
+/// La tool que una respuesta del CLI responde, y la respuesta en la forma
+/// que el sobre lee.
+fn payload_of(output: &CommandOutput) -> Option<(&'static str, serde_json::Value)> {
+    match output {
+        CommandOutput::Graph(GraphResult::Impact {
+            symbol,
+            risk_level,
+            impacted_files,
+            coverage,
+            ..
+        }) => Some((
+            "analyze_impact",
+            serde_json::json!({
+                "symbol": symbol,
+                "risk_level": risk_level,
+                "impacted_files": impacted_files,
+                "coverage": coverage,
+            }),
+        )),
+        _ => None,
     }
 }
 

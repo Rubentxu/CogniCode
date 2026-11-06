@@ -115,7 +115,15 @@ async fn read_file(ctx: &HandlerContext, arguments: Value) -> Value {
     let body = call_tool_handler(ctx, request)
         .await
         .unwrap_or_else(|e| panic!("read_file answers: {e}"));
-    let answer = success_result("read_file", body);
+    let answer = success_result(
+        "read_file",
+        body,
+        &serde_json::Map::new(),
+        &cognicode_core::interface::hateoas::HandleContext {
+            workspace: ctx.working_dir().to_string_lossy().to_string(),
+            snapshot: "none".to_string(),
+        },
+    );
     let text = answer
         .content
         .first()

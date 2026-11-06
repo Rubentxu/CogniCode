@@ -9,6 +9,8 @@ pub mod coverage;
 pub mod daemon;
 // TASK-82 — el registro de goals: una declaración y sus cuatro superficies.
 pub mod goals;
+// TASK-83 — el sobre de la respuesta: result, basis, budget y enlaces.
+pub mod hateoas;
 pub mod intent;
 pub mod lsp;
 pub mod mcp;

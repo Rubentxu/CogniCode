@@ -32,6 +32,7 @@
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 const CURSOR_VERSION: u32 = 1;
@@ -42,7 +43,7 @@ const CURSOR_VERSION: u32 = 1;
 /// the cursor is integrity-tag, not identifier. A collision
 /// would be caught as a same-context match, which is the right
 /// answer (the cursor is honestly compatible).
-fn short_hash(s: &str) -> String {
+pub(crate) fn short_hash(s: &str) -> String {
     let mut h = DefaultHasher::new();
     s.hash(&mut h);
     let bytes = h.finish().to_le_bytes();
@@ -113,7 +114,7 @@ pub fn encode_cursor(ctx: &CursorContext, offset: usize) -> String {
     })
 }
 
-fn encode_envelope(env: CursorEnvelope) -> String {
+fn encode_envelope<T: Serialize>(env: T) -> String {
     let json = serde_json::to_vec(&env).expect("envelope is always serializable");
     base64::engine::general_purpose::STANDARD.encode(json)
 }
@@ -170,6 +171,112 @@ pub fn verify_cursor(cursor: &str, ctx: &CursorContext) -> Result<usize, CursorE
         });
     }
     Ok(env.off)
+}
+
+/// A signed envelope with a payload: the same mechanism, a different cargo.
+///
+/// The cursor carries an offset; a handle carries whatever the link it
+/// travels in points at — a symbol, a page, a plan. The anchors, the
+/// hashing and the typed errors are the same ones, because a handle minted
+/// for one workspace and replayed in another has to fail the way a cursor
+/// does, and for the same reason.
+#[derive(Debug, Serialize, Deserialize)]
+struct SignedEnvelope {
+    v: u32,
+    ws: String,
+    snap: String,
+    tag: String,
+    payload: Value,
+    itag: String,
+}
+
+/// What a signed token carries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignedPayload {
+    /// What the token is about (`sym`, `page`, `plan`).
+    pub tag: String,
+    /// What the token points at.
+    pub payload: Value,
+}
+
+/// Sign a payload against a context.
+///
+/// The integrity tag covers the kind and the payload together, so neither
+/// can be swapped without breaking the token: rewriting the payload of a
+/// handle is detected even when its anchors are left untouched.
+pub fn encode_signed(ctx: &CursorContext, tag: &str, payload: &Value) -> String {
+    encode_envelope(SignedEnvelope {
+        v: CURSOR_VERSION,
+        ws: short_hash(&ctx.workspace),
+        snap: short_hash(&ctx.snapshot),
+        tag: tag.to_string(),
+        payload: payload.clone(),
+        itag: payload_tag(tag, payload),
+    })
+}
+
+/// Verify a signed token against a context.
+///
+/// The order of the checks is the order of what the consumer can fix: a
+/// token whose payload was rewritten is garbled, a token minted for another
+/// workspace does not belong here, and a token minted for another snapshot
+/// has expired.
+pub fn verify_signed(token: &str, ctx: &CursorContext) -> Result<SignedPayload, CursorError> {
+    let json_bytes = base64::engine::general_purpose::STANDARD
+        .decode(token)
+        .map_err(|e| CursorError {
+            kind: CursorErrorKind::Garbled,
+            reason: format!("the token is not valid base64: {e}"),
+        })?;
+    let env: SignedEnvelope = serde_json::from_slice(&json_bytes).map_err(|e| CursorError {
+        kind: CursorErrorKind::Garbled,
+        reason: format!("the token is not a valid v{CURSOR_VERSION} envelope: {e}"),
+    })?;
+    if env.v != CURSOR_VERSION {
+        return Err(CursorError {
+            kind: CursorErrorKind::Garbled,
+            reason: format!(
+                "token version {} is not supported; this server speaks v{CURSOR_VERSION}",
+                env.v
+            ),
+        });
+    }
+    if env.itag != payload_tag(&env.tag, &env.payload) {
+        return Err(CursorError {
+            kind: CursorErrorKind::Garbled,
+            reason: "the token's payload does not match its integrity tag: it was changed"
+                .to_string(),
+        });
+    }
+    let ws_expected = short_hash(&ctx.workspace);
+    if env.ws != ws_expected {
+        return Err(CursorError {
+            kind: CursorErrorKind::WorkspaceMismatch,
+            reason: format!(
+                "the token was minted for a different workspace; expected hash {ws_expected} for current request"
+            ),
+        });
+    }
+    let snap_expected = short_hash(&ctx.snapshot);
+    if env.snap != snap_expected {
+        return Err(CursorError {
+            kind: CursorErrorKind::SnapshotExpired,
+            reason: format!(
+                "the token was minted for snapshot hash {}; current snapshot is {snap_expected}; the token is expired",
+                env.snap
+            ),
+        });
+    }
+    Ok(SignedPayload {
+        tag: env.tag,
+        payload: env.payload,
+    })
+}
+
+/// The integrity tag of a payload.
+fn payload_tag(tag: &str, payload: &Value) -> String {
+    let body = serde_json::to_string(payload).unwrap_or_else(|_| "null".to_string());
+    short_hash(&format!("{tag}\u{1}{body}"))
 }
 
 #[cfg(test)]
