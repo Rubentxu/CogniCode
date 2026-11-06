@@ -245,12 +245,33 @@ if $RUN_MUTANTS; then
     # the two numbers from drifting apart, and it is also the contract that
     # fixes the parallelism at ONE job: the measurement has to be
     # attributable to be a certificate.
-    run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
-      cargo mutants -j "${MUTANTS_JOBS}" \
-      --gitignore true \
-      -p cognicode-graph-algos \
-      -- -- --test-threads=4
+    #
+    # The ceiling and the budget it has to fit in live in ONE file, which
+    # the focal route (`scripts/mutate-file.sh`) loads as well: two scripts
+    # naming the same budget are two sources of truth, and the second one
+    # rots. The value does not change — it is the 2 GiB the runner already
+    # imposed — but it is now written where both routes read it.
+    # Fail-closed: without the ceiling there is no measurement to certify.
+    # The step is not run under a default that nobody declared: an hour of
+    # mutants measured against an implicit ceiling is an hour whose verdict
+    # says nothing about the ceiling the certificate names.
+    if ! source "${REPO_ROOT}/scripts/mutants-budget.sh"; then
+      printf 'FAIL: scripts/mutants-budget.sh no se puede leer: el techo del paso de mutantes no tiene dueño\n' >&2
+      overall_rc=1
+    elif [ -z "${MUTANTS_GATE_VMEM_KIB:-}" ]; then
+      printf 'FAIL: scripts/mutants-budget.sh no declara el techo del paso de mutantes\n' >&2
+      overall_rc=1
+    else
+      # The value is the 2 GiB the runner already imposed — what changes is
+      # that it is written where both routes read it.
+      run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
+        MUTANT_TEST_VMEM_KB="${MUTANTS_GATE_VMEM_KIB}" \
+        cargo mutants -j "${MUTANTS_JOBS}" \
+        --gitignore true \
+        -p cognicode-graph-algos \
+        -- -- --test-threads=4
+    fi
   fi
 fi
 

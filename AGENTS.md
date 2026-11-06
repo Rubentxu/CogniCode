@@ -170,9 +170,17 @@ vive en el gate.
    árbol. Por eso el paso de mutantes del gate mide **un mutante a la vez**
    (`MUTANTS_JOBS=1` en `scripts/test-gate.sh`, con un contrato que lo fija):
    la certificación es por mutante, y para que sea atribuible la medición es
-   serial. Para una ojeada rápida a un fichero, `cargo mutants --file <ruta>
-   -j 8` dice lo mismo en segundos: es una *mirada*, no una certificación, y
-   no pasa por el script a propósito.
+   serial. Para una ojeada rápida a un fichero, `scripts/mutate-file.sh
+   crates/<crate>/src/<fichero>` dice lo mismo en segundos: es una *mirada*,
+   no una certificación, y no pasa por el script del gate a propósito — pero
+   sí lleva las tres cosas que lo hacen segura: el **techo de memoria** (el
+   binario de test no puede crecer sin límite; medido el 2026-11-05, un
+   mutante runaway llegó a 37 GB de RSS y el OOM-killer del kernel se llevó
+   por delante servicios que no son de este repositorio), su **propio
+   directorio de destino** (el binario del último mutante no puede quedarse
+   en la caché compartida) y el **presupuesto** (techo × trabajos ≤ 16 GiB,
+   con los números en `scripts/mutants-budget.sh` y el contrato
+   `scripts/ci/test_mutant_memory_budget.py`).
 
 **Comandos sueltos** (el gate los agrupa):
 
