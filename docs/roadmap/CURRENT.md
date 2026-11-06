@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `abc2b3c36df5f71feb0af4cede5c8ed6c5493be8` (la
+> **Snapshot**: 2026-11-06, sobre `7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -132,44 +132,42 @@
 > y desde entonces: la complejidad y el conteo de parámetros tienen una sola
 > medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
 > servidor real exige el token en `/mcp` y `/watch`;
+> y el snapshot operativo se regenera sobre la punta: el ratchet acepta cinco
+> commits de deriva contra la base con `main`, y el SHA declarado se había
+> quedado atrás; la cabecera declara la punta real, la prosa acumula lo que
+> llegó con el commit que lo midió, y la tabla cuenta los commits de distancia
+> con una fila por unidad;
+> y la cobertura tiene un dueño: la decisión de qué estado se publica estaba
+> escrita dos veces —la CLI y el MCP—, y el presenter del MCP la escribía una
+> tercera: un outcome completo servido de la caché se publicaba como «unknown»
+> mientras el handler vivo publicaba «complete» para esa misma respuesta; ahora
+> la decide `coverage_verdict`, en la capa de aplicación, y las dos superficies
+> la piden a la misma función;
+> y las preguntas dicen la cobertura con la que se respondieron: `analyze_impact`
+> y `graph impact` / `graph hierarchy` publican, junto a la respuesta, la
+> palabra de la cobertura y los tres hechos que la sostienen —los ficheros que
+> no se pudieron leer, las referencias que no se pudieron atar a una
+> declaración y las relaciones que el repositorio rechazó—; una respuesta que
+> no dice su cobertura dice que lo cubre todo, y un cero publicado sobre un
+> grafo parcial se lee como un hallazgo; la cobertura se calcula una vez, al
+> cargar el grafo, y el servicio la recuerda para que una segunda pregunta de
+> la misma sesión publique la misma cobertura;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`0eeffa17` → `abc2b3c36df5f71feb0af4cede5c8ed6c5493be8`)
+## Qué cambió desde el snapshot anterior (`abc2b3c3` → `7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c`)
 
-Entre una punta y otra entraron **56 commits** (`git rev-list --count 0eeffa1754c80f265ec5ab491a12c28cd6dc1f91..abc2b3c36df5f71feb0af4cede5c8ed6c5493be8`).
+Entre una punta y otra entraron **5 commits** (`git rev-list --count abc2b3c36df5f71feb0af4cede5c8ed6c5493be8..7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| La detección de comunidades es repetible | `694eb592` (TASK-133) | La partición de un mismo proyecto cambiava en cada corrida. Medido: 8 de 8 pares que diferían pasaron a 0 de 8, y el orden vive en la escritura —la inserción bajó de 16,7 ms a 10,3 ms—, porque la lectura se repite en cada publicación. |
-| Los ciclos y los god nodes tienen orden | `6676acc1` (TASK-134) | El Tarjan recursivo del dominio clonaba un `SymbolId` por nodo —por eso no terminaba— y el de `graph-algos` es iterativo sobre índices; unificarlos cambia el orden **publicado** de los símbolos dentro de un ciclo, y ese orden ahora es el mismo en cada corrida. |
-| Los llamantes y los caminos calientes tienen orden | `3cefb4cb` (TASK-135) | Ordenarlos en la lectura costaría 8,5 ms **por publicación**; el orden va en la escritura y la publicación se midió en 10,3 ms. |
-| Las dependencias entre módulos tienen orden | `8e87c485` (TASK-136) | 8 de 8 pares que diferían pasaron a 0 de 8. |
-| Los símbolos del grafo tienen orden | `1cb1680a` (TASK-137) | El orden publicado del mapa exterior de símbolos es el mismo en cada corrida, y el `start_line` de la página de continuación decía 1 donde el símbolo empezaba en 501. |
-| Las aristas del grafo tienen orden | `bc5dcb17` (TASK-139) | Medido: 1,462 ms frente a 0,054 ms al decidir dónde va el orden. El índice que nadie lee (`reverse_edges`) se quedó en `HashMap` a propósito: un índice que nadie lee no necesita orden. |
-| El grafo de un proyecto real termina | `7deabb45`, `c0f62467` (TASK-130) | La complejidad y el conjunto de retroalimentación se quedaban sin acabar sobre código de verdad. El arreglo fue del algoritmo —cada grupo entra una sola vez— y se midió en 46,5 MB; un `#[ignore]` que no termina es un defecto de producto, no una cobertura. |
-| La cadena más larga mide el orden topológico | `019b1dfd` (TASK-132) | El gate de mutantes encontró un agujero real del crate de algoritmos: la cadena más larga no medía el orden topológico. |
-| El diagrama de `export_callflow` dibuja lo que dice | `7d526f2b` (TASK-121) | Publicaba un diagrama que no dibujaba las comunidades que nombraba. |
-| `project_overview` publica el nivel que entrega | `d2c37a25` (TASK-122) | Publicaba un nivel que el producto no tenía; el nivel tiene un dueño (el tipo) y el default preserva el contenido y cambia la etiqueta. |
-| La estrategia del índice la declara la fábrica | `bde002f3` (TASK-124) | Una lista en prosa no es un contrato: el vocabulario que se publica necesita un tipo, y el enum vive en la interfaz mientras la fábrica conserva el suyo. |
-| El formato del diagrama lo declara el dueño | `d7ac4a0d` (TASK-123) | El shape del diagrama lo nombraba una frase y el campo del dominio no lo leía nadie; ahora lo declara `MermaidFormat`, en el dominio, y el JSON del CLI conserva la palabra del usuario. |
-| Los tests no escriben la configuración real del IDE | `ddd51180` (TASK-127) | 10 corridas del bin de `cogh` en paralelo: 5 de 10 fallaban antes y 0 de 10 después; un barrido de los 634 tests del paquete, uno a uno, con la mtime de la configuración real vigilada, encontró 6 escritores antes y 0 después. |
-| El grupo de contención del CLI se retira | `49dbd896` (TASK-141) | El grupo serializaba los tres binarios del CLI: 11,8 s serializados frente a 1,6 s en paralelo. En los dos pasos de nextest del gate el cambio es ruido —los binarios no están en su camino crítico—, así que el gate no se abreviaba con él. |
-| El paso de mutantes mide de uno en uno | `911dc274` (TASK-131) | `cargo-mutants` muta el árbol sin cerrojo: en paralelo, siete mutantes de `god_nodes.rs` parecían supervivientes y de uno en uno los diez son atrapados. El veredicto por mutante sólo es atribuible medido en serie. |
-| Toda corrida de mutación lleva techo | `8f96e69e` (TASK-140) | Un dueño del presupuesto (`scripts/mutants-budget.sh`) y dos rutas que lo leen; el focal son 4 GiB porque el pico legítimo del core es 2,70 GiB —un techo por debajo da «atrapado» falso. |
-| El gate del release ya no muere con 141 | `dc832cd2` (TASK-138) | La tubería moría con 141 porque el `exit` de `awk` cerraba el pipe antes de que `printf` terminara; la carrera se volvió determinista. |
-| Los duplicados de comportamiento salen de la suite | `71666fb0`, `1170358b` (TASK-70) | El modelo de coste medido: el gate son tres pasos de cargo, los contratos de Python (61,8 s) **no** están en él, y lo único retirable era la clase de duplicados —27 tests—. |
-| La cadena de continuación tiene dueño en casa | `d39b686c`, `22358503` (TASK-128) | La página de continuación decía `start_line` 1 donde el símbolo empezaba en 501, y el `content_hash` publicado era del fichero entero; el digest nombra el fichero, no la página. |
-| El daemon vivo dice que su índice está fresco | `99060047`, `cf82cab5` (TASK-92) | El cliente lo sirve sin releer el árbol, y el `basis` lo dice; el snapshot durable ya compartía el parseo, el daemon quita el hash, y su palabra sólo vale con digest y mtimes. |
-| Un árbol sin nada que leer tiene un estado | `da2848e2`, `d51d3265`, `7e0faf5b` (TASK-79) | Las dos superficies dicen lo mismo del mismo proyecto —son adaptadores sobre un mismo servicio— y el snapshot del grafo vive en la caché del usuario. |
-| Los argumentos de una tool se declaran una vez | `4e4218e3` (TASK-82) | La forma se deriva del tipo: struct → esquema → runtime → captura → maestro → comprobación. Un enum publicado es una promesa: el tipo que nombra los valores tiene que ser el que el servidor lee. |
-| La columna publicada es una, como la línea | `5f115520` (TASK-118) | La columna del snapshot la declara un solo tipo, y la línea publicada se convierte en un sitio (`published_line()`). |
-| El stdout JSON se prueba donde lo usan | `4976b700` (TASK-120) | Los cuatro comandos que emiten línea de progreso tienen su prueba contra el binario real, no contra un único comando. |
-| El gate del lote de diez pasó | `fb526521` | Medido en serie sobre `a3b8b862`: 4701 unitarios, 6794 de integración y 627 mutantes —618 atrapados, 9 inviables, 0 supervivientes y 0 tiempos agotados—, rc global 0. |
+| El snapshot operativo vuelve a la punta | `d4d7366d` (TASK-126) | El ratchet del snapshot acepta cinco commits de deriva contra la base con `main`, y el SHA declarado se había quedado atrás: la cabecera declara la punta real, la prosa acumula lo que llegó con el commit que lo midió, y la tabla cuenta los commits de distancia con una fila por unidad. |
+| La cobertura y su palabra tienen un dueño | `4ba9492c` (TASK-49) | La decisión de qué estado se publica estaba escrita dos veces —la CLI y el MCP—, y el presenter del MCP la escribía una tercera: un outcome completo servido de la caché se publicaba como «unknown» mientras el handler vivo publicaba «complete» para esa misma respuesta. Ahora la decide `coverage_verdict`, en la capa de aplicación, y las dos superficies la piden a la misma función. |
+| Las preguntas dicen la cobertura con la que se respondieron | `7592f2ff` (TASK-49) | La CLI avisaba por stderr y el documento publicado no llevaba nada; el MCP no decía nada y publicaba «Impact analysis completed in 3ms» sobre un grafo que no cubría el árbol. La cobertura del grafo que se sostiene se calcula una vez, al cargarlo, y las dos superficies la publican por una sola proyección: `CoverageInfo`, con la palabra y los tres hechos. |
 
 ## Release: la última publicada es la v0.101.30
 
