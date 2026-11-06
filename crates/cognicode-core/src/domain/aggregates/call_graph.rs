@@ -947,17 +947,31 @@ impl CallGraph {
     /// - modules: Vec of (module, depends_on, depended_by, coupling_score)
     /// - cycles: Vec of cycles (each cycle is a Vec of module names)
     /// - coupling_matrix: Map of (from, to) -> edge count
+    ///
+    /// The three lists come out in a canonical order, and that is part of
+    /// the contract: the modules by name, the ones each module depends on
+    /// and the ones that depend on it by name, the coupling matrix by
+    /// (from, to), and the cycles with their members by name and the
+    /// cycles among themselves in that same order.
+    ///
+    /// The reason is that a hash map iterates in an order that differs
+    /// per instance, and the answer is published: the same project
+    /// published its modules in a different order on every run.
     pub fn find_module_dependencies(
         &self,
     ) -> (
         Vec<(String, Vec<String>, Vec<String>, usize)>,
         Vec<Vec<String>>,
-        HashMap<(String, String), usize>,
+        BTreeMap<(String, String), usize>,
     ) {
         // Step 1: Build module-level edges from symbol edges
-        let mut module_edges: HashMap<(String, String), usize> = HashMap::new();
-        let mut module_outgoing: HashMap<String, HashSet<String>> = HashMap::new();
-        let mut module_incoming: HashMap<String, HashSet<String>> = HashMap::new();
+        //
+        // The accumulators are ordered ones, so the lists they hold come
+        // out in a canonical order, and so do the edges of the graph of
+        // modules below.
+        let mut module_edges: BTreeMap<(String, String), usize> = BTreeMap::new();
+        let mut module_outgoing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut module_incoming: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
         for (source_id, targets) in &self.edges {
             let source_module = self
@@ -991,7 +1005,12 @@ impl CallGraph {
         }
 
         // Step 2: Get all modules
-        let all_modules: HashSet<String> = module_outgoing
+        //
+        // The set is ordered, so the list of modules comes out by name —
+        // and the indices of the graph of modules below come with it, so
+        // the traversal that finds the cycles walks the graph the same
+        // way every time.
+        let all_modules: BTreeSet<String> = module_outgoing
             .keys()
             .cloned()
             .chain(module_incoming.keys().cloned())
@@ -1022,15 +1041,24 @@ impl CallGraph {
         // Step 4: Run Tarjan SCC to find cycles
         use petgraph::algo::tarjan_scc;
         let sccs = tarjan_scc(&graph);
-        let cycles: Vec<Vec<String>> = sccs
+        // The members of a cycle are a set, and the set is published in
+        // name order; the cycles are published in that same order among
+        // themselves. The traversal hands them over in the order it
+        // pops them, which is canonical but arbitrary — and a published
+        // answer is better when it can be compared with another one.
+        let mut cycles: Vec<Vec<String>> = sccs
             .into_iter()
             .filter(|scc| scc.len() > 1)
             .map(|scc| {
-                scc.iter()
+                let mut members: Vec<String> = scc
+                    .iter()
                     .map(|&idx| module_list[idx.index()].clone())
-                    .collect()
+                    .collect();
+                members.sort();
+                members
             })
             .collect();
+        cycles.sort();
 
         // Step 5: Build result
         let modules: Vec<(String, Vec<String>, Vec<String>, usize)> = module_list
@@ -1482,6 +1510,104 @@ mod tests {
         assert_eq!(
             published_callees, expected_callees,
             "callees are published by symbol id"
+        );
+    }
+
+    /// The module dependencies come out in a canonical order.
+    ///
+    /// A module is a directory, and the graph of modules is published:
+    /// the modules, the ones each one depends on, the ones that depend on
+    /// it, the coupling between them and the cycles they form. A hash map
+    /// iterates in an order that differs per instance, so the published
+    /// lists came out different on every run.
+    ///
+    /// The witness is eight modules, three of them in a cycle: the chance
+    /// that a hash map of eight modules happens to iterate in the name
+    /// order is one in 40.320, so this is a check and not a lottery.
+    #[test]
+    fn the_module_dependencies_are_canonically_ordered() {
+        let mut graph = CallGraph::new();
+        let mut ids = Vec::new();
+        for index in 0..8 {
+            let module = format!("m{index}");
+            let id = graph.add_symbol(Symbol::new(
+                format!("symbol_{module}"),
+                SymbolKind::Function,
+                Location::new(format!("{module}/file.rs"), 1, 0),
+            ));
+            ids.push(id);
+        }
+
+        // The edges, in the opposite order of the one they are published
+        // in: a cycle of three (m0, m1, m2) and a chain that hangs off
+        // it (m0 -> m3 -> m4 -> m5 -> m6 -> m7).
+        let edges = [
+            (6usize, 7usize),
+            (5, 6),
+            (4, 5),
+            (3, 4),
+            (0, 3),
+            (2, 0),
+            (1, 2),
+            (0, 1),
+        ];
+        for (from, to) in edges {
+            graph
+                .add_dependency(&ids[from], &ids[to], DependencyType::Calls)
+                .expect("direct call");
+        }
+
+        let (modules, cycles, coupling) = graph.find_module_dependencies();
+
+        let published: Vec<(&str, Vec<&str>, Vec<&str>, usize)> = modules
+            .iter()
+            .map(|m| {
+                (
+                    m.0.as_str(),
+                    m.1.iter().map(|d| d.as_str()).collect(),
+                    m.2.iter().map(|d| d.as_str()).collect(),
+                    m.3,
+                )
+            })
+            .collect();
+        assert_eq!(
+            published,
+            vec![
+                ("m0", vec!["m1", "m3"], vec!["m2"], 2),
+                ("m1", vec!["m2"], vec!["m0"], 1),
+                ("m2", vec!["m0"], vec!["m1"], 1),
+                ("m3", vec!["m4"], vec!["m0"], 1),
+                ("m4", vec!["m5"], vec!["m3"], 1),
+                ("m5", vec!["m6"], vec!["m4"], 1),
+                ("m6", vec!["m7"], vec!["m5"], 1),
+                ("m7", vec![], vec!["m6"], 0),
+            ],
+            "the modules are published by name, with their dependencies by name"
+        );
+
+        assert_eq!(
+            cycles,
+            vec![vec!["m0".to_string(), "m1".to_string(), "m2".to_string()]],
+            "the cycle is published with its members in name order"
+        );
+
+        let coupling_pairs: Vec<(&str, &str, usize)> = coupling
+            .iter()
+            .map(|((from, to), count)| (from.as_str(), to.as_str(), *count))
+            .collect();
+        assert_eq!(
+            coupling_pairs,
+            vec![
+                ("m0", "m1", 1),
+                ("m0", "m3", 1),
+                ("m1", "m2", 1),
+                ("m2", "m0", 1),
+                ("m3", "m4", 1),
+                ("m4", "m5", 1),
+                ("m5", "m6", 1),
+                ("m6", "m7", 1),
+            ],
+            "the coupling matrix is published by (from, to)"
         );
     }
 
