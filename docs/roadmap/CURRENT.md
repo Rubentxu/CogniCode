@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c` (la
+> **Snapshot**: 2026-11-06, sobre `5e6775c9f2a621010c4bd3533610ede8bbd550ae` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -152,14 +152,30 @@
 > grafo parcial se lee como un hallazgo; la cobertura se calcula una vez, al
 > cargar el grafo, y el servicio la recuerda para que una segunda pregunta de
 > la misma sesión publique la misma cobertura;
+> y el reindex incremental dice lo que costó: `reparse_on_edit` publicaba
+> cuántos ficheros tocó y cuántos símbolos cambiaron, y el trabajo se repartía
+> entre cinco fases —leer el estado, establecer la identidad de cada fichero,
+> reinterpretar, escribir en el índice, reconstruir el grafo— con una sola
+> suma publicada; ahora publica las fases que corrieron y cuánto tardó cada
+> una, los ficheros que tocó y los que consideró, la memoria alta y los
+> percentiles de la sesión cuando hay observaciones suficientes; la palabra
+> del rebuild la decide el producto y no una etiqueta escrita junto a la
+> llamada —`cache_hit`, `full`, `partial`, `error`—, y con ella sale un
+> defecto latente: el manifiesto decide por el contenido y el reloj es sólo
+> una pista, pero el handler decidía por el reloj solo, así que un fichero
+> cuyo contenido había cambiado bajo un reloj intacto se saltaba en
+> silencio; y el benchmark que mide el coste no lo corre el gate —un
+> benchmark se pide a propósito—, sino que se pide con sus tres formas y sus
+> dos tamaños, y comprueba antes de medir que el rebuild que va a medir es el
+> que dice medir;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`abc2b3c3` → `7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c`)
+## Qué cambió desde el snapshot anterior (`abc2b3c3` → `5e6775c9f2a621010c4bd3533610ede8bbd550ae`)
 
-Entre una punta y otra entraron **5 commits** (`git rev-list --count abc2b3c36df5f71feb0af4cede5c8ed6c5493be8..7592f2ff1e2039ad20a4f11bdcc3f824f0d2df6c`).
+Entre una punta y otra entraron **9 commits** (`git rev-list --count abc2b3c36df5f71feb0af4cede5c8ed6c5493be8..5e6775c9f2a621010c4bd3533610ede8bbd550ae`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
@@ -168,6 +184,7 @@ en qué commit está medido.
 | El snapshot operativo vuelve a la punta | `d4d7366d` (TASK-126) | El ratchet del snapshot acepta cinco commits de deriva contra la base con `main`, y el SHA declarado se había quedado atrás: la cabecera declara la punta real, la prosa acumula lo que llegó con el commit que lo midió, y la tabla cuenta los commits de distancia con una fila por unidad. |
 | La cobertura y su palabra tienen un dueño | `4ba9492c` (TASK-49) | La decisión de qué estado se publica estaba escrita dos veces —la CLI y el MCP—, y el presenter del MCP la escribía una tercera: un outcome completo servido de la caché se publicaba como «unknown» mientras el handler vivo publicaba «complete» para esa misma respuesta. Ahora la decide `coverage_verdict`, en la capa de aplicación, y las dos superficies la piden a la misma función. |
 | Las preguntas dicen la cobertura con la que se respondieron | `7592f2ff` (TASK-49) | La CLI avisaba por stderr y el documento publicado no llevaba nada; el MCP no decía nada y publicaba «Impact analysis completed in 3ms» sobre un grafo que no cubría el árbol. La cobertura del grafo que se sostiene se calcula una vez, al cargarlo, y las dos superficies la publican por una sola proyección: `CoverageInfo`, con la palabra y los tres hechos. |
+| El reindex incremental dice lo que costó | `5e6775c9` (TASK-56) | `reparse_on_edit` publicaba una sola suma sobre un trabajo repartido en cinco fases, así que no había forma de saber si el rebuild incremental merecía la pena. Ahora publica las fases y su duración, los ficheros afectados y considerados, la memoria alta y los percentiles de la sesión, y la palabra del rebuild la decide `rebuild_kind_of` a partir de los números de la cobertura. Con ella sale un defecto latente: el handler decidía qué fichero había cambiado por el reloj solo, mientras el manifiesto decide por el contenido —un fichero con los bytes cambiados bajo un reloj intacto se saltaba en silencio—. El benchmark mide tres formas sobre dos tamaños y no lo corre el gate. |
 
 ## Release: la última publicada es la v0.101.30
 
@@ -910,6 +927,44 @@ comprobable después del hecho: queda en la base de eventos del gate,
 `1045a1a3-1669-4e5c-9f6f-aa3d59bfb073`, los 58 `StageFinished` en `success` —el
 primero `build-isolation`, el último `merge-gate`— y el `RunFinished` en
 `success` (`outcome: success`, `diagnostics: []`).
+
+**El reindex incremental dice lo que costó, está cerrada.** `reparse_on_edit`
+publicaba cuántos ficheros tocó y cuántos símbolos cambiaron, y el trabajo que hay
+detrás se reparte en cinco fases —leer el estado que la operación necesita,
+establecer la identidad de cada fichero candidato, reinterpretar los que
+cambiaron, escribir lo que sale de ellos en el índice, y reconstruir el grafo—.
+El producto publicaba una sola suma, así que un consumidor que quisiera saber si
+el rebuild incremental merece la pena no tenía con qué responder: la fase cara y
+la fase barata se veían iguales.
+La causa era que la medición no existía donde el trabajo ocurre: el handler
+contaba el tiempo total, y el total no distingue un acierto de caché de un
+rebuild completo. Ahora cada fase se mide donde se hace —el `scan` lee el
+manifiesto, el `hash` establece la identidad de cada candidato, el `parse` y el
+`index` separan el tiempo de leer del tiempo de escribir, y el `graph` mide el
+rebuild—, y la palabra del rebuild la decide el producto y no una etiqueta
+escrita junto a la llamada: `rebuild_kind_of` la deriva de los números de la
+cobertura, que son los del producto.
+Con la fase `hash` sale un defecto latente: el manifiesto decide por el
+contenido y el reloj es sólo una pista —la misma regla que sigue la frescura
+del snapshot—, pero el handler decidía por el reloj solo, de modo que un
+fichero cuyo contenido había cambiado bajo un reloj intacto se saltaba en
+silencio. La identidad se establece ahora con el hash del contenido, y el reloj
+queda como lo que es: una pista.
+El RED está medido sobre el camino malo: 7 de 7 rojo en
+`crates/cognicode-core/tests/it/the_reparse_says_what_it_cost.rs` —el documento
+publicado no tenía clave `cost`—, y 7 de 7 verde después. Las aserciones van
+por el JSON que ve el cliente y no por el campo tipado, para que el test falle
+por el motivo correcto y no porque el campo todavía no exista.
+El benchmark (`crates/cognicode-core/benches/reparse_benchmarks.rs`) NO lo corre
+el gate —un benchmark se pide a propósito—: mide tres formas sobre dos
+tamaños, y comprueba antes de medir que el rebuild que va a medir es el que dice
+medir. MEDIDO, sobre el árbol de 120 ficheros: un acierto de caché cuesta
+88,0 µs, un cambio de un fichero 4,95 ms y un cambio de 30 ficheros 7,69 ms; el
+rebuild de un SOLO fichero ya cuesta cinco veces más en el árbol grande que en el
+de doce —4,95 ms contra 1,01 ms—, y 29 ficheros más sólo suman 2,74 ms. El
+coste que crece con el árbol es el del rebuild, no el del parseo: eso es lo que
+la medición deja dicho, y es lo que hace falta saber antes de autorizar una
+optimización sin umbral.
 
 ## La misión
 
