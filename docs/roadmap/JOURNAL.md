@@ -37627,3 +37627,18 @@ con el sufijo ` (#NNN)` dentro del presupuesto**.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
 crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+### Corrección a la nota de operación (2026-11-06, después de fusionar)
+
+Lo que dijo el recibo anterior sobre el `fetch` era **inexacto**, y esta entrada lo corrige. Medido:
+
+- El `fetch` de `main` **sigue bloqueado**. El hook juzga la referencia que apunta al commit Y los commits que la referencia trae, así que `41b855fa` —con su cabecera de 126 caracteres— se juzga en cada `fetch` que lo incluye, y la referencia se aborta.
+- Lo que sí funciona es **apuntar la rama local a la punta**, porque la punta (`9abaaef5`, 71 caracteres) es conforme y el hook la juzga: eso deja el clon local en el mismo estado que el servidor, sin desactivar ninguna regla, sin `--no-verify` y sin tocar la política.
+- En cuanto el clon local tiene `41b855fa` en su historia, los `fetch` posteriores **vuelven a funcionar**: lo que llega son commits nuevos, y esos se juzgan uno a uno.
+
+Lo que NO se ha hecho, y es decisión del operador: **`main` no se reescribe**. La protección de la rama no permite force-push, la API de GitHub no permite editar el mensaje de un commit que no es la punta, y la política de la casa lo prohíbe. El commit `41b855fa` se queda, con su cabecera de 126 caracteres, en la historia de `main`. Las dos salidas que quedan, y las dos son del operador:
+
+1. Subir `header_max` a 127 o más en `~/.config/git-control/config.toml` —la política es suya, y el mínimo está hoy en 120—, o
+2. Reescribir en el servidor el mensaje de ese commit, con la misma clave y el mismo árbol, para que la cabecera quepa.
+
+La regla que sale de aquí, y que es la que hay que aplicar la próxima vez: **contar la cabecera del `--subject` de `gh pr merge --squash` con el sufijo ` (#NNN)` dentro del presupuesto, ANTES de fusionar**. El espacio que dejó el sufijo fue de 7 caracteres, y el título estaba a 119.
