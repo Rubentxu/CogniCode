@@ -18,7 +18,7 @@ use crate::interface::cli::progress::progress_line;
 use crate::interface::cli::result::{
     CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
 };
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
@@ -818,9 +818,9 @@ impl CommandExecutor {
             }
             None => {
                 info!("CogniCode CLI initialized");
-                // The help, if no command was given. The core renders
-                // it and returns it; the presenter writes it.
-                let mut cmd = Cli::command();
+                // The help, if no command was given — the tree with the
+                // goals in it, so `cognicode --help` lists them.
+                let mut cmd = crate::interface::cli::goal_command::cli_command();
                 let help = cmd.render_help().to_string();
                 Ok(CommandOutput::rendered(format!("{help}\n")))
             }

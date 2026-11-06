@@ -98,6 +98,13 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("project_insights", schema_of::<ProjectInsightsOutput>());
     m.insert("project_overview", schema_of::<ProjectOverviewOutput>());
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
+    // TASK-82 — el goal `status`: el contrato sale del tipo que serializa su
+    // respuesta, así que la forma que el cliente ve es la que el servidor
+    // produce.
+    m.insert(
+        "status",
+        schema_of::<crate::interface::goals::status::GoalStatus>(),
+    );
     // The findings answer is derived only in the builds that ship the tool:
     // the findings pipeline grounds its findings in the canonical evidence
     // kernel, and a contract for a tool this build does not advertise would

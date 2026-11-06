@@ -1186,6 +1186,14 @@ fn simple_function() {
                 };
                 arms.insert(name, gate.take());
             }
+            // Los goals se sirven ANTES del `match`: el registro los sirve,
+            // y el nombre de un goal no es un caso del `match`. Sin esta
+            // linea el oraculo contaria cada goal como un fantasma —una
+            // tool que el catalogo anuncia y que el servidor no despacha—,
+            // que no es lo que pasa.
+            for goal in crate::interface::goals::registry() {
+                arms.entry(goal.name.to_string()).or_insert(None);
+            }
             arms
         }
 

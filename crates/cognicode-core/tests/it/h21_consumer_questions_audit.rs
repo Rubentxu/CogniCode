@@ -103,7 +103,7 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
     );
     // `graph_analyze` and `composite_impact_query` left the advertised
     // surface: the code behind them computed nothing.
-    assert_eq!(hand_names.len(), 78, "the surface is 78 tools");
+    assert_eq!(hand_names.len(), 79, "the surface is 79 tools");
 }
 
 #[test]

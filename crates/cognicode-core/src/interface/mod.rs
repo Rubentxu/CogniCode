@@ -7,10 +7,14 @@ pub mod coverage;
 // TASK-92 (slice 1) — the daemon's local socket: how a client on this
 // machine asks whether the index the daemon keeps is still fresh.
 pub mod daemon;
+// TASK-82 — el registro de goals: una declaración y sus cuatro superficies.
+pub mod goals;
 pub mod intent;
 pub mod lsp;
 pub mod mcp;
 pub mod symbol_identity;
+// Lo que se ve del workspace, compartido por el doctor y el goal `status`.
+pub mod workspace;
 
 #[cfg(feature = "rig")]
 pub mod rig;

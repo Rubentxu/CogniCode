@@ -4,6 +4,8 @@ pub mod analyzer;
 pub mod capabilities;
 pub mod commands;
 pub mod doctor;
+/// La línea de órdenes de los goals: el árbol, el parseo y la ejecución.
+pub mod goal_command;
 /// The names the command line publishes for the formats of the graph.
 pub mod mermaid_format;
 /// The project's graph, from the same authority the MCP uses.
@@ -18,6 +20,7 @@ pub mod result;
 pub mod evidence_backend;
 
 pub use commands::{Cli, CommandExecutor, Format};
+pub use goal_command::{ParsedCli, cli_command, parse_cli};
 pub use result::{
     CommandOutput, DefinitionLocation, GraphError, GraphResult, HoverResult, IndexError,
     IndexResult, NavigateError, NavigateResult, ReferenceEntry,

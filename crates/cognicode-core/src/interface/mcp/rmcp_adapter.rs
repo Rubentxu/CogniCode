@@ -949,6 +949,17 @@ pub async fn call_tool_handler(
     // dispatch future is dropped and we return Internal("timeout").
     let timeout = timeout_for_category(&category);
     let dispatch = async {
+        // TASK-82 — los goals. Un goal no es un tool con su brazo: es una
+        // declaración del registro que dice cómo se implementa, y la
+        // implementación es la misma que llama el CLI. El goal se resuelve
+        // antes del `match` porque su nombre no es un caso del `match`: lo
+        // construye el registro.
+        if let Some(goal) = crate::interface::goals::find(tool_name) {
+            let output =
+                crate::interface::mcp::handlers::goal::handle_goal(ctx, goal, arguments.into())
+                    .await?;
+            return Ok(serde_json::to_string(&output)?);
+        }
         match tool_name {
             "get_file_symbols" => {
                 let input: crate::interface::mcp::schemas::GetFileSymbolsInput =

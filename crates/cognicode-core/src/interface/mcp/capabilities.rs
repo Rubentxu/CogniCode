@@ -63,7 +63,7 @@ pub const LSP_SUPPORTED_LANGS: &[&str] = &["python", "rust", "javascript", "type
 /// Devuelve `Some(ToolCapabilities)` para tools registradas en
 /// `build_all_tools()`, `None` para tools desconocidas.
 ///
-/// La tabla cubre las **74 tools** que viven en
+/// La tabla cubre las **79 tools** que viven en
 /// `rmcp_adapter.rs::build_all_tools()`. Si añades una tool estable y
 /// olvidas añadirla aquí, `test_capabilities_matrix_for_stable_tools`
 /// falla con su nombre — esa es la intención.
@@ -221,6 +221,15 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "compuesto",
         },
 
+        // ----------------------------------------------------------------
+        // Goals (TASK-82) — la capa de goals: mira el workspace, no
+        // parsea codigo
+        // ----------------------------------------------------------------
+        "status" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
+
         _ => return None,
     };
     Some(caps)
@@ -308,6 +317,8 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "list_files",
         // Contract stable
         "retrieve_and_verify",
+        // Goals stable (TASK-82) — la capa de goals
+        "status",
     ]
 }
 

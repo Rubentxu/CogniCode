@@ -4,7 +4,6 @@
 
 use crate::infrastructure::parser::Language;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -384,64 +383,13 @@ fn check_parsers_section() -> DoctorSection {
     section
 }
 
-/// Detect languages in a workspace by scanning for markers
-fn detect_workspace_languages(workspace_path: &Path) -> Vec<Language> {
-    let mut languages = Vec::new();
-    let mut seen = HashSet::new();
-
-    // Check for Cargo.toml -> Rust
-    if workspace_path.join("Cargo.toml").exists() && seen.insert(Language::Rust) {
-        languages.push(Language::Rust);
-    }
-
-    // Check for go.mod -> Go
-    if workspace_path.join("go.mod").exists() && seen.insert(Language::Go) {
-        languages.push(Language::Go);
-    }
-
-    // Check for package.json -> JavaScript/TypeScript
-    if workspace_path.join("package.json").exists() {
-        if seen.insert(Language::JavaScript) {
-            languages.push(Language::JavaScript);
-        }
-        if seen.insert(Language::TypeScript) {
-            languages.push(Language::TypeScript);
-        }
-    }
-
-    // Check for pom.xml or *.java -> Java
-    if (workspace_path.join("pom.xml").exists()
-        || glob::glob(&workspace_path.join("**/*.java").to_string_lossy())
-            .ok()
-            .map(|g| g.count())
-            .unwrap_or(0)
-            > 0)
-        && seen.insert(Language::Java)
-    {
-        languages.push(Language::Java);
-    }
-
-    // Check for *.py files -> Python
-    if glob::glob(&workspace_path.join("**/*.py").to_string_lossy())
-        .ok()
-        .map(|g| g.count())
-        .unwrap_or(0)
-        > 0
-        && seen.insert(Language::Python)
-    {
-        languages.push(Language::Python);
-    }
-
-    languages
-}
-
 /// Run all doctor checks and generate a report
 pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
     let version = env!("CARGO_PKG_VERSION").to_string();
 
     // Detect workspace languages if path provided
     let detected_languages = workspace_path
-        .map(detect_workspace_languages)
+        .map(crate::interface::workspace::detect_languages)
         .unwrap_or_default();
 
     let workspace_info = workspace_path.map(|p| WorkspaceInfo {

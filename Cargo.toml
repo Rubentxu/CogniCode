@@ -224,7 +224,10 @@ prometheus = "0.14"
 mermaid-rs-renderer = { version = "0.2", default-features = false }
 
 # CLI
-clap = { version = "4.4", features = ["derive", "env"] }
+# The "string" feature lets clap own the names of the arguments: the goal
+# registry (TASK-82) builds its command tree at runtime, from the schema
+# that the argument structs derive, and those names are not `&'static str`.
+clap = { version = "4.4", features = ["derive", "env", "string"] }
 
 # MCP
 rmcp = { version = "1.7", features = ["server", "transport-io", "client", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-server-session", "which-command"] }
