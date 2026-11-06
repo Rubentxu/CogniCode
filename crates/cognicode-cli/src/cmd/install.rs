@@ -136,7 +136,7 @@ pub fn run_install(home: &CognicodeHome, profile: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::test_support::TempCognicodeHome;
+    use crate::layout::test_support::{TempCognicodeHome, TempPipelineEnv};
     use serial_test::serial;
 
     /// L4 T1: `run_install` must not crash when the canonical
@@ -150,6 +150,7 @@ mod tests {
     #[serial_test::serial]
     fn t_l4_install_emits_warning_when_no_skill_bundle_present() {
         let _temphome = TempCognicodeHome::new();
+        let _ide = TempPipelineEnv::ide(_temphome.path());
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 

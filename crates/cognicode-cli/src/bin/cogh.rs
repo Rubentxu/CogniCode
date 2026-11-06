@@ -585,6 +585,7 @@ mod tests {
     fn setup_installs_reviewer_profile_before_doctor() {
         let fixture = ResolverFixture::build("0.100.0").expect("build release fixture");
         let temp = tempfile::tempdir().expect("create setup home");
+        let _ide = layout::test_support::TempPipelineEnv::ide(temp.path());
         let home = CognicodeHome::resolve(Some(temp.path())).expect("resolve setup home");
         unsafe {
             std::env::set_var("COGNICODE_ASSET_BASE_URL", &fixture.release.base_url);

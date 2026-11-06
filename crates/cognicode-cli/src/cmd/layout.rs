@@ -1224,6 +1224,78 @@ pub(crate) mod test_support {
             }
         }
     }
+
+    /// The environment a sandbox installed, kept to restore it on drop.
+    ///
+    /// The install pipeline reads two things from the environment: the
+    /// cogh home (`COGNICODE_HOME`, and with it the tracker and the
+    /// journal) and the IDE configuration — the OpenCode config file, its
+    /// skills directory, and the configuration of the other IDEs. The
+    /// latter is resolved from `HOME` and from the variables that
+    /// override it. Both are resolved at the moment they are used, so a
+    /// test that leaves them alone writes to the developer's real home:
+    /// two tests writing it at the same time collide on the same file,
+    /// and the file survives the run with the entries of the test.
+    ///
+    /// Callers MUST be `#[serial]`.
+    pub(crate) struct TempPipelineEnv {
+        previous: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl TempPipelineEnv {
+        /// Point the cogh home and the IDE configuration at `dir`.
+        pub(crate) fn sandbox(dir: &Path) -> Self {
+            Self::install(&[
+                ("COGNICODE_HOME", dir.to_path_buf()),
+                ("HOME", dir.to_path_buf()),
+                (
+                    "OPENCODE_CONFIG",
+                    dir.join(".config/opencode/opencode.json"),
+                ),
+                ("CLAUDE_CONFIG", dir.join(".claude")),
+                ("CODEX_CONFIG", dir.join(".codex/config.toml")),
+            ])
+        }
+
+        /// Point only the IDE configuration at `dir`.
+        pub(crate) fn ide(dir: &Path) -> Self {
+            Self::install(&[
+                ("HOME", dir.to_path_buf()),
+                (
+                    "OPENCODE_CONFIG",
+                    dir.join(".config/opencode/opencode.json"),
+                ),
+                ("CLAUDE_CONFIG", dir.join(".claude")),
+                ("CODEX_CONFIG", dir.join(".codex/config.toml")),
+            ])
+        }
+
+        fn install(vars: &[(&'static str, std::path::PathBuf)]) -> Self {
+            let mut previous = Vec::with_capacity(vars.len());
+            for (name, value) in vars {
+                previous.push((*name, std::env::var_os(name)));
+                // SAFETY: callers are #[serial]; no concurrent env mutation.
+                unsafe {
+                    std::env::set_var(name, value);
+                }
+            }
+            Self { previous }
+        }
+    }
+
+    impl Drop for TempPipelineEnv {
+        fn drop(&mut self) {
+            for (name, value) in self.previous.drain(..) {
+                // SAFETY: callers are #[serial]; no concurrent env mutation.
+                unsafe {
+                    match value {
+                        Some(v) => std::env::set_var(name, v),
+                        None => std::env::remove_var(name),
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Download a manifest URL to a string. Used by `cmd_update` after the
@@ -1669,12 +1741,51 @@ mod tests {
 
     // ----- DEBT-4: transition matrix -----
 
-    /// Fixture helper: point COGNICODE_HOME at the per-test temp dir so the
-    /// tracker/lifecycle_journal module-level resolvers hit the sandbox.
-    fn redirect_home(dir: &std::path::Path) {
-        unsafe {
-            std::env::set_var("COGNICODE_HOME", dir);
-        }
+    /// Fixture helper: point the install pipeline at the per-test temp dir.
+    ///
+    /// The pipeline writes in two places that live outside its own paths:
+    /// the cogh home — `COGNICODE_HOME`, and with it the tracker and the
+    /// journal — and the IDE configuration, the OpenCode config file and
+    /// its skills directory, which is resolved from `HOME` or from the
+    /// variables that override it. Redirecting only the cogh home leaves
+    /// the IDE configuration pointing at the developer's real one: two
+    /// tests writing it at the same time collide on the same file, and
+    /// the file survives the run with the entries of the test.
+    ///
+    /// The guard restores the previous environment when it drops, so the
+    /// next test does not inherit this one's sandbox. Callers MUST be
+    /// `#[serial]`.
+    fn redirect_home(dir: &std::path::Path) -> test_support::TempPipelineEnv {
+        test_support::TempPipelineEnv::sandbox(dir)
+    }
+
+    /// The sandbox of the pipeline covers the IDE configuration, not only the
+    /// cogh home.
+    ///
+    /// The IDE configuration — the OpenCode config file and its skills
+    /// directory — is resolved from `HOME` (or from the variables that
+    /// override it), not from the cogh home. A test that redirects only the
+    /// cogh home writes the developer's real IDE configuration: two tests
+    /// writing it at the same time collide on the same file, and the file
+    /// survives the run.
+    #[test]
+    #[serial]
+    fn t_redirect_home_keeps_the_ide_configuration_inside_the_sandbox() {
+        let home_dir = tempfile::TempDir::new().unwrap();
+        let _sandbox = redirect_home(home_dir.path());
+
+        let config = crate::ide::opencode_config_path();
+        assert!(
+            config.starts_with(home_dir.path()),
+            "the OpenCode configuration must resolve inside the sandbox; got {}",
+            config.display()
+        );
+        let skills = crate::ide::opencode_skills_dir();
+        assert!(
+            skills.starts_with(home_dir.path()),
+            "the OpenCode skills directory must resolve inside the sandbox; got {}",
+            skills.display()
+        );
     }
 
     /// Fixture helper: persist a journal for `version` describing an
@@ -1820,7 +1931,7 @@ components:
     #[serial]
     fn t_debt4_t1_rollback_consumes_journal_and_second_is_noop() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.94.0").unwrap(); // A active
@@ -1851,7 +1962,7 @@ components:
     #[serial]
     fn t_debt4_t2_uninstall_active_clears_tracker_and_journal() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -1880,7 +1991,7 @@ components:
     #[serial]
     fn t_debt4_t3_uninstall_inactive_preserves_current() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap(); // B active
@@ -1913,7 +2024,7 @@ components:
     #[serial]
     fn t_debt4_t4_stale_journal_is_never_executed() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap(); // B active
@@ -1940,7 +2051,7 @@ components:
     #[serial]
     fn t_debt4_t5_no_tracker_means_no_implicit_rollback() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         plant_journal(&home, "0.94.0", None);
@@ -1966,7 +2077,7 @@ components:
     #[serial]
     fn t_e86_4_rollback_to_current_is_noop() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -1996,7 +2107,7 @@ components:
     #[serial]
     fn t_e86_4_rollback_to_previous_tracker_succeeds() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -2024,7 +2135,7 @@ components:
     #[serial]
     fn t_e86_4_rollback_past_first_installation_refuses() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -2055,7 +2166,7 @@ components:
     #[serial]
     fn t_e86_4_rollback_to_unreachable_target_refuses() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -2081,7 +2192,7 @@ components:
     #[serial]
     fn t_e86_4_rollback_to_unknown_with_no_journal_refuses() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -2107,7 +2218,7 @@ components:
     #[serial]
     fn t_debt4_t6_uninstall_is_idempotent() {
         let home_dir = tempfile::TempDir::new().unwrap();
-        redirect_home(home_dir.path());
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
         crate::tracker::write_version("0.95.0").unwrap();
@@ -3261,6 +3372,7 @@ components:
     #[serial]
     fn t_e86_7_cmd_uninstall_removes_install_tree() {
         let home_dir = tempfile::TempDir::new().unwrap();
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
@@ -3325,6 +3437,7 @@ components:
     #[serial]
     fn t_e86_7_cmd_uninstall_idempotent_when_install_tree_missing() {
         let home_dir = tempfile::TempDir::new().unwrap();
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
@@ -3392,6 +3505,7 @@ components:
     #[serial]
     fn t_e86_7_cmd_uninstall_prints_install_tree_removal() {
         let home_dir = tempfile::TempDir::new().unwrap();
+        let _sandbox = redirect_home(home_dir.path());
         let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
         home.init().unwrap();
 
@@ -3580,6 +3694,7 @@ components:
     #[serial_test::serial]
     fn t_l3_cmd_uninstall_round_trip_removes_canonical_tree() {
         let _temphome = test_support::TempCognicodeHome::new();
+        let _ide = test_support::TempPipelineEnv::ide(_temphome.path());
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 
@@ -4101,6 +4216,7 @@ components:
     fn prf_f6_w3_install_then_update_then_execute_then_rollback_then_uninstall() {
         // 1. Isolated COGNICODE_HOME so we don't touch the real one.
         let _home = test_support::TempCognicodeHome::new();
+        let _ide = test_support::TempPipelineEnv::ide(_home.path());
         let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
         home.init().expect("home.init");
 
