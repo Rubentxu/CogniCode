@@ -223,7 +223,7 @@
 > decisión; ahora la nota cita el ADR que existe y un contrato vigila la clase: una
 > ruta que el ROADMAP declara retirada no puede seguir en el árbol, y el RED se midió
 > sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, con cinco controles que
-> 其 —el ruido del contrato medido antes de escribirlo: 31 casos a nivel de párrafo,
+> lo sostienen —el ruido del contrato medido antes de escribirlo: 31 casos a nivel de párrafo,
 > 14 a nivel de frase con tablas, y **1** a nivel de frase sin ellas—;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
