@@ -36657,3 +36657,110 @@ había que probar; y el caso de la caché.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-49: las preguntas dicen su cobertura
+
+**El encargo.** CQA-F1.W2: «CLI, MCP y Explorer proyectan un mismo `AnalysisOutcome` con
+provenance». Es el quinto corte de la unidad; el cuarto (PR #646) dejó abierto que las
+PREGUNTAS —no el resultado completo— publicaran la cobertura con la que se respondieron.
+
+**El defecto, medido leyendo el árbol.**
+
+| Dónde | Qué pasaba |
+|---|---|
+| CLI (`project_graph`) | Calculaba los tres hechos de cobertura y los avisaba por **stderr** («Warning: graph is PARTIAL: …»); el **documento** que publica no llevaba nada. Un consumidor que lee el documento ve «0 símbolos» como un hallazgo, y el documento y el aviso dicen cosas distintas de la misma respuesta. |
+| MCP (`ensure_graph_built`) | Descartaba `loaded.source` y `loaded.tree.holes`, y el resumen publicaba «Impact analysis completed in 3ms. 0 symbols across 0 files would be affected.» sobre un grafo que no cubría el árbol. «Completado» describe la llamada; el cero se lee como un hallazgo. |
+| `coverage_verdict` (corte 4) | El dueño de la cobertura no lo pedían las preguntas, y `project_graph` (CLI) conservaba su **propia copia** de la regla: tres reglas parecidas para un mismo hecho. |
+
+**RED medido, antes de tocar el código.**
+
+| Comprobación | Antes |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-cli --test it -E 'test(the_questions_say_their_coverage)'` | **6 de 6 rojo**: el documento publicado no tenía clave `coverage` («una respuesta que no dice su cobertura dice que lo cubre todo») |
+
+El RED se midió revirtiendo el código de producción a `HEAD` —copia a `/tmp`, `git show
+HEAD:<ruta>`, comprobación byte a byte y restauración byte a byte— y dejando sólo el fichero
+nuevo: el test compila contra el código viejo porque mira el **documento serializado**, no el
+tipo.
+
+**Qué cambia.**
+
+- **Un cálculo, en un sitio.** `load_or_build_graph` pide la cobertura a `coverage_verdict` —de
+  dónde salió el grafo, el reporte del build, los huecos del árbol de ahora y si hay material— y
+  la deja en `LoadedGraph.coverage`. El servicio la recuerda (`set_last_coverage` /
+  `get_last_coverage`), así que una segunda pregunta de la misma sesión —respondida con el
+  grafo que ya está en la sesión— publica la misma cobertura.
+- **Una proyección, para las dos superficies.** `interface::coverage::CoverageInfo` —la palabra
+  (`OutcomeState::published_label()`) y los tres hechos (`Coverage::facts()`)— viaja en
+  `AnalyzeImpactOutput` y `GetCallHierarchyOutput` (MCP) y en `GraphResult::Impact` y
+  `GraphResult::Hierarchy` (CLI).
+- **`project_graph` pierde su copia de la regla**: la pide al mismo dueño. La CLI ya no decide
+  la cobertura por su cuenta.
+- **El resumen del MCP deja de presentar un cero como un hallazgo**: cuando la cobertura no es
+  completa, dice cuál es antes del recuento.
+
+**Lo que cambia para el consumidor.** Las formas publicadas ganan un campo `coverage` (la
+palabra y los tres hechos). La cobertura no cambia de valor: ya la decidía el dueño del corte 4;
+lo que faltaba era que la **publicaran en el documento**, que es lo que lee un consumidor. La
+forma del CLI conserva su aviso por stderr —el canal lateral—, y el documento lleva la misma
+información, como el documento de `graph full` ya hacía.
+
+**La prueba.** `crates/cognicode-cli/tests/it/the_questions_say_their_coverage.rs` (420 líneas):
+tres casos × dos preguntas, comparando los dos caminos **reales** —el binario de la CLI con
+`--format json` y el handler del MCP— campo por campo.
+
+| Caso | Qué mide |
+|---|---|
+| completo | un árbol que se leyó entero: la palabra es `complete` y no hay hechos |
+| parcial por un fichero que no se puede leer | la palabra es `partial` y el documento nombra el fichero (`b.rs`) |
+| parcial por una referencia que nadie declara | la palabra es `partial` y el documento nombra la referencia (Terraform: `aws_s3_bucket.no_existe.id`) |
+
+La segunda pregunta de la **misma sesión** del MCP se mide también: se responde con el grafo que
+la sesión ya tiene, y tiene que publicar la misma cobertura.
+
+**El caso «snapshot incompleto» es INALCANZABLE, y se midió para retirarlo.** El plan lo
+nombraba (una instantánea durable servida sobre un árbol que ahora tiene un hueco). El producto
+no lo permite: `is_manifest_stale` lee cada fichero del manifiesto y devuelve verdadero en
+cuanto uno no se puede leer, así que la instantánea se invalida y el árbol se relee. La sonda
+que lo buscaba encontró el árbol releído, no la instantánea servida. El caso se sustituyó por el
+de la referencia sin declarar.
+
+**Los consumidores que construyen las formas publicadas** (`t1_5_4_graph_result_serde.rs`,
+`t1_5_5_json_dispatch.rs`, `b3_w1_semantic_navigation.rs`) se actualizan: es la caracterización
+que ADR-001 exige antes de cambiar una forma publicada.
+
+**Verificación (medida, no afirmada).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-cli --test it -E 'test(the_questions_say_their_coverage)'` | rc=0, 6 pasan (antes: 6 de 6 rojo) |
+| `cargo nextest run --profile gate --workspace --lib` | rc=0, 4706 pasan |
+| `cargo nextest run --profile gate --workspace --tests` | rc=0, 6820 pasan, 3 saltados |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `cargo fmt --all --check` | rc=0 |
+| `npm test --prefix apps/explorer-ui` | rc=0, 944 tests |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, 312 comprobaciones |
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: el tercer paso (mutantes) es **NOT_RUN**. No es que
+  se saltara: el gate se paga por lotes de diez tareas, no por tarea.
+- No dice que **Explorer** quede alineado: sigue sin entrar. `ImpactAnalysisService` pregunta
+  por `SymbolId`, no por nombre; es otra familia de preguntas.
+- No dice que el **SDK** cambie: sus DTO (`AnalyzeImpactResult`, `GetCallHierarchyResult`) viven
+  en la capa de aplicación y no pueden llevar una proyección de interfaz sin invertir la
+  dependencia. Sus formas publicadas no cambian en este corte.
+- No dice que `graph_complexity` use el dueño: lee la cobertura por su cuenta
+  (`partial_coverage`), y su construcción siempre deja reporte.
+- No dice que las preguntas del MCP comprueben si el árbol cambió: eso es la freshness, no la
+  cobertura. Lo que se publica es la cobertura del GRAFO con el que se respondió.
+- No dice que la instantánea durable se invalide menos: el caso «snapshot incompleto» no es
+  alcanzable porque el producto prefiere releer el árbol.
+
+**Entrega.** PR #648 → `7592f2ff`. El snapshot operativo se regeneró en el PR #649 →
+`1153204a`, porque el ratchet del snapshot acepta cinco commits de deriva y este ciclo lo
+habría dejado a seis. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
