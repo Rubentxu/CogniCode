@@ -54,12 +54,13 @@ pub struct MermaidOptions {
 
 /// A directed graph representing call dependencies between symbols
 ///
-/// The graph publishes its shape in a canonical order: the callers of a
-/// symbol come out ordered by symbol id, and so do its callees.
+/// The graph publishes its shape in a canonical order: its symbols come
+/// out ordered by symbol id, and so do the callers of a symbol and its
+/// callees.
 ///
 /// The order lives in the storage and not in the read. The maps that
-/// hold the edges are ordered ones, so a read costs nothing extra and a
-/// build pays once per edge.
+/// hold the symbols and the edges are ordered ones, so a read costs
+/// nothing extra and a build pays once per symbol and once per edge.
 ///
 /// The reason is that a published order that changes between runs is
 /// not an answer: a hash map iterates in an order that differs per
@@ -69,7 +70,10 @@ pub struct MermaidOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CallGraph {
     /// Map from symbol identifier to symbol
-    symbols: HashMap<SymbolId, Symbol>,
+    ///
+    /// The map is ordered: the symbols of the graph come out ordered by
+    /// symbol id, and so does every list published from that walk.
+    symbols: BTreeMap<SymbolId, Symbol>,
     /// Map from source symbol to a map of `(target_id, dependency_type)` edge
     /// identity to `(Provenance, confidence)`. Using a `HashMap` here (rather
     /// than a `HashSet`) keeps the identity tuple (which is `Hash + Eq`) as
@@ -92,7 +96,7 @@ impl CallGraph {
     /// Creates a new empty CallGraph
     pub fn new() -> Self {
         Self {
-            symbols: HashMap::new(),
+            symbols: BTreeMap::new(),
             edges: HashMap::new(),
             reverse_edges: HashMap::new(),
             name_index: HashMap::new(),
@@ -205,12 +209,17 @@ impl CallGraph {
         results
     }
 
-    /// Returns all symbols in the graph
+    /// Returns all symbols in the graph, ordered by symbol id.
+    ///
+    /// The order is part of the contract of the aggregate: a list
+    /// published from this walk comes out the same in every run of the
+    /// same code.
     pub fn symbols(&self) -> impl Iterator<Item = &Symbol> {
         self.symbols.values()
     }
 
-    /// Returns an iterator over symbol IDs and symbols
+    /// Returns an iterator over symbol IDs and symbols, ordered by symbol
+    /// id (see [`CallGraph::symbols`]).
     pub fn symbol_ids(&self) -> impl Iterator<Item = (&SymbolId, &Symbol)> {
         self.symbols.iter()
     }
@@ -1417,6 +1426,101 @@ mod tests {
             assert_eq!(r, first_r, "roots order must be stable across iterations");
             assert_eq!(l, first_l, "leaves order must be stable across iterations");
         }
+    }
+
+    /// The aggregate publishes its own symbols in a canonical order: by
+    /// symbol id.
+    ///
+    /// The map that holds the symbols used to be a hash map, and a hash
+    /// map iterates in an order that differs per instance. Every surface
+    /// that walks the symbols of the graph published what it found in
+    /// that order, so the same project published a different project map,
+    /// a different list of affected symbols and a different list of long
+    /// parameter lists on every run.
+    ///
+    /// The witness is ten symbols: the chance that a hash map of ten
+    /// symbols happens to iterate in the sorted order is one in 3,6
+    /// million, so this is a check and not a lottery. The symbols are
+    /// added in an order that is not the published one, because the order
+    /// of a hash map does not depend on the order of insertion — but the
+    /// witness must not look like it does.
+    #[test]
+    fn symbols_and_symbol_ids_are_canonically_ordered() {
+        // Each symbol with the line it is declared on: the identity of a
+        // symbol carries its line, so the pairs have to travel together.
+        let pairs = [
+            ("delta", 1u32),
+            ("charlie", 2),
+            ("bravo", 3),
+            ("alpha", 4),
+            ("echo", 5),
+            ("foxtrot", 6),
+            ("golf", 7),
+            ("hotel", 8),
+            ("india", 9),
+            ("juliet", 10),
+        ];
+
+        let mut graph = CallGraph::new();
+        for (name, line) in pairs.iter() {
+            graph.add_symbol(Symbol::new(
+                *name,
+                SymbolKind::Function,
+                Location::new("t.rs", *line, 0),
+            ));
+        }
+
+        let expected = [
+            "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+            "juliet",
+        ];
+
+        let ids: Vec<String> = graph
+            .symbol_ids()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect();
+        let names_out: Vec<String> = graph.symbols().map(|s| s.name().to_string()).collect();
+
+        assert_eq!(
+            names_out,
+            expected.to_vec(),
+            "the symbols of the graph come out ordered by symbol id"
+        );
+        assert_eq!(
+            ids.len(),
+            expected.len(),
+            "every symbol is published: the walk does not drop any"
+        );
+        for (id, name) in ids.iter().zip(expected.iter()) {
+            assert!(
+                id.contains(&format!(":{name}:")),
+                "the id of a symbol carries its name: {id} does not name {name}"
+            );
+        }
+
+        // The order does not depend on the order the symbols were added:
+        // a graph filled in the published order publishes the same walk.
+        let mut straight = CallGraph::new();
+        for name in expected.iter() {
+            let line = pairs
+                .iter()
+                .find(|(declared, _)| declared == name)
+                .map(|(_, line)| *line)
+                .expect("every published name was declared");
+            straight.add_symbol(Symbol::new(
+                *name,
+                SymbolKind::Function,
+                Location::new("t.rs", line, 0),
+            ));
+        }
+        let straight_ids: Vec<String> = straight
+            .symbol_ids()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect();
+        assert_eq!(
+            straight_ids, ids,
+            "the published order is the same however the graph was filled"
+        );
     }
 
     /// The aggregate publishes its callers and its callees in a canonical
