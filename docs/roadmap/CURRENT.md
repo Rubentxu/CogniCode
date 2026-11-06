@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `5e6775c9f2a621010c4bd3533610ede8bbd550ae` (la
+> **Snapshot**: 2026-11-06, sobre `05cded613db5c711dd7752350d3e9be63b9db59b` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -168,23 +168,34 @@
 > benchmark se pide a propósito—, sino que se pide con sus tres formas y sus
 > dos tamaños, y comprueba antes de medir que el rebuild que va a medir es el
 > que dice medir;
+> y el gate mide un radio, y el radio lo decide un script: el gate entero costaba
+> 55 m 46 s en caliente y el paso de mutantes era el 98,8% de esa hora —medido
+> en el recibo de TASK-69—, así que un gate cuyo coste no depende de lo que
+> cambió es un gate que no se puede correr seguido; ahora `scripts/gate_scope.py`
+> decide qué se mide y el gate lo corre: el radio de los tests es el cierre
+> inverso de dependencias de los crates que el lote tocó, con el grafo de
+> `cargo metadata`, y el radio de los mutantes son los crates que el lote tocó
+> que son asequibles de mutar más el crate del calendario cuando le toca el
+> turno; el radio falla cerrado —si no se puede determinar, el gate corre entero
+> y lo dice— y el calendario acota la edad de un hueco de mutación a un número
+> declarado de fusiones, porque el crate que lleva la lógica de grafo no se deja
+> de medir: se mide en su turno;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`abc2b3c3` → `5e6775c9f2a621010c4bd3533610ede8bbd550ae`)
+## Qué cambió desde el snapshot anterior (`5e6775c9` → `05cded613db5c711dd7752350d3e9be63b9db59b`)
 
-Entre una punta y otra entraron **9 commits** (`git rev-list --count abc2b3c36df5f71feb0af4cede5c8ed6c5493be8..5e6775c9f2a621010c4bd3533610ede8bbd550ae`).
+Entre una punta y otra entraron **5 commits** (`git rev-list --count 5e6775c9f2a621010c4bd3533610ede8bbd550ae..05cded613db5c711dd7752350d3e9be63b9db59b`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot operativo vuelve a la punta | `d4d7366d` (TASK-126) | El ratchet del snapshot acepta cinco commits de deriva contra la base con `main`, y el SHA declarado se había quedado atrás: la cabecera declara la punta real, la prosa acumula lo que llegó con el commit que lo midió, y la tabla cuenta los commits de distancia con una fila por unidad. |
-| La cobertura y su palabra tienen un dueño | `4ba9492c` (TASK-49) | La decisión de qué estado se publica estaba escrita dos veces —la CLI y el MCP—, y el presenter del MCP la escribía una tercera: un outcome completo servido de la caché se publicaba como «unknown» mientras el handler vivo publicaba «complete» para esa misma respuesta. Ahora la decide `coverage_verdict`, en la capa de aplicación, y las dos superficies la piden a la misma función. |
-| Las preguntas dicen la cobertura con la que se respondieron | `7592f2ff` (TASK-49) | La CLI avisaba por stderr y el documento publicado no llevaba nada; el MCP no decía nada y publicaba «Impact analysis completed in 3ms» sobre un grafo que no cubría el árbol. La cobertura del grafo que se sostiene se calcula una vez, al cargarlo, y las dos superficies la publican por una sola proyección: `CoverageInfo`, con la palabra y los tres hechos. |
-| El reindex incremental dice lo que costó | `5e6775c9` (TASK-56) | `reparse_on_edit` publicaba una sola suma sobre un trabajo repartido en cinco fases, así que no había forma de saber si el rebuild incremental merecía la pena. Ahora publica las fases y su duración, los ficheros afectados y considerados, la memoria alta y los percentiles de la sesión, y la palabra del rebuild la decide `rebuild_kind_of` a partir de los números de la cobertura. Con ella sale un defecto latente: el handler decidía qué fichero había cambiado por el reloj solo, mientras el manifiesto decide por el contenido —un fichero con los bytes cambiados bajo un reloj intacto se saltaba en silencio—. El benchmark mide tres formas sobre dos tamaños y no lo corre el gate. |
+| El recibo de TASK-56 y el snapshot que lo nombra | `c3404a35` (TASK-56) | El recibo append-only de la unidad del reindex incremental, y la regeneración del snapshot que lo cita. |
+| La línea base de tiempos del gate que existe | `38c12b44`, `a4e62633` (TASK-69) | El gate vigente costaba 61 min en frío y 55 min 46 s en caliente, y el paso de mutantes era el 92% (frío) y el 98,8% (caliente) de esa hora. La tabla que la unidad tenía midió las etapas de un pipeline retirado el 2026-11-04 que nunca entró en `main`, así que la línea base se midió sobre el gate que existe. Con ese número, la política C —acotar la mutación al lote, con el crate de algoritmos en un calendario declarado— deja de ser una preferencia y pasa a tener su coste. |
+| El gate mide el radio del lote | `05cded61` (TASK-142) | El radio de los tests es el cierre inverso de dependencias de los crates que el lote tocó, con el grafo de `cargo metadata` —8 de 11 paquetes en este lote—, y el radio de los mutantes son los crates asequibles más el crate del calendario cuando le toca el turno. Medido sobre el mismo lote: 16,341 s + 22,990 s con la mutación declarada como SKIP, frente a 20,163 s + 22,384 s + 3306,185 s del gate entero. El radio de los tests ahorra segundos —los tests son 40 s en total—; lo que acota es la mutación. El radio falla cerrado, y el calendario acota la edad de un hueco de mutación a 50 fusiones. |
 
 ## Release: la última publicada es la v0.101.30
 
