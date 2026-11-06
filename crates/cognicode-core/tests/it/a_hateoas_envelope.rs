@@ -319,6 +319,52 @@ fn a_recommendation_offers_the_preview() {
     assert!(handle.starts_with("plan:"), "{handle}");
 }
 
+/// El motivo de un enlace es una frase, no un contador.
+///
+/// El motivo se lee en una terminal y en un cliente, y se lo lee una
+/// persona: «1 files» es una razón escrita por una máquina que no cuenta.
+#[test]
+fn a_reason_counts_in_words_a_person_reads() {
+    let with_skipped = |count: usize| {
+        let mut result = with_holes().as_object().unwrap().clone();
+        result.insert(
+            "skipped_files".to_string(),
+            Value::Array(
+                (0..count)
+                    .map(|n| json!({"path": format!("{n}.rs"), "reason": "io"}))
+                    .collect(),
+            ),
+        );
+        envelope_for(
+            "build_graph",
+            &Map::new(),
+            &Value::Object(result),
+            &context(),
+        )
+    };
+
+    let one_envelope = with_skipped(1);
+    let one = link_with(&one_envelope, "reindex");
+    assert!(
+        one.reason.contains("1 file,"),
+        "one file is one file: {}",
+        one.reason
+    );
+    assert!(
+        !one.reason.contains("1 files"),
+        "the reason is a phrase: {}",
+        one.reason
+    );
+
+    let two_envelope = with_skipped(2);
+    let two = link_with(&two_envelope, "reindex");
+    assert!(
+        two.reason.contains("2 files"),
+        "two files are two files: {}",
+        two.reason
+    );
+}
+
 /// Un enlace que no se puede resolver no es un enlace: cada tool que un
 /// enlace nombra está en el catálogo, con su autoridad y sus requisitos.
 #[test]
@@ -471,7 +517,7 @@ fn the_cli_prints_links_as_commands_its_own_tree_accepts() {
 
     let commands = follow_ups::commands(&envelope);
     assert!(
-        commands.contains(&"cognicode index build /repo".to_string()),
+        commands.contains(&"cognicode graph full --rebuild /repo".to_string()),
         "the reindex link is a copyable command: {commands:?}"
     );
 
@@ -483,4 +529,51 @@ fn the_cli_prints_links_as_commands_its_own_tree_accepts() {
             .try_get_matches_from(argv)
             .unwrap_or_else(|error| panic!("`{command}` is not a command: {error}"));
     }
+}
+
+/// La orden dice la dirección que el enlace dice.
+///
+/// El enlace dice `incoming` y `outgoing`; la terminal dice `in` y `out`.
+/// Una orden que fija la dirección en vez de leerla responde a otra
+/// pregunta: si el enlace cambia de dirección, la orden tiene que
+/// cambiar con él.
+#[test]
+fn the_cli_reads_the_direction_the_link_names() {
+    let envelope_with = |direction: &str| {
+        let mut args = Map::new();
+        args.insert("symbol_name".to_string(), json!("parse_config"));
+        args.insert("direction".to_string(), json!(direction));
+        cognicode_core::interface::hateoas::Envelope {
+            schema_version: 1,
+            state: "complete".to_string(),
+            result: Value::Null,
+            basis: cognicode_core::interface::hateoas::Basis::default(),
+            budget: cognicode_core::interface::hateoas::Budget::default(),
+            links: vec![cognicode_core::interface::hateoas::Link {
+                rel: "inspect-callers".to_string(),
+                tool: "get_call_hierarchy".to_string(),
+                required_args: args,
+                reason: "the symbol has 24 callers".to_string(),
+                precondition: None,
+                authority: "read".to_string(),
+                handle: None,
+            }],
+        }
+    };
+
+    assert_eq!(
+        follow_ups::commands(&envelope_with("outgoing")),
+        vec!["cognicode graph hierarchy parse_config --direction out".to_string()],
+    );
+    assert_eq!(
+        follow_ups::commands(&envelope_with("incoming")),
+        vec!["cognicode graph hierarchy parse_config --direction in".to_string()],
+    );
+
+    // Una dirección que la terminal no entiende no se inventa: el enlace
+    // se queda en el JSON, donde un cliente lo encuentra.
+    assert!(
+        follow_ups::commands(&envelope_with("sideways")).is_empty(),
+        "a direction the terminal does not know is not printed"
+    );
 }
