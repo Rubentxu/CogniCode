@@ -117,6 +117,7 @@ mod one_published_column_base;
 mod one_published_line_base;
 mod per_file_surfaces_publish_pending_references;
 mod prf_sec_07_adversarial_campaign;
+mod project_overview_publishes_the_level_it_delivers;
 mod provider_conformance;
 mod read_set_e2e;
 mod refactor_integration_tests;

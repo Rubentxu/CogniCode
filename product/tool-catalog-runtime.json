@@ -3472,15 +3472,55 @@
     "name": "project_overview",
     "description": "Get a comprehensive project overview at quick, medium, or detailed levels.",
     "inputSchema": {
+      "description": "The arguments of `project_overview`.",
       "properties": {
         "detail": {
-          "default": "medium",
-          "type": "string"
+          "default": "detailed",
+          "description": "The level of detail the answer carries: `quick` (the statistics of\nthe project), `medium` (the statistics, the entry points and the\nhot paths) or `detailed` (everything: the recommendations and the\ncontext for a prompt). The default is the complete answer.",
+          "oneOf": [
+            {
+              "const": "quick",
+              "description": "The statistics of the project, and nothing else.",
+              "type": "string"
+            },
+            {
+              "const": "medium",
+              "description": "The statistics, with the entry points and the hot paths.",
+              "type": "string"
+            },
+            {
+              "const": "detailed",
+              "description": "Everything the answer can carry.",
+              "type": "string"
+            }
+          ]
         }
       },
       "type": "object"
     },
     "outputSchema": {
+      "$defs": {
+        "OverviewDetail": {
+          "description": "The level of detail an overview answer carries.\n\nThe type owns the names, so the level a client asks for is a level the\nserver knows: a level that does not exist is a refusal, not a string\nread in silence.\n\nThe three levels are the same ladder everywhere they are published:\nthe statistics of the project, then the statistics with the entry\npoints and the hot paths, and then everything the answer can carry.\nWhat each level carries is published by the tool that publishes it.",
+          "oneOf": [
+            {
+              "const": "quick",
+              "description": "The statistics of the project, and nothing else.",
+              "type": "string"
+            },
+            {
+              "const": "medium",
+              "description": "The statistics, with the entry points and the hot paths.",
+              "type": "string"
+            },
+            {
+              "const": "detailed",
+              "description": "Everything the answer can carry.",
+              "type": "string"
+            }
+          ]
+        }
+      },
       "properties": {
         "architecture_score": {
           "format": "double",
@@ -3497,7 +3537,8 @@
           ]
         },
         "detail": {
-          "type": "string"
+          "$ref": "#/$defs/OverviewDetail",
+          "description": "The level this answer carries."
         },
         "entry_points": {
           "items": {
