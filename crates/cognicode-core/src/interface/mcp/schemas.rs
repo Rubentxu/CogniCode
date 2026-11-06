@@ -717,6 +717,38 @@ pub struct GetModuleDependenciesOutput {
 // Graph Strategy - Build Index
 // ============================================================================
 
+/// The strategy that indexes a project.
+///
+/// The vocabulary belongs to the factory — `GraphStrategyFactory` is what
+/// decides which names index a project — and these are the names it offers.
+/// The type is what the server reads, so a strategy that does not index is
+/// a refusal where the arguments arrive, not a name read in silence.
+///
+/// The factory's own list and this one are two lists, and the check in
+/// `the_index_tool_only_offers_strategies_that_index.rs` is what says when
+/// they separate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexStrategy {
+    Lightweight,
+    OnDemand,
+    Full,
+}
+
+impl IndexStrategy {
+    /// The name the factory builds this strategy from.
+    ///
+    /// It is the name the wire carries, so the two cannot disagree: the
+    /// check below is what keeps that promise true.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IndexStrategy::Lightweight => "lightweight",
+            IndexStrategy::OnDemand => "on_demand",
+            IndexStrategy::Full => "full",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BuildIndexInput {
     /// Directory to build the index for (default: current working directory)
@@ -724,11 +756,11 @@ pub struct BuildIndexInput {
 
     /// Strategy to use: lightweight, on_demand, full
     #[serde(default = "default_strategy")]
-    pub strategy: String,
+    pub strategy: IndexStrategy,
 }
 
-fn default_strategy() -> String {
-    "lightweight".to_string()
+fn default_strategy() -> IndexStrategy {
+    IndexStrategy::Lightweight
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1098,6 +1130,26 @@ mod tests {
         assert_eq!(json, "\"outgoing\"");
     }
 
+    /// The name the factory is given is the name the wire carries.
+    ///
+    /// The enum names its values twice — once for the wire and once for
+    /// the factory — and the two spellings are a promise: the strategy
+    /// named `on_demand` on the wire has to be the one the factory builds.
+    #[test]
+    fn the_strategy_name_is_the_name_the_wire_carries() {
+        for strategy in [
+            IndexStrategy::Lightweight,
+            IndexStrategy::OnDemand,
+            IndexStrategy::Full,
+        ] {
+            assert_eq!(
+                serde_json::to_string(&strategy).unwrap(),
+                format!("\"{}\"", strategy.as_str()),
+                "the wire name and the name the factory is given disagree: {strategy:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_call_hierarchy_input_defaults() {
         let json = r#"{"symbol_name": "test::func", "direction": "outgoing"}"#;
@@ -1125,7 +1177,7 @@ mod tests {
     fn test_build_index_input_defaults() {
         let json = r#"{}"#;
         let input: BuildIndexInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.strategy, "lightweight");
+        assert_eq!(input.strategy, IndexStrategy::Lightweight);
         assert!(input.directory.is_none());
     }
 
@@ -1134,7 +1186,25 @@ mod tests {
         let json = r#"{"directory": "/path/to/project", "strategy": "on_demand"}"#;
         let input: BuildIndexInput = serde_json::from_str(json).unwrap();
         assert_eq!(input.directory, Some("/path/to/project".to_string()));
-        assert_eq!(input.strategy, "on_demand");
+        assert_eq!(input.strategy, IndexStrategy::OnDemand);
+    }
+
+    /// A strategy the published shape does not name is refused where the
+    /// arguments are read, and the refusal names the ones that do index.
+    #[test]
+    fn a_strategy_that_does_not_exist_is_refused() {
+        let json = r#"{"strategy": "per_file"}"#;
+
+        let error = serde_json::from_str::<BuildIndexInput>(json)
+            .expect_err("a strategy that indexes nothing is not a strategy");
+
+        let message = error.to_string();
+        for name in ["lightweight", "on_demand", "full"] {
+            assert!(
+                message.contains(name),
+                "the refusal does not name the strategies that do index: {message}"
+            );
+        }
     }
 
     #[test]

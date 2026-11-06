@@ -19,7 +19,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 
 - **78 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
 - **31 lenguajes** — 20 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML, Kotlin, Groovy) y 11 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
-- **4 estrategias de grafo** — `full`, `lightweight`, `on_demand`, `per_file`
+- **3 estrategias de grafo** — `full`, `lightweight`, `on_demand`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)
 - **Refactorización segura** — renombrar, extraer, inline, mover, cambiar firma con vista previa de impacto
 - **Navegación LSP** — ir a definición, hover, buscar referencias
@@ -205,7 +205,7 @@ CogniCode incluye una CLI completa (`cognicode`) para uso directo en terminal:
 cognicode analyze [ruta]                              # Análisis completo de código
 cognicode doctor [--format text|json]                 # Verificar configuración del entorno
 
-cognicode index build [ruta] [--strategy full|lightweight|per_file|on_demand]
+cognicode index build [ruta] [--strategy full|lightweight|on_demand]
 cognicode index query <símbolo> [ruta]
 cognicode index outline <archivo>
 cognicode index symbol-code <archivo> <línea> <col>
@@ -230,7 +230,6 @@ Elige la estrategia adecuada para tu caso de uso:
 |------------|-----------|---------|------------|
 | `lightweight` | La más rápida | Ninguna | Búsquedas de símbolos |
 | `on_demand` | Rápida | Dirigidas | Analizar funciones específicas |
-| `per_file` | Media | Por archivo | Análisis modular |
 | `full` | La más lenta | Completas | Análisis de impacto, caminos críticos, verificación de arquitectura |
 
 ## Lenguajes Soportados

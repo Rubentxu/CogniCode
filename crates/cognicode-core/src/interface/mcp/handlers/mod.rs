@@ -153,6 +153,7 @@ use crate::interface::mcp::schemas::{
     HotPathEntry,
     HoverInput,
     HoverOutput,
+    IndexStrategy,
     MergeCoverage,
     MergeGraphsInput,
     MergeGraphsOutput,
@@ -2684,15 +2685,13 @@ pub async fn handle_build_lightweight_index(
     // to avoid starving the tokio async runtime (which caused MCP timeout -32001).
     // For lightweight strategy, build directly as LightweightStrategy (concrete type)
     // so we can extract the index via into_index() without rebuilding.
-    let strategy_name_input = input.strategy.clone();
-    // The factory is the authority on which names index a project. A
-    // name that is not offered is refused before any work is done: the
-    // tool that indexes a project must not answer with a strategy that
-    // indexes nothing.
-    let strategy = match strategy_name_input.as_str() {
-        "lightweight" | "" => None,
-        _ => Some(
-            GraphStrategyFactory::create(&strategy_name_input)
+    // The factory is the authority on which names index a project, and the
+    // name the tool reads is one it offers. The refusal is the guard that
+    // keeps the two lists honest: while they agree, it cannot be reached.
+    let strategy = match input.strategy {
+        IndexStrategy::Lightweight => None,
+        requested => Some(
+            GraphStrategyFactory::create(requested.as_str())
                 .map_err(|unknown| HandlerError::InvalidInput(unknown.to_string()))?,
         ),
     };
@@ -4325,7 +4324,7 @@ mod tests {
             .build();
         let input = BuildIndexInput {
             directory: Some("/nonexistent/path".to_string()),
-            strategy: "lightweight".to_string(),
+            strategy: IndexStrategy::Lightweight,
         };
 
         let result = handle_build_lightweight_index(&ctx, input).await;
