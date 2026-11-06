@@ -35992,3 +35992,82 @@ resto del defecto histórico que esta unidad cierra en la superficie.
 **Créditos.** La autoría de este trabajo es de Claude Code. El hook `commit-msg` del repositorio
 no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — Gate sobre `a3b8b862`: el lote de diez, medido en serie
+
+**El encargo.** El gate se paga por lotes de diez tareas (`AGENTS.md`). Con TASK-124 el lote
+llegó a diez y tocaba el gate entero; lo que se mide aquí es ese gate, sobre el árbol que
+cierra el lote.
+
+**El lote, en orden.** TASK-121 · TASK-133 · TASK-134 · TASK-135 · TASK-136 · TASK-137 ·
+TASK-138 · TASK-139 · TASK-122 · TASK-124.
+
+**El estado medido antes de medir.** `git status --short --branch`: `main...origin/main`, con
+el árbol limpio salvo el fichero del operador `backlog-import-producto-v2.sh` (sin tocar, sin
+commitear). `git rev-parse HEAD origin/main`: los dos `a3b8b862`. `cargo-mutants --version`:
+27.1.0. Binarios de release (`cognicode`, `cogh`, `cognicode-release`, `cognicode-mcp`): los
+cuatro presentes, y el script **no** imprimió aviso de binarios ausentes (`AVISO: 0` en el log).
+
+**Lo que se midió, con las cifras del log** (`/tmp/gate_lote_diez.log`, una sola corrida,
+`bash scripts/test-gate.sh`, sin paralelizar y sin mezclar ninguna otra medida):
+
+| Paso | Comando | Resultado |
+|---|---|---|
+| Tests unitarios | `cargo nextest run --profile gate --workspace --lib` | **4701 tests run: 4701 passed, 0 skipped** — 15,181 s |
+| Tests de integración | `cargo nextest run --profile gate --workspace --tests` | **6794 tests run: 6794 passed, 3 skipped** — 21,709 s |
+| Mutantes | `cargo mutants -j 1 --gitignore true -p cognicode-graph-algos` | **627 mutants tested in 55m: 618 caught, 9 unviable** — 0 supervivientes, 0 tiempos agotados |
+
+Veredictos del script: `OK: unit tests`, `OK: integration tests`, `OK: mutants`, y
+`=== test-gate rc=0 ===` (rc global 0). En el log: 3 líneas `OK:`, 0 `FAIL`, 0 `AVISO`.
+
+**La aritmética del paso de mutantes.** 618 atrapados + 9 inviables = 627, que es exactamente
+el alcance declarado (`Found 627 mutants to test`): no queda ningún mutante sin veredicto, y el
+resumen no nombra supervivientes ni tiempos agotados. Las 46 apariciones de la palabra
+«timeout» en el log son nombres de test (`..._timeout_...`), no veredictos de mutante.
+
+**El mismo veredicto que el gate certificado anterior.** El 2026-11-05, sobre `019b1dfd`, el
+mismo paso midió **627 mutantes: 618 atrapados, 9 inviables**, 0 supervivientes. El alcance no ha
+cambiado (TASK-124 no toca `cognicode-graph-algos`) y el veredicto es el mismo, mutante a
+mutante: el lote de diez no ha abierto ningún agujero nuevo en la cobertura por mutación.
+
+**Por qué el paso de mutantes es en serie, y no una decisión de gusto.** `cargo-mutants` 27.1.0
+comparte **un único** árbol copiado entre todos sus trabajadores y lo muta **sin cerrojo**
+(`lab.rs`: `apply` → `build` → `test` → `revert`). Medido el 2026-11-05: una corrida en paralelo
+con ocho trabajadores reportó **siete** supervivientes en `god_nodes.rs`, y los diez mutantes
+de ese fichero salen **atrapados** medidos de uno en uno; la misma corrida también reportó un
+número de mutantes inviables que cambió entre corridas (1, 2, 4) sobre el mismo árbol. El
+veredicto del gate es por mutante, y un veredicto que puede venir de la mutación de otro
+trabajador no es una certificación. El detalle, con el código de la herramienta y los plantados
+del contrato, está en el recibo de TASK-131.
+
+**El coste, dicho con la cifra.** 55 minutos de paso de mutantes (frente a los 57 del gate
+anterior): se pagan ~627 reconstrucciones de un crate y ~627 corridas de su suite, de una en
+una. Es el precio de una medición atribuible, y el lote de diez lo paga una vez.
+
+**Lo que este gate NO dice (y no se presenta como si lo dijera).**
+
+- **Los contratos de Python no están en el gate.** `scripts/ci/run-all-contracts.sh` es otra
+  cosa: se corrió aparte y dejó **un rojo, previo a este lote**: `test_roadmap_version_ratchet.py`
+  pide que el snapshot de `docs/roadmap/CURRENT.md` no cite un SHA de más de 5 commits de
+  distancia, y cita `0eeffa1754c8`, que en el momento de la medición estaba 45 commits atrás.
+  Mide estado de git y un documento que este lote no toca; el snapshot se regeneró por última
+  vez en TASK-119 y tiene su propia unidad.
+- **El alcance de mutación es un crate.** `cognicode-graph-algos` es lo único que se muta, por
+  coste; `cognicode-core` (217k líneas), `cognicode-explorer` (65k) y `cognicode-mcp` quedan
+  fuera, con el motivo escrito en el propio script. Por eso el gate **no** puede afirmar nada
+  sobre la cobertura por mutación del core.
+- **El techo de memoria vive sólo en este paso.** `scripts/mem-capped-runner.sh` acota a 2 GiB
+  el binario de test del paso de mutantes, y el presupuesto (techo × trabajos ≤ 16 GiB) lo fija
+  `scripts/ci/test_mutant_memory_budget.py`. Las corridas focales que se hacen a mano —la
+  «mirada» a un fichero que recomienda `AGENTS.md`— no llevan ese techo: medido el 2026-11-05 a
+  las 19:40, el OOM-killer del kernel mató un binario de `cognicode-core` de **37 GB de RSS**
+  (67 GB virtuales) y en la misma pasada se llevó `coredns`, `java`, `tini`, `python` y
+  `local-path-prov`, que no son de este repositorio. Ese hueco —una corrida de mutación sin
+  techo— tiene su propia unidad.
+
+**Entrega.** Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta medición es de Claude Code. El hook `commit-msg` del
+repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este
+repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook
+rechaza.
