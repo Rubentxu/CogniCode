@@ -34,7 +34,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::domain::value_objects::{SymbolKind, published_column, published_line};
+use crate::domain::value_objects::{MermaidFormat, SymbolKind, published_column, published_line};
 
 pub use crate::domain::traits::code_intelligence::ReferenceKind;
 pub use crate::infrastructure::graph::SymbolLocation;
@@ -574,7 +574,15 @@ pub enum GraphResult {
         path: String,
         diagram: String,
         diagram_len: usize,
+        /// The name the command published for the format that was asked
+        /// for. It is the name the user wrote, and the published
+        /// document keeps it.
         format: String,
+        /// The format the graph publishes. It is not part of the
+        /// published document: the name above is what the command
+        /// published, and this is what the presenter branches on.
+        #[serde(skip)]
+        resolved_format: MermaidFormat,
         truncated: bool,
         elapsed_ms: u128,
     },

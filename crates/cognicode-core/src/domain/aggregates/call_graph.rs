@@ -11,7 +11,7 @@ use std::path::Path;
 use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
 use crate::domain::services::{ConfidenceRules, ExtractionContext};
-use crate::domain::value_objects::{DependencyType, Provenance, SymbolCount};
+use crate::domain::value_objects::{DependencyType, MermaidFormat, Provenance, SymbolCount};
 
 /// Represents a call entry in traversal results
 ///
@@ -43,13 +43,27 @@ pub struct MermaidOptions {
     pub root: Option<String>,
     /// Maximum depth for traversal when root is provided (default: 3)
     pub max_depth: u8,
-    /// Theme for SVG rendering (used when format is "svg")
+    /// Theme for the rendered diagram. A theme asks for the drawing, and
+    /// the format is resolved with it.
     pub theme: Option<String>,
-    /// Output format: "code" or "svg" (default: "code")
-    pub format: Option<String>,
+    /// The format the diagram is published in. The vocabulary of the
+    /// diagram is the domain's: a name the graph cannot publish never
+    /// reaches this field, because the field does not hold names.
+    pub format: Option<MermaidFormat>,
     /// Only the symbols whose file path contains this substring are
     /// exported. `None` exports every symbol.
     pub module_filter: Option<String>,
+}
+
+impl MermaidOptions {
+    /// The format the diagram is published in.
+    ///
+    /// A theme asks for the rendered diagram, and the rule lives with the
+    /// vocabulary: a surface that asks for the diagram does not have to
+    /// know that a theme is what turns the source into a drawing.
+    pub fn effective_format(&self) -> MermaidFormat {
+        MermaidFormat::resolve(self.format, self.theme.is_some())
+    }
 }
 
 /// A directed graph representing call dependencies between symbols

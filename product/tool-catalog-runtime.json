@@ -1058,7 +1058,12 @@
     "inputSchema": {
       "properties": {
         "format": {
-          "description": "Output format: \"code\" (default, returns mermaid source) or \"svg\" (renders to SVG).\nIf omitted and theme is provided, defaults to \"svg\".",
+          "description": "The format the diagram is published in: `code` returns the Mermaid\nsource, `svg` renders the diagram. If omitted and a theme is\nprovided, the rendered diagram is published.",
+          "enum": [
+            "code",
+            "svg",
+            null
+          ],
           "type": [
             "string",
             "null"

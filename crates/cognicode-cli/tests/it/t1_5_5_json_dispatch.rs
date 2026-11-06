@@ -47,7 +47,7 @@ use cognicode_cli::presenter::test_helpers::outline_node;
 use cognicode_cli::presenter::{
     present_graph_result_json, present_index_result_json, present_output,
 };
-use cognicode_core::domain::value_objects::SymbolKind;
+use cognicode_core::domain::value_objects::{MermaidFormat, SymbolKind};
 use cognicode_core::interface::cli::commands::Format;
 use cognicode_core::interface::cli::result::PublishedLocation;
 use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, IndexResult};
@@ -296,11 +296,21 @@ fn json_graph_mermaid_shape() {
         diagram: "graph TD\n  a-->b".to_string(),
         diagram_len: 16,
         format: "txt".to_string(),
+        resolved_format: MermaidFormat::Code,
         truncated: false,
         elapsed_ms: 5,
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "mermaid");
+    // The published document carries the name the command published. The
+    // format the graph publishes is not part of it: the consumer of this
+    // document reads the name it asked for.
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["format"], "txt");
+    assert!(
+        v.get("resolved_format").is_none(),
+        "the published document grew a field it never published: {out:?}"
+    );
 }
 
 #[test]

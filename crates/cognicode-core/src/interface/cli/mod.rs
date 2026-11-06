@@ -4,6 +4,8 @@ pub mod analyzer;
 pub mod capabilities;
 pub mod commands;
 pub mod doctor;
+/// The names the command line publishes for the formats of the graph.
+pub mod mermaid_format;
 /// The project's graph, from the same authority the MCP uses.
 pub mod project_graph;
 // CU-1.3 — presentadores puros AnalysisOutcome → GraphResult N−1.

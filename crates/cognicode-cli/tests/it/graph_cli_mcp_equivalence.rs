@@ -25,7 +25,7 @@
 use crate::common;
 
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
-use cognicode_core::domain::value_objects::published_line;
+use cognicode_core::domain::value_objects::{MermaidFormat, published_line};
 use cognicode_core::interface::coverage::{PendingReason, PendingReferenceInfo};
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_analyze_impact, handle_build_graph,
@@ -868,7 +868,7 @@ async fn mcp_mermaid(dir: &Path) -> Value {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: None,
         },
     )

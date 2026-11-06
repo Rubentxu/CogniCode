@@ -148,6 +148,7 @@ mod the_graph_is_rebuilt_only_where_it_changed;
 mod the_graph_over_real_code_answers;
 mod the_identity_the_product_writes_is_the_one_it_reads;
 mod the_index_tool_only_offers_strategies_that_index;
+mod the_mermaid_tool_only_offers_formats_it_can_publish;
 mod the_product_observes_one_set_of_files;
 mod the_product_publishes_the_name_a_symbol_carries;
 mod the_published_arguments_are_the_declared_ones;

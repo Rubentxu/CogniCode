@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::application::dto::ReadMode;
+use crate::domain::value_objects::MermaidFormat;
 use crate::interface::symbol_identity::Precision;
 
 // Re-export types from dto for MCP protocol use
@@ -577,9 +578,10 @@ pub struct ExportMermaidInput {
     /// solarized-dark, one-dark, zinc-dark. Default when rendering: tokyo-night-light.
     pub theme: Option<String>,
 
-    /// Output format: "code" (default, returns mermaid source) or "svg" (renders to SVG).
-    /// If omitted and theme is provided, defaults to "svg".
-    pub format: Option<String>,
+    /// The format the diagram is published in: `code` returns the Mermaid
+    /// source, `svg` renders the diagram. If omitted and a theme is
+    /// provided, the rendered diagram is published.
+    pub format: Option<MermaidFormat>,
 
     /// Filter symbols by file path substring match (case-sensitive).
     /// Only symbols whose source file path contains this substring will be included.

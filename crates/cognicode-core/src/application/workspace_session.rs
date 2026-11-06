@@ -34,6 +34,7 @@ use crate::domain::traits::code_verifier::CodeVerifier;
 use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
+use crate::domain::value_objects::MermaidFormat;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::file_time::measured_seconds;
@@ -1046,7 +1047,7 @@ impl WorkspaceSession {
     /// Export the call graph as Mermaid diagram
     pub async fn export_mermaid(
         &self,
-        _format: &str,
+        format: &str,
         theme: Option<&str>,
         root: Option<&str>,
         module_filter: Option<&str>,
@@ -1055,11 +1056,17 @@ impl WorkspaceSession {
 
         let graph = self.require_graph()?;
 
+        // A name the graph cannot publish is a refusal, not a diagram
+        // in a format nobody asked for.
+        let format = format
+            .parse::<MermaidFormat>()
+            .map_err(WorkspaceError::InvalidInput)?;
+
         let options = crate::domain::aggregates::call_graph::MermaidOptions {
             root: root.map(|s| s.to_string()),
             max_depth: 3, // default depth
             theme: theme.map(|s| s.to_string()),
-            format: Some(_format.to_string()),
+            format: Some(format),
             // The filter was accepted and dropped. The renderer knows how
             // to honour it now, so it is honoured.
             module_filter: module_filter.map(|s| s.to_string()),

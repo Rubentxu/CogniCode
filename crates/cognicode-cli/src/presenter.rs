@@ -685,7 +685,8 @@ pub fn present_graph_mermaid(
         path: _,
         diagram,
         diagram_len,
-        format,
+        format: _,
+        resolved_format,
         truncated,
         elapsed_ms,
     } = result
@@ -700,13 +701,16 @@ pub fn present_graph_mermaid(
         writeln!(w)?;
         writeln!(w, "Mermaid diagram ({} chars):", diagram_len)?;
         writeln!(w)?;
-        // Format-specific block.
-        match format.as_str() {
-            "svg" | "png" => {
+        // Format-specific block. The format is the graph's: the
+        // command resolved the name the user wrote into the format
+        // the graph publishes, and the presenter does not compare
+        // names.
+        match resolved_format {
+            cognicode_core::domain::value_objects::MermaidFormat::Svg => {
                 writeln!(w, "Note: SVG/PNG export requires mermaid-cli")?;
                 writeln!(w, "Run: cat << 'EOF' | mermaid -s\n{}\nEOF", diagram)?;
             }
-            _ => {
+            cognicode_core::domain::value_objects::MermaidFormat::Code => {
                 // The 'truncated' flag drives whether we
                 // show the full diagram or the
                 // 2000-char + 'truncated' notice. The data
