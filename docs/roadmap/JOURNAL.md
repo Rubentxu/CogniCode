@@ -36764,3 +36764,140 @@ habría dejado a seis. Este recibo es su propio PR.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-56: el reindex incremental dice lo que costó
+
+**El encargo.** CQA-F3.W4: «Observar coste real de rebuild incremental». La unidad
+responde a tres preguntas: qué publica la operación, cuánto cuesta en cada forma y qué
+palabra nombra cada rebuild. El plan de la unidad fija las decisiones que se tomaron
+(vocabulario en la capa de aplicación, percentiles de la sesión, coste publicado
+siempre); este recibo dice lo que se midió.
+
+**El hueco, medido leyendo el árbol.**
+
+| Dónde | Qué pasaba |
+|---|---|
+| `handle_reparse_on_edit` | Publicaba `files_parsed`, `files_skipped`, `files_removed`, `symbols_added`, `symbols_removed`, `symbols_unmeasured`, `graph_updated` y un `analysis_time_ms` —el tiempo del análisis, medido ANTES del rebuild—. El trabajo que hay detrás se reparte en cinco fases —leer el estado, establecer la identidad de cada fichero, reinterpretar, escribir en el índice, reconstruir el grafo— y el producto publicaba una sola suma: un consumidor que quisiera saber si el rebuild incremental merece la pena no tenía con qué responder. |
+| La identidad del fichero | El handler decidía qué fichero había cambiado comparando el reloj con el del manifiesto. El manifiesto decide por el CONTENIDO y el reloj es sólo una pista —la misma regla que sigue la frescura del snapshot, `is_manifest_stale`—, así que un fichero cuyos bytes habían cambiado bajo un reloj intacto se saltaba en silencio. |
+| La instrumentación | `ToolMetrics` no tenía ningún contador del reparse: la operación no era observable fuera de su propia respuesta. |
+
+**Qué cambia.**
+
+- **El coste se publica SIEMPRE.** `ReparseOnEditOutput` gana `cost` (`ReparseCost`): las
+  fases que corrieron y cuánto tardó cada una, los ficheros que tocó y los que consideró,
+  la memoria alta del proceso y los percentiles de las operaciones de la sesión.
+- **Cada fase se mide donde ocurre.** `scan` (el manifiesto y el sello de cada ruta
+  candidata), `hash` (la identidad de cada candidato), `parse` e `index` (el tiempo de
+  leer y el de escribir, separados: `index_file_from_path_timed`) y `graph` (el rebuild).
+  Una fase que no corrió no aparece en la lista: no tiene duración que publicar.
+- **La palabra la decide el producto.** `rebuild_kind_of` la deriva de
+  `GraphCoverageMetrics` —`parsed_files` contra `total_source_files`— y no de una etiqueta
+  escrita junto a la llamada: `cache_hit`, `full`, `partial`, `error`. El vocabulario vive
+  en la capa de aplicación (`application::reparse_cost`), no en la del MCP: son palabras
+  del producto, y el plan de la unidad las situaba en la del MCP —que es donde la capa de
+  aplicación no las puede alcanzar sin invertir la dependencia—.
+- **La identidad se establece por el contenido.** El reloj queda como lo que es —una
+  pista— y el hash del contenido es la autoridad, con la misma función
+  (`content_matches_manifest`) que usa la frescura del snapshot.
+- **Los percentiles son de la sesión.** La ventana (`CostWindow`) recuerda las últimas 64
+  operaciones de la sesión y publica `sample_size`; con menos de dos observaciones los
+  percentiles son `null`, porque una sola medición no es una distribución.
+- **La instrumentación es la que ya existía.** `ToolMetrics` gana
+  `cognicode.reparse.phase_ms` (histograma) y `cognicode.reparse.calls` (contador), y un
+  `tracing::info!` publica el rebuild y sus números. En modo deshabilitado —sin colector
+  de métricas— el coste se publica igual: lo que se apaga es el REGISTRO, no la respuesta.
+
+**Lo que NO cambia para el consumidor.** `analysis_time_ms` sigue significando lo que
+significaba —el tiempo del análisis, medido antes del rebuild— y los siete campos de
+siempre se publican igual. La forma publicada gana un campo; no cambia ninguno.
+
+**La prueba.** `crates/cognicode-core/tests/it/the_reparse_says_what_it_cost.rs` (373
+líneas): siete casos, con las aserciones sobre el JSON que ve el cliente y no sobre el
+campo tipado —así el test compila contra el código anterior y falla por el motivo
+correcto: el documento no lo dice—.
+
+| Caso | Qué mide |
+|---|---|
+| `a_reparse_that_changes_nothing_is_a_cache_hit` | el documento dice `cache_hit`, las fases son `scan` y `hash`, y los ficheros afectados son 0 |
+| `a_reparse_that_changes_one_file_reuses_the_rest` | el documento dice `partial`, corrieron las cinco fases y el fichero afectado es 1 |
+| `a_reparse_over_a_cold_session_rebuilds_everything` | sin caché previa el rebuild es `full` |
+| `the_published_cost_carries_no_path` | el coste no lleva ni el camino del árbol ni el nombre de un fichero |
+| `the_percentiles_need_more_than_one_operation` | con una operación no hay percentiles; con dos los hay, y la mediana no está por encima del percentil 95 |
+| `the_peak_memory_is_published_when_the_platform_knows_it` | en Linux la memoria alta es un número, y donde la plataforma no la publica es una ausencia |
+| `every_published_phase_is_one_the_product_runs` | cada fase publicada es una de las cinco, con tiempo medido, y en orden |
+
+**RED medido antes de tocar el código: 7 de 7 rojo** —el documento publicado no tenía
+clave `cost`—; después, **7 de 7 verde**. El RED se midió revirtiendo el código de
+producción a `HEAD` —copia a `/tmp`, `git show HEAD:<ruta>`, comparación byte a byte y
+restauración byte a byte— y dejando sólo el fichero nuevo y su registro. La primera
+medición dio 6 de 7 porque una de las aserciones comprobaba una AUSENCIA y por eso
+pasaba contra el código viejo; se corrigió para que sea testigo del defecto —el
+documento no dice lo que costó— y el RED se volvió a medir entero.
+
+**El benchmark (AC#2).** `crates/cognicode-core/benches/reparse_benchmarks.rs` —
+Criterion, el que ya usa el repo. NO lo corre el gate: un benchmark se pide a propósito.
+Corpus generado, determinista y nunca versionado; tres formas —nada cambió, un fichero,
+un cuarto del árbol— sobre dos tamaños —12 y 120 ficheros—; y antes de medir comprueba
+que el rebuild que va a medir es el que dice medir: un benchmark que midiese un acierto
+de caché anunciando un rebuild parcial sería un número sobre el trabajo equivocado.
+
+MEDIDO (esta máquina, `cargo bench -p cognicode-core --bench reparse_benchmarks`):
+
+| Workspace | Forma | Tiempo |
+|---|---|---|
+| 12 ficheros | nada cambió (`cache_hit`) | 51,9 µs |
+| 12 ficheros | un fichero cambió (`partial`) | 1,01 ms |
+| 12 ficheros | 3 ficheros cambiaron (`partial`) | 1,14 ms |
+| 120 ficheros | nada cambió (`cache_hit`) | 88,0 µs |
+| 120 ficheros | un fichero cambió (`partial`) | 4,95 ms |
+| 120 ficheros | 30 ficheros cambiaron (`partial`) | 7,69 ms |
+
+Lo que dice la medición: el coste que crece con el árbol es el del REBUILD, no el del
+parseo —reconstruir un solo fichero cuesta 4,95 ms en el árbol de 120 y 1,01 ms en el de
+12, y 29 ficheros más sólo suman 2,74 ms—. El AC#3 pide que ninguna optimización se
+autorice sin umbral medido: esta unidad deja la MEDICIÓN, no el umbral.
+
+**Verificación (medida, no afirmada).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo test -p cognicode-core --lib` | rc=0, 2575 pasan |
+| `cargo test -p cognicode-core --test it` | rc=0, 1001 pasan, 2 saltados |
+| `cargo test -p cognicode-mcp` | rc=0, 88 pasan |
+| `cargo test -p cognicode-cli --tests` | rc=0, 640 pasan, 1 saltado |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | rc=0 |
+| `cargo fmt --all --check` | rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, 312 comprobaciones |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — el fichero que no puede crecer encoge: 2569 → 2399 |
+| `python3 scripts/ci/test_roadmap_version_ratchet.py` | OK |
+| gate completo (3.º paso: mutantes) | **NOT_RUN** — el gate se paga por lotes de diez tareas |
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: el tercer paso (mutantes) es **NOT_RUN**. No
+  es que se saltara: el gate se paga por lotes de diez tareas, no por tarea.
+- No dice que el SDK ni el Explorer cambien: `reparse_on_edit` es una herramienta del MCP, y
+  no hay superficie publicada de reindex en la CLI ni en el Explorer (`reparse` no aparece
+  en `crates/cognicode-cli/src` ni en `apps/explorer-ui/src`). El
+  `incremental_reindex` de `WorkspaceSession` no lo llama nadie fuera de sus propios tests,
+  así que no es una segunda superficie del mismo contrato.
+- No dice que `analysis_time_ms` sea el coste total: sigue siendo el tiempo del análisis,
+  medido antes del rebuild. El coste total es `cost.total_ms`.
+- No dice que el percentil sea del árbol: es de la sesión, y una ventana global mezclaría
+  workspaces.
+- No dice que en modo deshabilitado se mida menos: el coste se publica siempre; lo que se
+  apaga sin colector es el registro OTel.
+- No dice que la medición del benchmark sea del producto real: es sobre un corpus sintético,
+  en esta máquina. Los dos costes medidos —1,01 ms y 4,95 ms— quedan por debajo de los
+  20 ms que el catálogo declara para la herramienta, pero un corpus sintético no es un
+  repositorio real.
+- No dice que la frescura de `is_manifest_stale` cambie: la freshness sigue siendo la misma
+  regla; lo que cambia es que el reparse la consulta también.
+
+**Entrega.** PR #652 → `5e6775c9`. El snapshot operativo se regeneró en el PR #653 →
+`c3404a35`, porque el ratchet del snapshot acepta cinco commits de deriva y este ciclo lo
+habría dejado a seis. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
