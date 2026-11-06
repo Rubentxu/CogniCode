@@ -64,9 +64,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # A failing test, as nextest prints it:
-#     FAIL [   0.005s] cognicode-core application::services::x::tests::y
+#     FAIL [   0.005s] ( 471/3606) cognicode-core application::services::x::tests::y
+#
+# The counter between the time and the binary is the progress of the run,
+# and it is optional: it is there when the runner prints the progress and
+# gone when it does not.
 FAIL_LINE = re.compile(
-    r"^\s*(?:TRY\s+\d+\s+)?FAIL\s+\[\s*[\d.]+s\]\s+(\S+)\s+(\S+)\s*$"
+    r"^\s*(?:TRY\s+\d+\s+)?FAIL\s+\[\s*[\d.]+s\]\s*(?:\(\s*\d+/\d+\)\s*)?(\S+)\s+(\S+)\s*$"
 )
 
 # The declaration of a function: `fn name`, `pub fn name`, `async fn name`.
@@ -416,8 +420,17 @@ def head_sha() -> str:
 
 
 def tree_is_dirty() -> bool:
+    """Whether the tracked tree is modified.
+
+    The untracked files do not count: a file that nobody committed is not a
+    change to the code that was measured, and a measurement that calls a
+    dirty tree dirty because of an untracked file says nothing useful.
+    """
     proc = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=REPO_ROOT, capture_output=True, text=True
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
     )
     return bool(proc.stdout.strip())
 
