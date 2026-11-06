@@ -13,12 +13,12 @@ use crate::interface::mcp::handlers::{BuildGraphOutput, SkippedFileDto};
 
 /// Presenta un outcome de `graph.full` como `BuildGraphOutput`.
 ///
-/// `loaded_from_cache` reproduce la semántica "unknown" del handler
-/// actual: servido de caché sin walk en ESTA llamada.
-pub fn present_build_graph(
-    outcome: &AnalysisOutcome<AnalysisValue>,
-    loaded_from_cache: bool,
-) -> BuildGraphOutput {
+/// La palabra la nombra el estado y sólo el estado: el presentador no
+/// decide. Una respuesta servida de la caché es la MISMA respuesta que la
+/// construida en frío —la cobertura se comprobó contra el árbol de ahora—,
+/// así que se publica con la misma palabra; el handler vivo ya la publicaba
+/// así, y este módulo era la segunda respuesta al mismo caso.
+pub fn present_build_graph(outcome: &AnalysisOutcome<AnalysisValue>) -> BuildGraphOutput {
     let (symbols, relationships, pending, rejected) = match outcome.value() {
         Some(AnalysisValue::Graph(crate::application::analysis_basis::GraphValue::Full {
             symbols,
@@ -66,9 +66,6 @@ pub fn present_build_graph(
                     .collect::<Vec<_>>(),
             ),
         ),
-        OutcomeState::Complete if loaded_from_cache => {
-            (OutcomeState::Unknown.published_label().to_string(), None)
-        }
         OutcomeState::Complete => (
             OutcomeState::Complete.published_label().to_string(),
             Some(Vec::new()),
