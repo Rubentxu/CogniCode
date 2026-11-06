@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `41b855fa351188a59a5565c946dfeaaee6571c78` (la
+> **Snapshot**: 2026-11-06, sobre `5235eacb79b3cf31e50105511dc504939b4e0310` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -225,26 +225,38 @@
 > sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, con cinco controles que
 > lo sostienen —el ruido del contrato medido antes de escribirlo: 31 casos a nivel de párrafo,
 > 14 a nivel de frase con tablas, y **1** a nivel de frase sin ellas—;
+> y el goal ya es un concepto con un dueño: el registro
+> (`interface::goals::GoalSpec`) declara **una vez** el nombre, el título, la
+> descripción con ejemplos, la autoridad, la fase mínima, el dueño y los
+> argumentos de un goal, y de esa declaración salen las cuatro superficies por
+> las que un consumidor lo ve —el `inputSchema` que el MCP publica, el comando
+> clap, la entrada del maestro y la ayuda—; el primero montado es `status`,
+> que dice qué ofrece el build y qué se ve del workspace, y los argumentos los
+> declara el struct que los lee, así que el flag de la terminal y el campo del
+> cable son el mismo argumento con dos nombres; medido: el catálogo pasa de 78
+> a 79 tools **sin retirar ninguna**, y la captura del runtime —regenerada con
+> el binario de tres features— coincide byte a byte con la que ya lo traía; y
+> AC2 —los 78 nombres antiguos registrados como alias con aviso de
+> deprecación— **sigue abierta**, porque un alias traduce un nombre a un goal
+> y el vocabulario de los nueve goals es TASK-84: lo que esta unidad entrega
+> es el mecanismo y el primer goal montado;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`e518823c` → `41b855fa351188a59a5565c946dfeaaee6571c78`)
+## Qué cambió desde el snapshot anterior (`41b855fa` → `5235eacb79b3cf31e50105511dc504939b4e0310`)
 
-Entre una punta y otra entraron **6 commits** (`git rev-list --count e518823cbfc667cd3f3a7c99ed0664e0747cdff5..41b855fa351188a59a5565c946dfeaaee6571c78`).
+Entre una punta y otra entraron **3 commits** (`git rev-list --count 41b855fa351188a59a5565c946dfeaaee6571c78..5235eacb79b3cf31e50105511dc504939b4e0310`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El recibo de TASK-142 | `ab08c7a6` (TASK-142) | El recibo append-only de la unidad que acota el gate al lote, con la comparación de las dos suites sobre el mismo lote. |
-| El entorno de compilación está declarado | `e518823c` (TASK-76) | El perfil, el linker del host y la caché de compilación viven en la configuración global de cargo de la máquina, porque en el workspace no pueden: un `[profile.test]` ahí invalidaría la caché compartida. Con `debug = "line-tables-only"` en vez de `debug = 1`, el trabajo del compilador baja a la mitad: el build en frío pasa de 746,75 s a 370,40 s de CPU y la reconstrucción del core de 482,15 s a 300,99 s, medido en series alternadas antes/después con la máquina compartida. `mold` queda declarado como linker del host (0,77 s frente a 0,94 s de `lld` sobre los mismos objetos) y `sccache` activo, con su tasa de aciertos visible y su límite dicho: no cachea los binarios. |
-| El recibo de TASK-76 | `9fa7d525` (TASK-76) | El recibo append-only de la unidad que declaró el entorno de compilación, con las series alternadas antes/después y la lista de lo que la cifra **no** dice. |
-| El impacto nombra los tests que alcanza | `b229cdcd` (TASK-86) | La faceta `affected_tests` en la respuesta del impacto —MCP, CLI y sesión de workspace—, con el comando exacto que corre cada test, y el lector como único que puede decir qué es un test. La recall se midió contra la ejecución completa del paquete, con el contrato del símbolo roto: **70,0 %** en `mark_as_test` y **28,6 %** en `find_all_symbols_with_path`, sobre `a68bfbc8`, con las nueve faltas nombradas una a una. La selección **ordena** y no se promueve a filtro. |
-| El comando de medición lee lo que el runner escribe | `96088fac`, `a68bfbc8` (TASK-86) | Los dos defectos que la propia medición destapó en el comando: el lector no entendía el contador del progreso de la línea de fallo, y la buscase en stdout cuando `nextest` escribe todo en stderr. Con ellos, la primera medición publicaba «reached 0» —un oráculo vacío— como si fuera una cifra. |
-| El recibo de TASK-86 | `1f3d11ec` (TASK-86) | El recibo append-only de la unidad que dio al impacto la faceta `affected_tests`, con la recall medida en dos cifras y sus nueve faltas nombradas. |
 | La nota 2 cita el ADR que existe | `41b855fa` (TASK-129) | El ROADMAP ya no declara retirado un documento que sigue en el árbol: la nota 2 de §11.1 mandaba a leer el recibo del `JOURNAL` porque la poda documental se había llevado `docs/adr/ADR-D1-006-uat-retirement.md`, y ese fichero está en el árbol con la decisión aceptada dentro. Medido: `git log --all --diff-filter=D` no registra su baja, PR #399 (`97259133`) borró seis ficheros y ninguno era este, y los dos SHAs que la nota citaba no viven en `main` (el que vive es `4996246e`). Un contrato nuevo vigila la clase —una ruta que el ROADMAP declara retirada no puede seguir en el árbol—, con el RED medido sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, y con el ruido del propio contrato medido antes de escribirlo: 31 casos a nivel de párrafo, 14 a nivel de frase con tablas y **1** a nivel de frase sin ellas. |
+| El recibo de TASK-129 | `9abaaef5` (TASK-129) | El recibo append-only de la unidad que corrigió la nota 2 del ROADMAP, con el RED del contrato medido sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, con el ruido del propio contrato medido antes de escribirlo, y con la lista de lo que el contrato **no** comprueba. |
+| La corrección de la nota de operación de TASK-129 | `490dba41` (TASK-129) | La nota de operación del recibo anterior decía que el `fetch` de `main` volvía a funcionar; medido, **seguía bloqueado**, porque el hook juzga la referencia y los commits que la referencia trae. La corrección dice lo que sí funciona —apuntar la rama local a la punta— y deja escrito que `main` no se reescribe, con las dos salidas que quedan y la regla que sale de ahí: **contar la cabecera del `--subject` de `gh pr merge --squash` con el sufijo ` (#NNN)` dentro del presupuesto, ANTES de fusionar**. |
+| El goal se declara en un solo sitio | `5235eacb` (TASK-82) | El registro de goals declara **una vez** el nombre, el título, la descripción con ejemplos, la autoridad, la fase mínima, el dueño y los argumentos de un goal, y de esa declaración salen las cuatro superficies por las que un consumidor lo ve: el `inputSchema` del MCP, el comando clap, la entrada del maestro y la ayuda. El primero montado es `status`. Medido: el catálogo pasa de **78 a 79 tools sin retirar ninguna**, la captura del runtime —regenerada con el binario de tres features— coincide byte a byte con la que ya lo traía, y un build por defecto publica **74** tools (antes 73). El RED anti-vacuitad de la suite nueva se midió perturbando el producto: **1 rojo** con el título del maestro perturbado y **2 rojos** con el valor por defecto del struct perturbado; restaurado, 10/10. |
 
 ## Release: la última publicada es la v0.101.30
 
