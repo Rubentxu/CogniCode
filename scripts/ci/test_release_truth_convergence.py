@@ -65,9 +65,11 @@ no haya tres versiones distintas que puedan confundirse entre si.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -657,6 +659,113 @@ def coherence_rc(*args: str) -> tuple[int, str]:
         timeout=120,
     )
     return done.returncode, done.stdout + done.stderr
+
+
+def coherence_rc_in(cwd: Path, *args: str) -> tuple[int, str]:
+    """El gate real, ejecutado en otro repositorio.
+
+    En modo `--from-version` el gate solo necesita una cosa del repositorio
+    donde se ejecuta: el `Cargo.toml` del commit que se le nombra. Eso permite
+    medirlo contra un manifiesto de cualquier tamano sin tocar el arbol.
+    """
+    done = subprocess.run(
+        ["bash", str(COHERENCE), *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def _a_workspace_manifest_bigger_than_a_pipe(repo: Path) -> str:
+    """Un `Cargo.toml` cuyo cuerpo no cabe en una tuberia, y su commit.
+
+    El relleno va DESPUES de la linea de la version: el lector de la tuberia
+    (awk) sale en cuanto ve la version, y lo que venga detras se queda sin
+    leer. Un manifiesto que cabe entero en el búfer de la tuberia no
+    reproduce nada, porque el escritor termina antes de que el lector salga.
+
+    La configuracion de git se neutraliza (como hace el runner de
+    contratos): un repositorio de usar y tirar no puede depender de las
+    reglas de la maquina que lo ejecuta, o el contrato daria un veredicto
+    distinto en cada sitio.
+    """
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+    }
+    repo.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", str(repo)],
+        capture_output=True, text=True, check=True, env=env,
+    )
+    manifest = [
+        "[workspace]",
+        'resolver = "2"',
+        "members = []",
+        "",
+        "[workspace.package]",
+        'version = "9.9.9"',
+        'edition = "2024"',
+        "",
+    ]
+    padding = "# relleno para que el manifiesto no quepa en el bufer de una tuberia\n"
+    manifest.extend(padding * 40_000)
+    (repo / "Cargo.toml").write_text("\n".join(manifest), encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "-A"],
+        capture_output=True, text=True, check=True, env=env,
+    )
+    subprocess.run(
+        [
+            "git", "-C", str(repo),
+            "-c", "user.email=contract@example.invalid",
+            "-c", "user.name=contract",
+            "-c", "commit.gpgsign=false",
+            "commit", "-q", "-m", "chore: fixture",
+        ],
+        capture_output=True, text=True, check=True, env=env,
+    )
+    sha = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True, env=env,
+    ).stdout.strip()
+    return sha
+
+
+def test_the_gate_answers_ok_when_the_manifest_does_not_fit_in_a_pipe() -> None:
+    """El gate del release no puede depender del orden en que se cierra una tuberia.
+
+    MEDIDO 2026-11-06. El gate leia la version del workspace con
+    `printf '%s\\n' "$BLOB" | awk '… {print $2; exit}'`. El `exit` de awk
+    cierra la tuberia de lectura mientras printf puede que todavia este
+    escribiendo; con `set -euo pipefail` el estado de la tuberia pasa a ser
+    141 (SIGPIPE) y el gate sale con 141 en vez de 0.
+
+    Se ve como un rojo intermitente en el contrato
+    `b6_w5_distribution_certification::cp5_release_tag_coherence` de
+    `cognicode-core`: el gate se ejecutaba con un manifiesto de 9 KB (que
+    cabe en el bufer de la tuberia, asi que la carrera no se daba) y fallaba
+    de vez en cuando segun como se encontrara la maquina.
+
+    Aqui la carrera es determinista: el manifiesto del repositorio de la
+    prueba no cabe en ninguna tuberia, asi que printf tiene que escribir en
+    varias veces y el lector se va con la primera. Antes del arreglo, el gate
+    sale con 141; despues, con 0.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        sha = _a_workspace_manifest_bigger_than_a_pipe(repo)
+        rc, output = coherence_rc_in(repo, "--from-version", "9.9.9", sha)
+        assert rc == 0, (
+            "el gate del release sale con "
+            f"{rc} en vez de 0 cuando el manifiesto no cabe en una tuberia:\n{output}"
+        )
+        assert "OK: validate-mode" in output, (
+            f"el gate salio con 0 pero no dijo que el manifiesto era coherente:\n{output}"
+        )
 
 
 def _a_published_tag() -> str:
