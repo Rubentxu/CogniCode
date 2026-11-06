@@ -1,4 +1,4 @@
-//! TASK-49 — la cobertura y su palabra tienen un dueño.
+//! La cobertura publicada tiene un dueño.
 //!
 //! Una respuesta dice dos cosas: QUÉ sabe del árbol y DE QUÉ cobertura
 //! salió. Las dos superficies que responden —la CLI y el MCP— lo dicen
