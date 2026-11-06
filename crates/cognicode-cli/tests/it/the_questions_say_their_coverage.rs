@@ -1,4 +1,4 @@
-//! TASK-49 — las preguntas dicen su cobertura.
+//! Las preguntas dicen la cobertura con la que se respondieron.
 //!
 //! Una pregunta se responde con un grafo, y el grafo puede no cubrir el
 //! árbol entero. Cuando eso pasa, la respuesta tiene que decirlo: un
