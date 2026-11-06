@@ -26,8 +26,11 @@
 
 use super::{published_line, *};
 
-use crate::domain::value_objects::file_time::observed_mtime;
-use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
+// The incremental reindex, and what it costs. It lives here because it
+// is the body of the `reparse_on_edit` tool, and the file it lives in
+// is one that cannot grow.
+#[cfg(feature = "persistence")]
+mod reparse;
 
 // AIX Tool Handlers
 // ============================================================================
@@ -1829,6 +1832,10 @@ pub async fn handle_suggest_context(
 }
 
 /// Handler for reparse_on_edit tool (Phase 3A)
+///
+/// The work, and the measurement of what it cost, live in
+/// `aix_handlers::reparse`. This function is the projection of that
+/// work into the published shape.
 #[cfg(feature = "persistence")]
 #[cognicode_macros::aix_tool(
     name = "reparse_on_edit",
@@ -1840,197 +1847,20 @@ pub async fn handle_reparse_on_edit(
     ctx: &HandlerContext,
     input: ReparseOnEditInput,
 ) -> HandlerResult<ReparseOnEditOutput> {
-    let start = Instant::now();
-
-    // Validate input file paths
-    for path in &input.file_paths {
-        ctx.validator.validate_file_path(path)?;
-    }
-
-    // For reparse_on_edit, we delegate to the workspace session infrastructure.
-    // Since HandlerContext doesn't directly expose WorkspaceSession, we perform
-    // a simplified incremental reindex using the existing graph infrastructure.
-    //
-    // The full implementation would create a WorkspaceSession and call
-    // incremental_reindex() with the specific file_paths. For now, we use
-    // the existing incremental reindex logic via the analysis service.
-
-    // Build manifest for comparison (simplified - full impl would track edit ranges)
-    let store = ctx.get_graph_store();
-    let existing_manifest = store
-        .load_manifest()
-        .map_err(|e| HandlerError::Internal(format!("Failed to load manifest: {}", e)))?
-        .unwrap_or_else(|| {
-            crate::domain::value_objects::file_manifest::FileManifest::new(ctx.working_dir.clone())
-        });
-
-    // Check which files have actually changed using mtime comparison
-    let mut files_parsed = 0;
-    let mut files_skipped = 0;
-    let mut files_removed = 0;
-    let mut symbols_added = 0;
-    let mut symbols_removed = 0;
-    let mut symbols_unmeasured = 0;
-    let mut graph_updated = false;
-    // Track changed absolute paths for graph rebuild
-    let mut changed_abs_paths: Vec<PathBuf> = Vec::new();
-    // The changed files whose symbols have to be counted in the rebuilt
-    // graph. A file that was deleted is not here: it has no symbols left
-    // to count, and its count is settled against the graph as it was.
-    let mut changed_rel_paths: Vec<PathBuf> = Vec::new();
-
-    // The graph as it stands before this call: the baseline the symbol
-    // counts are measured against. A graph that holds no symbols at all
-    // measured nothing, and the counts it would produce are unknown
-    // rather than zero.
-    let baseline_graph = ctx.analysis_service.get_project_graph();
-
-    let observed = input
-        .file_paths
-        .iter()
-        .map(|file_path| {
-            // `join` keeps an absolute path as it is.
-            let full_path = ctx.working_dir.join(file_path);
-            let (exists, mtime) = observed_mtime(std::fs::metadata(&full_path)).map_err(|e| {
-                HandlerError::Internal(format!("Cannot observe file metadata: {e}"))
-            })?;
-            Ok((full_path, exists, mtime))
-        })
-        .collect::<HandlerResult<Vec<_>>>()?;
-
-    for (full_path, file_exists, file_mtime) in observed {
-        let rel_path = full_path
-            .strip_prefix(&ctx.working_dir)
-            .unwrap_or(&full_path)
-            .to_path_buf();
-
-        // Compare with manifest entry
-        let was_in_manifest = existing_manifest.entries.contains_key(&rel_path);
-
-        if !file_exists && was_in_manifest {
-            // File was deleted. The symbols it had are the ones the graph
-            // held of it before this call; a file that is gone holds none.
-            files_removed += 1;
-            let delta = symbol_delta(
-                baseline_graph.symbol_count_for_file(&rel_path),
-                SymbolCount::Measured(0),
-            );
-            symbols_removed += delta.removed();
-            if !delta.is_measured() {
-                symbols_unmeasured += 1;
-            }
-            changed_abs_paths.push(full_path);
-        } else if file_exists {
-            if let Some(entry) = existing_manifest.entries.get(&rel_path) {
-                // Only an unchanged file can be called unchanged, and that
-                // needs both measures to exist and to agree. Without a
-                // date there is nothing to compare, and a file that was
-                // not compared is not a file that did not change: it is
-                // read again.
-                let unchanged = matches!((entry.mtime, file_mtime), (Some(a), Some(b)) if a == b);
-                if unchanged {
-                    // File unchanged
-                    files_skipped += 1;
-                } else {
-                    // File modified - call index_file_from_path to update DashMap and FTS5
-                    files_parsed += 1;
-                    match ctx.semantic_search.index_file_from_path(&full_path) {
-                        Ok(()) => {
-                            // Successfully indexed - symbols will be in DashMap and FTS5.
-                            // How many they are is not published here: it is
-                            // counted in the graph, once it has been rebuilt.
-                            changed_abs_paths.push(full_path);
-                            changed_rel_paths.push(rel_path);
-                        }
-                        Err(e) => {
-                            // Parse failure - log at WARN and count as skipped
-                            tracing::warn!("Failed to index modified file {:?}: {}", full_path, e);
-                            files_skipped += 1;
-                            files_parsed -= 1; // Don't count this as parsed
-                        }
-                    }
-                }
-            } else {
-                // New file - call index_file_from_path to add to DashMap and FTS5
-                files_parsed += 1;
-                match ctx.semantic_search.index_file_from_path(&full_path) {
-                    Ok(()) => {
-                        // Successfully indexed
-                        changed_abs_paths.push(full_path);
-                        changed_rel_paths.push(rel_path);
-                    }
-                    Err(e) => {
-                        // Parse failure - log at WARN and count as skipped
-                        tracing::warn!("Failed to index new file {:?}: {}", full_path, e);
-                        files_skipped += 1;
-                        files_parsed -= 1; // Don't count this as parsed
-                    }
-                }
-            }
-        }
-    }
-
-    let elapsed_ms = start.elapsed().as_millis() as u64;
-
-    // Rebuild call graph if files were actually modified
-    // This ensures the graph stays in sync with FTS5/DashMap after code changes
-    let mut rebuild_succeeded = false;
-    if !changed_abs_paths.is_empty() {
-        tracing::debug!(
-            "Rebuilding call graph for {} changed files in reparse_on_edit",
-            changed_abs_paths.len()
-        );
-
-        // Invalidate file cache so changed files are re-parsed
-        ctx.analysis_service
-            .invalidate_file_cache_for(&changed_abs_paths);
-
-        // Rebuild the project graph to reflect the changes
-        match ctx
-            .analysis_service
-            .build_project_graph_async(&ctx.working_dir)
-            .await
-        {
-            Ok(()) => rebuild_succeeded = true,
-            Err(e) => {
-                tracing::warn!("Failed to rebuild call graph in reparse_on_edit: {}", e);
-                // Don't fail the whole operation - FTS5/DashMap are already updated
-            }
-        }
-        graph_updated = rebuild_succeeded;
-    }
-
-    // The symbols of the changed files, counted in the rebuilt graph. When
-    // the graph could not be rebuilt there is no "after" to count against,
-    // and the change is unknown rather than zero.
-    if rebuild_succeeded {
-        let rebuilt_graph = ctx.analysis_service.get_project_graph();
-        for rel_path in &changed_rel_paths {
-            let delta = symbol_delta(
-                baseline_graph.symbol_count_for_file(rel_path),
-                rebuilt_graph.symbol_count_for_file(rel_path),
-            );
-            symbols_added += delta.added();
-            symbols_removed += delta.removed();
-            if !delta.is_measured() {
-                symbols_unmeasured += 1;
-            }
-        }
-    } else {
-        symbols_unmeasured += changed_rel_paths.len();
-    }
+    let outcome = reparse::run(ctx, &input).await?;
 
     Ok(ReparseOnEditOutput {
-        files_parsed,
-        files_skipped,
-        files_removed,
-        symbols_added,
-        symbols_removed,
-        symbols_unmeasured,
-        graph_updated,
+        files_parsed: outcome.files_parsed,
+        files_skipped: outcome.files_skipped,
+        files_removed: outcome.files_removed,
+        symbols_added: outcome.symbols_added,
+        symbols_removed: outcome.symbols_removed,
+        symbols_unmeasured: outcome.symbols_unmeasured,
+        graph_updated: outcome.graph_updated,
+        cost: outcome.cost,
         metadata: AnalysisMetadata {
-            total_calls: files_parsed + files_skipped + files_removed,
-            analysis_time_ms: elapsed_ms,
+            total_calls: outcome.files_parsed + outcome.files_skipped + outcome.files_removed,
+            analysis_time_ms: outcome.analysis_time_ms,
         },
         _meta: Some(SchemaOverviewMeta {
             estimated_tokens: 50,

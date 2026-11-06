@@ -92,11 +92,8 @@ pub struct AnalysisService {
     /// File cache: maps file path to (mtime, size, content_hash,
     /// facts). The mtime is absent when the filesystem did not report a
     /// time; an absent time is not the epoch, and it does not invalidate
-    /// the entry by itself — the content hash decides.
-    /// F2.W9 + PRF audit H-01. The
-    /// content_hash field is SHA-256 of the file bytes at parse time,
-    /// added in `5ed7f865` (H-01 RED pin) GREEN. This invalidates the
-    /// cache when bytes change while mtime AND size stay the same.
+    /// the entry by itself — the content hash decides, and the hash is
+    /// the SHA-256 of the file bytes at parse time.
     /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
     file_cache: Arc<
         Mutex<
@@ -133,6 +130,14 @@ pub struct AnalysisService {
     /// `None` until somebody measures it: a coverage nobody measured is
     /// not "complete", and the answer says "unknown".
     last_coverage: Mutex<Option<crate::application::services::analyze::Coverage>>,
+    /// What the recent operations of this session cost. The window is
+    /// per session: a percentile over every workspace of a process is a
+    /// percentile over a question nobody asked.
+    ///
+    /// The window is `pub(crate)` because the methods that read and
+    /// write it live in the module that owns the vocabulary of the
+    /// cost; the field itself is not something a caller should touch.
+    pub(crate) reparse_costs: Mutex<crate::application::reparse_cost::CostWindow>,
     /// What the service remembers between builds: what the last one
     /// proved, and how much of it this one kept.
     ///
@@ -223,6 +228,7 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             last_coverage: Mutex::new(None),
+            reparse_costs: Mutex::new(Default::default()),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
             freshness_oracle: std::sync::OnceLock::new(),
@@ -234,19 +240,13 @@ impl AnalysisService {
     /// This allows multiple services (e.g., WorkspaceSession and HandlerContext)
     /// to share the same graph cache, preventing duplicate builds.
     pub fn with_graph_cache(cache: Arc<dyn SharedGraph>) -> Self {
-        Self {
-            complexity_calculator: ComplexityCalculator::new(),
-            cycle_detector: CycleDetector::new(),
-            graph_cache: cache,
-            symbol_index: Mutex::new(None),
-            file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            coverage_metrics: Mutex::new(None),
-            last_build_report: Mutex::new(None),
-            last_coverage: Mutex::new(None),
-            reuse: ReuseState::default(),
-            repository_factory: default_repository_factory(),
-            freshness_oracle: std::sync::OnceLock::new(),
-        }
+        // The fields are listed once, in `new`. A second copy of the
+        // list is a second place where a new field can be forgotten,
+        // and a service that forgets a field is a service that
+        // publishes a different answer depending on how it was built.
+        let mut service = Self::new();
+        service.graph_cache = cache;
+        service
     }
 
     /// The service that asks `oracle` whether the tree it holds is still

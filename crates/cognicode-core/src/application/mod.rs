@@ -84,6 +84,11 @@ pub mod portable_execution;
 // Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
 pub mod program_analysis;
 pub mod services;
+// What an incremental reindex costs, and what kind of rebuild it was.
+// The vocabulary lives here because the words are the product's, not the
+// MCP's: the CLI, the MCP and the SDK publish the same facts about the
+// same work.
+pub mod reparse_cost;
 // e76 WU1 — self-hosting baseline. Composes canonical ingestion
 // primitives; no parallel digest scheme; no I/O on the FS.
 // Gated by `evidence-kernel` because it imports

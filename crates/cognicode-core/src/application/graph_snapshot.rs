@@ -542,8 +542,6 @@ pub fn is_manifest_stale(
     project_dir: &Path,
     files: &[TreeFile],
 ) -> bool {
-    use sha2::{Digest, Sha256};
-
     if !manifest_mtimes_agree(manifest, project_dir, files) {
         return true;
     }
@@ -551,9 +549,6 @@ pub fn is_manifest_stale(
     for file in files {
         let path = &file.path;
         let rel = path.strip_prefix(project_dir).unwrap_or(path);
-        let Some(entry) = manifest.entries.get(rel) else {
-            return true;
-        };
         // Mtime alone is not sufficient. A tool
         // can rewrite the file bytes while keeping the original
         // timestamp (e.g. restoring a backup, partial restore,
@@ -569,16 +564,37 @@ pub fn is_manifest_stale(
         // both sides are absent, the times agree, and the file
         // does not invalidate the snapshot by itself. What decides
         // is the content hash.
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
-            Err(_) => return true,
-        };
-        let on_disk_hash = hex_digest(&Sha256::digest(&bytes));
-        if on_disk_hash != entry.content_hash {
+        if !content_matches_manifest(manifest, rel, path) {
             return true;
         }
     }
     false
+}
+
+/// Whether the file at `path` still has the content the manifest recorded.
+///
+/// The content hash is what decides; the modification time is only a
+/// hint. A file the manifest does not know, and a file that cannot be
+/// read, are not known to be unchanged.
+///
+/// This is the one place that compares a file against what the
+/// manifest says about it, so the freshness of the snapshot and the
+/// decision of an incremental reindex cannot disagree about the same
+/// file.
+pub fn content_matches_manifest(
+    manifest: &crate::domain::value_objects::file_manifest::FileManifest,
+    rel_path: &Path,
+    path: &Path,
+) -> bool {
+    use sha2::{Digest, Sha256};
+
+    let Some(entry) = manifest.entries.get(rel_path) else {
+        return false;
+    };
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    hex_digest(&Sha256::digest(&bytes)) == entry.content_hash
 }
 
 /// Builds a FileManifest for the given project directory.

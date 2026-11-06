@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::application::dto::ReadMode;
+use crate::application::reparse_cost::ReparseCost;
 use crate::domain::value_objects::MermaidFormat;
 use crate::interface::symbol_identity::Precision;
 
@@ -2234,6 +2235,13 @@ pub struct ReparseOnEditOutput {
     pub symbols_unmeasured: usize,
     /// Whether the graph was actually updated
     pub graph_updated: bool,
+    /// What the operation cost.
+    ///
+    /// The phases that ran, the files it acted on, the typical cost of
+    /// the recent operations of this session and what kind of rebuild
+    /// this was. It carries no path and no content: the cost is a fact
+    /// about the work, not about the tree it was done on.
+    pub cost: ReparseCost,
     /// Metadata about the operation
     pub metadata: AnalysisMetadata,
     /// Token estimate for LLM consumption

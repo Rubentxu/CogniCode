@@ -202,3 +202,7 @@ harness = false
 [[bench]]
 name = "b6_w2_reproducible_perf"
 harness = false
+
+[[bench]]
+name = "reparse_benchmarks"
+harness = false

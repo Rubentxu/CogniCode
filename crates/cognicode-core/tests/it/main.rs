@@ -153,6 +153,7 @@ mod the_product_observes_one_set_of_files;
 mod the_product_publishes_the_name_a_symbol_carries;
 mod the_published_arguments_are_the_declared_ones;
 mod the_published_coverage_has_one_owner;
+mod the_reparse_says_what_it_cost;
 mod the_same_project_gives_the_same_communities;
 mod the_same_project_gives_the_same_cycles_and_god_nodes;
 mod the_same_project_gives_the_same_edges;

@@ -192,9 +192,29 @@ fn refresh_peak_memory() {
 /// any failure (non-Linux, sandboxed, parse error). The caller treats
 /// `None` as "no observation" and keeps the previous peak.
 fn read_vm_rss_bytes() -> Option<u64> {
+    read_vm_size_bytes("VmRSS:")
+}
+
+/// The peak resident memory of the process, in bytes.
+///
+/// `VmHWM` is the high-water mark the kernel keeps: the largest
+/// resident set this process has ever had. It is the same magnitude the
+/// server publishes in its diagnostics, and `None` when the platform
+/// does not publish it — an unmeasured peak is not a zero.
+pub fn read_peak_memory_bytes() -> Option<u64> {
+    read_vm_size_bytes("VmHWM:")
+}
+
+/// Read a memory size from `/proc/self/status`, in bytes.
+///
+/// The field is named by the caller: `VmRSS:` for the resident set of
+/// the moment, `VmHWM:` for its high-water mark. Returns `None` on any
+/// failure (non-Linux, sandboxed, parse error): the caller treats
+/// `None` as "no observation".
+fn read_vm_size_bytes(field: &str) -> Option<u64> {
     let text = std::fs::read_to_string("/proc/self/status").ok()?;
     for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("VmRSS:") {
+        if let Some(rest) = line.strip_prefix(field) {
             // Format: "VmRSS:	   12345 kB"
             let mut iter = rest.split_whitespace();
             let value = iter.next()?;

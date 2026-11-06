@@ -38,6 +38,11 @@ pub struct ToolMetrics {
     pub graph_edges: Gauge<u64>,
     /// Graph health score from GraphInsightsService (0.0-100.0)
     pub graph_health_score: Gauge<f64>,
+    /// Time each phase of an incremental reindex took, in milliseconds
+    /// (by phase)
+    pub reparse_phase_ms: Histogram<f64>,
+    /// Incremental reindexes, by the kind of rebuild they were
+    pub reparse_calls: Counter<u64>,
 }
 
 impl ToolMetrics {
@@ -91,6 +96,14 @@ impl ToolMetrics {
             graph_health_score: meter
                 .f64_gauge("cognicode.graph.health_score")
                 .with_description("Graph health score from GraphInsightsService")
+                .build(),
+            reparse_phase_ms: meter
+                .f64_histogram("cognicode.reparse.phase_ms")
+                .with_description("Time each phase of an incremental reindex took")
+                .build(),
+            reparse_calls: meter
+                .u64_counter("cognicode.reparse.calls")
+                .with_description("Incremental reindexes by the kind of rebuild they were")
                 .build(),
         }
     }
@@ -173,6 +186,27 @@ impl ToolMetrics {
         self.graph_symbols.record(symbols, &[]);
         self.graph_edges.record(edges, &[]);
         self.graph_health_score.record(health_score, &[]);
+    }
+
+    /// Records one incremental reindex: what it cost, and what kind of
+    /// rebuild it was.
+    ///
+    /// The phases are recorded one by one, so the histogram of a phase
+    /// is the histogram of that phase and not of the whole operation.
+    pub fn record_reparse(&self, rebuild_kind: &str, phases: &[(&str, f64)]) {
+        for (phase, duration_ms) in phases {
+            self.reparse_phase_ms.record(
+                *duration_ms,
+                &[
+                    KeyValue::new("phase", phase.to_string()),
+                    KeyValue::new("rebuild_kind", rebuild_kind.to_string()),
+                ],
+            );
+        }
+        self.reparse_calls.add(
+            1,
+            &[KeyValue::new("rebuild_kind", rebuild_kind.to_string())],
+        );
     }
 }
 
