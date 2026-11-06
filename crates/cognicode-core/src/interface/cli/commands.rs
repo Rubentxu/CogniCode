@@ -13,6 +13,7 @@ use crate::infrastructure::graph::{
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
 use crate::interface::cli::capabilities::{build_capabilities_doc, format_capabilities_text};
+use crate::interface::cli::mermaid_format;
 use crate::interface::cli::progress::progress_line;
 use crate::interface::cli::result::{
     CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
@@ -521,8 +522,8 @@ pub enum GraphCommand {
         /// File to export (or directory for full graph)
         #[arg(default_value = ".")]
         path: String,
-        /// Output format: svg, png, txt
-        #[arg(long, default_value = "txt")]
+        /// The format the graph publishes the diagram in.
+        #[arg(long, default_value = mermaid_format::DEFAULT, help = mermaid_format::help())]
         format: String,
     },
     /// Get call hierarchy for a symbol
@@ -1302,6 +1303,11 @@ impl CommandExecutor {
                 Ok(final_result)
             }
             GraphCommand::Mermaid { path, format } => {
+                // A name the graph cannot publish is a refusal, and the
+                // refusal names what the command does publish.
+                let requested = format.as_str();
+                let format = mermaid_format::resolve(requested)?;
+
                 let start = Instant::now();
                 // Progress line: the presenter can't reproduce it (the
                 // variant doesn't carry the project path).
@@ -1329,45 +1335,22 @@ impl CommandExecutor {
                     root: None,
                     max_depth: 0,
                     theme: None,
-                    format: Some(format.clone()),
+                    format: Some(format),
                     module_filter: None,
                 };
                 let diagram = AnalysisService::mermaid_diagram(&graph, &options);
                 let mermaid = diagram.code;
+                let diagram_len = mermaid.len();
                 let elapsed = start.elapsed().as_millis();
-                // T1-5.4b: Mermaid variant. T1-5.4h added
-                // the `diagram` field (the presenter needs
-                // the full content to reproduce the
-                // pre-migration text byte-identical).
-                let truncated = format != "svg" && format != "png" && mermaid.len() > 2000;
+                let truncated = format.is_source() && diagram_len > 2000;
                 let result = GR::Mermaid {
                     path: path.clone(),
                     diagram: mermaid,
-                    diagram_len: 0, // filled in below
-                    format: format.clone(),
+                    diagram_len,
+                    format: requested.to_string(),
+                    resolved_format: format,
                     truncated,
                     elapsed_ms: elapsed,
-                };
-                // Fill diagram_len from the diagram itself.
-                let result = if let GR::Mermaid {
-                    path,
-                    diagram,
-                    diagram_len: _,
-                    format,
-                    truncated,
-                    elapsed_ms,
-                } = result
-                {
-                    GR::Mermaid {
-                        path,
-                        diagram_len: diagram.len(),
-                        diagram,
-                        format,
-                        truncated,
-                        elapsed_ms,
-                    }
-                } else {
-                    unreachable!()
                 };
                 // T1-5.4h: text formatting is in the presenter.
                 Ok(result)

@@ -14,6 +14,7 @@ pub mod file_time;
 pub mod language;
 pub mod lexical_path;
 pub mod location;
+pub mod mermaid_format;
 pub mod node_kind;
 pub mod pending_reference;
 pub mod provenance;
@@ -52,6 +53,7 @@ pub use language::{Language, LanguageSymbols, NameRule};
 pub use location::{
     Location, PUBLISHED_COLUMN_BASE, PUBLISHED_LINE_BASE, published_column, published_line,
 };
+pub use mermaid_format::MermaidFormat;
 pub use node_kind::NodeKind;
 pub use pending_reference::{PendingClass, PendingReference};
 pub use provenance::Provenance;

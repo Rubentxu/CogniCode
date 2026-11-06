@@ -27,6 +27,7 @@
 //!     changes a field type (e.g. `String` to `PathBuf`) breaks
 //!     the test before the bin silently gets a different shape.
 
+use cognicode_core::domain::value_objects::MermaidFormat;
 use cognicode_core::interface::cli::result::{
     ComplexityMetrics, DepthBucket, DepthEntry, GraphResult, HotPathEntry, PathHop, SkippedFile,
     SymbolRef,
@@ -245,6 +246,7 @@ fn graph_result_mermaid_serializes_truncated_flag() {
         diagram: "graph TD\n  A --> B".to_string(),
         diagram_len: 18,
         format: "txt".to_string(),
+        resolved_format: MermaidFormat::Code,
         truncated: true,
         elapsed_ms: 40,
     };
@@ -252,6 +254,11 @@ fn graph_result_mermaid_serializes_truncated_flag() {
     assert_eq!(json["kind"], "mermaid");
     assert_eq!(json["diagram_len"], 18);
     assert_eq!(json["format"], "txt");
+    assert!(
+        json.get("resolved_format").is_none(),
+        "the format the graph publishes is not part of the published document: the \
+         consumer of this document reads the name it asked for"
+    );
     assert_eq!(
         json["truncated"], true,
         "truncated flag is a stable signal for consumers"

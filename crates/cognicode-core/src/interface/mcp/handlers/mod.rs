@@ -2342,7 +2342,7 @@ pub async fn handle_export_mermaid(
         root: input.root_symbol.clone(),
         max_depth: input.max_depth,
         theme: input.theme.clone(),
-        format: input.format.clone(),
+        format: input.format,
         module_filter: input.module_filter.clone(),
     };
     let diagram = crate::application::services::analysis_service::AnalysisService::mermaid_diagram(
@@ -2352,9 +2352,9 @@ pub async fn handle_export_mermaid(
     let node_count = diagram.node_count;
     let edge_count = diagram.edge_count;
 
-    let svg = if input.format.as_deref() == Some("svg")
-        || (input.format.is_none() && input.theme.is_some())
-    {
+    // The format is the graph's: a theme asks for the rendered diagram
+    // and the vocabulary decides it, not this surface.
+    let svg = if options.effective_format() == crate::domain::value_objects::MermaidFormat::Svg {
         let theme = input.theme.as_deref().unwrap_or("tokyo-night-light");
         render_mermaid_to_svg(&mermaid_code, theme)
     } else {
@@ -3633,7 +3633,7 @@ mod tests {
         save_durable_snapshot, tmp_path_for,
     };
     use crate::application::services::analysis_service::TreeFile;
-    use crate::domain::value_objects::{SNAPSHOT_SCHEMA, SnapshotKey};
+    use crate::domain::value_objects::{MermaidFormat, SNAPSHOT_SCHEMA, SnapshotKey};
 
     /// Los ficheros del árbol TAL COMO ESTÁ AHORA.
     ///
@@ -4785,7 +4785,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("handlers.rs".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -4832,7 +4832,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: None,
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -4875,7 +4875,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -4913,7 +4913,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("nonexistent_module.rs".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -4954,7 +4954,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: Some("tokyo-night-light".to_string()),
-            format: Some("svg".to_string()),
+            format: Some(MermaidFormat::Svg),
             module_filter: Some("handlers.rs".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -4994,7 +4994,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("handlers.rs".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -5044,7 +5044,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("handlers.rs".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
@@ -5089,7 +5089,7 @@ mod tests {
             max_depth: 3,
             include_external: false,
             theme: None,
-            format: Some("code".to_string()),
+            format: Some(MermaidFormat::Code),
             module_filter: Some("interface/mcp".to_string()),
         };
         let export_result = handle_export_mermaid(&ctx, export_input).await;
