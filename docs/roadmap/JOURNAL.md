@@ -35290,3 +35290,139 @@ cifras.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-137: las superficies que recorren el mapa exterior de símbolos se publican en el mismo orden en cada corrida
+
+**El encargo.** El mapa exterior de símbolos del agregado era un `HashMap`, y el
+recorrido de un hash map difiere por instancia: el mismo proyecto publicaba un
+mapa de proyecto distinto en cada corrida, una lista distinta de símbolos
+afectados por un cambio y una lista distinta de funciones con muchos parámetros.
+
+Medido antes, sobre el dominio del core (6.005 símbolos, 2.063 aristas), dos
+construcciones independientes del mismo proyecto dentro de un mismo proceso, con
+el orden de los llamantes (TASK-135) y el de las dependencias entre módulos
+(TASK-136) ya estables: las TRES superficies difieren en **8 de 8** pares
+(`codebase_map 8/8`, `review_pr 8/8`, `detect_long_parameter_lists 8/8`), y
+`detect_god_functions` coincide 8 de 8 —su `sort_by` por `god_score` es estable y
+en este conjunto no hay empates; con un empate caería en el orden del recorrido—.
+
+**La causa, medida (no supuesta).** `CallGraph::symbols`
+(`domain/aggregates/call_graph.rs:72`) era un `HashMap<SymbolId, Symbol>`, y
+`symbols()` y `symbol_ids()` devolvían iteradores sobre sus valores. De ahí
+salen los tres órdenes:
+
+- la línea `Hot:` de `handle_codebase_map` publica los cinco primeros símbolos
+  del recorrido de `symbol_ids()`;
+- `handle_review_pr` publica `impacted_files` en el orden en que el recorrido
+  encuentra los símbolos del fichero;
+- `handle_detect_long_parameter_lists` publica su lista en el orden del
+  recorrido de `symbols()`.
+
+El radio medido: 55 llamadas a `symbols()`, 29 a `symbol_ids()` y 79 a
+`get_symbol()`.
+
+**Lo que entrega ahora.** El mapa exterior de símbolos pasa a
+`BTreeMap<SymbolId, Symbol>`: los símbolos salen por identidad, y toda lista
+publicada desde ese recorrido sale igual en cada corrida. El agregado
+documenta ese orden como parte de su contrato, en el doc del struct y en los
+dos accesores.
+
+El shim `CallGraphV1` conserva sus propios tipos (`HashMap`), así que el blob
+v1 no cambia; y el blob v2 se serializa como longitud + pares, de modo que un
+blob escrito con el mapa viejo se decodifica igual: cambia el orden de los
+pares al escribir, no la forma.
+
+Efecto lateral MEDIDO y NO reclamado: la búsqueda por nombre (`find_by_name`)
+sigue dando la misma respuesta en 4 de 4 pares, con el mapa viejo y con el
+nuevo. Su orden lo fija el orden de las altas, y el nombre casi nunca se
+repite dentro de un fichero, así que el hash map no llegaba a notarse. No hay
+nada que reclamar aquí.
+
+**El coste, medido antes y después (AC4).** Sobre el grafo real del dominio del
+core, con el mismo arnés antes y después (6.014 símbolos tras añadir el test
+unitario, que vive en `src/domain`):
+
+| Medida | Antes (`HashMap`) | Después (`BTreeMap`) |
+|---|---|---|
+| Pares en que difieren las tres superficies | 8 de 8 | **0 de 8** |
+| Búsqueda de los 6.014 símbolos, orden ascendente | 5,87 / 6,21 / 6,59 ms | **4,36 / 4,67 / 4,94 ms** |
+| Búsqueda de los 6.014 símbolos, orden disperso | 5,96 / 6,15 / 6,38 ms | **5,32 / 5,39 / 5,43 ms** |
+| Inserción de 6.000 símbolos | 33,08 / 34,54 / 36,92 ms | 36,69 / 41,46 / 41,76 ms |
+| Recorrido de los 6.014 símbolos | 0,25 / 0,26 / 0,37 ms | 0,43 / 0,44 / 0,97 ms |
+| Ordenar en la lectura (alternativa descartada) | — | 8,50 / 8,53 / 8,61 ms **por publicación** |
+
+El orden va en el **lado de la escritura**, el mismo criterio que TASK-135,
+TASK-136 y TASK-137, y la cifra lo sostiene: ordenar en cada lectura costaría
+8,5 ms en cada publicación —y el recorrido del mapa exterior se hace en cada
+publicación—, mientras que el lado de la escritura paga 3 ms una sola vez por
+construcción.
+
+El dato que sorprende y hay que decir: **la búsqueda sale más rápida**, no más
+lenta. La clave es larga (`fichero:nombre:línea`, con el camino entero) y
+SipHash la recorre entera en cada búsqueda, mientras que el `BTreeMap` compara
+hasta 13 veces y sale pronto por el prefijo común. La inserción sube (de ~35 a
+~40 ms) y el recorrido sube (de 0,26 a 0,44 ms): las dos son costes de una vez
+o de un recorrido, y el primero se paga una vez por construcción.
+
+**Las pruebas, y por qué son las mínimas.** El agregado no tenía ninguna
+prueba de determinismo de sus símbolos, así que no hay nada que retirar, y no
+hay UAT que promover porque el defecto es de reproducibilidad.
+
+- **Unitaria**, en el agregado: diez símbolos añadidos en un orden que NO es el
+  publicado. La comprobación es **total** contra el orden esperado, no una
+  lotería: diez símbolos dan una de 3.628.800 para que el hash map acierte el
+  orden por azar. El RED se midió volviendo a poner el tipo viejo en el árbol:
+  el recorrido salió `["juliet", "charlie", "alpha", "bravo", "india", …]` en vez
+  de ordenado.
+- **De integración**, sobre el código real del dominio del core: dos
+  construcciones independientes dan la misma respuesta **publicada** de
+  `codebase_map`, `review_pr` y `detect_long_parameter_lists`. El RED se midió
+  con el árbol viejo: el mapa publicado salía distinto entre las dos corridas
+  (`…/snapshot_key.rs:b:191` frente a `…/evidence_kernel/fact.rs:new:86`).
+
+El testigo de la prueba de integración son **dos pares**, y no uno porque el
+defecto se midió en 8 de 8: un par es una moneda al aire, y dos pares la
+bajan a una de cien.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib --tests` | **3540 tests run: 3539 passed, 1 failed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer --lib --tests` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-mcp --lib --tests` | **101 tests run: 101 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-ladybug --lib --tests` | **66 tests run: 66 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli --lib --tests` | **629 tests run: 629 passed, 1 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 (0 añadidas, 0 retiradas) |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134, TASK-135, TASK-136 y TASK-137
+van **seis de diez**, así que el gate de esta unidad es **NOT_RUN**. La
+allowlist de CR-06 no crece: el arreglo no introduce ningún import nuevo entre
+capas.
+
+**El rojo que queda, y por qué NO es de esta unidad.**
+`b6_w5_distribution_certification::cp5_release_tag_coherence` falla en la suite
+paralela con `got Some(141)` y la stdout cortada antes de `workspace.version=`.
+MEDIDO: `scripts/ci/release-tag-coherence.sh` lee la versión con
+`printf … | awk … {…; exit}`, y el `exit` de awk cierra la tubería mientras
+printf puede que todavía esté escribiendo; con `set -euo pipefail` el estado de
+la tubería pasa a ser 141 (SIGPIPE). Reproducido 9 de 400 invocaciones con la
+suite corriendo en paralelo y la traza `bash -x`; sin carga, 0 de 40. El
+cambio de TASK-137 no toca el script ni el git, y el mismo test pasa cuando se
+ejecuta solo. Encaminado en **TASK-138**, con su reproducción.
+
+**Lo que se midió y NO se arregla aquí.** El mapa **exterior de ARISTAS** sigue
+siendo un `HashMap` (`edges` y `reverse_edges`); el interior ya está ordenado
+(TASK-135). Medido sobre el mismo dominio, ocho pares: `all_dependencies()` da
+el mismo orden en **0 de 8** pares, y `edges_with_metadata()` en **0 de 8**.
+Queda encaminado en **TASK-139**, con sus cifras y sus consumidores.
+
+**Entrega.** PR #625 → `1cb1680a`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
