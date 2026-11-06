@@ -35838,3 +35838,157 @@ retirar en su propia unidad.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-124: la estrategia del índice la declara la fábrica
+
+**El encargo.** `build_lightweight_index` publica `strategy` como un `string` con una frase
+suelta: «Strategy to use: lightweight, on_demand, full». Los nombres estaban, pero en prosa, y
+una prosa no es un contrato legible por máquina. Peor: la `description` del tool en el maestro
+ofrecía `per_file`, una estrategia que la fábrica rechaza.
+
+**Lo que estaba roto, medido (no supuesto).** La forma publicada de `strategy` antes del arreglo
+(la derivaba `input_contracts.rs` del struct que lee los argumentos):
+
+```json
+{"default": "lightweight", "description": "Strategy to use: lightweight, on_demand, full", "type": "string"}
+```
+
+Sin `enum`: ni un solo valor que una máquina pudiera leer. Y el maestro llevaba **dos copias del
+vocabulario que no de acuerdo entre sí**:
+
+| Copia | Lo que decía | Lo que la fábrica hace |
+|---|---|---|
+| `input_schema.properties.strategy` | tres nombres, en prosa | ofrece tres |
+| `description` del tool | cuatro nombres: `lightweight`, `on_demand`, **`per_file`**, `full` | rechaza `per_file` |
+| argumentos (`{"strategy": "per_file"}`) | se aceptaba en silencio | el handler lo rechazaba |
+
+Y el defecto de fondo de `per_file` ya estaba medido y escrito en el repo: la estrategia por
+fichero contestaba el contrato del índice **sin construir un índice** («0 symbols indexed», con
+éxito, sobre un proyecto lleno de símbolos).
+
+**La causa.** El argumento era un `String`, y la forma derivada de un `String` es un `string` con
+la descripción del campo: los nombres viajan como prosa o no viajan. Y el vocabulario estaba
+copiado a mano en el maestro, con dos copias que ya se habían separado.
+
+**El arreglo: un tipo que nombra los valores, y el servidor lo lee.**
+
+- `IndexStrategy` (enum) junto a `BuildIndexInput` (`interface/mcp/schemas.rs`): `Lightweight`,
+  `OnDemand` y `Full`, con `#[serde(rename_all = "snake_case")]` — los nombres del cable son
+  exactamente los de la fábrica. Sin documentación por variante, para que la forma derivada salga
+  con el `enum` plano, como las otras enumeraciones del maestro.
+- El default sigue siendo `lightweight`: el default publicado no cambia.
+- El tipo nombra los valores y el servidor lee el tipo, así que una estrategia que no indexa es
+  un **rechazo donde se leen los argumentos** (`rmcp_adapter.rs:1691`, serde), no un nombre leído
+  en silencio. Es la regla de TASK-82 aplicada al argumento que ya estaba publicado.
+- La **fábrica sigue siendo la autoridad**: el handler le pasa el nombre del enum, y si las dos
+  listas se separaran, la fábrica negaría el nombre en vez de indexar con otra cosa. Ese camino es
+  hoy inalcanzable —mientras las dos listas de acuerdo, no puede llegar— y por eso el guardián en
+  runtime no sustituye al check: lo acompaña.
+
+**Por qué el enum vive en la interfaz y no en la fábrica.** Los dos módulos de contrato
+(`schemas.rs`, `input_contracts.rs`) no importan infraestructura hoy, y el enum publicado es un
+contrato, no una vista de la implementación. Y el check de AC2 tiene que poder **fallar**: el enum
+de la interfaz y la lista de la fábrica son dos listas, y un check que no puede fallar no vigila
+nada. El precio de esa decisión es que hay dos listas: el check las ata.
+
+**El maestro, y de dónde sale cada bloque.**
+
+| Bloque | Cómo se decide | Qué cambió |
+|---|---|---|
+| `description` | curado a mano | deja de ofrecer `per_file` |
+| `input_schema` | **espejo** del runtime (`sync_tool_catalog_with_the_capture.py`) | el `enum` con los tres valores |
+| `output_schema` | **contrato derivado**, byte a byte | no cambia |
+
+La captura se refrescó desde un `tools/list` real con las tres features (`program-analysis-server`,
+`evidence-cli-ladybug`, `contract-store`): 78 tools. En la captura cambian **dos** tools:
+`build_lightweight_index` (el `enum` y la descripción) y `project_overview`, cuya descripción en
+la captura estaba **vieja** — TASK-122 cambió la del maestro y no refrescó la captura. El
+sincronizador lo corrige al refrescar; queda escrito aquí porque es una diferencia que aparece en
+el diff y no la ha causado esta unidad.
+
+Los README (inglés y español) dejaban de anunciar «4 estrategias de grafo», una bandera
+`--strategy per_file` que el producto rechaza y una fila de tabla para una estrategia que no
+existe. Los dos son la misma copia falsa del vocabulario, en la superficie que lee un humano.
+
+**Las pruebas, y por qué son las mínimas** (lentes `change-impact` y `regression-promotion` de
+`delivery-first-testing`).
+
+- **De integración** (`the_index_tool_only_offers_strategies_that_index`): la forma publicada
+  nombra los valores que la fábrica ofrece; el `enum` está y es legible por máquina; una
+  estrategia que no indexa se rechaza y el rechazo nombra las que sí indexan; el argumento
+  omitido indexa con el default publicado; la cadena vacía se rechaza. Los argumentos viajan
+  **como los argumentos viajan — como JSON** — porque ésa es la frontera donde el servidor los
+  lee: así la comprobación del rechazo es parte del test y no un comentario sobre él, y el
+  fichero compila contra el tipo viejo y contra el nuevo (el RED es un fallo de aserción, no un
+  error de compilación). **RED medido: 3 de los 7 tests en rojo** antes del arreglo.
+- **Unitaria** (`schemas.rs`): el nombre que la fábrica recibe es el que el cable lleva (el enum
+  nombra sus valores dos veces —para el cable y para la fábrica— y las dos escrituras tienen que
+  decir lo mismo), y una estrategia que no existe se rechaza con el nombre de las que sí.
+
+**Decisión `promote | replace | retire`:** los tres tests preexistentes se **reemplazan** por sus
+versiones con los argumentos construidos como JSON (el rechazo se comprueba en la frontera, no en
+el handler, y el fichero tiene que compilar contra los dos tipos); no hay test que retirar —los
+tres que había siguen Protegiendo la misma garantía— y no hay UAT que retirar.
+
+Lo que **no** se ha tocado: `the_published_arguments_are_the_declared_ones` ya cubría «la forma
+publicada es la derivada» y «el valor que la forma excluye es el que el servidor rechaza». Su
+fallo después del cambio **midió** el reflejo viejo del maestro (la forma derivada con el `enum`
+contra el `string` del maestro); refrescado el maestro, vuelve a verde. No hacía falta escribir su
+tercera copia.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core` | **3554 tests run: 3554 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli` | **629 tests run: 629 passed, 1 skipped** |
+| `cargo nextest run --profile gate -p cognicode-mcp` | **101 tests run: 101 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `python3 scripts/product/sync_tool_catalog_with_the_capture.py --check` | punto fijo, rc=0 |
+| `python3 scripts/ci/test_file_size_ratchet.py` | PASS — `handlers/mod.rs` 3628 → 3627 |
+| `bash scripts/ci/run-all-contracts.sh` | 1 rojo, **previo a esta unidad** (ver abajo) |
+| El RED de la prueba de integración | **3 de 7 en rojo** antes del arreglo |
+| La captura de `tools/list` | 78 tools; cambian `build_lightweight_index` y `project_overview` |
+
+**El rojo previo de los contratos.** `test_roadmap_version_ratchet.py` falla por el snapshot de
+`docs/roadmap/CURRENT.md`: declara `0eeffa1754c8`, que en el momento de la medición (`HEAD`
+`23375e98`) estaba **45 commits** atrás, y el ratchet pide como máximo 5. El contrato mide estado
+de git y un documento que esta unidad no toca, así que el fallo es anterior a ella; el snapshot se
+regeneró por última vez en TASK-119 y tiene su propia unidad (`regenera el snapshot`). No se ha
+tocado: mezclar la regeneración del snapshot con esta unidad sería entregar un documento que
+nadie ha pedido.
+
+**El gate entero no se paga por tarea, se paga por lotes de diez** (`AGENTS.md`): con TASK-121,
+TASK-133, TASK-134, TASK-135, TASK-136, TASK-137, TASK-138, TASK-139, TASK-122 y TASK-124 van
+**diez de diez**. El lote queda **completo** y el gate de esta unidad es **NOT_RUN**, a la espera
+de que el operador lo autorice.
+
+**Compatibilidad.**
+
+| Lo que envía el cliente | Antes | Ahora |
+|---|---|---|
+| `{}` | lightweight | lightweight (igual) |
+| `{"strategy": "lightweight"}` | lightweight | lightweight (igual) |
+| `{"strategy": "on_demand"}` / `{"strategy": "full"}` | esa estrategia | esa estrategia (igual) |
+| `{"strategy": "per_file"}` | se aceptaba en los argumentos; lo rechazaba el handler | lo rechazan los argumentos (serde): el mismo veredicto, más temprano |
+| `{"strategy": ""}` | significaba lightweight | se rechaza: el default publicado es `lightweight`, y un nombre que la forma publicada no nombra es un rechazo |
+| `{"strategy": "ondemand"}` / `"full_graph"` (alias de la fábrica) | los aceptaba el tool | la superficie MCP no los publica y no los acepta; la CLI sí, y no cambia |
+
+Las dos últimas filas son cambios de comportamiento, y son deliberados: la forma publicada nunca
+nombró ni la cadena vacía ni los alias, y ahora el servidor rechaza exactamente lo que la forma
+no nombra. La CLI conserva los alias porque su llamada a la fábrica no ha cambiado.
+
+**Observación para el futuro (no se ha tocado).** La lista de estrategias en la ayuda de la CLI
+(«Strategy to use: lightweight, on_demand, full») y en la tabla de los README es prosa: hoy dice
+la verdad, pero es una copia que puede separarse de la fábrica sin que nada lo diga. La forma
+publicada sí está atada por el check. Y `PerFileStrategy` sigue existiendo como tipo en
+`infrastructure/graph/strategy.rs` sin que la fábrica la ofrezca: nadie la construye, y es el
+resto del defecto histórico que esta unidad cierra en la superficie.
+
+**Entrega.** PR #633 → `bde002f3`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook `commit-msg` del repositorio
+no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
