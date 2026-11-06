@@ -36473,3 +36473,90 @@ estados existe ya.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-126: el snapshot operativo se regenera sobre la punta, y dice lo que hay
+
+**El defecto.** `docs/roadmap/CURRENT.md` declaraba `Snapshot**: 2026-11-05, sobre
+`0eeffa1754c80f265ec5ab491a12c28cd6dc1f91`, y ese commit estaba **56 commits por detrás** de
+la punta. Su propio contrato lo dice: `scripts/ci/test_roadmap_version_ratchet.py` acepta como
+máximo `SNAPSHOT_MAX_DRIFT = 5` commits de deriva, medidos contra la base con `main`.
+
+**RED medido, antes de tocar el fichero.**
+
+| Comprobación | Antes |
+|---|---|
+| `python3 scripts/ci/test_roadmap_version_ratchet.py` | **rc=1**, dos fallos: `test_current_sha_matches_head` y su agregador `test_control_all_green` («CURRENT.md declara SHA 0eeffa1754c8, HEAD es abc2b3c36df5») |
+| `bash scripts/ci/run-all-contracts.sh` | **rc=1**, con esos mismos dos fallos y ningún otro rojo |
+| La distancia | `git rev-list --count 0eeffa17..abc2b3c3` → **56** commits |
+
+El rojo estaba en `main` antes de abrir la rama, y no lo causaba ninguna unidad concreta: es
+deriva de ritmo. Tres recibos seguidos lo declararon «preexistente» (TASK-123, TASK-127,
+TASK-141) y esa etiqueta era cierta pero no era una respuesta: la unidad que lo cierra es
+esta.
+
+**Lo que NO se hizo.** No se tocó una cabecera y se dejó la prosa vieja. `CURRENT.md` es un
+snapshot del estado del árbol: cambiar el SHA y dejar el texto describiendo un mundo que ya
+no existe sería una mentira nueva, del mismo tipo que las que este proyecto retira. La prosa
+que describía superficies retiradas dice, ahora, que se retiraron; y lo que llegó desde el
+snapshot anterior se acumula con el commit que lo midió.
+
+**Qué cambia (tres bloques, un solo fichero).**
+
+- **La cabecera** declara `abc2b3c36df5f71feb0af4cede5c8ed6c5493be8` —la punta real de `main`
+  antes de abrir la rama— y la fecha del día. El ratchet mide la deriva contra la base con
+  `main`, así que un snapshot sobre la punta tiene deriva 0, y 1 cuando la fusión lo deje un
+  commit atrás, que es lo que el squash produce.
+- **La prosa del encabezado** acumula el estado que llegó: el análisis del grafo es reproducible
+  bit a bit (comunidades, ciclos, god nodes, llamantes, caminos calientes, dependencias entre
+  módulos, símbolos y aristas publican el mismo orden en cada corrida, y el sitio del orden se
+  decidió con la cifra: si la lectura se repite en cada publicación, el orden va en la
+  escritura); el grafo de un proyecto real termina; el valor del daemon es el hash de frescura;
+  el paso de mutantes mide de uno en uno —su veredicto es por mutante— y lleva techo de
+  memoria; los tests del CLI ya no escriben la configuración real del IDE, y la contención que
+  cubría la carrera vieja se retiró con medición; el vocabulario publicado tiene dueño; y el
+  gate del lote de diez pasó.
+- **La sección «Qué cambió desde el snapshot anterior»** cuenta los **56 commits** de distancia
+  (`git rev-list --count 0eeffa1754c80f265ec5ab491a12c28cd6dc1f91..abc2b3c36df5f71feb0af4cede5c8ed6c5493be8`)
+  con una tabla de **24 filas**, donde cada fila dice qué se movió y en qué commit está medido.
+  Los SHA que cita la tabla viven en `main`. Las seis filas de la ventana anterior se retiran
+  porque el delta es de esta ventana: la historia entera vive en este `JOURNAL`, que es
+  append-only.
+- **La sección «Gates»** dice qué gate está certificado y sobre qué árbol: el del lote de diez,
+  medido en serie el 2026-11-06 sobre `a3b8b862` —4701 unitarios, 6794 de integración y 627
+  mutantes: 618 atrapados, 9 inviables, 0 supervivientes—, y **avisa de que ese certificado es
+  del árbol del lote, no de la punta**: después llegaron TASK-123, TASK-127, TASK-140 y
+  TASK-141, y el árbol de hoy mide 4706 unitarios y 6809 de integración.
+
+**Verificación (medida, no afirmada).**
+
+| Comprobación | Antes | Después |
+|---|---|---|
+| `python3 scripts/ci/test_roadmap_version_ratchet.py` | rc=1 (2 fallos) | **`ROADMAP version ratchet: OK (workspace=0.101.31, head=…)`**, rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=1 (2 fallos) | **rc=0**: 45 ficheros de contrato, 312 comprobaciones, 0 rojas |
+| El ratchet sobre la rama, con el commit puesto | — | rc=0 (deriva 1: el commit propio) |
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: es **NOT_RUN**. La unidad no toca código de
+  producción —un solo fichero de documentación—, así que la batería de tests y el paso de
+  mutantes no la tocan; y el gate se corre al cerrar el lote de diez, no por tarea.
+- No dice que la certificación del gate sea de este árbol: es de `a3b8b862`, y el snapshot lo
+  dice ahora mismo.
+- No dice que el snapshot sea la agenda: `docs/roadmap/ROADMAP.md` sigue siendo la única
+  autoridad, y este fichero es un snapshot puntual que su propio encabezado declara obsoleto
+  hasta su próxima regeneración.
+- No dice que el snapshot cubra el tablero de trabajo: la cola de `Backlog.md` es una bandeja
+  privada y no vive en este documento; lo que aquí se cuenta son las unidades que el `JOURNAL`
+  ya cerró.
+- No dice que la prosa del encabezado sea exhaustiva: es un resumen acumulativo, y la tabla de
+  «qué cambió» es el delta de la última ventana. Quien necesite el detalle de una unidad lo
+  tiene en su recibo del `JOURNAL`, con su commit.
+- No dice que el rojo de los contratos fuera de esta unidad: antes de este cambio, el único
+  rojo de `run-all-contracts.sh` eran estos dos fallos del ratchet; los demás contratos
+  estaban verdes.
+
+**Entrega.** PR #644 → `d4d7366d`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
