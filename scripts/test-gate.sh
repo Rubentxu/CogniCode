@@ -3,38 +3,52 @@
 #
 # The gate. Three things, and nothing else:
 #
-#   1. unit tests        — cargo nextest run --profile gate --workspace --lib
-#   2. integration tests — cargo nextest run --profile gate --workspace --tests
-#   3. mutants           — cargo mutants, over the crates that carry the logic
+#   1. unit tests        — cargo nextest run --profile gate, over the radius
+#   2. integration tests — cargo nextest run --profile gate, over the radius
+#   3. mutants           — cargo mutants, over the crates the batch can break
 #
 # There is no CI lane behind this script. It was retired on 2026-11-04 with the
 # rest of the gate apparatus, and what replaced it is the tests themselves plus
 # a human who reads the diff. The three steps above are what "the gate is
 # green" means.
 #
-# The mutants step is scoped, and the scope is HERE, on the command line,
-# because `.cargo/mutants.toml` cannot hold it: the `cargo-mutants` config
-# schema is flat and global with `deny_unknown_fields`, so a file that opens
-# a `package` table is rejected outright rather than ignored. The scope is:
+# THE RADIUS: WHAT THIS RUN MEASURES, AND WHY
+# --------------------------------------------
+# The gate used to measure everything, always: the whole workspace for the two
+# test steps, and `cognicode-graph-algos` for the mutation step. Measured on
+# 2026-11-06 (the receipt of TASK-69 is in the JOURNAL), that costs 61 minutes
+# cold and 55 minutes warm, and the mutation step is 92% of it — 98% warm.
+# A gate whose cost does not depend on what changed is a gate that cannot be
+# run often, and a gate that is not run often is a gate that certifies less.
 #
-#   cognicode-graph-algos   5.6k lines — the graph algorithms the analysis
-#                             is built on. 629 mutants, and the step takes
-#                             about an hour: the crate depends on nothing
-#                             from the workspace, so a mutant is a rebuild
-#                             of one crate and one test run — but the
-#                             mutants are measured ONE AT A TIME, for the
-#                             reason given in the step itself.
+# So the gate measures a RADIUS, and the radius is computed by ONE script:
+# `scripts/gate_scope.py`. The gate does not decide what to measure; it asks,
+# and it runs what the answer says. Two decisions about the same radius would
+# be two sources of truth, and the second one is the one that rots.
 #
-# WHAT IS NOT IN THE SCOPE, AND WHY IT IS NOT A LIE
-# --------------------------------------------------
+# The answer has two halves, and they are different on purpose:
+#
+#   THE RADIUS OF THE TESTS is the inverse dependency closure of the crates
+#   the batch touched, and cargo decides the graph. A crate can only break
+#   because of a change in itself or in one of its dependencies, so the
+#   closure is a fact and not a guess. It is not a filter by path: the
+#   retired `scripts/test-fast.sh` filtered by path and its fallback ran
+#   `cargo test --workspace --lib` only, so an integration test that had just
+#   been written never ran — the suite was green because it had not looked.
+#
+#   THE RADIUS OF THE MUTANTS is the crates the batch touched that are
+#   AFFORDABLE to mutate, plus the crate of the calendar when its turn comes.
+#
+# WHAT IS MUTABLE, AND WHAT IS NOT, AND WHY IT IS NOT A LIE
+# -----------------------------------------------------------
 # A scope that only says what it includes reads like a scope that includes
 # everything else. The crates that are out of it are named here with the
 # reason, and the reason is always one of two things: COST or WORK.
 #
-# COST — the mutation step copies the tree before it mutates anything, and
-# the copy lands on a different path than the repository's own builds, so
-# cargo cannot reuse the shared cache. Every mutant of a crate that depends
-# on `cognicode-core` therefore rebuilds `cognicode-core` from scratch:
+# COST — the mutation step copies the tree before it mutates anything, and the
+# copy lands on a different path than the repository's own builds, so cargo
+# cannot reuse the shared cache. Every mutant of a crate that depends on
+# `cognicode-core` therefore rebuilds `cognicode-core` from scratch:
 #
 #   cognicode-core        217k lines — mutating it does not finish in a
 #   cognicode-explorer     65k lines — lifetime, and a gate nobody ever sees
@@ -61,8 +75,38 @@
 # The counts and the reason are in the JOURNAL receipt, so the exclusion is
 # visible rather than implied.
 #
-# The mutants step builds in its own target directory. cargo-mutants works on
-# a copy of the tree, so its builds land under a different path than the
+# The calendar does not change WHICH crate is ever measured: it changes WHEN.
+# The mutation scope before this policy was `cognicode-graph-algos`, every
+# batch; after it, it is `cognicode-graph-algos` when the batch touches it or
+# when its turn comes. The set of crates that carry a mutation certificate
+# does not shrink — the same crate, on a declared schedule.
+#
+# THE CALENDAR: THE AGE OF A HOLE IS BOUNDED
+# -------------------------------------------
+# The crate that carries the graph logic is measured on a turn, not on every
+# batch. The turn is declared HERE, in three numbers, so that anybody can
+# check when it last fired:
+#
+#   MUTANT_CALENDAR_PACKAGE   the crate that is measured in its turn
+#   MUTANT_CALENDAR_EVERY_N   how many merges of `main` it waits between turns
+#   MUTANT_CALENDAR_MARKER    the commit where the count starts
+#
+# The unit of the calendar is the merge commit on the main line: it is
+# countable from git and it is auditable by anybody, with no state file that
+# could disagree with the history. A batch of ten units puts about ten merges
+# in `main`, so the period below is about five batches.
+#
+# The turn is a CROSSING, not a remainder: the batch fires when it crosses a
+# multiple of the period, because a batch does not always have the same size
+# and a rule of "fire when the count is a multiple" can step over the multiple
+# and never fire.
+#
+# The marker is the commit where the last batch's gate was measured in full:
+# the count starts there, and the hole of a mutation certificate therefore has
+# an age bounded by the period, counted in merges.
+#
+# The mutants step builds in its own target directory. cargo-mutants works on a
+# copy of the tree, so its builds land under a different path than the
 # repository's own builds and would otherwise evict them from the shared
 # cache. `MUTANTS_TARGET_DIR` can point somewhere else on a machine that has
 # the space.
@@ -82,6 +126,11 @@
 #   bash scripts/test-gate.sh --no-mutants # unit + integration only
 #   bash scripts/test-gate.sh --mutants    # mutants only
 #
+# The base of the batch (the commit where it started) can be named with
+# GATE_BASE. Without it, the base is where this branch diverged from `main`,
+# and on `main` itself there is no divergence to measure against, so the gate
+# runs WHOLE and says so.
+#
 # Policy: see AGENTS.md § "Estrategia de tests".
 set -uo pipefail
 
@@ -91,6 +140,19 @@ if [ -z "${REPO_ROOT}" ]; then
   exit 2
 fi
 cd "${REPO_ROOT}"
+
+# The mutation scope, declared here so that the numbers that decide what is
+# measured are in one place and not in the answer of a command.
+#
+# The crates that are affordable to mutate: the ones whose mutant is a rebuild
+# of a single crate and one test run. The rest are out for COST or WORK, and
+# the reasons are in the header above.
+MUTANT_AFFORDABLE_PACKAGES="cognicode-graph-algos"
+
+# The calendar: the crate that carries the graph logic, measured in its turn.
+MUTANT_CALENDAR_PACKAGE="cognicode-graph-algos"
+MUTANT_CALENDAR_EVERY_N=50
+MUTANT_CALENDAR_MARKER="fb526521db6e45142362d9eb19d53f2ba2a9c05a"
 
 RUN_UNIT=true
 RUN_INTEGRATION=true
@@ -132,10 +194,81 @@ run_step() {
   fi
 }
 
+# THE RADIUS. The decision lives in scripts/gate_scope.py, so the gate has no
+# branch of its own that can be wrong. The script always answers: if it cannot
+# decide, the answer is the WHOLE gate, with the reason.
+radius_field() {
+  printf '%s\n' "$RADIUS" | sed -n "s/^$1=//p"
+}
+
+RADIUS_ARGS=(
+  --repo-root "${REPO_ROOT}"
+  --affordable "${MUTANT_AFFORDABLE_PACKAGES}"
+  --calendar-crate "${MUTANT_CALENDAR_PACKAGE}"
+  --calendar-every "${MUTANT_CALENDAR_EVERY_N}"
+  --calendar-marker "${MUTANT_CALENDAR_MARKER}"
+)
+if [ -n "${GATE_BASE:-}" ]; then
+  RADIUS_ARGS+=(--base "${GATE_BASE}")
+fi
+# stdout carries the answer, stderr carries the trouble: a traceback has to be
+# visible in the log, and it must not be able to corrupt the answer.
+RADIUS="$(python3 "${REPO_ROOT}/scripts/gate_scope.py" "${RADIUS_ARGS[@]}")"
+RADIUS_RC=$?
+
+R_STATUS="$(radius_field status)"
+R_BASE="$(radius_field base)"
+R_TOUCHED="$(radius_field touched)"
+R_TEST="$(radius_field test-scope)"
+R_TEST_FULL="$(radius_field test-scope-full)"
+R_MUTANT="$(radius_field mutant-scope)"
+R_CALENDAR="$(radius_field calendar)"
+R_REASON="$(radius_field reason)"
+
+# The selector could not even answer (it is missing, or python is missing, or
+# it died). The gate then measures EVERYTHING: an empty radius would mean
+# "nothing to check", and a gate that checks nothing and says green is worse
+# than a slow gate.
+if [ -z "${R_STATUS}" ]; then
+  R_STATUS="undetermined"
+  R_BASE=""
+  R_TOUCHED=""
+  R_TEST=""
+  R_TEST_FULL="true"
+  R_MUTANT="${MUTANT_AFFORDABLE_PACKAGES} ${MUTANT_CALENDAR_PACKAGE}"
+  R_CALENDAR="unknown"
+  R_REASON="el selector del radio no respondio (rc=${RADIUS_RC}): ${RADIUS}"
+fi
+
+# The scope of the two test steps: the whole workspace when the radius could
+# not be narrowed, and the closure of the touched crates when it could.
+if [ "${R_TEST_FULL}" = "true" ]; then
+  TEST_PKG_ARGS=(--workspace)
+else
+  TEST_PKG_ARGS=()
+  for pkg in ${R_TEST}; do
+    TEST_PKG_ARGS+=(-p "${pkg}")
+  done
+fi
+
+printf '\n=== radio ===\n'
+if [ "${R_STATUS}" = "ok" ]; then
+  printf 'base:        %s\n' "${R_BASE:0:12}"
+  printf 'tocado:      %s\n' "${R_TOUCHED:-(ninguno)}"
+  printf 'radio test:  %s\n' "${R_TEST}"
+else
+  printf 'radio:       NO DETERMINADO — %s\n' "${R_REASON}"
+  printf 'radio test:  TODO EL WORKSPACE (el gate corre entero)\n'
+fi
+printf 'radio mut.:  %s\n' "${R_MUTANT:-(vacio)}"
+printf 'calendario:  %s (%s fusiones desde el marcador %s, cada %s)\n' \
+  "${R_CALENDAR}" "$(radius_field calendar-count)" "${MUTANT_CALENDAR_MARKER:0:12}" \
+  "${MUTANT_CALENDAR_EVERY_N}"
+
 # 1. Unit tests. `--lib` compiles and runs the `#[cfg(test)]` modules inside
 #    the sources: one unit, in isolation, no process and no network.
 if $RUN_UNIT; then
-  run_step "unit tests" cargo nextest run --profile gate --workspace --lib
+  run_step "unit tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --lib
 fi
 
 # The release-flow suites execute release-profile bytes on purpose: a debug
@@ -162,14 +295,30 @@ fi
 # 2. Integration tests. `--tests` compiles and runs every target under
 #    `tests/`: several real pieces working together, with the edges mocked.
 if $RUN_INTEGRATION; then
-  run_step "integration tests" cargo nextest run --profile gate --workspace --tests
+  run_step "integration tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --tests
 fi
 
 # 3. Mutants. A mutant is a deliberate defect injected into the source; a
 #    mutant that survives is a hole in the suite that no amount of passing
 #    tests would have revealed.
 if $RUN_MUTANTS; then
-  if ! command -v cargo-mutants >/dev/null 2>&1 && ! cargo mutants --version >/dev/null 2>&1; then
+  if [ -z "${R_MUTANT}" ]; then
+    # An empty radius here does NOT mean "nothing to check": it means that this
+    # batch touched no crate that is affordable to mutate, and that the crate
+    # of the calendar is not in its turn. The gate says so, loudly, because a
+    # skipped step that does not say it was skipped is a step that looks green.
+    printf '\n--- mutants ---\n'
+    printf 'SKIP (mutants): este lote NO midio mutacion.\n'
+    printf '  motivo:      el lote toco %s, y ninguno es mutable por coste;\n' \
+      "${R_TOUCHED:-(nada)}"
+    printf '               el crate del calendario (%s) no esta en su turno (%s).\n' \
+      "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR}"
+    printf '  el hueco:    el calendario va en %s fusiones desde el marcador,\n' \
+      "$(radius_field calendar-count)"
+    printf '               y acota la edad de un hueco a %s fusiones (%s lotes de diez).\n' \
+      "${MUTANT_CALENDAR_EVERY_N}" "$((MUTANT_CALENDAR_EVERY_N / 10))"
+    printf '  lo que no se dice: que la mutacion se midio y no encontro nada.\n'
+  elif ! command -v cargo-mutants >/dev/null 2>&1 && ! cargo mutants --version >/dev/null 2>&1; then
     printf 'FAIL: cargo-mutants no esta instalado. Instálalo con: cargo install cargo-mutants --locked\n' >&2
     overall_rc=1
   else
@@ -193,9 +342,9 @@ if $RUN_MUTANTS; then
     # mutation is a gate that watches nothing. The certificate here is per
     # mutant, so the measurement is serial.
     #
-    # For a quick look at one file, `cargo mutants --file <path> -j 8` says
-    # the same thing in seconds; that is a LOOK, not a certificate, and it
-    # does not go through this script on purpose.
+    # For a quick look at one file, `scripts/mutate-file.sh` says the same
+    # thing in seconds; that is a LOOK, not a certificate, and it does not
+    # go through this script on purpose.
     MUTANTS_JOBS=1
     # The mutants build gets its own target directory, derived from the one
     # cargo already uses on this machine rather than hardcoded, so the script
@@ -262,14 +411,16 @@ if $RUN_MUTANTS; then
       printf 'FAIL: scripts/mutants-budget.sh no declara el techo del paso de mutantes\n' >&2
       overall_rc=1
     else
-      # The value is the 2 GiB the runner already imposed — what changes is
-      # that it is written where both routes read it.
+      MUTANT_PKG_ARGS=()
+      for pkg in ${R_MUTANT}; do
+        MUTANT_PKG_ARGS+=(-p "${pkg}")
+      done
       run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
         MUTANT_TEST_VMEM_KB="${MUTANTS_GATE_VMEM_KIB}" \
         cargo mutants -j "${MUTANTS_JOBS}" \
         --gitignore true \
-        -p cognicode-graph-algos \
+        "${MUTANT_PKG_ARGS[@]}" \
         -- -- --test-threads=4
     fi
   fi

@@ -640,13 +640,20 @@ que no está verificada.
 
 | # | Qué | Comando |
 |---|---|---|
-| 1 | Tests unitarios | `cargo nextest run --profile gate --workspace --lib` |
-| 2 | Tests de integración (con mocks) | `cargo nextest run --profile gate --workspace --tests` |
+| 1 | Tests unitarios | `cargo nextest run --profile gate <radio> --lib` |
+| 2 | Tests de integración (con mocks) | `cargo nextest run --profile gate <radio> --tests` |
 | 3 | Mutantes | `cargo mutants` |
 
 `bash scripts/test-gate.sh` los agrupa. Los tres tienen que estar verdes. No
 hay lane detrás: la autoridad de un cambio es el gate en verde más una
 persona que lee el diff.
+
+`<radio>` es el alcance que el gate mide, y desde TASK-142 lo decide
+`scripts/gate_scope.py`: el **cierre inverso de dependencias** de los crates
+que el lote tocó, con el grafo de `cargo metadata`. Cuando el radio no se
+puede determinar, el radio es el workspace entero, y el gate lo dice. El
+motivo está en el recibo de TASK-69 del `JOURNAL`: el gate entero costaba 55
+min 46 s en caliente, y el paso de mutantes era el 98% de esa hora.
 
 El tercer paso es el que responde a una pregunta que los otros dos no
 responden: *¿los tests notarían si el código dejara de hacer lo que dice?*
@@ -654,9 +661,11 @@ Un mutante es un defecto real inyectado; uno que sobrevive es un agujero en
 la suite que ninguna cantidad de tests verdes iba a revelar. Los tres pasos
 se quedan porque preguntan cosas distintas.
 
-El **alcance** de la mutación vive en `scripts/test-gate.sh`, en la línea de
-comandos de `cargo mutants`, y es explícito porque el coste es real: el
-workspace tiene 340k líneas y mutar `cognicode-core` (217k) o
+El **alcance** de la mutación lo decide el mismo selector: los crates que el
+lote tocó que son **asequibles** de mutar, más el crate del calendario cuando
+le toca el turno. Lo que es asequible y lo que el calendario dice están
+declarados en `scripts/test-gate.sh`, y son explícitos porque el coste es
+real: el workspace tiene 340k líneas y mutar `cognicode-core` (217k) o
 `cognicode-explorer` (65k) no termina en una vida. No está en
 `.cargo/mutants.toml` porque no puede estar: el esquema de configuración de
 `cargo-mutants` es plano y global, con `deny_unknown_fields`, y un fichero
@@ -668,6 +677,15 @@ el único donde la medición de mutación es a la vez *significativa* y
 asequible. No depende de nada del workspace: un mutante es una recompilación
 de un crate y una corrida de tests, así que el paso entero son minutos y no
 horas.
+
+**Cuándo** se mide cambió con TASK-142, no *qué*: el mismo crate, en un turno
+declarado (`MUTANT_CALENDAR_PACKAGE`, `MUTANT_CALENDAR_EVERY_N`,
+`MUTANT_CALENDAR_MARKER`, en `scripts/test-gate.sh`). La unidad del calendario
+es el commit de fusión en `main` —contable desde git, auditable por
+cualquiera— y el turno es un cruce de un múltiplo del periodo, para que un
+lote de tamaño irregular no pueda saltarse el múltiplo. El calendario no
+quita ninguna cobertura: acota **la edad** de un hueco de mutación, y el
+gate lo dice en el log cuando el paso no se midió.
 
 Antes lo eran `cognicode-runtime` y `cognicode-mcp` (40 mutantes), y el
 cambio de alcance no es cosmético: los dos son verdes, pero **cuestan** —
