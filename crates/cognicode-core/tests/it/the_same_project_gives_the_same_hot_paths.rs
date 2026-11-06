@@ -61,6 +61,7 @@ use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::consolidated_handlers::{
     ProjectOverviewInput, handle_project_overview,
 };
+use cognicode_core::interface::mcp::schemas::OverviewDetail;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -91,7 +92,7 @@ async fn published_hot_paths(ctx: &HandlerContext) -> Vec<String> {
     handle_project_overview(
         ctx,
         ProjectOverviewInput {
-            detail: "medium".into(),
+            detail: OverviewDetail::Medium,
         },
     )
     .await

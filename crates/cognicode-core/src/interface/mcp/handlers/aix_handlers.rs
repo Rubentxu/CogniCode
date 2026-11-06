@@ -61,31 +61,42 @@ pub async fn handle_smart_overview(
     // Detect project type
     let project_type = detect_project_type(&graph);
 
-    // Build entry point summaries
-    let top_eps: Vec<EntryPointSummary> = entry_points
-        .iter()
-        .take(5)
-        .map(|ep| EntryPointSummary {
-            name: ep.name.clone(),
-            file: ep.file_path.clone(),
-            line: ep.line,
-            kind: ep.kind.clone(),
-            summary: format!("Entry point: {}", ep.name),
-        })
-        .collect();
+    // Build entry point summaries. The quick level is the statistics of
+    // the project and nothing else, so the lists belong to the levels
+    // above it: an answer that announced ~100 tokens and carried every
+    // entry point and every hot path was not the answer it announced.
+    let top_eps: Vec<EntryPointSummary> = if detail == OverviewDetail::Quick {
+        Vec::new()
+    } else {
+        entry_points
+            .iter()
+            .take(5)
+            .map(|ep| EntryPointSummary {
+                name: ep.name.clone(),
+                file: ep.file_path.clone(),
+                line: ep.line,
+                kind: ep.kind.clone(),
+                summary: format!("Entry point: {}", ep.name),
+            })
+            .collect()
+    };
 
     // Build hot path DTOs
-    let critical_hot_paths: Vec<HotPathDto> = hot_paths
-        .iter()
-        .take(5)
-        .map(|hp| HotPathDto {
-            symbol_name: hp.symbol_name.clone(),
-            file: hp.file.clone(),
-            line: published_line(hp.line),
-            fan_in: hp.fan_in,
-            fan_out: hp.fan_out,
-        })
-        .collect();
+    let critical_hot_paths: Vec<HotPathDto> = if detail == OverviewDetail::Quick {
+        Vec::new()
+    } else {
+        hot_paths
+            .iter()
+            .take(5)
+            .map(|hp| HotPathDto {
+                symbol_name: hp.symbol_name.clone(),
+                file: hp.file.clone(),
+                line: published_line(hp.line),
+                fan_in: hp.fan_in,
+                fan_out: hp.fan_out,
+            })
+            .collect()
+    };
 
     // Estimate tokens
     let estimated_tokens = match detail {
@@ -2909,6 +2920,69 @@ fn main() { f15(); }
             output.languages.contains_key("Rust"),
             "the only source file is Rust; got {:?}",
             output.languages
+        );
+    }
+
+    /// The level selects what the answer carries.
+    ///
+    /// The quick answer is the statistics of the project: it announced
+    /// ~100 tokens and carried every entry point and every hot path, so
+    /// the number it published was not the number of the answer.
+    #[tokio::test]
+    async fn the_quick_overview_carries_the_statistics_and_nothing_else() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        // `helper` is called from two places, so it has the two callers a
+        // hot path needs.
+        std::fs::write(
+            &file_path,
+            "fn main() { helper(); }\nfn other() { helper(); }\nfn helper() {}",
+        )
+        .unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
+        let build_input = BuildGraphInput { directory: None };
+        let _ = handle_build_graph(&ctx, build_input).await;
+
+        let quick = handle_smart_overview(
+            &ctx,
+            SmartOverviewInput {
+                detail: Some(OverviewDetail::Quick),
+            },
+        )
+        .await
+        .expect("the tool answers");
+        let medium = handle_smart_overview(
+            &ctx,
+            SmartOverviewInput {
+                detail: Some(OverviewDetail::Medium),
+            },
+        )
+        .await
+        .expect("the tool answers");
+
+        assert!(
+            quick.total_symbols >= 3,
+            "the quick overview carries the statistics it has: {quick:?}"
+        );
+        assert!(
+            quick.top_entry_points.is_empty(),
+            "the quick overview does not carry the entry points: {quick:?}"
+        );
+        assert!(
+            quick.critical_hot_paths.is_empty(),
+            "the quick overview does not carry the hot paths: {quick:?}"
+        );
+        assert!(
+            !medium.top_entry_points.is_empty(),
+            "the medium overview carries the entry points: {medium:?}"
+        );
+        assert!(
+            !medium.critical_hot_paths.is_empty(),
+            "the medium overview carries the hot paths: {medium:?}"
         );
     }
 

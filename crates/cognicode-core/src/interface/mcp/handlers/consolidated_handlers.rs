@@ -10,8 +10,8 @@ use crate::domain::services::CycleDetector;
 use crate::domain::value_objects::{DependencyType, Provenance};
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
-    CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
-    SmartSearchResult,
+    CompareGraphInput, CompareGraphOutput, MetricDeltas, OverviewDetail, SmartSearchInput,
+    SmartSearchOutput, SmartSearchResult,
 };
 use std::time::Duration;
 // `JsonSchema` derives the published MCP output contract from this type, so
@@ -225,18 +225,30 @@ pub async fn handle_smart_search(
 
 // ── project_overview ─────────────────────────────────────────────────────────
 
+/// The arguments of `project_overview`.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ProjectOverviewInput {
+    /// The level of detail the answer carries: `quick` (the statistics of
+    /// the project), `medium` (the statistics, the entry points and the
+    /// hot paths) or `detailed` (everything: the recommendations and the
+    /// context for a prompt). The default is the complete answer.
     #[serde(default = "default_overview_detail")]
-    pub detail: String,
+    pub detail: OverviewDetail,
 }
-fn default_overview_detail() -> String {
-    "medium".into()
+
+/// The answer a client gets without asking for a level.
+///
+/// The tool published the complete answer before the levels meant
+/// anything, so that is what the default keeps delivering: the label
+/// changes, the content does not.
+fn default_overview_detail() -> OverviewDetail {
+    OverviewDetail::Detailed
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ProjectOverviewOutput {
-    pub detail: String,
+    /// The level this answer carries.
+    pub detail: OverviewDetail,
     pub architecture_score: Option<f64>,
     pub hot_paths: Vec<String>,
     pub entry_points: Vec<String>,
@@ -253,6 +265,10 @@ pub async fn handle_project_overview(
 ) -> HandlerResult<ProjectOverviewOutput> {
     // Ensure graph is built (auto-build if empty)
     let _ensure = super::ensure_graph_built(ctx)?;
+
+    // The level the client asked for. The answer carries what the level
+    // says it carries, and it says which level it answered.
+    let level = input.detail;
 
     let graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -271,60 +287,79 @@ pub async fn handle_project_overview(
     // alone, so the ties — and the cut, which fell inside a tie — were
     // decided by the order the graph happened to hold its symbols in, and
     // the published list came out different on every run.
-    let hot_paths: Vec<String> =
+    let all_hot_paths: Vec<String> =
         crate::application::services::analysis_service::AnalysisService::hot_paths(&graph, 10, 2)
             .into_iter()
             .map(|row| row.name)
             .collect();
 
     // Entry point names
-    let entry_point_names: Vec<String> = entry_points.iter().map(|ep| ep.name.clone()).collect();
+    let all_entry_points: Vec<String> = entry_points.iter().map(|ep| ep.name.clone()).collect();
 
     // Coverage estimate
     let coverage_estimate = coverage.as_ref().map(|c| c.coverage_percent);
 
     // Build recommendations based on findings
-    let mut recommendations = Vec::new();
-    if !hot_paths.is_empty() {
-        recommendations.push(format!(
+    let mut all_recommendations = Vec::new();
+    if !all_hot_paths.is_empty() {
+        all_recommendations.push(format!(
             "Start with hot path '{}' (highest fan-in) for core logic understanding",
-            hot_paths.first().unwrap_or(&"unknown".to_string())
+            all_hot_paths.first().unwrap_or(&"unknown".to_string())
         ));
     }
     if !cycle_result.cycles.is_empty() {
-        recommendations.push(format!(
+        all_recommendations.push(format!(
             "Address {} cyclic dependency cycle(s) to improve architecture score",
             cycle_result.cycles.len()
         ));
     }
     if entry_points.is_empty() {
-        recommendations.push("No entry points detected. Run build_graph first.".to_string());
+        all_recommendations.push("No entry points detected. Run build_graph first.".to_string());
     }
 
-    let detail = input.detail.as_str();
     let symbol_count = stats.symbol_count;
     let edge_count = stats.edge_count;
 
+    // The summary reports the shape of the project, and the shape of a
+    // project does not change with the level: the same statistics at the
+    // three levels.
     let summary = format!(
         "{} symbols, {} entry points, {} hot paths, architecture score {}",
         symbol_count,
-        entry_point_names.len(),
-        hot_paths.len(),
+        all_entry_points.len(),
+        all_hot_paths.len(),
         architecture_score
             .map(|s| format!("{s:.2}"))
             .unwrap_or_else(|| "unknown".to_string())
     );
+
+    let system_prompt_context = format!(
+        "CogniCode project: {} symbols, {} edges. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
+        symbol_count, edge_count
+    );
+
+    // The level selects what the answer carries. The measurements travel
+    // at every level: the score and the coverage are measured, and an
+    // absent measurement would say that they were not.
+    let (hot_paths, entry_points, recommendations, system_prompt_context) = match level {
+        OverviewDetail::Quick => (Vec::new(), Vec::new(), Vec::new(), None),
+        OverviewDetail::Medium => (all_hot_paths, all_entry_points, Vec::new(), None),
+        OverviewDetail::Detailed => (
+            all_hot_paths,
+            all_entry_points,
+            all_recommendations,
+            Some(system_prompt_context),
+        ),
+    };
+
     Ok(ProjectOverviewOutput {
-        detail: detail.into(),
+        detail: level,
         architecture_score,
         hot_paths,
-        entry_points: entry_point_names,
+        entry_points,
         coverage_estimate,
         recommendations,
-        system_prompt_context: Some(format!(
-            "CogniCode project: {} symbols, {} edges. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
-            symbol_count, edge_count
-        )),
+        system_prompt_context,
         summary,
     })
 }
