@@ -35693,3 +35693,148 @@ no cruza una versión.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-122: `project_overview` publica el nivel que entrega
+
+**El encargo.** El maestro publica `project_overview` con el título «Get a
+comprehensive project overview at quick, medium, or detailed levels». El
+handler leía el argumento `detail`, lo copiaba a la respuesta
+(`detail: detail.into()`) y no lo usaba para nada más. La respuesta que
+decía «quick» llevaba el mismo contenido que la que decía «detailed».
+
+**Lo que estaba roto, medido (no supuesto).** Sobre un proyecto con un
+camino caliente y dos puntos de entrada, con el test en rojo antes del
+arreglo:
+
+| Lo que pedía el cliente | Lo que llevaba la respuesta |
+|---|---|
+| `quick` | los caminos calientes, los puntos de entrada, las recomendaciones y el contexto |
+| `medium` | las recomendaciones y el contexto |
+| `detailed` | todo |
+| `full` (un nivel que no existe) | se aceptaba en silencio, con la respuesta completa |
+
+Y la respuesta por defecto —la de un cliente que no pide nivel— decía
+**«medium»** y entregaba la respuesta completa: la etiqueta era la
+mentira. El RED fue **4 de los 5 tests en rojo**.
+
+**La causa.** El argumento era un `String`. El handler lo copiaba a la
+respuesta y no lo leía para nada más, así que el nivel era una etiqueta
+sin efecto: tres nombres para una sola respuesta.
+
+**El vocabulario ya existía, y por eso el arreglo no inventa nada.**
+`OverviewDetail` (`interface/mcp/schemas.rs:1784`) ya declaraba `quick |
+medium | detailed`, y el mismo tipo lo leía `smart_overview`. El argumento
+pasa de `String` a ese tipo: **el tipo nombra los valores y el servidor
+lee el tipo**, así que un nivel que no existe es un rechazo (serde), no un
+`String` leído en silencio. Es la regla de TASK-82 aplicada al argumento
+que ya estaba publicado.
+
+**La escalera sale del dueño.** El tipo declara qué lleva cada nivel, y
+los bloques del tool se reparten con ella:
+
+| nivel | summary | score | coverage | hot_paths | entry_points | recommendations | context |
+|---|---|---|---|---|---|---|---|
+| `quick` | sí | sí | sí | — | — | — | — |
+| `medium` | sí | sí | sí | sí | sí | — | — |
+| `detailed` | sí | sí | sí | sí | sí | sí | sí |
+
+**Las mediciones no se anulan.** El score y el coverage viajan en los tres
+niveles, igual que `smart_overview` publica `coverage_percent` en todos.
+Un `None` ahí diría «no lo medi», y sí lo medimos. El `summary` es el
+mismo en los tres niveles: la forma de un proyecto no cambia con el
+nivel.
+
+**El default pasa a `detailed`, y por qué.** Porque `detailed` es
+exactamente lo que el tool publica hoy: ningún consumidor medido pierde
+contenido. Lo que cambia es la etiqueta —hoy la respuesta decía «medium»
+para una respuesta completa—. El default anterior («medium») era el
+nombre de un nivel que no describía lo que se entregaba.
+
+**El hermano que comparte el vocabulario también decía una cosa y hacía
+otra.** `smart_overview` publicaba los mismos entry points y los mismos
+hot paths en `quick` y en `medium`, y anunciaba ~100 tokens para una
+respuesta que no cabía en 100 tokens. Con el tipo compartido, la escalera
+tiene que ser la misma en las dos superficies: ahora `quick` son las
+estadísticas. RED medido revirtiendo solo el gating en el árbol: el
+`quick` llevaba los 2 entry points y el hot path `helper`.
+
+**El maestro, y de dónde sale cada bloque.**
+
+| Bloque | Cómo se decide |
+|---|---|
+| `title` | curado a mano; no cambia, pasa a ser verdad |
+| `description` | curado a mano; dice qué lleva cada nivel |
+| `limitations` | curado a mano; las recomendaciones y el contexto son del nivel `detailed` |
+| `input_schema` | **espejo** del runtime (`sync_tool_catalog_with_the_capture.py`) |
+| `output_schema` | **contrato derivado**, byte a byte (`b2_w3_output_schema_contract.rs`) |
+
+La captura se refrescó desde un `tools/list` real con las tres features
+(`program-analysis-server`, `evidence-cli-ladybug`, `contract-store`): 78
+tools, y **solo `project_overview` cambia**. La forma publicada pasó de
+`detail: string, default medium` al enum con los tres niveles y su
+significado, con `default detailed`; la forma de salida pasó de
+`detail: string` al contrato derivado del enum.
+
+**Las pruebas, y por qué son las mínimas** (lentes `change-impact` y
+`regression-promotion` de `delivery-first-testing`).
+
+- **De integración** (`project_overview_publishes_the_level_it_delivers`):
+  cada nivel entrega su contenido y la respuesta dice el nivel; el default
+  entrega la respuesta completa; un nivel que no existe es rechazado. El
+  nivel viaja **como los argumentos viajan — como JSON** — porque ésa es la
+  frontera donde el servidor los lee (`rmcp_adapter.rs:1611`): así la
+  comprobación del rechazo es parte del test y no un comentario sobre él.
+  El testigo es un proyecto con un símbolo llamado desde dos sitios, para
+  que las listas no sean vacías y las comprobaciones no sean vacuas.
+- **Unitaria**, en `smart_overview`: `quick` no lleva las listas. RED
+  medido revirtiendo el gating en el árbol (nunca con
+  `git checkout HEAD -- .`).
+
+Lo que **no** se ha tocado: `the_published_arguments_are_the_declared_ones`
+ya cubría las tres cosas que este cambio toca —la forma publicada es la
+derivada, el runtime anuncia la forma derivada y el valor que la forma
+excluye es el que el servidor rechaza—, así que no hacía falta escribir su
+tercera copia. No hay UAT que retirar ni test redundante que sustituir.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2563 tests run: 2563 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-core --tests` | **3548 tests run: 3548 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-ladybug` | **66 tests run: 66 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-mcp` | **101 tests run: 101 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli` | **629 tests run: 629 passed, 1 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `scripts/ci/test_the_consumer_can_declare_the_version.py` | **10 comprobaciones, OK** |
+| `scripts/product/test_product_tool_catalog.py` | **PASS** |
+| El RED de la prueba de integración | **4 de 5 en rojo** antes del arreglo |
+| El RED de la prueba unitaria de `smart_overview` | el `quick` llevaba los 2 entry points y el hot path `helper` |
+| La captura de `tools/list` | 78 tools; solo `project_overview` cambia |
+
+**El gate entero no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134, TASK-135, TASK-136,
+TASK-137, TASK-138, TASK-139 y TASK-122 van **nueve de diez**, así que el
+gate de esta unidad es **NOT_RUN**.
+
+**Compatibilidad.** Un cliente que envía `{}` recibe el mismo contenido que
+antes. Uno que envía `{"detail": "medium"}` recibe el nivel medio —lo que
+pidió—. No hay consumidor medido que mande `detail`: el CLI no tiene
+comando para esta tool, `apps/explorer-ui` no la usa, y el único
+consumidor en el repo (`b6_w1_mcp_robustness.rs:1068`) la llama con `{}`.
+
+**Observación para el futuro (no se ha tocado).** El enum del nivel
+existe por duplicado: la copia de `interface/mcp/schemas.rs` —la que se
+usa— y otra en `application/dto/analysis.rs:527` que no usa nadie más que
+su propio test. La que manda es la de la interfaz, porque es la que
+deriva la forma publicada; la otra es un resto muerto que se puede
+retirar en su propia unidad.
+
+**Entrega.** PR #631 → `d2c37a25`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
