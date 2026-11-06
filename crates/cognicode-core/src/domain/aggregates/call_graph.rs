@@ -55,8 +55,8 @@ pub struct MermaidOptions {
 /// A directed graph representing call dependencies between symbols
 ///
 /// The graph publishes its shape in a canonical order: its symbols come
-/// out ordered by symbol id, and so do the callers of a symbol and its
-/// callees.
+/// out ordered by symbol id, and so do its edges, the callers of a
+/// symbol and its callees.
 ///
 /// The order lives in the storage and not in the read. The maps that
 /// hold the symbols and the edges are ordered ones, so a read costs
@@ -80,13 +80,26 @@ pub struct CallGraph {
     /// the key and stores the per-edge metadata as the value. `f64` has no
     /// `Hash` impl, so it can never be part of the key.
     ///
+    /// The outer map is ordered: the edges of the graph come out ordered by
+    /// source symbol id, and then by target id and dependency type. Every
+    /// walk that publishes them — [`Self::all_dependencies`],
+    /// [`Self::all_dependencies_with_metadata`] and
+    /// [`Self::edges_with_metadata`] — comes out the same in every run of
+    /// the same code.
+    ///
     /// The inner map is ordered: the callees of a symbol come out
     /// ordered by symbol id, and then by dependency type.
-    edges: HashMap<SymbolId, BTreeMap<(SymbolId, DependencyType), (Provenance, f64)>>,
+    edges: BTreeMap<SymbolId, BTreeMap<(SymbolId, DependencyType), (Provenance, f64)>>,
     /// Reverse index: which symbols call this symbol (incoming edges)
     ///
     /// The set is ordered: the callers of a symbol come out ordered by
     /// symbol id.
+    ///
+    /// The outer map is NOT ordered, and does not have to be: this is a
+    /// lookup index, and nothing publishes its order. Every walk that
+    /// names the callers of a symbol asks the index for one key and
+    /// reads the ordered set inside it. Giving the index an order nobody
+    /// reads would put its cost on the hot path of every edge.
     reverse_edges: HashMap<SymbolId, BTreeSet<SymbolId>>,
     /// Auxiliary index: base_name (lowercase) -> list of SymbolIds
     name_index: HashMap<String, Vec<SymbolId>>,
@@ -97,7 +110,7 @@ impl CallGraph {
     pub fn new() -> Self {
         Self {
             symbols: BTreeMap::new(),
-            edges: HashMap::new(),
+            edges: BTreeMap::new(),
             reverse_edges: HashMap::new(),
             name_index: HashMap::new(),
         }
@@ -261,6 +274,11 @@ impl CallGraph {
     }
 
     /// Returns an iterator over all dependencies (edges) in the graph
+    ///
+    /// The edges come out ordered by source symbol id, then by target id
+    /// and dependency type. The order is part of the contract of the
+    /// aggregate: the same graph publishes the same list of edges on
+    /// every run.
     pub fn all_dependencies(
         &self,
     ) -> impl Iterator<Item = (&SymbolId, &SymbolId, &DependencyType)> {
@@ -276,6 +294,9 @@ impl CallGraph {
     /// snapshot executor to populate `EdgeResult.properties` so the
     /// conformance harness sees the same shape as the PG executor
     /// (e28-2-pr4-conformance).
+    ///
+    /// The edges come out in the same canonical order as
+    /// [`Self::all_dependencies`].
     pub fn all_dependencies_with_metadata(
         &self,
     ) -> impl Iterator<Item = (&SymbolId, &SymbolId, &DependencyType, Provenance, f64)> {
@@ -427,7 +448,11 @@ impl CallGraph {
     ///
     /// Used by the persistence layer (PostgreSQL via
     /// `cognicode-core::infrastructure::persistence`) and the explorer
-    /// adapter. The order is unspecified.
+    /// adapter.
+    ///
+    /// The edges come out in the same canonical order as
+    /// [`Self::all_dependencies`]: by source symbol id, then by target id
+    /// and dependency type.
     pub fn edges_with_metadata(
         &self,
     ) -> impl Iterator<Item = (SymbolId, SymbolId, DependencyType, Provenance, f64)> {
@@ -1519,6 +1544,132 @@ mod tests {
             .collect();
         assert_eq!(
             straight_ids, ids,
+            "the published order is the same however the graph was filled"
+        );
+    }
+
+    /// The aggregate publishes its edges in a canonical order: by source
+    /// symbol id, then by target id and dependency type.
+    ///
+    /// The map that holds the edges used to be a hash map, and a hash map
+    /// iterates in an order that differs per instance. Every walk that
+    /// publishes the edges inherited that order, so the same project
+    /// published a different list of edges on every run — and the relations
+    /// that a merge refused were named in a different order every time.
+    ///
+    /// The witness is ten edges with ten different sources: the chance that
+    /// a hash map of ten sources happens to iterate in the sorted order is
+    /// one in 3,6 million, so this is a check and not a lottery. The check
+    /// is total — it compares the published list against its own sorted
+    /// copy — because comparing two builds would only say that two hash
+    /// maps disagree, not that the published order is the canonical one.
+    #[test]
+    fn the_walk_over_the_edges_is_canonically_ordered() {
+        let names = [
+            "delta", "charlie", "bravo", "alpha", "echo", "foxtrot", "golf", "hotel", "india",
+            "juliet",
+        ];
+
+        let mut graph = CallGraph::new();
+        let mut sources = Vec::new();
+        for (index, name) in names.iter().enumerate() {
+            sources.push(graph.add_symbol(Symbol::new(
+                *name,
+                SymbolKind::Function,
+                Location::new("t.rs", index as u32 + 1, 0),
+            )));
+        }
+        let target = graph.add_symbol(Symbol::new(
+            "target",
+            SymbolKind::Function,
+            Location::new("t.rs", 99, 0),
+        ));
+
+        // The edges are added in an order that is not the published one:
+        // the order of the walk is a property of the graph, not of the
+        // order the edges arrived in.
+        for source in sources.iter().rev() {
+            graph
+                .add_dependency(source, &target, DependencyType::Calls)
+                .expect("both symbols are in the graph");
+        }
+
+        let published: Vec<(String, String, DependencyType)> = graph
+            .all_dependencies()
+            .map(|(source, target, kind)| {
+                (
+                    source.as_str().to_string(),
+                    target.as_str().to_string(),
+                    *kind,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            published.len(),
+            names.len(),
+            "every edge is published: the walk does not drop any"
+        );
+
+        let mut canonical = published.clone();
+        canonical.sort();
+        assert_eq!(
+            published, canonical,
+            "the edges come out ordered by source id, then target id and dependency type"
+        );
+
+        // The walk that carries the metadata publishes the same edges in
+        // the same order.
+        let with_metadata: Vec<(String, String)> = graph
+            .edges_with_metadata()
+            .map(|(source, target, _, _, _)| {
+                (source.as_str().to_string(), target.as_str().to_string())
+            })
+            .collect();
+        let without_metadata: Vec<(String, String)> = published
+            .iter()
+            .map(|(source, target, _)| (source.clone(), target.clone()))
+            .collect();
+        assert_eq!(
+            with_metadata, without_metadata,
+            "both walks over the edges publish them in the same order"
+        );
+
+        // The order does not depend on the order the edges were added: a
+        // graph filled in the published order publishes the same walk.
+        let mut straight = CallGraph::new();
+        let mut straight_sources = Vec::new();
+        for (index, name) in names.iter().enumerate() {
+            straight_sources.push(straight.add_symbol(Symbol::new(
+                *name,
+                SymbolKind::Function,
+                Location::new("t.rs", index as u32 + 1, 0),
+            )));
+        }
+        let straight_target = straight.add_symbol(Symbol::new(
+            "target",
+            SymbolKind::Function,
+            Location::new("t.rs", 99, 0),
+        ));
+        let mut in_published_order = straight_sources.clone();
+        in_published_order.sort();
+        for source in in_published_order.iter() {
+            straight
+                .add_dependency(source, &straight_target, DependencyType::Calls)
+                .expect("both symbols are in the graph");
+        }
+        let straight_published: Vec<(String, String, DependencyType)> = straight
+            .all_dependencies()
+            .map(|(source, target, kind)| {
+                (
+                    source.as_str().to_string(),
+                    target.as_str().to_string(),
+                    *kind,
+                )
+            })
+            .collect();
+        assert_eq!(
+            straight_published, published,
             "the published order is the same however the graph was filled"
         );
     }
