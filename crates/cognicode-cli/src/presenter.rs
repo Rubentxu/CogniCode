@@ -1023,6 +1023,7 @@ pub fn present_graph_impact(
         impacted_files_count,
         impacted_symbols,
         impacted_files,
+        affected_tests,
         // The coverage travels in the published document (the JSON
         // dispatch). The text says what the build could not cover on the
         // side channel —stderr—, the same way `graph full` does.
@@ -1072,6 +1073,19 @@ pub fn present_graph_impact(
                 }
                 if impacted_files.len() > 10 {
                     writeln!(w, "  ... and {} more", impacted_files.len() - 10)?;
+                }
+            }
+            // The tests the change reaches, and the command that runs
+            // them: the command is written so that it can be copied and
+            // pasted as it is.
+            if !affected_tests.is_empty() {
+                writeln!(w)?;
+                writeln!(w, "Affected tests:")?;
+                for test in affected_tests.iter() {
+                    writeln!(w, "  {} ({}:{})", test.name, test.file, test.line)?;
+                    if let Some(command) = &test.command {
+                        writeln!(w, "    {}", command)?;
+                    }
                 }
             }
             writeln!(w)?;

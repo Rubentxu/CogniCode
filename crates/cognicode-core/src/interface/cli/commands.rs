@@ -1491,17 +1491,7 @@ impl CommandExecutor {
 
                 let elapsed = start.elapsed().as_millis();
 
-                let result = GR::Impact {
-                    symbol: symbol.clone(),
-                    risk_level: format!("{:?}", impact.risk).to_uppercase(),
-                    direct_dependents: impact.matched,
-                    total_impacted_symbols: impact.symbols.len(),
-                    impacted_files_count: impact.files.len(),
-                    impacted_symbols: impact.symbols,
-                    impacted_files: impact.files,
-                    coverage: crate::interface::coverage::CoverageInfo::of(&built.coverage),
-                    elapsed_ms: elapsed,
-                };
+                let result = GR::impact_of(impact, symbol.clone(), &built.coverage, elapsed);
                 // T1-5.4l: text formatting is in the
                 // presenter.
                 Ok(result)

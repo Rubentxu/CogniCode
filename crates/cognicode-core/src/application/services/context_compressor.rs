@@ -387,6 +387,7 @@ mod tests {
             impacted_symbols: vec!["main".to_string()],
             risk_level: RiskLevel::Low,
             summary: "Low impact analysis".to_string(),
+            affected_tests: Vec::new(),
         };
 
         let result = service.compress_impact(&output);
@@ -411,6 +412,7 @@ mod tests {
             ],
             risk_level: RiskLevel::High,
             summary: "High impact analysis".to_string(),
+            affected_tests: Vec::new(),
         };
 
         let result = service.compress_impact(&output);
@@ -667,6 +669,7 @@ mod tests {
             ],
             risk_level: RiskLevel::Critical,
             summary: "Critical impact analysis".to_string(),
+            affected_tests: Vec::new(),
         };
 
         let result = service.compress_impact(&output);
@@ -687,6 +690,7 @@ mod tests {
             impacted_symbols: vec![],
             risk_level: RiskLevel::Low,
             summary: "No impact".to_string(),
+            affected_tests: Vec::new(),
         };
 
         let result = service.compress_impact(&output);

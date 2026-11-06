@@ -617,7 +617,22 @@ impl TreeSitterParser {
         // `SymbolFqn::from_legacy_side`, so the LEGACY FQN keeps its 0-based
         // trailing segment (the fact side re-bases to `start.row + 1`).
         let location = Location::new(file_path, start.row as u32, start.column as u32);
-        Some(Symbol::new(name, kind, location))
+        let symbol = Symbol::new(name, kind, location);
+        // The reader is the only one that can say what a test is: the mark
+        // that sits next to the declaration, or the convention the language
+        // names its tests with.
+        let is_test = symbol.is_callable()
+            && crate::infrastructure::parser::test_markers::declares_a_test(
+                node,
+                source,
+                file_path,
+                symbol.name(),
+                self.language,
+            );
+        if is_test {
+            return Some(symbol.mark_as_test());
+        }
+        Some(symbol)
     }
 
     /// The name of a function node.

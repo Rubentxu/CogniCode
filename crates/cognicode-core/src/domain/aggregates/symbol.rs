@@ -27,6 +27,24 @@ pub struct Symbol {
     /// the tools that ask about the declaration can learn it.
     #[serde(default)]
     declaration: Option<Declaration>,
+    /// Whether this symbol is a test.
+    ///
+    /// It is here because the reader is the only one that can say: a Rust
+    /// file says it with `#[test]`, a Java file with `@Test`, and a Python
+    /// file with where it lives and how it is named. The graph carries what
+    /// the reader read, so a consumer that asks which tests reach a change
+    /// does not have to read the files again.
+    ///
+    /// It is always written, even when it is false, and that is not a
+    /// detail: the snapshot durable encodes this struct with bincode, which
+    /// is not self-describing. A field that is written only when it is
+    /// true is a field the reader expects and does not find, and the
+    /// snapshot stops decoding — the graph of a tree that did not change
+    /// would be rebuilt on every run, and the test marks would be lost.
+    /// The layout of the snapshot changed when this field arrived, and
+    /// that is why the schema that names it changed with it.
+    #[serde(default)]
+    declares_a_test: bool,
 }
 
 impl Symbol {
@@ -48,6 +66,7 @@ impl Symbol {
             signature: None,
             fqn,
             declaration: None,
+            declares_a_test: false,
         }
     }
 
@@ -111,6 +130,23 @@ impl Symbol {
     /// Returns true if this symbol has a signature
     pub fn has_signature(&self) -> bool {
         self.signature.is_some()
+    }
+
+    /// Whether this symbol is a test.
+    ///
+    /// The answer is the one the reader gave: a symbol is a test when the
+    /// file that declares it says so, and not when its name looks like one.
+    pub fn is_test(&self) -> bool {
+        self.declares_a_test
+    }
+
+    /// Marks this symbol as a test.
+    ///
+    /// Only the reader that read the file calls this: it is the reader that
+    /// saw the mark, or the convention, and nobody else can say.
+    pub fn mark_as_test(mut self) -> Self {
+        self.declares_a_test = true;
+        self
     }
 }
 

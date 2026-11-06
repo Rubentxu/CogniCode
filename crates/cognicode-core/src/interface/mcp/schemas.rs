@@ -300,12 +300,50 @@ pub struct AnalyzeImpactOutput {
     pub impacted_symbols: Vec<String>,
     pub risk_level: RiskLevel,
     pub summary: String,
+    /// The tests the change reaches, and the command that runs each one.
+    ///
+    /// Empty when no test reaches the change, and empty is the truth then.
+    pub affected_tests: Vec<crate::application::dto::AffectedTest>,
     /// What the graph the answer was computed from covers.
     ///
     /// The counts are what the graph holds. Over a graph that does not
     /// cover the whole tree, that is not what the tree holds, and a
     /// reader that is not told so reads a zero as a finding.
     pub coverage: crate::interface::coverage::CoverageInfo,
+}
+
+impl AnalyzeImpactOutput {
+    /// The impact answer, as the consumer reads it.
+    ///
+    /// The answer is built here and not in the handler: the handler knows
+    /// what to ask, and this is the shape the consumer reads. The counts
+    /// in the summary are the ones the GRAPH holds — over a graph that
+    /// does not cover the whole tree, that is not what the tree holds, and
+    /// a summary that says "0 symbols would be affected" without saying so
+    /// is a finding the product did not make.
+    pub fn of(
+        impact: crate::application::services::impact_of::ImpactOf,
+        symbol: String,
+        auto_note: &str,
+        coverage_note: &str,
+        coverage: crate::interface::coverage::CoverageInfo,
+        elapsed_ms: u128,
+    ) -> Self {
+        let symbols_count = impact.symbols.len();
+        let files_count = impact.files.len();
+        Self {
+            symbol,
+            impacted_files: impact.files,
+            impacted_symbols: impact.symbols,
+            risk_level: impact.risk,
+            summary: format!(
+                "{}{}Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
+                auto_note, coverage_note, elapsed_ms, symbols_count, files_count
+            ),
+            affected_tests: impact.affected_tests,
+            coverage,
+        }
+    }
 }
 
 // ============================================================================

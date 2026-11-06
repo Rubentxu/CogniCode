@@ -129,6 +129,27 @@ pub struct GetCallHierarchyResult {
 // Analyze Impact
 // ============================================================================
 
+/// A test that a change reaches.
+///
+/// It carries the command that runs it, because a test the consumer cannot
+/// run is a test the consumer has to look up: the whole point of naming it
+/// is that the next step is one command away.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AffectedTest {
+    /// The name of the test.
+    pub name: String,
+    /// The file the test lives in.
+    pub file: String,
+    /// The line the test is declared at, as a consumer reads it.
+    pub line: u32,
+    /// The exact command that runs this test.
+    ///
+    /// Absent when the language does not decide its own runner: a Java
+    /// test is run by Maven or by Gradle, and the language does not say
+    /// which. An absent command is honest; an invented one is not.
+    pub command: Option<String>,
+}
+
 /// Result of impact analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyzeImpactResult {
@@ -137,6 +158,11 @@ pub struct AnalyzeImpactResult {
     pub impacted_symbols: Vec<String>,
     pub risk_level: RiskLevel,
     pub summary: String,
+    /// The tests the change reaches, and the command that runs each one.
+    ///
+    /// Empty when no test reaches the change, and empty is the truth then:
+    /// a change nothing tests has no test to name.
+    pub affected_tests: Vec<AffectedTest>,
 }
 
 // ============================================================================

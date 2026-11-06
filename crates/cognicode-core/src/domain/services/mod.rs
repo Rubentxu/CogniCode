@@ -10,6 +10,7 @@ mod corroboration;
 mod cycle_detector;
 mod edge_attachment;
 mod target_resolution;
+mod test_conventions;
 
 pub use call_graph_analyzer::{
     CallGraphAnalyzer, CallGraphComplexityReport, EntryPointAnalysis, HotPath, LeafFunctionAnalysis,
@@ -23,3 +24,4 @@ pub use corroboration::{edge_score, provenance_weight, score_subgraph, target_sc
 pub use cycle_detector::{Cycle, CycleDetectionResult, CycleDetector};
 pub use edge_attachment::attach_relations;
 pub use target_resolution::resolve_target;
+pub use test_conventions::{TestDeclaration, command_for, declaration_for, is_test};
