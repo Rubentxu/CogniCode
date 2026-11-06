@@ -15,7 +15,7 @@
 // actually implies, so the next unfailable assertion in this file becomes a
 // compile error instead of a silent pass.
 
-use crate::application::analysis_basis::{GraphSource, OutcomeState};
+use crate::application::analysis_basis::GraphSource;
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -1240,89 +1240,37 @@ pub async fn handle_build_graph(
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
-    let (skipped_files, pending_references, rejected_relationships, status) = if graph_source
-        != GraphSource::Built
-    {
-        // The snapshot was hydrated only after passing
-        // the manifest staleness check (content-vs-content, including
-        // unreadable-file detection), so the FILES the graph is built from
-        // are the ones on disk. The holes of the tree are a different
-        // question: a path the walk DECLINES is not one of those files, so
-        // the manifest never knew about it and the freshness check cannot
-        // see it. The holes are therefore taken from the tree as it is now,
-        // and a tree with a hole is `partial` — the same verdict a fresh
-        // walk of it would give.
-        //
-        // The pending and the rejected references are the graph's, and the
-        // graph is the persisted one: a snapshot only exists for a build
-        // that had none of them, and the files that decided them have not
-        // changed. Publishing them empty is publishing the truth about
-        // that graph.
-        let mapped: Vec<SkippedFileDto> = current_holes.iter().map(skipped_file_dto).collect();
-        let status = if mapped.is_empty() {
-            OutcomeState::Complete.published_label()
-        } else {
-            OutcomeState::Partial.published_label()
-        };
-        (
-            Some(mapped),
-            Some(Vec::new()),
-            Some(Vec::new()),
-            status.to_string(),
-        )
-    } else {
-        let report = ctx.analysis_service.get_last_build_report();
-        match report.as_ref().map(|r| &r.status) {
-            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => (
-                Some(Vec::new()),
-                Some(Vec::new()),
-                Some(Vec::new()),
-                OutcomeState::Complete.published_label().to_string(),
-            ),
-            Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                skipped,
-                pending,
-                rejected,
-            }) => {
-                let mapped: Vec<SkippedFileDto> = skipped.iter().map(skipped_file_dto).collect();
-                let pending: Vec<PendingReferenceInfo> = pending
-                    .iter()
-                    .map(PendingReferenceInfo::from_reference)
-                    .collect();
-                let rejected: Vec<RejectedRelationInfo> = rejected
-                    .iter()
-                    .map(RejectedRelationInfo::from_rejection)
-                    .collect();
-                (
-                    Some(mapped),
-                    Some(pending),
-                    Some(rejected),
-                    OutcomeState::Partial.published_label().to_string(),
-                )
-            }
-            None => {
-                // No report available — defensive: treat as complete
-                // (the build did not produce a BuildReport, which
-                // means the legacy path was used and no skip
-                // occurred in any case).
-                (
-                    Some(Vec::new()),
-                    Some(Vec::new()),
-                    Some(Vec::new()),
-                    OutcomeState::Complete.published_label().to_string(),
-                )
-            }
-        }
-    };
-
-    // The walk covered the tree, but the tree holds nothing this product
-    // can read. "Unsupported" says that without pretending the graph is
-    // complete.
-    let status = if no_material {
-        OutcomeState::Unsupported.published_label().to_string()
-    } else {
-        status
-    };
+    //
+    // Y la decisión es de un dueño: `coverage_verdict` la toma, y la CLI
+    // toma la misma. Dos reglas que se parecen son dos reglas, y la segunda
+    // se queda vieja mientras la primera se cuida.
+    //
+    // Los hechos de la respuesta servida de la caché son los del árbol de
+    // AHORA: un hueco no es uno de los ficheros del grafo, así que el
+    // manifiesto nunca lo vio, y un árbol con un hueco es `partial` —el
+    // mismo veredicto que daría un recorrido en frío. Las referencias y las
+    // relaciones rechazadas son las del grafo servido, que son vacías porque
+    // una instantánea sólo existe para un build completo.
+    let report = ctx.analysis_service.get_last_build_report();
+    let coverage = crate::application::services::analyze::coverage_verdict(
+        graph_source,
+        report.as_ref(),
+        &current_holes,
+        !no_material,
+    );
+    let facts = coverage.facts();
+    let status = coverage.published_state().published_label().to_string();
+    let skipped_files: Vec<SkippedFileDto> = facts.skipped.iter().map(skipped_file_dto).collect();
+    let pending_references: Vec<PendingReferenceInfo> = facts
+        .pending
+        .iter()
+        .map(PendingReferenceInfo::from_reference)
+        .collect();
+    let rejected_relationships: Vec<RejectedRelationInfo> = facts
+        .rejected
+        .iter()
+        .map(RejectedRelationInfo::from_rejection)
+        .collect();
 
     info!(
         "handle_build_graph: {} symbols, {} edges in {}ms (source: {})",
@@ -1382,9 +1330,9 @@ pub async fn handle_build_graph(
         relationships_found: edges_count,
         edges,
         message,
-        skipped_files,
-        pending_references,
-        rejected_relationships,
+        skipped_files: Some(skipped_files),
+        pending_references: Some(pending_references),
+        rejected_relationships: Some(rejected_relationships),
         basis: Some(basis),
     })
 }

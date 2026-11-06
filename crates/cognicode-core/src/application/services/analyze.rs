@@ -21,6 +21,7 @@ use std::time::Instant;
 
 use crate::application::analysis_basis::{
     AnalysisBasis, AnalysisError, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze, GraphSource,
+    OutcomeState,
 };
 use crate::application::services::analysis_service::AnalysisService;
 
@@ -59,6 +60,150 @@ pub fn holds_material(symbol_count: usize) -> bool {
 /// reads successful payloads.
 pub fn no_material_outcome(path: &std::path::Path) -> AnalysisOutcome<AnalysisValue> {
     AnalysisOutcome::unsupported(&no_material_reason(path))
+}
+
+/// The three holes a build can leave open.
+///
+/// They are three facts and they are told apart: a file the walk could not
+/// process, a reference it could not tie to a declaration, and a relation
+/// the repository refused. A build that left none of them open is complete.
+#[derive(Debug, Clone, Default)]
+pub struct CoverageFacts {
+    /// The files the walk could not process, with the reason.
+    pub skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+    /// The references that could not be tied to a declaration.
+    pub pending: Vec<crate::domain::value_objects::PendingReference>,
+    /// The relations the repository refused.
+    pub rejected: Vec<crate::domain::value_objects::RejectedRelation>,
+}
+
+impl CoverageFacts {
+    /// Whether the build left nothing open.
+    pub fn is_complete(&self) -> bool {
+        self.skipped.is_empty() && self.pending.is_empty() && self.rejected.is_empty()
+    }
+
+    /// The facts a build report states.
+    fn from_report(report: &crate::infrastructure::graph::per_file_graph::BuildReport) -> Self {
+        match &report.status {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => Self::default(),
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped,
+                pending,
+                rejected,
+            } => Self {
+                skipped: skipped.clone(),
+                pending: pending.clone(),
+                rejected: rejected.clone(),
+            },
+        }
+    }
+}
+
+/// The verdict on a coverage: the word it is published with and the facts
+/// that hold it up.
+#[derive(Debug, Clone)]
+pub enum Coverage {
+    /// The tree holds nothing this product can read: the walk ran and there
+    /// was nothing in it.
+    NoMaterial(CoverageFacts),
+    /// The answer covers the tree it was measured against.
+    Complete,
+    /// Nobody measured the coverage of this answer.
+    Unmeasured,
+    /// The answer covers the tree, except for the holes it names.
+    Partial(CoverageFacts),
+}
+
+impl Coverage {
+    /// The word this coverage is published with.
+    ///
+    /// One owner for the vocabulary: the CLI, the MCP and the SDK publish
+    /// the same word for the same coverage, and a word that means two things
+    /// is a lie the consumer cannot see.
+    pub fn published_state(&self) -> OutcomeState {
+        match self {
+            Coverage::NoMaterial(_) => OutcomeState::Unsupported,
+            Coverage::Complete => OutcomeState::Complete,
+            Coverage::Unmeasured => OutcomeState::Unknown,
+            Coverage::Partial(_) => OutcomeState::Partial,
+        }
+    }
+
+    /// The holes this coverage has.
+    ///
+    /// A coverage that is complete has none: that is what makes it
+    /// complete.
+    pub fn facts(&self) -> CoverageFacts {
+        match self {
+            Coverage::NoMaterial(facts) | Coverage::Partial(facts) => facts.clone(),
+            _ => CoverageFacts::default(),
+        }
+    }
+}
+
+/// The coverage of an answer, decided in one place.
+///
+/// The CLI and the MCP answer the same question about the same tree, so
+/// they ask it the same function: two rules that look alike are two rules,
+/// and the second one goes stale while the first one is kept.
+///
+/// The inputs are the facts both surfaces have. `source` says where the
+/// answer came from; `report` is the report of the build of THIS call —
+/// `None` when the answer was not built here; `holes` are the holes the
+/// tree has NOW; and `holds_material` says whether the tree holds anything
+/// this product can read.
+///
+/// The rules, in one place:
+///
+/// - an answer that was not built here is measured by the holes the tree
+///   has now, and a snapshot only exists for a complete build, so its
+///   references and relations are the empty ones;
+/// - an answer built here is measured by its report, and a build that left
+///   nothing open is `Complete`;
+/// - an answer whose coverage nobody measured is `Unmeasured`: measuring
+///   nothing and finding nothing are not the same thing;
+/// - a tree with nothing to read is `NoMaterial`: the walk ran and there
+///   was nothing in it.
+pub fn coverage_verdict(
+    source: GraphSource,
+    report: Option<&crate::infrastructure::graph::per_file_graph::BuildReport>,
+    holes: &[crate::infrastructure::graph::per_file_graph::SkippedFile],
+    holds_material: bool,
+) -> Coverage {
+    let facts = if source != GraphSource::Built {
+        // The answer was not built here, so its report is not ours: what
+        // the tree has NOW is what it is measured against. A hole is not
+        // one of the files the graph was built from, so the manifest never
+        // knew about it — and a tree with a hole is partial, the same
+        // verdict a fresh walk of it would give.
+        CoverageFacts {
+            skipped: holes.to_vec(),
+            pending: Vec::new(),
+            rejected: Vec::new(),
+        }
+    } else {
+        match report {
+            Some(report) => CoverageFacts::from_report(report),
+            None => CoverageFacts::default(),
+        }
+    };
+
+    if !holds_material {
+        return Coverage::NoMaterial(facts);
+    }
+
+    // Nobody measured this coverage: the answer does not say "complete" —
+    // it says "unknown", and the consumer knows it.
+    if source == GraphSource::Built && report.is_none() {
+        return Coverage::Unmeasured;
+    }
+
+    if facts.is_complete() {
+        Coverage::Complete
+    } else {
+        Coverage::Partial(facts)
+    }
 }
 
 /// Adaptador de producción: `Analyze` sobre el `AnalysisService` real.
@@ -199,12 +344,6 @@ impl ServiceAnalyzer {
         let source = Some(loaded.source);
 
         let graph = self.service.get_project_graph();
-        if !holds_material(graph.symbol_count()) {
-            // El build "exitoso" con cero símbolos es ausencia de
-            // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
-            return (no_material_outcome(path), None);
-        }
-
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
         // BuildReport compartido, no la mera existencia de símbolos.
         // Un walk con ficheros saltados es Partial con gaps = ficheros
@@ -213,12 +352,13 @@ impl ServiceAnalyzer {
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
         //
-        // Las tres coberturas son tres hechos y los tres cuentan: un
-        // fichero que no se pudo leer, una referencia que no se pudo atar y
-        // una relación que el almacén rechazó son respuestas distintas a
-        // "lo sabes todo?". La referencia y la relación rechazada viajan
-        // con el valor —donde el consumidor lee lo que sí se resolvió— y el
-        // gap dice qué cobertura no está completa.
+        // La decisión es de un dueño: `coverage_verdict` la toma, y el MCP
+        // toma la misma. Las tres coberturas son tres hechos y los tres
+        // cuentan: un fichero que no se pudo leer, una referencia que no se
+        // pudo atar y una relación que el almacén rechazó son respuestas
+        // distintas a "lo sabes todo?". La referencia y la relación
+        // rechazada viajan con el valor —donde el consumidor lee lo que sí
+        // se resolvió— y el gap dice qué cobertura no está completa.
         //
         // Un grafo servido del snapshot no tiene BuildReport: este proceso
         // no lo construyó. Sus huecos son los del arbol de AHORA —un
@@ -226,44 +366,39 @@ impl ServiceAnalyzer {
         // no lo ve— y sus referencias y relaciones son las del grafo
         // servido, que son vacias porque un snapshot solo existe para un
         // build completo.
-        let (skipped, pending, rejected) = if loaded.source != GraphSource::Built {
-            (loaded.tree.holes, Vec::new(), Vec::new())
-        } else {
-            match self.partial_coverage() {
-                Some(coverage) => coverage,
-                None => {
-                    // No hay reporte: no se midio nada. Eso no es lo mismo que
-                    // medir y no encontrar nada, asi que la respuesta no dice
-                    // "complete": dice "unknown", y el consumidor lo sabe.
-                    let stats = self.service.get_graph_stats();
-                    return (
-                        AnalysisOutcome::unknown_with(AnalysisValue::Graph(GraphValue::Full {
-                            path: path.to_path_buf(),
-                            symbols: stats.symbol_count,
-                            dependencies: stats.edge_count,
-                            elapsed_ms: 0,
-                            pending_references: Vec::new(),
-                            rejected_relations: Vec::new(),
-                        })),
-                        source,
-                    );
-                }
-            }
-        };
+        let report = self.service.get_last_build_report();
+        let coverage = coverage_verdict(
+            loaded.source,
+            report.as_ref(),
+            &loaded.tree.holes,
+            holds_material(graph.symbol_count()),
+        );
+
         let stats = self.service.get_graph_stats();
+        let facts = coverage.facts();
         let value = AnalysisValue::Graph(GraphValue::Full {
             path: path.to_path_buf(),
             symbols: stats.symbol_count,
             dependencies: stats.edge_count,
             elapsed_ms: 0, // el elapsed real va en la provenance
-            pending_references: pending.clone(),
-            rejected_relations: rejected.clone(),
+            pending_references: facts.pending,
+            rejected_relations: facts.rejected,
         });
-        let gaps = coverage_gaps(&skipped, &pending, &rejected);
-        if gaps.is_empty() {
-            return (AnalysisOutcome::complete(value), source);
+
+        match coverage {
+            // El build "exitoso" con cero símbolos es ausencia de
+            // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
+            Coverage::NoMaterial(_) => (no_material_outcome(path), None),
+            Coverage::Complete => (AnalysisOutcome::complete(value), source),
+            // No hay reporte: no se midio nada. Eso no es lo mismo que
+            // medir y no encontrar nada, asi que la respuesta no dice
+            // "complete": dice "unknown", y el consumidor lo sabe.
+            Coverage::Unmeasured => (AnalysisOutcome::unknown_with(value), source),
+            Coverage::Partial(facts) => {
+                let gaps = coverage_gaps(&facts.skipped, &facts.pending, &facts.rejected);
+                (AnalysisOutcome::partial(value, gaps), source)
+            }
         }
-        (AnalysisOutcome::partial(value, gaps), source)
     }
 
     fn graph_complexity(&self, path: &std::path::Path) -> AnalysisOutcome<AnalysisValue> {

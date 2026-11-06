@@ -136,7 +136,7 @@ fn cli_presenter_translates_outcome_to_n_minus_one_graph_result() {
 fn mcp_presenter_translates_outcome_to_build_graph_output() {
     let outcome = partial_outcome();
 
-    let output = present_build_graph(&outcome, false);
+    let output = present_build_graph(&outcome);
 
     assert_eq!(
         output.status, "partial",
@@ -171,7 +171,7 @@ fn all_three_channels_agree_on_state_for_the_same_outcome() {
     };
 
     // Canal MCP: presenter.
-    let mcp = present_build_graph(&outcome, false);
+    let mcp = present_build_graph(&outcome);
     let mcp_state = match mcp.status.as_str() {
         "complete" => OutcomeState::Complete,
         "partial" => OutcomeState::Partial,
@@ -216,7 +216,7 @@ fn facade_end_to_end_over_real_workspace_presents_consistently() {
     // Cualquier estado terminal es válido PERO debe ser consistente en
     // ambos presentadores.
     let cli = present_graph_full(&outcome, &tmp.to_string_lossy(), true);
-    let mcp = present_build_graph(&outcome, true);
+    let mcp = present_build_graph(&outcome);
     let GraphResult::Full {
         status: cli_status, ..
     } = &cli
