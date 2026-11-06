@@ -37788,3 +37788,132 @@ lotes de diez tareas, y éste no cierra un lote.
 repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este
 repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el
 hook rechaza.
+
+## 2026-11-07 — TASK-83: el sobre de la respuesta: el resultado, su base, su presupuesto y los enlaces
+
+### Lo que estaba mal (MEDIDO contra el árbol, no supuesto)
+
+Una respuesta decía QUÉ encontró y nada más. Medido sobre el árbol antes del cambio:
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Qué viaja en `structuredContent`? | El payload pelado. `content[0]` era el JSON del resultado, y quien quería saber si la respuesta era completa, o qué se había omitido, o cuál era el siguiente paso, tenía que reconstruirlo desde el payload —y a veces no podía, porque el payload no lo decía |
+| ¿Hay un tipo que declare la respuesta completa? | **No**: resultado, base, presupuesto y enlaces no existían como contrato. Cada tool publicaba su payload, y el "estado" era una palabra suelta dentro de ese payload, si la había |
+| ¿Hay un camino que permita seguir una respuesta? | **No**: los `follow_ups` del catálogo eran nombres de tool sin argumentos. No se podían copiar, ni jugar, ni ejecutar |
+| ¿Un handle firmado puede volver a la respuesta? | **No**: el mecanismo de cursores firmados (`interface/mcp/cursor.rs`) existía para otro propósito, y nada lo usaba como identidad de un enlace |
+
+Es decir: el producto publicaba **qué** y poco más, y lo que publicaba no decía ni si estaba completo ni qué hacer después.
+
+### Lo que dice ahora
+
+Hay un **sobre**, y tiene un solo dueño: `crates/cognicode-core/src/interface/hateoas.rs`.
+
+| Parte | Qué dice |
+|---|---|
+| `result` | el resultado tal cual lo publicó la tool: sin reescribirlo. Un sobre que lo resumiera sería un segundo resultado |
+| `state` | el veredicto que la respuesta declara (`complete`, `partial`, `unknown`, `unsupported`, `failed`). La palabra la declara quien la midió; el sobre no la inventa |
+| `basis` | la cobertura —los agujeros **contados**—, la frescura y las aristas que un LSP confirmó. Lo que nadie midió se dice `null`, nunca `0`: un cero parece una medición |
+| `budget` | lo que la respuesta dejó fuera, y por qué |
+| `_links` | lo que se puede hacer ahora: la tool, los argumentos rellenos, el motivo, la precondición, la autoridad y el handle |
+
+Las dos superficies son adaptadores del mismo sobre: el MCP lo publica en `structuredContent`, y el CLI lo imprime como órdenes copiables. Ninguna de las dos puede decir algo distinto de la otra, porque el sobre lo construye el mismo dueño.
+
+### Las seis reglas
+
+Cada regla produce **un** enlace: una respuesta puede tener muchos agujeros, y el consumidor necesita saber que hay un reindexado, no reindexar tres veces.
+
+| Regla | Cuándo sale | Tool que responde |
+|---|---|---|
+| `resolve-ambiguity` | una referencia declara un nombre que varios símbolos llevan | `get_symbol_code` |
+| `continue` | la respuesta está cortada | la misma tool, con el argumento de continuación |
+| `inspect-callers` | el fan-in llega a 8 | `get_call_hierarchy` |
+| `reindex` | la respuesta deja agujeros | `build_graph` |
+| `inspect-risk` | la respuesta declara riesgo alto o crítico | `get_file_symbols` |
+| `preview-change` | la respuesta propone un cambio | `analyze_impact` |
+
+Cada enlace nombra una tool **del catálogo**, con la autoridad y las precondiciones que el catálogo publica: el test lo contrasta contra el catálogo, no contra una lista escrita dentro del test.
+
+### Los handles: firmados, anclados y tipados
+
+`sym:`, `page:` y `plan:` se firman con el mecanismo de cursores firmados que ya vive en la interfaz MCP —mismo sobre, mismos hashes, mismos errores tipados—, más un **tag de integridad del payload**: un handle cuyo payload se reescribe no vuelve a pasar, aunque sus anclajes sigan intactos. El adaptador resuelve los handles que llegan en los argumentos **antes** del despacho: uno manipulado o caducado devuelve un error tipado y la tool no corre.
+
+### Lo que NO cambia: la cláusula de compatibilidad
+
+`content[0]` sigue llevando el payload **byte a byte** —lo fija `find_usages_compat_0_97`—, `content[1]` lleva el resumen, y detrás van las líneas `Siguiente:`. El `output_schema` publicado pasa a ser el del sobre, con el contrato de cada tool debajo de `result`; los `$defs` de la tool se **suben** a la raíz del documento publicado, porque un `$ref` dentro de un esquema anidado se resuelve contra el documento en el que se publica, y contra el documento anidado no resolvería.
+
+### El RED anti-vacuitad, medido
+
+Una suite nueva que pasa no dice nada si no puede fallar. Se perturbó el producto cinco veces, con los ficheros restaurados byte a byte después (sha256 verificado):
+
+| Perturbación | Lo que salió |
+|---|---|
+| el veredicto que siempre dice `complete` | **1 rojo**: `the_state_is_the_verdict_the_answer_declares` |
+| el tag de integridad sin cobertura del payload | **1 rojo**: `a_handle_with_a_rewritten_payload_is_refused` (el test nuevo) |
+| los agujeros que no se cuentan | **1 rojo**: `the_basis_counts_the_holes_and_names_what_was_not_measured` |
+| el umbral de fan-in que no dispara | **1 rojo**: `a_hot_symbol_offers_its_callers` |
+| el catálogo sin `BasisDto` | **1 rojo**: el contrato del maestro rechaza el esquema publicado |
+
+El segundo caso es el que importa: un tag que sólo cubriera los anclajes habría dejado pasar un handle que apunta a otro sitio.
+
+### La corrección que este mismo recibo trae
+
+El PR de la unidad (#670) projections del sobre al CLI de una manera que decía cosas que no eran ciertas, y la revisión lo encontró con la ejecución real, no con la lectura:
+
+| Lo que decía | Lo que hacía | Por qué importa |
+|---|---|---|
+| `cognicode index build <dir>` | construye el **índice de símbolos**: otra operación | el enlace dice «reconstruye el grafo»; la orden que lo hace es `cognicode graph full --rebuild <dir>` —sin `--rebuild` la terminal sirve la caché y el hueco sigue ahí |
+| `--direction in` fijo | la dirección estaba escrita en la proyección, no leída del enlace | una orden que dice una dirección que el enlace no dice responde a otra pregunta |
+| la construcción del grafo no se proyectaba | el CLI no imprimía ningún siguiente paso tras una construcción parcial | es la respuesta que más huecos declara, y la que más necesita decir cómo seguir |
+| «1 files» | el motivo se contaba sin leer | el motivo se lee en una terminal y en un cliente: es una frase, no un contador |
+
+El radio de esa corrección lo decidió `scripts/gate_scope.py` (`--base HEAD`): `touched=cognicode-cli cognicode-core`, `test-scope` de ocho paquetes, `mutant-scope` **vacío** —ninguno de los paquetes tocados es asequible de mutar— y `calendar=waits` (35 < 50).
+
+### El RED de la corrección, medido
+
+| Test | Con el código anterior |
+|---|---|
+| `the_cli_prints_links_as_commands_its_own_tree_accepts` | **FALLA**: la orden era `cognicode index build /repo` |
+| `the_cli_reads_the_direction_the_link_names` | **FALLA**: la dirección estaba fija en `in` |
+| `a_reason_counts_in_words_a_person_reads` | **FALLA**: el motivo decía `1 files` |
+| `a_partial_build_prints_the_rebuild_of_the_tree_it_built` | **FALLA**: la construcción no se proyectaba, no había bloque `Siguiente:` |
+
+`a_complete_build_prints_no_next_step` es el control negativo: pasa antes y después, y su trabajo es que la corrección no imprima un siguiente paso cuando no hay nada que ofrecer.
+
+### Las cifras, y de dónde salen
+
+| Cifra | De dónde sale |
+|---|---|
+| `4987 tests run: 4987 passed, 3 skipped` | `cargo nextest run -p cognicode-core -p cognicode-cli -p cognicode-mcp` (el PR #670) |
+| `4454 tests run, 0 skipped` (unitarios) y `6590 tests run, 6590 passed, 3 skipped` (integración) | `cargo nextest run --profile gate --lib/--tests` sobre el radio que declara `scripts/gate_scope.py` (el PR #671) |
+| `336 checks, 0 fallos` | `bash scripts/ci/run-all-contracts.sh` —47 suites— |
+| `cargo clippy --workspace --all-targets -- -D warnings` → **rc=0**; `cargo fmt --all --check` → limpio | los dos, en el árbol de la unidad |
+| El ratchet de tamaño sigue en pie | `python3 scripts/ci/test_file_size_ratchet.py` → **PASS**: 10 de 800 fuentes por encima de 2000 líneas de producción, ninguna cruzó el límite ni creció |
+| La captura del runtime coincide byte a byte | `mcp-client --method tools/list` contra el binario de tres features: 79 tools, 17 con contrato, y el maestro publica el mismo esquema byte a byte |
+| El catálogo no pierde ninguna tool | `product/tools.json`: sólo cambian los `output_schema` de 11 tools —los nombres y su orden, no |
+
+### Verificado
+
+- El MCP, en vivo: `structuredContent` es el sobre —`{_links, basis, budget, result, schema_version, state}`—, `content[0]` sigue siendo el payload byte a byte, y `content[1]` el resumen, con las líneas `Siguiente:` detrás.
+- Un handle manipulado que llega por el cable devuelve `{"kind":"garbled"}` y **la tool no corre**.
+- El CLI, en vivo: `cognicode graph full .` sobre un árbol con un fichero ilegible imprime
+
+  ```text
+  Siguiente:
+    cognicode graph full --rebuild . — 1 file, 0 references and 0 relations were left out of the answer
+  ```
+
+  y la orden impresa se copió y se ejecutó: `cognicode graph full --rebuild .` termina con `rc=0` y devuelve la misma respuesta.
+
+### Lo que NO se toca
+
+- **La cláusula de compatibilidad.** `content[0]` sigue siendo el payload byte a byte; el `structuredContent` es donde vive el sobre, y no al revés.
+- **Los enlaces que el CLI no sabe convertir no se imprimen.** Se quedan en el JSON de la respuesta, donde un cliente MCP los encuentra: media orden sería peor que ninguna.
+- **AC2 de TASK-82 sigue abierta**, y lo mismo: el vocabulario de los nueve goals es TASK-84.
+- **El ratchet de tamaño no se toca**: el sobre vive en un fichero nuevo, y `handlers/mod.rs` y `commands.rs` no han crecido.
+
+### La unidad anterior y la que sigue
+
+- TASK-82 montó el registro de goals y el primer goal; esta unidad no lo toca.
+- La que sigue es **TASK-84** —los nueve goals y sus alias—, que es donde se cumple el AC2 de TASK-82.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
