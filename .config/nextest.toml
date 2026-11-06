@@ -34,20 +34,22 @@ max-threads = 1
 filter = 'package(cognicode-mcp) & (test(/^cr07_metrics_exposition_contract::/) | test(/^mcp_http_routes_authority::/) | test(/^the_watch_endpoint_names_what_is_watched::/))'
 test-group = 'http-port'
 
-# The unit tests of the `cogh` binaries mutate state that lives outside their
-# temp dir: `redirect_home` moves HOME but not XDG, so lifecycle tests rename
-# files under the real `~/.config/opencode`. Under `cargo test` the `#[serial]`
-# annotations took turns on it; one process per test needs the same turn-taking
-# said here. Measured 2026-11-04: `layout::tests::t_debt4_t3_...` failed with
-# "rename ~/.config/opencode/opencode.json: No such file" once in two whole-suite
-# runs. The proper fix is hermetic tests (known debt); this group is the
-# containment, and it costs what `#[serial]` already cost.
-[test-groups.cli-shared-home]
-max-threads = 1
-
-[[profile.gate.overrides]]
-filter = 'binary_id(/^cognicode-cli::bin\//)'
-test-group = 'cli-shared-home'
+# The unit tests of the `cogh` binaries used to mutate state that lives outside
+# their temp dir: they wrote the developer's real IDE configuration while
+# several test processes ran at once, and the CLI's own atomic write used a
+# fixed temp name, so one writer's rename consumed the other's file ("rename
+# ~/.config/opencode/opencode.json: No such file"). Both halves of that are
+# gone since TASK-127 (PR #640): the atomic publish is the core's
+# `AtomicFileWriter` (an exclusive temp file), and every test that installs or
+# uninstalls an IDE points HOME and the IDE variables at its own directory
+# (`layout::test_support::TempPipelineEnv`). The home of a test is private
+# again, so there is nothing left to take turns on, and the group that
+# serialized the three bin targets went with it.
+#
+# Measured 2026-11-06: the three bin targets take 11.8 s serialized and 1.6 s
+# in parallel, and the suite of the package stays green with the developer's
+# real configuration untouched — its mtime and its content hash watched around
+# every run. The receipt is in docs/roadmap/JOURNAL.md.
 
 # The SBOM contract runs `scripts/ci/build-sboms-for-lane.sh` against the
 # REAL workspace: the script writes `crates/<component>-<target>.cdx.json`
