@@ -128,8 +128,26 @@ if [ -z "$CARGO_TOML_BLOB" ]; then
   echo "::error::release-tag-coherence: cannot read Cargo.toml at ${SHA} (object missing or no git history at this SHA)." >&2
   exit 1
 fi
+# The version is read with awk, and awk does NOT stop at the first match: it
+# reads the whole manifest and keeps the first `version =` it finds after
+# `[workspace.package]`.
+#
+# MEDIDO 2026-11-06. The `exit` that used to be here made the gate depend on
+# the order in which a pipe is closed: awk exited as soon as it had printed the
+# version, closing the read end of the pipe while printf might still have been
+# writing the rest of the manifest. printf then took a SIGPIPE (141) and, with
+# `set -euo pipefail`, the gate died with 141 instead of answering.
+#
+# It showed up as an intermittent red: the workspace manifest is 9 KB, which
+# fits in a pipe buffer, so the writer finished before the reader left — and
+# the race only showed when the machine was loaded and the two processes were
+# scheduled differently. The gate that decides whether a release is coherent
+# with its commit must not have a verdict that depends on that.
+#
+# Reading the whole manifest costs nothing (it is parsed in memory anyway) and
+# removes the race by construction: the reader never closes the pipe early.
 WORKSPACE_VERSION="$(printf '%s\n' "$CARGO_TOML_BLOB" \
-  | awk -F'"' '/^\[workspace\.package\]/{found=1} found && /^version[ \t]*=/{print $2; exit}')"
+  | awk -F'"' '/^\[workspace\.package\]/{found=1} found && /^version[ \t]*=/ && !printed {print $2; printed=1}')"
 
 if [ -z "$WORKSPACE_VERSION" ]; then
   echo "::error::release-tag-coherence: could not parse workspace.package.version from ${SHA}" >&2
