@@ -36176,3 +36176,101 @@ esta unidad.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio
 no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio
 no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-123: el formato del diagrama lo declara el dueño
+
+**El encargo.** El formato del mermaid lo declaraban tres capas, y las tres no se hablaban. El
+shape publicado lo nombraba en una frase, el campo del dominio no lo leía nadie, y el CLI metía
+sus propias palabras en un campo documentado como otra cosa.
+
+**Lo que estaba roto, medido (no supuesto).**
+
+| Hecho | Medida |
+|---|---|
+| El campo del dominio | `MermaidOptions.format: Option<String>` (`domain/aggregates/call_graph.rs:49`), documentado como «code» o «svg» |
+| Quién lo leía | **nadie**: `grep options.format` sobre el dominio → 0 resultados. Lo escribían tres llamadores (handlers, commands, workspace_session) |
+| El campo `.theme` | el mismo caso: escrito, nunca leído |
+| La regla de SVG | vivía en la interface: `handlers/mod.rs:2355`, `input.format.as_deref() == Some("svg") \|\| (input.format.is_none() && input.theme.is_some())` |
+| El CLI hablaba otro vocabulario | `graph mermaid --format` ∈ {txt, svg, png} (`commands.rs:526`) y lo metía **tal cual** en el campo del dominio (`format: Some(format.clone())`): el dominio recibía «txt» por un campo documentado como «code»\|«svg» |
+| El servidor aceptaba cualquier cadena | `ExportMermaidInput.format: Option<String>` → `{"format":"png"}` se aceptaba en silencio y contestaba con el código fuente |
+| La forma publicada no enumeraba | maestro: `input_schema.properties.format` = `{"description":"Output format: \"code\" …","type":["string","null"]}` — sin `enum` |
+| El CLI no distinguía svg de png | `presenter.rs:705`: la misma rama `"svg" \| "png"` → el mismo texto y la misma receta (`mermaid -s`, que produce SVG) |
+
+**Por qué el dueño es del dominio y no de la interface.** Un enum en la interfaz sería una segunda
+declaración del vocabulario, y un enum en el dominio tendría que admitir el «png» del CLI o
+romperlo. El dueño tenía que existir antes de que la forma pudiera enumerar.
+
+**El dueño.** `crates/cognicode-core/src/domain/value_objects/mermaid_format.rs` (nuevo):
+`MermaidFormat { Code, Svg }` — las dos formas que el renderizador produce. Deriva
+`Serialize`/`JsonSchema` con `rename_all="snake_case"`, y su `Deserialize` es manual: delega en
+`FromStr`, así que **el cable y la línea de comandos leen la misma implementación del parseo**.
+Los variants no llevan documentación propia a propósito: con `schemars` un variant documentado
+produce un `oneOf` de constantes, y una forma publicada que una máquina tiene que leer es mejor
+como una lista plana de los nombres que acepta.
+
+**Las tres capas, de una.**
+
+| Capa | Qué cambia |
+|---|---|
+| Dominio | `MermaidOptions.format: Option<MermaidFormat>` (tipado y vivo) + `effective_format()`. La regla «un tema pide el diagrama renderizado» vive con el vocabulario (`MermaidFormat::resolve`), no en la interface |
+| MCP | `ExportMermaidInput.format: Option<MermaidFormat>` → la forma enumera `["code","svg"]` y un valor que no existe se rechaza **donde los argumentos se leen** |
+| CLI | `interface/cli/mermaid_format.rs` (nuevo): la tabla de los nombres que la línea de comandos publica (`code`, `txt`, `svg`, `png`) con el formato que pide cada uno. Un nombre que no está se rechaza **nombrando los aceptados**, y el texto del `--help` sale de la misma tabla |
+
+**Lo que NO se tocó.** El texto publicado del CLI es el mismo texto y la misma receta; el JSON del
+CLI sigue llevando la palabra que escribió el usuario (`"format":"txt"`), y el formato que el
+grafo publica viaja en el resultado con `#[serde(skip)]`, fuera del documento publicado; `svg` y
+`png` siguen dando la misma rama.
+
+**Medido (no afirmado).**
+
+- **Los rojos, antes de implementar**: el test de integración del core fallaba 4 de 4 (la forma
+  sin `enum`, «png» aceptado, la refusada sin nombres, el maestro sin lista) y el del CLI 2 de 3
+  (la refusada y el `--help` que no nombraba los formatos). El tercero del CLI —los nombres
+  publicados— ya pasaba: es la guarda de regresión de lo que no puede cambiar.
+- **Los verdes, después**: core 5/5, CLI 3/3.
+- **El workspace entero**: `cargo nextest run --workspace --lib --tests` → **6807 tests run: 6807
+  passed, 3 skipped**, 0 rojos.
+- `cargo clippy --workspace --all-targets -- -D warnings` → rc=0, sin avisos. `cargo fmt --all
+  --check` → limpio.
+- **Los ratchets que muerden**: `test_file_size_ratchet.py` → PASS, y `commands.rs` **encogió**
+  (2955 → 2938 líneas de producción): el cambio se pagó con una deuda que ya estaba —el
+  `diagram_len` que se rellenaba en un segundo bloque de construcción y rebotaba el resultado— y
+  esa ceremonia se fue con él. `test_comment_standard.py` → OK (0 líneas ofensivas nuevas).
+- **El maestro**: la captura se refrescó con un `tools/list` real (78 tools, build con las tres
+  features) y el maestro se sincronizó con `sync_tool_catalog_with_the_capture.py`. El único delta
+  del documento es el `enum` del `format` de `export_mermaid`:
+  `{"enum":["code","svg",null],"type":["string","null"]}`. `--check` dice que el maestro es punto
+  fijo de la fusión, y `test_the_consumer_can_declare_the_version.py` pasa.
+- **La suite de contratos** (`bash scripts/ci/run-all-contracts.sh`): el **único rojo** es
+  `test_roadmap_version_ratchet.py` (`test_current_sha_matches_head`, `test_control_all_green`):
+  el snapshot de `docs/roadmap/CURRENT.md` declara `0eeffa1754c8` y HEAD es `d7ac4a0d14c3`. Es
+  **preexistente** y ajeno a esta unidad — ya lo declaró el recibo de TASK-140, y el snapshot
+  pertenece a otra unidad: regenerarlo es reescribir la prosa que describe el estado de aquel día.
+- **El consumidor real, medido con el binario**: `tools/call export_mermaid {"format":"png"}`
+  contesta `isError: true` con «invalid input: JSON error: unknown mermaid format 'png': the
+  graph publishes code or svg». Antes de este cambio la misma llamada contestaba con el código
+  fuente y ningún error.
+- **El CLI real**: `graph mermaid --format png2` sale con rc=1 y el stderr nombra los cuatro
+  nombres que el comando acepta. Antes se trataba como «txt», en silencio.
+- **El JSON del CLI**: `{"kind":"mermaid","path":".","diagram":"flowchart TD…","diagram_len":90,
+  "format":"txt","truncated":false,"elapsed_ms":5}` — el mismo documento que antes.
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: **el gate completo es NOT_RUN**. El lote anterior
+  (TASK-121, 133, 134, 135, 136, 137, 138, 139, 122, 124) queda certificado en `fb526521` (4701
+  unitarios, 6794 de integración, 627 mutantes: 618 atrapados, 9 inviables, 0 supervivientes).
+  Esta unidad entra en el lote siguiente.
+- No dice que el CLI renderice SVG o PNG: no lo hacía antes y no lo hace ahora. El CLI publica el
+  diagrama renderizado con la receta de `mermaid-cli`, que es lo que publicaba.
+- No dice que la forma publicada admita «txt» o «png»: el vocabulario del grafo son dos formas,
+  y los alias son de la línea de comandos. Un cliente del MCP ve `code` y `svg`, y es lo que el
+  servidor acepta.
+- No dice que el campo `.theme` sirva para más que para el nombre del tema: lo que se mueve es la
+  regla que lo mira, que ahora vive con el vocabulario.
+
+**Entrega.** PR #638 → `d7ac4a0d`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
