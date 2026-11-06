@@ -37212,3 +37212,173 @@ sobre el lote; las tres pasaron en verde.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
 crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-76: build más rápido: debuginfo reducido, mold y sccache
+
+**El encargo.** AC1 pedía `debug = line-tables-only` en la configuración global del runner y de
+desarrollo; AC2, `mold` o `lld` como linker del host; AC3, `sccache` activo con la tasa de aciertos
+visible; AC4, una mejora medida contra V09 (la línea base que publicaron TASK-69 y TASK-71).
+
+### Dónde vive el cambio, y por qué no vive en el repositorio
+
+La descripción de la unidad lo dice: «AGENTS.md prohíbe `[profile.test]` en el workspace para no
+romper la caché compartida, así que el cambio va en `~/.cargo/config.toml`». La razón es la regla 4
+de «Estrategia de tests»: la caché de `/var/home/rubentxu/cargo-targets/` es de todos los
+proyectos de la máquina, y un perfil declarado en un workspace la invalida. El perfil **no se puede
+declarar por proyecto**, así que su sitio es la configuración global de cargo; y el linker y la
+caché de compilación son propiedades de la máquina, no de este árbol.
+
+Lo que la máquina declara ahora:
+
+| Qué | Antes | Después |
+|---|---|---|
+| `[profile.dev]` / `[profile.test]` → `debug` | `1` ("limited") | `"line-tables-only"` |
+| `[profile.dev.package."*"]` / `[profile.test.package."*"]` → `debug` | `1` | `"line-tables-only"` |
+| `[target.x86_64-unknown-linux-gnu]` | (no declarado) | `linker = "gcc"` + `rustflags = ["-C", "link-arg=-fuse-ld=mold"]` |
+| `[build]` → `rustc-wrapper` | (no declarado) | `"sccache"` |
+
+`debug = 1` significa «limited», que lleva **más** información de depuración que
+`line-tables-only`: la diferencia es real y por eso el perfil estaba ahí.
+
+**Por qué `gcc` y no `mold` directamente.** rustc le pasa `-m64` al linker, que `mold` no
+entiende («mold: fatal: unknown -m argument: 64»). `gcc` es el driver que acepta ese flag, y con
+`-fuse-ld=mold` es quien invoca a `mold`. El orden importa: gcc aplica el **último** `-fuse-ld`
+(comprobado: `mold` y luego `lld` usa lld; `lld` y luego `mold` usa `ld.mold`), y rustc con
+`linker = "gcc"` no añade su propio `-fuse-ld=lld`, así que el único que queda es el nuestro.
+
+**Que `mold` sea el que enlaza, está probado, no supuesto.** Con un `ld.mold` sustituto en el
+PATH que imprime su línea de argumentos y ejecuta el `mold` real, un enlace de `rustc` con las
+flags de la configuración imprime la prueba.
+
+**El `rust-lld` del toolchain ya era el linker por defecto.** rustc pasa `-fuse-ld=lld` y el
+sysroot trae `gcc-ld/ld.lld`. AC2 no se cumple por herencia: se cumple porque ahora está
+**declarado**, y porque `mold` es más rápido que `lld` en el enlace.
+
+### Lo que el repositorio sí lleva
+
+Un cambio que vive fuera del repositorio necesita algo dentro que diga que sigue siendo verdad:
+
+| Fichero | Qué es |
+|---|---|
+| `scripts/build-time.sh` | **El instrumento.** Mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite y se pide a propósito (`just build-time`). |
+| `scripts/ci/test_build_env.py` | **El contrato.** Que el instrumento siga declarando los cuatro escenarios y midiendo en un destino aislado; que el repositorio **no** declare un perfil (la razón de que la declaración viva en la máquina); que la configuración de la máquina declare el entorno publicado; y que **toda herramienta que esa configuración nombre esté instalada** — una configuración que nombra un linker o una caché que no están rompe el build de toda la máquina, y el error no lo dice. |
+| `AGENTS.md` | La sección «El entorno de compilación» (qué declara la máquina, por qué el perfil no vive aquí, qué no se puede declarar, cómo se mide) y la regla 4, que citaba los valores viejos de la configuración. |
+| `justfile` | La receta `build-time`, que llama al instrumento: una sola puerta, no dos sitios que nombran la misma medición. |
+
+El contrato discrimina, y se comprobó en los tres estados: sin el instrumento falla; con la
+configuración global en `debug = 1` falla; con la configuración nueva pasa.
+
+### La medición
+
+**El entorno.** Xeon E5-2682 v4 @ 2,50 GHz, 64 CPU, 94 GB de RAM; Linux 7.2.15; cargo 1.96.0,
+rustc 1.96.0; `jobs = 4` en la configuración global de cargo (**no se toca**); workspace
+`0.101.31`; `sccache` 0.19.0 y `mold` 3.0.0 en `~/.cargo/bin`, junto a `cargo`.
+
+**El protocolo.** `scripts/build-time.sh` con `--cache empty` (la caché de compilación empieza
+vacía, así que el «frío» es un frío de verdad y no una caché disfrazada), en un directorio de
+destino **aislado**, y con la caché vaciada antes de **cada** medición. El «antes» se midió
+**con el mismo instrumento**, con la configuración original restaurada, en la misma sesión y en la
+misma máquina; y las series alternan antes/después, porque la máquina está compartida.
+
+**La máquina está compartida, y eso cambia cómo se lee una cifra.** Durante las mediciones compilaba
+otra workspace (`NextDraw`, un `cargo build --target wasm32-unknown-unknown --release`) y el *load
+average* estaba entre 13 y 28 sobre 64 núcleos. El tiempo de **pared** de un build depende de
+cuánta CPU hay libre: la misma reconstrucción del core midió 81 s con la máquina tranquila y
+131 s con la máquina cargada. El tiempo de **CPU** (user+sys) es el trabajo del compilador, y no
+se infla con la competencia. Por eso las dos cifras van en la tabla, y por eso la comparación
+buena es la **alternada**, no la de dos días distintos.
+
+#### El antes y el después
+
+Series alternadas, mismo árbol, misma máquina, caché vacía en cada medición:
+
+| Escenario | CPU antes | CPU después | Cambio | Pared antes | Pared después |
+|---|---|---|---|---|---|
+| frío (workspace entero desde cero) | 746,75 s | 370,40 s | **−50,4 %** | 171,55 s | 225,02 s |
+| tocar `core/src/lib.rs` (8 paquetes) | 482,15 s (media de 2) | 300,99 s (media de 2) | **−37,6 %** | 130,09 s (media de 2) | 110,24 s (media de 2) |
+| tocar un test de integración del core | 3,79 s | 1,12 s | **−70,4 %** | 1,77 s | 1,57 s |
+| sin cambios | 0,64 s | 0,63 s | −1,6 % | 0,64 s | 0,63 s |
+
+La fila de la pared del escenario frío **no** se lee como una regresión, y hay que decir por qué:
+en el estado nuevo hay `sccache`, y la escritura de sus ~900 objetos compite con el build que se
+está midiendo. Con la máquina tranquila y sin caché que escribir, la misma medición dio 238,56 s
+antes y 186,88 s después. Lo que no depende de la carga es el trabajo del compilador, y ese baja
+a la mitad.
+
+**Contra V09.** La línea base publicada (TASK-69/TASK-71) es: 49 ejecutables, 218 s en frío,
+0,50 s sin cambios, 13,85 s tras tocar un test de integración y 121 s tras tocar
+`cognicode-core/src/lib.rs`. La comparación de «tocar el core» contra esa línea base: los 121 s
+publicados se quedan en **101,65 – 118,83 s** (mediana 110,24 s) con la máquina compartida, y en
+**81,26 s** con la máquina tranquila. Los 13,85 s publicados del «tocar un test» **no se
+reproducen** en esta máquina: el mismo escenario con la configuración antigua mide 1,77 s, así que
+esa cifra de la línea base se midió bajo otras condiciones y no sirve para comparar.
+
+### Qué es el cambio y qué es ruido
+
+**El perfil se lleva casi todo.** El A/B controlado del enlace —los mismos objetos, el mismo
+binario de test del core, tres corridas cada uno— da:
+
+| Linker | Tiempos | Mediana |
+|---|---|---|
+| `mold` | 0,70 / 0,77 / 0,79 s | 0,77 s |
+| `lld` (el del toolchain) | 0,92 / 0,94 / 0,94 s | 0,94 s |
+
+Son 0,17 s por enlace. El enlace de un binario de test del core dura ~0,8 s sobre una
+reconstrucción que dura minutos, así que el enlace es una fracción del escenario: **el cambio
+grande es del perfil** (menos información de depuración que generar), y el del linker es real pero
+pequeño.
+
+**`sccache` funciona, y aquí su beneficio es limitado — y hay que decirlo.** Medido:
+
+- La tasa de aciertos es visible: `sccache --show-stats` la publica, y el instrumento la imprime
+  al final de cada corrida.
+- La caché **no cachea los binarios**: la razón que reporta sccache es `crate-type (bin)`, y los
+  ejecutables de test son exactamente eso. Por eso el escenario «tocar el core» no mejora con la
+  caché: lo que domina ahí es el enlace de esos binarios, que no se cachea.
+- La clave de compilación de Rust **no acierta entre directorios de destino distintos**: el mismo
+  crate compilado en dos `CARGO_TARGET_DIR` dio 0 aciertos y 46 fallos de caché. La clave incluye
+  el *fingerprint* de cargo, que depende del mtime de las fuentes: un fichero tocado es un
+  fingerprint nuevo, y por tanto un fallo de caché. La caché sirve dentro del mismo estado de
+  compilación, no entre checkouts.
+
+### Lo que esta unidad NO dice
+
+- **No dice que el gate se mida en otro tiempo.** El gate no compila el workspace entero entre
+  lotes: el radio de TASK-142 acota los paquetes, y el paso que domina el gate son los mutantes
+  (55 minutos), no el enlace.
+- **No dice que `sccache` haya valido la pena por sí solo.** Su tasa de aciertos es visible y
+  funciona, pero en este workspace el trabajo que domina (los binarios) es justo el que no se
+  cachea. Se queda porque no cuesta nada, y porque en el caso de recompilar lo mismo sin cambiarlo
+  ahorra parte del trabajo; no se anuncia como una ganancia de tiempo.
+- **No dice que la mejora de pared sea el −50 %** del trabajo de CPU: la pared depende de la carga
+  de la máquina, y con la máquina cargada la mejora de pared fue del 15 % (y del 9 % contra los
+  121 s publicados).
+- **No dice que el cambio sea del repositorio.** Es de la máquina, es reversible, y el contrato
+  del repo vigila que siga declarado.
+
+### El efecto sobre toda la máquina, y cómo volver atrás
+
+El cambio alcanza a **todos los proyectos Rust de esta máquina**, no solo a este: `~/.cargo/config.toml`
+es global. Los efectos son: menos información de depuración (las trazas siguen teniendo número de
+línea), `mold` como linker (más rápido), y `sccache` como envoltorio de `rustc` (más trabajo de
+proceso por compilación, y una caché en `~/.cache/sccache`).
+
+Para volver atrás:
+
+```
+cp ~/.cargo/config.toml.bak-2026-11-06 ~/.cargo/config.toml
+```
+
+La copia se hizo antes de tocar nada, y ese fichero es exactamente el estado anterior (verificado:
+`debug = 1`, sin `rustc-wrapper`, sin linker del host).
+
+**Gate del lote: NOT_RUN.** El gate se pasa por lotes de diez tareas (AGENTS.md) y esta unidad no
+lo certifica: lo que hay aquí son mediciones de tiempos de compilación, no la batería del gate.
+Lo que sí se ha corrido y está en verde es el contrato de esta unidad
+(`scripts/ci/test_build_env.py`), en sus tres estados discriminantes, y la suite de
+contratos: `bash scripts/ci/run-all-contracts.sh` → **324 checks, 0 fallos** (319 antes de
+esta unidad, +5 los del contrato nuevo).
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.

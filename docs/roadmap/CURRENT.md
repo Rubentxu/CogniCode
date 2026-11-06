@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `05cded613db5c711dd7752350d3e9be63b9db59b` (la
+> **Snapshot**: 2026-11-06, sobre `e518823cbfc667cd3f3a7c99ed0664e0747cdff5` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -180,22 +180,38 @@
 > y lo dice— y el calendario acota la edad de un hueco de mutación a un número
 > declarado de fusiones, porque el crate que lleva la lógica de grafo no se deja
 > de medir: se mide en su turno;
+> y el entorno de compilación está declarado, y su declaración vive en la máquina
+> porque en el repositorio no puede: un `[profile.test]` en el workspace
+> invalidaría la caché compartida de `/var/home/rubentxu/cargo-targets/`, que es
+> de todos los proyectos de la máquina —regla 4 de «Estrategia de tests»—, así
+> que el perfil, el linker y la caché de compilación viven en
+> `~/.cargo/config.toml`; lo que el repositorio declara es el instrumento que
+> los mide y el contrato que vigila que sigan declarados: el trabajo del
+> compilador baja a la mitad con `debug = "line-tables-only"` en vez de
+> `debug = 1` ("limited", que lleva **más** información de depuración), medido
+> en el recibo de TASK-76 sobre series alternadas antes/después, con el tiempo
+> de CPU —el trabajo, no la competencia por la máquina— como cifra robusta: el
+> build en frío pasa de 746,75 s a 370,40 s y la reconstrucción del core de
+> 482,15 s a 300,99 s; el linker del host es `mold`, declarado y no heredado
+> (con `gcc` como driver porque rustc le pasa un `-m64` que `mold` no
+> entiende), y `sccache` queda activo con su tasa de aciertos visible, aunque
+> aquí su beneficio es limitado: no cachea los binarios, y su clave incluye el
+> *fingerprint* de cargo, que cambia con el mtime de las fuentes;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`5e6775c9` → `05cded613db5c711dd7752350d3e9be63b9db59b`)
+## Qué cambió desde el snapshot anterior (`05cded61` → `e518823cbfc667cd3f3a7c99ed0664e0747cdff5`)
 
-Entre una punta y otra entraron **5 commits** (`git rev-list --count 5e6775c9f2a621010c4bd3533610ede8bbd550ae..05cded613db5c711dd7752350d3e9be63b9db59b`).
+Entre una punta y otra entraron **2 commits** (`git rev-list --count 05cded613db5c711dd7752350d3e9be63b9db59b..e518823cbfc667cd3f3a7c99ed0664e0747cdff5`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El recibo de TASK-56 y el snapshot que lo nombra | `c3404a35` (TASK-56) | El recibo append-only de la unidad del reindex incremental, y la regeneración del snapshot que lo cita. |
-| La línea base de tiempos del gate que existe | `38c12b44`, `a4e62633` (TASK-69) | El gate vigente costaba 61 min en frío y 55 min 46 s en caliente, y el paso de mutantes era el 92% (frío) y el 98,8% (caliente) de esa hora. La tabla que la unidad tenía midió las etapas de un pipeline retirado el 2026-11-04 que nunca entró en `main`, así que la línea base se midió sobre el gate que existe. Con ese número, la política C —acotar la mutación al lote, con el crate de algoritmos en un calendario declarado— deja de ser una preferencia y pasa a tener su coste. |
-| El gate mide el radio del lote | `05cded61` (TASK-142) | El radio de los tests es el cierre inverso de dependencias de los crates que el lote tocó, con el grafo de `cargo metadata` —8 de 11 paquetes en este lote—, y el radio de los mutantes son los crates asequibles más el crate del calendario cuando le toca el turno. Medido sobre el mismo lote: 16,341 s + 22,990 s con la mutación declarada como SKIP, frente a 20,163 s + 22,384 s + 3306,185 s del gate entero. El radio de los tests ahorra segundos —los tests son 40 s en total—; lo que acota es la mutación. El radio falla cerrado, y el calendario acota la edad de un hueco de mutación a 50 fusiones. |
+| El recibo de TASK-142 | `ab08c7a6` (TASK-142) | El recibo append-only de la unidad que acota el gate al lote, con la comparación de las dos suites sobre el mismo lote. |
+| El entorno de compilación está declarado | `e518823c` (TASK-76) | El perfil, el linker del host y la caché de compilación viven en la configuración global de cargo de la máquina, porque en el workspace no pueden: un `[profile.test]` ahí invalidaría la caché compartida. Con `debug = "line-tables-only"` en vez de `debug = 1`, el trabajo del compilador baja a la mitad: el build en frío pasa de 746,75 s a 370,40 s de CPU y la reconstrucción del core de 482,15 s a 300,99 s, medido en series alternadas antes/después con la máquina compartida. `mold` queda declarado como linker del host (0,77 s frente a 0,94 s de `lld` sobre los mismos objetos) y `sccache` activo, con su tasa de aciertos visible y su límite dicho: no cachea los binarios. |
 
 ## Release: la última publicada es la v0.101.30
 
