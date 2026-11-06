@@ -105,12 +105,19 @@ fn no_contract_carries_a_dialect_declaration() {
 fn every_published_contract_carries_a_summary_line() {
     for tool in tools_with_output_schema() {
         let schema = output_schema_for(tool).expect("derived contract");
+        // The contract is the envelope: the answer's own shape travels
+        // under `result`, and the summary line is there.
         let properties = schema
             .get("properties")
             .and_then(|p| p.as_object())
             .unwrap_or_else(|| panic!("{tool} advertises no properties"));
+        let result = properties
+            .get("result")
+            .and_then(|r| r.get("properties"))
+            .and_then(|p| p.as_object())
+            .unwrap_or_else(|| panic!("{tool} advertises no result: the answer has no shape"));
         assert!(
-            properties.contains_key("summary") || properties.contains_key("message"),
+            result.contains_key("summary") || result.contains_key("message"),
             "{tool} publishes no summary line: its answer would arrive with \
              no summary at all"
         );
@@ -418,7 +425,16 @@ async fn a_real_response_satisfies_the_advertised_schema() {
         .and_then(advertised_schema)
         .unwrap_or_else(|| panic!("graph_query must advertise a non-null outputSchema"));
 
-    assert_object_contract_holds(&schema, &payload, "graph_query");
+    // The contract describes the envelope, and the envelope is what
+    // travels in `structuredContent`.
+    let envelope = result
+        .get("structuredContent")
+        .expect("the answer carries the envelope");
+    assert_object_contract_holds(&schema, envelope, "graph_query");
+    assert_eq!(
+        envelope["result"], payload,
+        "the payload is the result inside the envelope"
+    );
 }
 
 /// A tool with a contract must answer with the payload **and** a summary.
@@ -456,8 +472,10 @@ async fn a_contract_tool_returns_structured_content_and_a_summary() {
         "structuredContent must be an object: {result}"
     );
 
-    // The text block and the structured content are the same answer: a
-    // client that reads either one reads the same thing.
+    // The text block carries the payload, and the payload is the result
+    // inside the envelope: a client that reads either one reads the same
+    // answer. The text block stays where it was — it is the compatibility
+    // clause the existing consumers read.
     let text = result["content"][0]["text"]
         .as_str()
         .expect("text content")
@@ -465,8 +483,12 @@ async fn a_contract_tool_returns_structured_content_and_a_summary() {
     let payload: Value =
         serde_json::from_str(&text).unwrap_or_else(|e| panic!("payload is JSON ({e})"));
     assert_eq!(
-        &payload, structured,
-        "the text block and the structured content must be the same answer"
+        &payload, &structured["result"],
+        "the text block and the envelope's result must be the same answer"
+    );
+    assert_eq!(
+        structured["schema_version"], 1,
+        "the envelope says which shape it is"
     );
 
     // The summary is the payload's own line, not a second copy of it.

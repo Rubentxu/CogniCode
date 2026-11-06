@@ -71,18 +71,36 @@ so a tool that says `readOnlyHint` is one you can offer without asking.
 
 ## Reading a tool's answer
 
-A tool that publishes an `outputSchema` answers in three places:
+Every answer travels in an **envelope**: the result, what it rests on,
+what it left out and what can be done next.
 
-- `structuredContent` — the answer as the object the contract describes.
-  Read it when you want fields; do not parse them out of the text.
-- `content[0].text` — the same answer serialised as JSON. It is there
-  for clients that only read text, and it is the same answer, not a
-  second one.
+- `structuredContent` — the envelope. Its `result` is the answer as
+  the object the contract describes; read it when you want fields, do
+  not parse them out of the text.
+- `state` — the verdict the answer declares: `complete`, `partial`,
+  `unknown` or `unsupported`. Read it before you report success.
+- `basis` — what the answer rests on: coverage, freshness and the
+  edges an LSP confirmed. `null` means nobody measured it, not that
+  it was zero.
+- `budget` — what the answer left out, and why.
+- `_links` — what can be done next, with the arguments each step
+  needs.
+
+The text blocks say the same thing for a reader that does not parse
+JSON:
+
+- `content[0].text` — the answer serialised as JSON, byte for byte as
+  the tool produced it. It is there for clients that only read text,
+  and it is the same answer, not a second one.
 - `content[1].text` — one line saying what the answer says. Read it
   when you want to report the result without reading the whole object.
+- the next blocks — one `Siguiente:` line per link, with the tool,
+  the arguments it needs and the reason. They are the next step
+  already spelled out; follow one instead of inventing a call.
 
-A tool with no `outputSchema` answers with its text alone. That is not
-a degraded mode: it is a tool that promised no shape.
+A link that carries a `handle` is signed: it is anchored to the
+workspace and the snapshot that minted it, and replaying it elsewhere
+fails with a typed error instead of answering about the wrong tree.
 
 ## Tool composition — the four canonical flows
 

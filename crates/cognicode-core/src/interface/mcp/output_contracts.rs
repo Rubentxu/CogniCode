@@ -78,7 +78,7 @@ fn schema_of<T: schemars::JsonSchema>() -> Map<String, Value> {
 /// A `BTreeMap` so iteration order is stable; the map is part of a public
 /// contract surface and a nondeterministic order would make diffs of
 /// `tools/list` noise.
-fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
+fn build_tool_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     let mut m = BTreeMap::new();
     m.insert("build_graph", schema_of::<BuildGraphOutput>());
     m.insert("codebase_map", schema_of::<CodebaseMapOutput>());
@@ -115,6 +115,41 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         schema_of::<crate::interface::mcp::handlers::findings_handlers::ExplainFindingOutput>(),
     );
     m
+}
+
+/// Every published contract is the envelope, with the tool's own shape under
+/// `result`.
+fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
+    build_tool_output_schemas()
+        .into_iter()
+        .map(|(tool, result)| (tool, envelope_schema(result)))
+        .collect()
+}
+
+/// The envelope's schema, with the tool's own contract under `result`.
+///
+/// The envelope is one shape for every tool: the result, what it rests on,
+/// what it left out and what comes next. What each tool answers with
+/// travels under `result`, so the contract the tool already published is
+/// not lost — it is one level deeper, and a client that validated the old
+/// shape validates the new one by reading one level down.
+fn envelope_schema(mut result: Map<String, Value>) -> Map<String, Value> {
+    let mut schema = schema_of::<crate::interface::hateoas::Envelope>();
+    // The tool's own definitions move up: a `$ref` inside the nested
+    // result points at `#/$defs/…`, and that path is read against the
+    // document the schema is published in.
+    let tool_defs = result.remove("$defs");
+    if let Some(definitions) = schema.get_mut("$defs").and_then(Value::as_object_mut)
+        && let Some(Value::Object(tool_defs)) = tool_defs
+    {
+        for (name, definition) in tool_defs {
+            definitions.entry(name).or_insert(definition);
+        }
+    }
+    if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+        properties.insert("result".to_string(), Value::Object(result));
+    }
+    schema
 }
 
 /// Every published tool output contract, built once per process.

@@ -4,6 +4,8 @@ pub mod analyzer;
 pub mod capabilities;
 pub mod commands;
 pub mod doctor;
+/// Los enlaces del sobre, como órdenes que la terminal entiende.
+pub mod follow_ups;
 /// La línea de órdenes de los goals: el árbol, el parseo y la ejecución.
 pub mod goal_command;
 /// The names the command line publishes for the formats of the graph.
