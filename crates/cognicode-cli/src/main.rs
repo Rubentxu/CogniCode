@@ -2,9 +2,9 @@
 //!
 //! This binary provides the command-line interface for CogniCode.
 
-use clap::Parser;
+use cognicode_core::CommandExecutor;
 use cognicode_core::interface::cli::commands::CliCommand;
-use cognicode_core::{Cli, CommandExecutor};
+use cognicode_core::interface::cli::{ParsedCli, parse_cli};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
 
@@ -16,8 +16,38 @@ mod evidence_cmd;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments
-    let cli = Cli::parse();
+    // Parse command line arguments.
+    //
+    // The goals of the registry live next to the commands of the enum, and
+    // the parse is the one that knows it: a goal is not a variant of the
+    // enum, it is a declaration the registry builds into the command tree.
+    let parsed = match parse_cli() {
+        Ok(parsed) => parsed,
+        Err(error) => error.exit(),
+    };
+
+    let cli = match parsed {
+        ParsedCli::Command(cli) => cli,
+        ParsedCli::Goal {
+            goal,
+            arguments,
+            format,
+            verbose,
+        } => {
+            if verbose {
+                // SAFETY: called before any threads are spawned
+                unsafe { std::env::set_var("RUST_LOG", "debug") };
+            }
+            let workspace = std::env::current_dir()?;
+            let output =
+                CommandExecutor::execute_goal(goal, &arguments, &workspace, format).await?;
+            let mut stdout = std::io::stdout();
+            cognicode_cli::presenter::present_output(&output, format, &mut stdout)?;
+            use std::io::Write;
+            stdout.flush()?;
+            return Ok(());
+        }
+    };
 
     // Initialize logging based on verbosity
     if cli.verbose {

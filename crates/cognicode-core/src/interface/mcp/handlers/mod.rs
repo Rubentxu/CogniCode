@@ -2008,6 +2008,7 @@ pub async fn handle_check_architecture(
 /// The identity basis of an answer, and the shape it is published with.
 mod basis;
 mod complexity_handlers;
+pub mod goal;
 pub use basis::BasisDto;
 use basis::compute_basis;
 /// Handler for safe_refactor tool
@@ -3602,9 +3603,8 @@ pub mod graph_handlers;
 pub mod graph_query_handlers;
 pub mod program_analysis_handlers;
 
-// Path authorisation — the rules that decide which file a handler may
-// read. They live in one module so that no handler answers "is this path
-// safe?" with a shortcut of its own.
+// Path authorisation — the rules that decide which file a handler may read.
+// One module, so no handler answers "is this path safe?" on its own.
 mod path_authorisation;
 pub mod retired;
 

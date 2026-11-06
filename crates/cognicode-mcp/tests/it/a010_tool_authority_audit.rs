@@ -62,7 +62,7 @@ fn published_tool_count() -> usize {
 /// (`interproc_summary` → `program-analysis-server`, `list_evidence` and
 /// `search_evidence` → `evidence-cli-ladybug`, plus `persistence` annotations
 /// on `detect_drift` / `reparse_on_edit`). The full catalogue is the master
-/// list (78 tools, used by the CLI `capabilities --json` consumer), but
+/// list (79 tools, used by the CLI `capabilities --json` consumer), but
 /// the runtime surface is the **active** subset (the same tools filtered
 /// by `tool_feature_enabled`). The PRF-MCP-05 tests below pin the
 /// contract between the runtime and the active catalogue; the full
@@ -227,7 +227,7 @@ fn reviewer_posture_covers_exactly_the_published_non_mutating_tools() {
     );
 }
 
-/// `requirements_status: not_declared` on all 78 tools is not an
+/// `requirements_status: not_declared` on all 79 tools is not an
 /// unexplained gap — it is a statement that `cache` and `network` are
 /// `null` because the runtime does not declare them, and a status that
 /// said "declared" while two of four requirements are `null` would be the

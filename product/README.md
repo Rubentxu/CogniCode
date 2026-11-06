@@ -100,8 +100,8 @@ Five of the tools that a default build hides are gated by three features:
 (`list_evidence` and `search_evidence`) and `contract-store`
 (`generate_contract` and `validate_contract`). Build with all three, or the
 capture comes up short and the catalog stops describing the surface the
-runtime publishes. Measured 2026-11-05: a default build reports 73 tools,
-and a build with the three features reports the 78 the catalog publishes.
+runtime publishes. Measured 2026-11-06: a default build reports 74 tools,
+and a build with the three features reports the 79 the catalog publishes.
 
 Capture what the runtime really publishes:
 

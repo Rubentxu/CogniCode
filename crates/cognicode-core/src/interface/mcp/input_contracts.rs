@@ -413,6 +413,13 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         "smart_search",
         schema_of::<crate::interface::mcp::schemas::SmartSearchInput>(),
     );
+    // TASK-82 — el goal `status`: sus argumentos se leen del mismo struct que
+    // el resto, así que el `inputSchema` que publica sale de ahí y no de una
+    // copia escrita a mano.
+    m.insert(
+        "status",
+        schema_of::<crate::interface::goals::status::StatusInput>(),
+    );
     m.insert(
         "taint_flow",
         schema_of::<

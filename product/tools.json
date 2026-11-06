@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 78,
+  "runtime_tool_count": 79,
   "tools": [
     {
       "name": "analyze_impact",
@@ -5618,6 +5618,219 @@
       "limitations": [
         "requires build_graph to be current",
         "composite; result is merged + deduplicated"
+      ]
+    },
+    {
+      "name": "status",
+      "title": "El estado del producto y del workspace",
+      "description": "Di qué ofrece este build y qué se ve del workspace: las fases del producto, los lenguajes detectados y los goals con sus plantillas de argumentos. Un cliente lo llama antes de decidir; un humano lo llama para saber si el workspace está donde cree. Ejemplos: `cognicode status`, `cognicode status --format json`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Input for the `status` goal",
+        "properties": {
+          "include_goals": {
+            "default": true,
+            "description": "Include the goals that this build offers, with their argument templates",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": {
+        "$defs": {
+          "GoalArgument": {
+            "description": "Un argumento de un goal, tal y como el esquema lo publica.\n\nEl tipo lo produce el esquema derivado del struct que lee los\nargumentos; no se escribe a mano, para que el nombre, la descripción y\nla obligatoriedad tengan un solo dueño.",
+            "properties": {
+              "description": {
+                "description": "Lo que hace el argumento, en una frase.",
+                "type": "string"
+              },
+              "name": {
+                "description": "El nombre del argumento.",
+                "type": "string"
+              },
+              "required": {
+                "description": "Si el llamante tiene que mandarlo.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "required"
+            ],
+            "type": "object"
+          },
+          "GoalInfo": {
+            "description": "Un goal tal y como lo describe la respuesta de `status`.",
+            "properties": {
+              "arguments": {
+                "description": "Los argumentos del goal y su plantilla.",
+                "items": {
+                  "$ref": "#/$defs/GoalArgument"
+                },
+                "type": "array"
+              },
+              "authority": {
+                "description": "Lo que el goal puede hacer: `read` o `mutating`.",
+                "type": "string"
+              },
+              "description": {
+                "description": "La descripción del goal.",
+                "type": "string"
+              },
+              "examples": {
+                "description": "Los ejemplos de uso.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "minimum_phase": {
+                "description": "La fase más temprana en la que el goal ya responde.",
+                "type": "string"
+              },
+              "name": {
+                "description": "El nombre del goal.",
+                "type": "string"
+              },
+              "owner": {
+                "description": "Quién responde por el goal.",
+                "type": "string"
+              },
+              "title": {
+                "description": "El título corto.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "description",
+              "examples",
+              "authority",
+              "minimum_phase",
+              "owner",
+              "arguments"
+            ],
+            "type": "object"
+          },
+          "PhaseInfo": {
+            "description": "Una fase del producto.",
+            "properties": {
+              "description": {
+                "description": "Lo que la fase significa.",
+                "type": "string"
+              },
+              "name": {
+                "description": "El nombre de la fase.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ],
+            "type": "object"
+          },
+          "WorkspaceStatus": {
+            "description": "El workspace que se ha mirado.",
+            "properties": {
+              "languages": {
+                "description": "Los lenguajes que se han detectado en él.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "path": {
+                "description": "La raíz del workspace.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "languages"
+            ],
+            "type": "object"
+          }
+        },
+        "description": "La respuesta del goal `status`.",
+        "properties": {
+          "goal": {
+            "description": "El goal que contesta.",
+            "type": "string"
+          },
+          "goals": {
+            "description": "Los goals que este build ofrece.",
+            "items": {
+              "$ref": "#/$defs/GoalInfo"
+            },
+            "type": "array"
+          },
+          "phases": {
+            "description": "Las fases del producto y lo que cada una significa.",
+            "items": {
+              "$ref": "#/$defs/PhaseInfo"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "description": "La versión del esquema de esta respuesta.",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Una línea que resume el estado.",
+            "type": "string"
+          },
+          "version": {
+            "description": "La versión del producto que contesta.",
+            "type": "string"
+          },
+          "workspace": {
+            "$ref": "#/$defs/WorkspaceStatus",
+            "description": "El workspace que se ha mirado."
+          }
+        },
+        "required": [
+          "summary",
+          "schema_version",
+          "goal",
+          "version",
+          "phases",
+          "workspace",
+          "goals"
+        ],
+        "title": "GoalStatus",
+        "type": "object"
+      },
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      },
+      "precision_floor": "ast-heuristic",
+      "limitations": [
+        "El estado es del producto y del workspace, no del análisis: la cobertura del workspace todavía no se publica."
       ]
     },
     {
