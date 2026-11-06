@@ -79,9 +79,16 @@ const RETIRED_PATHS: &[&str] = &[
 /// and the difference between "the gate grew" and "the gate was extended on
 /// purpose" is a commit that says so. This list is the definition; changing it
 /// means changing the contract in the same diff, which is the point.
+///
+/// What identifies a step is the runner and what it runs, NOT the scope: since
+/// TASK-142 the radius of the gate is the answer of `scripts/gate_scope.py`,
+/// so the literal `--workspace` and the literal `-p <crate>` are no longer in
+/// the command line. A step is still a step when the scope is computed.
 const GATE_STEPS: &[&str] = &[
-    "cargo nextest run --profile gate --workspace --lib",
-    "cargo nextest run --profile gate --workspace --tests",
+    "cargo nextest run --profile gate",
+    "--lib",
+    "cargo nextest run --profile gate",
+    "--tests",
     "cargo mutants",
 ];
 
@@ -250,12 +257,17 @@ fn the_gate_runs_the_three_steps() {
 /// command-line concern and it lives in the gate script — which is where this
 /// test looks for it.
 ///
-/// The scope is `cognicode-graph-algos`: the crate that holds the graph
-/// algorithms the analysis is built on, and the only one where the mutation
-/// measurement is both meaningful and affordable. The crates that are out of
-/// it are named here as well, because a scope that only says what it includes
-/// reads like a scope that includes everything else: the exclusion is part of
-/// the declaration.
+/// Since TASK-142 the crates that are mutated are the ones the batch touched,
+/// and the command line takes them from the answer of `scripts/gate_scope.py`.
+/// So the scope is no longer a literal `-p cognicode-graph-algos`: what the
+/// gate declares is which crates are AFFORDABLE to mutate, and which crate the
+/// CALENDAR measures in its turn. `cognicode-graph-algos` is that crate: it
+/// holds the graph algorithms the analysis is built on, and it is the only one
+/// where the mutation measurement is both meaningful and affordable.
+///
+/// The crates that are out of the scope are named here as well, because a
+/// scope that only says what it includes reads like a scope that includes
+/// everything else: the exclusion is part of the declaration.
 #[test]
 fn the_mutation_scope_is_declared_and_resolvable() {
     let config = repo_root().join(".cargo/mutants.toml");
@@ -270,7 +282,21 @@ fn the_mutation_scope_is_declared_and_resolvable() {
         .expect("the gate script is readable");
 
     assert!(
-        script.contains("-p cognicode-graph-algos"),
+        script.contains("MUTANT_AFFORDABLE_PACKAGES"),
+        "the gate script no longer declares which crates are affordable to \
+         mutate; the scope of the mutation step has to be written down \
+         somewhere"
+    );
+
+    assert!(
+        script.contains("MUTANT_CALENDAR_PACKAGE"),
+        "the gate script no longer declares which crate the calendar measures \
+         in its turn; a calendar without a crate is a calendar that measures \
+         nothing"
+    );
+
+    assert!(
+        script.contains("cognicode-graph-algos"),
         "the mutation scope no longer names cognicode-graph-algos; if the \
          scope changed on purpose, this contract and the gate script have to \
          change in the same diff"

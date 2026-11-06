@@ -73,13 +73,15 @@ El gate son **tres cosas, y solo tres**:
 
 | # | Qué | Comando |
 |---|---|---|
-| 1 | **Tests unitarios** | `cargo nextest run --profile gate --workspace --lib` |
-| 2 | **Tests de integración** (con mocks) | `cargo nextest run --profile gate --workspace --tests` |
+| 1 | **Tests unitarios** | `cargo nextest run --profile gate <radio> --lib` |
+| 2 | **Tests de integración** (con mocks) | `cargo nextest run --profile gate <radio> --tests` |
 | 3 | **Mutantes** | `cargo mutants` |
 
 El gate entero es `bash scripts/test-gate.sh`. **Los tres tienen que estar verdes**: un
 gate con uno de los tres en rojo es un gate rojo. No hay lane de CI detrás — la
-autoridad es la suite en verde más una persona que lee el diff.
+autoridad es la suite en verde más una persona que lee el diff. `<radio>` es el
+alcance que se mide (ver «El gate mide un radio» más abajo); cuando el radio no se
+puede determinar, el radio es el workspace entero.
 
 **Por qué los mutantes son parte del gate y no un extra.** Un test que pasa no dice
 nada sobre si *mataría* un defecto: una suite puede estar verde y no notar un `>` por
@@ -95,20 +97,56 @@ reglas de ignore.** Sin pedirlo, cada mutante copia los 6,6 GB del árbol de tra
 ejecutar dentro de un volumen normal. El script lo pide explícitamente
 (`--gitignore true`) y el contrato comprueba que siga pidiéndolo.
 
-El alcance de la mutación está en `scripts/test-gate.sh`, en la línea de comandos de
-`cargo mutants`, y es explícito porque el coste es real: mutar `cognicode-core`
-(217k líneas) o `cognicode-explorer` (65k) no termina en una vida. El alcance de hoy
-es `cognicode-graph-algos`: los algoritmos de grafo sobre los que está construido el
-análisis, y el único crate donde la medición es a la vez significativa y asequible
-—no tiene dependencias, así que un mutante es una recompilación de dos segundos y una
-corrida de tests. Los crates fuera del alcance están nombrados en el script con su
-motivo, porque un alcance que solo dice qué incluye se lee como si incluyera todo lo
-demás. **No está en `.cargo/mutants.toml` porque no puede estar**: el esquema de
-configuración de `cargo-mutants` es plano y global, con `deny_unknown_fields`, y un
-fichero que abre una tabla `package` se rechaza entero en vez de ignorarse. Ese
-fichero lleva los ajustes globales (globs excluidos, multiplicador de timeout,
-mutantes equivalentes declarados); el alcance, que es una cosa de línea de comandos,
-vive en el gate.
+**Lo que es asequible de mutar está declarado en `scripts/test-gate.sh`, y lo que
+queda fuera, también.** El coste es real: mutar `cognicode-core` (217k líneas) o
+`cognicode-explorer` (65k) no termina en una vida. El único crate asequible hoy es
+`cognicode-graph-algos`: los algoritmos de grafo sobre los que está construido el
+análisis —no tiene dependencias, así que un mutante es una recompilación de dos
+segundos y una corrida de tests—. Los crates fuera del alcance están nombrados en el
+script con su motivo, porque un alcance que solo dice qué incluye se lee como si
+incluyera todo lo demás. **No está en `.cargo/mutants.toml` porque no puede estar**:
+el esquema de configuración de `cargo-mutants` es plano y global, con
+`deny_unknown_fields`, y un fichero que abre una tabla `package` se rechaza entero en
+vez de ignorarse. Ese fichero lleva los ajustes globales (globs excluidos,
+multiplicador de timeout, mutantes equivalentes declarados); el alcance, que es una
+cosa de línea de comandos, vive en el gate.
+
+#### El gate mide un radio, y el radio lo decide un script
+
+Medido el 2026-11-06 (recibo de TASK-69 en el JOURNAL), el gate costaba **61 min en
+frío y 55 min 46 s en caliente**, y el paso de mutantes era el **92%** (frío) y el
+**98%** (caliente) de esa hora. Un gate cuyo coste no depende de lo que cambió es un
+gate que no se puede correr seguido. Desde TASK-142, `scripts/test-gate.sh` **pregunta**
+a `scripts/gate_scope.py` qué tiene que medir y corre eso. La decisión vive en el
+selector, no en el gate: dos decisiones sobre el mismo radio serían dos fuentes de
+verdad, y la segunda es la que se pudre.
+
+- **El radio de los tests** es el **cierre inverso de dependencias** de los crates que
+  el lote tocó, y el grafo lo decide `cargo metadata`: un crate solo puede romperse
+  porque cambió él o una dependencia suya. La unidad del radio es el **paquete**, no el
+  test ni la ruta: el filtro por rutas ya se probó y tenía un agujero real
+  (`scripts/test-fast.sh`, retirado el 2026-11-04, con un camino `fallback` que corría
+  `cargo test --workspace --lib` y no llegaba nunca a los tests de integración nuevos).
+- **El radio de los mutantes** son los crates que el lote tocó que son **asequibles de
+  mutar**, más el crate del **calendario** cuando le toca el turno.
+
+**El radio falla cerrado.** Si la base del lote no se resuelve, si `cargo metadata` no
+responde o si el diff no se puede leer, la respuesta es el gate **entero**, con el
+motivo en el log. Un radio vacío significaría «nada que comprobar», y un gate que no
+comprueba nada y dice verde es peor que un gate lento. Lo comprueba
+`scripts/ci/test_gate_scope.py`, con un workspace de fixture real.
+
+**El calendario de los mutantes.** El crate que lleva la lógica de grafo **no se deja
+de medir: se mide en su turno**, y el turno está declarado en `scripts/test-gate.sh`
+(`MUTANT_CALENDAR_PACKAGE`, `MUTANT_CALENDAR_EVERY_N`, `MUTANT_CALENDAR_MARKER`). La
+unidad del calendario es el **commit de fusión en `main`**: se cuenta desde git y
+cualquiera lo audita, sin fichero de estado que pueda discrepar de la historia. El turno
+es un **cruce** de un múltiplo del periodo, no un residuo, porque los lotes no miden
+todos lo mismo y una regla de «cuando el resto sea cero» puede saltar el múltiplo y no
+disparar nunca. Con el periodo declarado (N fusiones; hoy 50, unos cinco lotes de
+diez), **la edad de un hueco de mutación queda acotada**, y el gate lo dice en el log
+cuando el paso no se midió: un paso que no se midió y no lo dice es un gate que calla,
+y un gate que calla es un gate en el que nadie puede confiar.
 
 **Reglas duras**:
 
@@ -187,6 +225,7 @@ vive en el gate.
 | Qué | Comando |
 |---|---|
 | Gate completo | `bash scripts/test-gate.sh` |
+| Gate con la base del lote declarada | `GATE_BASE=<commit> bash scripts/test-gate.sh` |
 | Solo mutantes | `bash scripts/test-gate.sh --mutants` |
 | Doc-tests | `cargo test --workspace --doc` |
 | Lint de formato | `cargo fmt --all --check` |
