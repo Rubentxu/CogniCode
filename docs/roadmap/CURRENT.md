@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-05, sobre `0eeffa1754c80f265ec5ab491a12c28cd6dc1f91` (la
+> **Snapshot**: 2026-11-06, sobre `abc2b3c36df5f71feb0af4cede5c8ed6c5493be8` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -94,6 +94,41 @@
 > es la declaración del producto —la que el servidor lleva dentro del binario— y
 > no un catálogo calculado en otro build, que es lo que tenía el gate entero en
 > rojo;
+> y el análisis del grafo es reproducible bit a bit: la detección de
+> comunidades, los ciclos, los god nodes, los llamantes, los caminos calientes,
+> las dependencias entre módulos, los símbolos del grafo y las aristas del
+> grafo publican el mismo orden en cada corrida del mismo proyecto; el sitio
+> del orden se decidió con la cifra —si la lectura se repite en cada
+> publicación, el orden va en la escritura (`BTreeSet`/`BTreeMap`)—, y hay un
+> dato que sorprende: con claves largas (`fichero:nombre:línea`) el `BTreeMap`
+> busca MÁS RÁPIDO que el `HashMap`, porque SipHash recorre la clave entera;
+> y el grafo de un proyecto real termina: la complejidad y el conjunto de
+> retroalimentación ya no se quedan sin acabar sobre código de verdad, y el
+> arreglo —cada grupo entra una sola vez— se midió en 46,5 MB; y el lazo más
+> largo mide el orden topológico, que era un agujero real del crate de
+> algoritmos de grafo;
+> y el valor del daemon es el hash de frescura: un daemon vivo dice que su
+> índice está fresco y el cliente lo sirve sin releer el árbol; un árbol sin
+> nada que leer tiene un estado, y las dos superficies lo dicen igual;
+> y el paso de mutantes del gate mide de uno en uno, porque su veredicto es
+> por mutante: en paralelo, siete mutantes de un mismo fichero parecían
+> supervivientes y de uno en uno los diez son atrapados; el veredicto ya no
+> confunde un mutante atrapado con un tiempo agotado; y toda corrida de
+> mutación lleva techo de memoria, con un dueño del presupuesto y dos rutas
+> que lo leen;
+> y los tests del CLI ya no escriben la configuración real del IDE: la
+> escritura atómica es la del core —temporal exclusivo— y cada test apunta el
+> HOME y las variables del IDE a su propio directorio; la contención que
+> cubría la carrera vieja se retiró con medición, y el gate no se abreviaba
+> con ella: los binarios del CLI no están en su camino crítico;
+> y el vocabulario publicado tiene dueño: el formato del diagrama lo declara
+> el dominio, la estrategia del índice la declara la fábrica, el nivel que
+> publica `project_overview` es el que entrega, y el diagrama de
+> `export_callflow` dibuja las comunidades que dice;
+> y los argumentos de una tool se declaran una vez —la forma se deriva del
+> tipo— y la columna publicada es una, como la línea;
+> y el gate del lote de diez pasó, medido en serie: 4701 unitarios, 6794 de
+> integración y 627 mutantes —618 atrapados, 9 inviables, 0 supervivientes—;
 > y desde entonces: la complejidad y el conteo de parámetros tienen una sola
 > medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
 > servidor real exige el token en `/mcp` y `/watch`;
@@ -102,20 +137,39 @@
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`a88e2ca2` → `0eeffa1754c80f265ec5ab491a12c28cd6dc1f91`)
+## Qué cambió desde el snapshot anterior (`0eeffa17` → `abc2b3c36df5f71feb0af4cede5c8ed6c5493be8`)
 
-Entre una punta y otra entraron **7 commits** (`git rev-list --count a88e2ca2..0eeffa1754c80f265ec5ab491a12c28cd6dc1f91`).
+Entre una punta y otra entraron **56 commits** (`git rev-list --count 0eeffa1754c80f265ec5ab491a12c28cd6dc1f91..abc2b3c36df5f71feb0af4cede5c8ed6c5493be8`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| La línea publicada es una, y el presentador es el único que escribe | `0eeffa17` (TASK-80) | El grafo contaba desde cero y el producto desde uno, y cada superficie publicaba la suya. La conversión vive ahora en un sitio —`published_line()`— y el esquema maestro dice la base en cada propiedad que publica una línea; el `navigate` de la CLI pedía al backend la línea de encima de la que la persona nombraba, y ahora la posición viaja tal como se escribió. El core tampoco imprime: devuelve el resultado y el presentador lo escribe, así que `--format json` produce un documento y nada más, y el doctor sale con 1 sin que la biblioteca mate el proceso. |
-| El MCP contesta donde el contrato lo puso | `5830bbe1` (TASK-65) | Una tool que publica un `outputSchema` entrega su respuesta en `structuredContent` y su resumen en el segundo bloque de texto —el resumen no se inventa en el cable—, las tools publican sus pistas de comportamiento, el protocolo declarado es `2025-11-25` y el JSON ya no lleva saltos de línea dentro. |
-| El MCP dice por qué se reporta un hallazgo | `78829037` (TASK-111) | La tool `explain_finding` publica el mensaje, la cadena causal, el detector y el veredicto de grounding de cada hallazgo; `gateable` y `grounding` son dos preguntas distintas, y una lista vacía sin desenlace ya no es indistinguible de «no hay hallazgos». |
-| La paginación se compara con el catálogo maestro | `44a10776` (TASK-117) | El recorrido de `tools/list` se compara con la declaración del producto —la que el servidor lleva dentro del binario— y no con un catálogo calculado en otro build: por eso el gate entero estaba rojo por una comparación entre dos builds. |
-| El gate no confunde un mutante atrapado con un tiempo agotado | `ed50133e` (TASK-116) | El veredicto del tercer paso dependía de la carga de la máquina: el techo de memoria del runner bajó a 2 GiB y un contrato nuevo fija la aritmética del presupuesto. |
-| El JSON es un documento, y el texto conserva su formato | `fadf5e6a` (TASK-114) | Cuatro comandos de grafo escribían su línea de progreso en la salida estándar, delante del documento; la regla del canal manda la línea al error en modo JSON. |
+| La detección de comunidades es repetible | `694eb592` (TASK-133) | La partición de un mismo proyecto cambiava en cada corrida. Medido: 8 de 8 pares que diferían pasaron a 0 de 8, y el orden vive en la escritura —la inserción bajó de 16,7 ms a 10,3 ms—, porque la lectura se repite en cada publicación. |
+| Los ciclos y los god nodes tienen orden | `6676acc1` (TASK-134) | El Tarjan recursivo del dominio clonaba un `SymbolId` por nodo —por eso no terminaba— y el de `graph-algos` es iterativo sobre índices; unificarlos cambia el orden **publicado** de los símbolos dentro de un ciclo, y ese orden ahora es el mismo en cada corrida. |
+| Los llamantes y los caminos calientes tienen orden | `3cefb4cb` (TASK-135) | Ordenarlos en la lectura costaría 8,5 ms **por publicación**; el orden va en la escritura y la publicación se midió en 10,3 ms. |
+| Las dependencias entre módulos tienen orden | `8e87c485` (TASK-136) | 8 de 8 pares que diferían pasaron a 0 de 8. |
+| Los símbolos del grafo tienen orden | `1cb1680a` (TASK-137) | El orden publicado del mapa exterior de símbolos es el mismo en cada corrida, y el `start_line` de la página de continuación decía 1 donde el símbolo empezaba en 501. |
+| Las aristas del grafo tienen orden | `bc5dcb17` (TASK-139) | Medido: 1,462 ms frente a 0,054 ms al decidir dónde va el orden. El índice que nadie lee (`reverse_edges`) se quedó en `HashMap` a propósito: un índice que nadie lee no necesita orden. |
+| El grafo de un proyecto real termina | `7deabb45`, `c0f62467` (TASK-130) | La complejidad y el conjunto de retroalimentación se quedaban sin acabar sobre código de verdad. El arreglo fue del algoritmo —cada grupo entra una sola vez— y se midió en 46,5 MB; un `#[ignore]` que no termina es un defecto de producto, no una cobertura. |
+| La cadena más larga mide el orden topológico | `019b1dfd` (TASK-132) | El gate de mutantes encontró un agujero real del crate de algoritmos: la cadena más larga no medía el orden topológico. |
+| El diagrama de `export_callflow` dibuja lo que dice | `7d526f2b` (TASK-121) | Publicaba un diagrama que no dibujaba las comunidades que nombraba. |
+| `project_overview` publica el nivel que entrega | `d2c37a25` (TASK-122) | Publicaba un nivel que el producto no tenía; el nivel tiene un dueño (el tipo) y el default preserva el contenido y cambia la etiqueta. |
+| La estrategia del índice la declara la fábrica | `bde002f3` (TASK-124) | Una lista en prosa no es un contrato: el vocabulario que se publica necesita un tipo, y el enum vive en la interfaz mientras la fábrica conserva el suyo. |
+| El formato del diagrama lo declara el dueño | `d7ac4a0d` (TASK-123) | El shape del diagrama lo nombraba una frase y el campo del dominio no lo leía nadie; ahora lo declara `MermaidFormat`, en el dominio, y el JSON del CLI conserva la palabra del usuario. |
+| Los tests no escriben la configuración real del IDE | `ddd51180` (TASK-127) | 10 corridas del bin de `cogh` en paralelo: 5 de 10 fallaban antes y 0 de 10 después; un barrido de los 634 tests del paquete, uno a uno, con la mtime de la configuración real vigilada, encontró 6 escritores antes y 0 después. |
+| El grupo de contención del CLI se retira | `49dbd896` (TASK-141) | El grupo serializaba los tres binarios del CLI: 11,8 s serializados frente a 1,6 s en paralelo. En los dos pasos de nextest del gate el cambio es ruido —los binarios no están en su camino crítico—, así que el gate no se abreviaba con él. |
+| El paso de mutantes mide de uno en uno | `911dc274` (TASK-131) | `cargo-mutants` muta el árbol sin cerrojo: en paralelo, siete mutantes de `god_nodes.rs` parecían supervivientes y de uno en uno los diez son atrapados. El veredicto por mutante sólo es atribuible medido en serie. |
+| Toda corrida de mutación lleva techo | `8f96e69e` (TASK-140) | Un dueño del presupuesto (`scripts/mutants-budget.sh`) y dos rutas que lo leen; el focal son 4 GiB porque el pico legítimo del core es 2,70 GiB —un techo por debajo da «atrapado» falso. |
+| El gate del release ya no muere con 141 | `dc832cd2` (TASK-138) | La tubería moría con 141 porque el `exit` de `awk` cerraba el pipe antes de que `printf` terminara; la carrera se volvió determinista. |
+| Los duplicados de comportamiento salen de la suite | `71666fb0`, `1170358b` (TASK-70) | El modelo de coste medido: el gate son tres pasos de cargo, los contratos de Python (61,8 s) **no** están en él, y lo único retirable era la clase de duplicados —27 tests—. |
+| La cadena de continuación tiene dueño en casa | `d39b686c`, `22358503` (TASK-128) | La página de continuación decía `start_line` 1 donde el símbolo empezaba en 501, y el `content_hash` publicado era del fichero entero; el digest nombra el fichero, no la página. |
+| El daemon vivo dice que su índice está fresco | `99060047`, `cf82cab5` (TASK-92) | El cliente lo sirve sin releer el árbol, y el `basis` lo dice; el snapshot durable ya compartía el parseo, el daemon quita el hash, y su palabra sólo vale con digest y mtimes. |
+| Un árbol sin nada que leer tiene un estado | `da2848e2`, `d51d3265`, `7e0faf5b` (TASK-79) | Las dos superficies dicen lo mismo del mismo proyecto —son adaptadores sobre un mismo servicio— y el snapshot del grafo vive en la caché del usuario. |
+| Los argumentos de una tool se declaran una vez | `4e4218e3` (TASK-82) | La forma se deriva del tipo: struct → esquema → runtime → captura → maestro → comprobación. Un enum publicado es una promesa: el tipo que nombra los valores tiene que ser el que el servidor lee. |
+| La columna publicada es una, como la línea | `5f115520` (TASK-118) | La columna del snapshot la declara un solo tipo, y la línea publicada se convierte en un sitio (`published_line()`). |
+| El stdout JSON se prueba donde lo usan | `4976b700` (TASK-120) | Los cuatro comandos que emiten línea de progreso tienen su prueba contra el binario real, no contra un único comando. |
+| El gate del lote de diez pasó | `fb526521` | Medido en serie sobre `a3b8b862`: 4701 unitarios, 6794 de integración y 627 mutantes —618 atrapados, 9 inviables, 0 supervivientes y 0 tiempos agotados—, rc global 0. |
 
 ## Release: la última publicada es la v0.101.30
 
@@ -901,7 +955,14 @@ en verde más una persona que lee el diff.
 Los otros dos comandos **no los corre el gate**: los contratos y la UI son
 gates aparte, y también tienen que estar verdes antes de pedir review —medido
 el 2026-11-05: el gate sobre `14f71609` salió rc=0 con los contratos en rojo,
-porque el ratchet del snapshot es un contrato y no un paso del gate—.
+porque el ratchet del snapshot es un contrato y no un paso del gate—. Ese rojo
+era deriva de ritmo —el snapshot declaraba un árbol 56 commits por detrás de la
+punta— y lo cerró TASK-126; el gate del lote de diez, medido en serie el
+2026-11-06 sobre `a3b8b862`, dio rc=0 con los tres pasos: 4701 unitarios, 6794 de
+integración y 627 mutantes —618 atrapados, 9 inviables, 0 supervivientes—. Ese
+certificado es del árbol del lote, no de la punta: después llegaron TASK-123,
+TASK-127, TASK-140 y TASK-141, y el árbol de hoy mide 4706 unitarios y 6809 de
+integración.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
