@@ -20,6 +20,24 @@
 - Respetar arquitectura hexagonal, SOLID, cohesión y connascence: nueva abstracción solo para acoplamiento probado con tests; puertos de aplicación no dependen de adaptadores MCP. **No crear dos fuentes de verdad ni duplicar la semántica entre interfaces** (lección aprendida: `EvidenceStore`).
 - Cada corrección de bug incorpora test que fallaba ANTES y pasa DESPUÉS. Excepciones de cobertura o de plataforma nunca se inventan tras el fallo.
 
+## El entorno de compilación
+
+El entorno de compilación de este repositorio **no está en el repositorio**: es la configuración global de cargo de la máquina (`~/.cargo/config.toml`). El perfil **no se puede declarar por proyecto**: un `[profile.test]` en el workspace invalida la caché compartida de `/var/home/rubentxu/cargo-targets/`, que es de todos los proyectos de la máquina (regla 4 de «Estrategia de tests»).
+
+Lo que la máquina declara hoy, y lo que midió el recibo de TASK-76:
+
+| Qué | Valor | Por qué |
+|---|---|---|
+| `[profile.dev]` / `[profile.test]` → `debug` | `line-tables-only` | trazas con número de línea sin el coste de la información de depuración completa (`debug = 1` significa "limited", que lleva **más** que esto) |
+| `[target.x86_64-unknown-linux-gnu]` | `linker = "gcc"` + `rustflags = ["-C", "link-arg=-fuse-ld=mold"]` | `mold` enlaza más rápido que el `rust-lld` que rustc ya usa por defecto; `gcc` queda como driver porque rustc le pasa `-m64`, que `mold` no entiende |
+| `[build]` → `rustc-wrapper` | `sccache` | la misma compilación no se hace dos veces; la tasa de aciertos se ve en `sccache --show-stats` |
+
+`mold` y `sccache` viven en `~/.cargo/bin`, junto a `cargo`: donde puede correr cargo pueden correr ellos. `ld.mold` es un enlace simbólico a `mold` (es el nombre que busca `gcc` con `-fuse-ld=mold`).
+
+**Lo que nadie debe hacer**: declarar el perfil en el workspace, ni `jobs` o `CARGO_BUILD_JOBS` en la configuración del repo. Si falta una herramienta, se dice y se para: una configuración que nombra un linker o una caché que no están rompe el build de toda la máquina, y el error no lo dice.
+
+**Cómo se mide**: `bash scripts/build-time.sh` (o `just build-time`) mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite. El contrato `scripts/ci/test_build_env.py` vigila que el instrumento siga declarando los cuatro escenarios, que el repositorio no declare un perfil, y que toda herramienta que la configuración de la máquina nombre esté instalada.
+
 ## Cómo leer un fichero grande sin llenarte el contexto
 
 Un fichero de más de 30KB **no se lee entero**: se pide lo que hace falta. Herramientas y cuándo
@@ -159,9 +177,12 @@ y un gate que calla es un gate en el que nadie puede confiar.
 3. **Un test filtrado no es evidencia**: un run con `--filter` acota el feedback, no
    certifica la unidad. Para certificar, la suite entera sin filtro.
 4. **No pisar la config global de cargo** (`~/.cargo/config.toml`: `jobs=4, codegen-units=256,
-   debug=1, lto=false`, compartida con otros workspaces): `CARGO_BUILD_JOBS` y
+   debug=line-tables-only, lto=false`, compartida con otros workspaces): `CARGO_BUILD_JOBS` y
    `[profile.test]` workspace **prohibidos** — invalidan la caché compartida de
-   `/var/home/rubentxu/cargo-targets/`.
+   `/var/home/rubentxu/cargo-targets/`. La configuración global sí es el sitio donde vive el
+   perfil, el linker y la caché de compilación (ver «El entorno de compilación»): tocarla afecta a
+   todos los proyectos de la máquina, y por eso el contrato `scripts/ci/test_build_env.py` vigila
+   que lo que declara siga declarado y que las herramientas que nombra estén instaladas.
 5. **Un mutante que sobrevive es un agujero, no una puntuación.** Cuando aparezca uno, lo
    que se arregla es el test que no lo mata. Relajar el umbral es esconder el agujero.
 6. **Un test que frena la entrega no se queda dentro de la suite.** Un test que compila

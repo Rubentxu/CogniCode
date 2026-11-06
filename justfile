@@ -217,6 +217,14 @@ mutants:
     @echo "🧬 Running mutants..."
     bash scripts/test-gate.sh --mutants
 
+# Measure the build times: cold, no-change, touch a test, touch the core.
+# Not a test: it compiles the workspace four times, so it is asked for on
+# purpose and it lives outside the suite. It measures in an isolated target
+# directory and prints the sccache hit rate.
+build-time:
+    @echo "⏱️  Measuring the build times..."
+    bash scripts/build-time.sh
+
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
     @echo "🧪 Running ignored tests (single-threaded)..."
