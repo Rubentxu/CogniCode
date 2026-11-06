@@ -36369,3 +36369,107 @@ comprobar que la escritura no lo toca. El segundo es el aislamiento, en la misma
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-141: el grupo de contención de los binarios del CLI se retira
+
+**El encargo.** `.config/nextest.toml` declaraba un grupo de contención, `cli-shared-home`
+(`max-threads = 1` para `binary_id(/^cognicode-cli::bin\//)`), que serializaba los tres binarios
+del CLI porque sus tests de unitario escribían fuera de su directorio de test. TASK-127
+(PR #640) hizo hermética esa suite, así que la contención pasó a proteger un defecto ya
+arrancado. La unidad tenía que decidir si el grupo se eliminaba o se relajaba, y sostener la
+decisión con medición.
+
+**Lo primero, una corrección del encargo.** El AC#2 pedía «el gate entero sigue verde en varias
+corridas». El gate tiene tres pasos y el tercero **no es de nextest**: `scripts/test-gate.sh`
+corre `cargo mutants -j <n> --gitignore true -p cognicode-graph-algos -- -- --test-threads=4`
+(`scripts/test-gate.sh:270`), o sea un runner `cargo test` sobre un solo crate. La configuración
+del runner no lo alcanza y la suite del CLI no se ejecuta ahí. La prueba del AC#2 son, entonces,
+los **dos pasos de nextest** (`--lib` y `--tests`) sobre el workspace. El AC se reescribió por su
+CLI antes de medir nada, y la razón queda escrita en un comentario de la tarea.
+
+**Por qué el grupo ya no tenía nada que contener.** El grupo serializaba los tres binarios
+(`cognicode`, `cogh`, `cognicode-release`), que son donde vive **toda** la suite unitaria del
+CLI: el listado de nextest da 334 tests en `cognicode-cli::bin/cogh`, 44 en
+`cognicode-cli::bin/cognicode-release`, 15 en la lib, 231 en `it` y 10 en `release`. Los tests que
+escribían la configuración real del IDE (`layout::tests::…`, `lifecycle::tests::…`) están todos
+en el bin de `cogh`, o sea bajo el filtro del grupo. Los dos diagnósticos que el propio comentario
+del grupo daba —«`redirect_home` moves HOME but not XDG» y «the CLI's own atomic write used a
+fixed temp name»— eran los dos lados del defecto que TASK-127 cerró: hoy la escritura atómica es
+la del core (`AtomicFileWriter`, temporal exclusivo) y todo test que instala o desinstala un IDE
+apunta `HOME` y las variables del IDE a su propio directorio (`layout::test_support::TempPipelineEnv`).
+El home de un test vuelve a ser privado, y no queda nada que turnarse.
+
+**La medición, antes y después.** La huella del host es la mtime y el hash de contenido de la
+configuración real de cada IDE que el CLI resuelve desde `HOME`, más el hash y el número de
+entradas de sus directorios de skills; se toma antes y después de cada corrida.
+
+| Medida | Con el grupo | Sin el grupo |
+|---|---|---|
+| Los tres binarios solos (`--bin cognicode --bin cogh --bin cognicode-release`, 378 tests) | 11,85 s · 11,88 s · 11,79 s | **1,67 s** |
+| El paquete entero (`-p cognicode-cli`, 634 tests) | 17,72 s · 17,64 s · 17,60 s | 18,02 s · 17,73 s · 17,85 s |
+| Gate paso 1 (`--workspace --lib`, 4706 tests) | 17,01 s | 16,99 s · 17,12 s |
+| Gate paso 2 (`--workspace --tests`, 6809 tests) | 23,43 s | 23,11 s · 23,28 s |
+| Configuración real del host | sin cambios | sin cambios |
+
+**La lectura honesta de esa tabla.** El grupo costaba **10,2 s** cuando los binarios del CLI son
+el camino crítico (una corrida de binarios o de paquete acotado). En el paquete completo el
+cambio no se ve —17,6 s frente a 17,7–18,0 s es ruido— porque las 378 pruebas del bin corrían
+dentro del trabajo de los otros targets. En los dos pasos del gate **tampoco**: los binarios no
+están en el camino crítico del workspace, así que el gate **no se abrevia** con este cambio. Lo
+que se abrevia es la vuelta atrás del desarrollador sobre el paquete del CLI, y lo que se retira
+es una promesa falsa en el fichero de configuración.
+
+**La hermeticidad, medida test a test.** Barrido de los **634 tests del paquete, uno a uno**,
+con la huella del host vigilada antes y después de cada uno: **0 escritores, 0 fallos**, y cada
+invocación seleccionó exactamente un test (ningún filtro vacuo). Repartido como el listado de
+nextest: 334 en `cognicode-cli::bin/cogh`, 231 en `cognicode-cli::it`, 44 en
+`cognicode-cli::bin/cognicode-release`, 15 en la lib y 10 en `cognicode-cli::release`.
+
+**La decisión, y por qué eliminar y no relajar.** El grupo se **retira**, no se relaja: la
+garantía que lo ponía en pie —«los tests del CLI no escriben fuera de su directorio»— la sostienen
+hoy dos cosas con dueño y con test: el sandbox (`TempPipelineEnv`) y la escritura atómica del
+core (el temporal exclusivo, con su test de exclusividad). Relajar el grupo habría dejado medio
+grupo —«los tests que aún mutan el home»— sin ningún test detrás que lo diga, es decir una
+contención en vez de una garantía. Un grupo que protege un defecto ya arreglado no se relaja: se
+quita, y lo que lo protegía se queda con su dueño.
+
+**Lo que se cambió.** Una sola cosa: fuera el grupo `cli-shared-home` y su `override`, y el
+comentario que explicaba la contención pasa a explicar por qué ya no hay contención (con la
+medición y la unidad que lo arregló). Los otros dos grupos —`http-port` y `sbom-workspace`— no se
+tocan: el primero protege un puerto y el segundo el árbol del workspace, y ninguno de los dos
+estados existe ya.
+
+**Verificado (no afirmado).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-cli` ×3 | rc=0, 634 pasan, huella del host sin cambios |
+| `cargo nextest run --profile gate --workspace --lib` ×2 | rc=0, 4706 pasan, huella sin cambios |
+| `cargo nextest run --profile gate --workspace --tests` ×2 | rc=0, 6809 pasan, huella sin cambios |
+| Barrido de los 634 tests del paquete, uno a uno | 0 escritores, 0 fallos |
+| `cargo fmt --all --check` | rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | el **único rojo** es `test_roadmap_version_ratchet.py` (`test_current_sha_matches_head`, `test_control_all_green`): `CURRENT.md` declara el snapshot `0eeffa1754c8`, que está a más de 5 commits de la base. Es **preexistente** y ajeno a esta unidad —ya lo declararon los recibos de TASK-123 y TASK-127— |
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate entero siga en verde: **el tercer paso (mutantes) es NOT_RUN**. No es que
+  se saltara: el paso está acotado a `cognicode-graph-algos`, corre `cargo test` y no lee
+  `.config/nextest.toml`; y el gate se corre al cerrar el lote de diez, no por tarea.
+- No dice que el gate se haya abreviado: la tabla dice lo contrario (0,0 s y −0,3 s, ruido).
+- No dice que el CLI sea inmune a una futura escritura fuera de su directorio: la garantía la
+  sostienen el sandbox y la escritura atómica del core, con sus dos tests del recibo de TASK-127.
+  Un test futuro que escriba en el `HOME` real dañaría el host otra vez, y nada en la
+  configuración lo detectaría: **el grupo tampoco lo detectaba**, sólo serializaba el síntoma.
+- No dice que la huella cubra todo el host: cubre la configuración y los directorios de skills de
+  los cuatro IDE que el CLI resuelve desde `HOME`. Un test que escribiera en otra parte del host
+  no lo vería esta huella.
+- No dice que la configuración real del operador esté intacta: **no lo está** y no es culpa de
+  esta unidad. La suite la reescribió antes del arreglo de TASK-127 (la entrada `cognicode-mcp`
+  apunta a un temporal ya borrado, la entrada `rea` ya no está) y los ocho symlinks colgantes de
+  `~/.config/opencode/skills/` siguen ahí. Es del host, no del repositorio, y se limpia a mano.
+
+**Entrega.** PR #642 → `49dbd896`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
