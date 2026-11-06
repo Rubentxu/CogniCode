@@ -35535,3 +35535,161 @@ instalado, ese contrato pasa entero.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-139: el mapa exterior de aristas se publica en el orden de un hash map
+
+**El encargo.** `CallGraph` guardaba sus aristas en dos mapas exteriores, y el
+de aristas —el que se publica— seguía siendo un `HashMap<SymbolId, _>`. El
+mapa interior ya estaba ordenado (TASK-135), así que los llamantes de un
+símbolo salían ordenados; pero el recorrido del mapa exterior no lo estaba, y
+de ahí salía el orden de `all_dependencies()`,
+`all_dependencies_with_metadata()` y `edges_with_metadata()`.
+
+**Lo que estaba roto, medido (no supuesto).** Sobre el dominio del core
+(6.028 símbolos, 2.076 aristas), ocho pares de construcciones independientes
+del mismo proyecto dentro de un mismo proceso:
+
+| Pregunta | Respuesta |
+|---|---|
+| el **conjunto** de aristas, ¿coincide? | **8 de 8** pares |
+| el **orden** en `all_dependencies()`, ¿coincide? | **0 de 8** pares |
+| el **orden** en `edges_with_metadata()`, ¿coincide? | **0 de 8** pares |
+
+El conjunto coincide siempre: lo que cambiaba entre dos corridas del mismo
+proyecto era el orden y nada más. Eso importa, porque separa el defecto de
+otro: si el conjunto también variara, el testigo de abajo no serviría para
+atribuir el fallo al orden.
+
+**La causa.** Un `HashMap` itera en un orden que difiere por instancia
+(semilla por instancia). El mapa exterior de aristas no estaba ordenado, así
+que cada recorrido publicaba las aristas en el orden de su propia instancia.
+La misma serie de fondo que TASK-133, TASK-134, TASK-135, TASK-136 y
+TASK-137, en el mapa que quedaba.
+
+**Dónde va el orden: la cifra delante (AC4).** Cuatro variantes medidas con el
+mismo arnés (mediana de 9; el build real, mediana de 5), sobre el mismo
+testigo:
+
+| variante | build real | búsqueda por clave | recorrido `all_dependencies` | recorrido `edges_with_metadata` |
+|---|---|---|---|---|
+| A: `HashMap` (hoy) | 235,3 ms | 181,5 ns/llamada | 0,054 ms | 0,682 ms |
+| B: el orden en la **lectura** (ordenar al publicar) | 225,0 ms | 182,2 ns/llamada | **1,462 ms** | **1,944 ms** |
+| C: `BTreeMap` en los dos mapas exteriores | 228,0-240,9 ms | 196,2-204,2 ns/llamada | 0,053-0,057 ms | 0,625-0,674 ms |
+| D: `BTreeMap` solo en `edges` (la elegida) | 238,6 ms | 198,1 ns/llamada | 0,058 ms | 0,665 ms |
+
+La banda de ruido de la máquina es de ±20 ms en el build y ±13 ns en la
+búsqueda por clave, de modo que **la única señal que la supera es el
+recorrido publicado**:
+
+- B (el orden en la lectura) multiplica el recorrido publicado por 26
+  (0,054 ms → 1,462 ms) y lo paga en **cada publicación**;
+- C y D lo dejan en lo que cuesta hoy (0,053-0,062 ms).
+
+→ El orden va en el **lado de la escritura**, el mismo criterio que TASK-135,
+TASK-136 y TASK-137: la lectura se repite en cada publicación, la escritura
+ocurre una vez por construcción.
+
+**Qué se abre y qué no.** `edges` pasa a `BTreeMap`: es el mapa cuyo orden se
+publica. `reverse_edges` **se queda** como `HashMap`, y no por descuido: su
+orden exterior **no se publica en ninguna parte**. Medido sobre el agregado,
+las únicas operaciones que se hacen con ese índice son `.get`, `.entry`,
+`.remove`, `.insert`, `.get_mut` y `.contains_key` — no hay ni una iteración
+completa — y los llamantes de un símbolo salen del `BTreeSet` interior, que ya
+estaba ordenado. Ordenar un índice que nadie lee pagaría en el camino caliente
+de cada arista por una garantía que nadie consume. La diferencia entre C y D
+quedó dentro del ruido de medición; la razón para elegir D es estructural.
+
+**Un solo orden y un solo dueño.** El orden elegido es exactamente el que la
+proyección ya publica desde TASK-134 (origen, destino, tipo): con este
+cambio, `call_graph_projection` ya no tiene que reordenar nada, porque lo que
+llega de `edges_with_metadata()` llega en el mismo orden que él publicaba.
+Antes eran dos órdenes que coincidían por casualidad de la clave total.
+
+**El contrato, documentado en el agregado.** El tipo del mapa y el comentario
+del campo dicen ahora qué se promete: las aristas salen por identidad de
+origen, luego por identidad de destino y por tipo de dependencia, y todo lo
+que se publica desde ese recorrido sale igual en cada corrida. El comentario
+de `edges_with_metadata()` decía «the order is unspecified» — y ese «no
+especificado» era justo el defecto.
+
+**Los consumidores, uno por uno.** Medidos y revisados:
+
+| Consumidor | Qué publica del recorrido | Sensible al orden |
+|---|---|---|
+| `interface/mcp/handlers/mod.rs` (4 sitios) | la lista de aristas del grafo, la lista de dependencias por fichero y la del grafo fusionado | **sí** — las tres listas salían en un orden distinto en cada corrida |
+| `application/services/analysis_service.rs` (2) | un recuento de aristas hacia un homónimo | no — cuenta, no publica |
+| `interface/mcp/handlers/aix_handlers.rs` (2) | conjuntos (`HashSet`) de símbolos y aristas | no — el conjunto no tiene orden |
+| `application/ingest/edge_diff.rs` | la lista de aristas de los ficheros tocados | **sí** — alimenta el diff de relaciones |
+| `infrastructure/graph/snapshot_graph_executor.rs:469` | el orden de inserción de las aristas en el petgraph del BFS | **sí** — el recorrido del BFS hereda el orden de inserción |
+| `infrastructure/graph/per_file_graph.rs:545` | el orden en que se ofrecen las relaciones a la fusión | **sí** — la lista de relaciones rechazadas se publica en ese orden |
+| `infrastructure/graph/call_graph_projection.rs:195` | las aristas de la proyección | no — ya las ordenaba por su cuenta (TASK-134) |
+
+Dos consecuencias que importan: la lista de relaciones que una fusión
+rechaza se publica ahora en un orden canónico, y el BFS del ejecutor de
+snapshots inserta las aristas en orden canónico, así que el camino que
+devuelve un grafo con varios caminos de la misma longitud deja de depender de
+la semilla del hash.
+
+**Las pruebas, y por qué son las mínimas** (lentes `change-impact` y
+`regression-promotion` de `delivery-first-testing`).
+
+- **Unitaria**, en el agregado: diez aristas con diez orígenes distintos,
+  insertadas en un orden que no es el publicado. La comprobación es **total**:
+  la lista publicada se compara con su propia copia ordenada, no con la de
+  otra construcción. Comparar dos construcciones solo diría que dos hash maps
+  discrepan — y es una lotería: con diez orígenes, la probabilidad de que el
+  hash map acierte el orden por azar es una de 3,6 millones. Con la lista
+  ordenada de manifiesto, la comprobación no puede pasar por casualidad.
+  RED medido revirtiendo solo el tipo en el árbol (nunca con
+  `git checkout HEAD -- .`): el hash map publicaba `foxtrot, india, hotel,
+  golf…` donde el orden canónico dice `alpha, bravo, charlie…`.
+- **De integración**, sobre el código real del dominio del core: dos
+  construcciones independientes del mismo proyecto dan la misma lista de
+  aristas, el mismo conjunto y el mismo orden. RED medido igual, con el tipo
+  revertido: el fallo señalaba la posición 0 y las dos entradas que difieren.
+
+No hay UAT que retirar, no hay test redundante que sustituir y no se ha
+tocado ninguna protección existente. La única prueba efímera que hubo —el
+arnés de medición— se borró antes del commit: no era una garantía, era una
+cifra.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2562 tests run: 2562 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-core --tests` | **3542 tests run: 3542 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-ladybug` | **66 tests run: 66 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-mcp` | **101 tests run: 101 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-cli` | **629 tests run: 629 passed, 1 skipped** |
+| `cargo fmt --all --check` | limpio |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| El mismo orden en dos construcciones independientes | **8 de 8** pares (antes 0 de 8) |
+| El recorrido publicado, antes y después | 0,054 ms → 0,058 ms (`all_dependencies`); 0,682 ms → 0,665 ms (`edges_with_metadata`) |
+| La búsqueda por clave, antes y después | 181,5-208,3 ns → 191,5-198,1 ns por llamada |
+| El build real, antes y después | 235,3 ms → 238,6 ms |
+
+Las tres últimas bandas se solapan con el ruido de la máquina: el cambio de
+coste del camino caliente **no es separable del ruido**, y la única cifra que
+lo es —el recorrido publicado— dice que el orden en la escritura no cuesta
+nada al leer y que ordenarlo al leer costaría 1,4 ms por publicación.
+
+**El gate entero no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134, TASK-135, TASK-136, TASK-137,
+TASK-138 y TASK-139 van **ocho de diez**, así que el gate de esta unidad es
+**NOT_RUN**.
+
+**Compatibilidad del almacenamiento.** El blob bincode de `CallGraph` no
+cambia de forma: un mapa es longitud más pares, tanto en `HashMap` como en
+`BTreeMap`; lo que cambia es el orden de los pares. El shim `CallGraphV1`
+conserva sus propios tipos, así que el blob v1 no se toca. En este árbol el
+único codificador de `CallGraph` es `InMemoryGraphStore`, que es en memoria y
+no cruza una versión.
+
+**Entrega.** PR #629 → `bc5dcb17`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
