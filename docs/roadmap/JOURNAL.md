@@ -36560,3 +36560,100 @@ snapshot anterior se acumula con el commit que lo midió.
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-49: la cobertura y su palabra tienen un dueño
+
+**El encargo.** CQA-F1.W2: «CLI, MCP y Explorer proyectan un mismo `AnalysisOutcome` con
+provenance». Es el cuarto corte de la unidad; los tres anteriores (PR #542, #543, #544)
+dejaron cuatro casos sin medir: «grafo Partial con símbolo presente», «graph hierarchy del
+CLI», «present_build_graph Unsupported» y «Explorer».
+
+**El defecto, medido leyendo el árbol.** La decisión de **qué estado se publica** estaba
+escrita dos veces sobre los mismos hechos, y el presenter del MCP la escribía una tercera:
+
+| Dónde | Qué decidía |
+|---|---|
+| `ServiceAnalyzer::graph_full` (CLI/SDK) | la cobertura con su `BuildReport`; «sin reporte → unknown» |
+| `handle_build_graph` (MCP) | lo mismo, con su propio `match` sobre `BuildStatus`; «sin reporte → complete» |
+| `present_build_graph` (MCP) | «un outcome `Complete` servido de caché → unknown» |
+
+La tercera se ve: el handler vivo publica `complete` para una respuesta servida de la caché,
+y el presenter publicaba `unknown` para esa misma respuesta. Y `cached_coverage_is_honest.rs`
+—que ya estaba en el árbol— prueba que la respuesta servida de la caché tiene que ser **igual**,
+campo por campo, que la construida en frío. Dos presentaciones MCP de la misma respuesta, dos
+palabras.
+
+**RED medido, antes de tocar el código.**
+
+| Comprobación | Antes |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --test it -E 'test(the_published_coverage_has_one_owner)'` | **1 de 5 rojo**: el presenter publicaba `status: "unknown"` y el handler `complete` sobre la misma respuesta (`left: Unknown, right: Complete`) |
+
+Los otros cuatro pasaban: los tres estados alcanzables (`complete`, `partial`, `unsupported`)
+ya coincidían entre los dos caminos REALES, y la paridad de las cinco palabras entre los dos
+presentadores también. El defecto era la tercera decisión: la del presenter.
+
+**Qué cambia.**
+
+- **Un dueño**: `coverage_verdict(...)`, en `application::services::analyze` —la capa de
+  aplicación, donde ya vivían `holds_material` y `no_material_reason`— decide la cobertura
+  (`Complete` / `Partial` / `Unmeasured` / `NoMaterial`) y su palabra. Toma los hechos que las
+  dos superficies tienen: de dónde salió la respuesta, el reporte del build de ESTA llamada,
+  los huecos del árbol de AHORA, y si el árbol tiene material.
+- **La CLI y el MCP la piden a la misma función.** `ServiceAnalyzer::graph_full` y
+  `handle_build_graph` dejan de decidir cada una por su cuenta. El handler borra 87 líneas y
+  añade 35: el fichero encoge 52 líneas netas (la cifra del mensaje del commit, «85 líneas
+  menos», era una aproximación: no era la diferencia).
+- **`present_build_graph` deja de decidir**: publica la palabra del outcome y se retira el
+  parámetro `loaded_from_cache`, cuya regla («unknown» para lo servido de la caché) ya no la
+  publica ningún handler vivo.
+
+**Lo que cambia para el consumidor.** Nada en los caminos alcanzables: las dos superficies ya
+coincidían en `complete`, `partial` y `unsupported`, y eso es justamente lo que dice la prueba
+nueva. Lo que cambia es (a) que ahora lo dicen **por construcción** y no por coincidencia, y
+(b) el caso «sin reporte», que pasa de «complete» a «unknown» en el MCP: es el caso en el que
+nadie midió la cobertura, y el dueño de la CLI ya lo decía «unknown» desde CU-1.4. Ese caso
+es **inalcanzable** hoy —una respuesta construida siempre deja reporte—, así que no hay
+ningún contrato publicado que cambie.
+
+**La prueba.** Un fichero nuevo,
+`crates/cognicode-core/tests/it/the_published_coverage_has_one_owner.rs` (401 líneas): los tres
+estados alcanzables sobre el MISMO árbol y por los DOS caminos reales (la facade de la CLI y el
+handler del MCP), sobre el corpus versionado; la palabra comparada con el **tipo** del dueño,
+sin el mapeo con pérdida (`_ => OutcomeState::Unknown`) que se tragaba justo los estados que
+había que probar; y el caso de la caché.
+
+**Verificación (medida, no afirmada).**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --test it -E 'test(the_published_coverage_has_one_owner)'` | rc=0, 5 pasan (antes: 1 de 5 rojo) |
+| `cargo nextest run --profile gate -p cognicode-core` | rc=0, 3569 pasan, 2 saltados |
+| `cargo nextest run --profile gate --workspace --lib` | rc=0, 4706 pasan |
+| `cargo nextest run --profile gate --workspace --tests` | rc=0, 6814 pasan, 3 saltados |
+| `cargo clippy --workspace --all-targets -- -D warnings` | rc=0 |
+| `cargo fmt --all --check` | rc=0 |
+| `bash scripts/ci/run-all-contracts.sh` | rc=0, 312 comprobaciones |
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: el tercer paso (mutantes) es **NOT_RUN**. No es
+  que se saltara: el gate se paga por lotes de diez tareas, no por tarea.
+- No dice que las **preguntas** (`analyze_impact`, `graph hierarchy`) sobre un grafo parcial
+  publiquen la cobertura: siguen sin hacerlo. Arreglarlo cambia las formas publicadas
+  `AnalyzeImpactOutput` y `GraphResult::Impact` —y su esquema—, así que es otra unidad, con su
+  deprecación explícita o sus pruebas de consumidor.
+- No dice que **Explorer** quede alineado: sigue sin entrar en este corte, y es el cuarto caso
+  que los tres cortes anteriores dejaron sin medir.
+- No dice que `graph_complexity` use el dueño: la op de complejidad lee la cobertura por su
+  cuenta (`partial_coverage`), y su construcción siempre deja reporte, así que el caso «sin
+  reporte» tampoco es alcanzable ahí.
+- No dice que el MCP deje de publicar `success: true` para un árbol sin material: `success`
+  significa «la llamada se atendió», y el estado es lo que dice la cobertura. Cambiarlo sería
+  otro contrato, con su propio anuncio.
+
+**Entrega.** PR #646 → `4ba9492c`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
