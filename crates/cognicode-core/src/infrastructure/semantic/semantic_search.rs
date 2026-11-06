@@ -267,6 +267,20 @@ pub struct SemanticSearchService {
     index: Arc<SearchIndex>,
 }
 
+/// How long the reading, the interpreting and the writing of one file
+/// took.
+///
+/// The reading and the interpreting are one phase —the file has to be
+/// read before it can be understood— and the writing into the index is
+/// another.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IndexTimings {
+    /// Reading the file and interpreting it.
+    pub parse_ms: u64,
+    /// Writing the symbols into the index.
+    pub index_ms: u64,
+}
+
 impl SemanticSearchService {
     /// Creates a new semantic search service
     pub fn new() -> Self {
@@ -301,6 +315,17 @@ impl SemanticSearchService {
 
     /// Indexes a single file from path
     pub fn index_file_from_path(&self, file_path: &Path) -> Result<(), String> {
+        self.index_file_from_path_timed(file_path).map(|_| ())
+    }
+
+    /// Indexes a single file from path, saying how long each part took.
+    ///
+    /// The reading and the interpreting are one phase, and the writing
+    /// into the index is another: they are told apart because they do
+    /// not cost the same, and a consumer that wants to know what an
+    /// operation paid for needs to know which one it paid for.
+    pub fn index_file_from_path_timed(&self, file_path: &Path) -> Result<IndexTimings, String> {
+        let read_start = std::time::Instant::now();
         let extension = file_path.extension().and_then(|e| e.to_str());
 
         let language = Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
@@ -309,7 +334,13 @@ impl SemanticSearchService {
         let source = std::fs::read_to_string(file_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
 
-        self.index_file(&file_path.to_string_lossy(), &source, language)
+        let parse_ms = read_start.elapsed().as_millis() as u64;
+
+        let write_start = std::time::Instant::now();
+        self.index_file(&file_path.to_string_lossy(), &source, language)?;
+        let index_ms = write_start.elapsed().as_millis() as u64;
+
+        Ok(IndexTimings { parse_ms, index_ms })
     }
 
     /// Searches for symbols via the DashMap index.
