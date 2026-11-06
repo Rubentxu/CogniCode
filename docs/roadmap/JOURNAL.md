@@ -36274,3 +36274,98 @@ grafo publica viaja en el resultado con `#[serde(skip)]`, fuera del documento pu
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
 admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
 tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-127: la configuración del IDE no se escribe desde los tests
+
+**El encargo.** Un test de `cogh` falla de vez en cuando cuando la suite corre en paralelo. El
+texto de la tarea medía una ejecución en cinco y dejó la causa como hipótesis; el indicio que daba
+(`redirect_home` movería `HOME`) era falso: `redirect_home` movía `COGNICODE_HOME` y nada más.
+
+**Lo que estaba roto, medido (no supuesto).**
+
+| Hecho | Medida |
+|---|---|
+| La causa, reproducida | 10 corridas del bin de `cogh` en paralelo → **5 de 10 fallaron** |
+| El test que nombra la tarea | `layout::tests::t_debt4_t2_uninstall_active_clears_tracker_and_journal` falló en 2 de esas 10 |
+| El mensaje | `rename /home/rubentxu/.config/opencode/opencode.json: No such file or directory (os error 2)` — el mismo que la casa midió el 2026-11-04 y anotó en `.config/nextest.toml` |
+| Los otros dos que fallaron | `layout::tests::t_debt4_t6_uninstall_is_idempotent` y `layout::tests::t_e86_7_cmd_uninstall_idempotent_when_install_tree_missing` |
+| Por qué fallaba | la escritura atómica usaba un nombre de temporal **fijo** (`<target>.json.tmp`): el primer `rename` se lleva el temporal y el segundo falla con ENOENT |
+| Por qué había un solo fichero | la configuración del IDE se resuelve desde `HOME` (o desde las variables que lo anulan), y `redirect_home` solo movía `COGNICODE_HOME`: los tests escribían la configuración **real** del desarrollador |
+| El daño al host | `~/.config/opencode/opencode.json` reescrito por la suite (mtime 2026-11-06 06:55 y 07:30) con una entrada `cognicode-mcp` que apunta a un temporal de test ya borrado, y ocho symlinks colgantes en `~/.config/opencode/skills/` apuntando a `/tmp/.tmp…` |
+| Los seis escritores que quedaban | barrido de los 334 tests del bin de `cogh`, **uno a uno**, mirando la mtime de la configuración real: `install::tests::t_l4_install_emits_warning_when_no_skill_bundle_present`, `installer_transaction::tests::h06_upgrade_a_then_b_leaves_tracker_at_b`, `…::h06_sha_failure_during_upgrade_preserves_a`, `…::h06_doctor_passes_after_upgrade_and_binary_executes_with_version`, `layout::tests::prf_f6_w3_install_then_update_then_execute_then_rollback_then_uninstall` y `tests::setup_installs_reviewer_profile_before_doctor` |
+
+**El mecanismo, que es una cosa y no dos.** El `install` integra el IDE cuando
+`ide::detect_opencode()` ve un fichero de configuración (`cmd/install.rs:56`): con el `HOME` real
+del desarrollador, ese fichero existe, la detección dice que sí, y la instalación escribe en la
+configuración real. En una máquina sin OpenCode el mismo test no escribe nada — por eso el
+problema no aparece en CI y sí aparece aquí.
+
+**Lo que cambió.**
+
+- **La escritura atómica deja de duplicar la del core.** `write_json_atomic` (CLI) montaba su
+  propio temporal y lo renombraba; ahora delega en
+  `cognicode_core::application::services::atomic_file_writer::AtomicFileWriter`, que el core ya
+  tenía, ya probaba («el temporal se crea en exclusiva») y que borra el temporal en cualquier
+  camino que no publica. Dos escritores del mismo destino ya no pueden pisarse: el `rename` de
+  uno ya no se lleva el temporal del otro. La visibilidad del escritor pasa de `pub(crate)` a
+  `pub` (aditivo; el módulo ya era `pub`).
+- **El sandbox de la pipeline es un guard único que restaura el entorno.**
+  `layout::test_support::TempPipelineEnv` apunta el home de cogh, `HOME`, `OPENCODE_CONFIG`,
+  `CLAUDE_CONFIG` y `CODEX_CONFIG` al directorio del test y restaura lo anterior al soltar. Los
+  dieciséis sites de `layout.rs` lo usan (los que ya tenían `redirect_home` y los cuatro que no
+  llamaban a ningún fixture).
+- **Los seis escritores que quedaban** usan ahora `TempPipelineEnv::ide(...)`.
+
+**Los tests, con su rojo.**
+
+| Test | Rojo antes | Verde después |
+|---|---|---|
+| `ide::tests::t_write_json_atomic_does_not_touch_the_temporary_of_another_writer` | `NotFound: "No such file or directory"` al leer el temporal plantado: la escritura se lo había llevado | el temporal plantado sobrevive y la escritura publica su contenido |
+| `layout::tests::t_redirect_home_keeps_the_ide_configuration_inside_the_sandbox` | `the OpenCode configuration must resolve inside the sandbox; got /home/rubentxu/.config/opencode/opencode.json` | la configuración y el directorio de skills resuelven dentro del sandbox |
+
+El primero es el mecanismo de la carrera en una línea: plantar el temporal de otro escritor y
+comprobar que la escritura no lo toca. El segundo es el aislamiento, en la misma línea.
+
+**Medido (no afirmado).**
+
+- **La carrera, antes y después**: 10 corridas del bin de `cogh` en paralelo → **5 de 10
+  fallaron** antes (con el mensaje de arriba, en el test que nombra la tarea) y **0 de 10** después.
+- **Los escritores de la configuración real**: barrido de los 334 tests del bin de `cogh`, uno a
+  uno, mirando la mtime de `~/.config/opencode/opencode.json` → **6** antes del arreglo final y
+  **0** después. El barrido de los **634 tests del paquete** completo (lib, `it`, `release` y los
+  tres binarios), uno a uno, con la misma vigilancia → **0**.
+- **La suite completa, quince veces**: `cargo nextest run -p cognicode-cli` × 15 → la mtime de la
+  configuración real **no cambió ni una vez** (antes del arreglo, una sola corrida la cambiaba).
+- **Las suites**: `cargo nextest run -p cognicode-cli` → **634 pasan**; `cargo nextest run -p
+  cognicode-core --lib` → **2570 pasan**.
+- **Lint y formato**: `cargo clippy --workspace --all-targets -- -D warnings` → rc=0, sin avisos;
+  `cargo fmt --all --check` → limpio.
+- **La suite de contratos** (`bash scripts/ci/run-all-contracts.sh`): el **único rojo** es
+  `test_roadmap_version_ratchet.py` (`test_current_sha_matches_head`, `test_control_all_green`):
+  el snapshot de `docs/roadmap/CURRENT.md` declara `0eeffa1754c8` y HEAD es `ddd51180`. Es
+  **preexistente** y ajeno a esta unidad — ya lo declaró el recibo de TASK-123.
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: **el gate completo es NOT_RUN**. Esta unidad es la
+  primera del lote siguiente y el gate se corre al cerrar diez.
+- No dice que el grupo de contención `cli-shared-home` de `.config/nextest.toml` sobre: sigue
+  ahí, y sigue siendo lo que serializa los binarios del CLI en el gate. Relajarlo (o quitarlo)
+  es otra unidad, con su propia medición sobre los tres binarios; aquí sólo se ha hecho el
+  arreglo que el propio grupo señalaba como el debido («the proper fix is hermetic tests»).
+- No dice que la configuración real del operador esté intacta: **no lo está**. La suite la
+  reescribió antes de este arreglo (la entrada `cognicode-mcp` apunta a un temporal ya borrado, y
+  la entrada `rea` del operador ya no está). Los ocho symlinks colgantes de
+  `~/.config/opencode/skills/` siguen ahí. Todo eso es consecuencia de los tests, no de este
+  cambio, y se limpia a mano: el fichero y los symlinks son del host, no del repositorio.
+- No dice que el fallo observado a las 07:50 esté explicado: en esa corrida la configuración real
+  cambió de `{cognicode-mcp, rea}` a `{cognicode-mcp}`, y el camino de fusión de la pipeline
+  (`mcp.<binario>`) no borra entradas ajenas. La medición posterior (15 corridas completas y 634
+  tests uno a uno) no reproduce ningún escritor, así que lo que la escribió queda **sin explicar**
+  y no se afirma que sea la suite.
+
+**Entrega.** PR #640 → `ddd51180`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no
+tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
