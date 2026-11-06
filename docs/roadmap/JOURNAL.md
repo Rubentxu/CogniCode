@@ -36071,3 +36071,108 @@ una. Es el precio de una medición atribuible, y el lote de diez lo paga una vez
 repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este
 repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook
 rechaza.
+
+## 2026-11-06 — TASK-140: toda corrida de mutación lleva techo de memoria
+
+**El encargo.** El operador se quejó de que el trabajo le consumía mucha memoria y le
+provocaba problemas de OOM. La causa está medida en el log del kernel, no es una impresión.
+
+**Lo que estaba roto, medido (no supuesto).**
+
+| Hecho | Medida |
+|---|---|
+| El OOM del 2026-11-05 19:40 | el kernel mató un binario de test de `cognicode-core` de **37 GB de RSS** (67 GB virtuales) y, en la misma pasada, `coredns`, `java`, `tini`, `python` y `local-path-prov` |
+| Dónde vive el techo | **sólo** dentro del paso de mutantes del gate (`scripts/test-gate.sh` → `scripts/mem-capped-runner.sh`) |
+| La «mirada» que recomendaba `AGENTS.md` | `cargo mutants --file <ruta> -j 8`: **sin** techo, **sin** directorio de destino propio, **sin** la regla de presupuesto |
+| Qué crate se mutaba así | `cognicode-core` (217k líneas), que está **fuera** del alcance de mutación del gate por coste: precisamente el que puede descontrolarse |
+| El pico legítimo del binario de test del core | **2 828 944 kB = 2,70 GiB** de RSS (`cargo test -p cognicode-core --lib -- --test-threads=4`, 2565 tests en 13,58 s) |
+
+**La causa.** El techo no era una propiedad de las corridas de mutación: era una propiedad de
+*un* script. La forma de corrida que se documentaba para mirar un fichero —la que la gente copia
+— era la única sin techo, y la que se leía en `AGENTS.md` a la entrada de cada agente.
+
+**El arreglo: un dueño del presupuesto y dos rutas.**
+
+`scripts/mutants-budget.sh` (nuevo) es el dueño único de los tres números:
+
+| Número | Valor | De dónde sale |
+|---|---|---|
+| `MUTANTS_BUDGET_KIB` | 16 777 216 (16 GiB) | una cuarta parte de lo que una máquina de esta clase tiene libre, con sitio para el resto del workspace |
+| `MUTANTS_GATE_VMEM_KIB` | 2 097 152 (2 GiB) | el techo que el runner ya imponía por defecto: **el valor no cambia**, lo que cambia es que está escrito donde las dos rutas lo leen |
+| `MUTANTS_FOCAL_VMEM_KIB` | 4 194 304 (4 GiB) | por encima del pico legítimo del core (2,70 GiB) y por debajo del mutante runaway |
+
+Dos scripts que nombran el mismo presupuesto son dos fuentes de verdad, y la segunda se pudre: el
+paso que lee la vieja pide más memoria de la que la máquina tiene, y la certificación dice que el
+gate cabe.
+
+- **`scripts/mutate-file.sh`** (nuevo): la ruta focal. El mismo runner con techo, su **propio**
+  `CARGO_TARGET_DIR` (`<target>/mutants-focal`; el binario de un mutante no puede quedarse en la
+  caché compartida — la regla 8 de `AGENTS.md`), `--gitignore true` (sin él, la copia del árbol
+  son 6,6 GB por mutante) y los trabajos **derivados del presupuesto**:
+  `trabajos ≤ presupuesto / techo`. Pedir más no los compra.
+- **`scripts/test-gate.sh`**: carga el dueño y exporta su techo. Y si el dueño falta o no declara
+  el techo, el paso **no se mide** y el gate sale en rojo: un gate que mide una hora de mutantes
+  contra un techo implícito es un gate cuyo veredicto no dice nada del techo que la certificación
+  nombra.
+- **`AGENTS.md`**: deja de recomendar `cargo mutants --file <ruta> -j 8` a pelo y pasa a
+  recomendar la ruta focal, con su techo, su directorio de destino propio y su presupuesto.
+
+**Por qué el techo focal son 4 GiB y no 2 GiB.** Con el techo de 2 GiB —por debajo del pico
+legítimo de 2,70 GiB— el binario de test muere en **cada** mutante del core, y `cargo-mutants`
+reporta todos como «atrapado»: un veredicto **falso**, y una falsa garantía. Un techo que corta
+al binario legítimo no acota al mutante runaway, lo confunde con él. 4 GiB deja el pico legítimo
+debajo y corta al mutante que se desborda antes de que se lleve la máquina.
+
+**Medido (no afirmado).**
+
+- **El contrato** (`scripts/ci/test_mutant_memory_budget.py`): **9/9**. Los cinco nuevos
+  comprueban que la ruta focal usa el runner con techo, su target dir propio y
+  `--gitignore true`; que acota sus trabajos al presupuesto (64 pedidos → 4); que el presupuesto
+  tiene un dueño único; que el detector ve una ruta plantada que se desborda; y que ninguna
+  documentación recomienda una corrida de mutación sin techo.
+- **Los rechazos de las dos rutas, medidos de uno en uno** (todos con rc=2 o rc=1, ninguno con un
+  «continue» silencioso): ruta con forma incorrecta → rc=2; fichero inexistente → rc=2; techo por
+  encima del presupuesto → rc=2; `--jobs` que no es un número → rc=2; dueño ausente → el gate
+  **rc=1 sin medir** y la focal rc=2; dueño sin `MUTANTS_FOCAL_VMEM_KIB` → rc=2; dueño sin
+  `MUTANTS_GATE_VMEM_KIB` → el gate **rc=1 sin medir**; dueño sin `MUTANTS_BUDGET_KIB` → rc=2.
+- **El cableado del paso de mutantes del gate**, con un `cargo` de-stub que no compila ni muta:
+  el techo que llega al runner es **2097152 KiB** (el del dueño), el target dir es el propio, el
+  runner es el de techo y los trabajos son **1**. El valor que el gate usaba antes y el que usa
+  ahora son el mismo número.
+- **La suite de contratos** (`bash scripts/ci/run-all-contracts.sh`): el contrato de esta unidad
+  pasa 9/9 dentro de la suite. El **único rojo** es `test_roadmap_version_ratchet.py`
+  (`test_current_sha_matches_head`, `test_control_all_green`): el snapshot de
+  `docs/roadmap/CURRENT.md` declara `0eeffa1754c8` y HEAD era `fb526521db6e`. Es **preexistente**
+  y ajeno a esta unidad — mide estado de git y un documento que esta unidad no toca; el snapshot
+  se regeneró por última vez en TASK-119 y tiene su propia unidad.
+
+**Lo que esta unidad NO dice.**
+
+- No dice que el gate completo siga en verde: **el gate completo es NOT_RUN**. El lote anterior
+  (TASK-121, 133, 134, 135, 136, 137, 138, 139, 122, 124) queda certificado en `fb526521`
+  (4701 unitarios, 6794 de integración, 627 mutantes: 618 atrapados, 9 inviables, 0
+  supervivientes). Esta unidad entra en el lote siguiente.
+- No dice que el techo acote a `rustc` ni al enlazador: el runner acota **sólo** al binario de
+  test, que es donde crece el mutante runaway.
+- No dice nada sobre la cobertura por mutación de `cognicode-core`: ese crate sigue fuera del
+  alcance del gate, por coste. Lo que cambia es que **mirarlo** ya no es una operación sin techo.
+- No dice que la aritmética del presupuesto sea un límite del hardware: 16 GiB es una cuarta
+  parte de lo libre en esta máquina, medido el 2026-11-05. En una máquina más pequeña, el techo
+  es lo que baja; la medición sigue en serie, porque la atribución es lo que no se negocia.
+
+**Nota de operación (ajena a la unidad, pero va a morder el próximo ciclo).** `git pull` está
+**bloqueado** en este repositorio: la política de identidad (`git-control`, mecanismo
+`identity-policy`) rechaza la actualización de referencias porque una rama remota **antigua**
+contiene el commit `05650486` («fix(ci): el selector no se juzga a si mismo…», 2026-11-01),
+autorado por `Claude <noreply@anthropic.com>`. El refspec comodín (`+refs/heads/*`) trae todas
+las ramas, y con ellas ese commit; el commit **no** está en `main`. El camino que funciona es
+un fetch estrecho — `git fetch origin main` y `git merge --ff-only origin/main` — que es lo que
+se ha usado para traer esta entrega. No es un `--no-verify`: es un fetch más estrecho. La
+alternativa —regenerar la historia de esa rama o borrarla— es una decisión del operador, no de
+esta unidad.
+
+**Entrega.** PR #636 → `8f96e69e`. Este recibo es su propio PR.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio
+no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio
+no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
