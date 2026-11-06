@@ -10,10 +10,15 @@
 //! does not hold is [`SymbolNotInGraph`], never an empty impact.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use crate::application::analysis_basis::{SymbolNotInGraph, require_present};
+use crate::application::dto::AffectedTest;
 use crate::application::dto::RiskLevel;
+use crate::domain::aggregates::Symbol;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+use crate::domain::services::command_for;
+use crate::domain::value_objects::{Language, published_line};
 
 /// What changing a named symbol reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +31,12 @@ pub struct ImpactOf {
     pub files: Vec<String>,
     /// Blast radius derived from the number of dependent symbols.
     pub risk: RiskLevel,
+    /// The tests that reach the change, and the command that runs each one.
+    ///
+    /// The tests are the dependents the reader marked as tests: a name that
+    /// looks like a test is not one, and a helper of a test is not one
+    /// either. Empty is the truth when nothing tests the change.
+    pub affected_tests: Vec<AffectedTest>,
 }
 
 /// The impact of changing the symbols called `name` in `graph`.
@@ -42,21 +53,47 @@ pub fn impact_of(graph: &CallGraph, name: &str) -> Result<ImpactOf, SymbolNotInG
 
     let mut symbols = BTreeSet::new();
     let mut files = BTreeSet::new();
+    let mut affected_tests: Vec<AffectedTest> = Vec::new();
     for id in &matched {
         for dependent in graph.find_all_dependents(id) {
             if let Some(symbol) = graph.get_symbol(&dependent) {
                 symbols.insert(symbol.name().to_string());
                 files.insert(symbol.location().file().to_string());
+                if symbol.is_test() {
+                    affected_tests.push(affected_test(symbol));
+                }
             }
         }
     }
+    // The order of the answer is part of the answer: the tests come in the
+    // order of the file they live in, so the same question gives the same
+    // list twice.
+    affected_tests.sort_by(|a, b| (&a.file, a.line, &a.name).cmp(&(&b.file, b.line, &b.name)));
 
     Ok(ImpactOf {
         matched: matched.len(),
         risk: RiskLevel::from_impacted_symbols(symbols.len()),
         symbols: symbols.into_iter().collect(),
         files: files.into_iter().collect(),
+        affected_tests,
     })
+}
+
+/// The test the answer names, and the command that runs it.
+///
+/// The command is the one the language's convention says: where the
+/// language does not decide its own runner, there is none, and the answer
+/// says so rather than inventing one.
+fn affected_test(symbol: &Symbol) -> AffectedTest {
+    let file = symbol.location().file();
+    let command = Language::from_path(Path::new(file))
+        .and_then(|language| command_for(language, file, symbol.name()));
+    AffectedTest {
+        name: symbol.name().to_string(),
+        file: file.to_string(),
+        line: published_line(symbol.location().line()),
+        command,
+    }
 }
 
 #[cfg(test)]

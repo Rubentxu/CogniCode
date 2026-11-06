@@ -939,6 +939,7 @@ impl WorkspaceSession {
             impacted_symbols: impact.symbols,
             risk_level: impact.risk,
             summary,
+            affected_tests: impact.affected_tests,
         })
     }
 

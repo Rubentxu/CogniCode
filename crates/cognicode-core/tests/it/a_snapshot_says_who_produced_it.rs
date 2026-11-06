@@ -137,7 +137,7 @@ async fn the_basis_declares_the_analyzer_that_produced_the_analysis() {
 
     assert_eq!(
         basis["snapshot_schema"].as_str(),
-        Some("cognicode.graph.cache/v4"),
+        Some("cognicode.graph.cache/v5"),
         "la base declara el esquema con el que se escribió el snapshot"
     );
 }

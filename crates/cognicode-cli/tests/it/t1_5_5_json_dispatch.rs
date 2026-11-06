@@ -364,6 +364,48 @@ fn json_graph_complexity_shape() {
     assert_kind(&out, "complexity");
 }
 
+/// The affected tests travel in the published document, with the command
+/// that runs each one: a consumer that reads the JSON has to be able to
+/// run the test without asking again.
+#[test]
+fn json_graph_impact_carries_the_affected_tests() {
+    let r = GraphResult::Impact {
+        symbol: "foo".to_string(),
+        risk_level: "low".to_string(),
+        direct_dependents: 2,
+        total_impacted_symbols: 5,
+        impacted_files_count: 3,
+        impacted_symbols: vec!["bar".to_string()],
+        impacted_files: vec!["/src/bar.rs".to_string()],
+        affected_tests: vec![cognicode_core::application::dto::AffectedTest {
+            name: "the_test_that_watches_the_change".to_string(),
+            file: "crates/demo/tests/it/checks.rs".to_string(),
+            line: 12,
+            command: Some(
+                "cargo nextest run --manifest-path crates/demo/Cargo.toml --test it \
+                 -E 'test(=checks::the_test_that_watches_the_change)'"
+                    .to_string(),
+            ),
+        }],
+        coverage: complete_coverage(),
+        elapsed_ms: 15,
+    };
+    let out = render_json(|w| present_graph_result_json(&r, w));
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["affected_tests"][0]["name"], "the_test_that_watches_the_change",
+        "the document names the test"
+    );
+    assert_eq!(v["affected_tests"][0]["line"], 12);
+    assert!(
+        v["affected_tests"][0]["command"]
+            .as_str()
+            .unwrap()
+            .contains("test(=checks::the_test_that_watches_the_change)"),
+        "the document carries the command that runs it"
+    );
+}
+
 #[test]
 fn json_graph_impact_shape() {
     let r = GraphResult::Impact {
@@ -374,6 +416,7 @@ fn json_graph_impact_shape() {
         impacted_files_count: 3,
         impacted_symbols: vec!["bar".to_string()],
         impacted_files: vec!["/src/bar.rs".to_string()],
+        affected_tests: Vec::new(),
         coverage: complete_coverage(),
         elapsed_ms: 15,
     };

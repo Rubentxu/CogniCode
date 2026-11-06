@@ -373,6 +373,7 @@ fn graph_result_impact_serializes_risk_and_untruncated_lists() {
         impacted_files_count: 4,
         impacted_symbols: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         impacted_files: vec!["/lib/a.rs".to_string(), "/lib/b.rs".to_string()],
+        affected_tests: Vec::new(),
         coverage: complete_coverage(),
         elapsed_ms: 70,
     };

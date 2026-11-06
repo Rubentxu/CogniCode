@@ -635,6 +635,11 @@ pub enum GraphResult {
         impacted_files_count: usize,
         impacted_symbols: Vec<String>,
         impacted_files: Vec<String>,
+        /// The tests the change reaches, and the command that runs each one.
+        ///
+        /// Empty when no test reaches the change, and empty is the truth
+        /// then: a change nothing tests has no test to name.
+        affected_tests: Vec<crate::application::dto::AffectedTest>,
         /// What the graph the answer was computed from covers.
         ///
         /// The counts are what the graph holds. Over a graph that does
@@ -643,6 +648,35 @@ pub enum GraphResult {
         coverage: crate::interface::coverage::CoverageInfo,
         elapsed_ms: u128,
     },
+}
+
+impl GraphResult {
+    /// La respuesta del impacto, con las cifras que el grafo tiene.
+    ///
+    /// La respuesta se construye aquí y no en el comando: el comando sabe
+    /// qué pregunta hacer, y esta forma es la que el consumidor lee. Las
+    /// cifras son las del GRAFO —sobre un grafo que no cubre el árbol
+    /// entero, no son las del árbol, y una respuesta que no lo dice lee un
+    /// cero como un hallazgo—.
+    pub fn impact_of(
+        impact: crate::application::services::impact_of::ImpactOf,
+        symbol: String,
+        coverage: &crate::application::services::analyze::Coverage,
+        elapsed_ms: u128,
+    ) -> Self {
+        GraphResult::Impact {
+            symbol,
+            risk_level: format!("{:?}", impact.risk).to_uppercase(),
+            direct_dependents: impact.matched,
+            total_impacted_symbols: impact.symbols.len(),
+            impacted_files_count: impact.files.len(),
+            impacted_symbols: impact.symbols,
+            impacted_files: impact.files,
+            affected_tests: impact.affected_tests,
+            coverage: crate::interface::coverage::CoverageInfo::of(coverage),
+            elapsed_ms,
+        }
+    }
 }
 
 /// Error tipado de un `cognicode graph <subcommand>`.

@@ -39,7 +39,13 @@ use serde::{Deserialize, Serialize};
 /// El número dice con qué forma se escribió el fichero, y con eso decide
 /// si se puede leer: un snapshot de otra forma no se decodea, y por eso no
 /// se puede servir como si fuera de esta.
-pub const SNAPSHOT_SCHEMA: &str = "cognicode.graph.cache/v4";
+///
+/// La v5 llega porque el símbolo ahora dice si declara un test. El snapshot
+/// se escribe con bincode, que no se autodescribe: un símbolo con un campo
+/// más es una forma distinta de fichero, y un snapshot escrito con la forma
+/// anterior no dice nada sobre el árbol que describe. Se reconstruye, que es
+/// lo que hace un snapshot de otra versión.
+pub const SNAPSHOT_SCHEMA: &str = "cognicode.graph.cache/v5";
 
 /// El analizador que produce un análisis.
 ///

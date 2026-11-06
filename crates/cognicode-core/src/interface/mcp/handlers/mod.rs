@@ -1695,10 +1695,6 @@ pub async fn handle_analyze_impact(
 
     let impact = AnalysisService::impact_of(&graph, &input.symbol_name)
         .map_err(|absent| HandlerError::NotFound(absent.to_string()))?;
-    let (impacted_symbols, impacted_files, risk_level) =
-        (impact.symbols, impact.files, impact.risk);
-    let symbols_count = impacted_symbols.len();
-    let files_count = impacted_files.len();
 
     let auto_note = if ensure.auto_built {
         ensure.message.clone()
@@ -1718,21 +1714,14 @@ pub async fn handle_analyze_impact(
         state => format!("Over a graph with {} coverage. ", state.published_label()),
     };
 
-    Ok(AnalyzeImpactOutput {
-        symbol: input.symbol_name,
-        impacted_files,
-        impacted_symbols,
-        risk_level,
-        summary: format!(
-            "{}{}Impact analysis completed in {}ms. {} symbols across {} files would be affected.",
-            auto_note,
-            coverage_note,
-            start.elapsed().as_millis(),
-            symbols_count,
-            files_count
-        ),
-        coverage: crate::interface::coverage::CoverageInfo::of(&coverage),
-    })
+    Ok(AnalyzeImpactOutput::of(
+        impact,
+        input.symbol_name,
+        &auto_note,
+        &coverage_note,
+        crate::interface::coverage::CoverageInfo::of(&coverage),
+        start.elapsed().as_millis(),
+    ))
 }
 
 /// Result of ensuring a prerequisite is satisfied.
