@@ -37642,3 +37642,149 @@ Lo que NO se ha hecho, y es decisión del operador: **`main` no se reescribe**. 
 2. Reescribir en el servidor el mensaje de ese commit, con la misma clave y el mismo árbol, para que la cabecera quepa.
 
 La regla que sale de aquí, y que es la que hay que aplicar la próxima vez: **contar la cabecera del `--subject` de `gh pr merge --squash` con el sufijo ` (#NNN)` dentro del presupuesto, ANTES de fusionar**. El espacio que dejó el sufijo fue de 7 caracteres, y el título estaba a 119.
+
+## 2026-11-06 — TASK-82: el registro de goals, y el primer goal montado (`status`)
+
+### Lo que estaba mal (MEDIDO contra el árbol, no supuesto)
+
+Un goal es lo que un consumidor **pide** (`status`), no lo que el producto **calcula**
+(`find_usages`). Hoy esas dos cosas son la misma: el nombre de una tool es un nombre de
+propósito, y una tool nueva obliga a elegir un nombre sin que nadie sepa qué nombres
+existen. Tres medidas sobre el árbol:
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Cuánto pesa el nombre de una tool publicada? | MEDIDO sin `sandbox/`, `.git/`, `target/`, `node_modules/` ni `.codegraph/`: `find_usages` aparece en **32 ficheros** y **109 veces**, `analyze_impact` en **37** y **116**, `smart_search` en **15** y **64** |
+| ¿Hay un tipo que declare un goal? | **No**: en el árbol no hay ningún tipo que diga a la vez nombre, descripción, argumentos, autoridad, fase mínima y dueño |
+| ¿De dónde salían los argumentos del comando? | Del cable sí —el `inputSchema` se derivaba del struct que lee los argumentos—, pero el comando de la terminal y la ayuda los escribía una persona |
+
+Es decir: el mismo dato —qué acepta y qué significa una llamada— vivía en el struct que
+el servidor lee, en el comando que la persona escribe, en la entrada del maestro y en la
+ayuda. Cuatro sitios, y nada que dijera que tienen que coincidir.
+
+### Lo que dice ahora
+
+Hay un registro: `crates/cognicode-core/src/interface/goals.rs`. Cada goal declara **una vez**
+su nombre, su título, su descripción con ejemplos, su autoridad, su fase mínima, su dueño y
+sus argumentos. De esa declaración salen las cuatro superficies por las que un consumidor ve
+al goal:
+
+| Superficie | De dónde sale |
+|---|---|
+| el `inputSchema` que el MCP publica | del struct que lee los argumentos (`StatusInput`) |
+| el comando clap | del mismo esquema, con la API de builder de clap |
+| la entrada de `product/tools.json` | de la misma entrada que el maestro publica |
+| la ayuda | de la descripción y los ejemplos de la declaración |
+
+El primer goal montado es **`status`**: qué ofrece este build y qué se ve del workspace. Su
+`run` es una función, y la misma función la ejecutan el MCP y el CLI: el sobre que ve un
+cliente MCP y el que ve quien escribe en la terminal son el mismo, y un test lo mide.
+
+El goal se resuelve **antes** del `match` de despacho del MCP, porque su nombre no es un caso
+del `match`: lo construye el registro. Y el comando clap del goal lo construye el registro
+también, así que el goal no es una variante más del enum `CliCommand`: un enum lo escribiría
+una persona, y entonces el nombre del goal, su descripción y sus argumentos volverían a
+vivir en dos sitios.
+
+### Los argumentos tienen un dueño
+
+Los argumentos de un goal los declara el struct que los lee. De ese struct sale el
+`inputSchema` que el runtime anuncia (`interface/mcp/input_contracts.rs`, `schemars` con
+`SchemaSettings::draft2020_12`), y ese mismo esquema es el que el comando clap expone y el
+que el maestro publica. El registro no vuelve a escribir los argumentos: si los escribiera,
+el esquema tendría dos dueños y podría mentir.
+
+De ahí sale una propiedad que antes no estaba garantizada: **el valor por defecto del flag
+de la terminal es el valor por defecto del cable**. El esquema publica `include_goals:
+true`, y el flag `--include-goals` vale `true` porque el default sale del esquema, no de
+una línea escrita aparte.
+
+### Lo que NO se cumple: AC2
+
+AC2 —«los 78 nombres antiguos se registran como alias que traducen al goal, con aviso de
+deprecación»— **sigue abierta a propósito**, y no es un descuido:
+
+- un alias traduce un nombre a un goal, y el vocabulario de los nueve goals (status, context,
+  find, inspect, trace, impact, overview, audit, change) es **TASK-84**;
+- el mecanismo de deprecación ya existe y está vivo: `interface/mcp/handlers/retired.rs`
+  sirve un nombre retirado con la tool que sí calcula, y la respuesta lleva `alias`,
+  `served_by` y `deprecation`;
+- lo que esta unidad entrega es el **sitio** donde el alias se declarará —el registro— y el
+  primer goal montado.
+
+La tarea se cierra igualmente, y la razón es de cadena: TASK-83 y TASK-84 dependen de ella,
+y una tarea en curso bloquea a sus dependientes. Cerrarla con AC1 comprobado y AC2 anotada
+—no marcada— es lo que deja la cadena abierta sin mentir sobre lo que está hecho.
+
+### El RED anti-vacuitad, medido
+
+Una suite nueva que pasa no dice nada si no puede fallar. Se perturbó el producto dos veces,
+con los ficheros restaurados byte a byte después (md5 verificado):
+
+| Perturbación | Lo que salió |
+|---|---|
+| el `title` de la entrada `status` del maestro | **1 rojo**: `the_catalogue_publishes_what_the_registry_declares` — «the catalogue publishes another title than the declaration» |
+| el valor por defecto del struct (`default_true` → `false`) | **2 rojos**: `the_published_input_schema_is_the_derived_one` y `the_default_of_the_flag_is_the_default_of_the_wire` |
+
+Restaurado: **10/10**. Los dos rojos del segundo caso son los que importan: el primero
+detecta que el maestro y la derivación se separaron, y el segundo que el flag y el cable
+dejan de decir lo mismo.
+
+### Las cifras, y de dónde salen
+
+| Cifra | De dónde sale |
+|---|---|
+| El catálogo pasa de **78 a 79** tools | `product/tools.json`: **214 líneas añadidas y 1 quitada** —esa es la de `runtime_tool_count`, que pasa de 78 a 79—. Ninguna tool se retira |
+| Un build por defecto publica **74** tools (antes 73) | El binario **release** de `cognicode-mcp` con `tools/list` real: 74 nombres, `status` entre ellos |
+| La captura del runtime coincide byte a byte | `mcp-client --method tools/list` contra el binario de tres features: 79 tools, y el fichero capturado es idéntico al commiteado |
+| `4968 tests run: 4968 passed, 3 skipped` | `cargo nextest run -p cognicode-core -p cognicode-cli -p cognicode-mcp` |
+| `336 checks, 0 fallos` | `bash scripts/ci/run-all-contracts.sh` |
+| El ratchet de tamaño sigue en pie | `interface/cli/commands.rs` queda en **2932** líneas de producción (las de la base) y `interface/mcp/handlers/mod.rs` en **3619** (las de la base). El código nuevo vive en `interface/cli/goal_command.rs` e `interface/mcp/handlers/goal.rs` |
+
+### Lo que NO se toca
+
+- **Ninguna tool publicada se retira.** El goal se publica *además*.
+- **La cobertura del workspace no se publica.** El goal `status` no la mide —medirla exige
+  el snapshot durable—, y su `limitations` en el catálogo lo dice: lo que no se ha medido no
+  se anuncia.
+- **La semántica de los argumentos que el servidor acepta hoy pero no honra** —el nivel de
+  `project_overview`, los dos argumentos de `export_callflow`— no se arregla de paso: sigue
+  en la cola viva, con su medición.
+
+### Un defecto que el ratchet destapó
+
+El primer intento de esta unidad metió el árbol de comandos y el parseo de los goals dentro
+de `interface/cli/commands.rs`. Compilaba, los tests pasaban, y el contrato de tamaño de
+fichero dijo que no: ese fichero ya estaba por encima de 2000 líneas y **no puede crecer**. La
+salida fue mover el código a `interface/cli/goal_command.rs` y el handler del goal a
+`interface/mcp/handlers/goal.rs`, y devolver a los dos ficheros las líneas que tenían. Un
+ratchet que sólo se lee cuando algo se rompe es un ratchet que no vigila.
+
+### Verificado
+
+- `cargo nextest run -p cognicode-core -p cognicode-cli -p cognicode-mcp` → **4968 tests run,
+  4968 passed, 3 skipped**.
+- `bash scripts/ci/run-all-contracts.sh` → **336 checks, 0 fallos**.
+- `cargo fmt --all --check` → limpio. `cargo clippy --workspace --all-targets -- -D warnings` →
+  **rc=0**.
+- El binario real, en vivo: `cognicode status` imprime el estado, el workspace, los
+  lenguajes detectados, las fases y el goal; `cognicode status --format json` devuelve el
+  mismo sobre que el MCP; `cognicode --help` lista el goal; `cognicode status --help`
+  explica sus ejemplos.
+
+Radio de la unidad: `crates/cognicode-core`, `crates/cognicode-cli`, `crates/cognicode-mcp`,
+`product/`, y la prosa que publica el número de tools (`README.md`, `README.es.md`,
+`product/README.md`, las dos skills). No se ha corrido el gate entero: el gate se pasa por
+lotes de diez tareas, y éste no cierra un lote.
+
+### La unidad anterior y la que sigue
+
+- TASK-129 corrigió la nota 2 del ROADMAP; esta unidad no toca esa nota.
+- La que sigue es **TASK-83** (el contrato de respuesta HATEOAS con handles firmados), que
+  ya no está bloqueada: su dependencia, esta unidad, está cerrada. Y detrás, TASK-84 —los
+  nueve goals y sus alias— es donde se cumple AC2.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del
+repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este
+repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el
+hook rechaza.
