@@ -53,6 +53,11 @@ fn the_test_that_watches() {
 # The runner the fixture uses. It fails the test that reaches the change
 # only when the contract of the symbol is broken, which is what a real
 # complete run does.
+#
+# The line it prints is the line nextest prints, with the counter of the
+# progress between the time and the binary: the reader of the output has to
+# understand the format that the real runner writes, not one that is easier
+# to parse.
 RUNNER = """#!/usr/bin/env python3
 import os
 import sys
@@ -61,7 +66,7 @@ from pathlib import Path
 fixture = Path(os.environ["RECALL_FIXTURE"])
 source = (fixture / "src" / "lib.rs").read_text(encoding="utf-8")
 if "affected-tests-recall" in source:
-    print("        FAIL [   0.005s] demo it::the_test_that_watches")
+    print("        FAIL [   0.005s] (   1/2) demo it::the_test_that_watches")
 sys.exit(100)
 """
 
