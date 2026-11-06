@@ -37039,3 +37039,176 @@ unidad: el worktree que la tenía (`cog-t69`), la rama local y la rama remota. L
 arriba, en sus tres números que sobreviven: 235 ejecutables, 273 s en frío y ~1,16 s por binario. Lo
 que se retira es la rama, no el árbol: `main` nunca la tuvo, y lo único que de ella quedaba en el árbol
 era ese número derivado del recibo de TASK-70 grupo 1, que la medición de esta unidad sustituye.
+
+## 2026-11-06 — TASK-142: el gate mide el radio del lote, y el radio lo decide un script
+
+**El encargo.** AC1 pedía acotar el paso de mutantes según la política que el operador hubiera elegido, y
+dejar el alcance escrito en el propio script. La política elegida fue la **C** —los crates que el lote
+tocó, y `cognicode-graph-algos` en un calendario declarado—, y esta entrada es su implementación. AC3
+pedía que la suite acotada y la suite completa se corrieran sobre el mismo lote y que su veredicto
+coincidiera; AC4 y AC5, que el selector falle cerrado y que se pruebe que elige el crate correcto cuando
+el lote toca un crate del que otro depende; AC6, la tabla del antes y el después.
+
+**El número del «antes»** es el del recibo de TASK-69, dos entradas más arriba: el gate entero costaba
+**61 min en frío y 55 min 46 s en caliente**, y el paso de mutantes era el **92%** (frío) y el **98,8%**
+(caliente) de esa hora. Sin ese número, «acotar» es una palabra; con él, es una cifra.
+
+### Qué se implementó
+
+| Fichero | Qué es |
+|---|---|
+| `scripts/gate_scope.py` | **El selector.** Dice qué paquetes del workspace tocó el lote, cuáles pueden romperse por eso, y cuáles se miden. La decisión vive aquí y en ningún otro sitio. |
+| `scripts/test-gate.sh` | **El gate**, que deja de decidir y pasa a **leer** la respuesta del selector. Declara el alcance: los crates asequibles de mutar, el crate del calendario, su periodo y su marcador. |
+| `scripts/ci/test_gate_scope.py` | **El contrato del selector**, con un workspace de fixture real (tres crates, uno dependiente de otro). Siete comprobaciones. |
+| `AGENTS.md`, `docs/roadmap/ROADMAP.md` | La descripción del gate deja de decir «siempre `cognicode-graph-algos`» y dice lo que el gate hace ahora. El gate y su documento son la misma promesa en dos sitios. |
+| `crates/cognicode-cli/tests/it/test_taxonomy_contract.rs` | El contrato de la taxonomía, **reconciliado** en el mismo diff (ver abajo). |
+
+### El radio: cierre inverso de dependencias, y por qué no un filtro por rutas
+
+El radio de los tests es el **cierre inverso** de los crates que el lote tocó, y el grafo lo decide
+`cargo metadata`: un crate solo puede romperse porque cambió él o una dependencia suya. La unidad del
+radio es el **paquete**, no el test ni la ruta.
+
+El filtro por rutas ya se probó y tenía un agujero real: `scripts/test-fast.sh` (retirado el 2026-11-04)
+seleccionaba por ruta y su camino `fallback` caía a `cargo test --workspace --lib`, así que un test de
+integración recién escrito **nunca llegaba a correrse**: la suite entera pasaba en verde sin mirarlo. Un
+filtro de paquete no tiene ese hueco —un crate fuera del cierre no puede fallar por algo que el lote
+cambió, porque sus fuentes y las de sus dependencias no cambiaron—, y por eso el radio es de paquete.
+
+**Lo que el grafo dice de este workspace**, y que es el dato que gobierna el diseño: `cognicode-core`
+depende de `cognicode-graph-algos` y de `cognicode-macros`, y todo lo demás depende de `cognicode-core`.
+El cierre inverso del core son **8 de los 11 paquetes**; el de una hoja (`cogh`, `mcp`, `runtime`,
+`sandbox`) es 1. Consecuencia honesta, y hay que decirla antes de que la otras la digan: **acotar las
+suites por paquete ahorra segundos** —los dos pasos de test son 40 s en total— y lo que de verdad acota
+es el **paso de mutantes**, que eran 55 minutos.
+
+### Falla cerrado, y falla cerrado por respuesta
+
+Cada respuesta incierta es **más** medición, nunca menos:
+
+- **El radio.** Si la base del lote no se resuelve, si `cargo metadata` no responde o si el diff no se
+  puede leer, la respuesta es el gate **entero** —los 11 paquetes y todos los crates asequibles— con el
+  motivo en el mismo log. Un radio vacío significaría «nada que comprobar», y un gate que no comprueba
+  nada y dice verde es peor que un gate lento.
+- **El calendario.** Si la cuenta no se puede establecer, el crate del calendario **se mide ahora**. Un
+  calendario incierto no puede convertirse en un calendario que nunca dispara.
+
+El fallo cerrado se midió **en el gate real**, no sólo en el contrato: con una base inexistente el gate
+corrió el workspace entero (4711 + 6832 tests, en verde) y el log dijo por qué.
+
+### El calendario: la edad de un hueco, acotada y auditable
+
+El crate que lleva la lógica de grafo **no se deja de medir: se mide en su turno**, y el turno está
+declarado en el propio script:
+
+| Declaración | Valor | Qué es |
+|---|---|---|
+| `MUTANT_CALENDAR_PACKAGE` | `cognicode-graph-algos` | el crate que se mide en su turno |
+| `MUTANT_CALENDAR_EVERY_N` | `50` | cuántas fusiones de `main` espera entre turnos |
+| `MUTANT_CALENDAR_MARKER` | `fb526521db6e45142362d9eb19d53f2ba2a9c05a` | el commit donde empieza la cuenta (donde el gate del lote anterior se midió entero) |
+
+La **unidad** del calendario es el commit de fusión en `main`: se cuenta desde git, cualquiera lo audita
+sin ficheros de estado, y no hay estado que pueda discrepar de la historia.
+
+El turno es un **cruce**, no un residuo. Los lotes no miden todos lo mismo, así que una regla de «cuando
+el resto sea cero» puede **saltarse** el múltiplo y no disparar nunca: con lotes de 10 y periodo 50 el
+resto va 10, 20, 30, 40, 0 y cae, pero con un lote de 9 la secuencia es 9, 18, 27, 36, 45, 54 y el
+múltiplo de 50 no aparece en ninguna muestra. La regla que sí no falla es «dispara el lote que **cruza**
+un múltiplo»: la posición al empezar el lote y la posición al terminar se comparan por periodo, y como
+los lotes tilean la historia, cada múltiplo lo cruza exactamente un lote.
+
+**El calendario no quita cobertura: la dosifica.** El conjunto de crates que reciben una certificación
+de mutación no cambia —`cognicode-graph-algos`—, cambia **cuándo**. Antes se medía en cada lote; ahora,
+en el lote que le toca, y la edad de un hueco queda acotada a 50 fusiones (unos cinco lotes de diez). El
+gate lo dice en el log cuando el paso no se midió, porque un paso que no se midió y no lo dice es un
+gate que calla.
+
+### La medición: AC3 y AC6
+
+**El entorno.** Xeon E5-2682 v4 @ 2,50 GHz, 64 CPU, 94 GB de RAM; Linux 7.2.15; cargo 1.96.0,
+cargo-nextest 0.9.149, cargo-mutants 27.1.0; `jobs = 4` en la config global de cargo (**no se toca**);
+workspace `0.101.31`. **El lote** es el que va desde `fb526521` (el commit donde el gate del lote
+anterior se midió entero) hasta la punta: 21 fusiones. **El árbol** es la rama de esta unidad, con los
+cambios de `scripts/`, `AGENTS.md`, `ROADMAP.md` y el contrato del CLI; nada de cargo corrió en
+paralelo en ningún momento.
+
+#### AC3 — las dos suites sobre el mismo lote
+
+| | Radio acotado (8 de 11 paquetes) | Suite completa (11 paquetes) |
+|---|---|---|
+| Unitarios | **16,341 s** — 4429 tests, 0 fallos | **20,163 s** — 4711 tests, 0 fallos |
+| Integración (con mocks) | **22,990 s** — 6525 tests, 3 skipped | **22,384 s** — 6832 tests, 3 skipped |
+| **Veredicto** | **verde** | **verde** |
+
+El tiempo de cada celda es el que nextest reporta en su resumen —la ejecución de los tests, sin la
+compilación—, y las dos columnas se midieron sobre el mismo árbol y con el mismo estado de caché. En
+pared (con el arranque de cargo y el enlazado por delante), el gate acotado tardó **41,98 s** y la suite
+completa **49,06 s**.
+
+Los dos verdes, mismo veredicto. Los **589 tests** que quedan fuera del radio son de
+`cognicode-graph-algos`, `cognicode-macros` y `cognicode-graph-wasm`, y el grafo de cargo dice que
+ninguno de los tres depende de `cognicode-core` ni de `cognicode-cli` —los dos crates que el lote tocó—,
+así que el diff del lote no puede alcanzarlos. Eso no es una suposición del selector: es lo que
+`cargo metadata` responde, y por eso el radio no lo decide una lista de rutas.
+
+#### AC6 — el antes y el después
+
+| Etapa del gate del lote | Antes (gate entero) | Después (radio del lote) |
+|---|---|---|
+| Suite completa (unitarios + integración) | 49,06 s | 41,98 s |
+| Mutantes | **3306,185 s** — 618 atrapados, 9 inviables, 0 supervivientes | **0 s — SKIP declarado** |
+| **Total del gate del lote** | **3355,245 s (55 m 55,2 s)** | **41,98 s (42,0 s)** |
+
+La columna «antes» usa la suite completa **medida en este mismo árbol y con el mismo estado de caché**
+—49,06 s de pared entre los dos comandos, con la compilación ya hecha— y el paso de mutantes de TASK-69
+(3306,185 s), que **no se ha vuelto a medir**: son 55 minutos y el crate que se muta no ha cambiado. La
+línea base publicada de TASK-69 —**3346,139 s** en caliente, con 16,834 s y 22,889 s en los dos pasos de
+test— es el mismo gate un poco antes; la diferencia de unos segundos entre las dos columnas de test es
+ruido de máquina, y la de la fila de mutantes es la política.
+
+**La aritmética del calendario.** El paso de mutantes se paga **una vez cada 50 fusiones**: un lote de
+cada cinco paga 3306 s y los otros cuatro pagan ~40 s. El coste amortizado por lote baja de 55 min a
+**~11,6 min**, y el pico sigue siendo 55 min, en un lote de cada cinco.
+
+### Lo que esta unidad NO dice
+
+- **No dice que el gate sea rápido en general.** Es rápido en un lote que no toca crates asequibles de
+  mutar, y el lote que le toca al calendario paga los 55 minutos.
+- **No dice que el radio de los tests ahorre tiempo apreciable.** Ahorra segundos: los dos pasos de test
+  son 40 s en total. El radio de los tests es una **invariante de corrección** —lo que el gate no mide,
+  el grafo dice que no puede romperse—, no una palanca de coste. La palanca es la mutación.
+- **No dice que `cognicode-core` tenga cobertura de mutación.** No la tiene, y no la tenía antes: el
+  alcance de la mutación era `cognicode-graph-algos` y sigue siendo ese crate. Lo que hay es un hueco con
+  edad acotada, y el gate lo nombra cada vez que no mide.
+- **No dice que la suite completa deje de correr.** Corre entera al cierre del lote, como oráculo
+  independiente de la reducción, y el fallo cerrado la corre entera cada vez que el radio no se puede
+  determinar.
+- **No dice que el veredicto por mutante haya cambiado.** Sigue siendo de uno en uno, porque el
+  veredicto es por mutante.
+- **No toca** el techo de memoria, el presupuesto, ni el directorio de destino propio del paso de
+  mutantes.
+
+### El contrato del CLI, reconciliado en el mismo diff
+
+`crates/cognicode-cli/tests/it/test_taxonomy_contract.rs` buscaba dos literales en la línea de comandos
+del gate: `--workspace` y `-p cognicode-graph-algos`. Con el radio calculado, esos literales ya no
+están, y el contrato se reconcilió en vez de romperse: las dos aserciones miran ahora **lo que
+identifica un paso** —el runner y lo que corre— y **lo que el gate DECLARA** —los crates asequibles y el
+crate del calendario—. Las aserciones que miran los crates que quedan **fuera** del alcance no cambian:
+la exclusión sigue siendo parte de la declaración. El RED de las dos aserciones se vio en la suite
+completa del árbol, antes de reconciliarlas.
+
+### La unidad anterior y la que sigue
+
+- TASK-69 dio el número del «antes». Esta unidad lo gasta: el radio, el calendario y la tabla del
+  «después» son la consecuencia medida de aquella medición.
+- La línea base de TASK-69 (61 min en frío / 55 m 46 s en caliente) **sigue siendo la del gate entero**:
+  lo que esta unidad acota es el gate del lote, no la certificación del gate entero.
+
+**Gate del lote: NOT_RUN.** El gate se pasa por lotes de diez tareas (AGENTS.md), y esta unidad lo acota,
+no lo certifica. Las corridas que hay aquí son las dos comparaciones de AC3 y el gate acotado medido
+sobre el lote; las tres pasaron en verde.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no
+admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el
+crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
