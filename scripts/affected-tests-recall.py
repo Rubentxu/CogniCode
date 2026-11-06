@@ -287,17 +287,23 @@ def runner_command(args: argparse.Namespace) -> list[str]:
 
 
 def run_suite(args: argparse.Namespace, package: str) -> set[str]:
-    """The tests that fail in a complete run of the package's suite."""
+    """The tests that fail in a complete run of the package's suite.
+
+    The runner writes what it did to STDERR —the same channel cargo uses—,
+    and its stdout stays empty. Both are read, because a runner that
+    writes its verdict somewhere else would then be invisible, and a
+    measurement that sees no failures would report a recall of nothing
+    instead of saying it could not look.
+    """
     cmd = runner_command(args) + ["-p", package, "--no-fail-fast", "--color", "never"]
     if args.runner_args:
         cmd += args.runner_args
     proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
     if "could not compile" in proc.stderr or "error[E" in proc.stderr:
         raise MeasurementError(f"the suite did not build: {proc.stderr.strip()[-800:]}")
+    lines = proc.stdout.splitlines() + proc.stderr.splitlines()
     return {
-        match.group(2)
-        for match in (FAIL_LINE.match(line) for line in proc.stdout.splitlines())
-        if match
+        match.group(2) for match in (FAIL_LINE.match(line) for line in lines) if match
     }
 
 
