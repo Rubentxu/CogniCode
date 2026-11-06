@@ -35179,3 +35179,114 @@ el arreglo no introduce ningún import nuevo entre capas.
 `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
 créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
 en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-06 — TASK-136: las dependencias entre módulos y los ciclos de módulos se publican en el mismo orden en cada corrida
+
+**El encargo.** El mismo proyecto publicaba sus módulos y sus ciclos de módulos
+en otro orden en cada corrida: el grafo de módulos se acumulaba en mapas y
+conjuntos de hash, y el recorrido de un hash map difiere por instancia.
+
+Medido antes, sobre el dominio del core (20 módulos), dos construcciones
+independientes del mismo proyecto dentro de un mismo proceso, con el orden de
+los llamantes (TASK-135) ya estable: las TRES listas publicadas diferen en
+**8 de 8** pares (`modules 8/8`, `cycles 8/8`, `coupling 8/8`).
+
+**La causa, medida (no supuesta).** `find_module_dependencies`
+(`domain/aggregates/call_graph.rs:950`) acumulaba el grafo de módulos en
+`module_edges: HashMap<(String, String), usize>`,
+`module_outgoing: HashMap<String, HashSet<String>>` y
+`module_incoming: HashMap<String, HashSet<String>>`, y sacaba la lista de
+módulos de `all_modules: HashSet<String>`. De ahí salen tres órdenes de hash
+map: la lista de módulos, las dependencias de cada módulo (`depends_on` y
+`depended_by`) y la matriz de acoplamiento —que
+`AnalysisService::detect_module_dependencies` publica con `into_iter()` sobre
+un `HashMap`—. Los ciclos heredaban el orden: el grafo de petgraph se
+construía con los nodos en el orden de `module_list` y las aristas en el orden
+de `module_edges.keys()`, y el Tarjan salía de ahí.
+
+**Lo que entrega ahora.** El agregado publica sus tres listas en un orden
+canónico, y lo documenta como parte de su contrato:
+
+- la lista de módulos, por nombre de módulo;
+- `depends_on` y `depended_by` de cada módulo, por nombre;
+- la matriz de acoplamiento, por (origen, destino);
+- los ciclos, con sus miembros ordenados por nombre y ordenados entre sí.
+
+El orden va en el **lado de la escritura**: los acumuladores pasan a
+`BTreeMap`/`BTreeSet`. Es el mismo criterio que TASK-135, y con la cifra
+delante (ver más abajo). El tipo de retorno del tercer elemento pasa de
+`HashMap<(String, String), usize>` a `BTreeMap<(String, String), usize>`; su
+consumidor es uno solo (`AnalysisService::detect_module_dependencies`), y la
+forma publicada por la herramienta MCP no cambia
+(`Vec<(String, String, usize)>`): cambia su orden, que es lo que la unidad
+pide.
+
+**El radio, medido.** `find_module_dependencies` lo llama
+`AnalysisService::detect_module_dependencies`, y eso lo consumen la herramienta
+MCP `get_module_dependencies` (que publica las tres listas), el `auto_diagnose`
+de AIX (que solo usa `cycles.len()`) y el `auto_diagnose` de la sesión del
+espacio de trabajo (que solo usa `total_cross_module_edges`). Los dos últimos
+no son sensibles al orden. El explorer y la CLI no publican dependencias entre
+módulos; su `module_list()` ya ordena.
+
+**El coste, medido antes y después (AC4).** Sobre el grafo real del dominio
+del core (20 módulos), con el mismo arnés antes y después:
+
+| Medida | Antes | Después |
+|---|---|---|
+| Pares en que difieren las tres listas | 8 de 8 | **0 de 8** |
+| Coste de la pregunta | 14,86 / 12,65 / 12,43 ms | 14,93 / 12,11 / 11,92 ms |
+
+El orden no cuesta nada aquí, y la razón está en las cifras: la pregunta se
+hace **una vez por publicación** sobre un grafo de módulos pequeño, así que no
+hay una lectura repetida que pagar. En TASK-135 la situación era la contraria
+—la lectura del fan-in recorre los 5.995 símbolos en cada publicación— y por
+eso allí el orden bajó la inserción de aristas de 16,7 ms a 10,3 ms.
+
+**Las pruebas, y por qué son las mínimas.** La función no tenía ninguna prueba
+de determinismo, así que no hay nada que retirar, y no hay UAT que promover
+porque el defecto es de reproducibilidad.
+
+- **Unitaria**, en el agregado: ocho módulos con un ciclo de tres. La
+  comprobación es **total** contra el orden esperado —la lista por nombre, las
+  dependencias ordenadas, la matriz por (origen, destino) y el ciclo con sus
+  miembros ordenados—, no una lotería: ocho módulos dan una de 40.320 para que
+  el hash map acierte el orden por azar.
+- **De integración**, sobre el código real del dominio del core: dos
+  construcciones independientes dan la misma respuesta **publicada** de
+  `get_module_dependencies`. No compara el `metadata`, que lleva
+  `analysis_time_ms`: un tiempo no es parte de la respuesta.
+
+**Comprobado.**
+
+| Comprobación | Resultado |
+|---|---|
+| `cargo nextest run --profile gate -p cognicode-core --lib` | **2560 tests run: 2560 passed, 0 skipped** |
+| `cargo nextest run --profile gate -p cognicode-core --tests` | **3538 tests run: 3538 passed, 2 skipped** |
+| `cargo nextest run --profile gate -p cognicode-explorer --lib --tests` | **1096 tests run: 1096 passed, 0 skipped** |
+| `cargo clippy -p cognicode-core --all-targets -- -D warnings` | limpio |
+| `cargo fmt --all --check` | limpio |
+| `python3 scripts/ci/test_cr06_ratchet.py` | 28 → 28 (0 añadidas, 0 retiradas) |
+
+El gate entero **no se paga por tarea, se paga por lotes de diez**
+(`AGENTS.md`): con TASK-121, TASK-133, TASK-134, TASK-135 y TASK-136 van
+**cinco de diez**, así que el gate de esta unidad es **NOT_RUN**. La allowlist
+de CR-06 no crece: el arreglo no introduce ningún import nuevo entre capas.
+
+**Lo que se midió y NO se arregla aquí.** Las superficies que aún recorren el
+mapa **exterior** de símbolos (`CallGraph::symbols` sigue siendo un
+`HashMap<SymbolId, Symbol>`) se publican en el orden de un hash map. Medido
+sobre el mismo dominio, ocho pares: `codebase_map` difiere 8 de 8 (la línea
+`Hot:` publica los cinco primeros símbolos del recorrido de `symbol_ids()`),
+`review_pr` difiere 8 de 8, `detect_long_parameter_lists` (AIX) difiere 8 de
+8, y `detect_god_functions` (AIX) coincide 8 de 8 —su `sort_by` por
+`god_score` es estable y en este conjunto no hay empates; con un empate,
+caería en el orden del recorrido—. Queda encaminado en **TASK-137**, con sus
+cifras.
+
+**Entrega.** PR #623 → `8e87c485`.
+
+**Créditos.** La autoría de este trabajo es de Claude Code. El hook
+`commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los
+créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí,
+en el recibo, en vez de en un trailer que el hook rechaza.
