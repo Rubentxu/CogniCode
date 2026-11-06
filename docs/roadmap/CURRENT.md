@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `a68bfbc86d430e237109fbfc9f98125f8b705caf` (la
+> **Snapshot**: 2026-11-06, sobre `41b855fa351188a59a5565c946dfeaaee6571c78` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -213,14 +213,26 @@
 > suite y del gate, contra la ejecución completa del paquete: **70,0 %** y
 > **28,6 %** en dos símbolos, con las faltas nombradas una a una, así que la
 > selección **ordena** y no se promueve a filtro;
+> y el ROADMAP ya no declara retirado lo que sigue en el árbol: la nota 2 de §11.1
+> mandaba a leer el recibo del JOURNAL porque la poda documental se había llevado
+> `docs/adr/ADR-D1-006-uat-retirement.md`, y ese fichero está en el árbol, con la
+> decisión aceptada dentro; medido: `git log --all --diff-filter=D` no registra su
+> baja, PR #399 (`97259133`) borró seis ficheros y ninguno era este, y los dos SHAs
+> que la nota citaba no viven en `main` —el que vive es `4996246e`—, así que la nota
+> mandaba a un sitio que ya no era el único y escondía el fichero que sí tenía la
+> decisión; ahora la nota cita el ADR que existe y un contrato vigila la clase: una
+> ruta que el ROADMAP declara retirada no puede seguir en el árbol, y el RED se midió
+> sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, con cinco controles que
+> 其 —el ruido del contrato medido antes de escribirlo: 31 casos a nivel de párrafo,
+> 14 a nivel de frase con tablas, y **1** a nivel de frase sin ellas—;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`e518823c` → `a68bfbc86d430e237109fbfc9f98125f8b705caf`)
+## Qué cambió desde el snapshot anterior (`e518823c` → `41b855fa351188a59a5565c946dfeaaee6571c78`)
 
-Entre una punta y otra entraron **4 commits** (`git rev-list --count e518823cbfc667cd3f3a7c99ed0664e0747cdff5..a68bfbc86d430e237109fbfc9f98125f8b705caf`).
+Entre una punta y otra entraron **6 commits** (`git rev-list --count e518823cbfc667cd3f3a7c99ed0664e0747cdff5..41b855fa351188a59a5565c946dfeaaee6571c78`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
@@ -231,6 +243,8 @@ en qué commit está medido.
 | El recibo de TASK-76 | `9fa7d525` (TASK-76) | El recibo append-only de la unidad que declaró el entorno de compilación, con las series alternadas antes/después y la lista de lo que la cifra **no** dice. |
 | El impacto nombra los tests que alcanza | `b229cdcd` (TASK-86) | La faceta `affected_tests` en la respuesta del impacto —MCP, CLI y sesión de workspace—, con el comando exacto que corre cada test, y el lector como único que puede decir qué es un test. La recall se midió contra la ejecución completa del paquete, con el contrato del símbolo roto: **70,0 %** en `mark_as_test` y **28,6 %** en `find_all_symbols_with_path`, sobre `a68bfbc8`, con las nueve faltas nombradas una a una. La selección **ordena** y no se promueve a filtro. |
 | El comando de medición lee lo que el runner escribe | `96088fac`, `a68bfbc8` (TASK-86) | Los dos defectos que la propia medición destapó en el comando: el lector no entendía el contador del progreso de la línea de fallo, y la buscase en stdout cuando `nextest` escribe todo en stderr. Con ellos, la primera medición publicaba «reached 0» —un oráculo vacío— como si fuera una cifra. |
+| El recibo de TASK-86 | `1f3d11ec` (TASK-86) | El recibo append-only de la unidad que dio al impacto la faceta `affected_tests`, con la recall medida en dos cifras y sus nueve faltas nombradas. |
+| La nota 2 cita el ADR que existe | `41b855fa` (TASK-129) | El ROADMAP ya no declara retirado un documento que sigue en el árbol: la nota 2 de §11.1 mandaba a leer el recibo del `JOURNAL` porque la poda documental se había llevado `docs/adr/ADR-D1-006-uat-retirement.md`, y ese fichero está en el árbol con la decisión aceptada dentro. Medido: `git log --all --diff-filter=D` no registra su baja, PR #399 (`97259133`) borró seis ficheros y ninguno era este, y los dos SHAs que la nota citaba no viven en `main` (el que vive es `4996246e`). Un contrato nuevo vigila la clase —una ruta que el ROADMAP declara retirada no puede seguir en el árbol—, con el RED medido sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, y con el ruido del propio contrato medido antes de escribirlo: 31 casos a nivel de párrafo, 14 a nivel de frase con tablas y **1** a nivel de frase sin ellas. |
 
 ## Release: la última publicada es la v0.101.30
 
