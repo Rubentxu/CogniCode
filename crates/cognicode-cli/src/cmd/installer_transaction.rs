@@ -903,7 +903,7 @@ mod tests {
     use super::*;
     use crate::doctor::{CheckStatus, probe_core_health};
     use crate::install::run_install;
-    use crate::layout::test_support::{TempCognicodeHome, TempOpenCodeConfig};
+    use crate::layout::test_support::{TempCognicodeHome, TempOpenCodeConfig, TempPipelineEnv};
     use crate::layout::{CognicodeHome, cmd_uninstall};
     use crate::release_test_support::{local_release, point_at, unpoint};
 
@@ -2369,6 +2369,7 @@ components:
     #[serial_test::serial]
     fn h06_upgrade_a_then_b_leaves_tracker_at_b() {
         let _temphome = TempCognicodeHome::new();
+        let _ide = TempPipelineEnv::ide(_temphome.path());
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 
@@ -2414,6 +2415,7 @@ components:
     #[serial_test::serial]
     fn h06_sha_failure_during_upgrade_preserves_a() {
         let _temphome = TempCognicodeHome::new();
+        let _ide = TempPipelineEnv::ide(_temphome.path());
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 
@@ -2521,6 +2523,7 @@ components:
     #[serial_test::serial]
     fn h06_doctor_passes_after_upgrade_and_binary_executes_with_version() {
         let _temphome = TempCognicodeHome::new();
+        let _ide = TempPipelineEnv::ide(_temphome.path());
         let home = CognicodeHome::resolve(None).expect("resolve home");
         home.init().expect("init home");
 

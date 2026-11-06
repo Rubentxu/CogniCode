@@ -44,7 +44,7 @@ fn temp_path_for(target: &Path, attempt: u32) -> PathBuf {
 /// entonces el cambio de nombre lo publica. Si el escritor se suelta sin
 /// publicar —porque una escritura falló, o porque el cambio de nombre
 /// falló—, el temporal se borra.
-pub(crate) struct AtomicFileWriter {
+pub struct AtomicFileWriter {
     target: PathBuf,
     temp: PathBuf,
     file: Option<File>,
@@ -57,7 +57,7 @@ impl AtomicFileWriter {
     /// Si ya hay un fichero con ese nombre, no se abre: se busca el
     /// siguiente nombre libre, y el fichero que estaba ahí conserva su
     /// contenido.
-    pub(crate) fn create(target: &Path) -> io::Result<Self> {
+    pub fn create(target: &Path) -> io::Result<Self> {
         for attempt in 0..MAX_TEMP_ATTEMPTS {
             let temp = temp_path_for(target, attempt);
             match OpenOptions::new().write(true).create_new(true).open(&temp) {
@@ -87,7 +87,7 @@ impl AtomicFileWriter {
     ///
     /// La sincronización va aquí, antes de que el destino exista: cuando el
     /// cambio de nombre llegue, el contenido ya está en el disco.
-    pub(crate) fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+    pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
         let file = self
             .file
             .as_mut()
@@ -102,7 +102,7 @@ impl AtomicFileWriter {
     /// El cambio de nombre es lo que hace que el destino cambie de golpe:
     /// nadie ve un fichero a medio escribir. La sincronización del
     /// directorio es lo que hace que el cambio sobreviva a un corte de luz.
-    pub(crate) fn commit(mut self) -> io::Result<()> {
+    pub fn commit(mut self) -> io::Result<()> {
         if let Some(file) = self.file.as_mut() {
             file.sync_all()?;
         }

@@ -44,6 +44,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
+use cognicode_core::application::services::atomic_file_writer::AtomicFileWriter;
 use serde_json::{Value, json};
 
 use crate::platform_adapter;
@@ -226,6 +227,10 @@ pub fn opencode_skills_dir() -> PathBuf {
 /// (`serde_json::Value`), not byte equality; key order and formatting
 /// differences do not count as changes. A real semantic change still
 /// goes through the atomic tmp+rename path.
+///
+/// The publish is delegated to the core's atomic writer: its temporary is
+/// created in exclusive mode, so two writers of the same target never
+/// share it — the rename of one cannot consume the temporary of the other.
 fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     if path.exists()
         && let Ok(text) = std::fs::read_to_string(path)
@@ -234,15 +239,20 @@ fn write_json_atomic(path: &Path, value: &Value) -> Result<()> {
     {
         return Ok(());
     }
-    let tmp = path.with_extension("json.tmp");
-    if let Some(parent) = tmp.parent() {
+    if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create dir {}", parent.display()))?;
     }
     let json_str = serde_json::to_string_pretty(value)
         .with_context(|| format!("serialize {}", path.display()))?;
-    std::fs::write(&tmp, json_str).with_context(|| format!("write tmp {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("rename {}", path.display()))?;
+    let mut writer =
+        AtomicFileWriter::create(path).with_context(|| format!("create tmp {}", path.display()))?;
+    writer
+        .write(json_str.as_bytes())
+        .with_context(|| format!("write tmp {}", path.display()))?;
+    writer
+        .commit()
+        .with_context(|| format!("publish {}", path.display()))?;
     Ok(())
 }
 
@@ -1023,10 +1033,38 @@ mod tests {
         let text = std::fs::read_to_string(&target).unwrap();
         let parsed: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(parsed["a"], 2, "semantic change must be persisted");
-        assert!(
-            !target.with_extension("json.tmp").exists(),
-            "atomic rename must not leave the tmp file behind"
+        assert_eq!(
+            std::fs::read_dir(tmp.path()).unwrap().count(),
+            1,
+            "the atomic publish must not leave a temporary behind"
         );
+    }
+
+    /// A write must not touch a temporary it did not create.
+    ///
+    /// The temporary of a target belongs to whoever made it: a writer that
+    /// finds one already there moves to a name of its own. Under a scheme
+    /// with one name for every writer, two writers of the same target
+    /// shared it — the rename of one consumed the temporary of the other
+    /// and the second write failed with "No such file or directory".
+    #[test]
+    fn t_write_json_atomic_does_not_touch_the_temporary_of_another_writer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("cfg.json");
+        let other_temp = target.with_extension("json.tmp");
+        std::fs::write(&other_temp, "another writer").unwrap();
+
+        let value: Value = serde_json::from_str(r#"{"a":1}"#).unwrap();
+        write_json_atomic(&target, &value).expect("write must succeed");
+
+        assert_eq!(
+            std::fs::read_to_string(&other_temp).unwrap(),
+            "another writer",
+            "the write must not open nor truncate a temporary it did not create"
+        );
+        let parsed: Value =
+            serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(parsed["a"], 1, "the write must publish its content");
     }
 
     /// DEBT-1: an unparseable existing file is not silently preserved —
