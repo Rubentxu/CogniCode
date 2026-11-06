@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-06, sobre `5235eacb79b3cf31e50105511dc504939b4e0310` (la
+> **Snapshot**: 2026-11-07, sobre `2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -240,23 +240,42 @@
 > deprecación— **sigue abierta**, porque un alias traduce un nombre a un goal
 > y el vocabulario de los nueve goals es TASK-84: lo que esta unidad entrega
 > es el mecanismo y el primer goal montado;
+> y la respuesta ya es un **sobre**: cada respuesta dice QUÉ encontró, SOBRE QUÉ
+> se apoya, QUÉ dejó fuera y QUÉ se puede hacer ahora; el sobre tiene un solo
+> dueño (`interface/hateoas.rs`) y las dos superficies lo adaptan sin decir
+> cosas distintas —el MCP lo publica en `structuredContent`, con el resultado
+> dentro, la base, el presupuesto y los enlaces, y el CLI lo imprime como
+> órdenes copiables—; los enlaces se calculan del resultado (ambigüedad,
+> recorte, fan-in alto, cobertura parcial, riesgo y plan de cambio), cada uno
+> nombra una tool del catálogo con sus argumentos rellenos y su motivo, y los
+> que llevan handle van firmados y anclados al árbol y a la instantánea que
+> los acuñó, con un tag de integridad del payload: un handle cuyo payload se
+> reescribe no vuelve a pasar, y el adaptador resuelve los handles ANTES del
+> despacho, de modo que uno caducado devuelve un error tipado y la tool no
+> corre; medido: la cláusula de compatibilidad se mantiene —`content[0]`
+> sigue llevando el payload byte a byte—, el `output_schema` publicado pasa a
+> ser el del sobre con el contrato de cada tool debajo de `result`, y el
+> catálogo no pierde ninguna tool; y la terminal dice la verdad: el
+> reindexado se imprime como `cognicode graph full --rebuild` —que reconstruye
+> el grafo, no el índice de símbolos—, la dirección de la jerarquía se lee
+> del enlace en vez de estar escrita, y el motivo de un enlace cuenta en
+> palabras («1 file», no «1 files»);
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`41b855fa` → `5235eacb79b3cf31e50105511dc504939b4e0310`)
+## Qué cambió desde el snapshot anterior (`5235eacb` → `2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7`)
 
-Entre una punta y otra entraron **3 commits** (`git rev-list --count 41b855fa351188a59a5565c946dfeaaee6571c78..5235eacb79b3cf31e50105511dc504939b4e0310`).
+Entre una punta y otra entraron **3 commits** (`git rev-list --count 5235eacb79b3cf31e50105511dc504939b4e0310..2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| La nota 2 cita el ADR que existe | `41b855fa` (TASK-129) | El ROADMAP ya no declara retirado un documento que sigue en el árbol: la nota 2 de §11.1 mandaba a leer el recibo del `JOURNAL` porque la poda documental se había llevado `docs/adr/ADR-D1-006-uat-retirement.md`, y ese fichero está en el árbol con la decisión aceptada dentro. Medido: `git log --all --diff-filter=D` no registra su baja, PR #399 (`97259133`) borró seis ficheros y ninguno era este, y los dos SHAs que la nota citaba no viven en `main` (el que vive es `4996246e`). Un contrato nuevo vigila la clase —una ruta que el ROADMAP declara retirada no puede seguir en el árbol—, con el RED medido sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, y con el ruido del propio contrato medido antes de escribirlo: 31 casos a nivel de párrafo, 14 a nivel de frase con tablas y **1** a nivel de frase sin ellas. |
-| El recibo de TASK-129 | `9abaaef5` (TASK-129) | El recibo append-only de la unidad que corrigió la nota 2 del ROADMAP, con el RED del contrato medido sobre la nota vieja (1 rojo) y el GREEN sobre la nueva, con el ruido del propio contrato medido antes de escribirlo, y con la lista de lo que el contrato **no** comprueba. |
-| La corrección de la nota de operación de TASK-129 | `490dba41` (TASK-129) | La nota de operación del recibo anterior decía que el `fetch` de `main` volvía a funcionar; medido, **seguía bloqueado**, porque el hook juzga la referencia y los commits que la referencia trae. La corrección dice lo que sí funciona —apuntar la rama local a la punta— y deja escrito que `main` no se reescribe, con las dos salidas que quedan y la regla que sale de ahí: **contar la cabecera del `--subject` de `gh pr merge --squash` con el sufijo ` (#NNN)` dentro del presupuesto, ANTES de fusionar**. |
-| El goal se declara en un solo sitio | `5235eacb` (TASK-82) | El registro de goals declara **una vez** el nombre, el título, la descripción con ejemplos, la autoridad, la fase mínima, el dueño y los argumentos de un goal, y de esa declaración salen las cuatro superficies por las que un consumidor lo ve: el `inputSchema` del MCP, el comando clap, la entrada del maestro y la ayuda. El primero montado es `status`. Medido: el catálogo pasa de **78 a 79 tools sin retirar ninguna**, la captura del runtime —regenerada con el binario de tres features— coincide byte a byte con la que ya lo traía, y un build por defecto publica **74** tools (antes 73). El RED anti-vacuitad de la suite nueva se midió perturbando el producto: **1 rojo** con el título del maestro perturbado y **2 rojos** con el valor por defecto del struct perturbado; restaurado, 10/10. |
+| El recibo de TASK-82 | `f87aa02a` (TASK-82) | El recibo append-only de la unidad anterior —el registro de goals y el goal `status`—, con su RED anti-vacuitad medido perturbando el producto (**1 rojo** con el título del maestro perturbado, **2 rojos** con el valor por defecto del struct perturbado) y con la lista de lo que el contrato **no** comprueba. |
+| La respuesta es un sobre | `5e17cc9d` (TASK-83) | Cada respuesta lleva ahora el resultado, la base que lo sostiene (cobertura, frescura, aristas confirmadas por LSP), el presupuesto (lo que quedó fuera) y los enlaces (qué se puede hacer ahora, con los argumentos rellenos). El sobre tiene **un solo dueño** (`interface/hateoas.rs`) y las dos superficies lo adaptan sin decir cosas distintas: el MCP lo publica en `structuredContent` y el CLI lo imprime como órdenes copiables; los handles (`sym:`, `page:`, `plan:`) van firmados y anclados, con un tag de integridad del payload, y el adaptador los resuelve **antes** del despacho. Medido: `4987 tests run: 4987 passed, 3 skipped`, `336 checks, 0 fallos` en los contratos, clippy y fmt en verde, la captura del runtime con 79 tools y 17 con contrato coincidiendo byte a byte con el maestro, y el RED anti-vacuitad medido perturbando el producto cinco veces (**1 rojo** cada una: el veredicto, el tag de integridad, el recuento de agujeros, el umbral de fan-in y el `BasisDto` del maestro). La cláusula de compatibilidad se mantiene: `content[0]` sigue llevando el payload byte a byte. |
+| El reindexado reconstruye el grafo, y su motivo cuenta en palabras | `2d43f7bf` (TASK-83) | La proyección del sobre en la terminal decía dos cosas que no eran ciertas: el enlace del reindexado se imprimía como `cognicode index build` —que construye el índice de símbolos, no el grafo— y la dirección de la jerarquía estaba fija en `--direction in` en vez de leerse del enlace; además, la construcción del grafo —la respuesta que más huecos declara— no se proyectaba, y el motivo de un enlace contaba sin leer («1 files»). Medido: el radio lo decidió `scripts/gate_scope.py` (`touched=cognicode-cli cognicode-core`, ocho paquetes en el `test-scope`, `mutant-scope` vacío, `calendar=waits`), **4454** tests unitarios y **6590** de integración en verde, contratos y clippy en verde, y el RED medido con el código anterior restaurado byte a byte (**4 rojos**: la orden del reindexado, la dirección fija, el motivo sin contar y la construcción sin proyectar; el control negativo —una construcción completa **no** imprime siguiente paso— pasa antes y después). En vivo: `cognicode graph full .` sobre un árbol con un fichero ilegible imprime `cognicode graph full --rebuild . — 1 file, 0 references and 0 relations were left out of the answer`, y la orden impresa se ejecutó con `rc=0`. |
 
 ## Release: la última publicada es la v0.101.30
 
