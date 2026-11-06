@@ -441,7 +441,7 @@
   },
   {
     "name": "build_lightweight_index",
-    "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
+    "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, full.",
     "inputSchema": {
       "properties": {
         "directory": {
@@ -454,6 +454,11 @@
         "strategy": {
           "default": "lightweight",
           "description": "Strategy to use: lightweight, on_demand, full",
+          "enum": [
+            "lightweight",
+            "on_demand",
+            "full"
+          ],
           "type": "string"
         }
       },
@@ -3470,7 +3475,7 @@
   },
   {
     "name": "project_overview",
-    "description": "Get a comprehensive project overview at quick, medium, or detailed levels.",
+    "description": "Get a comprehensive project overview at quick, medium, or detailed levels. Quick publishes the statistics of the project; medium adds the entry points and the hot paths; detailed adds the recommendations and the context for a prompt. The default is the complete answer, and the answer says which level it carries.",
     "inputSchema": {
       "description": "The arguments of `project_overview`.",
       "properties": {

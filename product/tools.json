@@ -526,7 +526,7 @@
     {
       "name": "build_lightweight_index",
       "title": "Build a lightweight symbol index for fast lookups",
-      "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
+      "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, full.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -542,6 +542,11 @@
           "strategy": {
             "default": "lightweight",
             "description": "Strategy to use: lightweight, on_demand, full",
+            "enum": [
+              "lightweight",
+              "on_demand",
+              "full"
+            ],
             "type": "string"
           }
         },
