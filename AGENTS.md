@@ -36,7 +36,7 @@ Lo que la máquina declara hoy, y lo que midió el recibo de TASK-76:
 
 **Lo que nadie debe hacer**: declarar el perfil en el workspace, ni `jobs` o `CARGO_BUILD_JOBS` en la configuración del repo. Si falta una herramienta, se dice y se para: una configuración que nombra un linker o una caché que no están rompe el build de toda la máquina, y el error no lo dice.
 
-**Cómo se mide**: `bash scripts/build-time.sh` (o `just build-time`) mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite. El contrato `scripts/ci/test_build_env.py` vigila que el instrumento siga declarando los cuatro escenarios, que el repositorio no declare un perfil, y que toda herramienta que la configuración de la máquina nombre esté instalada.
+**Cómo se mide**: `bash scripts/build-time.sh` (o `just build-time`) mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite. El contrato `scripts/ci/test_cargo_environment_contracts.py` vigila que el instrumento siga declarando los cuatro escenarios, que el repositorio no declare un perfil, y que toda herramienta que la configuración de la máquina nombre esté instalada.
 
 ## Cómo leer un fichero grande sin llenarte el contexto
 
@@ -181,7 +181,7 @@ y un gate que calla es un gate en el que nadie puede confiar.
    `[profile.test]` workspace **prohibidos** — invalidan la caché compartida de
    `/var/home/rubentxu/cargo-targets/`. La configuración global sí es el sitio donde vive el
    perfil, el linker y la caché de compilación (ver «El entorno de compilación»): tocarla afecta a
-   todos los proyectos de la máquina, y por eso el contrato `scripts/ci/test_build_env.py` vigila
+   todos los proyectos de la máquina, y por eso el contrato `scripts/ci/test_cargo_environment_contracts.py` vigila
    que lo que declara siga declarado y que las herramientas que nombra estén instaladas.
 5. **Un mutante que sobrevive es un agujero, no una puntuación.** Cuando aparezca uno, lo
    que se arregla es el test que no lo mata. Relajar el umbral es esconder el agujero.

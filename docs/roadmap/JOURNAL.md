@@ -38515,3 +38515,17 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (17 PASS). Mut
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (12 PASS), originales rc 0. Mutaciones del sujeto (problemas nuevo / serial_env / prose): un test con `set_var` sin guarda añadido a `evidence_cmd.rs` 1/1/0; un carácter cirílico añadido a `README.md` 1/0/1; el glob de `run-all-contracts.sh` roto 1/0/1. El nuevo falla exactamente lo que falla el original que corresponde. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 18): los contratos del entorno de compilación y del envoltorio cargo-iso son uno
+
+### Qué cambió
+
+`test_build_env.py` (231 líneas, 5 tests) y `test_cargo_iso.py` (195, 6) se fusionan en `scripts/ci/test_cargo_environment_contracts.py` (461): 426 → 461 líneas, 2 ficheros → 1 (27 en `scripts/ci`). Comparten tema (cómo compila este repositorio con cargo), no sujeto: la parte I vigila `scripts/build-time.sh` y la configuración de cargo de la máquina; la II, `scripts/ci/cargo-iso.sh`. Las 11 comprobaciones conservan nombre, docstring y fallos cerrados. `REPO` pasa a `REPO_ROOT` (una sola declaración). El `main` único recorre las funciones `test_*` en orden de definición, falla si no hay ninguna, ejecuta después las tres clases `unittest` y devuelve 1 si `failures` no está vacío o alguna clase falla. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`.
+
+Punteros vivos repuntados: dos en `AGENTS.md`, dos en el docstring de `test_assurance_export_golden.py` y el comentario de `run-all-contracts.sh`, que ya no excluye `test_cargo_iso.py` de la lista (el fichero fusionado SÍ entra en el glob; el runner lee solo las funciones de nivel de módulo, es decir, la parte I, como antes con `build_env`; las clases `unittest` siguen corriendo solo por invocación directa, como antes).
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. `test_actually_uses_isolated_target_for_real_build` compila un crate (`cargo build -p cognicode-graph-algos`) y NO se ejecutó (NOT_RUN) ni en el nuevo ni en el original; el resto de las clases ejecuta solo `cargo metadata --no-deps`. Base verde: nuevo 0 fallos, originales 0 (5 funciones + 5 tests unittest). Mutaciones del sujeto (problemas nuevo / build_env / cargo_iso): `MEASUREMENTS=(` renombrado en `build-time.sh` 1/1/0; hash del checkout fijo en `cargo-iso.sh` 1/0/1; `--gate` que pisa un `CARGO_TARGET_DIR` explícito 1/0/1; `[profile.dev]` añadido a `Cargo.toml` 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde. `scripts/run_contract_tests.py` sobre el fichero nuevo: 5 passed, 0 failed. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
