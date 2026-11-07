@@ -38357,3 +38357,17 @@ Sin cargo. En `main` el snapshot de `CURRENT.md` declara `d0225b3f66a8`, a 10 co
 Sin cargo. Base verde: nuevo y originales rc 0. Mutaciones (rc nuevo / marcadores / estado): marcadores de conflicto en `ROADMAP.md` 1/1/0; `leases/probe.lock` rastreado 1/0/1; `!leases/` en `.gitignore` 1/0/1; `aaaa-s1-0/result.txt` rastreado 1/0/1; negación de la regla del directorio de paso 1/0/1. Índice y ficheros restaurados (`git rm --cached`, `cmp`, `touch`). `run_contract_tests.py` recoge las 6 pruebas del nuevo, rc 0. No se corrió `test_ci_contracts.py`. El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 5): los dos contratos de los binarios de la lane son uno
+
+### Qué cambió
+
+`test_built_binary_freshness.py` (268 líneas) y `test_run_target_binary.py` (265) se fusionan en `scripts/ci/test_lane_binaries.py` (507): 533 → 507 líneas, 2 ficheros → 1 (40 en `scripts/ci`). Los dos tratan los binarios de la lane de release: uno comprueba que el binario es de ESTE árbol (`check-built-binary.sh`) y el otro cómo se ejecuta uno de otro target (`run-target-binary.sh`). Las 15 comprobaciones (9 de frescura, 6 de ejecución) conservan su nombre, su docstring y sus fallos cerrados; el prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. No había punteros vivos a los originales fuera de este JOURNAL.
+
+### Pruebas
+
+Sin cargo. Base verde: nuevo 15 passed, originales 9 y 6 passed, rc 0. Mutaciones sobre los scripts (rc nuevo / frescura / ejecución): `exit 1`→`exit 0` en las ramas no-depinfo, stale, mixed, other-tree y binario ausente de `check-built-binary.sh`: 1/1/0 en las cinco; `exit 1`→`exit 0` en la ausencia de loader de `run-target-binary.sh`: 1/0/1; quitar `-L "$prefix"` del `exec`: 1/0/1. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Límite conocido.** La rama «sin emulador» de `run-target-binary.sh` (`exit 1` tras el mensaje de qemu) no se pudo discriminar: en esta máquina `qemu-aarch64-static` está en el PATH, así que ni el original ni el nuevo entran en esa rama (0/0/0). Es una laguna heredada del original, no introducida por la fusión; se conserva la comprobación tal cual.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
