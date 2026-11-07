@@ -341,6 +341,35 @@ def test_the_installed_binary_is_the_pinned_one() -> None:
         )
 
 
+def test_the_generator_takes_its_version_from_the_shared_tool() -> None:
+    """The generator inherits the pin; it never assigns one of its own.
+
+    Comparing against one literal version only catches a second declaration
+    that happens to repeat that version. A second declaration with ANY value
+    is the defect, so this reads the assignment, not the number. The
+    generator's comments that record which version a behaviour was measured
+    with are history and stay as they are.
+    """
+    assignment = re.compile(r"^\s*(?:export\s+)?COGNICODE_COSIGN_VERSION=", re.MULTILINE)
+    for path in (GENERATOR, CONTRACT):
+        check(
+            assignment.search(_text(path)) is None,
+            f"{path.name} assigns COGNICODE_COSIGN_VERSION itself. The pin has "
+            "one home, and that home is the shared tool",
+        )
+
+    sourced = re.search(
+        r'^\s*(?:\.|source)\s+"?\$\{?SCRIPT_DIR\}?/cosign-tool\.sh"?\s*$',
+        _text(GENERATOR),
+        re.MULTILINE,
+    )
+    check(
+        sourced is not None,
+        f"{GENERATOR.name} does not source cosign-tool.sh, so it has no "
+        "pinned version to sign with",
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
