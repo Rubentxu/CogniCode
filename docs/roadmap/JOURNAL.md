@@ -37917,3 +37917,109 @@ El radio de esa corrección lo decidió `scripts/gate_scope.py` (`--base HEAD`):
 - La que sigue es **TASK-84** —los nueve goals y sus alias—, que es donde se cumple el AC2 de TASK-82.
 
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-07 — TASK-84: los nueve goals, los perfiles y `status` como raíz
+
+### Lo que estaba mal (MEDIDO contra el árbol, no supuesto)
+
+Un goal es lo que un consumidor **pide**; una tool es lo que el producto **calcula**. Medido sobre el árbol antes del cambio:
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Cuántos goals declara el registro? | **Uno**: `status`. Los otros ocho —`context`, `find`, `inspect`, `trace`, `impact`, `overview`, `audit`, `change`— sólo aparecían en la prosa de la agenda |
+| ¿Qué anuncia el servidor por defecto? | Las **79** entradas del maestro —78 tools y el goal `status`—: un cliente que llega preguntando «qué ofrece este build» recibe una lista de 79 operaciones y tiene que saber cuál es la buena |
+| ¿Hay una forma de pedir «qué se ve del workspace»? | No: `cognicode` sin argumentos no era ninguna pregunta. La raíz del producto no tenía dueño |
+| ¿Hay un sitio donde se diga qué superficie se publica? | No: el `tools/list` era el mismo para todo el mundo, y el único eje era la postura de escritura (`--read-only`) |
+| ¿El nombre `inspect` está libre? | **No**: el goal que lo toma choca con el comando provisional `cognicode inspect` de B3.W2, y clap se niega a registrar dos comandos con el mismo nombre |
+
+Es decir: el vocabulario de los goals era una lista en prosa —la agenda—, y el cable publicaba un catálogo de operaciones sin la capa de preguntas.
+
+### Lo que dice ahora
+
+El registro (`interface::goals::GoalSpec`) declara **una vez** cada goal, y de esa declaración salen las cuatro superficies: el `inputSchema` que el MCP publica, el comando clap, la entrada del maestro y la ayuda. Los nueve goals se montan sobre los dueños que **ya** calculaban eso —`AnalysisService`, `SourceInventory`, `RefactorService`—, así que ningún goal recalcula nada.
+
+| goal | qué pregunta | fase mínima | autoridad | sustituye a |
+|---|---|---|---|---|
+| `status` | qué ofrece este build y qué se ve del workspace | discover | read | — |
+| `context` | qué hay en el workspace | discover | read | `list_files` |
+| `find` | dónde está un símbolo | index | read | `query_symbol_index`, `find_references` |
+| `inspect` | qué declara un fichero | discover | read | `get_file_symbols`, `get_symbol_code` |
+| `trace` | quién llama a un símbolo | link | read | `get_call_hierarchy`, `trace_path` |
+| `impact` | qué rompe un cambio | analyze | read | `analyze_impact` |
+| `overview` | cómo es el proyecto | analyze | read | `project_overview`, `codebase_map` |
+| `audit` | qué está mal en el proyecto | analyze | read | `detect_god_functions`, `solid_audit` |
+| `change` | qué tocaría un renombrado | analyze | **mutating** | `safe_refactor` |
+
+### Los perfiles: la regla tiene un dueño
+
+Un perfil decide **qué se anuncia** en `tools/list`, no qué se calcula: un goal del perfil por defecto y el mismo goal del perfil `full` contestan lo mismo.
+
+| perfil | qué anuncia |
+|---|---|
+| `default` | los goals cuya fase es anterior a `Analyze`: **cinco** (`status`, `context`, `find`, `inspect`, `trace`) |
+| `full` | los nueve goals y las 78 tools: las **87** entradas del maestro |
+| `legacy` | las 78 tools, cada una con el aviso que nombra al goal que la sustituye |
+
+**La regla del perfil por defecto tiene un solo dueño: la fase mínima del goal.** El perfil deriva de ella, así que un goal nuevo que declara su fase sabe si sale por defecto sin que nadie lo decida dos veces.
+
+**El aviso del perfil `legacy` también lo declara el goal, no el perfil**: cada goal dice qué nombres legados sustituye (`replaces`), y el perfil lo lee. Un nombre sin sustituto también lo dice: «the goal surface does not answer this question yet; this tool still computes it» —un alias que promete un sustituto que no existe sería peor que no publicar alias.
+
+El perfil lo elige el servidor: `cognicode-mcp --profile <perfil>`. Un perfil que no se conoce no se asume: el servidor sale con código 2 diciendo los que conoce. Y `--profile` **no** es el perfil de instalación (`core`, `reviewer`, …): aquel decide lo que el servidor **puede hacer**, éste lo que **anuncia**.
+
+### Por qué los goals no publican `outputSchema`
+
+Medido el 2026-11-07 sobre este árbol:
+
+| Medida | Bytes |
+|---|---|
+| La lista del perfil por defecto —los cinco goals, sin `outputSchema`— | **4.290** (4.350 por el cable) |
+| La misma lista con el esquema del sobre bajo cada goal, con el contrato **más pequeño** que el producto publica | **26.420** |
+| La misma lista con el contrato **más grande** (`build_graph`) | **65.890** |
+| El presupuesto de AC1 | 6.144 (6 KB) |
+
+Con esquema, la lista no cabe ni por el margen más favorable. Un goal anuncia **qué pregunta responde** (su `inputSchema`) y **cómo se llama**: el sobre es el mismo para todos, y por eso no se anuncia por goal. El maestro declara los trece campos de cada entrada, así que el campo existe y vale `null` —la misma respuesta honesta que dan las tools sin esquema—.
+
+### El nombre que se renombró, y por qué
+
+El goal `inspect` toma el nombre `inspect`, y el comando provisional `cognicode inspect` —PROPOSED desde B3.W2, nunca publicado con estabilidad— pasa a ser `cognicode intent`. Cada corrida de `cognicode intent` imprime el aviso de que el nombre cambió.
+
+La regla que se aplicó: **un nombre publicado por un goal vence a un comando PROPOSED**, porque lo publicado es lo que un cliente puede depender. La deprecación se dice en cada corrida, no en un changelog que nadie lee.
+
+### Lo que NO se toca
+
+- **Las 78 tools**: sus handlers, sus esquemas y su captura siguen siendo los que son. El perfil `legacy` las publica como alias.
+- **El maestro `product/tools.json` sigue escrito a mano**: sólo crecen las nueve entradas de los goals. Los campos espejo (`input_schema`, `runtime_metadata`) se copiaron de la captura del runtime.
+- **La cláusula de compatibilidad de TASK-83**: `content[0]` sigue llevando el payload byte a byte, y el sobre sigue siendo de un solo dueño (`interface/hateoas.rs`).
+- **La captura del runtime se toma en el perfil `full`**: es la única superficie que publica las 87 entradas del maestro, y la paridad maestro/captura la exige.
+
+### Las cifras, y de dónde salen
+
+| Cifra | De dónde sale |
+|---|---|
+| **6.933 tests en verde, 0 en rojo** (5.312 unitarios, 1.613 de integración, 8 doctests; 3 ignorados) | `cargo test --workspace` sobre el árbol de la unidad |
+| **336 checks, 0 fallos** (47 suites) | `bash scripts/ci/run-all-contracts.sh` |
+| `cargo clippy --workspace --all-targets -- -D warnings` → **rc=0**; `cargo fmt --all --check` → limpio | los dos, en el árbol de la unidad |
+| El ratchet de tamaño sigue en pie | `python3 scripts/ci/test_file_size_ratchet.py` → **PASS**: 10 de 800 fuentes por encima de 2000 líneas de producción, y `commands.rs` **encogió** (2932 → 2815) |
+| La deuda de CR-06 no crece | `python3 scripts/ci/test_cr06_ratchet.py` → **PASS**: 28 @ `e66f693a` → 28, 0 añadidas |
+| El maestro y la captura coinciden | `sync_tool_catalog_with_the_capture.py --check` → «the master is synchronized with the capture», 87 entradas |
+| La lista por defecto pesa 4.290 bytes | el mismo `Tool` que el runtime anuncia, medido sobre el árbol (`tools_for_profile(Default)`) |
+| La lista por defecto pesa 4.350 bytes por el cable | `mcp-client --method tools/list --server-profile default` contra el binario de release con las tres features |
+
+### Verificado, en vivo
+
+- **El perfil por defecto**: `mcp-client --server-profile default` → **5** entradas, `context`, `find`, `inspect`, `status`, `trace`, ninguna con `outputSchema`, y el documento pesa 4.350 bytes.
+- **El perfil `full`**: **87** entradas —los 9 goals y las 78 tools—, que son las que publica el maestro.
+- **El perfil `legacy`**: **78** entradas, ningún goal, y el aviso nombra al sustituto: `analyze_impact` lleva «Deprecated: the goal `impact` answers this question».
+- **AC4**: el servidor de sólo lectura anuncia **83** entradas en el perfil `full` y `change` **no** está entre ellas; el que puede escribir anuncia 87, y `change` sí.
+- **La raíz**: `cognicode` sin argumentos imprime lo que imprime `cognicode status`: las fases, los lenguajes, la cobertura y los nueve goals con su autoridad.
+- **AC3**: `cognicode status --format json` y el `tools/call status` del cable devuelven el **mismo sobre**: las mismas seis claves (`_links`, `basis`, `budget`, `result`, `schema_version`, `state`) con los mismos valores.
+
+### La unidad anterior y la que sigue
+
+- TASK-83 puso el sobre; esta unidad no lo toca: el goal se monta encima y las dos superficies lo adaptan.
+- TASK-82 dejó el AC2 —los 78 nombres antiguos como alias con aviso de deprecación— **abierto**, porque el vocabulario de los nueve goals era TASK-84. Esta unidad lo cierra: los 78 nombres se publican en el perfil `legacy` con su aviso, y los 13 que un goal sustituye nombran al goal que contesta la misma pregunta; los otros 65 dicen la verdad —que la superficie de goals todavía no contesta esa pregunta y que la tool la calcula—.
+- La que sigue es **TASK-85** —el ejecutor de recetas con fases, memo, paralelismo, presupuesto y `--plan`—, que ya no está bloqueada por esta.
+
+**FUSIONADO.** PR #673 (`ffa1bd02`): la unidad. Este recibo y el snapshot operativo viajan en el PR que le sigue.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
