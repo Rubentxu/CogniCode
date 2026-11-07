@@ -88,7 +88,7 @@ relacionados con el gate. Los más relevantes:
   - `scripts/ci/preflight-clean-clone.sh`: el gate corre sobre un
     clone limpio. Si la infra no soporta un clean clone, el gate
     debe fallar (no fallback).
-  - `python3 scripts/ci/test_roadmap_version_ratchet.py`: la
+  - `python3 scripts/ci/test_roadmap_coherence.py`: la
     versión del workspace aparece en el ROADMAP o JOURNAL
     reciente (un release sin documentar es bypass por omisión).
 

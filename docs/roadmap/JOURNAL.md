@@ -38333,3 +38333,15 @@ Sin cargo. Con la base `5173c478`, el contrato nuevo y los dos originales dan la
 Sin cargo. Mutando ROADMAP/JOURNAL (rc nuevo / autoridad / cierre): cierre de H23 en el Journal 1/0/1; ancla retirada 1/1/1; Journal sin cierres 1/0/1; cita a ruta inexistente 1/1/0; ADR atribuido a otra unidad (línea 425) 1/1/0. Base 0/0/0. Dos mutaciones previas (ruta fuera del bloque, `(K1)` en la línea 538) no tocaban el bloque, no discriminaban y se rehicieron. Restauración con `cmp` y `touch`. `run_contract_tests.py` recoge las 6 pruebas del fichero nuevo; el glob `test_*.py` lo toma. Nadie más citaba los nombres retirados. El gate no se corrió (TASK-74 no suma al lote).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 3): los dos contratos de coherencia de ROADMAP son uno
+
+### Qué cambió
+
+`test_roadmap_version_ratchet.py` (341 líneas) y `test_roadmap_does_not_retire_what_is_there.py` (320) se fusionan en `scripts/ci/test_roadmap_coherence.py` (636): 661 → 636 líneas, 2 ficheros → 1 (42 en `scripts/ci`; 43 medidos antes). Las 12 comprobaciones conservan su nombre con prefijo, `SNAPSHOT_MAX_DRIFT=5`, `NEGATION_WINDOW=60` y el cierre en fallo. Se actualizan los dos punteros vivos (`ROADMAP.md:305` y `MERGE-GATE-BYPASS-POLICY.md:91`); las citas del JOURNAL, de las certificaciones, de los veredictos y de `odd/tasks` son evidencia histórica y no se tocan.
+
+### Pruebas
+
+Sin cargo. En `main` el snapshot de `CURRENT.md` declara `d0225b3f66a8`, a 10 commits de HEAD (tope 5): el original `test_roadmap_version_ratchet.py` ya estaba rojo ANTES de esta fusión y el fusionado da los mismos 2 fallos. Para medir con base verde se apuntó, sólo en el worktree y de forma reversible, el SHA declarado a `87398989` (HEAD~3): nuevo y originales rc 0. Mutaciones (rc nuevo / versión+snapshot / retirada): versión del workspace `7.31.4159` 1/1/0; SHA no ancestro 1/1/0; fecha de 2026-01-01 1/1/0; deriva (SHA a 10 commits) 1/1/0; retirada de `JOURNAL.md` presente 1/0/1; retirada de `CURRENT.md` presente 1/0/1; control con retirada negada 0/0/0. Una primera mutación de versión (`9.9.9`) no discriminó, porque el JOURNAL ya contiene esa cadena, y se rehízo. Ficheros restaurados con `cmp` y `touch`. El snapshot sigue sin regenerar (otra unidad, tres bloques). El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
