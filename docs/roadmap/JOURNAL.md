@@ -38321,3 +38321,15 @@ Sólo se corrió ese contrato. RED 1: segunda declaración `="3.1.4"` en el gene
 Sin cargo. Con la base `5173c478`, el contrato nuevo y los dos originales dan las mismas cifras (10 de 813 fuentes sobre 2000 líneas; 78 nombres repetidos) y rc 0. Mutación 1: una línea añadida a `analysis_service.rs` (2031 → 2032) → nuevo rc 1, original de tamaño rc 1, original de homónimos rc 0. Mutación 2: `pub struct BundleManifest;` duplicado en `cogh.rs` → nuevo rc 1, original de homónimos rc 1, original de tamaño rc 0. Ficheros restaurados con `cmp` y `touch`. `run_contract_tests.py` recoge 7 pruebas del fichero nuevo; `run-all-contracts.sh` lo toma por el glob `test_*.py`. Ningún otro fichero citaba los nombres retirados. El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 2): los dos contratos de ROADMAP §11 son uno
+
+### Qué cambió
+
+`test_roadmap_authority_attribution.py` (211 líneas) y `test_roadmap_open_units_coherence.py` (220) se fusionan en `scripts/ci/test_roadmap_section11.py` (415): 431 → 415 líneas, 2 ficheros → 1. Vigilan el mismo bloque de §11 (uno su AUTORIDAD, otro su CIERRE), y cada uno conserva su extractor (`open_units_block` y `section11_open_units`) porque delimitan distinto; no se unificaron. Las 6 comprobaciones conservan su nombre, el cierre en fallo ante ancla ausente y las dos docstrings completas (la referencia cruzada al hermano apunta ahora a la Parte 2). El ahorro es pequeño a propósito: la docstring de cada contrato es el contrato.
+
+### Pruebas
+
+Sin cargo. Mutando ROADMAP/JOURNAL (rc nuevo / autoridad / cierre): cierre de H23 en el Journal 1/0/1; ancla retirada 1/1/1; Journal sin cierres 1/0/1; cita a ruta inexistente 1/1/0; ADR atribuido a otra unidad (línea 425) 1/1/0. Base 0/0/0. Dos mutaciones previas (ruta fuera del bloque, `(K1)` en la línea 538) no tocaban el bloque, no discriminaban y se rehicieron. Restauración con `cmp` y `touch`. `run_contract_tests.py` recoge las 6 pruebas del fichero nuevo; el glob `test_*.py` lo toma. Nadie más citaba los nombres retirados. El gate no se corrió (TASK-74 no suma al lote).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
