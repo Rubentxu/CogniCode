@@ -38741,3 +38741,13 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Limitación conocida.** `definition` y `references` a través de pyright NO están verificados. No se afirma esa capacidad; queda documentada en el doc del módulo.
 
 **Verificación.** `grep -c 'requires pyright binary'` = 0. `cargo clippy -p cognicode-core --test it -- -D warnings` `rc=0`. `cargo nextest run --profile gate -p cognicode-core --test it lsp_integration`: 5 pasan, 0 omitidas por pyright (corrida filtrada: acota el feedback, no certifica). Gate NOT_RUN: el lote lleva 5 de 10 desde `1e1a013a`.
+
+## 2026-11-07 — El conjunto de assets del release-candidate se prueba con fixtures (TASK-146)
+
+**Medido.** `scripts/ci/test_release_candidate_asset_set.py` (153 líneas) no contenía ningún `test_*`: el runner de contratos solo ejecuta funciones `test_*` de nivel de módulo, y `run-all-contracts.sh` lo excluía con `EXCLUDED_CI_CONTRACTS`. Su comentario afirmaba que lo invocaba la lane, y no hay lane. Resultado: la comprobación del conjunto de assets no corría en ningún sitio.
+
+**Cambio.** La lógica pasa a `candidate_defects()` en `scripts/ci/test_release_path_contracts.py` (sección III), que devuelve la lista de defectos, y se prueba con un fixture aislado (inventario, `SHA256SUMS`, artefacto y commit de origen creados en un directorio temporal; el commit con `git hash-object -w`, porque el wrapper de `git` de la máquina rechaza `git commit` con identidad de agente; entorno git aislado). Diez pruebas nuevas: conjunto sano sin defectos; artefacto manipulado; hash del inventario distinto de `SHA256SUMS`; artefacto ausente de `SHA256SUMS`; ausente en disco; commit inalcanzable; sin `source_commit` ni artefactos; versión o plataforma erróneas; auxiliar ausente; inventario o `SHA256SUMS` ausentes sin crash. Se borra el script antiguo y la exclusión (con su comentario obsoleto) desaparece de `run-all-contracts.sh`.
+
+**RED/GREEN.** Antes: 24 pasan, 10 fallan (el helper no existía). Después: `python3 scripts/run_contract_tests.py scripts/ci/test_release_path_contracts.py` 34 pasan, 0 fallan. Mutación manual del helper, cada una detectada y restaurada (34/34 después): sha256 del artefacto (2 fallos), `SHA256SUMS` frente a inventario (1), `source_commit` (1), token de plataforma (1). `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts_146.log`). El AC que pedía `pytest -n 2` no era ejecutable (pytest no está instalado); se sustituyó por esta corrida.
+
+Gate NOT_RUN: el lote lleva 6 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146).

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Contratos de la ruta de release: la guarda de toolchain cruzado y el acuerdo del instalador.
 
-Dos contratos del mismo carril (el binario que sale de la release y el que
-`install.sh` descarga), fusionados en uno (TASK-74) conservando todas las
-comprobaciones y sus fallos cerrados.
+Tres contratos del mismo carril (el binario que sale de la release, el que
+`install.sh` descarga y el conjunto de assets del release-candidate),
+fusionados en uno (TASK-74, TASK-146) conservando todas las comprobaciones y
+sus fallos cerrados.
 
 # I. Un target instalado no es un target que compile
 
@@ -105,6 +106,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import platform
 import re
@@ -1028,6 +1030,286 @@ def test_a_binary_reporting_another_version_is_refused() -> None:
         assert not (dest / "cogh").exists()
 
 
+# III. El conjunto de assets del release-candidate es completo y atribuible
+#
+# Antes vivia en `test_release_candidate_asset_set.py`: un script con `--version`
+# y `--platform` obligatorios, sin una sola funcion `test_*`, que
+# `run-all-contracts.sh` excluia del glob y que ninguna lane invocaba. Un
+# contrato que nadie ejecuta no vigila nada. Aqui lo ejercita la suite, contra
+# un directorio de mentira y un repositorio git de fixture, sin artefactos
+# reales y sin argumentos. Cada prueba rompe UNA cosa del fixture sano y exige
+# que el defecto salga nombrado; la prueba sana exige cero defectos, para que
+# las demas no puedan pasar por una funcion que siempre protesta.
+
+CANDIDATE_VERSION = "0.101.17"
+CANDIDATE_PLATFORM = "x86_64-unknown-linux-gnu"
+
+
+def _isolated_git_env(home: Path) -> dict[str, str]:
+    """Entorno de git que no lee la configuracion de la maquina.
+
+    Un repositorio de fixture con la config global del operador heredaria sus
+    hooks, su firma y su identidad, y el contrato dependeria de quien lo corre.
+    """
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(home),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 16), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _parse_sha256sums(path: Path) -> dict[str, str]:
+    """`<sha256>  <filename>` (dos espacios) o `<sha256> *<filename>`."""
+    entries: dict[str, str] = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "  " not in line:
+            continue
+        digest, name = line.split("  ", 1)
+        entries[name.lstrip("*").strip()] = digest.strip()
+    return entries
+
+
+def _git_commit_exists(repo: Path, sha: str) -> bool:
+    done = subprocess.run(
+        ["git", "rev-parse", "--verify", sha + "^{commit}"],
+        capture_output=True, text=True, cwd=repo, timeout=10,
+    )
+    return done.returncode == 0
+
+
+def candidate_defects(root: Path, version: str, platform_token: str, repo: Path) -> list[str]:
+    """Defectos de un conjunto de assets local; vacio si es completo y atribuible.
+
+    Cada fichero que el inventario nombra existe, coincide con su sha256 y con
+    la entrada de `SHA256SUMS`; el `source_commit` existe en `repo`; el nombre
+    lleva el token de plataforma; y los ficheros auxiliares de la lane estan.
+    """
+    inventory_path = root / f"release-inventory-{version}.json"
+    sums_path = root / "SHA256SUMS"
+    if not inventory_path.exists():
+        return [f"inventory missing: {inventory_path.name}"]
+    if not sums_path.exists():
+        return ["SHA256SUMS missing"]
+
+    defects: list[str] = []
+    inventory = json.loads(inventory_path.read_text())
+    if inventory.get("version") != version:
+        defects.append(
+            f"inventory version {inventory.get('version')!r} != {version!r}"
+        )
+    commit = inventory.get("source_commit")
+    if not commit:
+        defects.append("inventory missing source_commit")
+    elif not _git_commit_exists(repo, commit):
+        defects.append(f"inventory source_commit {commit!r} not reachable from HEAD")
+
+    artifacts = inventory.get("artifacts", [])
+    if not artifacts:
+        defects.append("inventory has no artifacts")
+
+    sums = _parse_sha256sums(sums_path)
+    for artifact in artifacts:
+        name, declared = artifact.get("filename"), artifact.get("sha256")
+        if not name or not declared:
+            defects.append(f"artifact missing filename/sha256: {artifact}")
+            continue
+        path = root / name
+        if not path.exists():
+            defects.append(f"missing file on disk: {name}")
+            continue
+        actual = _sha256_file(path)
+        if actual != declared:
+            defects.append(
+                f"sha256 mismatch for {name}: declared={declared}, actual={actual}"
+            )
+        listed = sums.get(name)
+        if listed is None:
+            defects.append(f"file {name} not in SHA256SUMS")
+        elif listed != declared:
+            defects.append(
+                f"SHA256SUMS hash for {name} ({listed}) != inventory ({declared})"
+            )
+        if platform_token not in name:
+            defects.append(
+                f"artifact {name} does not carry platform token {platform_token}"
+            )
+
+    for name in (
+        f"bundle-{version}-{platform_token}.yaml",
+        f"cognicode-{version}.tar.gz",
+        f"cognicode-mcp-{version}.tar.gz",
+    ):
+        if not (root / name).exists():
+            defects.append(f"missing auxiliary file: {name}")
+    return defects
+
+
+def _candidate_fixture(base: Path) -> tuple[Path, Path, str]:
+    """Un release local sano: (directorio de assets, repo git, source_commit)."""
+    repo = base / "repo"
+    repo.mkdir()
+    env = _isolated_git_env(base)
+
+    def git(*args: str, stdin: str | None = None) -> str:
+        done = subprocess.run(
+            ["git", *args], cwd=repo, env=env, input=stdin,
+            capture_output=True, text=True, timeout=30,
+        )
+        assert done.returncode == 0, f"fixture git {args[:2]}: {done.stderr}"
+        return done.stdout.strip()
+
+    git("init", "-q")
+    # El commit se escribe como objeto, sin `git commit`: el `git` de una
+    # maquina con politica de identidad rechaza el autor de un fixture, y este
+    # contrato solo necesita que el objeto exista en el repo.
+    tree = git("hash-object", "-w", "-t", "tree", "--stdin", stdin="")
+    commit = git(
+        "hash-object", "-w", "-t", "commit", "--stdin",
+        stdin=(
+            f"tree {tree}\n"
+            "author fixture <fixture@example.invalid> 0 +0000\n"
+            "committer fixture <fixture@example.invalid> 0 +0000\n\nfixture\n"
+        ),
+    )
+
+    root = base / "release"
+    root.mkdir()
+    artifact = f"cognicode-{CANDIDATE_VERSION}-{CANDIDATE_PLATFORM}.tar.gz"
+    payload = b"binary-bytes-of-the-fixture"
+    (root / artifact).write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    (root / f"release-inventory-{CANDIDATE_VERSION}.json").write_text(
+        json.dumps(
+            {
+                "version": CANDIDATE_VERSION,
+                "source_commit": commit,
+                "artifacts": [{"filename": artifact, "sha256": digest}],
+            }
+        )
+    )
+    (root / "SHA256SUMS").write_text(f"{digest}  {artifact}\n")
+    for aux in (
+        f"bundle-{CANDIDATE_VERSION}-{CANDIDATE_PLATFORM}.yaml",
+        f"cognicode-{CANDIDATE_VERSION}.tar.gz",
+        f"cognicode-mcp-{CANDIDATE_VERSION}.tar.gz",
+    ):
+        (root / aux).write_bytes(b"aux")
+    return root, repo, commit
+
+
+def _candidate_defects_of(mutate) -> list[str]:
+    """Defectos que el contrato halla tras aplicar `mutate(root, repo, commit)`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root, repo, commit = _candidate_fixture(Path(tmp))
+        mutate(root, repo, commit)
+        return candidate_defects(root, CANDIDATE_VERSION, CANDIDATE_PLATFORM, repo)
+
+
+def _rewrite_inventory(root: Path, change) -> None:
+    path = root / f"release-inventory-{CANDIDATE_VERSION}.json"
+    inventory = json.loads(path.read_text())
+    change(inventory)
+    path.write_text(json.dumps(inventory))
+
+
+def _assert_names(defects: list[str], needle: str) -> None:
+    assert any(needle in d for d in defects), (
+        f"se esperaba un defecto que contuviera {needle!r}; el contrato dijo: {defects}"
+    )
+
+
+def test_a_sound_release_candidate_has_no_defects() -> None:
+    assert _candidate_defects_of(lambda *_: None) == []
+
+
+def test_a_tampered_artifact_is_a_sha256_mismatch() -> None:
+    def tamper(root: Path, *_: object) -> None:
+        (root / f"cognicode-{CANDIDATE_VERSION}-{CANDIDATE_PLATFORM}.tar.gz").write_bytes(b"other")
+
+    _assert_names(_candidate_defects_of(tamper), "sha256 mismatch")
+
+
+def test_an_inventory_hash_that_disagrees_with_sha256sums_is_named() -> None:
+    def disagree(root: Path, *_: object) -> None:
+        _rewrite_inventory(root, lambda inv: inv["artifacts"][0].update(sha256="0" * 64))
+
+    defects = _candidate_defects_of(disagree)
+    _assert_names(defects, "sha256 mismatch")
+    _assert_names(defects, "SHA256SUMS hash for")
+
+
+def test_an_artifact_missing_from_sha256sums_is_named() -> None:
+    def drop(root: Path, *_: object) -> None:
+        (root / "SHA256SUMS").write_text("")
+
+    _assert_names(_candidate_defects_of(drop), "not in SHA256SUMS")
+
+
+def test_an_artifact_missing_on_disk_is_named() -> None:
+    def remove(root: Path, *_: object) -> None:
+        (root / f"cognicode-{CANDIDATE_VERSION}-{CANDIDATE_PLATFORM}.tar.gz").unlink()
+
+    _assert_names(_candidate_defects_of(remove), "missing file on disk")
+
+
+def test_a_source_commit_that_git_does_not_know_is_unreachable() -> None:
+    def forge(root: Path, *_: object) -> None:
+        _rewrite_inventory(root, lambda inv: inv.update(source_commit="1" * 40))
+
+    _assert_names(_candidate_defects_of(forge), "not reachable")
+
+
+def test_an_inventory_without_source_commit_or_artifacts_is_named() -> None:
+    def strip(root: Path, *_: object) -> None:
+        _rewrite_inventory(root, lambda inv: (inv.pop("source_commit"), inv.update(artifacts=[])))
+
+    defects = _candidate_defects_of(strip)
+    _assert_names(defects, "missing source_commit")
+    _assert_names(defects, "no artifacts")
+
+
+def test_a_wrong_version_or_platform_token_is_named() -> None:
+    def other_version(root: Path, *_: object) -> None:
+        _rewrite_inventory(root, lambda inv: inv.update(version="0.0.1"))
+
+    _assert_names(_candidate_defects_of(other_version), "inventory version")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root, repo, _ = _candidate_fixture(Path(tmp))
+        defects = candidate_defects(root, CANDIDATE_VERSION, "aarch64-apple-darwin", repo)
+    _assert_names(defects, "does not carry platform token")
+
+
+def test_a_missing_auxiliary_file_is_named() -> None:
+    def remove(root: Path, *_: object) -> None:
+        (root / f"cognicode-mcp-{CANDIDATE_VERSION}.tar.gz").unlink()
+
+    _assert_names(_candidate_defects_of(remove), "missing auxiliary file")
+
+
+def test_a_missing_inventory_or_sha256sums_is_a_defect_not_a_crash() -> None:
+    def no_sums(root: Path, *_: object) -> None:
+        (root / "SHA256SUMS").unlink()
+
+    _assert_names(_candidate_defects_of(no_sums), "SHA256SUMS missing")
+
+    def no_inventory(root: Path, *_: object) -> None:
+        (root / f"release-inventory-{CANDIDATE_VERSION}.json").unlink()
+
+    _assert_names(_candidate_defects_of(no_inventory), "inventory missing")
+
+
 def main() -> int:
     module = sys.modules[__name__]
     tests = sorted(
@@ -1057,7 +1339,9 @@ def main() -> int:
         "PASS - un target instalado que no compila codigo nativo no se cuela "
         "como un target listo, y el asset que pide install.sh y el que publica "
         "la release se derivan igual, con las cinco posturas del instalador "
-        "ejercitadas contra una release local."
+        "ejercitadas contra una release local, y un conjunto de assets del "
+        "release-candidate solo es completo si inventario, SHA256SUMS, ficheros "
+        "y commit de origen coinciden."
     )
     return 0
 
