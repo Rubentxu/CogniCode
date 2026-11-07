@@ -15,7 +15,7 @@
 //!   - `Intent`: la intencion del agente tipada (Locate, Summarize,
 //!     Verify, Read). Modelo minimo: solo lo necesario para enrutar.
 //!     Variantes adicionales se anaden cuando B3.W5 cierre el
-//!     shape final del comando `cognicode inspect`.
+//!     shape final del comando `cognicode intent`.
 //!   - `ToolRef`: un puntero serializable a un tool del catalogo,
 //!     con sus `args` pre-llenados para que el caller los pase tal
 //!     cual al handler (CLI/MCP). No es una llamada: el caller
@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 use std::ops::Range;
 
 /// Intencion del agente. El conjunto de variantes es el vocabulario
-/// que `cognicode inspect` reconoce en v0.101.13. Anadir una
+/// que `cognicode intent` reconoce en v0.101.13. Anadir una
 /// variante aqui implica extender `route_intent` Y los `intent_tags`
 /// en `product/tools.json` (paridad pinea por
 /// `b3_w2_progressive_context::intent_tags_in_catalog_match_route_intent`).
@@ -251,6 +251,130 @@ fn route_read(path: &str, range: Option<&Range<usize>>) -> Vec<ToolRef> {
             rationale: "After reading, optionally search for related lines",
         },
     ]
+}
+
+/// B3.W2 — Best-effort parser for `cognicode intent <args...>`.
+///
+/// English: maps free-text CLI args to a typed `Intent`.
+/// Espanol: convierte args de CLI free-text a un `Intent` tipado.
+///
+/// Politica B3.W2 (scaffold; B3.W5 pinea el contrato final):
+///   - Nunca panic. Si el input no encaja en ninguna regla,
+///     cae a `Locate` con el resto del texto como symbol.
+///   - Las reglas son deterministas y locales: no leen el
+///     workspace ni invocan tools.
+///   - El usuario puede sobreescribir la heuristica con palabras
+///     clave (`summary`, `verify`) al principio.
+pub fn parse_intent_args(args: &[String]) -> Intent {
+    use Intent;
+
+    // Empty input: default to Locate with an empty symbol; the
+    // caller will see the PROPOSED status and an empty chain.
+    // Better than panicking.
+    if args.is_empty() {
+        return Intent::Locate {
+            symbol: String::new(),
+        };
+    }
+
+    // First token drives the intent kind when it's a keyword.
+    let first = args[0].to_ascii_lowercase();
+    let rest = &args[1..];
+
+    match first.as_str() {
+        // `intent summary <scope>` -> Summarize
+        "summary" | "summarize" => {
+            return Intent::Summarize {
+                scope: rest.join(" "),
+            };
+        }
+        // `intent verify <claim>` -> Verify
+        "verify" => {
+            return Intent::Verify {
+                claim: if rest.is_empty() {
+                    args.join(" ")
+                } else {
+                    rest.join(" ")
+                },
+            };
+        }
+        // `intent read <path>` / `inspect read <path:range>`
+        "read" => {
+            return parse_read(rest);
+        }
+        // `intent locate <symbol>` (explicit) or
+        // `intent fn <symbol>` (Rust-ish keyword).
+        "locate" | "find" | "fn" => {
+            return Intent::Locate {
+                symbol: if rest.is_empty() {
+                    String::new()
+                } else {
+                    rest.join(" ")
+                },
+            };
+        }
+        _ => {}
+    }
+
+    // No keyword matched. If the only argument looks like a path
+    // (contains '/' or '.' or has a `:LINE-LINE` range), treat it
+    // as Read. Otherwise treat it as Locate.
+    if args.len() == 1 {
+        let only = &args[0];
+        if only.contains('/') || only.contains('.') {
+            return parse_read(std::slice::from_ref(only));
+        }
+        return Intent::Locate {
+            symbol: only.clone(),
+        };
+    }
+
+    // Multi-arg without keyword: best-effort Read if the first
+    // arg looks like a path; otherwise Locate with joined args.
+    if args[0].contains('/') || args[0].contains('.') {
+        parse_read(args)
+    } else {
+        Intent::Locate {
+            symbol: args.join(" "),
+        }
+    }
+}
+
+/// B3.W2 — Parses `Read` intent from raw args, recognizing the
+/// `path:start-end` range syntax.
+///
+/// English: extract path and optional line range from CLI args.
+/// Espanol: extrae path y rango opcional de lineas de args CLI.
+fn parse_read(args: &[String]) -> Intent {
+    use Intent;
+    use std::ops::Range;
+
+    let joined = args.join(" ");
+    if let Some((path, range)) = joined.split_once(':')
+        && let Some((s, e)) = range.split_once('-')
+        && let (Ok(start), Ok(end)) = (s.parse::<usize>(), e.parse::<usize>())
+    {
+        return Intent::Read {
+            path: path.to_string(),
+            range: Some(Range { start, end }),
+        };
+    }
+    Intent::Read {
+        path: joined,
+        range: None,
+    }
+}
+
+/// B3.W2 — Human-readable label for an `Intent` (used in the
+/// PROPOSED status line so the operator can see which variant
+/// the scaffold chose).
+pub fn intent_kind_label(intent: &Intent) -> &'static str {
+    match intent {
+        Intent::Locate { .. } => "Locate",
+        Intent::Summarize { .. } => "Summarize",
+        Intent::Verify { .. } => "Verify",
+        Intent::Read { .. } => "Read",
+    }
 }
 
 #[cfg(test)]

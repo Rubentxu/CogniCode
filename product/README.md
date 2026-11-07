@@ -103,7 +103,30 @@ capture comes up short and the catalog stops describing the surface the
 runtime publishes. Measured 2026-11-06: a default build reports 74 tools,
 and a build with the three features reports the 79 the catalog publishes.
 
-Capture what the runtime really publishes:
+## The surfaces (`--profile`)
+
+The MCP server publishes **one surface**, and the surface says what is
+announced in `tools/list`. TASK-84 added three:
+
+| profile   | what it announces                                                        |
+|-----------|--------------------------------------------------------------------------|
+| `default` | the five goals that answer before the analysis (`status`, `context`, `find`, `inspect`, `trace`) — measured 4.350 bytes for the list over the wire |
+| `full`    | every goal and every tool: the 87 entries the master publishes           |
+| `legacy`  | the 78 tools, each with the notice that names the goal that replaces it  |
+
+`--profile` is **not** the install profile (`core`, `reviewer`, `developer`,
+`experimental`): the install profile decides what the server may *do*, and
+this one decides what it *announces*. The server's default is `default`: an
+agent that connects gets the small list, and a client that still needs the
+tools asks for `--profile legacy` (the tools, with the deprecation notice) or
+`--profile full` (both).
+
+The profile decides what is **announced**, not what is refused: a tool that
+is not announced can still be called, and the read-only posture is what
+refuses a writer.
+
+Capture what the runtime really publishes — in the `full` surface, because it
+is the only one that publishes every entry of the master:
 
 ```bash
 cargo build -p cognicode-mcp \
@@ -112,6 +135,7 @@ cargo build -p cognicode-mcp \
   --workspace "$PWD" \
   --method tools/list \
   --server-binary /var/home/rubentxu/cargo-targets/debug/cognicode-mcp \
+  --server-profile full \
   > product/tool-catalog-runtime.json
 ```
 

@@ -413,12 +413,45 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         "smart_search",
         schema_of::<crate::interface::mcp::schemas::SmartSearchInput>(),
     );
-    // TASK-82 — el goal `status`: sus argumentos se leen del mismo struct que
-    // el resto, así que el `inputSchema` que publica sale de ahí y no de una
-    // copia escrita a mano.
+    // TASK-82 / TASK-84 — los goals: sus argumentos se leen del mismo struct
+    // que el resto, así que el `inputSchema` que publica sale de ahí y no de
+    // una copia escrita a mano. Los nueve goals viven juntos porque son una
+    // familia: el mismo tipo de declaración para los nueve.
     m.insert(
         "status",
         schema_of::<crate::interface::goals::status::StatusInput>(),
+    );
+    m.insert(
+        "context",
+        schema_of::<crate::interface::goals::context::ContextInput>(),
+    );
+    m.insert(
+        "find",
+        schema_of::<crate::interface::goals::find::FindInput>(),
+    );
+    m.insert(
+        "inspect",
+        schema_of::<crate::interface::goals::inspect::InspectInput>(),
+    );
+    m.insert(
+        "trace",
+        schema_of::<crate::interface::goals::trace::TraceInput>(),
+    );
+    m.insert(
+        "impact",
+        schema_of::<crate::interface::goals::impact::ImpactInput>(),
+    );
+    m.insert(
+        "overview",
+        schema_of::<crate::interface::goals::overview::OverviewInput>(),
+    );
+    m.insert(
+        "audit",
+        schema_of::<crate::interface::goals::audit::AuditInput>(),
+    );
+    m.insert(
+        "change",
+        schema_of::<crate::interface::goals::change::ChangeInput>(),
     );
     m.insert(
         "taint_flow",

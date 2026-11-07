@@ -216,7 +216,13 @@ async fn reviewer_posture_refuses_writes_against_the_real_binary() {
     let ws = fixture_ws();
     let target = ws.join("a009-reviewer-must-not-write.txt");
 
-    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only"])
+    // TASK-84: the surface is asked for explicitly. The server's default
+    // surface announces the goals that answer before the analysis, and
+    // `write_file` is not among them: with that surface the guarantee
+    // below would hold for the wrong reason. The `full` surface publishes
+    // the tools, so the read-only posture is the only thing that can hide
+    // `write_file`.
+    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only", "--profile", "full"])
         .await
         .expect("spawn cognicode-mcp --read-only");
 
@@ -267,7 +273,13 @@ async fn reviewer_posture_refuses_writes_against_the_real_binary() {
 #[tokio::test]
 async fn reviewer_posture_still_allows_reading() {
     let ws = fixture_ws();
-    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only"])
+    // TASK-84: the surface is asked for explicitly. The server's default
+    // surface announces the goals that answer before the analysis, and
+    // `write_file` is not among them: with that surface the guarantee
+    // below would hold for the wrong reason. The `full` surface publishes
+    // the tools, so the read-only posture is the only thing that can hide
+    // `write_file`.
+    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only", "--profile", "full"])
         .await
         .expect("spawn cognicode-mcp --read-only");
 

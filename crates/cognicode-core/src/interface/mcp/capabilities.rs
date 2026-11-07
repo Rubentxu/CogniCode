@@ -63,7 +63,7 @@ pub const LSP_SUPPORTED_LANGS: &[&str] = &["python", "rust", "javascript", "type
 /// Devuelve `Some(ToolCapabilities)` para tools registradas en
 /// `build_all_tools()`, `None` para tools desconocidas.
 ///
-/// La tabla cubre las **79 tools** que viven en
+/// La tabla cubre las **87 tools** que viven en
 /// `rmcp_adapter.rs::build_all_tools()`. Si añades una tool estable y
 /// olvidas añadirla aquí, `test_capabilities_matrix_for_stable_tools`
 /// falla con su nombre — esa es la intención.
@@ -222,13 +222,22 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         },
 
         // ----------------------------------------------------------------
-        // Goals (TASK-82) — la capa de goals: mira el workspace, no
-        // parsea codigo
+        // Goals (TASK-82 / TASK-84) — la capa de goals: cada goal se
+        // monta sobre un dueño, y declara lo que el dueño declara.
+        // Los que sólo miran el workspace no parsean codigo; los que leen
+        // el grafo o un fichero, lo leen con tree-sitter.
         // ----------------------------------------------------------------
-        "status" => ToolCapabilities {
+        "status" | "context" => ToolCapabilities {
             langs: &[],
             precision: "n/a",
         },
+
+        "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
+            ToolCapabilities {
+                langs: tree_sitter_langs(),
+                precision: "AST",
+            }
+        }
 
         _ => return None,
     };
@@ -317,8 +326,16 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "list_files",
         // Contract stable
         "retrieve_and_verify",
-        // Goals stable (TASK-82) — la capa de goals
+        // Goals stable (TASK-82 / TASK-84) — la capa de goals
         "status",
+        "context",
+        "find",
+        "inspect",
+        "trace",
+        "impact",
+        "overview",
+        "audit",
+        "change",
     ]
 }
 

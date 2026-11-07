@@ -80,6 +80,33 @@
     }
   },
   {
+    "name": "audit",
+    "description": "Mira el proyecto y dice qué encuentra: el código que no llega a usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit --format json`.",
+    "inputSchema": {
+      "description": "Input for the `audit` goal",
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
     "name": "build_call_subgraph",
     "description": "Build an on-demand call subgraph centered on a symbol. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
@@ -805,6 +832,53 @@
     }
   },
   {
+    "name": "change",
+    "description": "Calcula el cambio de un símbolo a otro nombre: los ficheros que tocaría, los símbolos que afecta y con qué riesgo. Es el goal que escribe, y por eso no aparece en el modo de sólo lectura. Ejemplos: `cognicode change --symbol helper --new-name helper2`.",
+    "inputSchema": {
+      "description": "Input for the `change` goal",
+      "properties": {
+        "file": {
+          "description": "The file that declares the symbol, relative to the workspace or absolute",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "new_name": {
+          "description": "The new name of the symbol",
+          "type": "string"
+        },
+        "symbol": {
+          "description": "The name of the symbol to change",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "new_name"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "mutating",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
     "name": "check_architecture",
     "description": "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
     "inputSchema": {
@@ -1110,6 +1184,39 @@
         "estimated_latency_ms": 100,
         "mutates_workspace": false,
         "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
+    "name": "context",
+    "description": "Di qué hay en el workspace: los ficheros que lo componen, los lenguajes que se detectan y la cobertura de la lectura. Es el goal que se llama antes de tocar nada. Ejemplos: `cognicode context`, `cognicode context --format json`.",
+    "inputSchema": {
+      "description": "Input for the `context` goal",
+      "properties": {
+        "include_coverage": {
+          "default": true,
+          "description": "Include the coverage of the read, with the files it could not read",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.31"
@@ -1769,6 +1876,41 @@
     }
   },
   {
+    "name": "find",
+    "description": "Resuelve un nombre de símbolo a los sitios donde está declarado, con su fichero y su línea. Es la pregunta que se hace un homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, `cognicode find --symbol helper --format json`.",
+    "inputSchema": {
+      "description": "Input for the `find` goal",
+      "properties": {
+        "symbol": {
+          "description": "The name of the symbol to find",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
     "name": "find_pattern_by_intent",
     "description": "Match natural language intent descriptions to known code patterns.",
     "inputSchema": {
@@ -1850,6 +1992,103 @@
       "cognicode": {
         "authority": "read",
         "category": "navigation",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
+    "name": "impact",
+    "description": "Dice a qué símbolos y a qué ficheros afecta cambiar un símbolo, y con qué riesgo. Es la pregunta que se hace antes de tocar nada. Ejemplos: `cognicode impact --symbol helper`, `cognicode impact --symbol helper --format json`.",
+    "inputSchema": {
+      "description": "Input for the `impact` goal",
+      "properties": {
+        "symbol": {
+          "description": "The name of the symbol whose impact is asked for",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
+    "name": "inspect",
+    "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs --format json`.",
+    "inputSchema": {
+      "description": "Input for the `inspect` goal",
+      "properties": {
+        "file": {
+          "description": "The file to inspect, relative to the workspace or absolute",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
+    "name": "overview",
+    "description": "Resume el proyecto que hay en el workspace: cuántos símbolos tiene, cuántas aristas, cuántos ficheros y en qué lenguajes. Ejemplos: `cognicode overview`, `cognicode overview --format json`.",
+    "inputSchema": {
+      "description": "Input for the `overview` goal",
+      "properties": {},
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
         "requires_graph": false,
@@ -7603,7 +7842,7 @@
   },
   {
     "name": "status",
-    "description": "Di qué ofrece este build y qué se ve del workspace: las fases del producto, los lenguajes detectados y los goals con sus plantillas de argumentos. Un cliente lo llama antes de decidir; un humano lo llama para saber si el workspace está donde cree. Ejemplos: `cognicode status`, `cognicode status --format json`.",
+    "description": "Di qué ofrece este build y qué se ve del workspace: las fases del producto, los lenguajes detectados, la cobertura de la lectura y los goals con sus plantillas de argumentos. Un cliente lo llama antes de decidir; un humano lo llama para saber si el workspace está donde cree. Ejemplos: `cognicode status`, `cognicode status --format json`.",
     "inputSchema": {
       "description": "Input for the `status` goal",
       "properties": {
@@ -7613,387 +7852,6 @@
           "type": "boolean"
         }
       },
-      "type": "object"
-    },
-    "outputSchema": {
-      "$defs": {
-        "Basis": {
-          "description": "Lo que sostiene la respuesta.",
-          "properties": {
-            "coverage": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/CoverageBasis"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Lo que la respuesta cubre del árbol que se midió.\n\n`None` cuando la respuesta no dice nada de la cobertura: nadie la\nmidió."
-            },
-            "freshness": {
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/FreshnessBasis"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Sobre qué árbol y qué instantánea se calculó.\n\n`None` cuando la respuesta no lo declara."
-            },
-            "lsp_confirmed_edges": {
-              "description": "Las aristas que un LSP confirmó.\n\n`None` siempre, hoy: el producto no publica un recuento de aristas\nconfirmadas por LSP, y un `0` sería una medición que nadie hizo.",
-              "format": "uint",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
-        },
-        "Budget": {
-          "description": "Lo que la respuesta dejó fuera.",
-          "properties": {
-            "omitted": {
-              "description": "Cuántos elementos quedaron fuera, cuando la respuesta lo dice.",
-              "format": "uint",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
-            "page": {
-              "description": "El handle firmado por el que se sigue leyendo.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "reason": {
-              "description": "Por qué quedaron fuera, cuando la respuesta lo dice.",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
-        },
-        "CoverageBasis": {
-          "description": "La cobertura de la respuesta.",
-          "properties": {
-            "pending_references": {
-              "description": "Las referencias que no se pudieron atar a una declaración.",
-              "format": "uint",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "rejected_relationships": {
-              "description": "Las relaciones que el repositorio rechazó.",
-              "format": "uint",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "skipped_files": {
-              "description": "Los ficheros que la lectura no pudo leer.",
-              "format": "uint",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "status": {
-              "description": "El veredicto de la cobertura: `complete`, `partial`, `unknown` o\n`unsupported`.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "status",
-            "skipped_files",
-            "pending_references",
-            "rejected_relationships"
-          ],
-          "type": "object"
-        },
-        "FreshnessBasis": {
-          "description": "La frescura de la respuesta.",
-          "properties": {
-            "graph_source": {
-              "description": "De dónde salió el grafo: `built`, `cache` o `daemon`.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "snapshot": {
-              "description": "El digest del manifiesto de fuentes: el mismo árbol da el mismo\ndigest, y cualquier cambio lo cambia.",
-              "type": "string"
-            },
-            "workspace": {
-              "description": "El workspace canónico del que se calculó.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "workspace",
-            "snapshot"
-          ],
-          "type": "object"
-        },
-        "GoalArgument": {
-          "description": "Un argumento de un goal, tal y como el esquema lo publica.\n\nEl tipo lo produce el esquema derivado del struct que lee los\nargumentos; no se escribe a mano, para que el nombre, la descripción y\nla obligatoriedad tengan un solo dueño.",
-          "properties": {
-            "description": {
-              "description": "Lo que hace el argumento, en una frase.",
-              "type": "string"
-            },
-            "name": {
-              "description": "El nombre del argumento.",
-              "type": "string"
-            },
-            "required": {
-              "description": "Si el llamante tiene que mandarlo.",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "name",
-            "description",
-            "required"
-          ],
-          "type": "object"
-        },
-        "GoalInfo": {
-          "description": "Un goal tal y como lo describe la respuesta de `status`.",
-          "properties": {
-            "arguments": {
-              "description": "Los argumentos del goal y su plantilla.",
-              "items": {
-                "$ref": "#/$defs/GoalArgument"
-              },
-              "type": "array"
-            },
-            "authority": {
-              "description": "Lo que el goal puede hacer: `read` o `mutating`.",
-              "type": "string"
-            },
-            "description": {
-              "description": "La descripción del goal.",
-              "type": "string"
-            },
-            "examples": {
-              "description": "Los ejemplos de uso.",
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "minimum_phase": {
-              "description": "La fase más temprana en la que el goal ya responde.",
-              "type": "string"
-            },
-            "name": {
-              "description": "El nombre del goal.",
-              "type": "string"
-            },
-            "owner": {
-              "description": "Quién responde por el goal.",
-              "type": "string"
-            },
-            "title": {
-              "description": "El título corto.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "title",
-            "description",
-            "examples",
-            "authority",
-            "minimum_phase",
-            "owner",
-            "arguments"
-          ],
-          "type": "object"
-        },
-        "Link": {
-          "description": "Un enlace: lo que se puede hacer ahora, con los argumentos rellenos.",
-          "properties": {
-            "authority": {
-              "description": "La autoridad de la tool: `read`, `mutating`, `execute` o `network`.",
-              "type": "string"
-            },
-            "handle": {
-              "description": "El handle firmado que el enlace lleva, cuando lo lleva.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "precondition": {
-              "description": "Lo que tiene que ser verdad antes de llamar a la tool.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "reason": {
-              "description": "Por qué existe este enlace.",
-              "type": "string"
-            },
-            "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
-              "type": "string"
-            },
-            "required_args": {
-              "additionalProperties": true,
-              "description": "Los argumentos con los que hay que llamarla.",
-              "type": "object"
-            },
-            "tool": {
-              "description": "La tool que responde al enlace.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "rel",
-            "tool",
-            "required_args",
-            "reason",
-            "authority"
-          ],
-          "type": "object"
-        },
-        "PhaseInfo": {
-          "description": "Una fase del producto.",
-          "properties": {
-            "description": {
-              "description": "Lo que la fase significa.",
-              "type": "string"
-            },
-            "name": {
-              "description": "El nombre de la fase.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "name",
-            "description"
-          ],
-          "type": "object"
-        },
-        "WorkspaceStatus": {
-          "description": "El workspace que se ha mirado.",
-          "properties": {
-            "languages": {
-              "description": "Los lenguajes que se han detectado en él.",
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "path": {
-              "description": "La raíz del workspace.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "path",
-            "languages"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "La respuesta, con lo que la sostiene y lo que viene después.",
-      "properties": {
-        "_links": {
-          "description": "Lo que se puede hacer ahora.",
-          "items": {
-            "$ref": "#/$defs/Link"
-          },
-          "type": "array"
-        },
-        "basis": {
-          "$ref": "#/$defs/Basis",
-          "description": "Sobre qué se apoya la respuesta."
-        },
-        "budget": {
-          "$ref": "#/$defs/Budget",
-          "description": "Lo que la respuesta dejó fuera."
-        },
-        "result": {
-          "description": "La respuesta del goal `status`.",
-          "properties": {
-            "goal": {
-              "description": "El goal que contesta.",
-              "type": "string"
-            },
-            "goals": {
-              "description": "Los goals que este build ofrece.",
-              "items": {
-                "$ref": "#/$defs/GoalInfo"
-              },
-              "type": "array"
-            },
-            "phases": {
-              "description": "Las fases del producto y lo que cada una significa.",
-              "items": {
-                "$ref": "#/$defs/PhaseInfo"
-              },
-              "type": "array"
-            },
-            "schema_version": {
-              "description": "La versión del esquema de esta respuesta.",
-              "type": "string"
-            },
-            "summary": {
-              "description": "Una línea que resume el estado.",
-              "type": "string"
-            },
-            "version": {
-              "description": "La versión del producto que contesta.",
-              "type": "string"
-            },
-            "workspace": {
-              "$ref": "#/$defs/WorkspaceStatus",
-              "description": "El workspace que se ha mirado."
-            }
-          },
-          "required": [
-            "summary",
-            "schema_version",
-            "goal",
-            "version",
-            "phases",
-            "workspace",
-            "goals"
-          ],
-          "title": "GoalStatus",
-          "type": "object"
-        },
-        "schema_version": {
-          "description": "La versión de la forma del sobre.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "state": {
-          "description": "El veredicto de la respuesta: `complete`, `partial`, `unknown`,\n`unsupported` o `failed`.\n\nLa palabra la declara quien midió; el sobre no la inventa.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "schema_version",
-        "state",
-        "result",
-        "basis",
-        "budget",
-        "_links"
-      ],
-      "title": "Envelope",
       "type": "object"
     },
     "annotations": {
@@ -8145,6 +8003,52 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
+    "name": "trace",
+    "description": "Sigue el grafo de llamadas alrededor de un símbolo: quién lo llama, a quién llama y a qué distancia. Ejemplos: `cognicode trace --symbol helper`, `cognicode trace --symbol helper --direction callers`.",
+    "inputSchema": {
+      "description": "Input for the `trace` goal",
+      "properties": {
+        "depth": {
+          "default": 1,
+          "description": "How many hops to follow",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "direction": {
+          "default": "both",
+          "description": "Which side to follow: `callers`, `callees` or `both`",
+          "type": "string"
+        },
+        "symbol": {
+          "description": "The name of the symbol to trace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
         "tool_version": "0.101.31"
       }
     }

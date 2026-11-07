@@ -75,7 +75,11 @@ fn workspace_with_the_corpus() -> tempfile::TempDir {
 #[tokio::test]
 async fn the_answer_names_the_finding_and_carries_its_grounding() {
     let workspace = workspace_with_the_corpus();
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     let answer = explain(&mut session, "sample.rs")
         .await
@@ -170,7 +174,11 @@ async fn the_answer_names_the_finding_and_carries_its_grounding() {
 #[tokio::test]
 async fn asking_for_one_finding_returns_that_finding() {
     let workspace = workspace_with_the_corpus();
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     let answer = explain(&mut session, "sample.rs")
         .await
@@ -214,7 +222,11 @@ async fn asking_for_one_finding_returns_that_finding() {
 #[tokio::test]
 async fn a_finding_that_was_not_reported_says_so() {
     let workspace = workspace_with_the_corpus();
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     let response = session
         .request(
@@ -255,7 +267,11 @@ async fn a_file_without_findings_says_so() {
     let workspace = tempfile::tempdir().expect("tempdir");
     std::fs::write(workspace.path().join("empty.rs"), "// nothing here\n")
         .expect("the fixture is written");
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     let answer = explain(&mut session, "empty.rs")
         .await
@@ -283,7 +299,11 @@ async fn a_file_without_findings_says_so() {
 #[tokio::test]
 async fn a_path_outside_the_workspace_is_refused() {
     let workspace = workspace_with_the_corpus();
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     let refusal = explain(&mut session, "../outside.rs").await;
 
@@ -302,7 +322,11 @@ async fn a_path_outside_the_workspace_is_refused() {
 #[tokio::test]
 async fn the_tool_is_advertised_with_its_output_contract() {
     let workspace = tempfile::tempdir().expect("tempdir");
-    let mut session = McpSession::spawn(workspace.path()).await.expect("spawn");
+    // TASK-84: la superficie se pide explicitamente. La del servidor por
+    // defecto anuncia los goals, y esta suite audita una tool.
+    let mut session = McpSession::spawn_with_flags(workspace.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
 
     // The catalogue is paginated, so a single page is a partial view of the
     // surface — and a partial view looks exactly like a tool that does not

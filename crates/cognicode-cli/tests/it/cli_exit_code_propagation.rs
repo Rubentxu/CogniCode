@@ -361,9 +361,10 @@ fn every_dispatch_arm_is_accounted_for() {
          con un motivo. Variantes añadidas desde el pin a 9: `Identity` (B1.W2, \
          commit 336e743, lectura-only Ok(CommandOutput::Other) — propaga \
          trivialmente), una segunda que se consolidó al reorganizar el \
-         dispatch entre v0.101.9 y v0.101.10, y `Inspect` (B3.W2, commit \
-         e6860cf9, scaffold propuesto — propaga Ok(CommandOutput::Other) y \
-         emite PROPOSED a stderr). Verifica con `grep Some\\ \
+         dispatch entre v0.101.9 y v0.101.10, y `Intent` (B3.W2, commit \
+         e6860cf9, scaffold propuesto — se llamaba `Inspect` hasta que el goal \
+         `inspect` tomó ese nombre en TASK-84; propaga Ok(CommandOutput::Other) \
+         y emite PROPOSED y el aviso de deprecación a stderr). Verifica con `grep Some\\ \
          (CliCommand:: crates/cognicode-core/src/interface/cli/commands.rs`."
     );
     assert!(

@@ -344,11 +344,16 @@ async fn all_tools(session: &mut McpSession) -> Vec<Value> {
 /// adapter.
 #[tokio::test]
 async fn the_published_hints_follow_the_published_authority() {
-    let mut s = McpSession::spawn(
+    // TASK-84: the surface is asked for explicitly. The server's default
+    // surface announces the goals that answer before the analysis, and this
+    // audit is about the tools: the `full` surface is the one that publishes
+    // them.
+    let mut s = McpSession::spawn_with_flags(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws"),
+        &["--profile", "full"],
     )
     .await
-    .expect("spawn cognicode-mcp");
+    .expect("spawn cognicode-mcp --profile full");
     let tools = all_tools(&mut s).await;
     s.shutdown().await;
 
@@ -405,12 +410,16 @@ async fn the_published_hints_follow_the_published_authority() {
 /// published catalogue.
 #[tokio::test]
 async fn read_only_advertises_exactly_the_published_read_tools() {
+    // TASK-84: with the default surface the tools would not be announced at
+    // all, and the guarantee below would hold for the wrong reason. The
+    // `full` surface publishes them, so the read-only posture is the only
+    // thing that can hide a writer.
     let mut s = McpSession::spawn_with_flags(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws"),
-        &["--read-only"],
+        &["--read-only", "--profile", "full"],
     )
     .await
-    .expect("spawn cognicode-mcp --read-only");
+    .expect("spawn cognicode-mcp --read-only --profile full");
     let advertised = all_tool_names(&mut s).await;
     s.shutdown().await;
 
@@ -458,12 +467,16 @@ async fn every_published_mutating_tool_is_refused_under_read_only() {
         .collect();
     assert!(!mutating.is_empty(), "no mutating tool published");
 
+    // TASK-84: with the default surface the tools would not be announced at
+    // all, and the guarantee below would hold for the wrong reason. The
+    // `full` surface publishes them, so the read-only posture is the only
+    // thing that can hide a writer.
     let mut s = McpSession::spawn_with_flags(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws"),
-        &["--read-only"],
+        &["--read-only", "--profile", "full"],
     )
     .await
-    .expect("spawn cognicode-mcp --read-only");
+    .expect("spawn cognicode-mcp --read-only --profile full");
     let advertised = all_tool_names(&mut s).await;
     for tool in &mutating {
         assert!(

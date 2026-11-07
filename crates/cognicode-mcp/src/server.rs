@@ -50,6 +50,15 @@ struct Args {
     cwd: PathBuf,
     #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
+    /// TASK-84: the surface this server publishes in `tools/list`.
+    ///
+    /// `default` publishes the goals that answer before the analysis,
+    /// `full` publishes every goal and every tool, and `legacy` publishes
+    /// the tools with the notice that names the goal that replaces them.
+    /// This is not the install profile (`core`, `reviewer`, ...): that one
+    /// decides what the server may do, this one decides what it announces.
+    #[arg(long, default_value = "default")]
+    profile: String,
 }
 
 /// Handler for `/health` — process alive, always 200 OK.
@@ -219,6 +228,21 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let cwd = args.cwd.clone();
+
+    // Una superficie que no se conoce no se asume: el servidor publicaría
+    // algo que nadie pidió, y el que lo pidió no sabría qué recibe.
+    let profile = match cognicode_core::interface::surface::SurfaceProfile::parse(&args.profile) {
+        Some(profile) => profile,
+        None => {
+            eprintln!(
+                "Error: unknown surface profile '{}'. The profiles are: {}.",
+                args.profile,
+                cognicode_core::interface::surface::SurfaceProfile::names().join(", ")
+            );
+            std::process::exit(2);
+        }
+    };
+    tracing::info!("surface profile: {}", profile.as_str());
     let session_manager = std::sync::Arc::new(
         rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default(),
     );
@@ -410,7 +434,12 @@ async fn main() -> anyhow::Result<()> {
     let service = rmcp::transport::streamable_http_server::StreamableHttpService::new(
         {
             let shared_ctx = shared_ctx.clone();
-            move || Ok(CogniCodeHandler::from_ctx(shared_ctx.clone()))
+            move || {
+                Ok(CogniCodeHandler::from_ctx_with_profile(
+                    shared_ctx.clone(),
+                    profile,
+                ))
+            }
         },
         session_manager,
         config,

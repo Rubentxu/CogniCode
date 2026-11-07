@@ -209,8 +209,15 @@ fn spawn_server(read_only: bool) -> Child {
     // The MCP binary is subcommand-free: its only input flag is `--cwd`, and
     // the read-only posture is selected the same way A-010 selects it. Using
     // a fixture workspace keeps the tool calls hermetic and fast.
+    //
+    // TASK-84: the surface is asked for explicitly. The server's default
+    // surface announces the goals that answer before the analysis —five
+    // entries, none of them a tool with an output contract—, and this test
+    // audits the contracts of the tools. The `full` surface is the one that
+    // publishes them.
     cmd.arg("--cwd")
         .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws"));
+    cmd.arg("--profile").arg("full");
     if read_only {
         cmd.arg("--read-only");
     }

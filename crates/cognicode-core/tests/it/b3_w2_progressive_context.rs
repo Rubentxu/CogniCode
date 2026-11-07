@@ -25,10 +25,12 @@
 //!   - El catalogo `product/tools.json` lleva `intent_tags` por
 //!     tool, en paridad con `route_intent`: si una tool aparece en
 //!     un routing, su `intent_tags` lista esa `Intent` variante.
-//!   - `cognicode inspect` es un scaffold: parsea el input como
+//!   - `cognicode intent` es un scaffold: parsea el input como
 //!     best-effort, imprime "PROPOSED: contract under review; see
 //!     B3.W5" a stderr, y devuelve exit 0 (no panic) en cualquier
-//!     entrada.
+//!     entrada. TASK-84: el comando se llamaba `inspect` hasta que
+//!     el goal `inspect` tomó ese nombre publicado; el aviso de
+//!     deprecación va en stderr y el test lo exige.
 //!
 //! Politica B3.W2: el scaffold NO pina contrato final. B3.W5
 //! cierra el shape cuando se valide el routing contra datos
@@ -251,7 +253,7 @@ fn intent_tags_in_catalog_match_route_intent() {
 }
 
 // -----------------------------------------------------------------------
-// CLI scaffold: cognicode inspect must not panic on arbitrary input
+// CLI scaffold: cognicode intent must not panic on arbitrary input
 // -----------------------------------------------------------------------
 
 /// The directory cargo is actually building into, as cargo itself reports it.
@@ -371,15 +373,19 @@ fn is_executable(path: &Path) -> bool {
 }
 
 #[test]
-fn inspect_subcommand_does_not_panic_on_arbitrary_input() {
+fn intent_subcommand_does_not_panic_on_arbitrary_input() {
     // The scaffold must compile and exit 0 on any of these shapes.
     // We don't pin the exact routing (that's B3.W5); we pin that
     // the binary survives arbitrary free-text input.
+    //
+    // TASK-84: the command was `inspect` until the goal `inspect` took
+    // that published name. The consumer's guarantee — "the scaffold
+    // survives arbitrary free-text input" — travels with the command.
     let bin = cognicode_bin().unwrap_or_else(|| {
         panic!(
             "binario `cognicode` no encontrado: este test solo tiene sentido \
              contra el binario real (su sujeto es el comportamiento del \
-             subcomando `inspect`), y saltarlo sería un verde vacío.\n\
+             subcomando `intent`), y saltarlo sería un verde vacío.\n\
              Compílalo con `cargo build -p cognicode-cli --bin cognicode` \
              (añade `--release` y ajusta CARGO_TARGET_DIR si tu config lo \
              redirige), o exporta COGNICODE_CLI_BIN=/ruta/absoluta/a/cognicode \
@@ -389,13 +395,13 @@ fn inspect_subcommand_does_not_panic_on_arbitrary_input() {
     });
 
     let inputs: &[&[&str]] = &[
-        &["inspect", "fn", "foo"],
-        &["inspect", "path/to/file.rs:10-20"],
-        &["inspect", ""],
-        &["inspect", "completely", "arbitrary", "text"],
-        &["inspect", "sym::Method"],
-        &["inspect", "verify that 2+3=5"],
-        &["inspect", "summary of crates/cognicode-core"],
+        &["intent", "fn", "foo"],
+        &["intent", "path/to/file.rs:10-20"],
+        &["intent", ""],
+        &["intent", "completely", "arbitrary", "text"],
+        &["intent", "sym::Method"],
+        &["intent", "verify that 2+3=5"],
+        &["intent", "summary of crates/cognicode-core"],
     ];
 
     for args in inputs {
@@ -407,7 +413,7 @@ fn inspect_subcommand_does_not_panic_on_arbitrary_input() {
         let code = out.status.code().unwrap_or(-1);
         assert_eq!(
             code, 0,
-            "inspect must exit 0 (no panic) for args={args:?}; \
+            "intent must exit 0 (no panic) for args={args:?}; \
              stderr={stderr}"
         );
         // The scaffold must announce its provisional status so the
@@ -416,6 +422,14 @@ fn inspect_subcommand_does_not_panic_on_arbitrary_input() {
             stderr.contains("PROPOSED"),
             "stderr must contain the PROPOSED status marker for \
              args={args:?}; got stderr={stderr}"
+        );
+        // And it must say where it came from: the name it used to
+        // have now belongs to the goal `inspect` (TASK-84), and a
+        // deprecation that nobody reads is not a deprecation.
+        assert!(
+            stderr.contains("Deprecated: this command was `cognicode inspect`"),
+            "stderr must carry the deprecation notice for args={args:?}; \
+             got stderr={stderr}"
         );
     }
 }

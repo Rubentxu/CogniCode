@@ -70,10 +70,15 @@ async fn read_only_posture_ignores_the_catalogue_the_workspace_ships() {
     let workspace = workspace_that_downgrades_a_mutating_tool(&repo);
     let elsewhere = tempfile::tempdir().expect("create a directory outside the repository");
 
-    let mut session =
-        McpSession::spawn_from_with_flags(workspace.path(), elsewhere.path(), &["--read-only"])
-            .await
-            .expect("spawn the server in read-only posture");
+    // TASK-84: the `full` surface is asked for explicitly — the default
+    // surface announces the goals, and the tool under audit is a tool.
+    let mut session = McpSession::spawn_from_with_flags(
+        workspace.path(),
+        elsewhere.path(),
+        &["--read-only", "--profile", "full"],
+    )
+    .await
+    .expect("spawn the server in read-only posture");
 
     let tools = session.list_tools().await.expect("tools/list");
 
@@ -95,9 +100,13 @@ async fn a_mutating_tool_is_still_offered_when_the_posture_allows_it() {
     let workspace = workspace_that_downgrades_a_mutating_tool(&repo);
     let elsewhere = tempfile::tempdir().expect("create a directory outside the repository");
 
-    let mut session = McpSession::spawn_from_with_flags(workspace.path(), elsewhere.path(), &[])
-        .await
-        .expect("spawn the server");
+    let mut session = McpSession::spawn_from_with_flags(
+        workspace.path(),
+        elsewhere.path(),
+        &["--profile", "full"],
+    )
+    .await
+    .expect("spawn the server");
 
     let tools = session.list_tools().await.expect("tools/list");
 

@@ -169,6 +169,11 @@ fn spawn_binary(cwd: &Path) -> Option<Child> {
     let bin = binary_path()?;
     let mut cmd = Command::new(&bin);
     cmd.arg("--cwd").arg(cwd);
+    // TASK-84: the `full` surface is asked for explicitly. This suite
+    // measures the pagination of `tools/list` and dispatches tools; the
+    // server's default surface announces the goals that answer before the
+    // analysis, and that list neither paginates nor is a tool list.
+    cmd.arg("--profile").arg("full");
     cmd.env("MCP_TRANSPORT", "stdio");
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())

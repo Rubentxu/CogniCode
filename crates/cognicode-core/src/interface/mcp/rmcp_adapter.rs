@@ -14,6 +14,7 @@ use crate::interface::daemon::DaemonOracle;
 use crate::interface::mcp::cancellation::CancellationRegistry;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
+use crate::interface::surface::SurfaceProfile;
 use opentelemetry::KeyValue;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
@@ -55,6 +56,12 @@ pub struct CogniCodeHandler {
     /// flag. A cancellation belongs to the request that asked for it, so
     /// this is a table and not a single flag.
     cancellations: CancellationRegistry,
+    /// The surface this server publishes.
+    ///
+    /// TASK-84: the profile decides what `tools/list` announces, not what
+    /// the server computes. A goal of the `default` surface and the same
+    /// goal of the `full` surface answer the same thing.
+    profile: SurfaceProfile,
 }
 
 impl CogniCodeHandler {
@@ -75,12 +82,29 @@ impl CogniCodeHandler {
     /// is the property PRF-SEC-02 exists to deny. Fixing it by adding a
     /// setter would have preserved the hole and dressed it up as an API.
     pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
+        Self::with_profile(project_root, read_only, SurfaceProfile::Default)
+    }
+
+    /// TASK-84: a handler that publishes one surface.
+    ///
+    /// The surface is what `tools/list` announces. The `default` surface
+    /// publishes the goals that answer before the analysis; the `full`
+    /// surface publishes every goal and every tool; the `legacy` surface
+    /// publishes the tools with the notice that names the goal that
+    /// replaces them.
+    pub fn with_profile(project_root: PathBuf, read_only: bool, profile: SurfaceProfile) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let ctx = Self::build_ctx(project_root, Some(read_only), Some(cancellation_token));
         Self {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),
+            profile,
         }
+    }
+
+    /// The surface this handler publishes.
+    pub fn profile(&self) -> SurfaceProfile {
+        self.profile
     }
 
     /// M3.1: Creates a CogniCodeHandler wrapping a pre-built, shared
@@ -88,9 +112,15 @@ impl CogniCodeHandler {
     /// to share the same `graph_loaded` flag between the MCP dispatch
     /// and the `/ready` HTTP handler.
     pub fn from_ctx(ctx: Arc<HandlerContext>) -> Self {
+        Self::from_ctx_with_profile(ctx, SurfaceProfile::Default)
+    }
+
+    /// TASK-84: a handler over a shared context that publishes one surface.
+    pub fn from_ctx_with_profile(ctx: Arc<HandlerContext>, profile: SurfaceProfile) -> Self {
         Self {
             ctx,
             cancellations: CancellationRegistry::new(),
+            profile,
         }
     }
 
@@ -165,6 +195,7 @@ impl CogniCodeHandler {
         Self {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),
+            profile: SurfaceProfile::Default,
         }
     }
 
@@ -195,6 +226,7 @@ impl CogniCodeHandler {
         Self {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),
+            profile: SurfaceProfile::Default,
         }
     }
 
@@ -576,6 +608,10 @@ pub fn build_all_tools() -> Vec<Tool> {
         .collect()
 }
 
+// La proyección de una superficie a la lista que se anuncia vive en
+// `super::surface_tools`: el adaptador sirve la lista, ese módulo la decide.
+pub use super::surface_tools::{tools_for_profile, visible_tools};
+
 /// The active catalogue plus its provenance, warning when it is unusable.
 ///
 /// A server that cannot load its catalogue says so on stderr. stdout belongs
@@ -711,24 +747,26 @@ impl ServerHandler for CogniCodeHandler {
             // from there is empty — a healthy-looking server advertising no
             // tools at all. Built once and shared with the cursor snapshot
             // below, so the two cannot disagree.
-            let visible_tools: Vec<Tool> = build_all_tools()
-                .into_iter()
-                .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
-                .collect();
+            let announced: Vec<Tool> = visible_tools(self.profile, self.ctx.is_read_only());
 
             // H2.3: anchored cursor with typed errors. The cursor
             // is a compact base64-JSON envelope; a tampered or
             // expired cursor surfaces as a JSON-RPC error with
             // `kind` + `reason`, not a silent reset to page 0.
             let cursor_ctx = {
-                let visible = visible_tools
+                let visible = announced
                     .iter()
                     .map(|t| t.name.as_ref())
                     .collect::<Vec<_>>()
                     .join("|");
                 CursorContext {
                     workspace: "__tools__".to_string(),
-                    snapshot: format!("read_only:{}|{}", self.ctx.is_read_only(), visible),
+                    snapshot: format!(
+                        "profile:{}|read_only:{}|{}",
+                        self.profile.as_str(),
+                        self.ctx.is_read_only(),
+                        visible
+                    ),
                 }
             };
             let cursor_offset: usize = match request.as_ref().and_then(|p| p.cursor.as_deref()) {
@@ -750,7 +788,7 @@ impl ServerHandler for CogniCodeHandler {
             // PRF-SEC-02 + PRF-MCP-05: in read-only mode mutating tools are not advertised.
             // Authority comes from the declared `cognicode.authority` field (primary
             // oracle), with no second list to fall back to.
-            let all_tools = visible_tools;
+            let all_tools = announced;
 
             // Paginate
             let total = all_tools.len();

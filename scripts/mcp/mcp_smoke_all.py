@@ -22,6 +22,12 @@ Usage:
     python3 scripts/mcp/mcp_smoke_all.py --persist <path>  # smoke run + persist baseline
     python3 scripts/mcp/mcp_smoke_all.py --help             # show this help
 
+The server under test must announce the WHOLE surface: start it with
+`--profile full`. The server's default surface announces the five goals
+that answer before the analysis, and this script smokes the tools. With the
+default surface it would smoke five goals and report a green run that says
+nothing about the seventy-eight tools.
+
 Exit codes:
     0 = smoke passed (no MISSING, no stable STUB when --fail-on-stable-stub)
     1 = smoke failed (≥1 MISSING, transport error, or stable STUB with flag set)

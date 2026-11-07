@@ -19,6 +19,15 @@ struct Args {
     /// edit_file, reparse_on_edit) are hidden from tools/list and rejected.
     #[arg(long, default_value_t = false)]
     read_only: bool,
+    /// TASK-84: the surface this server publishes in `tools/list`.
+    ///
+    /// `default` publishes the goals that answer before the analysis,
+    /// `full` publishes every goal and every tool, and `legacy` publishes
+    /// the tools with the notice that names the goal that replaces them.
+    /// This is not the install profile (`core`, `reviewer`, ...): that one
+    /// decides what the server may do, this one decides what it announces.
+    #[arg(long, default_value = "default")]
+    profile: String,
 }
 
 #[tokio::main]
@@ -29,6 +38,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Error: Directory '{}' does not exist", args.cwd.display());
         std::process::exit(1);
     }
+
+    // Una superficie que no se conoce no se asume: el servidor publicaría
+    // algo que nadie pidió, y el que lo pidió no sabría qué recibe.
+    let profile = match cognicode_core::interface::surface::SurfaceProfile::parse(&args.profile) {
+        Some(profile) => profile,
+        None => {
+            eprintln!(
+                "Error: unknown surface profile '{}'. The profiles are: {}.",
+                args.profile,
+                cognicode_core::interface::surface::SurfaceProfile::names().join(", ")
+            );
+            std::process::exit(2);
+        }
+    };
 
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(
@@ -97,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Standalone in-memory handler — the PG-connected Mode B was
     // removed with the full postgres removal (e29-7).
     info!("Starting standalone in-memory handler");
-    let handler = CogniCodeHandler::with_options(args.cwd, args.read_only);
+    let handler = CogniCodeHandler::with_profile(args.cwd, args.read_only, profile);
     let transport = stdio();
     let server = rmcp::serve_server(handler, transport).await?;
 

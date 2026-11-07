@@ -29,12 +29,13 @@
 //!
 //! ## Lo que este registro NO es
 //!
-//! - **No es el vocabulario de los nueve goals.** Los nueve goals (status,
-//!   context, find, inspect, trace, impact, overview, audit, change) son de
-//!   TASK-84; aquí se declara el mechanism y el primer goal montado.
+//! - **No es el mecanismo de publicación.** El registro declara los goals;
+//!   qué se publica en cada cable lo decide
+//!   [`crate::interface::surface`] (los perfiles `default`, `full` y
+//!   `legacy`).
 //! - **No retira ninguna tool publicada.** Un goal se publica *además* de las
-//!   tools, y las tools siguen siendo las que sirven hoy. Retirar un nombre
-//!   publicado es otra unidad, con su contrato de deprecación.
+//!   tools en el perfil `full`, y en el perfil `legacy` las tools se
+//!   publican como alias con el aviso que nombra al goal que las sustituye.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -70,7 +71,10 @@ impl GoalAuthority {
 /// un goal declara la más temprana en la que su respuesta es verdad, y no
 /// una más temprana — un goal que se apoya en el grafo no puede responder en
 /// `discover` aunque el fichero esté ahí.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// El orden de las fases es el del producto, y el perfil por defecto lo usa:
+/// publica los goals que responden antes del análisis completo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum GoalPhase {
     /// Se ven los ficheros y los símbolos que declaran.
     Discover,
@@ -152,6 +156,14 @@ pub struct GoalSpec {
     pub minimum_phase: GoalPhase,
     /// Quién responde por el goal.
     pub owner: &'static str,
+    /// Los nombres legados que este goal sustituye.
+    ///
+    /// El goal no borra un nombre publicado: lo declara su sustituto, y el
+    /// perfil `legacy` publica el nombre viejo con el aviso que nombra a
+    /// este goal. La lista la escribe el goal, no el perfil: el perfil
+    /// derivaría de ella, así que un nombre puede tener un sustituto
+    /// declarado y ninguno inventado.
+    pub replaces: &'static [&'static str],
     /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
     ///
     /// El goal se implementa una vez y las cuatro superficies la comparten:
@@ -172,20 +184,170 @@ pub const STATUS: GoalSpec = GoalSpec {
     name: "status",
     title: "El estado del producto y del workspace",
     description: "Di qué ofrece este build y qué se ve del workspace: las fases del \
-producto, los lenguajes detectados y los goals con sus plantillas de argumentos. \
-Un cliente lo llama antes de decidir; un humano lo llama para saber si el \
-workspace está donde cree. Ejemplos: `cognicode status`, `cognicode status \
---format json`.",
+producto, los lenguajes detectados, la cobertura de la lectura y los goals con sus \
+plantillas de argumentos. Un cliente lo llama antes de decidir; un humano lo llama \
+para saber si el workspace está donde cree. Ejemplos: `cognicode status`, \
+`cognicode status --format json`.",
     examples: &["cognicode status", "cognicode status --format json"],
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Discover,
     owner: "interface::goals::status",
+    replaces: &[],
     run: status::run,
     render: status::render,
 };
 
+/// El goal `context`: el workspace como contexto de trabajo.
+pub const CONTEXT: GoalSpec = GoalSpec {
+    name: "context",
+    title: "El workspace como contexto de trabajo",
+    description: "Di qué hay en el workspace: los ficheros que lo componen, los \
+lenguajes que se detectan y la cobertura de la lectura. Es el goal que se llama \
+antes de tocar nada. Ejemplos: `cognicode context`, `cognicode context --format \
+json`.",
+    examples: &["cognicode context", "cognicode context --format json"],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Discover,
+    owner: "interface::goals::context",
+    replaces: &["list_files"],
+    run: context::run,
+    render: context::render,
+};
+
+/// El goal `find`: dónde está un símbolo.
+pub const FIND: GoalSpec = GoalSpec {
+    name: "find",
+    title: "Dónde está un símbolo",
+    description: "Resuelve un nombre de símbolo a los sitios donde está declarado, \
+con su fichero y su línea. Es la pregunta que se hace un homónimo: el mismo \
+nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, \
+`cognicode find --symbol helper --format json`.",
+    examples: &[
+        "cognicode find --symbol helper",
+        "cognicode find --symbol helper --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Index,
+    owner: "interface::goals::find",
+    replaces: &["query_symbol_index", "find_references"],
+    run: find::run,
+    render: find::render,
+};
+
+/// El goal `inspect`: qué declara un fichero.
+pub const INSPECT: GoalSpec = GoalSpec {
+    name: "inspect",
+    title: "Qué declara un fichero",
+    description: "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. \
+No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: \
+`cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs \
+--format json`.",
+    examples: &[
+        "cognicode inspect --file src/lib.rs",
+        "cognicode inspect --file src/lib.rs --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Discover,
+    owner: "interface::goals::inspect",
+    replaces: &["get_file_symbols", "get_symbol_code"],
+    run: inspect::run,
+    render: inspect::render,
+};
+
+/// El goal `trace`: quién llama a un símbolo y a quién llama.
+pub const TRACE: GoalSpec = GoalSpec {
+    name: "trace",
+    title: "Quién llama a un símbolo",
+    description: "Sigue el grafo de llamadas alrededor de un símbolo: quién lo llama, \
+a quién llama y a qué distancia. Ejemplos: `cognicode trace --symbol helper`, \
+`cognicode trace --symbol helper --direction callers`.",
+    examples: &[
+        "cognicode trace --symbol helper",
+        "cognicode trace --symbol helper --direction callers",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Link,
+    owner: "interface::goals::trace",
+    replaces: &["get_call_hierarchy", "trace_path"],
+    run: trace::run,
+    render: trace::render,
+};
+
+/// El goal `impact`: qué rompe un cambio.
+pub const IMPACT: GoalSpec = GoalSpec {
+    name: "impact",
+    title: "Qué rompe un cambio",
+    description: "Dice a qué símbolos y a qué ficheros afecta cambiar un símbolo, y \
+con qué riesgo. Es la pregunta que se hace antes de tocar nada. Ejemplos: \
+`cognicode impact --symbol helper`, `cognicode impact --symbol helper --format json`.",
+    examples: &[
+        "cognicode impact --symbol helper",
+        "cognicode impact --symbol helper --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::impact",
+    replaces: &["analyze_impact"],
+    run: impact::run,
+    render: impact::render,
+};
+
+/// El goal `overview`: cómo es el proyecto.
+pub const OVERVIEW: GoalSpec = GoalSpec {
+    name: "overview",
+    title: "Cómo es el proyecto",
+    description: "Resume el proyecto que hay en el workspace: cuántos símbolos tiene, \
+cuántas aristas, cuántos ficheros y en qué lenguajes. Ejemplos: \
+`cognicode overview`, `cognicode overview --format json`.",
+    examples: &["cognicode overview", "cognicode overview --format json"],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::overview",
+    replaces: &["project_overview", "codebase_map"],
+    run: overview::run,
+    render: overview::render,
+};
+
+/// El goal `audit`: qué está mal en el proyecto.
+pub const AUDIT: GoalSpec = GoalSpec {
+    name: "audit",
+    title: "Qué está mal en el proyecto",
+    description: "Mira el proyecto y dice qué encuentra: el código que no llega a \
+usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit \
+--format json`.",
+    examples: &["cognicode audit", "cognicode audit --format json"],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::audit",
+    replaces: &["detect_god_functions", "solid_audit"],
+    run: audit::run,
+    render: audit::render,
+};
+
+/// El goal `change`: el cambio que se va a hacer.
+pub const CHANGE: GoalSpec = GoalSpec {
+    name: "change",
+    title: "El cambio que se va a hacer",
+    description: "Calcula el cambio de un símbolo a otro nombre: los ficheros que \
+tocaría, los símbolos que afecta y con qué riesgo. Es el goal que escribe, y por \
+eso no aparece en el modo de sólo lectura. Ejemplos: `cognicode change --symbol \
+helper --new-name helper2`.",
+    examples: &[
+        "cognicode change --symbol helper --new-name helper2",
+        "cognicode change --symbol helper --new-name helper2 --format json",
+    ],
+    authority: GoalAuthority::Mutating,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::change",
+    replaces: &["safe_refactor"],
+    run: change::run,
+    render: change::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 1] = [STATUS];
+static REGISTRY: [GoalSpec; 9] = [
+    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, CHANGE,
+];
 
 /// Los goals declarados, en orden de registro.
 pub fn registry() -> &'static [GoalSpec] {
@@ -255,10 +417,24 @@ pub fn mcp_descriptor(goal: &GoalSpec) -> ToolDescriptor {
 
 /// La entrada que el goal ocupa en `product/tools.json`.
 ///
-/// Los campos espejo (`input_schema`, `output_schema`, `runtime_metadata`)
-/// son los que publica el runtime; los demás los declara el goal. El
-/// maestro se escribe a mano, pero sus bloques espejo tienen que ser
-/// estos: un check lo compara byte a byte.
+/// Los campos espejo (`input_schema`, `runtime_metadata`) son los que publica
+/// el runtime; los demás los declara el goal. El maestro se escribe a mano,
+/// pero sus bloques espejo tienen que ser estos: un check lo compara byte a
+/// byte.
+///
+/// ## Por qué los goals no publican `output_schema`
+///
+/// MEDIDO el 2026-11-07 sobre este árbol: la lista del perfil por defecto
+/// —los cinco goals, sin `outputSchema`— pesa **4.290 bytes** (4.350 por el
+/// cable, con las tres features). El mismo esquema del sobre, publicado bajo
+/// cada goal, la dejaría entre **26.420** (con el contrato más pequeño que el
+/// producto publica) y **65.890** bytes (con el más grande), y el presupuesto
+/// es de 6 KB. El goal no anuncia un `outputSchema`: lo que anuncia es **qué
+/// pregunta responde** (su `inputSchema`) y **cómo se llama**. El sobre es el
+/// mismo para todos.
+///
+/// El maestro y el runtime tienen que decir lo mismo sobre esto, y lo
+/// comprueba `a012_structured_output`.
 pub fn tools_json_entry(goal: &GoalSpec) -> Value {
     let mutates = goal.authority == GoalAuthority::Mutating;
     let mut entry = serde_json::json!({
@@ -288,13 +464,13 @@ pub fn tools_json_entry(goal: &GoalSpec) -> Value {
             "tool_version": env!("CARGO_PKG_VERSION")
         },
         "input_schema": Value::Object(input_schema(goal)),
-        "output_schema": Value::Object(output_schema(goal)),
+        // El campo existe y vale `null`: el maestro declara los trece
+        // campos de cada entrada, y `null` es la respuesta honesta para
+        // «no hay contrato» — la misma que dan las tools sin esquema.
+        "output_schema": Value::Null,
         "precision_floor": "ast-heuristic",
         "required_args": required_args(goal),
-        "limitations": [
-            "El estado es del producto y del workspace, no del análisis: la cobertura \
-    del workspace todavía no se publica."
-        ]
+        "limitations": limitations(goal)
     });
 
     // Un campo que no tiene nada que decir no se publica: un
@@ -311,7 +487,13 @@ pub fn tools_json_entry(goal: &GoalSpec) -> Value {
     entry
 }
 
-/// El `outputSchema` del goal: el derivado del tipo que serializa su respuesta.
+/// El `outputSchema` del goal: **ninguno**.
+///
+/// Los goals no publican un `outputSchema` (el porqué está en
+/// [`tools_json_entry`]): el perfil por defecto tiene que caber en 6 KB, y
+/// medido el 2026-11-07 sobre este árbol, el esquema del sobre bajo cada
+/// goal la dejaría entre 26.420 y 65.890 bytes. La función se queda para
+/// quien pregunte, y contesta la verdad: un mapa vacío.
 pub fn output_schema(goal: &GoalSpec) -> Map<String, Value> {
     crate::interface::mcp::output_contracts::output_schema_for(goal.name).unwrap_or_default()
 }
@@ -323,6 +505,30 @@ fn required_args(goal: &GoalSpec) -> Vec<String> {
         .filter(|argument| argument.required)
         .map(|argument| argument.name)
         .collect()
+}
+
+/// Lo que el goal dice que no hace, en sus propias palabras.
+///
+/// Un goal que escribe tiene que decirlo: quien lee la lista de
+/// `tools/list` tiene que saber, **antes** de llamar, que la llamada toca
+/// el workspace. Un goal que sólo lee dice lo otro: que su respuesta no
+/// añade un cálculo al que el dueño ya hacía.
+fn limitations(goal: &GoalSpec) -> Vec<String> {
+    if goal.authority == GoalAuthority::Mutating {
+        vec![
+            "El goal tiene autoridad de escritura sobre el workspace: es el único \
+             que puede llegar a escribir, y por eso no se anuncia en el modo de \
+             sólo lectura. Hoy calcula el cambio y lo publica; aplicarlo es una \
+             acción aparte."
+                .to_string(),
+        ]
+    } else {
+        vec![
+            "El goal se monta sobre el dueño que ya calcula esto: su respuesta no \
+             añade un cálculo nuevo."
+                .to_string(),
+        ]
+    }
 }
 
 /// El comando clap del goal.
@@ -518,7 +724,16 @@ pub struct GoalInfo {
     pub arguments: Vec<GoalArgument>,
 }
 
+pub mod audit;
+pub mod change;
+pub mod common;
+pub mod context;
+pub mod find;
+pub mod impact;
+pub mod inspect;
+pub mod overview;
 pub mod status;
+pub mod trace;
 
 #[cfg(test)]
 mod tests {
