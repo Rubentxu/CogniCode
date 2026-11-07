@@ -38664,3 +38664,24 @@ Solo formato, en cuatro ficheros: `src/domain/value_objects/language.rs` (lista 
 RED: `cargo fmt --all --check` rc=1 antes. GREEN: rc=0 después. No se compiló ni se lanzaron suites, clippy ni el gate (NOT_RUN): `rustfmt` no cambia el AST y el gate se pasa por lotes de 10.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — Gate sobre `2a3fa5e5`: el lote vencido de 25 tareas
+
+**El encargo.** El último gate certificado fue «Gate sobre `a3b8b862`» (2026-11-06 04:44). Desde entonces cerraron 25 tareas (conteo por `updatedAt` de las Done y por commits; la cuenta anterior de «8 de 10» partía de una base equivocada): TASK-140 · 123 · 127 · 141 · 126 · 49 · 56 · 69 · 142 · 76 · 86 · 129 · 83 · 82 · 84 · 85 · 93 · 81 · 125 · 143 · 145 · 144 · 74 · 70 · 147. El lote estaba vencido (>10) y no se empezó ninguna tarea nueva antes.
+
+**Estado previo.** `main...origin/main` en `2a3fa5e5`, sin tareas In Progress; único fichero sin seguimiento: `backlog-import-producto-v2.sh` (sin tocar). `cargo-mutants` presente.
+
+**Medido** (`GATE_BASE=a3b8b862 nice -n 19 bash scripts/test-gate.sh`, una corrida, log `/tmp/gate_lote_25.log`):
+
+| Paso | Resultado |
+|---|---|
+| Radio | tocado: `cognicode-cli cognicode-core cognicode-mcp cognicode-sandbox`; tests: 8 crates; mutantes: `cognicode-graph-algos` |
+| Tests unitarios | 4493 run: 4493 passed, 0 skipped — 16,530 s |
+| Tests de integración | 6660 run: 6660 passed, 3 skipped — 21,180 s |
+| Mutantes | 627 probados en 56 min: 618 atrapados, 9 inviables, 0 supervivientes — `=== test-gate rc=0 ===` |
+
+Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto al gate anterior, coherente con el borrado de duplicados de TASK-70 y la fusión de contratos de TASK-74. No se ha verificado test a test.
+
+**Fuera del gate, sin medir.** `npm test --prefix apps/explorer-ui`, los contratos Python (`run-all-contracts.sh`) y clippy: NOT_RUN. Rojos previos conservados: `CURRENT.md`, pruebas de §11 por texto de recibos previos y `test_a_branch_checkout_still_names_its_branch`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
