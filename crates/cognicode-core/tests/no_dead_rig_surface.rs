@@ -10,8 +10,9 @@ fn the_core_declares_no_rig_feature_nor_dependency() {
     let manifest = std::fs::read_to_string(Path::new(CORE).join("Cargo.toml")).unwrap();
     assert!(!manifest.contains("rig-core"), "dependencia rig-core viva");
     assert!(
-        !manifest.lines().any(|l| l.trim_start().starts_with("rig ")
-            || l.trim_start().starts_with("rig=")),
+        !manifest
+            .lines()
+            .any(|l| l.trim_start().starts_with("rig ") || l.trim_start().starts_with("rig=")),
         "feature `rig` declarada"
     );
 }

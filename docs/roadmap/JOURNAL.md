@@ -38650,3 +38650,17 @@ Ninguno se marca. AC1 («30 ficheros en 7») no se cumple: son 20. AC2 (`pytest 
 Rojos previos conservados sin tocar: `CURRENT.md` (2), las pruebas de §11 por texto de recibos previos (4 en `test_roadmap_coherence.py`) y `test_a_branch_checkout_still_names_its_branch`. Gate NOT_RUN.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-147 — `cargo fmt --all --check` vuelve a rc=0
+
+Medido sobre `263cc411`: `cargo fmt --all --check` salía con rc=1 (6 diferencias en 4 ficheros de `cognicode-core`). Tras `cargo fmt --all`, rc=0.
+
+### Qué cambió
+
+Solo formato, en cuatro ficheros: `src/domain/value_objects/language.rs` (lista `MEASURED` a un elemento por línea), `src/interface/goals/find.rs` (`let ... else` con bloque y dos llamadas partidas), `src/interface/mod.rs` (una línea en blanco sobrante) y `tests/no_dead_rig_surface.rs` (cadena de `lines().any(...)` reflujada). `git diff --stat`: 4 ficheros, 32 inserciones, 9 borrados; ninguna línea de lógica.
+
+### Pruebas
+
+RED: `cargo fmt --all --check` rc=1 antes. GREEN: rc=0 después. No se compiló ni se lanzaron suites, clippy ni el gate (NOT_RUN): `rustfmt` no cambia el AST y el gate se pasa por lotes de 10.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

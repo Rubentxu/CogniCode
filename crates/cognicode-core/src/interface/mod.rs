@@ -22,4 +22,3 @@ pub mod symbol_identity;
 pub mod surface;
 // Lo que se ve del workspace, compartido por el doctor y el goal `status`.
 pub mod workspace;
-
