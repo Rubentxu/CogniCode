@@ -38699,3 +38699,13 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Descartado con evidencia.** C23/H24 (`goal-compass.json`) no cabe en un PR (`analysis_service.rs` tiene 4.014 líneas) y su premisa «ningún test compara las vías» está obsoleta: `h24_the_routes_say_the_same.rs` existe.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — El contrato de §11 distingue citar de afirmar (TASK-149)
+
+**Medido.** `bash scripts/ci/run-all-contracts.sh` (control que el gate dejó NOT_RUN) terminó con rc=1: todo verde salvo 4 casos de `test_roadmap_coherence.py`. Dos son la deriva de `CURRENT.md` (decisión pendiente del operador, no tocada). Los otros dos (`test_section11_does_not_list_a_unit_the_journal_closed` y su control) fallaban porque `_journal_closure_lines` casaba un recibo de TASK-74 que cita entre comillas inversas la mutación inyectada, y un cierre se detecta por línea con la palabra «closed».
+
+**Causa.** El Journal es append-only, así que el recibo no se reescribe; el defecto era del contrato, que no distinguía citar de afirmar.
+
+**Cambio.** `scripts/ci/test_roadmap_coherence.py`: `_asserted` quita los spans de código en línea antes de buscar cierres, en `_journal_closure_lines` y en `closed_units_in_journal`. Test nuevo `test_a_quoted_closure_is_not_a_closure`, con un Journal temporal: la cita no cierra, el texto llano sí.
+
+**RED/GREEN.** Antes: 4 fallos de coherencia + el test nuevo en rojo. Después: 27 pasan, 2 fallan (solo `CURRENT.md`). Gate NOT_RUN: el lote lleva 2 de 10.
