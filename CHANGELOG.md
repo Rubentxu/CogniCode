@@ -10,12 +10,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
-## [v0.102.0] — 2026-11-07
+## [v0.102.1] — 2026-11-07
 
 **Minor: el grafo se publica en un orden canónico, el sobre de la respuesta
 tiene un solo dueño y las preguntas dicen con qué cobertura se contestaron.**
 Incluye el contenido de la v0.101.31 (identidad de lo que leyó el control
 plane), que nunca llegó a publicarse.
+
+El tag `v0.102.0` se creó sobre un árbol cuya suite de `cognicode-core` no
+pasaba (un certificado de distribución y un test de snapshot ligados a la
+longitud de la versión); no tiene release y no se mueve. Este corte lo
+sustituye con las dos correcciones.
 
 **Superficie (cambios visibles para un consumidor).**
 - Los nueve *goals* (`status` como raíz) y los perfiles de superficie salen de

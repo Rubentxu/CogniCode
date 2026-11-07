@@ -174,7 +174,12 @@ async fn a_snapshot_from_another_analyzer_is_not_served() {
     //    fichero siga siendo legible y lo que cambia sea la identidad, no
     //    la integridad. Un snapshot corrupto sería un caso distinto.
     let version = env!("CARGO_PKG_VERSION").to_string();
-    let other = "9.999.99".to_string();
+    // Mismo largo que la real: cada dígito pasa a 9, los separadores se conservan.
+    let other: String = version
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '9' } else { c })
+        .collect();
+    assert_ne!(other, version, "la versión simulada tiene que ser otra");
     assert_eq!(
         other.len(),
         version.len(),

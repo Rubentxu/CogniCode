@@ -38897,3 +38897,13 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161
 **Pendiente tras la fusión.** Tag anotado `v0.102.0`, candidato y publicación con las lanes del tag `v0.101.30` (las lanes vivas se retiraron el 2026-11-04), verificación como consumidor e instalación local. Provenance: sin generador; se publica sin ella y se dice.
 
 Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.
+
+## 2026-11-07 — Release v0.102.1: el corte de v0.102.0 no pasaba su propia suite (sin tarea)
+
+**Medido.** La lane candidata sobre el SHA del tag `v0.102.0` (`8eec4c63`) compiló el clon limpio y falló en `cargo test -p cognicode-core --test it`: 1106 pasan, 2 fallan. (1) `b6_w5_distribution_certification::cp5_workspace_version_consistent`: el cert registraba 0.101.31. (2) `a_snapshot_says_who_produced_it::a_snapshot_from_another_analyzer_is_not_served`: la versión simulada `9.999.99` (8) no medía lo mismo que `0.102.0` (7). Ninguno de los dos está en `run-all-contracts.sh`; solo los ve la suite de Rust.
+
+**Decisión.** `v0.102.0` ya estaba publicado como tag y no se mueve. Se corta 0.102.1 con las dos correcciones; 0.102.0 queda sin release.
+
+**Cambio.** Versión 0.102.0 → 0.102.1 en los mismos ficheros. El test del snapshot deriva la versión simulada de la real (cada dígito a 9) y exige que difiera. El cert solo mueve `cp5_workspace_version`; sus entradas NO se re-ejecutaron y la evidencia del cert lo dice.
+
+Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.
