@@ -38273,3 +38273,21 @@ Los lenguajes que leen un solo nodo de clase y declaran más en `LanguageSymbols
 Migrar cada lenguaje a sus conjuntos declarados (cambia lo que publica) y quitarlo de la lista del test.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-144: `--validate-paths` ya no muere con `KeyError: 'pct_verified'`
+
+SHA inicial: `a41f97d9`. Python puro, sin cargo.
+
+### Causa
+
+`scan_specs` devolvía antes de tiempo cuando no existe el directorio de specs (`openspec/specs`, ausente en este árbol) con un `summary` sin `pct_verified` ni `pct_triaged`; `emit_md` y el `print` final los leían. Cualquier evidencia válida llegaba a ese punto y moría.
+
+### Qué cambió
+
+Los porcentajes se calculan en `_with_percentages`, que usan los dos caminos de salida. Una ruta ausente sigue dando rc 1 y se nombra: es el comportamiento documentado, no un defecto.
+
+### Pruebas (RED → GREEN)
+
+`scripts/ci/test_openspec_conformance_validate_paths.py`: RED 1/2 → GREEN 2/2 (el caso sano fallaba; el de ruta ausente ya pasaba y protege el contrato). Sólo se corrió ese contrato; el gate no se corrió (lote de 10).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
