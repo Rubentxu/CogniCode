@@ -16,6 +16,7 @@ use std::path::Path;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::graph_queries::Direction;
 use crate::interface::cli::project_graph::service_with_graph;
+use crate::interface::goals::GoalEnvironment;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `trace` goal
@@ -122,7 +123,8 @@ pub fn trace(
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: TraceInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `trace` are not valid: {error}"))?;
     let answer = trace(workspace, &input.symbol, &input.direction, input.depth)?;

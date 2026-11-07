@@ -21,7 +21,7 @@
 //!
 //! - Que el sobre viaje por el cable del MCP: eso lo comprueba
 //!   `a012_structured_output` (el mismo contrato, visto desde el binario).
-//! - Que las nueve goals de TASK-84 existan: aquí no hay ningún goal.
+//! - Qué goals existen: aquí no hay ningún goal.
 
 use serde_json::{Map, Value, json};
 

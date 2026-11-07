@@ -120,6 +120,33 @@ impl GoalPhase {
     }
 }
 
+/// El contexto en el que un goal se ejecuta.
+///
+/// Un goal necesita dos cosas del mundo: el workspace que analiza y **dónde
+/// guarda el producto lo que deriva de él**. Las dos vienen aquí, así que el
+/// goal no adivina ninguna de las dos y la terminal y el cable le dan el
+/// mismo contexto.
+///
+/// La caché es `None` cuando el entorno no dice dónde hay una: el producto
+/// entonces no guarda nada en vez de escribir en un sitio inventado.
+#[derive(Debug, Clone, Copy)]
+pub struct GoalEnvironment<'a> {
+    /// El workspace que se analiza.
+    pub workspace: &'a Path,
+    /// Dónde guarda el producto lo que deriva del workspace.
+    pub cache_root: Option<&'a Path>,
+}
+
+impl<'a> GoalEnvironment<'a> {
+    /// El contexto de un goal.
+    pub fn new(workspace: &'a Path, cache_root: Option<&'a Path>) -> Self {
+        Self {
+            workspace,
+            cache_root,
+        }
+    }
+}
+
 /// Un argumento de un goal, tal y como el esquema lo publica.
 ///
 /// El tipo lo produce el esquema derivado del struct que lee los
@@ -167,10 +194,10 @@ pub struct GoalSpec {
     /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
     ///
     /// El goal se implementa una vez y las cuatro superficies la comparten:
-    /// el MCP la llama con el `workspace` de la sesión y los argumentos del
+    /// el MCP la llama con el contexto de la sesión y los argumentos del
     /// cable; el CLI la llama con el directorio actual y los argumentos que
     /// el comando clap leyó.
-    pub run: fn(&Path, &Value) -> Result<Value, String>,
+    pub run: fn(&GoalEnvironment, &Value) -> Result<Value, String>,
     /// La respuesta del goal en texto.
     ///
     /// El texto lo compone el goal, no el comando: el MCP no lo publica, pero
@@ -344,9 +371,41 @@ helper --new-name helper2`.",
     render: change::render,
 };
 
+/// El goal `recipe`: una pregunta compuesta que el producto sabe responder.
+///
+/// Una receta son **varios goals en un orden**, con lo que se puede
+/// reutilizar de la corrida anterior. La respuesta dice qué corrió, qué vino
+/// de la caché, cuánto costó y, si algo falló, qué falló y por qué.
+///
+/// El goal es de sólo lectura: una receta **no** escribe en el workspace, y
+/// una receta del workspace tampoco puede invocar un goal que escriba.
+pub const RECIPE: GoalSpec = GoalSpec {
+    name: "recipe",
+    title: "Una receta de goals, con su caché y su presupuesto",
+    description: "Corre una receta: varios goals en el orden de sus fases, \
+memoizados por lo que el árbol ha cambiado, con los pasos independientes en \
+paralelo. Con `plan: true` dice qué correría, qué está en caché y lo que \
+costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, \
+`cognicode recipe --name pre-change --params '{\"symbol\":\"helper\"}'`, \
+`cognicode recipe --name onboard --plan`.",
+    examples: &[
+        "cognicode recipe --name onboard",
+        "cognicode recipe --name pre-change --params '{\"symbol\":\"helper\"}'",
+        "cognicode recipe --name onboard --plan",
+    ],
+    authority: GoalAuthority::Read,
+    // La receta necesita el análisis completo: sus pasos son goals de las
+    // cuatro fases, y el último de ellos no responde antes de `analyze`.
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::recipe",
+    replaces: &[],
+    run: recipe::run,
+    render: recipe::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 9] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, CHANGE,
+static REGISTRY: [GoalSpec; 10] = [
+    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, CHANGE, RECIPE,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -579,6 +638,13 @@ pub fn clap_command(goal: &GoalSpec) -> clap::Command {
             .value_name(name.to_uppercase())
             .help(description)
             .value_parser(value_parser_for(&property));
+        // Un booleano se escribe con su valor o sin él: `--plan` y
+        // `--plan true` son el mismo argumento, y el primero es el que se
+        // escribe. El valor explícito sigue funcionando, así que lo que se
+        // publicaba antes no se rompe.
+        if argument_type(&property) == Some("boolean") {
+            arg = arg.num_args(0..=1).default_missing_value("true");
+        }
         if required.contains(&name.as_str()) {
             arg = arg.required(true);
         }
@@ -622,6 +688,20 @@ pub fn arguments_from_matches(goal: &GoalSpec, matches: &clap::ArgMatches) -> Va
                 .ok()
                 .flatten()
                 .map(|value| Value::from(*value)),
+            // Un objeto en la terminal llega como **texto** JSON, porque un
+            // flag lleva texto. Se lee aquí para que la terminal y el cable
+            // publiquen el mismo valor —un objeto— y no el mismo texto: el
+            // sobre de la respuesta tiene que ser el mismo en las dos
+            // superficies. Un texto que no es JSON se deja como texto, y el
+            // goal que lo lee dice qué le pasa.
+            Some("object") => matches
+                .try_get_one::<String>(&name)
+                .ok()
+                .flatten()
+                .map(|text| {
+                    serde_json::from_str::<Value>(text)
+                        .unwrap_or_else(|_| Value::String(text.clone()))
+                }),
             _ => matches
                 .try_get_one::<String>(&name)
                 .ok()
@@ -732,6 +812,7 @@ pub mod find;
 pub mod impact;
 pub mod inspect;
 pub mod overview;
+pub mod recipe;
 pub mod status;
 pub mod trace;
 

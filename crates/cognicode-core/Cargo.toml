@@ -116,6 +116,9 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 ciborium = { workspace = true }
 notify = { workspace = true }
+# The recipes of the product — `product/goals.toml` — are read from the
+# binary, so the crate needs to read TOML.
+toml.workspace = true
 
 # Error Handling
 anyhow.workspace = true

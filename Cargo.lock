@@ -553,6 +553,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-test",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
  "tree-sitter",

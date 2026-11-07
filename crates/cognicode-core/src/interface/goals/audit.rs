@@ -14,6 +14,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::interface::cli::project_graph::service_with_graph;
+use crate::interface::goals::GoalEnvironment;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `audit` goal
@@ -90,7 +91,8 @@ pub fn audit(workspace: &Path) -> Result<GoalAudit, String> {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     serde_json::from_value::<AuditInput>(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `audit` are not valid: {error}"))?;
     let answer = audit(workspace)?;

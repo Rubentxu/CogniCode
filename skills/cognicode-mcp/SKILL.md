@@ -1,8 +1,8 @@
 ---
 name: cognicode-mcp
 description: >
-  Drive CogniCode's MCP server effectively: its 87-tool full surface
-  and the nine goals on top, the profile each one lives in, graph
+  Drive CogniCode's MCP server effectively: its 88-tool full surface
+  and the ten goals on top, the profile each one lives in, graph
   prerequisites, read-before-write, incremental re-analysis, error
   recovery. Trigger: When an agent is doing multi-step graph
   exploration, impact analysis, quality audits, or safe refactoring
@@ -36,7 +36,7 @@ surface says what `tools/list` announces — not what the server may do.
 | profile   | what `tools/list` announces                                                                    |
 |-----------|--------------------------------------------------------------------------------------------------|
 | `default` | the **five goals** that answer before the analysis: `status`, `context`, `find`, `inspect`, `trace` |
-| `full`    | every goal **and** every tool — the 87 entries the master publishes, announced as tools on the wire |
+| `full`    | every goal **and** every tool — the 88 tools the master publishes, announced on the wire           |
 | `legacy`  | the tools that came before the goals, each carrying the notice that names its substitute            |
 
 The default is `default`. **If `tools/list` shows only goals, the server is
@@ -44,7 +44,7 @@ announcing the small surface** — the tools are still there and still work,
 but they are not announced; ask for `--profile full` (both) or
 `--profile legacy` (the tools, with the deprecation notice) if you need them.
 
-### The nine goals
+### The ten goals
 
 A **goal** is what a consumer *asks*; a **tool** is what the product
 *computes*. Every goal is mounted on a tool that already existed, so a goal
@@ -61,10 +61,20 @@ answers without computing anything new.
 | `overview` | what is this project?         | `project_overview`, `codebase_map`           |
 | `audit`    | what is wrong with it?        | `detect_god_functions`, `solid_audit`        |
 | `change`   | what would this rename touch? | `safe_refactor`                              |
+| `recipe`   | which goals does this recipe run? | —                                        |
 
 `change` is the only goal that writes, so it does not appear in
 `--read-only`. Start with `status`: it says what this build offers, what it
 sees in the workspace, and how much of it it could read.
+
+`recipe` runs a **named recipe**: several goals in the order of their
+phases, with the independent ones in parallel and each step memoized by
+what the tree changed. Its arguments are `name` (the recipe) and `params`
+(the values of the recipe's parameters, an object). With `plan: true` it
+runs nothing and says what would run, what is already cached and what it
+would cost. The product publishes `context`, `onboard`, `pre-change`,
+`post-change` and `review`; a workspace can add its own in
+`.cognicode/goals.toml`, and only read-only goals.
 
 ## Capability domains (from `tools/list`)
 
@@ -320,7 +330,7 @@ There is no version-pinned reference in this skill.
 ## What this skill does NOT do
 
 - It does not teach you how to **install** CogniCode. Use `cogh`.
-- It does not list all 87 entries (nine goals and the tools behind
+- It does not list all 88 tools (the ten goals and the tools behind
   them). Use `tools/list`.
 - It does not promise internal CogniCode subsystems (e77
   architecture, LSI facts/evidence, governed promotion) as public

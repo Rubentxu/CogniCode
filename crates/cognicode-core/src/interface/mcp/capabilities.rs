@@ -63,7 +63,7 @@ pub const LSP_SUPPORTED_LANGS: &[&str] = &["python", "rust", "javascript", "type
 /// Devuelve `Some(ToolCapabilities)` para tools registradas en
 /// `build_all_tools()`, `None` para tools desconocidas.
 ///
-/// La tabla cubre las **87 tools** que viven en
+/// La tabla cubre las **88 tools** que viven en
 /// `rmcp_adapter.rs::build_all_tools()`. Si añades una tool estable y
 /// olvidas añadirla aquí, `test_capabilities_matrix_for_stable_tools`
 /// falla con su nombre — esa es la intención.
@@ -239,6 +239,14 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             }
         }
 
+        // La receta (TASK-85) no parsea nada por su cuenta: corre otros
+        // goals. Declara la unión de lo que sus pasos pueden leer, que es
+        // lo que el producto sabe leer.
+        "recipe" => ToolCapabilities {
+            langs: tree_sitter_langs(),
+            precision: "AST",
+        },
+
         _ => return None,
     };
     Some(caps)
@@ -336,6 +344,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "overview",
         "audit",
         "change",
+        "recipe",
     ]
 }
 

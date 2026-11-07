@@ -1,0 +1,77 @@
+# Las recetas del producto: preguntas compuestas que el producto sabe
+# responder.
+#
+# Una receta son varios goals en el orden de sus fases, con lo que se puede
+# reutilizar de la corrida anterior. Este fichero se compila en el binario
+# (`include_str!`), así que una receta publicada existe en el mismo binario
+# que la sirve.
+#
+# El formato:
+#
+#   [[recipe]]
+#   name = "el-nombre"          # el nombre que se pide
+#   description = "qué hace"    # una frase
+#   parameters = ["symbol"]     # los parámetros que necesita (opcional)
+#   steps = [ { goal = "status" }, { goal = "find", args = { symbol = "{{symbol}}" } } ]
+#
+# Las reglas —las valida el producto, y las mismo para las recetas del
+# workspace— son:
+#
+#   - todo paso nombra un goal que el producto declara;
+#   - todo goal de un paso **lee**: una receta no escribe, y una receta del
+#     workspace tampoco;
+#   - `{{parámetro}}` nombra un parámetro declarado, y todo parámetro
+#     declarado lo usa algún paso.
+#
+# La fase de un paso es la de su goal (`discover`, `index`, `link`, `analyze`):
+# las fases van en orden, y los pasos de la misma fase corren en paralelo.
+
+# Qué se ve del workspace: qué ofrece el build, qué hay en él, con qué
+# cobertura de lectura.
+[[recipe]]
+name = "context"
+description = "Qué ofrece el build y qué hay en el workspace, con la cobertura de la lectura."
+steps = [
+  { goal = "status" },
+  { goal = "context" },
+]
+
+# Orientarse: qué ofrece el build, qué hay en el workspace y de qué tamaño es.
+[[recipe]]
+name = "onboard"
+description = "Qué ofrece el build, qué hay en el workspace y cómo es de grande el proyecto."
+steps = [
+  { goal = "status" },
+  { goal = "context" },
+  { goal = "overview" },
+]
+
+# Antes de tocar un símbolo: qué hay, dónde está y qué rompería.
+[[recipe]]
+name = "pre-change"
+description = "Qué hay que saber antes de tocar un símbolo: dónde está y qué rompería."
+parameters = ["symbol"]
+steps = [
+  { goal = "context" },
+  { goal = "find", args = { symbol = "{{symbol}}" } },
+  { goal = "impact", args = { symbol = "{{symbol}}" } },
+]
+
+# Después de tocar un símbolo: dónde está ahora y quién lo usa.
+[[recipe]]
+name = "post-change"
+description = "Qué hay que comprobar después de tocar un símbolo: dónde está y quién lo usa."
+parameters = ["symbol"]
+steps = [
+  { goal = "find", args = { symbol = "{{symbol}}" } },
+  { goal = "trace", args = { symbol = "{{symbol}}" } },
+]
+
+# La revisión del proyecto: qué está mal y cómo es de grande.
+[[recipe]]
+name = "review"
+description = "Qué está mal en el proyecto y de qué tamaño es: calidad, ciclos y estructura."
+steps = [
+  { goal = "audit" },
+  { goal = "overview" },
+]

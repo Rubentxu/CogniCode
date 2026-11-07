@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use crate::application::dto::SymbolDto;
 use crate::application::services::analysis_service::AnalysisService;
+use crate::interface::goals::GoalEnvironment;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `inspect` goal
@@ -81,7 +82,8 @@ pub fn inspect(workspace: &Path, file: &str) -> Result<GoalInspect, String> {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: InspectInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `inspect` are not valid: {error}"))?;
     let answer = inspect(workspace, &input.file)?;

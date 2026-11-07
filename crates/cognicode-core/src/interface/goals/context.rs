@@ -17,6 +17,7 @@ use std::path::Path;
 
 use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::coverage::CoverageInfo;
+use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::coverage_of;
 use crate::interface::workspace::detect_languages;
 
@@ -91,7 +92,8 @@ pub fn context(input: &ContextInput, workspace: &Path) -> GoalContext {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: ContextInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `context` are not valid: {error}"))?;
     let answer = context(&input, workspace);

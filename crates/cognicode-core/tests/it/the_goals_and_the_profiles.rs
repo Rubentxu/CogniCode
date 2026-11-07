@@ -1,11 +1,16 @@
-//! TASK-84 — los nueve goals, los perfiles y `status` como raíz.
+//! TASK-84 — los goals, los perfiles y `status` como raíz.
 //!
 //! Un goal es lo que un consumidor **pide**; una tool es lo que el producto
-//! **calcula**. La unidad monta los nueve goals sobre los dueños que ya
+//! **calcula**. La unidad monta los goals sobre los dueños que ya
 //! existían —sin recalcular nada— y decide **qué se anuncia** en cada
 //! superficie: el perfil `default` publica los goals que responden antes del
 //! análisis completo, el `full` publica todo, y el `legacy` publica las
 //! tools con el aviso que nombra al goal que las sustituye.
+//!
+//! TASK-85 añade el décimo goal —`recipe`, las preguntas compuestas—: el
+//! registro crece, y el perfil por defecto **no** crece con él, porque la
+//! fase de la receta es `analyze` y la regla del perfil por defecto la
+//! deriva de la fase.
 //!
 //! ## Lo que este fichero pinea
 //!
@@ -23,7 +28,7 @@
 //! - Que cada goal calcule bien: eso lo mide el test de cada goal, en su
 //!   propio módulo.
 //! - Que la lista entera del cable pese lo que pesan las de una tool: el
-//!   perfil `full` publica las 87 entradas, y su peso es el de siempre.
+//!   perfil `full` publica las 88 entradas, y su peso es el de siempre.
 
 use serde_json::{Map, Value};
 
@@ -92,21 +97,21 @@ fn the_default_profile_fits_in_six_kilobytes() {
     );
 }
 
-/// El registro declara los nueve goals, cada uno con su declaración entera.
+/// El registro declara los diez goals, cada uno con su declaración entera.
 ///
 /// Un goal a medias es una promesa a medias: sin dueño no hay a quién
 /// preguntarle, y sin fase no se sabe si el perfil por defecto lo publica.
 #[test]
-fn the_registry_declares_the_nine_goals() {
+fn the_registry_declares_the_ten_goals() {
     let names: Vec<&str> = goals::registry().iter().map(|goal| goal.name).collect();
 
     assert_eq!(
         names,
         vec![
             "status", "context", "find", "inspect", "trace", "impact", "overview", "audit",
-            "change"
+            "change", "recipe"
         ],
-        "the registry declares the nine goals"
+        "the registry declares the ten goals"
     );
 
     for goal in goals::registry() {
@@ -163,7 +168,8 @@ fn the_status_goal_answers_the_phases_the_languages_the_coverage_and_the_goals()
     std::fs::write(workspace.path().join("main.rs"), "fn main() {}").expect("write");
 
     let goal = goals::find("status").expect("the registry declares the goal `status`");
-    let answer = (goal.run)(workspace.path(), &serde_json::json!({})).expect("the goal answers");
+    let environment = goals::GoalEnvironment::new(workspace.path(), None);
+    let answer = (goal.run)(&environment, &serde_json::json!({})).expect("the goal answers");
 
     let phases = answer
         .get("phases")

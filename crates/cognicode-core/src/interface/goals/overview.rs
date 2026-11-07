@@ -16,6 +16,7 @@ use std::path::Path;
 
 use crate::interface::cli::project_graph::service_with_graph;
 use crate::interface::coverage::CoverageInfo;
+use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::coverage_of;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -85,7 +86,8 @@ pub fn overview(workspace: &Path) -> Result<GoalOverview, String> {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     serde_json::from_value::<OverviewInput>(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `overview` are not valid: {error}"))?;
     let answer = overview(workspace)?;

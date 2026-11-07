@@ -22,6 +22,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::interface::coverage::CoverageInfo;
+use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::coverage_of;
 use crate::interface::goals::{GoalInfo, GoalPhase, goal_info, registry};
 use crate::interface::workspace::detect_languages;
@@ -147,7 +148,8 @@ cobertura {}.",
 ///
 /// La firma la firma el registro ([`crate::interface::goals::GoalSpec::run`]):
 /// el workspace donde se mira y los argumentos del llamante.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: StatusInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `status` are not valid: {error}"))?;
     let answer = status(&input, workspace);

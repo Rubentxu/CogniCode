@@ -415,8 +415,8 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     // TASK-82 / TASK-84 — los goals: sus argumentos se leen del mismo struct
     // que el resto, así que el `inputSchema` que publica sale de ahí y no de
-    // una copia escrita a mano. Los nueve goals viven juntos porque son una
-    // familia: el mismo tipo de declaración para los nueve.
+    // una copia escrita a mano. Los goals viven juntos porque son una
+    // familia: el mismo tipo de declaración para todos.
     m.insert(
         "status",
         schema_of::<crate::interface::goals::status::StatusInput>(),
@@ -452,6 +452,12 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert(
         "change",
         schema_of::<crate::interface::goals::change::ChangeInput>(),
+    );
+    // TASK-85 — el goal `recipe`: sus parámetros son los de la receta, así que
+    // viajan en un objeto (`params`) y no como argumentos sueltos.
+    m.insert(
+        "recipe",
+        schema_of::<crate::interface::goals::recipe::RecipeInput>(),
     );
     m.insert(
         "taint_flow",

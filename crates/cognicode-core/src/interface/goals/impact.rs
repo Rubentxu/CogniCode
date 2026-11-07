@@ -17,6 +17,7 @@ use std::path::Path;
 
 use crate::application::services::analysis_service::AnalysisService;
 use crate::interface::cli::project_graph::service_with_graph;
+use crate::interface::goals::GoalEnvironment;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `impact` goal
@@ -78,7 +79,8 @@ pub fn impact(workspace: &Path, symbol: &str) -> Result<GoalImpact, String> {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: ImpactInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `impact` are not valid: {error}"))?;
     let answer = impact(workspace, &input.symbol)?;

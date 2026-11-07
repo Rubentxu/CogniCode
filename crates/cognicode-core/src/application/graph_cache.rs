@@ -73,7 +73,11 @@ pub fn daemon_socket_path(cache_root: &Path, workspace: &Path) -> PathBuf {
 /// reaches it, and two workspaces never share one. The hash is of the
 /// *canonical* path because the same repository reached by two different
 /// routes is one repository, and its snapshot is one snapshot.
-fn workspace_key(workspace: &Path) -> String {
+///
+/// It is public because the cache has more than one kind of entry —the
+/// snapshot of the graph and the memo of the recipes— and both have to name
+/// the workspace the same way. One owner of the name, two users of it.
+pub fn workspace_key(workspace: &Path) -> String {
     use sha2::{Digest, Sha256};
 
     let canonical = workspace

@@ -22,7 +22,7 @@ CogniCode is a code-analysis companion you can drive two ways:
   CI, and one-shot operations.
 - **MCP** — an agent drives it through JSON-RPC. It publishes one
   surface, chosen with `--profile`: by default the five goals that
-  answer before the analysis, or the whole catalogue — 87 entries —
+  answer before the analysis, or the whole catalogue — 88 tools —
   with `--profile full`. Best for multi-step, interactive
   reasoning.
 
