@@ -38023,3 +38023,131 @@ La regla que se aplicó: **un nombre publicado por un goal vence a un comando PR
 **FUSIONADO.** PR #673 (`ffa1bd02`): la unidad. Este recibo y el snapshot operativo viajan en el PR que le sigue.
 
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+## 2026-11-07 — TASK-85: el ejecutor de recetas con fases, memo, paralelismo, presupuesto y `--plan`
+
+### Lo que estaba mal (MEDIDO contra el árbol, no supuesto)
+
+Una receta es una pregunta compuesta: **qué goals** hay que correr, **en qué
+orden** y **qué se puede reutilizar** de la corrida anterior. Medido sobre el
+árbol antes del cambio:
+
+| Comprobación | Resultado |
+|---|---|
+| ¿Hay alguna forma de pedir una pregunta compuesta? | **No**: el registro declaraba nueve goals —`status`, `context`, `find`, `inspect`, `trace`, `impact`, `overview`, `audit` y `change`—, y cada uno se preguntaba solo |
+| ¿Se reutiliza algo entre dos preguntas? | **No**: cada goal se calculaba entero cada vez que se preguntaba, sin memo de ningún tipo |
+| ¿Corre en paralelo lo que es independiente? | **No**: los goals se llamaban de uno en uno, y dos preguntas que no dependen la una de la otra tardaban lo que tardan sumadas |
+| ¿Se puede saber lo que va a costar antes de correrlo? | **No**: no había plan, ni coste estimado, ni la lista de lo que ya estaba calculado |
+| ¿Qué pasa cuando un paso de la pregunta compuesta falla? | **No había caso**: el sobre de la respuesta tenía seis reglas de enlace —ambigüedad, recorte, fan-in alto, cobertura parcial, riesgo y plan de cambio— y ninguna era reintentar lo que falló |
+| ¿Puede una receta del workspace escribir? | **No había receta**: el workspace no tenía ninguna forma de declarar una, así que la pregunta «¿y si el equipo tiene su propio guion?» no tenía respuesta |
+
+Es decir: el producto sabía responder una pregunta, pero una pregunta compuesta
+—que es lo que de verdad se le pide a un analizador de código— había que
+escribirla a mano, cada vez, sin saber qué parte estaba ya pagada.
+
+### Lo que dice ahora
+
+El goal **`recipe`** —el décimo— es lo que se pregunta; el ejecutor
+(`interface::recipes`) es lo que lo calcula. Los goals no cambian: la receta
+los **invoca**, no los reimplementa.
+
+| pieza | qué es | quién la decide |
+|---|---|---|
+| `product/goals.toml` | las **cinco** recetas del producto, compiladas en el binario: `context`, `onboard`, `pre-change`, `post-change` y `review` | el producto |
+| `.cognicode/goals.toml` | las recetas del workspace | el workspace, y **sólo con goals de lectura** |
+| el memo | lo que se puede reutilizar | el ejecutor, con la clave `(goal, args, hash del árbol)` |
+| las fases | el orden | la **fase mínima del goal**, que ya era un hecho publicado |
+| el plan | lo que costaría | el ejecutor, con `plan: true` o `--plan` |
+
+**El hash del árbol es el mismo que decide si el snapshot está fresco.** Un
+fichero con los bytes cambiados bajo un reloj intacto invalida la memo, porque
+la autoridad es el contenido y no la mtime.
+
+**Una receta del workspace que invoque `change` se rechaza entera**, con su
+motivo, no en parte: una receta se publica o no se publica.
+
+**Un paso que falla deja la receta en `partial`**, con el motivo y el enlace
+`retry` —el séptimo caso del sobre—, que lleva los argumentos que el reintento
+necesita.
+
+**Los parámetros viajan en un objeto** (`params`), no como argumentos sueltos:
+el `inputSchema` de un goal es estático y el de una receta no. En la terminal
+el flag lleva texto, así que se lee como el JSON que es: el sobre que imprime
+la terminal y el que publica el cable tienen que ser **el mismo**.
+
+### Las fases: el orden ya era un hecho publicado
+
+La fase mínima de un goal —`discover`, `index`, `link`, `analyze`— ya era un
+dato del registro, publicado desde TASK-84. El ejecutor no la inventa: la lee.
+Los pasos de la misma fase son independientes y **corren a la vez**; los de
+fases distintas, **en orden**. Medido en vivo con la receta `pre-change`: las
+fases fueron `discover` (context), `index` (find) y `analyze` (impact).
+
+### Lo que NO se toca
+
+- **Los nueve goals de TASK-84**: no se recalcula nada. La receta los invoca.
+- **La cláusula de compatibilidad de TASK-83**: `content[0]` sigue llevando el
+  payload byte a byte, y el sobre sigue siendo de un solo dueño
+  (`interface/hateoas.rs`); esta unidad le añade una regla, no un sobre nuevo.
+- **La superficie por defecto**: el goal `recipe` declara la fase `Analyze`, así
+  que el perfil por defecto **no lo anuncia**. Medido: sigue announcing cinco
+  goals y **4.350 bytes** por el cable —el mismo número, byte a byte, que
+  midió TASK-84—, porque esa superficie no cambió.
+- **El maestro `product/tools.json` sigue escrito a mano**: crece con una
+  entrada, y sus campos espejo se copiaron de la captura del runtime.
+
+### El RED anti-vacuitad, medido perturbando el producto
+
+Seis perturbaciones, una por garantía. Cada una se aplicó sobre el fichero, se
+corrío el test, y el fichero se restauró **byte a byte** —comprobado con el
+hash del blob contra `HEAD`—, nunca con `git checkout HEAD -- .`:
+
+| # | Perturbación | Test | Resultado |
+|---|---|---|---|
+| R1 | el memo deja de llevar el hash del árbol | `a_step_runs_again_when_the_tree_changes` | **1 rojo** |
+| R2 | el plan corre la receta en vez de planificarla | `the_plan_says_what_would_run_without_running_it` | **1 rojo** |
+| R3 | un paso que falla no deja la receta en `partial` | `a_failing_step_leaves_the_recipe_partial_with_the_reason` | **1 rojo** |
+| R4 | una receta del workspace puede invocar `change` | `a_workspace_recipe_that_invokes_change_is_refused_with_its_reason` | **1 rojo** |
+| R5 | la terminal publica los parámetros como texto y no como objeto | `the_terminal_publishes_the_parameters_as_an_object_like_the_wire` | **1 rojo** |
+| R6 | los pasos de la misma fase se corren en serie | `the_steps_of_the_same_phase_run_in_parallel` | **1 rojo** (a los 30 s, el plazo del test) |
+
+**Un hallazgo de la medición**: el hash del árbol está en **dos** sitios —la
+clave del memo y la entrada— y quitarlo de **uno solo** no rompe nada: el otro
+lo cubre, y el test sigue en verde. Sólo cuando se quitan los dos, el test se
+pone rojo. La invalidación tiene dos guardas, y eso es una decisión, no un
+accidente: la clave evita que dos árboles distintos compartan fichero, y la
+entrada evita que una entrada de otro árbol se sirva por error.
+
+### Las cifras, y de dónde salen
+
+| Cifra | De dónde sale |
+|---|---|
+| **6.962 tests en verde, 0 en rojo** (5.326 unitarios, 1.628 de integración, 8 doctests; 15 ignorados) | `cargo test --workspace` sobre el árbol de la unidad |
+| **336 checks, 0 fallos** (48 suites) | `bash scripts/ci/run-all-contracts.sh` |
+| `cargo clippy --workspace --all-targets -- -D warnings` → **rc=0**; `cargo fmt --all --check` → limpio | los dos, en el árbol de la unidad |
+| El ratchet de tamaño sigue en pie | `python3 scripts/ci/test_file_size_ratchet.py` → **PASS**: 10 de 811 fuentes por encima de 2000 líneas de producción, ninguna cruzó el límite ni creció |
+| La deuda de CR-06 no crece | `python3 scripts/ci/test_cr06_ratchet.py` → **PASS**: 28 @ `9659d822` → 28, 0 añadidas |
+| El maestro y la captura coinciden | `sync_tool_catalog_with_the_capture.py --check` → «the master is synchronized with the capture», 88 entradas |
+| La superficie por defecto no cambia | el binario de release con las tres features: `tools/list` en el perfil `default` → **5 entradas, 4.350 bytes** por el cable —los mismos de TASK-84— |
+| El perfil `full` publica 88 | el mismo binario: `tools/list` en `full` → **88 entradas**, con `recipe` entre ellas; en `legacy` → **78**; en `full` con `--read-only` → **84**, y `change` no está entre ellas |
+
+### Verificado, en vivo
+
+Con el binario de release, sobre un workspace con un `main.rs`:
+
+- **El plan** (`cognicode recipe --name context --plan`): **2 pasos planeados, 60 ms estimados, 0 ejecutados**; con la receta ya corrida, el plan dice **2 en caché y 0 ms**.
+- **La primera corrida**: 2 pasos computados en 15 ms. **La segunda**: los 2 desde la memo, 0 ms. **Tras un cambio del árbol**: los 2 otra vez computados, 12 ms.
+- **Un paso que falla**: el sobre sale en `partial`, con `failure: {goal: "trace", reason: "…"}` y el enlace `retry` —`tool: "recipe"`, `required_args: {name, params}` con `params` como **objeto**, y el motivo en palabras.
+- **El cable**: el mismo `tools/call recipe` devuelve el mismo `state`, el mismo `failure` y el mismo enlace `retry`, con los mismos valores.
+
+### La unidad anterior y la que sigue
+
+- TASK-84 puso el vocabulario de los goals y los perfiles; esta unidad no lo
+  toca: la receta los invoca, y la fase mínima que TASK-84 publicó es la que
+  aquí decide el orden.
+- La que sigue es **TASK-93** —el harness A/B de agente y los SLOs—, que quedó
+  desbloqueada por TASK-84 y que esta unidad ni bloquea ni desbloquea.
+
+**FUSIONADO.** PR #675 (`d0225b3f`): la unidad. Este recibo y el snapshot operativo viajan en el PR que le sigue.
+
+**Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
