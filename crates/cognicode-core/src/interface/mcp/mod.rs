@@ -14,6 +14,7 @@ pub mod error;
 pub mod file_ops_handlers;
 pub mod handlers;
 pub mod input_contracts;
+pub mod link_trace;
 pub mod output_contracts;
 pub mod parameter_aliases;
 // CU-1.3 — presentadores puros AnalysisOutcome → BuildGraphOutput.

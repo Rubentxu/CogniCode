@@ -136,6 +136,52 @@ def test_a_repeated_offer_is_followed_once() -> None:
     assert len(followed) == 1, f"la misma oferta se siguio {len(followed)} veces"
 
 
+def test_the_server_writes_the_trace_the_counter_reads() -> None:
+    """`COGNICODE_LINK_TRACE` hace que el SERVIDOR escriba la traza: lo que
+    ofrecio y a que se llamo, con `rel`, que un transcript del cliente no
+    conserva. Debe coincidir con lo que el cliente observo y ser contable."""
+    import os
+
+    trace = load("link_trace")
+    harness = load("harness_ab")
+    binary = harness.default_binary()
+    assert binary.exists(), f"missing release binary cognicode-mcp ({binary})"
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / "fixture"
+        trace.build_fixture(project)
+        out = Path(tmp) / "server-trace.jsonl"
+        os.environ["COGNICODE_LINK_TRACE"] = str(out)
+        try:
+            observed = trace.run_session(binary, project, follow=None, session="client")
+        finally:
+            del os.environ["COGNICODE_LINK_TRACE"]
+        written = [json.loads(row) for row in out.read_text(encoding="utf-8").splitlines()]
+        sessions = {row["session"] for row in written}
+        assert len(sessions) == 1, f"una sesion de servidor, no {sessions}"
+        assert [(r["tool"], r["arguments"]) for r in written] == [
+            (c["tool"], c["arguments"]) for c in observed
+        ], "el servidor registro otras llamadas que las que recibio el cliente"
+        assert [r["links"] for r in written] == [c["links"] for c in observed]
+        counts = load("link_follow").follow_counts([written])
+        assert counts["inspect-risk"]["offered"] >= 1, counts
+
+
+def test_without_the_variable_the_server_writes_nothing() -> None:
+    import os
+
+    assert "COGNICODE_LINK_TRACE" not in os.environ
+    trace = load("link_trace")
+    harness = load("harness_ab")
+    binary = harness.default_binary()
+    assert binary.exists(), f"missing release binary cognicode-mcp ({binary})"
+    with tempfile.TemporaryDirectory() as tmp:
+        project = Path(tmp) / "fixture"
+        trace.build_fixture(project)
+        trace.run_session(binary, project, follow=None, session="x")
+        leaked = [p for p in Path(tmp).rglob("*.jsonl")]
+        assert not leaked, f"el servidor escribio trazas sin que se pidieran: {leaked}"
+
+
 def main() -> int:
     module = sys.modules[__name__]
     checks = sorted(
