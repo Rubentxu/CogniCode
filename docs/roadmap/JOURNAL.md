@@ -38685,3 +38685,17 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Fuera del gate, sin medir.** `npm test --prefix apps/explorer-ui`, los contratos Python (`run-all-contracts.sh`) y clippy: NOT_RUN. Rojos previos conservados: `CURRENT.md`, pruebas de §11 por texto de recibos previos y `test_a_branch_checkout_still_names_its_branch`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-148 — una prueba ignorada que descargaba de GitHub se retira
+
+**Origen.** El recibo del gate sobre `2a3fa5e5` (PR #711) dejaba 3 pruebas de integración omitidas: dos de pyright (`lsp_integration_test.rs:246` y `:317`, necesitan el binario) y `lifecycle::tests::test_cogh_install_runs_successfully`. El mismo gate midió 627 mutantes con 0 supervivientes: no había hueco de mutación que atender.
+
+**RED medido.** `cargo nextest run --profile gate -p cognicode-cli --bin cogh --run-ignored only -E 'test(test_cogh_install_runs_successfully)'` → FAIL. La prueba cae al manifiesto DEV-ONLY, descarga `cognicode-0.95.0-x86_64-unknown-linux-gnu.tar.gz` de GitHub (302 y 200 reales) y muere con `SHA256 mismatch`. El motivo de su `#[ignore]` («requires bundle version to match CARGO_PKG_VERSION») era falso, y la prueba usaba la red.
+
+**Cambio.** Se borra la prueba (49 líneas de `lifecycle.rs`). Su cobertura determinista ya existía: `test_clean_home_install` instala desde un release local (`local_release` + `AssetPoint`) y comprueba manifiesto, tracker con la versión, binario extraído y shim; la borrada comprobaba menos.
+
+**GREEN.** `cargo nextest run --profile gate -p cognicode-cli --bin cogh`: 334 run, 334 passed, 0 skipped (antes 1 ignorada). `cargo fmt --all --check` rc=0. Las omitidas del paso de integración pasan de 3 a 2 (las de pyright, que necesitan un binario externo y quedan como decisión aparte). Gate NOT_RUN: el lote lleva 1 de 10.
+
+**Descartado con evidencia.** C23/H24 (`goal-compass.json`) no cabe en un PR (`analysis_service.rs` tiene 4.014 líneas) y su premisa «ningún test compara las vías» está obsoleta: `h24_the_routes_say_the_same.rs` existe.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
