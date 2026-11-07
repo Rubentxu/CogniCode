@@ -170,6 +170,21 @@ def run_generator(
     )
 
 
+def run_generator_ok(root: Path, artifacts: list[str], *, key: str, out_dir: str):
+    """`run_generator` para los tests que NECESITAN el bundle.
+
+    Un generador que falla deja el directorio sin bundle ni clave publica; el
+    test que sigue falla (o, en una negativa, PASA) sin saber por que. Aqui el
+    fallo del generador se declara con su rc, stdout y stderr.
+    """
+    done = run_generator(root, artifacts, key=key, out_dir=out_dir)
+    assert done.returncode == 0, (
+        f"el generador fallo: rc={done.returncode}\n"
+        f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+    return done
+
+
 def _sha256(path: Path) -> str:
     return subprocess.run(
         ["sha256sum", str(path)], capture_output=True, text=True, timeout=60
@@ -345,7 +360,7 @@ def test_the_bundle_verifies_with_the_key_that_ships_with_the_release() -> None:
         artifact.write_text("candidato\n", encoding="utf-8")
         out = root / "out"
 
-        run_generator(root, [str(artifact)], key="probe.key", out_dir=str(out))
+        run_generator_ok(root, [str(artifact)], key="probe.key", out_dir=str(out))
         shipped = out / "probe.pub"
         assert shipped.is_file(), "la clave publica tiene que viajar con la release"
 
@@ -382,7 +397,7 @@ def test_a_bundle_does_not_verify_against_another_key() -> None:
         artifact.write_text("candidato\n", encoding="utf-8")
         out = root / "out"
 
-        run_generator(root, [str(artifact)], key="probe.key", out_dir=str(out))
+        run_generator_ok(root, [str(artifact)], key="probe.key", out_dir=str(out))
         done = _verify_blob(root / "ajena.pub", out / "a.tar.gz.bundle.json", artifact)
         assert done.returncode != 0, (
             "un bundle firmado con una clave verifico con otra. Si esto pasara, "
@@ -409,11 +424,59 @@ def test_a_bundle_does_not_transfer_to_other_bytes() -> None:
         swapped.write_text("contenido distinto\n", encoding="utf-8")
         out = root / "out"
 
-        run_generator(root, [str(artifact)], key="probe.key", out_dir=str(out))
+        run_generator_ok(root, [str(artifact)], key="probe.key", out_dir=str(out))
         done = _verify_blob(out / "probe.pub", out / "a.tar.gz.bundle.json", swapped)
         assert done.returncode != 0, (
             "el bundle de un artefacto verifico contra otro artefacto. Un consumidor "
             f"que solo compruebe 'hay bundle al lado' daria por bueno esto.\n{done.stdout}"
+        )
+
+
+def _with_unusable_tmpdir(check) -> str | None:
+    """Corre `check` con un TMPDIR que el generador no puede usar.
+
+    Devuelve el mensaje del AssertionError, o None si `check` no fallo. Es la
+    forma determinista de provocar un fallo del generador: `mktemp` no puede
+    crear el predicado y el generador sale con rc=1.
+    """
+    saved = os.environ.get("TMPDIR")
+    os.environ["TMPDIR"] = "/nonexistent-tmpdir-for-contract"
+    try:
+        check()
+    except AssertionError as exc:
+        return str(exc)
+    finally:
+        if saved is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = saved
+    return None
+
+
+def test_a_failed_generator_run_names_its_own_cause() -> None:
+    """Un fallo del generador se ve con SU causa, no como una clave ausente."""
+    if _cosign_bin() is None:
+        return
+    message = _with_unusable_tmpdir(test_the_bundle_verifies_with_the_key_that_ships_with_the_release)
+    assert message is not None, "con el generador roto el test del consumidor tiene que fallar"
+    assert "cosign refused to attest" in message, (
+        "el test fallo sin decir por que fallo el generador; la proxima vez que sea "
+        f"intermitente no habra con que atribuirlo.\nmensaje:\n{message}"
+    )
+
+
+def test_a_negative_check_cannot_pass_over_a_failed_generator() -> None:
+    """Sin bundle, `verify-blob` falla solo: la negativa seria verde sin medir nada."""
+    if _cosign_bin() is None:
+        return
+    for negative in (
+        test_a_bundle_does_not_verify_against_another_key,
+        test_a_bundle_does_not_transfer_to_other_bytes,
+    ):
+        message = _with_unusable_tmpdir(negative)
+        assert message is not None, (
+            f"{negative.__name__} paso con un generador que no escribio ningun bundle: "
+            "esa negativa no mide la verificacion, mide la ausencia del fichero."
         )
 
 

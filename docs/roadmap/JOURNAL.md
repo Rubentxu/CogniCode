@@ -38785,3 +38785,17 @@ Gate NOT_RUN: el lote lleva 8 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 1
 **Verificación.** `test_roadmap_coherence.py`: 29 pasan, 0 fallan. `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts155.log`).
 
 Gate NOT_RUN: el lote lleva 9 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153, 154, 155).
+
+## 2026-11-07 — Contrato de provenance: el fallo del generador se declara con su causa (TASK-156)
+
+**Medido.** `python3 scripts/run_contract_tests.py scripts/ci/test_provenance_generation.py` sobre `main` limpio (`d38ae0ae`, CET, cosign fijado 3.1.3): 30 ejecuciones secuenciales y 24 en paralelo (TZ UTC y Pacific/Auckland alternas), 0 fallos. El fallo de TASK-154 (`probe.pub` ausente, línea 350) NO se reprodujo: la causa original no está demostrada y no se afirma ninguna. Lo demostrado: el test descartaba rc/stdout/stderr de `run_generator`, así que cualquier fallo del generador salía como «la clave pública tiene que viajar» sin causa; con `TMPDIR` inutilizable el síntoma es idéntico y los dos tests negativos (`…another_key`, `…other_bytes`) pasaban en verde sin medir nada, porque sin bundle `verify-blob` falla solo.
+
+**Alternativas.** Tolerar que el hash declarado sea el padre de `HEAD`: descartada, este test no lee `CURRENT.md`. Fijar orden o fuente de datos: descartada, no interviene ningún orden. Aislar `TMPDIR`: descartada, taparía un fallo de entorno sin haberlo demostrado. Elegida: declarar el fallo del generador con su salida.
+
+**Cambio.** `run_generator_ok` exige rc=0 y adjunta rc/stdout/stderr; lo usan los tres tests que necesitan el bundle.
+
+**RED/GREEN.** Dos tests nuevos con `TMPDIR` inutilizable (`test_a_failed_generator_run_names_its_own_cause`, `test_a_negative_check_cannot_pass_over_a_failed_generator`): antes 2 fallan, después 15 de 15 pasan. 30 ejecuciones tras el arreglo: 0 fallos. `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL`.
+
+**Límite.** Si el fallo vuelve, ahora dirá por qué; hasta entonces sigue sin explicarse.
+
+**Gate (lote 10/10 desde `1e1a013a`: TASK-148, 149, 150, 151, 152, 146, 153, 154, 155, 156).** `GATE_BASE=1e1a013a bash scripts/test-gate.sh` `rc=0` sobre `d38ae0ae`: unitarios 4493 pasan, integración 6679 pasan, radio de 9 crates. Mutantes: SKIP declarado por el propio gate (el lote tocó `cognicode-cli`, `cognicode-core`, `cognicode-graph-wasm`, ninguno mutable por coste; el calendario de `cognicode-graph-algos` marca «waits»). La mutación NO se midió en este lote. Observación sin resolver: el gate informa «85 fusiones desde el marcador, cada 50» y aun así «waits»; queda para revisar.
