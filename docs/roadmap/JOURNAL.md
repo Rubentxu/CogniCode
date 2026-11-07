@@ -38861,3 +38861,15 @@ Gate NOT_RUN: el lote lleva 4 de 10 desde `ff670d40` (TASK-157, 159, 160, 161).
 **Verificación.** `test_roadmap_coherence.py` verde (deriva de `CURRENT.md` 1 → 2 al fusionar, sin regenerar). `bash scripts/ci/run-all-contracts.sh` `rc=0`.
 
 Gate NOT_RUN: el lote lleva 5 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162).
+
+## 2026-11-07 — Shell: toda llamada a curl lleva plazo (TASK-163)
+
+**Medido.** Sin tarea ejecutable (solo TASK-94 y TASK-158), se midió la deuda de la regla dura 7 fuera de Python: `curl`/`wget` sin `--max-time` en `git ls-files '*.sh' justfile`, por línea lógica (continuaciones unidas, comentarios fuera). La primera cuenta dio 19; el contrato corregido, 21: el escaneo no veía `@curl` de las recetas `just` (`justfile:259`, `:271`). 7 son remotos (`install.sh:54,73,81`, que se entrega a los usuarios; `scripts/ci/install-cosign.sh:99`; `scripts/e88-entry-gates.sh:15,16,30`) y 14 contra localhost.
+
+**Cambio.** Contrato nuevo `scripts/ci/test_shell_curl_deadlines.py`. Los 21 llevan `--connect-timeout` y `--max-time` (30 s las consultas; 60 s las descargas pequeñas y las llamadas del explorer; 300 s los binarios y las recetas `just` de análisis). Los valores son estimaciones, no mediciones.
+
+**RED/GREEN.** Sobre HEAD el escaneo marca 21; después, 0. Un caso con `@curl` fija el hueco que la primera cuenta tuvo.
+
+**Verificación.** Contratos de consumidor del instalador y `test_roadmap_coherence.py` verdes; `bash scripts/ci/run-all-contracts.sh` `rc=0`.
+
+Gate NOT_RUN: el lote lleva 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162, 163).

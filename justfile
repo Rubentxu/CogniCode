@@ -256,37 +256,37 @@ start-server:
 
 # Test API health endpoint
 api-health:
-    @curl -s http://localhost:{{ PORT }}/health
+    @curl -s --connect-timeout 5 --max-time 300 http://localhost:{{ PORT }}/health
 
 # Register a project via API
 api-register project_path project_name="":
     @echo "📋 Registering project..."
     @test -n "{{ project_name }}" && NAME="{{ project_name }}" || NAME="$$(basename {{ project_path }})"
-    curl -s -X POST http://localhost:{{ PORT }}/api/projects/register \
+    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/projects/register \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"$$NAME\", \"path\": \"{{ project_path }}\"}" | python3 -m json.tool
 
 # List projects via API
 api-projects:
-    @curl -s http://localhost:{{ PORT }}/api/projects | python3 -m json.tool
+    @curl -s --connect-timeout 5 --max-time 300 http://localhost:{{ PORT }}/api/projects | python3 -m json.tool
 
 # Run analysis via API
 api-analyze project_path:
     @echo "🔍 Running analysis..."
-    curl -s -X POST http://localhost:{{ PORT }}/api/analysis \
+    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/analysis \
         -H "Content-Type: application/json" \
         -d "{\"project_path\": \"{{ project_path }}\", \"quick\": true, \"changed_only\": true}" | python3 -m json.tool
 
 # Validate project path
 api-validate project_path:
-    curl -s -X POST http://localhost:{{ PORT }}/api/validate-path \
+    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/validate-path \
         -H "Content-Type: application/json" \
         -d "{\"project_path\": \"{{ project_path }}\"}" | python3 -m json.tool
 
 # Get project history
 api-history project_path:
     @ENCODED=$$(echo -n "{{ project_path }}" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))") && \
-     curl -s "http://localhost:{{ PORT }}/api/projects/$$ENCODED/history" | python3 -m json.tool
+     curl -s --connect-timeout 5 --max-time 300 "http://localhost:{{ PORT }}/api/projects/$$ENCODED/history" | python3 -m json.tool
 
 # ─── Docs ──────────────────────────────────────────────────────────────────────
 

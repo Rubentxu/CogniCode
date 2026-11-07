@@ -16,10 +16,10 @@ fi
 "$SCRIPT_DIR/real_api_stop.sh" "$PORT" >/dev/null
 "$SCRIPT_DIR/real_api_up.sh" "$PORT" >/dev/null
 
-curl -fsS "http://127.0.0.1:${PORT}/health" | tee "$TMP_DIR/health.json"
+curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/health" | tee "$TMP_DIR/health.json"
 echo
 
-curl -fsS -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
+curl -fsS --connect-timeout 5 --max-time 60 -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
   -H "Content-Type: application/json" \
   -d "{\"root_path\":\"$WORKSPACE\"}" \
   > "$TMP_DIR/workspace.json"
@@ -27,7 +27,7 @@ curl -fsS -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
 WORKSPACE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$TMP_DIR/workspace.json")"
 echo "Workspace: $WORKSPACE_ID"
 
-if ! curl -fsS "http://127.0.0.1:${PORT}/api/workspaces/${WORKSPACE_ID}/landing" > "$TMP_DIR/landing.json"; then
+if ! curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/api/workspaces/${WORKSPACE_ID}/landing" > "$TMP_DIR/landing.json"; then
   echo "❌ Landing request failed. Last API log lines:" >&2
   tail -n 40 "$TMP_DIR/api.log" >&2 || true
   exit 1
