@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `f05bbab50a6099aebc8e464a010ccf02a44ead10` (la
+> **Snapshot**: 2026-11-07, sobre `e42ea35fe86fa773f44a13e5167b048285f13a8e` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -305,26 +305,28 @@
 > sirve de la memo en 0 ms, un cambio del árbol los vuelve a computar, y el
 > sobre que imprime la terminal y el que publica el cable son **idénticos** —
 > con `params` como **objeto** en los dos, que es donde se ve que las dos
-> superficies leen lo mismo;
+> superficies leen lo mismo; y el harness de medición ya sabe contar qué
+> enlaces de `_links` se siguen —un contador puro sobre una traza— y producirla
+> desde una sesión real de `cognicode-mcp` encadenada, con una política de
+> seguimiento declarada: mide el contrato de cable, no a un agente;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`d0225b3f` → `f05bbab50a6099aebc8e464a010ccf02a44ead10`)
+## Qué cambió desde el snapshot anterior (`f05bbab5` → `e42ea35fe86fa773f44a13e5167b048285f13a8e`)
 
-Entre una punta y otra entraron **39 commits** (`git rev-list --count d0225b3f66a8ee6c0dfe3c2b254dd73e62efa4cc..f05bbab50a6099aebc8e464a010ccf02a44ead10`).
+Entre una punta y otra entraron **5 commits** (`git rev-list --count f05bbab50a6099aebc8e464a010ccf02a44ead10..e42ea35fe86fa773f44a13e5167b048285f13a8e`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| `find` encuentra los `enum`, `trait` y `union` de Rust, y declara los tipos que el índice no lee | `d07c4a25` (TASK-143), `a41f97d9` (TASK-145) | Dos defectos de cobertura del índice: lo que no se lee ya se declara en vez de callarse. |
-| Un tipo por forma de payload y retirada de la feature `rig` sin build | `c2db47c3` (TASK-81), `8b98a5da` (TASK-125) | Menos copias en el sandbox y una feature muerta menos. |
-| Harness A/B con una llamada por proceso y `validate-paths` sin morir sin directorio de specs | `7f6a56b9` (TASK-93), `87398989` (TASK-144) | El harness mide un proceso por llamada; el script ya no cae con un árbol sin specs. |
-| Fusión de los contratos Python en menos ficheros | `26332c33`…`dea75b7d`, 26 commits (TASK-74) | Los contratos duplicados se funden en uno por tema; la suite de contratos conserva sus casos. |
-| Un contrato de procedencia sin pin propio de cosign y un `rustfmt` aplicado | `5173c478` (TASK-70), `2a3fa5e5` (TASK-147) | Higiene medida por su contrato; el gate del lote de 25 tareas dio rc=0 sobre `2a3fa5e5` (`1e1a013a`). |
-| Una prueba ignorada que descargaba de GitHub, retirada; el contrato de §11 distingue citar de afirmar un cierre; un perfil que cargo ignoraba, retirado | `803b149a` (TASK-148), `d7564395` (TASK-149), `f05bbab5` (TASK-150) | Cada corrección lleva su test que fallaba antes y pasa después; clippy `rc=0` y `npm test` 944 tests `rc=0`. |
+| El snapshot se regenera sobre la punta | `416ad5fc` (TASK-151) | El ratchet de `test_roadmap_coherence.py` pasó de 2 rojos a 29 verdes, y se cerró como deriva de ritmo, no como preexistente. |
+| Dos pruebas de pyright que nunca corrían, retiradas | `34afa837` (TASK-152) | Un `#[ignore]` que no corre afirma una cobertura que no existe; `definition`/`references` vía pyright quedan declarados como no verificados. |
+| El conjunto de assets del release-candidate se prueba con fixtures | `79fe4aa0` (TASK-146) | El contrato no contenía ningún `test_*` y el runner lo excluía; ahora 34 casos pasan y `run-all-contracts.sh` ya no tiene exclusiones. |
+| Contador de enlaces seguidos | `565fdd12` (TASK-153) | Módulo puro `scripts/measure/link_follow.py`; 13 casos y una mutación que sobrevivió y se mató. |
+| Productor de trazas reales de enlaces | `e42ea35f` (TASK-154) | Una sesión `cognicode-mcp` real ofrece `inspect-risk` tras `build_graph` → `analyze_impact`; los goals del perfil `default` no ofrecieron enlaces en las llamadas probadas. |
 
 ## Release: la última publicada es la v0.101.30
 
