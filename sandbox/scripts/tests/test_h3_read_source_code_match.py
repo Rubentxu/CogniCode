@@ -41,6 +41,7 @@ def _latest_run() -> Path:
     out = subprocess.check_output(
         ["bash", "-c", "ls -td sandbox/results-runs/*/ | head -1"],
         cwd=REPO,
+        timeout=60,
     ).decode().strip()
     return REPO / out
 

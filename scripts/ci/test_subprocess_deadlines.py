@@ -21,11 +21,11 @@ from pathlib import Path
 
 CI_DIR = Path(__file__).resolve().parent
 ROOT = CI_DIR.parents[1]
+# Raices que el contrato recorre, de forma recursiva. Una raiz que no existe
+# falla: un directorio renombrado no puede dejar el contrato vacio sin decirlo.
 SCANNED = (
-    CI_DIR,
-    ROOT / "scripts" / "measure",
     ROOT / "scripts",
-    ROOT / "scripts" / "product",
+    ROOT / "sandbox" / "scripts",
 )
 CALLS = {"run", "check_output", "check_call", "call"}
 
@@ -55,13 +55,42 @@ def test_the_scan_sees_a_call_without_a_deadline() -> None:
     assert found == [2], f"el escaneo debe marcar solo la linea 2, marco {found}"
 
 
+def scanned_files() -> list[Path]:
+    missing = [str(d.relative_to(ROOT)) for d in SCANNED if not d.is_dir()]
+    assert not missing, f"directorios declarados que no existen: {missing}"
+    return sorted(path for directory in SCANNED for path in directory.rglob("*.py"))
+
+
+def test_a_declared_directory_that_does_not_exist_fails() -> None:
+    original = SCANNED
+    globals()["SCANNED"] = original + (ROOT / "scripts" / "no_such_dir",)
+    try:
+        try:
+            scanned_files()
+        except AssertionError as exc:
+            assert "no_such_dir" in str(exc), exc
+        else:
+            raise AssertionError("un directorio inexistente no hizo fallar el contrato")
+    finally:
+        globals()["SCANNED"] = original
+
+
+def test_the_scan_reaches_nested_and_sandbox_scripts() -> None:
+    names = {p.relative_to(ROOT).as_posix() for p in scanned_files()}
+    for needed in (
+        "scripts/ci/no_pytest_env/sitecustomize.py",
+        "scripts/mcp/mcp_smoke_all.py",
+        "scripts/measure/harness_ab.py",
+        "scripts/product/test_profiles.py",
+        "sandbox/scripts/tests/test_h2_max_results_propagation.py",
+    ):
+        assert needed in names, f"{needed} no se recorre"
+
+
 def test_every_script_subprocess_call_has_a_deadline() -> None:
-    files = sorted(path for directory in SCANNED for path in directory.glob("*.py"))
-    for needed in ("measure", "product", "scripts"):
-        assert any(p.parent.name == needed for p in files), f"{needed} no se recorre"
     offenders = [
         f"{path.relative_to(ROOT)}:{line}"
-        for path in files
+        for path in scanned_files()
         for line in calls_without_deadline(path.read_text(encoding="utf-8"), str(path))
     ]
     assert not offenders, (
