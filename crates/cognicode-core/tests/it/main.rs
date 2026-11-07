@@ -71,6 +71,7 @@ mod findings_axiom_import_e2e;
 mod findings_canonical_grounding_e2e;
 mod findings_dataflow_e2e;
 mod findings_graph_e2e;
+mod goals_and_mcp_do_not_import_cli;
 mod graph_index_answers_the_same_way_on_every_disk;
 mod graph_walk_stays_inside_the_root;
 mod h01_content_identity_contract;

@@ -14,6 +14,7 @@ pub mod hateoas;
 pub use crate::domain::intent;
 pub mod lsp;
 pub mod mcp;
+pub mod project_graph;
 // TASK-85 — las recetas: preguntas compuestas, con su memo y su presupuesto.
 pub mod recipes;
 pub use crate::domain::symbol_identity;

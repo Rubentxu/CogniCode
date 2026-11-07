@@ -29,6 +29,10 @@ pub mod consumer_analysis;
 pub mod commands;
 pub mod dto;
 pub mod error;
+#[cfg(feature = "evidence-cli-ladybug")]
+pub mod evidence_backend;
+#[cfg(feature = "evidence-cli-ladybug")]
+pub mod evidence_rows;
 // e69 WU1 — EvidenceBundle data types (application-layer; derived; not canonical).
 // Gated by `evidence-kernel` because it consumes e66/e68 gated types.
 #[cfg(feature = "evidence-kernel")]

@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 
 use crate::application::commands::RenameSymbolCommand;
 use crate::application::services::refactor_service::RefactorService;
-use crate::interface::cli::project_graph::service_with_graph;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `change` goal
