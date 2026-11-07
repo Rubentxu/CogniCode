@@ -38751,3 +38751,13 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **RED/GREEN.** Antes: 24 pasan, 10 fallan (el helper no existía). Después: `python3 scripts/run_contract_tests.py scripts/ci/test_release_path_contracts.py` 34 pasan, 0 fallan. Mutación manual del helper, cada una detectada y restaurada (34/34 después): sha256 del artefacto (2 fallos), `SHA256SUMS` frente a inventario (1), `source_commit` (1), token de plataforma (1). `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts_146.log`). El AC que pedía `pytest -n 2` no era ejecutable (pytest no está instalado); se sustituyó por esta corrida.
 
 Gate NOT_RUN: el lote lleva 6 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146).
+
+## 2026-11-07 — Contador de seguimiento de enlaces en scripts/measure (TASK-153, AC1 de TASK-94)
+
+**Medido.** TASK-94 estaba inviable en un PR: `scripts/measure` no tenía contador, el harness corre un proceso por llamada con servidor frío (no hay sesión en la que observar qué enlace sigue un agente) y `McpClient.call` descartaba los `_links` de la respuesta. AC2 (retirar los de tasa cero tras 4 semanas) exige datos que no existen.
+
+**Decisión.** Entregar solo el contador, como módulo puro sobre una traza JSONL que aporta quien corre un agente (opt-in): `scripts/measure/link_follow.py`. Descartado: telemetría en el core (choca con AGENTS.md, el core corre sin collector) y un servidor/daemon de métricas (acoplamiento hipotético). Un enlace cuenta como seguido si una llamada POSTERIOR de la misma sesión usa su `tool` con todos sus `required_args`; cada oferta cuenta una vez. Un `rel` nunca ofrecido es «sin datos», no cero; un cero solo es «candidato a retirar» con `MIN_OFFERS = 20` ofertas. El informe señala, no retira. `McpClient.call` devuelve además `links` (campo aditivo; `result`, `state`, `is_error`, `bytes`, `elapsed_ms` no cambian).
+
+**RED/GREEN.** `scripts/ci/test_link_follow_contracts.py`: antes 0 pasan, 12 fallan; después 13 pasan, 0 fallan. Mutaciones: ventana de búsqueda que incluye la propia llamada (sobrevivió; se añadió la prueba de «una llamada que se ofrece a sí misma» y ahora la mata), mínimo de ofertas (1 fallo), «sin datos» (4), comparación de `required_args` (1). `test_script_drift_and_recall.py` (harness) 33/33; `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (`/tmp/contracts_153.log`).
+
+**Limitación conocida.** No hay productor de trazas en el árbol: el contador está verificado con trazas sintéticas con la forma de `Link` (`rel`, `tool`, `required_args`), no con una corrida de agente real. AC2 de TASK-94 sigue abierto y solo se evalúa con datos reales. Gate NOT_RUN: el lote lleva 7 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153).

@@ -318,6 +318,7 @@ class McpClient:
             "result": payload if isinstance(payload, dict) else {},
             "state": state or "unknown",
             "is_error": bool(result.get("isError")) or "error" in message,
+            "links": (result.get("structuredContent") or {}).get("_links") or [],
             "bytes": size,
             "elapsed_ms": elapsed_ms,
         }
