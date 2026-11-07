@@ -350,6 +350,11 @@ ROWS_PATH = MEASUREMENTS / "task-93" / "calls.csv"
 TIME = "/usr/bin/time"
 
 
+# Plazos de las llamadas que no son la medición misma (regla 7).
+HELPER_DEADLINE_S = 60
+OUTER_DEADLINE_MARGIN_S = 60
+
+
 def parse_time_report(text: str) -> dict[str, Any]:
     """Lo que `/usr/bin/time -v` dice del proceso medido."""
     seconds = rss = exit_code = None
@@ -395,10 +400,24 @@ def isolated_run(argv: list[str], *, timeout_s: float, memory_max: str) -> dict[
             "nice", "-n", "19", "ionice", "-c3",
             *argv,
         ]
-        done = subprocess.run(command, capture_output=True, text=True)
+        try:
+            # `timeout` ya corta el proceso medido; este plazo exterior sólo
+            # cubre que `time`, `systemd-run` o `timeout` mismos se cuelguen.
+            done = subprocess.run(
+                command, capture_output=True, text=True,
+                timeout=timeout_s + OUTER_DEADLINE_MARGIN_S,
+            )
+        except subprocess.TimeoutExpired:
+            done = subprocess.CompletedProcess(command, 124, "", "")
         measured = parse_time_report(Path(report.name).read_text())
     # Lo que el plazo dejó vivo (el servidor hijo de un worker cortado) muere con el scope.
-    subprocess.run(["systemctl", "--user", "stop", f"{unit}.scope"], capture_output=True)
+    try:
+        subprocess.run(
+            ["systemctl", "--user", "stop", f"{unit}.scope"],
+            capture_output=True, timeout=HELPER_DEADLINE_S,
+        )
+    except subprocess.TimeoutExpired:
+        pass  # el scope se limpia solo cuando el último proceso sale
     exit_code = measured["exit_code"] if measured["exit_code"] is not None else done.returncode
     payload: dict[str, Any] = {}
     for line in reversed(done.stdout.splitlines()):
@@ -682,12 +701,19 @@ def aggregate(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, A
 
 def _git(*args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        timeout=HELPER_DEADLINE_S,
     ).stdout.strip()
 
 
 def binary_version(binary: Path) -> str:
-    output = subprocess.run([str(binary), "--version"], capture_output=True, text=True)
+    try:
+        output = subprocess.run(
+            [str(binary), "--version"], capture_output=True, text=True,
+            timeout=HELPER_DEADLINE_S,
+        )
+    except subprocess.TimeoutExpired:
+        return ""
     return output.stdout.strip().split()[-1] if output.returncode == 0 and output.stdout else ""
 
 
@@ -722,12 +748,17 @@ def publish(arms: dict[str, Any], binary: Path, config: dict[str, Any]) -> Path:
 
 
 def default_binary() -> Path:
-    target = subprocess.run(
-        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
+    try:
+        target = subprocess.run(
+            ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+            timeout=HELPER_DEADLINE_S,
+        )
+        ok = target.returncode == 0
+    except subprocess.TimeoutExpired:
+        ok = False
     base = (Path(json.loads(target.stdout)["target_directory"])
-            if target.returncode == 0 else REPO_ROOT / "target")
+            if ok else REPO_ROOT / "target")
     return base / "release" / "cognicode-mcp"
 
 
