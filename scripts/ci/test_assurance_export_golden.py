@@ -214,13 +214,13 @@ def cargo_target_dir() -> Path | None:
     metadata` es la forma de preguntarle sin reimplementar su resolución de
     configuración.
 
-    NO confundir con `test_cargo_iso.py::cargo_metadata_target_dir`, que se
+    NO confundir con `test_cargo_environment_contracts.py::cargo_metadata_target_dir`, que se
     llama casi igual. La de ahí borra `CARGO_TARGET_DIR` del entorno a
     propósito: su pregunta es "qué hace el *wrapper* con este entorno", y
     para eso necesita controlarla. La de aquí es la pregunta contraria —
     "dónde escribe cargo *para este proceso*" — y por eso tiene que honrar
     la variable que la lane fija. Importar una en la otra rompería una de las
-    dos en silencio: la de `test_cargo_iso` perdería exactamente el caso que
+    dos en silencio: la de `test_cargo_environment_contracts` perdería exactamente el caso que
     existe para cubrir, y esta volvería a ignorar el directorio aislado del
     gate. MEDIDO: 5 llamadas ≈ 0,31 s en total, así que el subproceso no
     necesita memoización y la función se queda sin estado.
