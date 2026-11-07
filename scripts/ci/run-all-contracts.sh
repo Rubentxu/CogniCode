@@ -92,6 +92,11 @@ if [ "$JOBS" -gt 8 ]; then
 fi
 echo "=== contratos: ${JOBS} en paralelo (CONTRACTS_JOBS=1 para el modo serie) ==="
 
+# Un fallo intermitente solo se diagnostica si el primero deja su evidencia:
+# con al menos un contrato rojo, el runner escribe aqui rc/stdout/stderr
+# completos y las condiciones de la maquina (carga, tempdir, espacio libre).
+export CONTRACTS_FAILURE_REPORT="${CONTRACTS_FAILURE_REPORT:-${XDG_STATE_HOME:-$HOME/.local/state}/cognicode/contract-failure.txt}"
+
 exec python3 scripts/run_contract_tests.py --jobs "$JOBS" \
     scripts/product/test_*.py \
     "${CI_CONTRACTS[@]}"

@@ -38931,3 +38931,13 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** `cargo test -p cognicode-core --lib link_trace` 4/4; `test_link_trace_contracts.py` 9/9; clippy `-D warnings` y `cargo fmt --check` limpios. Implementación y tests se escribieron juntos: no hay RED medido.
 
 **Pendiente.** TASK-94 sigue abierta: AC2 necesita 4 semanas de trazas de agente real. Para generarlas, arrancar el cliente con `COGNICODE_LINK_TRACE` apuntando a un fichero y contar con `link_follow.py`. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.
+
+## 2026-11-07 — TASK-158 (parcial): el primer fallo de contrato deja su evidencia en disco
+
+**Medido.** TASK-158 registra 0 fallos en 54 ejecuciones (30 en serie, 24 en paralelo): repetir el estrés no aporta nada. Lo que faltaba para AC1 no era reproducir sino conservar: `run-all-contracts.sh` imprime la salida del contrato roto, pero no las condiciones de la máquina (carga, tempdir, espacio libre) y el log se pierde con el terminal.
+
+**Cambio.** `run_contract_tests.py`: con `CONTRACTS_FAILURE_REPORT=<fichero>` y al menos un contrato rojo, la ruta paralela escribe rc/stdout/stderr completos de cada contrato fallido más `loadavg`, `cpu_count`, `TMPDIR`, `tempdir` y `free_bytes` (`build_failure_report` puro, `write_failure_report` que nunca hace fallar el run). `run-all-contracts.sh` fija por defecto `$XDG_STATE_HOME/cognicode/contract-failure.txt`. Sin la variable no se escribe nada; un run verde no deja informe.
+
+**Verificación.** RED medido: 4 de 5 comprobaciones fallaban antes (`FileNotFoundError` del informe, `build_failure_report` inexistente). GREEN: `test_contract_failure_report.py` 5/5. Suite entera `bash scripts/ci/run-all-contracts.sh` rc=0, 0 FAIL.
+
+**Pendiente.** TASK-158 sigue sin causa: AC1-AC3 esperan al próximo fallo, que ahora trae su informe. TASK-94: el binario instalado 0.102.1 no contiene la traza (PR #732 es posterior y ningún tag la incluye), así que `COGNICODE_LINK_TRACE` en la configuración MCP no recoge nada hasta publicar v0.102.2 o apuntar a un build de main. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.

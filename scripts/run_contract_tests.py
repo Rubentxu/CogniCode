@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import subprocess
+import tempfile
 import sys
 import traceback
 from pathlib import Path
@@ -189,6 +191,57 @@ def parse_argv(argv: list[str]) -> tuple[int, list[str]]:
 SUITE_DEADLINE_S = 900
 
 
+def environment_snapshot() -> dict[str, object]:
+    """Las condiciones de la maquina que un fallo intermitente necesita."""
+    tempdir = tempfile.gettempdir()
+    try:
+        free = shutil.disk_usage(tempdir).free
+    except OSError:
+        free = -1
+    try:
+        load = " ".join(f"{v:.2f}" for v in os.getloadavg())
+    except OSError:
+        load = "unavailable"
+    return {
+        "loadavg": load,
+        "cpu_count": os.cpu_count(),
+        "TMPDIR": os.environ.get("TMPDIR", "(unset)"),
+        "tempdir": tempdir,
+        "free_bytes": free,
+    }
+
+
+def build_failure_report(
+    failures: list[tuple[str, subprocess.CompletedProcess[str]]],
+    environment: dict[str, object],
+) -> str:
+    """Texto del informe: por contrato que fallo, rc/stdout/stderr completos."""
+    parts: list[str] = []
+    for name, done in failures:
+        parts.append(f"--- {name} rc={done.returncode} ---")
+        parts.append("stdout:\n" + done.stdout)
+        parts.append("stderr:\n" + done.stderr)
+    parts.append("--- environment ---")
+    parts.extend(f"{key}: {value}" for key, value in environment.items())
+    return "\n".join(parts) + "\n"
+
+
+def write_failure_report(
+    failures: list[tuple[str, subprocess.CompletedProcess[str]]],
+) -> None:
+    """Escribe el informe si `CONTRACTS_FAILURE_REPORT` lo pide. Nunca falla el run."""
+    target = os.environ.get("CONTRACTS_FAILURE_REPORT")
+    if not target or not failures:
+        return
+    try:
+        path = Path(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(build_failure_report(failures, environment_snapshot()), encoding="utf-8")
+        print(f"  informe de fallo: {path}", file=sys.stderr)
+    except OSError as exc:
+        print(f"  no se pudo escribir el informe de fallo: {exc}", file=sys.stderr)
+
+
 def run_files_parallel(jobs: int, files: list[str]) -> int:
     """Un proceso por contrato, hasta `jobs` a la vez.
 
@@ -227,6 +280,7 @@ def run_files_parallel(jobs: int, files: list[str]) -> int:
             results[raw] = done
 
     failed = 0
+    failures: list[tuple[str, subprocess.CompletedProcess[str]]] = []
     for raw in files:
         done = results[raw]
         print(done.stdout, end="")
@@ -235,6 +289,8 @@ def run_files_parallel(jobs: int, files: list[str]) -> int:
         if done.returncode != 0:
             print(f"  !! {Path(raw).name} salió con {done.returncode}", file=sys.stderr)
             failed += 1
+            failures.append((Path(raw).name, done))
+    write_failure_report(failures)
     return 1 if failed else 0
 
 
