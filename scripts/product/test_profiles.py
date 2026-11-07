@@ -21,6 +21,7 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
         capture_output=True,
+        timeout=120,
     )
 
 

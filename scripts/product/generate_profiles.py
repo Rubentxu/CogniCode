@@ -309,7 +309,8 @@ def main() -> int:
 
         head_sha = (
             subprocess.check_output(
-                ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+                ["git", "-C", str(root), "rev-parse", "HEAD"], text=True,
+                timeout=120,
             ).strip()
             if (args.source_commit is None)
             else args.source_commit

@@ -50,6 +50,7 @@ def _list_tags() -> list[str]:
         capture_output=True,
         text=True,
         check=False,
+        timeout=120,
     )
     if result.returncode != 0:
         return []
@@ -70,6 +71,7 @@ def cargo_metadata() -> dict:
             capture_output=True,
             text=True,
             check=False,
+            timeout=120,
         )
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
         raise AssertionError(
@@ -254,13 +256,18 @@ def test_security_policy_supported_versions_are_real() -> None:
     if not known:
         # Shallow clone with no tag refspec: the local repo cannot answer
         # whether a version was released. Ask the remote before giving up.
-        remote = subprocess.run(
-            ["git", "ls-remote", "--tags", "origin"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            remote = subprocess.run(
+                ["git", "ls-remote", "--tags", "origin"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            # Un remoto que no contesta a tiempo es un remoto sin respuesta.
+            remote = subprocess.CompletedProcess([], 1, "", "")
         if remote.returncode == 0 and remote.stdout.strip():
             known = {
                 line.rsplit("refs/tags/", 1)[-1].removesuffix("^{}").lstrip("v")

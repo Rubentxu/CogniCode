@@ -98,7 +98,7 @@ def package_dir_of(package: str, manifest_path: Path | None) -> Path:
     cmd = ["cargo", "metadata", "--no-deps", "--format-version", "1"]
     if manifest_path is not None:
         cmd += ["--manifest-path", str(manifest_path)]
-    proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         raise MeasurementError(f"cargo metadata failed: {proc.stderr.strip()}")
 
@@ -236,7 +236,7 @@ def read_selection(args: argparse.Namespace, package_dir: Path) -> list[dict]:
             args.symbol,
             str(package_dir),
         ]
-        proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+        proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise MeasurementError(
                 f"the product could not answer the impact of {args.symbol!r}: "
@@ -298,7 +298,7 @@ def run_suite(args: argparse.Namespace, package: str) -> set[str]:
     cmd = runner_command(args) + ["-p", package, "--no-fail-fast", "--color", "never"]
     if args.runner_args:
         cmd += args.runner_args
-    proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=120)
     if "could not compile" in proc.stderr or "error[E" in proc.stderr:
         raise MeasurementError(f"the suite did not build: {proc.stderr.strip()[-800:]}")
     lines = proc.stdout.splitlines() + proc.stderr.splitlines()
@@ -420,7 +420,8 @@ def compare(
 
 def head_sha() -> str:
     proc = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True,
+        timeout=120,
     )
     return proc.stdout.strip() if proc.returncode == 0 else "unknown"
 
@@ -437,6 +438,7 @@ def tree_is_dirty() -> bool:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     return bool(proc.stdout.strip())
 

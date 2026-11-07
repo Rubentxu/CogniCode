@@ -185,6 +185,10 @@ def parse_argv(argv: list[str]) -> tuple[int, list[str]]:
     return jobs, files
 
 
+# Plazo de un contrato: la red de seguridad del runner, no una medicion (regla 7).
+SUITE_DEADLINE_S = 900
+
+
 def run_files_parallel(jobs: int, files: list[str]) -> int:
     """Un proceso por contrato, hasta `jobs` a la vez.
 
@@ -204,12 +208,18 @@ def run_files_parallel(jobs: int, files: list[str]) -> int:
     results: dict[str, subprocess.CompletedProcess[str]] = {}
 
     def _run(raw: str) -> tuple[str, subprocess.CompletedProcess[str]]:
-        done = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), raw],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            done = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), raw],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=SUITE_DEADLINE_S,
+            )
+        except subprocess.TimeoutExpired:
+            done = subprocess.CompletedProcess(
+                [raw], 1, "", f"{Path(raw).name}: no termino en {SUITE_DEADLINE_S} s\n"
+            )
         return raw, done
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
