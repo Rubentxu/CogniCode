@@ -266,7 +266,7 @@ pub fn wire_canonical_control_query() -> ControlQueryService {
 /// that cannot be read are skipped; the query fail-closed status
 /// handles reduced coverage.
 #[deprecated(
-    since = "0.102.0",
+    since = "0.102.1",
     note = "usa read_from_source_root: la identidad de lo que se leyó viaja con la lectura"
 )]
 pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
