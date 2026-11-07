@@ -38631,3 +38631,22 @@ Punteros: el comentario de `scripts/measure/harness_ab.py` que citaba el contrat
 Sin compilar, sin suites; no se lanzó el gate. Base: 33 comprobaciones en verde (13 del destino + 20 del harness). Mutaciones del sujeto (pruebas fallidas nuevo / destino / harness): `memory_max` renombrado en `scripts/measure/harness.toml` 1/0/1; primera `def` renombrada en `harness_ab.py` 4/0/4; primera sección de `slo-budget.toml` renombrada 4/0/4. Ningún control 0/0/0. Incidente propio: una primera pasada dejó `harness.toml` mutado (el script de mutación murió por SIGPIPE al encadenar `head -0` antes de restaurar), lo que contaminó las cifras de las otras dos; se restauró desde `HEAD`, se comprobó que el árbol solo llevaba los cambios previstos y se repitieron las tres mutaciones con el árbol limpio. Las cifras anteriores son las de la repetición.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (cierre de las fusiones seguras) — 25 partes, 20 ficheros, sin parte 26
+
+Las partes 1 a 25 (PRs #685 a #708) fusionaron contratos de `scripts/ci/test_*.py` de uno en uno, cada una con prueba de conservación por mutación del sujeto. A `dea75b7d` quedan 20 ficheros `test_*.py`. No hay parte 26: se midió que no queda ningún par fusionable con bajo riesgo.
+
+### Por qué se para aquí
+
+- Doce de los veinte ficheros ya son fusiones de dos o más contratos (`cargo_environment`, `paths_that_must_exist`, `conditional_write`, `skill_contracts`, `gate_contracts`, `snapshot_and_date`, `release_path`, `lane_binaries`, `ratchets`, `repo_hygiene`, `source_scan`, `script_drift_and_recall`). Fusionarlos entre sí daría ficheros de 1.800 líneas o más sobre sujetos sin relación.
+- `provenance_generation`, `provenance_contracts` y `comment_standard` se descartaron antes: SKIP en `main` si falta cosign, `_repo_scripts` duplicado y `setup()` con git.
+- `test_release_candidate_asset_set.py` (153 líneas) es un script con `--version` y `--platform` obligatorios, usa `git rev-parse`, no tiene funciones `test_*` y `run-all-contracts.sh` lo excluye del glob (líneas 54 y 78). Fusionarlo exige reescribirlo como pruebas con fixtures: no es de bajo riesgo.
+- `assurance_export_golden`, `ci_contracts` y `release_truth_convergence` usan git o red.
+
+### Estado de los criterios de aceptación
+
+Ninguno se marca. AC1 («30 ficheros en 7») no se cumple: son 20. AC2 (`pytest -n 2` sobre todos los contratos) no se ejecutó; el modo de bajo consumo lo excluye. AC3 (líneas antes y después) consta por parte en las notas de la tarea, no por linter final. La tarea sigue In Progress y no suma al lote (6 de 10). Reducir el alcance de AC1 o reescribir `release_candidate_asset_set` es decisión del operador.
+
+Rojos previos conservados sin tocar: `CURRENT.md` (2), las pruebas de §11 por texto de recibos previos (4 en `test_roadmap_coherence.py`) y `test_a_branch_checkout_still_names_its_branch`. Gate NOT_RUN.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
