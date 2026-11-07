@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
-use crate::interface::cli::project_graph::service_with_graph;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::coverage_of;
+use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `overview` goal

@@ -1140,8 +1140,8 @@ pub async fn call_tool_handler(
             // evidence_cli_mcp_equivalence.rs`.
             #[cfg(feature = "evidence-cli-ladybug")]
             "list_evidence" => {
+                use crate::application::evidence_backend;
                 use crate::domain::ports::evidence_store::EvidenceKind;
-                use crate::interface::cli::evidence_backend;
 
                 let workspace = arguments
                     .get("workspace")
@@ -1173,13 +1173,11 @@ pub async fn call_tool_handler(
                 let rows = backend
                     .list(workspace, kind)
                     .map_err(InterfaceError::Internal)?;
-                Ok(crate::interface::cli::commands::render_evidence_rows_json(
-                    rows,
-                ))
+                Ok(crate::application::evidence_rows::render_evidence_rows_json(rows))
             }
             #[cfg(feature = "evidence-cli-ladybug")]
             "search_evidence" => {
-                use crate::interface::cli::evidence_backend;
+                use crate::application::evidence_backend;
 
                 let workspace = arguments
                     .get("workspace")
@@ -1211,9 +1209,7 @@ pub async fn call_tool_handler(
                 let rows = backend
                     .search(workspace, query, limit)
                     .map_err(InterfaceError::Internal)?;
-                Ok(crate::interface::cli::commands::render_evidence_rows_json(
-                    rows,
-                ))
+                Ok(crate::application::evidence_rows::render_evidence_rows_json(rows))
             }
             "get_complexity" => {
                 let input: crate::interface::mcp::schemas::GetComplexityInput =
