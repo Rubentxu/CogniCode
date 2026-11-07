@@ -1,7 +1,29 @@
 #!/usr/bin/env python3
-"""Una configuración ejecutable no puede apuntar a un documento que no existe.
+"""Contrato: lo que el árbol vigila o cita tiene que existir.
 
-## El hueco
+Dos contratos con el mismo defecto de fondo —una ruta que no está— sobre
+sujetos distintos, reunidos en un solo fichero. No comparten un sujeto único:
+cada sección vigila el suyo.
+
+  I.  Los `build.rs` de `cognicode-core` y `cognicode-cli`: no vigilan rutas
+      de git que un worktree no tiene.
+  II. Las configuraciones ejecutables (`playwright.config.ts`, `scripts/*.sh`,
+      `*.pipeline.kts`...): no citan documentos de `docs/` que no existen.
+
+## I. Un build.rs no vigila rutas de git que un worktree no tiene
+
+`cargo:rerun-if-changed=<ruta>` sobre una ruta que NO existe hace que Cargo
+vuelva a ejecutar el script en cada invocacion, y con el script, que
+recompile el crate. En un worktree `.git` es un fichero, no un directorio, asi
+que `../../.git/HEAD` no existe: dos `cargo build` identicos seguidos
+recompilaban `cognicode-core` los dos (58 s y 52 s medidos). El gate corre
+varias veces `cognicode-core` con features distintas, y cada una pagaba esa
+recompilacion de mas.
+
+La ruta correcta la dice git (`git rev-parse --git-path HEAD` y
+`--git-common-dir`), y solo se vigila si existe.
+
+## II. Una configuración ejecutable no puede apuntar a un documento que no existe
 
 La poda documental se llevó `docs/inventory/`. Lo que dejó detrás eran
 configuraciones ejecutables que apuntaban allí:
@@ -25,8 +47,6 @@ ejecuta: el generador levanta, recorre el árbol, y falla al escribir en un
 directorio que no está. El fallo aparece tarde y habla de permisos o de
 rutas, no del documento que faltaba.
 
-## Lo que se comprueba
-
 Para cada fichero de configuración ejecutable, cada ruta de `docs/` que cita
 debe existir en el árbol.
 
@@ -40,7 +60,7 @@ extractor de citas dejara de encontrar citas para que el contrato pasara
 siempre. Con él, se demuestra que el extractor ve citas y que sabe decir que
 una no resuelve.
 
-## Lo que NO se comprueba
+Lo que NO se comprueba:
 
   - **Que el documento citado sea el mejor.** Solo que exista. Si la cita
     apunta a un documento equivocado, eso es otra unidad.
@@ -49,6 +69,9 @@ una no resuelve.
   - **Las citas de los ficheros que no son configuración ejecutable.** Un
     documento puede citar a otro documento que se haya movido; eso lo
     vigila otro contrato, con otras reglas.
+
+Run:
+    python3 scripts/ci/test_paths_that_must_exist.py
 """
 
 from __future__ import annotations
@@ -59,6 +82,45 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Los hallazgos se acumulan aquí y `main()` los convierte en un código de
+# salida. Un contrato que informa de un fallo y sale con cero informa de un
+# verde, que es peor que no tener contrato.
+failures: list[str] = []
+
+
+def check(condition: bool, message: str) -> None:
+    if not condition:
+        failures.append(message)
+
+
+# ---------------------------------------------------------------------------
+# I. Un build.rs no vigila rutas de git que un worktree no tiene
+# ---------------------------------------------------------------------------
+
+BUILD_SCRIPTS = ("crates/cognicode-core/build.rs", "crates/cognicode-cli/build.rs")
+
+
+def watched_literals(text: str) -> list[str]:
+    live = "\n".join(l for l in text.splitlines() if not l.strip().startswith("//"))
+    return re.findall(r'cargo:rerun-if-changed=([^"{}]+)"', live)
+
+
+def test_no_script_hardcodes_a_dot_git_directory() -> None:
+    for rel in BUILD_SCRIPTS:
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        bad = [p for p in watched_literals(text) if ".git" in p]
+        check(not bad, f"{rel} vigila {bad}: en un worktree esa ruta no existe y Cargo recompila siempre")
+
+
+def test_the_detector_sees_a_planted_hardcoded_path() -> None:
+    planted = 'println!("cargo:rerun-if-changed=../../.git/HEAD");'
+    check(watched_literals(planted) == ["../../.git/HEAD"], "el detector no ve una ruta fija plantada")
+
+
+# ---------------------------------------------------------------------------
+# II. Una configuración ejecutable no cita un documento que no existe
+# ---------------------------------------------------------------------------
 
 # Configuraciones ejecutables: ficheros que el producto lee al arrancar o
 # al ejecutarse. Un documento puede citar lo que quiera; una configuración
@@ -92,11 +154,6 @@ CITED_BY_NAME = re.compile(r"\b([A-Za-z0-9][A-Za-z0-9._-]*\.md)\b")
 
 # El árbol donde se busca un documento citado por su nombre.
 DOCUMENT_ROOTS = ("docs",)
-
-# Los hallazgos se acumulan aquí y `main()` los convierte en un código de
-# salida. Un contrato que informa de un fallo y sale con cero informa de un
-# verde, que es peor que no tener contrato.
-failures: list[str] = []
 
 # Los nombres que el programa PRODUCE. Un informe que el programa escribe
 # no existe hasta que se escribe, así que exigirlo lo haría fallar
@@ -252,18 +309,22 @@ def main() -> int:
     for name, function in sorted(globals().items()):
         if not name.startswith("test_") or not callable(function):
             continue
+        before = len(failures)
         try:
             function()
-            print(f"PASS: {name}")
         except AssertionError as error:
             failures.append(f"FAIL: {name}: {error}")
-            print(f"FAIL: {name}: {error}", file=sys.stderr)
         except Exception as error:  # noqa: BLE001 — el contrato informa, no aborta
             failures.append(f"ERROR: {name}: {error}")
-            print(f"ERROR: {name}: {error}", file=sys.stderr)
+        if len(failures) > before:
+            print(f"FAIL: {name}", file=sys.stderr)
+            for finding in failures[before:]:
+                print(f"  - {finding}", file=sys.stderr)
+        else:
+            print(f"PASS: {name}")
 
     if failures:
-        print(f"\n{len(failures)} contract(s) failed", file=sys.stderr)
+        print(f"\n{len(failures)} problem(s) found", file=sys.stderr)
         return 1
     print("\nall contracts passed")
     return 0
