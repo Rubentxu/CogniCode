@@ -38291,3 +38291,21 @@ Los porcentajes se calculan en `_with_percentages`, que usan los dos caminos de 
 `scripts/ci/test_openspec_conformance_validate_paths.py`: RED 1/2 → GREEN 2/2 (el caso sano fallaba; el de ruta ausente ya pasaba y protege el contrato). Sólo se corrió ese contrato; el gate no se corrió (lote de 10).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-70: el generador de procedencia no puede declarar su propio pin de cosign
+
+SHA inicial: `87398989`. Python puro, sin cargo.
+
+### Causa
+
+La medición por mutación del grupo 3 de TASK-70 cambió `3.1.3` por `3.1.4` en `scripts/ci/attest-provenance.sh` y ningún contrato falló. Los `3.1.3` de ese fichero son comentarios con la versión con que se midió cada comportamiento (historia, no pin): la versión ejecutable viene de `cosign-tool.sh`, que el generador carga. El hueco real era otro: el contrato sólo prohibía una segunda declaración si era literalmente `COGNICODE_COSIGN_VERSION="3.1.3"`; una con otro valor pasaba.
+
+### Qué cambió
+
+`test_provenance_lane_pins_its_cosign.py` gana `test_the_generator_takes_its_version_from_the_shared_tool`: ni el generador ni el contrato asignan `COGNICODE_COSIGN_VERSION` (se lee la asignación, no el número), y el generador carga `cosign-tool.sh`. Los comentarios de medición no se tocan.
+
+### Pruebas (RED → GREEN)
+
+Sólo se corrió ese contrato. RED 1: segunda declaración `="3.1.4"` en el generador → rc 1. RED 2: sin la carga de `cosign-tool.sh` → rc 1. GREEN con el fichero real → rc 0. Los scripts mutados se restauraron con `cmp`. Ningún otro fichero referencia este contrato salvo un comentario de `cosign-tool.sh`. El gate no se corrió (lote de 10).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
