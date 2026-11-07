@@ -38151,3 +38151,39 @@ Con el binario de release, sobre un workspace con un `main.rs`:
 **FUSIONADO.** PR #675 (`d0225b3f`): la unidad. Este recibo y el snapshot operativo viajan en el PR que le sigue.
 
 **Créditos.** La autoría de esta unidad es de Claude Code. El hook `commit-msg` del repositorio no admite trailers `Co-Authored-By` y remite los créditos a `AUTHORS.md`, que este repositorio no tiene; el crédito queda aquí, en el recibo, en vez de en un trailer que el hook rechaza.
+
+
+## 2026-11-07 — TASK-93: el harness A/B mide la superficie v2 frente a la legacy, una llamada por proceso
+
+SHA inicial: `633de4e6`. Comando: `just harness-ab run --repos small|cognicode`, luego `just harness-ab report --publish`. Fuera de la suite y del gate (`test-gate.sh` no lo menciona).
+
+### Lo que se midió
+
+Cada llamada es un proceso aparte (`/usr/bin/time -v` → `timeout 120s` → `systemd-run --scope MemoryMax=2G MemorySwapMax=0`, con `nice 19` e `ionice -c3`). Una llamada que pasa el plazo o la memoria queda como `cortada` y la corrida sigue. Una fila por llamada en `product/measurements/task-93/calls.csv`. 69 llamadas (63 en los tres repos pequeños, 3 repeticiones; 6 en `cognicode`, 1 repetición): **0 cortadas**.
+
+| Cifra | v2 (`default`) | legacy |
+|---|---|---|
+| Bytes de descubrimiento (máximo por servidor) | **4.325** | 169.910 |
+| Tokens estimados / coste estimado | ~50.286 / ~$0,15 | ~6.380.783 / ~$19,14 |
+| Exactitud juzgada | 0,6667 | 0,75 |
+
+### Veredicto del comando: rc 1, dos metas superadas
+
+- `find_p95_ms`: **16.444 ms** frente a 300. La medición es en frío por llamada (cada una indexa `cognicode`, ~16 s, ~810 MB); la meta dice «con daemon». La cifra no se maquilla: la meta con daemon **no está medida** todavía.
+- `accuracy_not_below_legacy`: 0,6667 frente a 0,75. Causa medida, no del juez: en `cognicode`, `find SurfaceProfile` responde «not in the project's symbols» con estado `complete` aunque el enum existe (`surface.rs:35`), e `inspect` del fichero lista los métodos del `impl` pero no el enum. Es un defecto de producto en Rust (falso `complete`), no de TASK-93. **Pendiente: tarea propia.**
+
+### Sobre legacy en el repo grande
+
+La corrida anterior la daba por colgada. Aislada y sin carga de la máquina, legacy termina en ≤17,2 s y ≤915 MB en `cognicode`. No se excluye. El plazo de 120 s queda como protección.
+
+### No medido
+
+«Menos 50 % de llamadas por tarea»: la política determinista hace una llamada por pregunta en ambos brazos, así que no hay comparación honesta de llamadas por tarea.
+
+### Publicación
+
+`product/measurements/0.101.31-633de4e64456.json`: cita el commit base en `main` (`633de4e6`) y, aparte, el del harness. Contrato: `scripts/ci/test_harness_ab.py`, 20 de 20.
+
+El gate completo no se corrió: se pasa por lote de 10 tareas.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

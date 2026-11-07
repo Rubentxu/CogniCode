@@ -1,0 +1,339 @@
+{
+  "schema_version": "cognicode.measurement/v1",
+  "version": "0.101.31",
+  "commit": "633de4e64456045411315254c7bfb5f213fb0b69",
+  "harness_commit": "88eba07ab458590b51db990caafddd3ca72303de",
+  "dirty": true,
+  "measured_on": "2026-11-07",
+  "method": "one process per call; cold server per call; timeout and MemoryMax per call",
+  "limits": {
+    "call_timeout_s": 120,
+    "memory_max": "2G",
+    "repeats": 3,
+    "large_repeats": 1
+  },
+  "calls_file": "product/measurements/task-93/calls.csv",
+  "price": {
+    "bytes_per_token": 4,
+    "usd_per_million_input_tokens": 3.0,
+    "as_of": "2026-11-07"
+  },
+  "arms": {
+    "v2": {
+      "profile": "default",
+      "discovery_bytes": 4325,
+      "response_bytes": 183846,
+      "calls": 39,
+      "cut_calls": 0,
+      "tokens_estimate": 50286,
+      "cost_estimate_usd": 0.150859,
+      "states": {
+        "complete": 36,
+        "unknown": 3
+      },
+      "questions": [
+        {
+          "repo": "kotlin",
+          "intent": "find",
+          "question": "find:Shape",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "950",
+          "cold_s": "0.14",
+          "max_rss_kb": "21756"
+        },
+        {
+          "repo": "kotlin",
+          "intent": "inspect",
+          "question": "inspect:Shapes.kt",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "22005",
+          "cold_s": "0.14",
+          "max_rss_kb": "20444"
+        },
+        {
+          "repo": "kotlin",
+          "intent": "trace",
+          "question": "trace:describeShape",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "1113",
+          "cold_s": "0.15",
+          "max_rss_kb": "21308"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "find",
+          "question": "find:Kube",
+          "correct": false,
+          "state": "complete",
+          "cut": "",
+          "bytes": "657",
+          "cold_s": "0.14",
+          "max_rss_kb": "19652"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "inspect",
+          "question": "inspect:src/org/acme/Kube.groovy",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "3945",
+          "cold_s": "0.14",
+          "max_rss_kb": "19308"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "trace",
+          "question": "trace:apply",
+          "correct": false,
+          "state": "unknown",
+          "cut": "",
+          "bytes": "199",
+          "cold_s": "0.14",
+          "max_rss_kb": "20192"
+        },
+        {
+          "repo": "csharp",
+          "intent": "find",
+          "question": "find:Calculator",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "995",
+          "cold_s": "0.15",
+          "max_rss_kb": "20352"
+        },
+        {
+          "repo": "csharp",
+          "intent": "inspect",
+          "question": "inspect:Core/Money.cs",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "5418",
+          "cold_s": "0.13",
+          "max_rss_kb": "19604"
+        },
+        {
+          "repo": "csharp",
+          "intent": "trace",
+          "question": "trace:Shout",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "1087",
+          "cold_s": "0.16",
+          "max_rss_kb": "19856"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "find",
+          "question": "find:SurfaceProfile",
+          "correct": false,
+          "state": "complete",
+          "cut": "",
+          "bytes": "707",
+          "cold_s": "16.66",
+          "max_rss_kb": "831352"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "inspect",
+          "question": "inspect:crates/cognicode-core/src/interface/surface.rs",
+          "correct": false,
+          "state": "complete",
+          "cut": "",
+          "bytes": "15802",
+          "cold_s": "0.14",
+          "max_rss_kb": "18660"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "trace",
+          "question": "trace:memo_key",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "2532",
+          "cold_s": "16.24",
+          "max_rss_kb": "832852"
+        }
+      ],
+      "accuracy": 0.6667,
+      "find_p50_ms": 21.944,
+      "find_p95_ms": 16444.16,
+      "inspect_p50_ms": 13.915,
+      "inspect_p95_ms": 16.058,
+      "trace_p50_ms": 19.465,
+      "trace_p95_ms": 16026.184,
+      "status_p50_ms": 18.925,
+      "status_p95_ms": 19.258,
+      "context_p50_ms": 21.287,
+      "context_p95_ms": 21.336,
+      "reparse_p50_ms": 19.313,
+      "reparse_p95_ms": 19.718,
+      "tools_list_bytes": 4325
+    },
+    "legacy": {
+      "profile": "legacy",
+      "discovery_bytes": 169910,
+      "response_bytes": 24843491,
+      "calls": 30,
+      "cut_calls": 0,
+      "tokens_estimate": 6380783,
+      "cost_estimate_usd": 19.142348,
+      "states": {
+        "complete": 19,
+        "partial": 7,
+        "unknown": 4
+      },
+      "questions": [
+        {
+          "repo": "kotlin",
+          "intent": "find",
+          "question": "find:Shape",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "808",
+          "cold_s": "0.16",
+          "max_rss_kb": "21604"
+        },
+        {
+          "repo": "kotlin",
+          "intent": "inspect",
+          "question": "inspect:Shapes.kt",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "13460",
+          "cold_s": "0.16",
+          "max_rss_kb": "21920"
+        },
+        {
+          "repo": "kotlin",
+          "intent": "trace",
+          "question": "trace:describeShape",
+          "correct": true,
+          "state": "partial",
+          "cut": "",
+          "bytes": "2411",
+          "cold_s": "0.17",
+          "max_rss_kb": "21364"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "find",
+          "question": "find:Kube",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "1520",
+          "cold_s": "0.15",
+          "max_rss_kb": "19276"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "inspect",
+          "question": "inspect:src/org/acme/Kube.groovy",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "2204",
+          "cold_s": "0.16",
+          "max_rss_kb": "20144"
+        },
+        {
+          "repo": "jenkins-library",
+          "intent": "trace",
+          "question": "trace:apply",
+          "correct": false,
+          "state": "unknown",
+          "cut": "",
+          "bytes": "166",
+          "cold_s": "0.16",
+          "max_rss_kb": "19720"
+        },
+        {
+          "repo": "csharp",
+          "intent": "find",
+          "question": "find:Calculator",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "828",
+          "cold_s": "0.15",
+          "max_rss_kb": "22280"
+        },
+        {
+          "repo": "csharp",
+          "intent": "inspect",
+          "question": "inspect:Core/Money.cs",
+          "correct": true,
+          "state": "complete",
+          "cut": "",
+          "bytes": "3178",
+          "cold_s": "0.16",
+          "max_rss_kb": "20648"
+        },
+        {
+          "repo": "csharp",
+          "intent": "trace",
+          "question": "trace:Shout",
+          "correct": true,
+          "state": "partial",
+          "cut": "",
+          "bytes": "2053",
+          "cold_s": "0.16",
+          "max_rss_kb": "21732"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "find",
+          "question": "find:SurfaceProfile",
+          "correct": false,
+          "state": "unknown",
+          "cut": "",
+          "bytes": "106",
+          "cold_s": "0.65",
+          "max_rss_kb": "26544"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "inspect",
+          "question": "inspect:crates/cognicode-core/src/interface/surface.rs",
+          "correct": false,
+          "state": "complete",
+          "cut": "",
+          "bytes": "8766",
+          "cold_s": "16.59",
+          "max_rss_kb": "829004"
+        },
+        {
+          "repo": "cognicode",
+          "intent": "trace",
+          "question": "trace:memo_key",
+          "correct": true,
+          "state": "partial",
+          "cut": "",
+          "bytes": "24754735",
+          "cold_s": "17.21",
+          "max_rss_kb": "937816"
+        }
+      ],
+      "accuracy": 0.75,
+      "find_p50_ms": 14.478,
+      "find_p95_ms": 506.713,
+      "inspect_p50_ms": 22.317,
+      "inspect_p95_ms": 16345.74,
+      "trace_p50_ms": 20.111,
+      "trace_p95_ms": 16929.55
+    }
+  }
+}

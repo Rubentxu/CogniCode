@@ -225,6 +225,12 @@ build-time:
     @echo "⏱️  Measuring the build times..."
     bash scripts/build-time.sh
 
+# Measure the agent-facing surface (v2 goals vs legacy tools) against slo-budget.toml.
+# On demand, outside the suite and the gate: every call is its own process with a
+# time limit and a memory ceiling. `just harness-ab run --repos kotlin`, then `report`.
+harness-ab *ARGS:
+    python3 -I scripts/measure/harness_ab.py {{ARGS}}
+
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
     @echo "🧪 Running ignored tests (single-threaded)..."

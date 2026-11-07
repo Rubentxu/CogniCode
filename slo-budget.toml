@@ -1,0 +1,63 @@
+# Metas de la superficie que ve un agente (TASK-93).
+#
+# ENFORCEMENT: on-demand
+#
+# Esto es una declaración, no prosa. Las metas las lee un solo comando,
+# `just harness-ab` (scripts/measure/harness_ab.py), que sale con rc 1 y
+# nombra la meta y la cifra medida cuando una se supera. No hay puerta de PR
+# ni carril de CI detrás, y el gate (scripts/test-gate.sh) no lo invoca: una
+# medición de latencia depende del hardware y de la carga, y un test que
+# depende de eso no es determinista (regla 1 de «Estrategia de tests»).
+#
+# `perf-budget.toml` mide otra cosa con otro dueño: las operaciones internas
+# del core. Aquí se mide lo que le cuesta a un agente entender y usar el
+# producto.
+#
+# Dos tipos de meta:
+#   - `ceiling`: la cifra medida del brazo `arm` no puede superar el techo.
+#   - `not_below`: la cifra del brazo `arm` no puede quedar por debajo de la
+#     del brazo `baseline` (la superficie nueva no responde peor que la vieja).
+
+[[goal]]
+name = "tools_list_bytes"
+metric = "tools_list_bytes"
+ceiling = 6144
+note = "Lo que el agente lee para conocer el perfil por defecto: 6 KB o menos."
+
+[[goal]]
+name = "status_p95_ms"
+metric = "status_p95_ms"
+ceiling = 300
+note = "status con daemon."
+
+[[goal]]
+name = "find_p95_ms"
+metric = "find_p95_ms"
+ceiling = 300
+note = "find con daemon."
+
+[[goal]]
+name = "inspect_p95_ms"
+metric = "inspect_p95_ms"
+ceiling = 500
+note = "inspect sin LSP."
+
+[[goal]]
+name = "context_p95_ms"
+metric = "context_p95_ms"
+ceiling = 3000
+note = "context."
+
+[[goal]]
+name = "reparse_p95_ms"
+metric = "reparse_p95_ms"
+ceiling = 1000
+note = "Reindexado de un fichero."
+
+[[goal]]
+name = "accuracy_not_below_legacy"
+metric = "accuracy"
+kind = "not_below"
+arm = "v2"
+baseline = "legacy"
+note = "La superficie v2 no responde peor que la legacy a las mismas preguntas."
