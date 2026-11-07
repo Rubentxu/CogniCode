@@ -38941,3 +38941,13 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** RED medido: 4 de 5 comprobaciones fallaban antes (`FileNotFoundError` del informe, `build_failure_report` inexistente). GREEN: `test_contract_failure_report.py` 5/5. Suite entera `bash scripts/ci/run-all-contracts.sh` rc=0, 0 FAIL.
 
 **Pendiente.** TASK-158 sigue sin causa: AC1-AC3 esperan al próximo fallo, que ahora trae su informe. TASK-94: el binario instalado 0.102.1 no contiene la traza (PR #732 es posterior y ningún tag la incluye), así que `COGNICODE_LINK_TRACE` en la configuración MCP no recoge nada hasta publicar v0.102.2 o apuntar a un build de main. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.
+
+## 2026-11-07 — TASK-158 (corrección): una suite verde dejaba un informe falso
+
+**Medido.** Al correr la suite entera con el valor por defecto de `run-all-contracts.sh`, `~/.local/state/cognicode/contract-failure.txt` aparecía con rc=0: lo escribían contratos que lanzan runners anidados que fallan a propósito (`test_subprocess_deadlines` con `a.py`/`b.py`, `test_ci_contracts` con `test_bad.py`). Contradecía «un run verde no deja informe» y enterraba el de un fallo real. Mi propio cambio de la entrada anterior lo introdujo; la comprobación de entonces miró el rc, no el fichero.
+
+**Cambio.** `run_files_parallel` no pasa `CONTRACTS_FAILURE_REPORT` a los procesos hijos: el destino del informe es del runner padre. Un solo sitio cubre todos los contratos anidados presentes y futuros, en vez de aislar la variable contrato a contrato.
+
+**Verificación.** RED: `test_a_contract_does_not_inherit_the_report_destination` fallaba (el hijo veía la variable). GREEN: `test_contract_failure_report.py` 6/6. Suite entera `bash scripts/ci/run-all-contracts.sh` rc=0 y el directorio de estado queda vacío tras borrar el informe falso.
+
+**Pendiente.** Igual que la entrada anterior: TASK-158 espera el próximo fallo real. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.
