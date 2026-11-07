@@ -429,6 +429,7 @@ def head_sha() -> str:
     return subprocess.check_output(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
         text=True,
+        timeout=120,
     ).strip()
 
 
@@ -543,6 +544,7 @@ def _merge_base(a: str, b: str) -> str | None:
     out = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "merge-base", a, b],
         capture_output=True, text=True,
+        timeout=120,
     )
     return out.stdout.strip() or None
 
@@ -581,12 +583,14 @@ def _is_recent_ancestor(
         reachable = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "merge-base", "--is-ancestor", sha, ancestor],
             capture_output=True, text=True,
+            timeout=120,
         )
         if reachable.returncode != 0:
             return False
         out = subprocess.check_output(
             ["git", "-C", str(REPO_ROOT), "rev-list", "--count", f"{sha}..{distance_to or ancestor}"],
             text=True, stderr=subprocess.DEVNULL,
+            timeout=120,
         ).strip()
         distance = int(out)
         return 0 <= distance <= max_drift
@@ -606,6 +610,7 @@ def test_distance_is_measured_to_the_merge_base_not_the_branch_head() -> None:
     root = subprocess.check_output(
         ["git", "-C", str(REPO_ROOT), "rev-list", "--max-parents=0", head],
         text=True,
+        timeout=120,
     ).strip().splitlines()[-1]
 
     assert not _is_recent_ancestor(root, head, SNAPSHOT_MAX_DRIFT, head), (
@@ -948,6 +953,7 @@ def tracked(paths: list[str]) -> set[str]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=120,
     )
     return {line for line in out.stdout.splitlines() if line}
 

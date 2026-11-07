@@ -38811,3 +38811,17 @@ Gate NOT_RUN: el lote lleva 9 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 1
 **Verificación.** `bash scripts/ci/run-all-contracts.sh` `rc=0`, 21 pasan, 0 fallan.
 
 Gate NOT_RUN: el lote lleva 1 de 10 desde `ff670d40` (TASK-157).
+
+## 2026-11-07 — Toda llamada a subprocess de los contratos lleva plazo (TASK-159)
+
+**Medido.** Sin tarea ejecutable en el backlog (solo TASK-94 y TASK-158), se auditó `scripts/ci/*.py` con `ast`: 48 llamadas `subprocess.run/check_output/check_call/call` sin `timeout`, entre ellas dos `git ls-remote --tags origin` (red) y las que ejecutan binarios, `cargo metadata` y sub-suites. Regla dura 7 de AGENTS.md.
+
+**Cambio.** Las 48 llevan plazo (120 s; 600 s las que ejecutan binarios o sub-suites). `_ls_remote_tags()` es ahora el único sitio que consulta el remoto y trata `TimeoutExpired` como remoto sin respuesta (`None`), igual que un fallo de red. Contrato nuevo `scripts/ci/test_subprocess_deadlines.py` (descubierto por el glob de `run-all-contracts.sh`).
+
+**RED/GREEN.** El contrato dio 1 fallo (48 llamadas) antes y 2/2 después. `test_a_remote_that_never_answers_is_a_remote_without_an_answer`: cambiando el `except` por otro tipo falla (25/26); restaurado, 26/26.
+
+**Verificación.** `test_roadmap_coherence.py` 29/29 (deriva de `CURRENT.md` 3, sin regenerar). `bash scripts/ci/run-all-contracts.sh` `rc=0`.
+
+**Límite.** Solo `scripts/ci`; `scripts/measure/harness_ab.py` tiene 5 llamadas sin plazo y queda fuera.
+
+Gate NOT_RUN: el lote lleva 2 de 10 desde `ff670d40` (TASK-157, 159).

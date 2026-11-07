@@ -116,6 +116,7 @@ def tracked_text_files() -> list[Path]:
         capture_output=True,
         text=True,
         check=False,
+        timeout=120,
     )
     if listed.returncode != 0:
         return []
@@ -224,6 +225,7 @@ def tracked_files() -> list[str]:
         text=True,
         cwd=REPO_ROOT,
         check=False,
+        timeout=120,
     )
     if proc.returncode != 0:
         failures.append(
@@ -257,6 +259,7 @@ def test_the_control_root_state_is_ignored() -> None:
             ["git", "check-ignore", "-q", f"{d}/probe"],
             cwd=REPO_ROOT,
             check=False,
+            timeout=120,
         ).returncode
         == 0
     ]
@@ -307,6 +310,7 @@ def test_no_per_step_scratch_is_tracked() -> None:
         text=True,
         cwd=REPO_ROOT,
         check=False,
+        timeout=120,
     )
     if proc.returncode != 0:
         failures.append(
@@ -354,6 +358,7 @@ def test_a_step_directory_name_is_ignored() -> None:
             ["git", "check-ignore", "-q", probe],
             cwd=REPO_ROOT,
             check=False,
+            timeout=120,
         ).returncode
         == 0
     )

@@ -115,7 +115,7 @@ def check(condition: bool, message: str) -> None:
 
 
 def _git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
+    proc = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {proc.stderr.strip()}")
     return proc.stdout.strip()
@@ -128,6 +128,7 @@ def _identity(key: str) -> str:
         cwd=REPO,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     return proc.stdout.strip()
 
@@ -209,6 +210,7 @@ def _radius(root: Path, *extra: str) -> tuple[dict[str, str], int]:
         [sys.executable, "-I", str(SELECTOR), "--repo-root", str(root), *extra],
         capture_output=True,
         text=True,
+        timeout=120,
     )
     answer: dict[str, str] = {}
     for line in proc.stdout.splitlines():
