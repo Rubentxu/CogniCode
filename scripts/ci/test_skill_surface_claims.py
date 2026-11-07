@@ -360,7 +360,7 @@ def test_the_published_counts_are_themselves_consistent() -> None:
 def test_main_reports_and_returns() -> None:
     """`main()` tiene que correr los tests, no declararlos.
 
-    El mismo fallo que trailing en `test_provenance_gate.py`: un `main()` que
+    El mismo fallo que trailing en `test_provenance_contracts.py`: un `main()` que
     imprime PASS sin ejecutar nada es la forma mas barata de publicar un
     contrato vacio. Se comprueba desde aqui para que el fallo aparezca aqui.
     """

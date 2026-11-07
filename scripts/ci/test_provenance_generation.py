@@ -468,7 +468,7 @@ def test_the_policy_still_lives_in_exactly_one_place() -> None:
     generator_text = GENERATOR.read_text(encoding="utf-8")
     assert "RELEASE_REQUIRE_PROVENANCE" not in generator_text, (
         "el generador no lee la politica: si la leyera, habria dos politicas y "
-        "volveria exactamente el desacuerdo que test_provenance_gate.py prohibe."
+        "volveria exactamente el desacuerdo que test_provenance_contracts.py prohibe."
     )
     readers = [
         path
