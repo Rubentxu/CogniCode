@@ -38309,3 +38309,15 @@ La medición por mutación del grupo 3 de TASK-70 cambió `3.1.3` por `3.1.4` en
 Sólo se corrió ese contrato. RED 1: segunda declaración `="3.1.4"` en el generador → rc 1. RED 2: sin la carga de `cosign-tool.sh` → rc 1. GREEN con el fichero real → rc 0. Los scripts mutados se restauraron con `cmp`. Ningún otro fichero referencia este contrato salvo un comentario de `cosign-tool.sh`. El gate no se corrió (lote de 10).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 1): los dos ratchets de `crates/*/src` son un solo contrato
+
+### Qué cambió
+
+`test_file_size_ratchet.py` (198 líneas) y `test_public_type_homonym_ratchet.py` (147) se fusionan en `scripts/ci/test_ratchets.py` (268): 345 → 268 líneas, 2 ficheros → 1. Comparten `git`, `resolve_base`, `measured_files` y `setup`; el segundo ya importaba del primero. De 8 comprobaciones quedan 7: `the_base_is_resolvable` era la misma en ambos y queda una. El resto conserva su nombre con prefijo (`file_size_…`, `homonym_…`), los umbrales (`LIMIT=2000`, más de 100 ficheros) y el cierre en fallo sin base.
+
+### Pruebas
+
+Sin cargo. Con la base `5173c478`, el contrato nuevo y los dos originales dan las mismas cifras (10 de 813 fuentes sobre 2000 líneas; 78 nombres repetidos) y rc 0. Mutación 1: una línea añadida a `analysis_service.rs` (2031 → 2032) → nuevo rc 1, original de tamaño rc 1, original de homónimos rc 0. Mutación 2: `pub struct BundleManifest;` duplicado en `cogh.rs` → nuevo rc 1, original de homónimos rc 1, original de tamaño rc 0. Ficheros restaurados con `cmp` y `touch`. `run_contract_tests.py` recoge 7 pruebas del fichero nuevo; `run-all-contracts.sh` lo toma por el glob `test_*.py`. Ningún otro fichero citaba los nombres retirados. El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
