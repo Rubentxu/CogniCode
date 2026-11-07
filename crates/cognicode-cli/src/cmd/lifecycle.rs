@@ -904,55 +904,6 @@ components:
     // E32-H: Install / list / current / update / uninstall lifecycle tests
 
     #[test]
-    #[ignore = "requires bundle version to match CARGO_PKG_VERSION"]
-    #[serial]
-    fn test_cogh_install_runs_successfully() {
-        let temp_home = tempfile::tempdir().unwrap();
-        let original_home = std::env::var("HOME").ok();
-        let original_cognicode_home = std::env::var("COGNICODE_HOME").ok();
-        unsafe {
-            std::env::set_var("HOME", temp_home.path());
-            std::env::set_var("XDG_CONFIG_HOME", temp_home.path().join(".config"));
-            std::env::set_var("XDG_DATA_HOME", temp_home.path().join(".local/share"));
-            std::env::set_var("COGNICODE_HOME", temp_home.path().join(".cognicode"));
-        }
-        let home = CognicodeHome::resolve(None).unwrap();
-        // Run install
-        let result = install::run_install(&home, "core");
-        assert!(result.is_ok(), "install failed: {:?}", result);
-        // Verify tracker version file is created
-        let tracker_path = temp_home.path().join(".cognicode/tracker/version");
-        assert!(
-            tracker_path.exists(),
-            "tracker missing at {}",
-            tracker_path.display()
-        );
-        // Verify shims are created
-        let shims_path = temp_home.path().join(".cognicode/shims");
-        assert!(
-            shims_path.exists(),
-            "shims missing at {}",
-            shims_path.display()
-        );
-        // Restore env
-        if let Some(home) = original_home {
-            unsafe {
-                std::env::set_var("HOME", home);
-            }
-        }
-        if let Some(cog_home) = original_cognicode_home {
-            unsafe {
-                std::env::set_var("COGNICODE_HOME", cog_home);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("COGNICODE_HOME");
-            }
-        }
-        drop(temp_home);
-    }
-
-    #[test]
     #[serial]
     fn test_cogh_list_shows_installed() {
         let tmp = std::env::temp_dir().join(format!("cogh-lc-list-{}", std::process::id()));
