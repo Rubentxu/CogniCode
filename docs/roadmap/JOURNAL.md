@@ -38467,3 +38467,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (16 PASS), ori
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (10 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / libro mayor / misión): `**Estado**: CLOSED` → `PENDING` en el goal doc de B1 4/4/0; fila B1 de la tabla del work-loop a `PENDING` 4/4/0; `evidenceRefs` → `evidence` en `goal-compass.json` 3/0/3; `doneWhen` → `done` 3/0/3; ruta de evidencia inexistente 2/0/2. El nuevo falla exactamente lo que falla el original que corresponde. Descartadas por 0/0/0: prioridad cambiada (hay un único candidato, no puede desordenarse) y tag de la fila B1 de ROADMAP alterado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 14): los contratos del lint de capacidades y de la recall son uno
+
+### Qué cambió
+
+`test_capabilities_drift.py` (247 líneas, 7 tests) y `test_affected_tests_recall.py` (273, 6) se fusionan en `scripts/ci/test_script_drift_and_recall.py` (519): 520 → 519 líneas, 2 ficheros → 1 (31 en `scripts/ci`). No comparten sujeto: la parte A ejercita `sandbox/scripts/capabilities_drift_lint.py`; la B, `scripts/affected-tests-recall.py`. Sí comparten mecanismo (una lista `failures` a la que cada comprobación añade lo que no se cumple), que queda declarada una vez, junto con los imports. Las 13 comprobaciones conservan nombre, docstring y fallos cerrados; el `main` único las recorre en orden de definición (el de la recall las ordenaba por nombre), falla si no encuentra ningún `test_` y cuenta como FAIL toda comprobación que haya añadido a `failures`. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Sin punteros vivos a los nombres antiguos.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (13 PASS), originales rc 0. Mutaciones del sujeto (problemas nuevo / lint / recall): `sys.exit(2)` → `sys.exit(0)` en la línea 98 del lint 1/1/0; `return 1 if args.strict else 0` → `return 0` 1/1/0; recall calculada como `1.0` fija 1/0/1; salida de error `return 2` → `return 0` en el script de la recall 1/0/1. El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (comentario al final del script de la recall) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
