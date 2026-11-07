@@ -38775,3 +38775,13 @@ Gate NOT_RUN: el lote lleva 6 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 1
 **Limitación conocida.** Mide el contrato de cable y la política, no a un agente: con `all` la tasa es 1 por construcción. TASK-94 AC2 (retirar enlaces con tasa cero tras 4 semanas) sigue necesitando trazas de agentes reales.
 
 Gate NOT_RUN: el lote lleva 8 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153, 154).
+
+## 2026-11-07 — Regenerar el snapshot CURRENT.md sobre e42ea35f (TASK-155)
+
+**Medido.** `python3 scripts/run_contract_tests.py scripts/ci/test_roadmap_coherence.py` daba 29 verdes sobre `main` (`e42ea35f`) con `CURRENT.md` en `f05bbab5`, a 5 commits: justo el máximo (`SNAPSHOT_MAX_DRIFT = 5`). En una rama la deriva se mide desde la base con `main`, así que un commit de rama no pone nada en rojo; el rojo solo aparece en `main` tras el merge. RED medido con la propia `_is_recent_ancestor(declarado, HEAD, 5, HEAD)` sobre un commit de sonda local (deshecho, no empujado): distancia 6, aceptado `False`.
+
+**Cambio.** Los tres bloques de la receta de TASK-126/151: la cabecera declara `e42ea35fe86fa773f44a13e5167b048285f13a8e`; la prosa añade una cláusula sobre el contador y el productor de enlaces; y la tabla «Qué cambió» pasa a describir `f05bbab5..e42ea35f` (5 commits, medidos con `git rev-list --count`) con una fila por unidad (TASK-151, 152, 146, 153, 154). La regeneración viaja en el mismo PR que este recibo: tras el squash la deriva es 1.
+
+**Verificación.** `test_roadmap_coherence.py`: 29 pasan, 0 fallan. `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts155.log`).
+
+Gate NOT_RUN: el lote lleva 9 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153, 154, 155).
