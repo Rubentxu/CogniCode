@@ -9,7 +9,7 @@ meta y la cifra.
 
 Es un comando a demanda. No está en la suite ni en el gate, y por eso su
 lógica de decisión (el juez, el veredicto, las extracciones) la vigila
-`scripts/ci/test_harness_ab.py`.
+`scripts/ci/test_script_drift_and_recall.py`.
 
     just harness-ab run --repos kotlin,jenkins-library,csharp   # los pequeños
     just harness-ab run --repos cognicode                       # el grande

@@ -38617,3 +38617,17 @@ Punteros: ningún fichero vivo citaba el retirado; la única mención restante e
 Sin compilar, sin suites; no se lanzó el gate. Base: 21 pruebas en verde (12 del destino + 9 del servicio de ficheros). Mutaciones del sujeto (incremento nuevo / destino / servicio de ficheros, contando una prueba fallida): `AppError::InternalError(` añadido a `file_ops_handlers.rs` +1/0/+1; `pub fn`→`fn` en `text_boundary.rs` +1/0/+1; corte por índice de byte `&s[..10]` añadido a `file_operations.rs` +1/0/+1. Ningún control 0/0/0. Restaurado con `cp -p`, `touch` y `cmp`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 25) — el contrato de deriva y recall de scripts absorbe el del harness A/B
+
+`scripts/ci/test_harness_ab.py` (488 líneas) se fusiona como «Parte C» en `scripts/ci/test_script_drift_and_recall.py`, que ya reunía el lint de capacidades (A) y la medición de recall de la selección (B). Tema común: scripts del repositorio que el gate no ejecuta, ejercitados desde un contrato. Quedan 20 ficheros `test_*.py`.
+
+El fichero retirado no tenía `main` (acababa en `sys.exit(0)` y dependía del cargador de contratos); ahora sus 20 pruebas se ejecutan también al lanzar el fichero a mano. Colisión única: `GATE`, con valor idéntico, se deja una vez. `REPO_ROOT` pasa a alias de `ROOT`. Se añaden `re` y `tomllib`. El `main` del destino solo capturaba `AssertionError`: se le añade la captura de `Exception`, como en las partes 22 y 23, porque una prueba del harness revienta con `KeyError` cuando falta una clave y abortaba la corrida entera en vez de registrarse.
+
+Punteros: el comentario de `scripts/measure/harness_ab.py` que citaba el contrato apunta ahora al destino.
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base: 33 comprobaciones en verde (13 del destino + 20 del harness). Mutaciones del sujeto (pruebas fallidas nuevo / destino / harness): `memory_max` renombrado en `scripts/measure/harness.toml` 1/0/1; primera `def` renombrada en `harness_ab.py` 4/0/4; primera sección de `slo-budget.toml` renombrada 4/0/4. Ningún control 0/0/0. Incidente propio: una primera pasada dejó `harness.toml` mutado (el script de mutación murió por SIGPIPE al encadenar `head -0` antes de restaurar), lo que contaminó las cifras de las otras dos; se restauró desde `HEAD`, se comprobó que el árbol solo llevaba los cambios previstos y se repitieron las tres mutaciones con el árbol limpio. Las cifras anteriores son las de la repetición.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
