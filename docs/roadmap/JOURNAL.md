@@ -38503,3 +38503,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (24 PASS). Mut
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (17 PASS). Mutaciones del sujeto (problemas nuevo / originales): `create_new(true)` → `create(true)` en el escritor atómico 1/1; `expected_content_hash` fijado a `None` en `dto_mapping.rs` 1/1; clave `expected_content_hash` renombrada en `product/tools.json` 3/3. Control 0/0/0 (`sync_all` → `flush` en el escritor) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 17): los contratos del escritor de entorno sin guarda y de la contaminación de prosa son uno
+
+### Qué cambió
+
+`test_serial_env_contract.py` (405 líneas, 8 tests) y `test_prose_script_contamination.py` (383, 4) se fusionan en `scripts/ci/test_source_scan_contracts.py` (783): 788 → 783 líneas, 2 ficheros → 1 (28 en `scripts/ci`). Comparten método, no sujeto: ambos recorren las fuentes del árbol y rechazan un patrón prohibido (un `set_var` sin guarda en los crates; un carácter ajeno en la prosa y los scripts). Las 12 comprobaciones conservan nombre, docstring y fallos cerrados; `REPO_ROOT` se declara una vez y `SELF_NAME` apunta al nombre nuevo. El `main` único recorre los tests en orden de definición, falla si no encuentra ninguno y cuenta como FAIL toda excepción o todo `failures` que crece. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. La única mención viva al nombre antiguo es una medición fechada (2026-10-03) en el docstring de `test_ci_contracts.py`; es historia y se deja.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (12 PASS), originales rc 0. Mutaciones del sujeto (problemas nuevo / serial_env / prose): un test con `set_var` sin guarda añadido a `evidence_cmd.rs` 1/1/0; un carácter cirílico añadido a `README.md` 1/0/1; el glob de `run-all-contracts.sh` roto 1/0/1. El nuevo falla exactamente lo que falla el original que corresponde. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
