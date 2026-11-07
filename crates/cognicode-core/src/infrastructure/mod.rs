@@ -28,6 +28,7 @@ pub mod safety;
 pub mod semantic;
 pub mod telemetry;
 pub mod testing;
+pub mod tool_catalog;
 pub mod verification;
 pub mod vfs;
 pub mod walk_policy;
