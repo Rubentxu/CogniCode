@@ -125,6 +125,25 @@ mod tests {
     }
 
     #[test]
+    fn a_declared_type_is_found_or_the_answer_does_not_claim_completeness() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("lib.rs"),
+            "pub enum SurfaceProfile { A, B }\npub struct Cfg { pub p: SurfaceProfile }\n",
+        )
+        .expect("write");
+
+        for name in ["SurfaceProfile", "Cfg"] {
+            let answer = find(dir.path(), name).expect("the goal answers");
+            assert!(
+                !answer.locations.is_empty(),
+                "`{name}` is declared in lib.rs but find says: {}",
+                answer.summary
+            );
+        }
+    }
+
+    #[test]
     fn a_symbol_that_is_there_says_where() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn helper() {}\nfn main() {}").expect("write");

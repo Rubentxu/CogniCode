@@ -38228,3 +38228,25 @@ Ningún crate del workspace compilaba la feature `rig`: 1.513 líneas de `interf
 `no_dead_rig_surface`: RED 0/2 → GREEN 2/2. `cognicode-core --lib snapshot_key` 8/8. Los filtrados no certifican. `openspec_conformance.py --validate-paths` falla con `KeyError: pct_verified` (defecto ajeno al cambio, sin tarea); el nuevo `evidence_path` se comprobó a mano: existe. El gate completo no se corrió: se pasa por lote de 10 tareas.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-143: `find` no encontraba los `enum`, `trait` ni `union` de Rust
+
+SHA inicial: `8b98a5da`. Pruebas con `CARGO_BUILD_JOBS=2`, `nice -n 19 ionice -c3`, un paquete cada vez.
+
+### Causa
+
+`find_all_symbols_in_tree` lee Rust por `class_node_type()` (un solo nodo, `struct_item`). Los nodos `enum_item`, `trait_item` y `union_item` estaban en el fichero y no en los símbolos, así que `find SurfaceProfile` respondía «not in the project's symbols» sobre un tipo declarado: un «no está» dicho como si el índice lo cubriera todo.
+
+### Qué cambió
+
+Rust lee también `enum_item`, `trait_item` y `union_item` como símbolos de tipo (`tree_sitter_parser.rs`). `impl_item` queda fuera a propósito: no declara un nombre nuevo, y Rust no migra a los conjuntos declarados de `LanguageSymbols`.
+
+### Pruebas (RED → GREEN)
+
+`goals::find::a_declared_type_is_found_or_the_answer_does_not_claim_completeness`: RED (`SurfaceProfile` no se encuentra) → GREEN. `cognicode-core --lib` 2635/2635; `--test it` 1061/1061 (2 ignorados). Verificación contra el MCP real: NOT_RUN (el binario instalado es v0.101.21 y no publica `find`). El gate completo no se corrió: se pasa por lote de 10 tareas.
+
+### Limitación conocida
+
+Otros lenguajes que leen un solo nodo de clase pueden tener el mismo hueco; la respuesta de `find` sigue sin declarar su cobertura. `inspect` no se ha reverificado.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
