@@ -38479,3 +38479,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (10 PASS), ori
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (13 PASS), originales rc 0. Mutaciones del sujeto (problemas nuevo / lint / recall): `sys.exit(2)` → `sys.exit(0)` en la línea 98 del lint 1/1/0; `return 1 if args.strict else 0` → `return 0` 1/1/0; recall calculada como `1.0` fija 1/0/1; salida de error `return 2` → `return 0` en el script de la recall 1/0/1. El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (comentario al final del script de la recall) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 15): los contratos de la guarda de toolchain cruzado y del instalador son uno
+
+### Qué cambió
+
+`test_cross_toolchain_guard.py` (483 líneas, 11 tests) y `test_install_asset_agreement.py` (607, 13) se fusionan en `scripts/ci/test_release_path_contracts.py` (1066): 1090 → 1066 líneas, 2 ficheros → 1 (30 en `scripts/ci`). Comparten carril (el binario que sale de la release y el que `install.sh` descarga), no sujeto: la parte I ejercita `scripts/ci/check-cross-toolchain.sh`; la II, `install.sh`. Las 24 comprobaciones conservan nombre, docstring y fallos cerrados; sin nombres homónimos de nivel superior y con `REPO_ROOT` declarado una vez. El `main` único recorre los tests en orden de definición, falla si no encuentra ninguno y cuenta como FAIL toda excepción. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Sin punteros vivos a los nombres antiguos.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (24 PASS). Mutaciones del sujeto (problemas nuevo / originales): comparación del checksum de `install.sh` contra sí misma 2/2; validación de versión del binario reducida a `*)` 1/1; guarda tratando todo target como nativo 5/5; fallo del compilador C++ degradado a `echo` 1/1. En todas el nuevo falla exactamente lo que falla el original que corresponde. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
