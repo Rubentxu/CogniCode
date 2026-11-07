@@ -163,7 +163,7 @@ python3 scripts/product/generate_tool_catalog.py \
 ```
 
 The committed master and the capture are compared by
-`scripts/ci/test_the_consumer_can_declare_the_version.py`. It fails when they
+`scripts/ci/test_conditional_write_contracts.py`. It fails when they
 disagree about a tool's input schema — the tool names can agree while the
 shape the consumer passes has drifted — and also when they disagree about the
 `runtime_metadata`: the master's mirror of what the runtime publishes has to
@@ -232,7 +232,7 @@ set, and the curated keys the runtime does not publish — `check_architecture`
 carries `gate_authority` and `produces_observations_only`, which no
 `tools/list` will ever return, and a copy would take them away. `--check`
 proves the committed master is a fixed point of that merge, and
-`scripts/ci/test_the_consumer_can_declare_the_version.py` fails when the
+`scripts/ci/test_conditional_write_contracts.py` fails when the
 committed master stops being one.
 
 The capture is the reference, and it is provenance: it is a real `tools/list`,

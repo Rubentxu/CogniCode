@@ -38491,3 +38491,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (13 PASS), ori
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (24 PASS). Mutaciones del sujeto (problemas nuevo / originales): comparación del checksum de `install.sh` contra sí misma 2/2; validación de versión del binario reducida a `*)` 1/1; guarda tratando todo target como nativo 5/5; fallo del compilador C++ degradado a `echo` 1/1. En todas el nuevo falla exactamente lo que falla el original que corresponde. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 16): los contratos de la escritura atómica y del consumidor que declara la versión son uno
+
+### Qué cambió
+
+`test_the_write_is_atomic_and_declares_the_version.py` (282 líneas, 7 tests) y `test_the_consumer_can_declare_the_version.py` (509, 10) se fusionan en `scripts/ci/test_conditional_write_contracts.py` (754): 791 → 754 líneas, 2 ficheros → 1 (29 en `scripts/ci`). Es el mismo tema (la escritura condicional por versión) visto desde el servicio y desde el protocolo. Las 17 comprobaciones conservan nombre, docstring y fallos cerrados; `source()` era idéntica y queda una vez; los dos tests homónimos de detectores se renombran `test_the_write_detectors_see_a_violation_when_there_is_one` y `test_the_consumer_detectors_see_a_violation_when_there_is_one`. El `main` único recorre los tests en orden de definición y falla si no encuentra ninguno. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Los dos punteros vivos de `product/README.md` apuntan al nombre nuevo.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (17 PASS). Mutaciones del sujeto (problemas nuevo / originales): `create_new(true)` → `create(true)` en el escritor atómico 1/1; `expected_content_hash` fijado a `None` en `dto_mapping.rs` 1/1; clave `expected_content_hash` renombrada en `product/tools.json` 3/3. Control 0/0/0 (`sync_all` → `flush` en el escritor) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
