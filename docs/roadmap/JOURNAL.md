@@ -38825,3 +38825,15 @@ Gate NOT_RUN: el lote lleva 1 de 10 desde `ff670d40` (TASK-157).
 **Límite.** Solo `scripts/ci`; `scripts/measure/harness_ab.py` tiene 5 llamadas sin plazo y queda fuera.
 
 Gate NOT_RUN: el lote lleva 2 de 10 desde `ff670d40` (TASK-157, 159).
+
+## 2026-11-07 — scripts/measure: toda llamada a subprocess lleva plazo (TASK-160)
+
+**Medido.** Con `ast`, 5 llamadas sin `timeout` en `scripts/measure/harness_ab.py` (398, 401, 684, 690, 725), la deuda que TASK-159 dejó fuera. Medido además y fuera de alcance: `scripts/*.py` 9 llamadas y `scripts/product/*.py` 11.
+
+**Cambio.** `test_subprocess_deadlines.py` recorre `scripts/ci` y `scripts/measure` (una sola fuente de verdad). En `harness_ab.py`: la medición lleva un plazo exterior `timeout_s + 60` (el `timeout` interior ya corta el proceso; si vence el exterior la fila es un `timeout`, exit 124); `systemctl stop`, `git`, `--version` y `cargo metadata` llevan 60 s y degradan (versión vacía; `target/` por defecto) en vez de colgar. Los 60 s son una estimación, no una medición.
+
+**RED/GREEN.** Antes 3 de 4 fallaban (las 5 líneas citadas y los dos comportamientos); después 4/4. `test_link_trace_contracts.py` y `test_link_follow_contracts.py` siguen verdes (11/11 con el nuevo).
+
+**Verificación.** `test_roadmap_coherence.py` verde (deriva de `CURRENT.md` 4 → 5 al fusionar, en el máximo, sin regenerar). `bash scripts/ci/run-all-contracts.sh` `rc=0`.
+
+Gate NOT_RUN: el lote lleva 3 de 10 desde `ff670d40` (TASK-157, 159, 160).
