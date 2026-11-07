@@ -158,8 +158,6 @@ lsp-types.workspace = true
 
 # OpenTelemetry
 opentelemetry.workspace = true
-opentelemetry_sdk.workspace = true
-opentelemetry-otlp.workspace = true
 
 # Mermaid
 mermaid-rs-renderer.workspace = true

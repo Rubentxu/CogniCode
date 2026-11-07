@@ -473,8 +473,6 @@ dependencies = [
  "mockall",
  "notify",
  "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "parking_lot",
  "petgraph",
  "process-wrap",
