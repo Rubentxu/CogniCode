@@ -38849,3 +38849,15 @@ Gate NOT_RUN: el lote lleva 3 de 10 desde `ff670d40` (TASK-157, 159, 160).
 **Verificación.** `CURRENT.md` regenerado en el mismo PR sobre `765ea29f` (cabecera, prosa y una fila por unidad); `test_roadmap_coherence.py` 29/29. `bash scripts/ci/run-all-contracts.sh` `rc=0`.
 
 Gate NOT_RUN: el lote lleva 4 de 10 desde `ff670d40` (TASK-157, 159, 160, 161).
+
+## 2026-11-07 — sandbox/scripts/tests con plazo y contrato de plazos recursivo (TASK-162)
+
+**Medido.** Con `ast` sobre `git ls-files '*.py'`, fuera de lo vigilado: 2 `subprocess.check_output` sin `timeout` (`sandbox/scripts/tests/test_h2_max_results_propagation.py:45`, `test_h3_read_source_code_match.py:41`). El contrato usaba `glob('*.py')`: no recursivo, y un directorio inexistente daba lista vacía sin fallar; `scripts/ci/no_pytest_env/sitecustomize.py` y `scripts/mcp/mcp_smoke_all.py` quedaban fuera (hoy limpios).
+
+**Cambio.** `test_subprocess_deadlines.py` recorre `scripts/` y `sandbox/scripts/` con `rglob`, y falla si una raíz declarada no existe. Las 2 llamadas llevan `timeout=60`.
+
+**RED/GREEN.** Antes el contrato daba 7/8 (fallo: las 2 líneas citadas); después 8/8. Dos tests nuevos fijan el comportamiento: raíz inexistente falla y el escaneo alcanza los anidados y `sandbox/scripts`.
+
+**Verificación.** `test_roadmap_coherence.py` verde (deriva de `CURRENT.md` 1 → 2 al fusionar, sin regenerar). `bash scripts/ci/run-all-contracts.sh` `rc=0`.
+
+Gate NOT_RUN: el lote lleva 5 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162).
