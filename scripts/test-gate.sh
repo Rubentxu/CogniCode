@@ -390,7 +390,7 @@ if $RUN_MUTANTS; then
     # the memory the step asks for at once, and it has to fit in what the
     # machine has free. When it does not fit, the mutants that the tests kill
     # in seconds are reported as timeouts instead — a red gate that says
-    # nothing about the code. `scripts/ci/test_mutant_memory_budget.py` keeps
+    # nothing about the code. `scripts/ci/test_gate_contracts.py` keeps
     # the two numbers from drifting apart, and it is also the contract that
     # fixes the parallelism at ONE job: the measurement has to be
     # attributable to be a certificate.

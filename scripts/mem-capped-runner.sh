@@ -22,7 +22,7 @@
 # The ceiling is therefore a property of the parallelism, not of the crate, and
 # it stays a knob (`MUTANT_TEST_VMEM_KB`) for a crate whose own tests need
 # more. What it may not do is grow back without re-measuring the whole scope:
-# `scripts/ci/test_mutant_memory_budget.py` keeps the two numbers from
+# `scripts/ci/test_gate_contracts.py` keeps the two numbers from
 # drifting apart, and it is also what fixes the parallelism at one job. On a
 # machine with less free memory than this one, the ceiling is what comes down,
 # not the attribution: the measurement stays serial.

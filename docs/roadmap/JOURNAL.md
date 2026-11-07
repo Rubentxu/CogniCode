@@ -38371,3 +38371,15 @@ Sin cargo. Base verde: nuevo 15 passed, originales 9 y 6 passed, rc 0. Mutacione
 **Límite conocido.** La rama «sin emulador» de `run-target-binary.sh` (`exit 1` tras el mensaje de qemu) no se pudo discriminar: en esta máquina `qemu-aarch64-static` está en el PATH, así que ni el original ni el nuevo entran en esa rama (0/0/0). Es una laguna heredada del original, no introducida por la fusión; se conserva la comprobación tal cual.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 6): los dos contratos del gate son uno
+
+### Qué cambió
+
+`test_gate_scope.py` (417 líneas) y `test_mutant_memory_budget.py` (434) se fusionan en `scripts/ci/test_gate_contracts.py` (832): 851 → 832 líneas, 2 ficheros → 1 (39 en `scripts/ci`). Los dos vigilan `scripts/test-gate.sh`: qué radio mide y cómo corre el paso de mutantes. Las 16 comprobaciones (7 del radio, 9 del paso de mutantes) conservan su nombre, su docstring y sus fallos cerrados; el prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Punteros vivos actualizados al contrato nuevo: `AGENTS.md` (líneas 155 y 242), `scripts/mutants-budget.sh`, `scripts/mem-capped-runner.sh`, `scripts/mutate-file.sh` y `scripts/test-gate.sh`.
+
+### Pruebas
+
+Única unidad con `cargo metadata` (el fixture de `gate_scope` es un workspace real), autorizada por el operador solo para esta unidad; no se lanzó el gate ni ninguna suite. Base verde: nuevo rc 0, originales rc 0. Mutaciones (rc nuevo / gate_scope / presupuesto): cierre inverso reemplazado por los paquetes tocados 1/1/0; veredicto del calendario invertido 1/1/0; `undetermined`→`determined` 1/1/0; calendario incierto→`waits` 1/1/0; `MUTANTS_JOBS=1`→`8` 1/1/1; `MUTANT_CALENDAR_EVERY_N=abc` 1/1/0; presupuesto del dueño duplicado 1/0/1; techo del runner a 20 GiB 1/0/1; `gitignore=false` en la ruta focal 1/0/1; `AGENTS.md` sin nombrar `mutate-file.sh` 1/0/1. El nuevo falla en las diez y reproduce la unión de lo que cazan los originales. Ficheros restaurados (`cp -p`, `touch`, `cmp`). `run_contract_tests.py` sobre el nuevo: 16 passed.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

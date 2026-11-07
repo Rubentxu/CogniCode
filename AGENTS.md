@@ -152,7 +152,7 @@ verdad, y la segunda es la que se pudre.
 responde o si el diff no se puede leer, la respuesta es el gate **entero**, con el
 motivo en el log. Un radio vacío significaría «nada que comprobar», y un gate que no
 comprueba nada y dice verde es peor que un gate lento. Lo comprueba
-`scripts/ci/test_gate_scope.py`, con un workspace de fixture real.
+`scripts/ci/test_gate_contracts.py`, con un workspace de fixture real.
 
 **El calendario de los mutantes.** El crate que lleva la lógica de grafo **no se deja
 de medir: se mide en su turno**, y el turno está declarado en `scripts/test-gate.sh`
@@ -239,7 +239,7 @@ y un gate que calla es un gate en el que nadie puede confiar.
    directorio de destino** (el binario del último mutante no puede quedarse
    en la caché compartida) y el **presupuesto** (techo × trabajos ≤ 16 GiB,
    con los números en `scripts/mutants-budget.sh` y el contrato
-   `scripts/ci/test_mutant_memory_budget.py`).
+   `scripts/ci/test_gate_contracts.py`).
 
 **Comandos sueltos** (el gate los agrupa):
 
