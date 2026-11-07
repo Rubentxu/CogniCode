@@ -38187,3 +38187,24 @@ La corrida anterior la daba por colgada. Aislada y sin carga de la máquina, leg
 El gate completo no se corrió: se pasa por lote de 10 tareas.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-81: un tipo por forma de payload y sandbox sin copias de reporting
+
+SHA inicial: `7f6a56b9` (la rama `fix/task-81` iba 133 commits por detrás; se fusionó `main`, un conflicto en `schemas.rs`). Pruebas con `CARGO_BUILD_JOBS=2`, `nice -n 19 ionice -c3`, un paquete cada vez.
+
+### Qué cambió
+
+- `schemas.rs` reexporta ya 9 formas del DTO de aplicación: `CycleInfo`, `ViolationInfo`, `ChangeEntry`, `ValidationResult`, `ModuleDependency`, `ModuleDependencyGraph`, `OverviewDetail`, `OverviewMeta` y `RefactorAction`. `OverviewDetail` recoge en el DTO los cambios que `main` había hecho en la copia del MCP (esquema y nombres).
+- `sandbox/main.rs` usa `reporting.rs` en lugar de sus cinco copias (3530 → 3181 líneas).
+
+### Las dos decisiones sobre el payload publicado
+
+1. **`RefactorAction` se unifica y gana la forma publicada** (`snake_case`). El enum del DTO sólo circula dentro de `workspace_session`; ninguna superficie externa lo serializa, así que el payload publicado no cambia. Un test fija `rename … change_signature`. La descripción va en comentario normal, no en doc: un doc entraría en el esquema publicado.
+2. **`DeadCodeEntry` no se unifica.** El cable publica `kind` y `reason` como cadenas (`"function"`, `"NoIncomingEdges"`); tiparlas cambia el payload. Se unifica la proyección: `From<dto::DeadCodeEntry>` es su único dueño y el handler ya no la repite. Un test fija las cadenas.
+3. **`ground_truth.rs` no se migra** a los tipos de `schemas.rs`: sus parsers son tolerantes a propósito y los tipos estrictos cambiarían la puntuación del sandbox. Queda como limitación conocida.
+
+### Pruebas (RED → GREEN)
+
+`one_dto_per_shape`: RED (no compilaba) → 6/6. `cognicode-core --lib interface::mcp` 429/429; `--test it` filtrado a esquemas publicados, b5_w1, b5_w2 y goals: 32/32; `cognicode-sandbox` 178/178. Los filtrados no certifican la unidad. Gate: NOT_RUN (se pasa por lote de 10).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
