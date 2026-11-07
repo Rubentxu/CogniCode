@@ -38443,3 +38443,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (21 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / invocaciones / afirmaciones): `default_value = "."` quitado en `commands.rs` 7/7/0; variante `SymbolCode` renombrada 3/3/0; «88 tools» → «70 tools» en el cuerpo de `cognicode-mcp` 1/0/1; `runtime_tool_count` 88 → 87 en `product/tools.json` 2/0/2; `<file:line:column>` → `<symbol>` en `cognicode-pr-review` 1/1/0; `88-tool` → `70-tool` en el frontmatter 1/0/1; bloque ```bash con `index symbol-code MySymbol` añadido 1/1/0; `published: true` → `false` en `release_contract.rs` 1/1/1 (el test común cuenta una vez). El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (un comentario HTML al final de una skill) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 12): los contratos de la fecha medida y del snapshot son uno
+
+### Qué cambió
+
+`test_a_date_is_published_only_when_it_was_measured.py` (549 líneas, 7 tests) y `test_a_snapshot_says_who_produced_it.py` (516, 9) se fusionan en `scripts/ci/test_snapshot_and_date_contracts.py` (1032): 1065 → 1032 líneas, 2 ficheros → 1 (33 en `scripts/ci`). La parte A conserva la fecha medida (`file_time.rs`) y la B el snapshot con productor (`snapshot_key.rs`, `product/tools.json`); comparten un único `source()` y un único `REPO_ROOT`. Las 16 comprobaciones conservan nombre, docstring y fallos cerrados. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Sin punteros vivos externos a los nombres antiguos.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (16 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / fecha / snapshot): `pub fn epoch_millis(` hecho privado 1/1/0; `pub analyzer:` renombrado en `snapshot_key.rs` 1/0/1; `pub schema:` renombrado 1/0/1; `pub fn measured_nanos(` hecho privado 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (comentario al final de `file_time.rs`) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
