@@ -313,9 +313,11 @@ if $RUN_MUTANTS; then
       "${R_TOUCHED:-(nada)}"
     printf '               el crate del calendario (%s) no esta en su turno (%s).\n' \
       "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR}"
-    printf '  el hueco:    el calendario va en %s fusiones desde el marcador,\n' \
+    printf '  el hueco:    el calendario va en %s fusiones desde el marcador; su ultimo\n' \
       "$(radius_field calendar-count)"
-    printf '               y acota la edad de un hueco a %s fusiones (%s lotes de diez).\n' \
+    printf '               turno ya paso y el siguiente llega a %s fusiones de aqui.\n' \
+      "$(radius_field calendar-next)"
+    printf '               La edad de un hueco queda acotada a %s fusiones (%s lotes de diez).\n' \
       "${MUTANT_CALENDAR_EVERY_N}" "$((MUTANT_CALENDAR_EVERY_N / 10))"
     printf '  lo que no se dice: que la mutacion se midio y no encontro nada.\n'
   elif ! command -v cargo-mutants >/dev/null 2>&1 && ! cargo mutants --version >/dev/null 2>&1; then

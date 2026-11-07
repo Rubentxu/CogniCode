@@ -38799,3 +38799,15 @@ Gate NOT_RUN: el lote lleva 9 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 1
 **Límite.** Si el fallo vuelve, ahora dirá por qué; hasta entonces sigue sin explicarse.
 
 **Gate (lote 10/10 desde `1e1a013a`: TASK-148, 149, 150, 151, 152, 146, 153, 154, 155, 156).** `GATE_BASE=1e1a013a bash scripts/test-gate.sh` `rc=0` sobre `d38ae0ae`: unitarios 4493 pasan, integración 6679 pasan, radio de 9 crates. Mutantes: SKIP declarado por el propio gate (el lote tocó `cognicode-cli`, `cognicode-core`, `cognicode-graph-wasm`, ninguno mutable por coste; el calendario de `cognicode-graph-algos` marca «waits»). La mutación NO se midió en este lote. Observación sin resolver: el gate informa «85 fusiones desde el marcador, cada 50» y aun así «waits»; queda para revisar.
+
+## 2026-11-07 — Calendario de mutantes: el SKIP dice cuándo llega el siguiente turno (TASK-157)
+
+**Medido.** Con `--base ff670d40` el calendario da `waits (86 fusiones desde el marcador; periodo 50)`. La regla es correcta: el cruce de 50 ya pasó (a 50) y el siguiente es 100. El defecto estaba en el mensaje del SKIP, que mostraba «86 fusiones» junto a «cada 50» sin decir cuándo toca, y se leía como un hueco sin acotar.
+
+**Cambio.** `scripts/gate_scope.py` publica `calendar-next` (fusiones hasta el siguiente múltiplo; 0 si el calendario es incierto o no hay) en la salida, en `--explain` y en el diccionario de `decide()`/`_whole_gate`. `scripts/test-gate.sh` lo usa en el SKIP. La regla del calendario no cambia.
+
+**RED/GREEN.** `test_a_waiting_calendar_says_how_far_its_next_turn_is` (periodos 3 y 50 sobre el fixture): antes `calendar-next` era `None`; después 17/17 en `test_gate_contracts.py`.
+
+**Verificación.** `bash scripts/ci/run-all-contracts.sh` `rc=0`, 21 pasan, 0 fallan.
+
+Gate NOT_RUN: el lote lleva 1 de 10 desde `ff670d40` (TASK-157).

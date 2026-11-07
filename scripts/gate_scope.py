@@ -230,6 +230,11 @@ def _position(repo: Path, marker: str, upto: str) -> int:
     return int(raw.strip())
 
 
+def _next_turn(count: int, every: int) -> int:
+    """Merges left until the count reaches the next multiple of the period."""
+    return (count // every + 1) * every - count
+
+
 def _calendar_fires(
     repo: Path, marker: str, base: str, every: int
 ) -> tuple[bool, int, int]:
@@ -317,6 +322,9 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
         "calendar": calendar_state,
         "calendar-count": calendar_count,
         "calendar-start": calendar_start,
+        "calendar-next": _next_turn(calendar_count, args.calendar_every)
+        if args.calendar_crate and calendar_state != "unknown"
+        else 0,
         "workspace": sorted(roots),
         "reason": reason,
     }
@@ -346,6 +354,7 @@ def _whole_gate(args: argparse.Namespace, reason: str) -> dict[str, object]:
         "calendar": "unknown",
         "calendar-count": 0,
         "calendar-start": 0,
+        "calendar-next": 0,
         "workspace": sorted(roots),
         "reason": reason,
     }
@@ -419,7 +428,8 @@ def main() -> int:
         print(
             f"  calendario:     {result['calendar']} "
             f"({result['calendar-count']} fusiones desde el marcador; "
-            f"{result['calendar-start']} al empezar el lote)"
+            f"{result['calendar-start']} al empezar el lote; "
+            f"el siguiente turno, a {result['calendar-next']} fusiones)"
         )
         if result["reason"]:
             print(f"  motivo:         {result['reason']}")
@@ -446,6 +456,7 @@ def main() -> int:
     print(f"calendar={result['calendar']}")
     print(f"calendar-count={result['calendar-count']}")
     print(f"calendar-start={result['calendar-start']}")
+    print(f"calendar-next={result['calendar-next']}")
     print(f"reason={result['reason']}")
     return 0 if result["status"] == "ok" else 1
 
