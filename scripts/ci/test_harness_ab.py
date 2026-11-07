@@ -398,5 +398,91 @@ def test_every_question_declares_the_intent_and_the_judge_knows_it() -> None:
             )
 
 
+def _call(version: str, question: str, repeat: int = 0) -> dict:
+    meta = {"version": version, "repo": "r", "question": question, "intent": "find", "repeat": repeat}
+    return load_module().make_call(meta, ["x"], 1, "1G")
+
+
+def _fake(cut_on: str):
+    def run_one(argv, *, timeout_s, memory_max):
+        cut = "timeout" if cut_on in argv else ""
+        return {"seconds": 1.0, "max_rss_kb": 10, "exit_code": 124 if cut else 0,
+                "cut": cut, "payload": {} if cut else {"call_ms": 5, "correct": True, "state": "complete"}}
+    return run_one
+
+
+def test_a_cut_call_is_recorded_and_the_run_continues() -> None:
+    """Una llamada que excede el plazo queda como `cortada` y la siguiente corre."""
+    harness = load_module()
+    slow = harness.make_call({"version": "legacy", "repo": "r", "question": "slow", "intent": "find", "repeat": 0}, ["slow"], 1, "1G")
+    fine = harness.make_call({"version": "v2", "repo": "r", "question": "fine", "intent": "find", "repeat": 0}, ["fine"], 1, "1G")
+    sunk: list = []
+    rows = harness.run_plan([slow, fine], sunk.append, run_one=_fake("slow"))
+    assert [r["cut"] for r in rows] == ["timeout", ""], rows
+    assert rows[0]["state"] == "timeout" and rows[1]["state"] == "complete"
+    assert len(sunk) == 2, "every call must leave its row as soon as it ends"
+
+
+def test_repetitions_of_a_cut_question_are_skipped() -> None:
+    """Repetir lo que ya agotó el plazo sólo gasta el plazo otra vez."""
+    harness = load_module()
+    meta = lambda n: {"version": "legacy", "repo": "r", "question": "slow", "intent": "find", "repeat": n}
+    plan = [harness.make_call(meta(n), ["slow"], 1, "1G") for n in range(3)]
+    rows = harness.run_plan(plan, lambda row: None, run_one=_fake("slow"))
+    assert len(rows) == 1, rows
+
+
+def test_exit_codes_classify_as_timeout_or_memory() -> None:
+    harness = load_module()
+    assert harness.classify_cut(124) == "timeout"
+    assert harness.classify_cut(137) == "memory"
+    assert harness.classify_cut(0) == "" and harness.classify_cut(1) == ""
+
+
+def test_time_report_is_parsed() -> None:
+    harness = load_module()
+    report = (
+        "\tCommand terminated by signal 9\n"
+        "\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:02.50\n"
+        "\tMaximum resident set size (kbytes): 2048\n"
+    )
+    parsed = harness.parse_time_report(report)
+    assert parsed == {"seconds": 62.5, "max_rss_kb": 2048, "exit_code": 137}, parsed
+
+
+def test_csv_sink_appends_one_row_per_call_with_one_header() -> None:
+    import tempfile
+    harness = load_module()
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "nested" / "calls.csv"
+        sink = harness.CsvSink(path)
+        rows = harness.run_plan([_call("v2", "a"), _call("v2", "b")], sink, run_one=_fake("none"))
+        read = harness.read_rows(path)
+        assert [r["question"] for r in read] == ["a", "b"] == [r["question"] for r in rows]
+        assert path.read_text().count("version,repo") == 1
+        assert set(harness.FIELDS) <= set(read[0])
+
+
+def test_a_real_process_over_its_limit_is_cut_and_the_next_one_runs() -> None:
+    """Con procesos de verdad: `sleep` pasa del plazo y `true` sigue."""
+    harness = load_module()
+    slow = harness.isolated_run(["sleep", "30"], timeout_s=1, memory_max="256M")
+    assert slow["cut"] == "timeout", slow
+    fine = harness.isolated_run(["true"], timeout_s=10, memory_max="256M")
+    assert fine["cut"] == "" and fine["exit_code"] == 0, fine
+
+
+def test_the_plan_limits_the_large_repo_to_its_own_repeats() -> None:
+    harness = load_module()
+    config = read_toml(HARNESS_CONFIG)
+    plan = harness.build_plan(config, Path("/bin/true"), {"large"}, {"v2"})
+    per_question = {}
+    for call in plan:
+        key = call["meta"]["question"]
+        per_question[key] = per_question.get(key, 0) + 1
+    assert per_question and set(per_question.values()) == {config["run"]["large_repeats"]}, per_question
+    assert all(call["memory_max"] == config["run"]["memory_max"] for call in plan)
+
+
 if __name__ == "__main__":
     sys.exit(0)

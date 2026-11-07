@@ -10,10 +10,16 @@
 [run]
 # Llamadas por pregunta tras un calentamiento (el primer arranque indexa y
 # se publica aparte como `warmup_ms`). El p95 se calcula sobre estas.
-repeats = 5
-# Tiempo máximo de una respuesta, en segundos. Una llamada que no vuelve a
-# tiempo es una respuesta fallida, no un cuelgue del comando.
-call_timeout_s = 30
+repeats = 3
+# En el repo grande cada llamada indexa desde cero: una sola, para no gastar la
+# máquina repitiendo lo caro.
+large_repeats = 1
+# Tiempo máximo de una llamada, en segundos. Una que no vuelve a tiempo queda
+# registrada como cortada y la corrida sigue.
+call_timeout_s = 120
+# Techo de memoria de CADA llamada (cgroup). Lo que lo pasa lo mata el kernel y
+# queda registrado como cortado por memoria.
+memory_max = "2G"
 
 [price]
 # Referencia declarada, no una consulta a ninguna API. Si cambia, se cambia
@@ -28,6 +34,7 @@ as_of = "2026-11-07"
 name = "cognicode"
 path = "."
 language = "rust"
+large = true
 
 [[repo]]
 name = "kotlin"

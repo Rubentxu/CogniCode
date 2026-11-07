@@ -11,8 +11,14 @@ Es un comando a demanda. No está en la suite ni en el gate, y por eso su
 lógica de decisión (el juez, el veredicto, las extracciones) la vigila
 `scripts/ci/test_harness_ab.py`.
 
-    just harness-ab                # mide y juzga
-    just harness-ab -- --publish   # además escribe product/measurements/
+    just harness-ab run --repos kotlin,jenkins-library,csharp   # los pequeños
+    just harness-ab run --repos cognicode                       # el grande
+    just harness-ab report [--publish]                          # juzga y publica
+
+Cada llamada es un proceso aparte (`worker`) con plazo y techo de memoria, y deja
+una fila en `product/measurements/task-93/calls.csv` en cuanto termina: una
+llamada que se cuelga o se pasa de memoria queda registrada como cortada y la
+corrida sigue con la siguiente.
 
 rc 0  todas las metas se cumplen
 rc 1  una meta se supera, o una cifra con meta no se pudo medir
@@ -32,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -233,21 +240,11 @@ class McpClient:
     """Un servidor `cognicode-mcp` por stdio. Una respuesta sin plazo es un
     cuelgue del comando, así que la lectura va en un hilo con su deadline."""
 
-    memory_max = "3G"
-
     def __init__(self, binary: Path, cwd: Path, profile: str, timeout_s: float):
         self.timeout_s = timeout_s
         self.next_id = 0
-        # Un techo de memoria por servidor (cgroup): un servidor que crece sin
-        # límite lo mata el kernel a él y no a sus vecinos. `ulimit -v` no vale,
-        # porque la base de grafos reserva espacio de direcciones de sobra.
-        cap = shutil.which("systemd-run")
-        if cap is None:
-            raise RuntimeError("systemd-run is required to cap the server memory; refusing to run unbounded")
         self.proc = subprocess.Popen(
-            [cap, "--user", "--scope", "--quiet", "-p", f"MemoryMax={self.memory_max}",
-             "-p", "MemorySwapMax=0",
-             str(binary), "--cwd", str(cwd), "--profile", profile],
+            [str(binary), "--cwd", str(cwd), "--profile", profile],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -340,7 +337,192 @@ def _first_text_json(result: dict[str, Any]) -> Any:
     return None
 
 
-# --- la medición --------------------------------------------------------------
+# --- el aislamiento: una llamada, un proceso ---------------------------------
+
+QUESTION_INTENTS = ("find", "inspect", "trace")
+PROBE_INTENTS = ("status", "context", "reparse")
+FIELDS = [
+    "version", "repo", "question", "seconds", "max_rss_kb", "exit_code", "cut",
+    "intent", "repeat", "call_ms", "correct", "state", "bytes", "discovery_bytes",
+]
+ROWS_PATH = MEASUREMENTS / "task-93" / "calls.csv"
+TIME = "/usr/bin/time"
+
+
+def parse_time_report(text: str) -> dict[str, Any]:
+    """Lo que `/usr/bin/time -v` dice del proceso medido."""
+    seconds = rss = exit_code = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("Elapsed (wall clock) time"):
+            total = 0.0
+            for part in line.rsplit(": ", 1)[1].split(":"):
+                total = total * 60 + float(part)
+            seconds = round(total, 3)
+        elif line.startswith("Maximum resident set size"):
+            rss = int(line.rsplit(": ", 1)[1])
+        elif line.startswith("Exit status:"):
+            exit_code = int(line.rsplit(": ", 1)[1])
+        elif line.startswith("Command terminated by signal"):
+            exit_code = 128 + int(line.rsplit(" ", 1)[1])
+    return {"seconds": seconds, "max_rss_kb": rss, "exit_code": exit_code}
+
+
+def classify_cut(exit_code: int | None) -> str:
+    """124 es el plazo de `timeout`; 137 es SIGKILL, que aquí sólo lo manda el
+    kernel cuando el cgroup pasa de `MemoryMax`."""
+    if exit_code == 124:
+        return "timeout"
+    if exit_code == 137:
+        return "memory"
+    return ""
+
+
+def isolated_run(argv: list[str], *, timeout_s: float, memory_max: str) -> dict[str, Any]:
+    """Ejecuta `argv` como un proceso aparte, con plazo, techo de memoria y
+    prioridad mínima de CPU y disco, y devuelve lo medido. Nunca lanza por culpa
+    del proceso: uno que falla, se cuelga o se pasa de memoria es una fila."""
+    if shutil.which("systemd-run") is None or not Path(TIME).is_file():
+        raise RuntimeError("systemd-run and /usr/bin/time are required; refusing to run unbounded")
+    unit = f"harness-ab-{uuid.uuid4().hex[:12]}"
+    with tempfile.NamedTemporaryFile("r", suffix=".time") as report:
+        command = [
+            TIME, "-v", "-o", report.name,
+            "timeout", "--kill-after=5", f"{timeout_s}s",
+            "systemd-run", "--user", "--scope", "--quiet", "--unit", unit,
+            "-p", f"MemoryMax={memory_max}", "-p", "MemorySwapMax=0",
+            "nice", "-n", "19", "ionice", "-c3",
+            *argv,
+        ]
+        done = subprocess.run(command, capture_output=True, text=True)
+        measured = parse_time_report(Path(report.name).read_text())
+    # Lo que el plazo dejó vivo (el servidor hijo de un worker cortado) muere con el scope.
+    subprocess.run(["systemctl", "--user", "stop", f"{unit}.scope"], capture_output=True)
+    exit_code = measured["exit_code"] if measured["exit_code"] is not None else done.returncode
+    payload: dict[str, Any] = {}
+    for line in reversed(done.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            payload = candidate
+            break
+    return {
+        "seconds": measured["seconds"],
+        "max_rss_kb": measured["max_rss_kb"],
+        "exit_code": exit_code,
+        "cut": classify_cut(exit_code),
+        "payload": payload,
+    }
+
+
+def make_call(meta: dict[str, Any], argv: list[str], timeout_s: float, memory_max: str) -> dict[str, Any]:
+    return {"meta": meta, "argv": argv, "timeout_s": timeout_s, "memory_max": memory_max}
+
+
+def build_row(call: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    payload = result["payload"]
+    row = {name: "" for name in FIELDS}
+    row.update(call["meta"])
+    row.update(
+        seconds=result["seconds"],
+        max_rss_kb=result["max_rss_kb"],
+        exit_code=result["exit_code"],
+        cut=result["cut"],
+        call_ms=payload.get("call_ms", ""),
+        correct=payload.get("correct", ""),
+        state=payload.get("state") or result["cut"] or "no-response",
+        bytes=payload.get("bytes", ""),
+        discovery_bytes=payload.get("discovery_bytes", ""),
+    )
+    return row
+
+
+def run_plan(plan: list[dict[str, Any]], sink, run_one=isolated_run) -> list[dict[str, Any]]:
+    """Corre las llamadas una a una. Una cortada queda registrada y la corrida
+    sigue; las repeticiones de la misma pregunta se omiten, porque repetir lo
+    que ya agotó el plazo sólo gasta el plazo otra vez."""
+    rows: list[dict[str, Any]] = []
+    cut_keys: set[tuple[str, str, str]] = set()
+    for call in plan:
+        meta = call["meta"]
+        key = (meta["version"], meta["repo"], meta["question"])
+        if key in cut_keys:
+            continue
+        result = run_one(call["argv"], timeout_s=call["timeout_s"], memory_max=call["memory_max"])
+        row = build_row(call, result)
+        sink(row)
+        rows.append(row)
+        if row["cut"]:
+            cut_keys.add(key)
+    return rows
+
+
+class CsvSink:
+    """Añade cada fila en cuanto llega: una corrida que muere no pierde lo medido."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def __call__(self, row: dict[str, Any]) -> None:
+        import csv
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fresh = not self.path.exists() or self.path.stat().st_size == 0
+        with self.path.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=FIELDS)
+            if fresh:
+                writer.writeheader()
+            writer.writerow({name: row.get(name, "") for name in FIELDS})
+
+
+def read_rows(path: Path) -> list[dict[str, Any]]:
+    import csv
+
+    if not path.is_file():
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+# --- el trabajador: una llamada dentro de su proceso --------------------------
+
+
+def run_worker(spec: dict[str, Any]) -> dict[str, Any]:
+    scratch = None
+    cwd = Path(spec["cwd"])
+    args = dict(spec["args"])
+    edit = spec.get("edit_copy")
+    if edit:
+        scratch = tempfile.mkdtemp(prefix="harness-ab-")
+        cwd = Path(scratch) / "ws"
+        shutil.copytree(edit["source"], cwd)
+        args = {"file_paths": [str(cwd / edit["file"])]}
+    client = McpClient(Path(spec["binary"]), cwd, spec["profile"], 3600)
+    try:
+        discovery = client.discovery_bytes() if spec.get("measure_discovery") else None
+        if edit:
+            with (cwd / edit["file"]).open("a", encoding="utf-8") as handle:
+                handle.write("\n// harness-ab edit\n")
+        reply = client.call(spec["tool"], args)
+    finally:
+        client.close()
+        if scratch:
+            shutil.rmtree(scratch, ignore_errors=True)
+    correct = ""
+    if spec.get("question"):
+        correct = judge(spec["intent"], reply, spec["arm"], spec["question"], spec["language"])
+    return {
+        "call_ms": round(reply["elapsed_ms"], 3),
+        "correct": correct,
+        "state": reply["state"],
+        "bytes": reply["bytes"],
+        "discovery_bytes": discovery if discovery is not None else "",
+    }
+
+
+# --- el plan -----------------------------------------------------------------
 
 
 def _fill(template: dict[str, Any], question: dict[str, Any]) -> dict[str, Any]:
@@ -354,135 +536,144 @@ def _fill(template: dict[str, Any], question: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _timed_out(timeout_s: float) -> dict[str, Any]:
-    return {
-        "result": {},
-        "state": "timeout",
-        "is_error": True,
-        "bytes": 0,
-        "elapsed_ms": timeout_s * 1000,
-    }
+def _worker_argv(spec: dict[str, Any]) -> list[str]:
+    return [sys.executable, "-I", str(Path(__file__).resolve()), "worker", "--spec", json.dumps(spec)]
 
 
-def measure_arm(
-    arm: dict[str, Any], config: dict[str, Any], binary: Path
-) -> dict[str, Any]:
-    repeats = config["run"]["repeats"]
-    timeout = config["run"]["call_timeout_s"]
-    price = config["price"]
-    repos = {repo["name"]: repo for repo in config["repo"]}
-    discovery = 0
-    sessions = 0
-    response_bytes = 0
-    calls_made = 0
-    questions: list[dict[str, Any]] = []
-    latencies: dict[str, list[float]] = {}
-    states: dict[str, int] = {}
+def build_plan(
+    config: dict[str, Any], binary: Path, repos: set[str] | None, arms: set[str] | None
+) -> list[dict[str, Any]]:
+    run = config["run"]
+    plan: list[dict[str, Any]] = []
+    by_name = {repo["name"]: repo for repo in config["repo"]}
 
-    for repo_name in dict.fromkeys(q["repo"] for q in config["question"]):
-        repo = repos[repo_name]
+    def selected(repo: dict[str, Any]) -> bool:
+        if not repos:
+            return True
+        size = "large" if repo.get("large") else "small"
+        return repo["name"] in repos or size in repos
+
+    def limits() -> tuple[float, str]:
+        return run["call_timeout_s"], run["memory_max"]
+
+    for repo in sorted(config["repo"], key=lambda r: bool(r.get("large"))):
+        if not selected(repo):
+            continue
         root = (REPO_ROOT / repo["path"]).resolve()
         language = config["language"][repo["language"]]
-        client = McpClient(binary, root, arm["profile"], timeout)
-        try:
-            discovery = max(discovery, client.discovery_bytes())
-            sessions += 1
-            for question in (q for q in config["question"] if q["repo"] == repo_name):
-                spec = arm["call"][question["intent"]]
-                arguments = _fill(spec["args"], question)
-                try:
-                    warm = client.call(spec["tool"], arguments)
-                    samples = [client.call(spec["tool"], arguments) for _ in range(repeats)]
-                except TimeoutError:
-                    # Una llamada que no vuelve a tiempo es una respuesta fallida
-                    # con la latencia del plazo; el servidor se relanza porque
-                    # `_read_line` lo mató, y las repeticiones no se reintentan.
-                    client.close()
-                    client = McpClient(binary, root, arm["profile"], timeout)
-                    warm = _timed_out(timeout)
-                    samples = [warm]
-                correct = judge(question["intent"], warm, arm["name"], question, language)
-                for sample in [warm, *samples]:
-                    response_bytes += sample["bytes"]
-                    calls_made += 1
-                    states[sample["state"]] = states.get(sample["state"], 0) + 1
-                latencies.setdefault(question["intent"], []).extend(
-                    s["elapsed_ms"] for s in samples
-                )
-                questions.append(
-                    {
-                        "repo": repo_name,
-                        "intent": question["intent"],
-                        "symbol": question["symbol"],
-                        "tool": spec["tool"],
-                        "correct": correct,
-                        "state": warm["state"],
-                        "bytes": warm["bytes"],
-                        "warmup_ms": round(warm["elapsed_ms"], 3),
+        repeats = run["large_repeats"] if repo.get("large") else run["repeats"]
+        for arm in config["arm"]:
+            if arms and arm["name"] not in arms:
+                continue
+            for question in (q for q in config["question"] if q["repo"] == repo["name"]):
+                call = arm["call"][question["intent"]]
+                label = f"{question['intent']}:{question.get('file') or question['symbol']}"
+                for repeat in range(repeats):
+                    spec = {
+                        "binary": str(binary), "cwd": str(root), "profile": arm["profile"],
+                        "arm": arm["name"], "tool": call["tool"],
+                        "args": _fill(call["args"], question), "intent": question["intent"],
+                        "question": question, "language": language,
+                        "measure_discovery": repeat == 0,
                     }
+                    meta = {"version": arm["name"], "repo": repo["name"], "question": label,
+                            "intent": question["intent"], "repeat": repeat}
+                    plan.append(make_call(meta, _worker_argv(spec), *limits()))
+
+    v2 = next((a for a in config["arm"] if a["name"] == "v2"), None)
+    if v2 and (not arms or "v2" in arms):
+        kotlin = by_name["kotlin"]
+        if selected(kotlin):
+            for probe in config.get("latency", []):
+                for repeat in range(run["repeats"]):
+                    spec = {"binary": str(binary), "cwd": str((REPO_ROOT / kotlin["path"]).resolve()),
+                            "profile": "default", "arm": "v2", "tool": probe["tool"],
+                            "args": probe["args"], "intent": probe["metric"],
+                            "measure_discovery": False}
+                    meta = {"version": "v2", "repo": "kotlin", "question": probe["metric"],
+                            "intent": probe["metric"], "repeat": repeat}
+                    plan.append(make_call(meta, _worker_argv(spec), *limits()))
+        reparse = config.get("reparse")
+        if reparse and selected(by_name[reparse["repo"]]):
+            source = str((REPO_ROOT / by_name[reparse["repo"]]["path"]).resolve())
+            for repeat in range(run["repeats"]):
+                spec = {"binary": str(binary), "cwd": source, "profile": "default", "arm": "v2",
+                        "tool": "reparse_on_edit", "args": {}, "intent": "reparse",
+                        "edit_copy": {"source": source, "file": reparse["file"]},
+                        "measure_discovery": False}
+                meta = {"version": "v2", "repo": reparse["repo"], "question": "reparse",
+                        "intent": "reparse", "repeat": repeat}
+                plan.append(make_call(meta, _worker_argv(spec), *limits()))
+    return plan
+
+
+# --- de las filas a las cifras ------------------------------------------------
+
+
+def _latency_ms(row: dict[str, Any]) -> float | None:
+    if row["call_ms"] not in ("", None):
+        return float(row["call_ms"])
+    if row["seconds"] not in ("", None):
+        return float(row["seconds"]) * 1000
+    return None
+
+
+def aggregate(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
+    """Las filas de un brazo → las cifras que juzgan las metas. Una llamada
+    cortada cuenta como incorrecta y como latencia de su plazo: una respuesta
+    que no llega es la peor respuesta, no una ausencia."""
+    price = config["price"]
+    arms: dict[str, Any] = {}
+    for name in dict.fromkeys(r["version"] for r in rows):
+        mine = [r for r in rows if r["version"] == name]
+        asked = [r for r in mine if r["intent"] in QUESTION_INTENTS]
+        first: dict[tuple[str, str], dict[str, Any]] = {}
+        for r in asked:
+            first.setdefault((r["repo"], r["question"]), r)
+        per_repo_discovery: dict[str, int] = {}
+        for r in mine:
+            if r["discovery_bytes"] not in ("", None):
+                per_repo_discovery[r["repo"]] = max(
+                    per_repo_discovery.get(r["repo"], 0), int(float(r["discovery_bytes"]))
                 )
-        finally:
-            client.close()
-
-    tokens = (discovery * sessions + response_bytes) / price["bytes_per_token"]
-    metrics: dict[str, Any] = {
-        "profile": arm["profile"],
-        "questions": questions,
-        "discovery_bytes": discovery,
-        "response_bytes": response_bytes,
-        "calls": calls_made,
-        "tokens_estimate": round(tokens),
-        "cost_estimate_usd": round(tokens / 1_000_000 * price["usd_per_million_input_tokens"], 6),
-        "accuracy": round(sum(q["correct"] for q in questions) / len(questions), 4),
-        "states": states,
-    }
-    for intent, samples in latencies.items():
-        metrics[f"{intent}_p50_ms"] = percentile(samples, 0.50)
-        metrics[f"{intent}_p95_ms"] = percentile(samples, 0.95)
-    return metrics
-
-
-def measure_latencies(config: dict[str, Any], binary: Path) -> dict[str, Any]:
-    """`status`, `context` y el reindexado de un fichero, en el brazo v2."""
-    repeats = config["run"]["repeats"]
-    timeout = config["run"]["call_timeout_s"]
-    repos = {repo["name"]: repo for repo in config["repo"]}
-    out: dict[str, Any] = {}
-
-    reference = repos["kotlin"]
-    root = (REPO_ROOT / reference["path"]).resolve()
-    client = McpClient(binary, root, "default", timeout)
-    try:
-        for probe in config.get("latency", []):
-            client.call(probe["tool"], probe["args"])
-            samples = [client.call(probe["tool"], probe["args"])["elapsed_ms"] for _ in range(repeats)]
-            out[f"{probe['metric']}_p95_ms"] = percentile(samples, 0.95)
-    finally:
-        client.close()
-
-    spec = config.get("reparse")
-    if spec:
-        source = (REPO_ROOT / repos[spec["repo"]]["path"]).resolve()
-        with tempfile.TemporaryDirectory(prefix="harness-ab-") as scratch:
-            copy = Path(scratch) / "ws"
-            shutil.copytree(source, copy)
-            target = copy / spec["file"]
-            client = McpClient(binary, copy, "default", timeout)
-            try:
-                samples = []
-                for index in range(repeats + 1):
-                    with target.open("a", encoding="utf-8") as handle:
-                        handle.write(f"\n// harness-ab edit {index}\n")
-                    reply = client.call("reparse_on_edit", {"file_paths": [str(target)]})
-                    if reply["is_error"]:
-                        samples = []
-                        break
-                    if index > 0:
-                        samples.append(reply["elapsed_ms"])
-                out["reparse_p95_ms"] = percentile(samples, 0.95)
-            finally:
-                client.close()
-    return out
+        discovery = max(per_repo_discovery.values(), default=None)
+        response_bytes = sum(int(float(r["bytes"])) for r in mine if r["bytes"] not in ("", None))
+        tokens = (sum(per_repo_discovery.values()) + response_bytes) / price["bytes_per_token"]
+        states: dict[str, int] = {}
+        for r in mine:
+            states[r["state"]] = states.get(r["state"], 0) + 1
+        metrics: dict[str, Any] = {
+            "profile": next(a["profile"] for a in config["arm"] if a["name"] == name),
+            "discovery_bytes": discovery,
+            "response_bytes": response_bytes,
+            "calls": len(mine),
+            "cut_calls": sum(1 for r in mine if r["cut"]),
+            "tokens_estimate": round(tokens),
+            "cost_estimate_usd": round(tokens / 1_000_000 * price["usd_per_million_input_tokens"], 6),
+            "states": states,
+            "questions": [
+                {
+                    "repo": r["repo"], "intent": r["intent"], "question": r["question"],
+                    "correct": str(r["correct"]) == "True", "state": r["state"],
+                    "cut": r["cut"], "bytes": r["bytes"], "cold_s": r["seconds"],
+                    "max_rss_kb": r["max_rss_kb"],
+                }
+                for r in first.values()
+            ],
+        }
+        if first:
+            metrics["accuracy"] = round(
+                sum(str(r["correct"]) == "True" for r in first.values()) / len(first), 4
+            )
+        for intent in (*QUESTION_INTENTS, *PROBE_INTENTS):
+            samples = [v for r in mine if r["intent"] == intent for v in [_latency_ms(r)] if v is not None]
+            if samples:
+                metrics[f"{intent}_p50_ms"] = percentile(samples, 0.50)
+                metrics[f"{intent}_p95_ms"] = percentile(samples, 0.95)
+        if name == "v2":
+            metrics["tools_list_bytes"] = discovery
+        arms[name] = metrics
+    return arms
 
 
 # --- la publicación -----------------------------------------------------------
@@ -510,7 +701,9 @@ def publish(arms: dict[str, Any], binary: Path, config: dict[str, Any]) -> Path:
         "commit": commit,
         "dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
         "measured_on": dt.date.today().isoformat(),
-        "binary": str(binary),
+        "method": "one process per call; cold server per call; timeout and MemoryMax per call",
+        "limits": {k: config["run"][k] for k in ("call_timeout_s", "memory_max", "repeats", "large_repeats")},
+        "calls_file": str(ROWS_PATH.relative_to(REPO_ROOT)),
         "price": config["price"],
         "arms": arms,
     }
@@ -526,50 +719,69 @@ def publish(arms: dict[str, Any], binary: Path, config: dict[str, Any]) -> Path:
 def default_binary() -> Path:
     target = subprocess.run(
         ["cargo", "metadata", "--no-deps", "--format-version", "1"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+        cwd=REPO_ROOT, capture_output=True, text=True,
     )
-    base = Path(json.loads(target.stdout)["target_directory"]) if target.returncode == 0 else REPO_ROOT / "target"
+    base = (Path(json.loads(target.stdout)["target_directory"])
+            if target.returncode == 0 else REPO_ROOT / "target")
     return base / "release" / "cognicode-mcp"
+
+
+def _csv_set(value: str | None) -> set[str] | None:
+    return {item for item in value.split(",") if item} if value else None
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--binary", type=Path, help="cognicode-mcp release binary")
-    parser.add_argument("--publish", action="store_true", help="write product/measurements/")
+    sub = parser.add_subparsers(dest="command", required=True)
+    run = sub.add_parser("run", help="measure, one process per call")
+    run.add_argument("--repos", help="names, or `small` / `large`")
+    run.add_argument("--arms", help="v2,legacy")
+    run.add_argument("--binary", type=Path)
+    run.add_argument("--rows", type=Path, default=ROWS_PATH)
+    report = sub.add_parser("report", help="judge the rows against slo-budget.toml")
+    report.add_argument("--binary", type=Path)
+    report.add_argument("--rows", type=Path, default=ROWS_PATH)
+    report.add_argument("--publish", action="store_true")
+    worker = sub.add_parser("worker", help="(internal) one call")
+    worker.add_argument("--spec", required=True)
     args = parser.parse_args(argv)
 
-    binary = args.binary or default_binary()
-    if not binary.is_file():
-        print(
-            f"missing binary {binary}: run `cargo build --release --bin cognicode-mcp` first",
-            file=sys.stderr,
-        )
-        return 2
+    if args.command == "worker":
+        print(json.dumps(run_worker(json.loads(args.spec))))
+        return 0
 
+    binary = args.binary or default_binary()
     with CONFIG_PATH.open("rb") as handle:
         config = tomllib.load(handle)
-    goals = load_goals(SLO_PATH)
 
-    arms: dict[str, Any] = {}
-    for arm in config["arm"]:
-        print(f"measuring arm `{arm['name']}` ...", file=sys.stderr)
-        arms[arm["name"]] = measure_arm(arm, config, binary)
-    print("measuring the latencies ...", file=sys.stderr)
-    arms["v2"].update(measure_latencies(config, binary))
-    arms["v2"]["tools_list_bytes"] = arms["v2"]["discovery_bytes"]
+    if args.command == "run":
+        if not binary.is_file():
+            print(f"missing binary {binary}: run `cargo build --release --bin cognicode-mcp`", file=sys.stderr)
+            return 2
+        plan = build_plan(config, binary, _csv_set(args.repos), _csv_set(args.arms))
+        if not plan:
+            print("the selection matches no call", file=sys.stderr)
+            return 2
+        print(f"{len(plan)} calls, one process each; rows -> {args.rows}", file=sys.stderr)
+        rows = run_plan(plan, CsvSink(args.rows))
+        cut = [r for r in rows if r["cut"]]
+        print(f"ran {len(rows)} calls; {len(cut)} cut")
+        for r in cut:
+            print(f"  cut ({r['cut']}): {r['version']} {r['repo']} {r['question']}")
+        return 0
 
+    rows = read_rows(args.rows)
+    if not rows:
+        print(f"no rows in {args.rows}: run `run` first", file=sys.stderr)
+        return 2
+    arms = aggregate(rows, config)
     for name, metrics in arms.items():
-        print(
-            f"{name:7} discovery={metrics['discovery_bytes']}B calls={metrics['calls']} "
-            f"tokens~{metrics['tokens_estimate']} cost~${metrics['cost_estimate_usd']} "
-            f"accuracy={metrics['accuracy']}"
-        )
-
+        print(f"{name:7} discovery={metrics['discovery_bytes']}B calls={metrics['calls']} "
+              f"cut={metrics['cut_calls']} tokens~{metrics['tokens_estimate']} "
+              f"cost~${metrics['cost_estimate_usd']} accuracy={metrics.get('accuracy')}")
     if args.publish:
         print(f"published {publish(arms, binary, config)}")
-
+    goals = load_goals(SLO_PATH)
     violations = check_goals(arms, goals)
     missing = unmeasured(arms, goals)
     for violation in violations:
@@ -581,3 +793,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
