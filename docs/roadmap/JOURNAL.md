@@ -38419,3 +38419,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones del sujeto (rc nuevo / build / config): `cargo:rerun-if-changed=../../.git/HEAD` en el `build.rs` del core 1/1/0; ruta `.git/index` en el del CLI 1/1/0; cita `"docs/inventory/nope.md"` en `scripts/test-gate.sh` 1/0/1; nombre `.md` inexistente en `preflight-clean-clone.sh` 1/0/1; cita en `vite.config.ts` 1/0/1. Control 0/0/0 (la misma línea de `.git` comentada con `//`) descartado como no discriminante y conservado como prueba de que el detector ignora comentarios. En las citas rotas el nuevo falla los mismos dos tests que el original de configuración. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 10): los dos contratos del carril de provenance son uno
+
+### Qué cambió
+
+`test_provenance_gate.py` (396 líneas) y `test_provenance_lane_pins_its_cosign.py` (396) se fusionan en `scripts/ci/test_provenance_contracts.py` (770): 792 → 770 líneas, 2 ficheros → 1 (35 en `scripts/ci`). Es el mismo carril pero **no un sujeto único**: la sección I vigila `verify-provenance.sh` (la política, con un `gh` de mentira); la II, `cosign-tool.sh`, el generador y el instalador (la versión fijada de cosign). Las 17 comprobaciones (9 y 8) conservan su nombre, su docstring y sus fallos cerrados; `_repo_scripts` era el mismo ayudante en los dos y queda uno; el `main()` unifica los dos estilos (`assert` que lanza y `check` que acumula) y falla si no encuentra ningún `test_`. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Punteros vivos actualizados: `cosign-tool.sh`, el mensaje de `test_provenance_generation.py` y la docstring de `test_skill_surface_claims.py`; la cita de `CHANGELOG.md` es histórica y no se toca.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones del sujeto (rc nuevo / gate / lane): `= "1" ]`→`= "2" ]` en `verify-provenance.sh` 1/1/0; pin `3.1.3`→`3.1.4` en `cosign-tool.sh` 1/0/1; `gh attestation verify` en otro script 1/1/0; segunda asignación de `COGNICODE_COSIGN_VERSION` en el generador 1/0/1; `cosign attest-blob` suelto en el generador 1/0/1; `${RELEASE_REQUIRE_PROVENANCE` expandida en otro script 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde (mismo recuento de hallazgos en la mutación del pin). Control 0/0/0 (un comentario en `verify-provenance.sh`) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

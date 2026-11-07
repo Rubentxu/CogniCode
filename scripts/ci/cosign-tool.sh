@@ -29,7 +29,7 @@
 # leen de aqui, para que no puedan discrepar sobre que version se firma.
 #
 # La version se cambia aqui y en ningun otro sitio, y el contrato
-# `test_provenance_lane_pins_its_cosign.py` lo vigila.
+# `test_provenance_contracts.py` lo vigila.
 #
 # Uso:
 #   . scripts/ci/cosign-tool.sh            # define las variables
