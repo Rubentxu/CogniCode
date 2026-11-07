@@ -166,6 +166,30 @@ def test_the_repository_does_not_declare_a_workspace_profile() -> None:
         )
 
 
+def test_no_workspace_member_declares_a_profile() -> None:
+    """Cargo ignores a `[profile.*]` in a member and warns on every command.
+
+    Only the workspace root can carry a profile, and the root cannot (see the
+    test above), so a member that declares one has a setting that never applied
+    and a warning that hides real ones. Crates excluded from the workspace are
+    their own root and keep the right to declare theirs.
+    """
+    root = tomllib.loads((REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+    excluded = {Path(e).as_posix() for e in root.get("workspace", {}).get("exclude", [])}
+    manifests = sorted((REPO_ROOT / "crates").glob("*/Cargo.toml"))
+    check(bool(manifests), "no se encontro ningun Cargo.toml en crates/*: la regla miraria sin ver")
+    for manifest in manifests:
+        relative = manifest.parent.relative_to(REPO_ROOT).as_posix()
+        if relative in excluded:
+            continue
+        declared = tomllib.loads(manifest.read_text(encoding="utf-8")).get("profile")
+        check(
+            not declared,
+            f"{relative}/Cargo.toml declara [profile.{', '.join(declared or [])}]: "
+            "cargo lo ignora fuera de la raiz del workspace y avisa en cada comando",
+        )
+
+
 def test_the_machine_config_declares_the_published_environment() -> None:
     data = _shared_config()
     if data is None:

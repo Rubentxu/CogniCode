@@ -38709,3 +38709,15 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Cambio.** `scripts/ci/test_roadmap_coherence.py`: `_asserted` quita los spans de código en línea antes de buscar cierres, en `_journal_closure_lines` y en `closed_units_in_journal`. Test nuevo `test_a_quoted_closure_is_not_a_closure`, con un Journal temporal: la cita no cierra, el texto llano sí.
 
 **RED/GREEN.** Antes: 4 fallos de coherencia + el test nuevo en rojo. Después: 27 pasan, 2 fallan (solo `CURRENT.md`). Gate NOT_RUN: el lote lleva 2 de 10.
+
+## 2026-11-07 — Un perfil en un crate miembro es config muerta (TASK-150)
+
+**Controles que el gate dejó NOT_RUN, medidos sobre `d7564395`.** `cargo clippy --workspace --all-targets -- -D warnings`: `rc=0`, 0 lints, 1 m 22 s (log `/tmp/clippy_run.log`). `npm test --prefix apps/explorer-ui`: `rc=0`, 86 ficheros y 944 tests, 0 fallos. Se leyó el veredicto del log, no el del wrapper. Los contratos Python quedaron medidos en TASK-149 (rojos residuales: los 2 de `CURRENT.md`).
+
+**Medido.** El log de clippy llevaba un único aviso de cargo, `profiles for the non root package will be ignored`, y venía de `crates/cognicode-graph-wasm/Cargo.toml` (`[profile.release]`: `opt-level = "s"`, `lto = true`). Cargo solo aplica perfiles de la raíz del workspace, así que el bloque nunca se aplicó. Ningún script del repo construye wasm (sin `wasm-pack` ni `wasm32`).
+
+**Alternativas.** (a) Subirlo a la raíz: cambiaría el perfil release de todos los binarios publicados y AGENTS.md prohíbe declarar perfil en el workspace; descartada. (b) Dejarlo: el aviso sigue ensuciando cada comando de cargo y puede esconder avisos reales. (c) Retirarlo y vigilarlo: elegida, sin cambio de comportamiento.
+
+**Cambio.** Se retira el bloque. `scripts/ci/test_cargo_environment_contracts.py` gana `test_no_workspace_member_declares_a_profile`, que recorre `crates/*/Cargo.toml` (salvo los excluidos del workspace, que son su propia raíz).
+
+**RED/GREEN.** Antes: el contrato falla nombrando `cognicode-graph-wasm`. Después: `PASS`, 6 tests. `cargo check -p cognicode-graph-wasm` ya no emite el aviso. `cargo nextest run --profile gate -p cognicode-graph-wasm`: 19 run, 19 passed. Gate NOT_RUN: el lote lleva 3 de 10 (TASK-148, TASK-149 y TASK-150).
