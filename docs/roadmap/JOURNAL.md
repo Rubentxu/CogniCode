@@ -38561,3 +38561,17 @@ Punteros: ninguna referencia al nombre retirado fuera del propio fichero (`AGENT
 Sin compilar, sin suites; no se lanzó el gate. Base verde: nuevo 0, originales 0/0. Mutaciones del sujeto (nuevo / paths / validate_paths): `sys.exit(1)` → `sys.exit(0)` en `openspec_conformance.py` 2/0/1; validación omitida 2/0/1; mensaje sin el nombre de la clave 2/0/1; ruta de git fija añadida a `build.rs` 1/1/0. El nuevo falla exactamente donde falla el original correspondiente (el 2 es el fallo de `unittest` más su línea en `main`). Ficheros restaurados con `cp -p`, `touch` y `cmp`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 21) — el contrato de coherencia del ROADMAP absorbe el de §11
+
+`scripts/ci/test_roadmap_section11.py` (415 líneas) se fusiona como «Parte 3» en `scripts/ci/test_roadmap_coherence.py`, que ya llevaba la coherencia de versión/snapshot (parte 1) y las retiradas (parte 2). Tema común: lo que el ROADMAP declara frente al árbol y al JOURNAL. Quedan 24 ficheros `test_*.py`.
+
+Colisiones resueltas sin cambiar semántica: `ROOT` pasa a `REPO_ROOT`; `ROADMAP` y `JOURNAL` eran idénticos y se comparten; `test_control_all_green` de §11 pasa a `test_section11_control_all_green`. Los dos extractores del bloque §11 se conservan a propósito (como en el original). El `main` único recorre todas las pruebas del módulo e imprime además la línea de unidades abiertas. La docstring de §11 se traslada a la del módulo.
+
+Punteros: solo las menciones históricas del JOURNAL, que no se tocan; ningún otro fichero citaba el nombre retirado.
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base: el original de coherencia ya fallaba 2 (`test_current_sha_matches_head` y su control, por la deriva de `CURRENT.md`: decisión pendiente del operador, no tocada); el nuevo falla los mismos 2 y §11 daba 0. Mutaciones del sujeto (incremento nuevo / coherencia / §11): `H24 closed` añadido al JOURNAL +2/0/+4; cita `docs/roadmap/NOPE-X.md` en §11 +1/0/+1; ancla de unidades abiertas retirada +4/0/+4; retirada falsa de `JOURNAL.md` +1/+1/0. El nuevo falla donde falla el original correspondiente. Restaurado con `cp -p`, `touch` y `cmp`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
