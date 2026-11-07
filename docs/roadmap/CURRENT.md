@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `765ea29fc3b4eb9eae23b00982aea1603489263c` (la
+> **Snapshot**: 2026-11-07, sobre `5c813212050cb7927119e910b0109e13fefa2be9` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -312,27 +312,30 @@
 > llamada a `subprocess` de los contratos de `scripts/ci/` y del harness de
 > `scripts/measure/` lleva plazo (regla dura 7), vigilado por un contrato por
 > `ast`, y el SKIP de mutantes del gate dice a cuántas fusiones llega el
-> siguiente turno del calendario;
-> Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
-> (2026-10-23, 8 assets).
+> siguiente turno del calendario; y el plazo alcanza también a `scripts/` y
+> `scripts/product/`, al recorrido recursivo de `sandbox/scripts` y a todo `curl`
+> de los scripts de shell; y la release `v0.102.1` está publicada e instalada
+> (la `v0.102.0` no pasó su suite, no tiene release y no se mueve).
+> Versión del workspace: `0.102.1`. Última release publicada: `v0.102.1`
+> (2026-11-07, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`e42ea35f` → `765ea29fc3b4eb9eae23b00982aea1603489263c`)
+## Qué cambió desde el snapshot anterior (`765ea29f` → `5c813212050cb7927119e910b0109e13fefa2be9`)
 
-Entre una punta y otra entraron **5 commits** (`git rev-list --count e42ea35fe86fa773f44a13e5167b048285f13a8e..765ea29fc3b4eb9eae23b00982aea1603489263c`).
+Entre una punta y otra entraron **6 commits** (`git rev-list --count 765ea29fc3b4eb9eae23b00982aea1603489263c..5c813212050cb7927119e910b0109e13fefa2be9`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera sobre la punta | `d38ae0ae` (TASK-155) | La cabecera, la prosa y una fila por unidad viajan juntas; el ratchet de deriva queda verde. |
-| El fallo del generador de provenance se declara | `ff670d40` (TASK-156) | Un generador que falla ya no se lee como un contrato sin casos. |
-| El SKIP de mutantes dice cuándo llega el siguiente turno | `b4066249` (TASK-157) | Campo `calendar-next` en `gate_scope.py`; el log del gate nombra las fusiones que faltan en vez de callar. |
-| Toda llamada a subprocess de los contratos lleva plazo | `4064f3da` (TASK-159) | Contrato por `ast` en `test_subprocess_deadlines.py`; un remoto que no contesta es «sin respuesta», no un veredicto. |
-| Toda llamada a subprocess del harness de medición lleva plazo | `765ea29f` (TASK-160) | Cinco llamadas de `scripts/measure/harness_ab.py` con plazo y degradación; una corrida que lo agota es una fila de timeout. |
+| `scripts/` y `scripts/product` llevan plazo en todo subprocess | `cccb3bdf` (TASK-161) | El contrato por `ast` cubre los scripts raíz y los de producto; una llamada sin plazo es un rojo. |
+| El contrato de plazos es recursivo y cubre `sandbox/scripts` | `040af78e` (TASK-162) | El recorrido ya no se detiene en el primer nivel. |
+| Todo `curl` de los scripts shell lleva plazo | `dce24aab` (TASK-163) | Un remoto que no contesta es «sin respuesta», no un veredicto. |
+| Recibo: la regla dura 7 en Rust no deja deuda | `b62f715b` (sin tarea) | Se midió que no hay llamada de Rust que justifique una tarea. |
+| Corte `v0.102.0` (sin release) y `v0.102.1` | `8eec4c63`, `5c813212` (sin tarea) | `v0.102.0` no pasó su suite; `v0.102.1` lleva los dos arreglos y se publicó con 8 assets. |
 
-## Release: la última publicada es la v0.101.30
+## Release: la última publicada es la v0.102.1
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -343,7 +346,9 @@ en qué commits está; la medición de cada unidad está en su recibo del `JOURN
 | `v0.101.27` | publicada (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
 | `v0.101.28` | publicada (2026-10-22, 8 assets) | lleva el orden del grafo filtrado y la lane de publicación reparada |
 | `v0.101.29` | **publicada** (2026-10-22, 8 assets) | lleva las tres unidades nuevas del bloque B1 |
-| `v0.101.30` | **publicada** (2026-10-23, 8 assets) | lleva la ontología: el campo que el consumidor lee |
+| `v0.101.30` | publicada (2026-10-23, 8 assets) | lleva la ontología: el campo que el consumidor lee |
+| `v0.102.0` | tag, sin release | su suite de candidato encontró dos defectos reales (un cert y un test de snapshot) |
+| `v0.102.1` | **publicada** (2026-11-07, 8 assets) | lleva los dos arreglos; instalada en local |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
