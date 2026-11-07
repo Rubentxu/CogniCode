@@ -1009,6 +1009,12 @@ def test_every_cited_adr_claims_the_unit_it_is_attributed() -> None:
 # El Journal declara cierres con estas formas. Se listan porque son las que
 # el registro usa de verdad, no porque el formato sea estable.
 CLOSURE = re.compile(r"\b(?:closed|acceptance:\s*PASS)\b", re.IGNORECASE)
+INLINE_CODE = re.compile(r"`[^`\n]*`")
+
+
+def _asserted(line: str) -> str:
+    """La linea sin sus citas en codigo en linea: citar no es afirmar."""
+    return INLINE_CODE.sub(" ", line)
 
 
 def _journal_closure_lines(unit: str) -> list[str]:
@@ -1021,7 +1027,8 @@ def _journal_closure_lines(unit: str) -> list[str]:
     pat = re.compile(rf"\b{re.escape(unit)}\b")
     out = []
     for line in JOURNAL.read_text(encoding="utf-8").splitlines():
-        if pat.search(line) and CLOSURE.search(line):
+        asserted = _asserted(line)
+        if pat.search(asserted) and CLOSURE.search(asserted):
             out.append(line.strip())
     return out
 
@@ -1050,6 +1057,7 @@ def closed_units_in_journal() -> set[str]:
     """
     found: set[str] = set()
     for line in JOURNAL.read_text(encoding="utf-8").splitlines():
+        line = _asserted(line)
         if not CLOSURE.search(line):
             continue
         for m in re.finditer(r"\b([A-Z]\d+(?:\.\d)?)\b", line):
@@ -1096,6 +1104,35 @@ def test_section11_does_not_list_a_unit_the_journal_closed() -> None:
         "Quitalas del trailer. Reconstruir trabajo cerrado es el fallo caro "
         "que este contrato existe para evitar."
     )
+
+
+def test_a_quoted_closure_is_not_a_closure() -> None:
+    """Una cita entre comillas inversas no cierra nada; el texto llano si.
+
+    Los recibos del Journal describen mutaciones con el texto que inyectaron
+    (`H24 closed`). El Journal es append-only, asi que la regla no puede
+    pedirle al recibo que calle: tiene que distinguir citar de afirmar.
+    """
+    global JOURNAL
+    real = JOURNAL
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "JOURNAL.md"
+            fake.write_text(
+                "Mutacion: `H24 closed` anadido al JOURNAL +2/0/+4.\n",
+                encoding="utf-8",
+            )
+            JOURNAL = fake
+            assert _journal_closure_lines("H24") == []
+            assert "H24" not in closed_units_in_journal()
+            fake.write_text(
+                "Mutacion: `H24 closed` citada.\nH24 closed en este ciclo.\n",
+                encoding="utf-8",
+            )
+            assert _journal_closure_lines("H24") == ["H24 closed en este ciclo."]
+            assert "H24" in closed_units_in_journal()
+    finally:
+        JOURNAL = real
 
 
 def test_section11_names_at_least_one_open_unit() -> None:
