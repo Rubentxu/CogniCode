@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
-"""Un rechazo llega al cliente como un rechazo, no como un fallo interno.
+"""Contratos del servicio de ficheros: el corte de texto y el rechazo.
+
+Dos contratos de lectura de codigo (ninguno ejecuta el servicio) sobre los
+caminos de ficheros del producto. Se fusionaron en uno (TASK-74) conservando
+todas las comprobaciones. No comparten un sujeto unico: cada seccion vigila sus
+propios ficheros.
+
+# I. Un corte por indice de byte no parte un caracter.
+
+MEDIDO: en los caminos de lectura y edicion del servicio de ficheros, y en
+dos de la presentacion de la CLI, el texto se recortaba por indice de byte.
+Un indice que cae dentro de la codificacion multibyte de un caracter aborta
+el proceso que corta; en el servidor de protocolo ese proceso es el que
+atiende a las peticiones de todos los agentes conectados.
+
+Este contrato no ejecuta el servicio: mira el codigo y comprueba que ningun
+corte por indice sobre texto se queda sin frontera, que los caminos que
+leen usan la forma que el tipo hace segura, y que el detector ve un corte
+cuando hay uno. El comportamiento observable lo fijan los tests de
+integracion y los tests unitarios del helper.
+
+# II. Un rechazo llega al cliente como un rechazo, no como un fallo interno.
 
 MEDIDO: los cinco handlers de ficheros aplanan el error a `AppError::InternalError`
 cuando hay colector de metricas, y el servidor MCP si lo inicializa. Un rechazo
@@ -25,7 +46,7 @@ Cada detector devuelve los hallazgos que encuentra, de modo que el propio
 contrato puede aplicarse a un texto que viola la garantia: un detector que no
 mira nada no puede declararse verde.
 
-Ejecutar:  python3 scripts/ci/test_a_rejection_arrives_as_a_rejection.py
+Ejecutar:  python3 scripts/ci/test_file_service_contracts.py
 """
 
 from __future__ import annotations
@@ -35,6 +56,45 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# --- I. un corte por indice de byte no parte un caracter -------------------
+
+CORE = "crates/cognicode-core/src"
+CLI = "crates/cognicode-cli/src"
+
+HELPER = f"{CORE}/application/text_boundary.rs"
+APPLICATION_MOD = f"{CORE}/application/mod.rs"
+SERVICE = f"{CORE}/application/services/file_operations.rs"
+PRESENTER = f"{CLI}/presenter.rs"
+LIFECYCLE = f"{CLI}/cmd/lifecycle_resolver.rs"
+
+# Los receptores que, en estos ficheros, son texto. Un corte por indice sobre
+# ellos parte un caracter cuando el indice no cae en una frontera.
+TEXT_RECEIVERS: dict[str, tuple[str, ...]] = {
+    SERVICE: ("content", "remaining", "s"),
+    PRESENTER: ("diagram",),
+    LIFECYCLE: ("s",),
+}
+
+# Las formas que dejan el corte en una frontera: el rango se pide con `get`,
+# que devuelve None cuando no cae en una, o el indice se lleva a la frontera
+# antes de cortar.
+SAFE_FORMS = (
+    "get(",
+    "floor_char_boundary(",
+    "is_char_boundary(",
+    "truncate_at_boundary(",
+    "slice_at_boundaries(",
+)
+
+FUNCTIONS = (
+    "floor_char_boundary",
+    "is_char_boundary",
+    "truncate_at_boundary",
+    "slice_at_boundaries",
+)
+
+# --- II. un rechazo llega como un rechazo ----------------------------------
 
 HANDLERS = "crates/cognicode-core/src/interface/mcp/file_ops_handlers.rs"
 TELEMETRY = "crates/cognicode-core/src/infrastructure/telemetry/mod.rs"
@@ -46,6 +106,95 @@ def source(relative: str) -> str:
     if not path.is_file():
         raise AssertionError(f"FAIL: no existe {relative}")
     return path.read_text(encoding="utf-8")
+
+
+# --- I. cortes de texto ---
+
+
+def cuts_without_boundary(text: str, receivers: tuple[str, ...]) -> list[tuple[int, str]]:
+    """Los cortes por indice sobre texto que no pasan por una frontera."""
+    pattern = re.compile(
+        r"\b(" + "|".join(re.escape(name) for name in receivers) + r")\s*\[[^\[\]]*\]"
+    )
+    found: list[tuple[int, str]] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not pattern.search(line):
+            continue
+        if any(form in line for form in SAFE_FORMS):
+            continue
+        found.append((number, line.strip()))
+    return found
+
+
+def test_the_boundary_helper_is_public() -> None:
+    """El helper existe, se declara y expone las cuatro operaciones."""
+    text = source(HELPER)
+    for name in FUNCTIONS:
+        assert f"pub fn {name}" in text, f"FAIL: {HELPER} no expone `pub fn {name}`"
+
+    declared = source(APPLICATION_MOD)
+    assert "pub mod text_boundary;" in declared, (
+        f"FAIL: {APPLICATION_MOD} no declara `pub mod text_boundary;`, "
+        "así que el helper no es alcanzable desde fuera del crate"
+    )
+
+
+def test_no_text_is_cut_by_byte_without_a_boundary() -> None:
+    """Ningun corte por indice sobre texto se queda sin frontera."""
+    offenders: list[str] = []
+    for relative, receivers in TEXT_RECEIVERS.items():
+        for number, line in cuts_without_boundary(source(relative), receivers):
+            offenders.append(f"{relative}:{number}: {line}")
+    assert not offenders, (
+        "FAIL: un corte por indice de byte ha vuelto a aparecer:\n  "
+        + "\n  ".join(offenders)
+        + "\nUn corte por byte parte un caracter multibyte y aborta el proceso."
+    )
+
+
+def test_the_read_path_asks_for_the_range_in_a_safe_form() -> None:
+    """El servicio pide el rango con la forma que el tipo hace segura."""
+    text = source(SERVICE)
+    assert "content.get(offset..)" in text, (
+        f"FAIL: {SERVICE} no pide el tramo con `get`, que devuelve None cuando "
+        "el rango no cae en fronteras; un token que empieza dentro de un "
+        "caracter abortaria el proceso"
+    )
+    assert "floor_char_boundary(remaining," in text, (
+        f"FAIL: {SERVICE} no ajusta el tamano del trozo a una frontera de "
+        "caracter; un trozo que termina dentro de un caracter abortaria el "
+        "proceso"
+    )
+
+
+def test_the_production_paths_use_the_helper() -> None:
+    """Quien recorta texto pasa por las fronteras de caracter."""
+    for relative, symbol in (
+        (SERVICE, "floor_char_boundary"),
+        (PRESENTER, "truncate_at_boundary"),
+        (LIFECYCLE, "truncate_at_boundary"),
+    ):
+        assert symbol in source(relative), (
+            f"FAIL: {relative} no usa `{symbol}`; el recorte de texto tiene "
+            "que pasar por el helper de fronteras"
+        )
+
+
+def test_the_detector_sees_a_cut_when_there_is_one() -> None:
+    """Control anti-vacuidad: el detector mira de verdad."""
+    probe = "for ch in content[..cap].chars() {\n"
+    found = cuts_without_boundary(probe, ("content",))
+    assert len(found) == 1, (
+        "FAIL: el detector no ve un corte por indice en un texto de ejemplo; "
+        "la regla de arriba pasaria sin comprobar nada"
+    )
+    safe = "let chunk = content.get(offset..).ok_or_else(|| 1)?;\n"
+    assert not cuts_without_boundary(safe, ("content",)), (
+        "FAIL: el detector marca como inseguro un corte que usa `get`"
+    )
+
+
+# --- II. rechazos ---
 
 
 # ---------------------------------------------------------------------------
@@ -207,32 +356,33 @@ def test_the_detectors_see_a_violation_when_there_is_one() -> None:
         )
 
 
+failures: list[str] = []
+
+
 def main() -> int:
-    checks = [
-        test_the_handlers_do_not_flatten_the_error,
-        test_the_counter_does_not_demand_its_own_error_type,
-        test_every_counted_handler_has_a_case,
-        test_the_detectors_see_a_violation_when_there_is_one,
-    ]
-    failures: list[str] = []
-    for check in checks:
+    failures.clear()
+    names: list[str] = []
+    for name, func in sorted(globals().items()):
+        if not (name.startswith("test_") and callable(func)):
+            continue
+        names.append(name)
         try:
-            check()
+            func()
         except AssertionError as error:
             failures.append(str(error))
-            print(f"  FAIL {check.__name__}")
+            print(f"  FAIL {name}")
+        except Exception as error:  # noqa: BLE001 - a check failing is data
+            failures.append(f"{name} raised {type(error).__name__}: {error}")
+            print(f"  FAIL {name}")
         else:
-            print(f"  PASS {check.__name__}")
+            print(f"  PASS {name}")
 
     if failures:
-        print("un rechazo llega como un rechazo: FAIL")
+        print("servicio de ficheros: FAIL")
         for failure in failures:
             print(failure)
         return 1
-    print(
-        "un rechazo llega como un rechazo: OK "
-        f"({len(checks)} comprobaciones)"
-    )
+    print(f"servicio de ficheros: OK ({len(names)} comprobaciones)")
     return 0
 
 

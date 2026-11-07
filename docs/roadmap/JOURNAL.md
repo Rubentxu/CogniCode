@@ -38395,3 +38395,15 @@ Sin cargo. Base verde: nuevo 15 passed, originales 9 y 6 passed, rc 0. Mutacione
 Sin cargo ni suites; no se lanzó el gate. Base: nuevo 1 fallo, ratchet 0, clone_ref 1. Ese fallo es preexistente y compartido: el hook global de git rechaza el commit del fixture de `test_a_branch_checkout_still_names_its_branch` (mensaje `x`, identidad `c`), el repositorio temporal queda sin commits y la resolución devuelve vacío. Efecto colateral: los casos «detached» y «clonable» no ejercitan lo que dicen en esta máquina. No se corrige aquí (cambiaría el fixture, otra unidad). Mutaciones sobre el sujeto (fallos nuevo / ratchet / clone_ref): `-gt`→`-ge` 2/1/1; sin inversión de signo 4/3/1; llamada del stage 1 a otro resolver 2/0/2; `--branch` sin la variable 2/0/2; mensaje sin «por debajo del baseline» 2/1/1; seam `--print-clone-ref` ausente 3/0/3; seam `--print-passed-verdict` ausente 6/5/1. El nuevo falla exactamente la suma de los originales en las siete. Fichero restaurado (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 8): los dos contratos del servicio de ficheros son uno
+
+### Qué cambió
+
+`test_a_cut_never_splits_a_character.py` (181 líneas) y `test_a_rejection_arrives_as_a_rejection.py` (240) se fusionan en `scripts/ci/test_file_service_contracts.py` (390): 421 → 390 líneas, 2 ficheros → 1 (37 en `scripts/ci`). Los dos son lecturas de código (no ejecutan el servicio) sobre los caminos de ficheros del producto; **no comparten un sujeto único**: cada sección vigila sus propios fuentes (`text_boundary.rs`, `file_operations.rs`, `presenter.rs`, `lifecycle_resolver.rs` frente a `file_ops_handlers.rs`, `telemetry/mod.rs` y la tabla de casos de la prueba de frontera). Las 9 comprobaciones (5 del corte, 4 del rechazo) conservan su nombre, su docstring y sus fallos cerrados; `source` y `REPO_ROOT` eran idénticos y quedan compartidos; el prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Sin punteros vivos que actualizar: solo la línea «Ejecutar:» de cada docstring.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones de los fuentes Rust (fallos nuevo / corte / rechazo): helper `floor_char_boundary` no público 1/1/0; `text_boundary` no público en `application/mod.rs` 1/1/0; `content.get(offset..)`→`content[offset..]` 2/2/0; presenter sin `truncate_at_boundary` 1/1/0; `AppError::InternalError(` en un handler 1/0/1; `instrument_tool` devolviendo `Result<T, ToolError>` 1/0/1; un caso de la tabla de frontera renombrado 1/0/1. Descartada una mutación 0/0/0 (renombrar `instrument_tool` a `instrument_toolx`: la subcadena sigue presente). El nuevo falla exactamente la suma de los originales en las siete. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
