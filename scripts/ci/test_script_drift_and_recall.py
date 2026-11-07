@@ -218,6 +218,7 @@ def test_the_documents_are_versioned() -> None:
             ["git", "-C", str(ROOT), "ls-files", "--error-unmatch", path],
             capture_output=True,
             text=True,
+            timeout=120,
         )
         if result.returncode != 0:
             failures.append(
@@ -414,6 +415,7 @@ def measure(
         capture_output=True,
         text=True,
         env={**os.environ, "RECALL_FIXTURE": str(fixture)},
+        timeout=600,
     )
     parsed: dict = {}
     if proc.stdout.strip():

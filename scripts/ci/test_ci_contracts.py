@@ -103,6 +103,7 @@ def test_runner_reports_failures_with_nonzero_exit() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=600,
         )
 
     check(
@@ -173,6 +174,7 @@ def test_runner_honours_the_accumulating_failures_pattern() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=600,
         )
 
     check(
@@ -230,6 +232,7 @@ def test_runner_calls_a_contract_setup_before_its_checks() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=600,
         )
 
         # And the same fixture with a setup that fails must not be reported
@@ -249,6 +252,7 @@ def test_runner_calls_a_contract_setup_before_its_checks() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=600,
         )
 
     check(
@@ -325,6 +329,7 @@ def test_runner_rejects_a_script_with_no_tests() -> None:
             capture_output=True,
             text=True,
             check=False,
+            timeout=600,
         )
     check(
         proc.returncode != 0,
@@ -360,6 +365,7 @@ def test_suite_runs_without_pytest_installed() -> None:
         text=True,
         check=False,
         env=env,
+        timeout=120,
     )
     check(
         probe.returncode != 0 and "No module named" in probe.stderr,
@@ -382,6 +388,7 @@ def test_suite_runs_without_pytest_installed() -> None:
         text=True,
         check=False,
         env=env,
+        timeout=120,
     )
     check(
         proc.returncode == 0,
@@ -434,10 +441,12 @@ def test_parallel_mode_keeps_the_failure_semantics() -> None:
         serial = subprocess.run(
             [sys.executable, str(RUNNER), str(ok), str(bad)],
             capture_output=True, text=True, check=False,
+            timeout=600,
         )
         parallel = subprocess.run(
             [sys.executable, str(RUNNER), "--jobs", "2", str(ok), str(bad)],
             capture_output=True, text=True, check=False,
+            timeout=600,
         )
 
     check(
@@ -489,12 +498,14 @@ def test_the_suite_does_not_inherit_the_operator_git_configuration() -> None:
         init = subprocess.run(
             ["git", "init", "-q", "-b", "main", str(repo)],
             capture_output=True, text=True, check=False,
+            timeout=120,
         )
         check(init.returncode == 0, f"git init falló: {init.stderr.strip()[:200]}")
         (repo / "README.md").write_text("seed\n", encoding="utf-8")
         subprocess.run(
             ["git", "-C", str(repo), "add", "-A"],
             capture_output=True, text=True, check=False,
+            timeout=120,
         )
         commit = subprocess.run(
             [
@@ -505,6 +516,7 @@ def test_the_suite_does_not_inherit_the_operator_git_configuration() -> None:
                 "commit", "-q", "-m", "chore: seed",
             ],
             capture_output=True, text=True, check=False,
+            timeout=120,
         )
         check(
             commit.returncode == 0,

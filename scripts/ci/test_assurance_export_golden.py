@@ -236,6 +236,7 @@ def cargo_target_dir() -> Path | None:
             cwd=str(REPO_ROOT),
             stderr=subprocess.DEVNULL,
             text=True,
+            timeout=120,
         )
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -282,7 +283,8 @@ def find_cognicode_binary() -> str:
 
 def head_sha() -> str:
     return subprocess.check_output(
-        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True,
+        timeout=120,
     ).strip()
 
 
@@ -297,7 +299,7 @@ def run_export_assurance(*, output: Path, capabilities: list[str] | None = None,
     if capabilities:
         for c in capabilities:
             args.extend(["--capability", c])
-    return subprocess.run(args, check=False, capture_output=True, text=True)
+    return subprocess.run(args, check=False, capture_output=True, text=True, timeout=120)
 
 
 # ---------- assertions (cada una pine un tipo de drift) ----------
@@ -348,6 +350,7 @@ def test_cli_subcommand_registered() -> None:
     result = subprocess.run(
         [binary, "export", "assurance", "--help"],
         check=False, capture_output=True, text=True,
+        timeout=600,
     )
     assert result.returncode == 0, (
         f"FAIL: `cognicode export assurance --help` retorno {result.returncode}\n"
@@ -491,9 +494,9 @@ def test_producer_is_deterministic() -> None:
             "--capability", "signals",
             "--capability", "facts",
         ]
-        subprocess.run(args + ["--output", str(out1)], check=True, capture_output=True)
-        subprocess.run(args + ["--output", str(out2)], check=True, capture_output=True)
-        subprocess.run(args + ["--output", str(out3)], check=True, capture_output=True)
+        subprocess.run(args + ["--output", str(out1)], check=True, capture_output=True, timeout=120)
+        subprocess.run(args + ["--output", str(out2)], check=True, capture_output=True, timeout=120)
+        subprocess.run(args + ["--output", str(out3)], check=True, capture_output=True, timeout=120)
         s1, s2, s3 = sha256_file(out1), sha256_file(out2), sha256_file(out3)
         assert s1 == s2 == s3, (
             f"FAIL: producer no es determinista. "
@@ -523,6 +526,7 @@ def regenerate_golden() -> None:
             "--output", str(GOLDEN_PATH),
         ],
         check=True, capture_output=True, text=True,
+        timeout=600,
     )
     new_sha = sha256_file(GOLDEN_PATH)
     print(f"regenerado {GOLDEN_PATH}: {GOLDEN_PATH.stat().st_size} bytes")

@@ -311,6 +311,7 @@ def main_version() -> str | None:
         capture_output=True,
         text=True,
         check=False,
+        timeout=120,
     )
     if shown.returncode != 0 or not shown.stdout.strip():
         return None
@@ -340,6 +341,31 @@ def _highest_remote_tag(ls_remote_stdout: str) -> str | None:
     return max(versions, key=lambda v: tuple(int(p) for p in v.split(".")))
 
 
+LS_REMOTE_DEADLINE_S = 120
+
+
+def _ls_remote_tags() -> str | None:
+    """Salida de `git ls-remote --tags origin`, o None si el remoto no responde.
+
+    Un remoto que no contesta a tiempo es un remoto sin respuesta, no un
+    veredicto: el plazo agotado cae en la misma rama que el fallo de red.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-remote", "--tags", "origin"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=LS_REMOTE_DEADLINE_S,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    return out.stdout
+
+
 def published_version() -> str | None:
     """La version mas alta publicada como tag remoto, o None si no responde.
 
@@ -358,36 +384,25 @@ def published_version() -> str | None:
     None cuando el remoto no responde. Mismo criterio que `main_version` y que
     la visibilidad de tags: una respuesta ausente no es un veredicto.
     """
-    out = subprocess.run(
-        ["git", "ls-remote", "--tags", "origin"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if out.returncode != 0 or not out.stdout.strip():
+    stdout = _ls_remote_tags()
+    if stdout is None:
         return None
-    return _highest_remote_tag(out.stdout)
+    return _highest_remote_tag(stdout)
 
 
 def known_tags() -> set[str]:
     """Tags visibles, locales o del remoto; vacio si el clon no puede responder."""
     local = subprocess.run(
-        ["git", "tag", "--list"], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+        ["git", "tag", "--list"], cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        timeout=120,
     )
     if local.returncode == 0 and local.stdout.strip():
         return {t.lstrip("v") for t in local.stdout.split()}
-    remote = subprocess.run(
-        ["git", "ls-remote", "--tags", "origin"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if remote.returncode == 0 and remote.stdout.strip():
+    remote_stdout = _ls_remote_tags()
+    if remote_stdout is not None:
         return {
             line.rsplit("refs/tags/", 1)[-1].removesuffix("^{}").lstrip("v")
-            for line in remote.stdout.splitlines()
+            for line in remote_stdout.splitlines()
             if "refs/tags/" in line
         }
     return set()
@@ -396,6 +411,24 @@ def known_tags() -> set[str]:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+def test_a_remote_that_never_answers_is_a_remote_without_an_answer() -> None:
+    """Un `ls-remote` que agota su plazo no es un veredicto ni un cuelgue."""
+    real = subprocess.run
+
+    def hang(*args, **kwargs):
+        assert kwargs.get("timeout"), "la consulta al remoto no lleva plazo"
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    subprocess.run = hang  # type: ignore[assignment]
+    try:
+        published = published_version()
+        raw = _ls_remote_tags()
+    finally:
+        subprocess.run = real  # type: ignore[assignment]
+    assert published is None, f"un remoto mudo no publica version: {published!r}"
+    assert raw is None, f"un remoto mudo no aporta tags: {raw!r}"
+
+
 def test_the_four_surfaces_agree_with_the_workspace() -> None:
     """La asercion de verdad, sobre los archivos de verdad."""
     current = workspace_version()
@@ -700,6 +733,7 @@ def _a_workspace_manifest_bigger_than_a_pipe(repo: Path) -> str:
     subprocess.run(
         ["git", "init", "-q", "-b", "main", str(repo)],
         capture_output=True, text=True, check=True, env=env,
+        timeout=120,
     )
     manifest = [
         "[workspace]",
@@ -717,6 +751,7 @@ def _a_workspace_manifest_bigger_than_a_pipe(repo: Path) -> str:
     subprocess.run(
         ["git", "-C", str(repo), "add", "-A"],
         capture_output=True, text=True, check=True, env=env,
+        timeout=120,
     )
     subprocess.run(
         [
@@ -727,10 +762,12 @@ def _a_workspace_manifest_bigger_than_a_pipe(repo: Path) -> str:
             "commit", "-q", "-m", "chore: fixture",
         ],
         capture_output=True, text=True, check=True, env=env,
+        timeout=120,
     )
     sha = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"],
         capture_output=True, text=True, check=True, env=env,
+        timeout=120,
     ).stdout.strip()
     return sha
 
@@ -776,6 +813,7 @@ def _a_published_tag() -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=120,
     )
     for name in listed.stdout.split():
         peeled = subprocess.run(
@@ -784,6 +822,7 @@ def _a_published_tag() -> str:
             capture_output=True,
             text=True,
             check=False,
+            timeout=120,
         )
         if peeled.returncode == 0 and peeled.stdout.strip():
             return name
@@ -819,6 +858,7 @@ def test_a_commit_beyond_the_tag_is_refused_even_with_the_right_version() -> Non
         capture_output=True,
         text=True,
         check=True,
+        timeout=120,
     ).stdout.strip()
     parent = subprocess.run(
         ["git", "rev-parse", f"{tagged}^"],
@@ -826,6 +866,7 @@ def test_a_commit_beyond_the_tag_is_refused_even_with_the_right_version() -> Non
         capture_output=True,
         text=True,
         check=True,
+        timeout=120,
     ).stdout.strip()
     if parent == tagged:
         raise AssertionError("el tag no tiene padre, y el caso no se puede construir")
