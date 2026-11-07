@@ -14,15 +14,23 @@ use crate::interface::symbol_identity::Precision;
 // These types are shared between MCP schemas and application DTOs
 // They are defined in dto/common.rs with proper serde for camelCase MCP serialization
 pub use crate::application::dto::AnalysisMetadata;
+pub use crate::application::dto::ChangeEntry;
 pub use crate::application::dto::ContentMatch;
+pub use crate::application::dto::CycleInfo;
 pub use crate::application::dto::EditValidation;
 pub use crate::application::dto::FileEdit;
 pub use crate::application::dto::FileEntry;
 pub use crate::application::dto::FileMetadata;
 pub use crate::application::dto::ListFilesResult;
+pub use crate::application::dto::ModuleDependency;
+pub use crate::application::dto::ModuleDependencyGraph;
+pub use crate::application::dto::OverviewDetail;
+pub use crate::application::dto::OverviewMeta;
 pub use crate::application::dto::RiskLevel;
 pub use crate::application::dto::SourceLocation;
 pub use crate::application::dto::SyntaxIssue;
+pub use crate::application::dto::ValidationResult;
+pub use crate::application::dto::ViolationInfo;
 
 /// Default depth for call hierarchy traversal
 fn default_depth() -> u8 {
@@ -364,20 +372,6 @@ pub struct CheckArchitectureOutput {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CycleInfo {
-    pub symbols: Vec<String>,
-    pub length: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ViolationInfo {
-    pub rule: String,
-    pub from: String,
-    pub to: String,
-    pub severity: String,
-}
-
 // ============================================================================
 // Safe Refactor
 // ============================================================================
@@ -406,15 +400,7 @@ pub struct SafeRefactorInput {
     pub params: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RefactorAction {
-    Rename,
-    Extract,
-    Inline,
-    Move,
-    ChangeSignature,
-}
+pub use crate::application::dto::RefactorAction;
 
 /// `composite_impact_query` input, in the shape the catalogue published.
 ///
@@ -457,21 +443,6 @@ pub struct SafeRefactorOutput {
     pub changes: Vec<ChangeEntry>,
     pub validation_result: ValidationResult,
     pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangeEntry {
-    pub file: String,
-    pub old_text: String,
-    pub new_text: String,
-    pub location: SourceLocation,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidationResult {
-    pub is_valid: bool,
-    pub warnings: Vec<String>,
-    pub errors: Vec<String>,
 }
 
 // ============================================================================
@@ -715,6 +686,9 @@ pub struct FindDeadCodeOutput {
     pub metadata: AnalysisMetadata,
 }
 
+/// The published form of a dead-code entry: `kind` and `reason` travel as
+/// strings. [`From`] is the only place that turns the application entry into
+/// this one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeadCodeEntry {
     pub symbol: String,
@@ -724,6 +698,20 @@ pub struct DeadCodeEntry {
     pub kind: String,
     pub reason: String,
     pub confidence: f32,
+}
+
+impl From<crate::application::dto::DeadCodeEntry> for DeadCodeEntry {
+    fn from(e: crate::application::dto::DeadCodeEntry) -> Self {
+        Self {
+            symbol: e.symbol,
+            file: e.file,
+            line: e.line,
+            column: e.column,
+            kind: format!("{:?}", e.kind).to_lowercase(),
+            reason: format!("{:?}", e.reason),
+            confidence: e.confidence,
+        }
+    }
 }
 
 // ============================================================================
@@ -739,22 +727,6 @@ pub struct GetModuleDependenciesInput {
 
 fn default_module_limit() -> usize {
     100
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleDependency {
-    pub module: String,
-    pub depends_on: Vec<String>,
-    pub depended_by: Vec<String>,
-    pub coupling_score: usize,
-    pub stability: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleDependencyGraph {
-    pub modules: Vec<ModuleDependency>,
-    pub cycles: Vec<Vec<String>>,
-    pub coupling_matrix: Vec<(String, String, usize)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1900,46 +1872,6 @@ pub struct ValidateContractInput {
 // ============================================================================
 // AIX Tool Input Schemas
 // ============================================================================
-
-/// The level of detail an overview answer carries.
-///
-/// The type owns the names, so the level a client asks for is a level the
-/// server knows: a level that does not exist is a refusal, not a string
-/// read in silence.
-///
-/// The three levels are the same ladder everywhere they are published:
-/// the statistics of the project, then the statistics with the entry
-/// points and the hot paths, and then everything the answer can carry.
-/// What each level carries is published by the tool that publishes it.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum OverviewDetail {
-    /// The statistics of the project, and nothing else.
-    Quick,
-    /// The statistics, with the entry points and the hot paths.
-    Medium,
-    /// Everything the answer can carry.
-    Detailed,
-}
-
-impl std::fmt::Display for OverviewDetail {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OverviewDetail::Quick => write!(f, "quick"),
-            OverviewDetail::Medium => write!(f, "medium"),
-            OverviewDetail::Detailed => write!(f, "detailed"),
-        }
-    }
-}
-
-/// Metadata for AI context budget management (MCP schema type)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OverviewMeta {
-    /// Estimated token count of this response
-    pub estimated_tokens: usize,
-    /// Detail level used
-    pub detail_level: String,
-}
 
 // AIX-1: Smart Overview & Ranked Symbols
 

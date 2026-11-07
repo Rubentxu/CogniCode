@@ -9,8 +9,11 @@ use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::value_objects::{published_column, published_line};
 use serde::{Deserialize, Serialize};
 
-/// Refactor action type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+// Refactor action type. The names are the ones the MCP surface publishes
+// (`snake_case`), so the application and the wire share one type. Plain
+// comment on purpose: a doc comment would enter the published schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum RefactorAction {
     Rename,
     Extract,
@@ -547,15 +550,24 @@ impl ProjectDiagnosticsDto {
 // Smart Overview (AIX-1.1)
 // ============================================================================
 
-/// Detail level for smart_overview output
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+/// The level of detail an overview answer carries.
+///
+/// The type owns the names, so the level a client asks for is a level the
+/// server knows: a level that does not exist is a refusal, not a string
+/// read in silence.
+///
+/// The three levels are the same ladder everywhere they are published:
+/// the statistics of the project, then the statistics with the entry
+/// points and the hot paths, and then everything the answer can carry.
+/// What each level carries is published by the tool that publishes it.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum OverviewDetail {
-    /// ~100 tokens: project type + basic stats only
+    /// The statistics of the project, and nothing else.
     Quick,
-    /// ~400 tokens: + top entry points + hot paths + architecture score
+    /// The statistics, with the entry points and the hot paths.
     Medium,
-    /// ~800 tokens: + first reads + complexity summary + coverage
+    /// Everything the answer can carry.
     Detailed,
 }
 

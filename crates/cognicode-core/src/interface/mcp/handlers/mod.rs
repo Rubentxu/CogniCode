@@ -2506,15 +2506,7 @@ pub async fn handle_find_dead_code(
         .dead_code
         .into_iter()
         .take(input.limit)
-        .map(|e| DeadCodeEntry {
-            symbol: e.symbol,
-            file: e.file,
-            line: e.line,
-            column: e.column,
-            kind: format!("{:?}", e.kind).to_lowercase(),
-            reason: format!("{:?}", e.reason),
-            confidence: e.confidence,
-        })
+        .map(DeadCodeEntry::from)
         .collect();
 
     Ok(FindDeadCodeOutput {

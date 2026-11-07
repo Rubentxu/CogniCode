@@ -23,7 +23,6 @@
 
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,7 +32,7 @@ use walkdir::WalkDir;
 
 use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
 use cognicode_core::sandbox_core::artifacts::{
-    PipelineStageResult, ResourceUsage, ScenarioResult, Summary, Timing, ValidationResult,
+    PipelineStageResult, ResourceUsage, ScenarioResult, Timing, ValidationResult,
 };
 use cognicode_core::sandbox_core::failure::FailureClass;
 use cognicode_core::sandbox_core::ground_truth::GroundTruth;
@@ -2179,125 +2178,6 @@ fn determine_failure_class(
     }
 }
 
-/// Aggregate scenario results into a summary with per-language and per-tool breakdowns.
-fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
-    let mut summary = Summary::new(iso8601_now(), ORCHESTRATOR_VERSION.to_string());
-    let mut all_durations: Vec<u64> = Vec::new();
-
-    // Per-language duration tracking for percentile calculation
-    let mut lang_durations: HashMap<String, Vec<u64>> = HashMap::new();
-    let mut tool_durations: HashMap<String, Vec<u64>> = HashMap::new();
-
-    for r in results {
-        summary.total += 1;
-        all_durations.push(r.timing_ms.total_ms);
-
-        // Track per-language durations
-        lang_durations
-            .entry(r.language.clone())
-            .or_default()
-            .push(r.timing_ms.total_ms);
-
-        // Track per-tool durations
-        tool_durations
-            .entry(r.tool.clone())
-            .or_default()
-            .push(r.timing_ms.total_ms);
-
-        match r.outcome.as_str() {
-            "pass" => {
-                summary.passed += 1;
-            }
-            "expected_fail" | "preexisting_fail" => {
-                // preexisting_fail is expected (not a regression)
-                summary.expected_failures += 1;
-            }
-            "unexpected_pass" => {
-                summary.unexpected_passes += 1;
-                summary.failed += 1;
-            }
-            _ => {
-                summary.failed += 1;
-            }
-        }
-
-        // By language — use LanguageBreakdown::new()
-        let lang_entry = summary.by_language.entry(r.language.clone()).or_default();
-        lang_entry.total += 1;
-        if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
-            lang_entry.passed += 1;
-        } else {
-            lang_entry.failed += 1;
-            // Count CI-blocking failures
-            if let Some(fc) = &r.failure_class
-                && fc.is_ci_blocking()
-            {
-                summary.ci_blocking += 1;
-            }
-        }
-
-        // By tool — use ToolBreakdown::new()
-        let tool_entry = summary.by_tool.entry(r.tool.clone()).or_default();
-        tool_entry.total += 1;
-        if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
-            tool_entry.passed += 1;
-        } else {
-            tool_entry.failed += 1;
-        }
-
-        // Failure distribution
-        if let Some(fc) = &r.failure_class {
-            let key = fc.to_string();
-            *summary.failure_distribution.entry(key).or_insert(0) += 1;
-        }
-    }
-
-    // Calculate overall pass rate
-    if summary.total > 0 {
-        summary.pass_rate = summary.passed as f64 / summary.total as f64;
-    }
-
-    // Calculate per-language pass rates and timings
-    for (lang, durations) in &mut lang_durations {
-        if let Some(lang_entry) = summary.by_language.get_mut(lang) {
-            if lang_entry.total > 0 {
-                lang_entry.pass_rate = lang_entry.passed as f64 / lang_entry.total as f64;
-            }
-            durations.sort();
-            let len = durations.len();
-            lang_entry.timing_p50_ms = Some(durations[len / 2]);
-            lang_entry.timing_p95_ms = Some(durations[(len * 95 / 100).min(len - 1)]);
-            lang_entry.timing_p99_ms = Some(durations[(len * 99 / 100).min(len - 1)]);
-        }
-    }
-
-    // Calculate per-tool pass rates and timings
-    for (tool, durations) in &mut tool_durations {
-        if let Some(tool_entry) = summary.by_tool.get_mut(tool) {
-            if tool_entry.total > 0 {
-                tool_entry.pass_rate = tool_entry.passed as f64 / tool_entry.total as f64;
-            }
-            durations.sort();
-            let len = durations.len();
-            tool_entry.timing_p50_ms = Some(durations[len / 2]);
-            tool_entry.timing_p95_ms = Some(durations[(len * 95 / 100).min(len - 1)]);
-            tool_entry.timing_p99_ms = Some(durations[(len * 99 / 100).min(len - 1)]);
-        }
-    }
-
-    // Calculate overall p50/p95/p99 durations
-    if !all_durations.is_empty() {
-        all_durations.sort();
-        let len = all_durations.len();
-        summary.duration_p50_ms = Some(all_durations[len / 2]);
-        summary.duration_p95_ms = Some(all_durations[(len * 95 / 100).min(len - 1)]);
-        summary.duration_p99_ms = Some(all_durations[(len * 99 / 100).min(len - 1)]);
-    }
-
-    summary.run_completed_at = iso8601_now();
-    summary
-}
-
 /// Write per-scenario result JSON to a per-scenario subdirectory.
 /// Path: {results_dir}/{scenario_id}/{run_id}/result.json
 /// Also writes request.json, response.json, and validation.log if available.
@@ -2392,169 +2272,6 @@ fn write_result(
     }
 
     Ok((result_path, artifacts))
-}
-
-/// Write summary JSON.
-fn write_summary(summary: &Summary, results_dir: &Path) -> std::io::Result<PathBuf> {
-    fs::create_dir_all(results_dir)?;
-    let path = results_dir.join("summary.json");
-    let json = serde_json::to_string_pretty(summary).unwrap_or_else(|_| "{}".into());
-    fs::write(&path, json)?;
-    Ok(path)
-}
-
-/// Generate a Markdown summary from results.
-fn generate_markdown_summary(results: &[ScenarioResult], summary: &Summary) -> String {
-    use std::fmt::Write;
-    let mut md = String::new();
-
-    writeln!(md, "# CogniCode Sandbox Validation Report").unwrap();
-    writeln!(md).unwrap();
-    writeln!(md, "**Date**: {}", summary.run_started_at).unwrap();
-    writeln!(
-        md,
-        "**Total**: {} | **Passed**: {} | **Failed**: {} | **Expected Failures**: {}",
-        summary.total, summary.passed, summary.failed, summary.expected_failures
-    )
-    .unwrap();
-    writeln!(md, "**Pass Rate**: {:.1}%", summary.pass_rate * 100.0).unwrap();
-    /// Format a dimension value: show "N/A" if 0 (not measured), otherwise the score
-    fn fmt_dim(v: f64) -> String {
-        if v > 0.0 {
-            format!("{:.0}", v)
-        } else {
-            "N/A".to_string()
-        }
-    }
-    writeln!(md, "**MCP Health Score**: {:.1}", summary.health_score).unwrap();
-    writeln!(
-        md,
-        "**Dimensions**: CORR:{} LAT:{} ESC:{} CON:{} ROB:{}",
-        fmt_dim(summary.dimension_scores.correctitud),
-        fmt_dim(summary.dimension_scores.latencia),
-        fmt_dim(summary.dimension_scores.escalabilidad),
-        fmt_dim(summary.dimension_scores.consistencia),
-        fmt_dim(summary.dimension_scores.robustez)
-    )
-    .unwrap();
-    writeln!(md).unwrap();
-
-    // Per-language breakdown
-    if !summary.by_language.is_empty() {
-        writeln!(md, "## Per-Language Breakdown").unwrap();
-        writeln!(md).unwrap();
-        writeln!(
-            md,
-            "| Language | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
-        )
-        .unwrap();
-        writeln!(
-            md,
-            "|----------|-------|--------|--------|-----------|-----|-----|-----|"
-        )
-        .unwrap();
-
-        let mut languages: Vec<_> = summary.by_language.iter().collect();
-        languages.sort_by(|a, b| a.0.cmp(b.0));
-
-        for (lang, stats) in languages {
-            writeln!(
-                md,
-                "| {} | {} | {} | {} | {:.1}% | {}ms | {}ms | {}ms |",
-                lang,
-                stats.total,
-                stats.passed,
-                stats.failed,
-                stats.pass_rate * 100.0,
-                stats.timing_p50_ms.map_or(0, |v| v),
-                stats.timing_p95_ms.map_or(0, |v| v),
-                stats.timing_p99_ms.map_or(0, |v| v)
-            )
-            .unwrap();
-        }
-        writeln!(md).unwrap();
-    }
-
-    // Per-tool breakdown
-    if !summary.by_tool.is_empty() {
-        writeln!(md, "## Per-Tool Breakdown").unwrap();
-        writeln!(md).unwrap();
-        writeln!(
-            md,
-            "| Tool | Total | Passed | Failed | Pass Rate | p50 | p95 | p99 |"
-        )
-        .unwrap();
-        writeln!(
-            md,
-            "|------|-------|--------|--------|-----------|-----|-----|-----|"
-        )
-        .unwrap();
-
-        let mut tools: Vec<_> = summary.by_tool.iter().collect();
-        tools.sort_by(|a, b| a.0.cmp(b.0));
-
-        for (tool, stats) in tools {
-            writeln!(
-                md,
-                "| {} | {} | {} | {} | {:.1}% | {}ms | {}ms | {}ms |",
-                tool,
-                stats.total,
-                stats.passed,
-                stats.failed,
-                stats.pass_rate * 100.0,
-                stats.timing_p50_ms.map_or(0, |v| v),
-                stats.timing_p95_ms.map_or(0, |v| v),
-                stats.timing_p99_ms.map_or(0, |v| v)
-            )
-            .unwrap();
-        }
-        writeln!(md).unwrap();
-    }
-
-    // Timing distribution
-    if summary.duration_p50_ms.is_some() {
-        writeln!(md, "## Timing Distribution").unwrap();
-        writeln!(md).unwrap();
-        writeln!(md, "- **p50**: {}ms", summary.duration_p50_ms.unwrap_or(0)).unwrap();
-        writeln!(md, "- **p95**: {}ms", summary.duration_p95_ms.unwrap_or(0)).unwrap();
-        writeln!(md, "- **p99**: {}ms", summary.duration_p99_ms.unwrap_or(0)).unwrap();
-        writeln!(md).unwrap();
-    }
-
-    writeln!(md, "## Results").unwrap();
-    writeln!(md).unwrap();
-    writeln!(
-        md,
-        "| Scenario | Language | Tool | Action | Outcome | Duration |"
-    )
-    .unwrap();
-    writeln!(
-        md,
-        "|----------|----------|------|--------|---------|----------|"
-    )
-    .unwrap();
-
-    for r in results {
-        writeln!(
-            md,
-            "| {} | {} | {} | {} | {} | {}ms |",
-            r.scenario_id, r.language, r.tool, r.action, r.outcome, r.timing_ms.total_ms
-        )
-        .unwrap();
-    }
-
-    writeln!(md).unwrap();
-
-    if !summary.failure_distribution.is_empty() {
-        writeln!(md, "## Failure Distribution").unwrap();
-        writeln!(md).unwrap();
-        for (class, count) in &summary.failure_distribution {
-            writeln!(md, "- **{}**: {}", class, count).unwrap();
-        }
-        writeln!(md).unwrap();
-    }
-
-    md
 }
 
 // Utility functions
@@ -3270,72 +2987,6 @@ fn plan(args: PlanArgs) -> Result<i32, String> {
     Ok(0)
 }
 
-/// Load baseline summary from a JSON file.
-fn load_baseline_summary(path: &Path) -> std::io::Result<Summary> {
-    let content = fs::read_to_string(path)?;
-    let summary: Summary = serde_json::from_str(&content)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    Ok(summary)
-}
-
-/// Compute regressions vs baseline by comparing current results against baseline.
-///
-/// A regression is detected when:
-/// - A scenario passed in baseline but fails now (unexpected_fail)
-/// - A scenario was expected_fail in baseline but now passes unexpectedly (unexpected_pass)
-/// - A new scenario appears with unexpected_fail or unexpected_pass
-fn compute_regressions(current: &[ScenarioResult], baseline: &Summary) -> Vec<String> {
-    // Build a map of scenario_id -> outcome from baseline
-    // Note: baseline is a Summary, not a list of ScenarioResult, so we need to
-    // infer outcomes from the summary statistics or load the full baseline results
-    // For now, we'll return an empty vector since we don't have the full baseline results
-    // TODO: Enhance to load full baseline result files for proper comparison
-
-    // Alternative: Compare aggregate statistics to detect major regressions
-    let mut regressions = Vec::new();
-
-    // Check if pass rate dropped significantly (>5%)
-    let baseline_pass_rate = baseline.pass_rate;
-    let current_pass_rate = current
-        .iter()
-        .filter(|r| r.outcome == "pass" || r.outcome == "expected_fail")
-        .count() as f64
-        / current.len().max(1) as f64;
-
-    if current_pass_rate < baseline_pass_rate - 0.05 {
-        regressions.push(format!(
-            "Pass rate dropped from {:.1}% to {:.1}%",
-            baseline_pass_rate * 100.0,
-            current_pass_rate * 100.0
-        ));
-    }
-
-    // Check for new CI-blocking failures
-    let current_ci_blocking = current
-        .iter()
-        .filter(|r| {
-            r.outcome == "unexpected_fail"
-                && r.failure_class.as_ref().is_some_and(|fc| {
-                    !matches!(
-                        fc,
-                        FailureClass::CapabilityMissing
-                            | FailureClass::PreexistingRepoFailure
-                            | FailureClass::ExpectedFail
-                    )
-                })
-        })
-        .count();
-
-    if current_ci_blocking > baseline.ci_blocking as usize {
-        regressions.push(format!(
-            "CI-blocking failures increased from {} to {}",
-            baseline.ci_blocking, current_ci_blocking
-        ));
-    }
-
-    regressions
-}
-
 fn report(args: ReportArgs) -> Result<i32, String> {
     let results_dir = &args.results_dir;
     if !results_dir.is_dir() {
@@ -3375,7 +3026,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     }
     let results: Vec<ScenarioResult> = latest.into_values().collect();
 
-    let mut summary = aggregate_summary(&results);
+    let mut summary = reporting::aggregate_summary(&results);
 
     // =============================================================================
     // Phase C: MCP Health Score & History Tracking
@@ -5016,7 +4667,7 @@ mod aggregate_summary_tests {
     #[test]
     fn test_aggregate_summary_empty() {
         let results: Vec<ScenarioResult> = vec![];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 0);
         assert_eq!(summary.passed, 0);
@@ -5037,7 +4688,7 @@ mod aggregate_summary_tests {
             make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result("pass", "rust", "read_file", Some(FailureClass::Pass)),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 2);
         assert_eq!(summary.passed, 2);
@@ -5065,7 +4716,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::PreexistingRepoFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 2);
         assert_eq!(summary.passed, 0);
@@ -5086,7 +4737,7 @@ mod aggregate_summary_tests {
             "edit_file",
             Some(FailureClass::UnexpectedPass),
         )];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 1);
         assert_eq!(summary.passed, 0);
@@ -5114,7 +4765,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::TestFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 2);
         assert_eq!(summary.passed, 0);
@@ -5158,7 +4809,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::TestFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.ci_blocking, 2); // BuildFailure + TestFailure
     }
@@ -5187,7 +4838,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::TestFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.failure_distribution.get("build_failure"), Some(&2));
         assert_eq!(summary.failure_distribution.get("test_failure"), Some(&1));
@@ -5207,7 +4858,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::BuildFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         let rust_entry = summary.by_language.get("rust").expect("rust entry exists");
         assert_eq!(rust_entry.total, 2);
@@ -5237,7 +4888,7 @@ mod aggregate_summary_tests {
             ),
             make_result("pass", "python", "edit_file", Some(FailureClass::Pass)),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         let edit_file_entry = summary
             .by_tool
@@ -5272,7 +4923,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::BuildFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 4);
         assert_eq!(summary.passed, 3);
@@ -5292,7 +4943,7 @@ mod aggregate_summary_tests {
                 Some(FailureClass::BuildFailure),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         let rust_entry = summary.by_language.get("rust").expect("rust entry exists");
         // 1 passed out of 2 total = 0.5
@@ -5309,7 +4960,7 @@ mod aggregate_summary_tests {
             "edit_file",
             Some(FailureClass::PreexistingRepoFailure),
         )];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.ci_blocking, 0);
         assert_eq!(summary.expected_failures, 1);
@@ -5325,7 +4976,7 @@ mod aggregate_summary_tests {
             "edit_file",
             Some(FailureClass::Pass),
         )];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.ci_blocking, 0);
     }
@@ -5343,8 +4994,8 @@ mod aggregate_summary_tests {
                 Some(FailureClass::UnexpectedFail),
             ),
         ];
-        let summary = aggregate_summary(&results);
-        let md = generate_markdown_summary(&results, &summary);
+        let summary = reporting::aggregate_summary(&results);
+        let md = reporting::generate_markdown_summary(&results, &summary);
 
         assert!(md.contains("# CogniCode Sandbox Validation Report"));
         assert!(md.contains("**Total**: 2"));
@@ -5359,8 +5010,8 @@ mod aggregate_summary_tests {
     #[test]
     fn test_generate_markdown_summary_empty_results() {
         let results: Vec<ScenarioResult> = vec![];
-        let summary = aggregate_summary(&results);
-        let md = generate_markdown_summary(&results, &summary);
+        let summary = reporting::aggregate_summary(&results);
+        let md = reporting::generate_markdown_summary(&results, &summary);
 
         assert!(md.contains("# CogniCode Sandbox Validation Report"));
         assert!(md.contains("**Total**: 0"));
@@ -6418,7 +6069,7 @@ mod bug_detection_tests {
             ),
         ];
 
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 4);
         assert_eq!(summary.passed, 3);
@@ -6450,7 +6101,7 @@ mod bug_detection_tests {
             ),
         ];
 
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         // Only 1 unexpected_fail should block CI
         assert_eq!(summary.ci_blocking, 1);
@@ -6476,7 +6127,7 @@ mod bug_detection_tests {
             ),
         ];
 
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.by_language.get("rust").unwrap().total, 2);
         assert_eq!(summary.by_language.get("python").unwrap().total, 2);
@@ -6497,7 +6148,7 @@ mod bug_detection_tests {
             ),
         ];
 
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.by_tool.get("edit_file").unwrap().total, 2);
         assert_eq!(summary.by_tool.get("get_file_symbols").unwrap().total, 1);
@@ -6796,7 +6447,7 @@ mod edge_case_tests {
         let results: Vec<ScenarioResult> = (0..10)
             .map(|_i| make_result("pass", "rust", "edit_file", Some(FailureClass::Pass)))
             .collect();
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 10);
         assert_eq!(summary.passed, 10);
@@ -6817,7 +6468,7 @@ mod edge_case_tests {
                 )
             })
             .collect();
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 5);
         assert_eq!(summary.passed, 0);
@@ -6834,7 +6485,7 @@ mod edge_case_tests {
             make_result_with_id("pass_עברית", "rust", "edit_file", Some(FailureClass::Pass)),
             make_result_with_id("pass_🎉", "rust", "edit_file", Some(FailureClass::Pass)),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 3);
         assert_eq!(summary.passed, 3);
@@ -6863,7 +6514,7 @@ mod edge_case_tests {
                 Some(FailureClass::UnexpectedFail),
             ),
         ];
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 4);
         assert_eq!(summary.passed, 1);
@@ -6888,7 +6539,7 @@ mod edge_case_tests {
                 }
             })
             .collect();
-        let summary = aggregate_summary(&results);
+        let summary = reporting::aggregate_summary(&results);
 
         assert_eq!(summary.total, 1000);
         assert_eq!(summary.passed, 500);
@@ -7544,8 +7195,8 @@ scenarios:
                 Some(FailureClass::Pass),
             ),
         ];
-        let summary = aggregate_summary(&results);
-        let md = generate_markdown_summary(&results, &summary);
+        let summary = reporting::aggregate_summary(&results);
+        let md = reporting::generate_markdown_summary(&results, &summary);
 
         assert!(md.contains("# CogniCode Sandbox Validation Report"));
         assert!(md.contains("rust"));
@@ -7560,8 +7211,8 @@ scenarios:
             make_result("pass", "python", "find_usages", Some(FailureClass::Pass)),
             make_result("pass", "python", "safe_refactor", Some(FailureClass::Pass)),
         ];
-        let summary = aggregate_summary(&results);
-        let md = generate_markdown_summary(&results, &summary);
+        let summary = reporting::aggregate_summary(&results);
+        let md = reporting::generate_markdown_summary(&results, &summary);
 
         assert!(md.contains("edit_file"));
         assert!(md.contains("get_file_symbols"));
