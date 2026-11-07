@@ -70,6 +70,11 @@ Lo que NO se comprueba:
     documento puede citar a otro documento que se haya movido; eso lo
     vigila otro contrato, con otras reglas.
 
+## III. `openspec_conformance.py --validate-paths` termina y nombra lo que falta
+
+Sobre un árbol sano sin directorio de especificaciones termina con código 0;
+con una ruta de evidencia ausente falla con código 1 y la nombra.
+
 Run:
     python3 scripts/ci/test_paths_that_must_exist.py
 """
@@ -77,8 +82,10 @@ Run:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -298,6 +305,46 @@ def test_the_existing_tree_has_no_absent_citation() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# III. `openspec_conformance.py --validate-paths` termina y nombra lo que falta
+# ---------------------------------------------------------------------------
+#
+# Con un árbol sano y sin directorio de especificaciones el comando termina
+# con código 0 (sin `KeyError`); con una ruta de evidencia ausente falla con
+# código 1 y nombra tanto la clave como la ruta.
+
+OPENSPEC_SCRIPT = REPO_ROOT / "sandbox" / "scripts" / "openspec_conformance.py"
+
+
+def run_validate_paths(cwd: Path, evidence: str) -> subprocess.CompletedProcess:
+    (cwd / "map.json").write_text(evidence)
+    return subprocess.run(
+        [sys.executable, "-I", str(OPENSPEC_SCRIPT), "--validate-paths",
+         "--evidence-map", "map.json", "--specs-dir", "none",
+         "--output-prefix", "out/m"],
+        cwd=cwd, capture_output=True, text=True, timeout=30,
+    )
+
+
+class ValidatePaths(unittest.TestCase):
+    def test_healthy_tree_without_specs_dir_ends_with_rc_0(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "ev.txt").write_text("x")
+            done = run_validate_paths(
+                root, '{"a": {"status": "verified", "evidence_path": "ev.txt"}}')
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertNotIn("KeyError", done.stderr)
+
+    def test_missing_path_is_named_and_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            done = run_validate_paths(
+                Path(d), '{"a": {"status": "verified", "evidence_path": "gone.txt"}}')
+            self.assertEqual(done.returncode, 1)
+            self.assertIn("a", done.stderr)
+            self.assertIn("gone.txt", done.stderr)
+
+
 def main() -> int:
     """Ejecuta las comprobaciones y devuelve 1 si alguna falla.
 
@@ -322,6 +369,11 @@ def main() -> int:
                 print(f"  - {finding}", file=sys.stderr)
         else:
             print(f"PASS: {name}")
+
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(ValidatePaths)
+    result = unittest.TextTestRunner(stream=sys.stderr, verbosity=0).run(suite)
+    for case, trace in result.failures + result.errors:
+        failures.append(f"FAIL: {case.id()}: {trace.strip().splitlines()[-1]}")
 
     if failures:
         print(f"\n{len(failures)} problem(s) found", file=sys.stderr)
