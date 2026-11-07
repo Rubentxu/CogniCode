@@ -68,6 +68,7 @@ def run_git(root: Path, *args: str) -> str:
         check=False,
         capture_output=True,
         text=True,
+        timeout=120,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "git command failed")

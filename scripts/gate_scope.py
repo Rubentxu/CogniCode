@@ -93,9 +93,25 @@ class Undetermined(Exception):
     """The radius could not be determined, so the caller has to measure everything."""
 
 
+GIT_DEADLINE_S = 120
+
+
+def _bounded(args: list[str], cwd: Path) -> "subprocess.CompletedProcess[str]":
+    """Run a command with a deadline; a command that does not answer is an
+    undetermined radius, never a hang."""
+    try:
+        return subprocess.run(
+            args, cwd=cwd, capture_output=True, text=True, timeout=GIT_DEADLINE_S
+        )
+    except subprocess.TimeoutExpired as error:
+        raise Undetermined(
+            f"`{' '.join(args)}` no respondio en {GIT_DEADLINE_S} s"
+        ) from error
+
+
 def _run(args: list[str], cwd: Path) -> str:
     """Run a command and return its stdout, or fail closed."""
-    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    proc = _bounded(args, cwd)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip().splitlines()
         raise Undetermined(
@@ -111,15 +127,7 @@ def _git(args: list[str], repo: Path) -> str:
 
 def _is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     """Whether `ancestor` is on the history of `descendant`."""
-    return (
-        subprocess.run(
-            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        ).returncode
-        == 0
-    )
+    return _bounded(["git", "merge-base", "--is-ancestor", ancestor, descendant], repo).returncode == 0
 
 
 def _workspace(repo: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
@@ -165,12 +173,7 @@ def _resolve_base(repo: Path, requested: str | None) -> str:
     head = _git(["rev-parse", "HEAD"], repo).strip()
     main_ref = None
     for candidate in ("origin/main", "main"):
-        probe = subprocess.run(
-            ["git", "rev-parse", "--verify", f"{candidate}^{{commit}}"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
+        probe = _bounded(["git", "rev-parse", "--verify", f"{candidate}^{{commit}}"], repo)
         if probe.returncode == 0:
             main_ref = candidate
             break

@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `e42ea35fe86fa773f44a13e5167b048285f13a8e` (la
+> **Snapshot**: 2026-11-07, sobre `765ea29fc3b4eb9eae23b00982aea1603489263c` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -308,25 +308,29 @@
 > superficies leen lo mismo; y el harness de medición ya sabe contar qué
 > enlaces de `_links` se siguen —un contador puro sobre una traza— y producirla
 > desde una sesión real de `cognicode-mcp` encadenada, con una política de
-> seguimiento declarada: mide el contrato de cable, no a un agente;
+> seguimiento declarada: mide el contrato de cable, no a un agente; y toda
+> llamada a `subprocess` de los contratos de `scripts/ci/` y del harness de
+> `scripts/measure/` lleva plazo (regla dura 7), vigilado por un contrato por
+> `ast`, y el SKIP de mutantes del gate dice a cuántas fusiones llega el
+> siguiente turno del calendario;
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`f05bbab5` → `e42ea35fe86fa773f44a13e5167b048285f13a8e`)
+## Qué cambió desde el snapshot anterior (`e42ea35f` → `765ea29fc3b4eb9eae23b00982aea1603489263c`)
 
-Entre una punta y otra entraron **5 commits** (`git rev-list --count f05bbab50a6099aebc8e464a010ccf02a44ead10..e42ea35fe86fa773f44a13e5167b048285f13a8e`).
+Entre una punta y otra entraron **5 commits** (`git rev-list --count e42ea35fe86fa773f44a13e5167b048285f13a8e..765ea29fc3b4eb9eae23b00982aea1603489263c`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera sobre la punta | `416ad5fc` (TASK-151) | El ratchet de `test_roadmap_coherence.py` pasó de 2 rojos a 29 verdes, y se cerró como deriva de ritmo, no como preexistente. |
-| Dos pruebas de pyright que nunca corrían, retiradas | `34afa837` (TASK-152) | Un `#[ignore]` que no corre afirma una cobertura que no existe; `definition`/`references` vía pyright quedan declarados como no verificados. |
-| El conjunto de assets del release-candidate se prueba con fixtures | `79fe4aa0` (TASK-146) | El contrato no contenía ningún `test_*` y el runner lo excluía; ahora 34 casos pasan y `run-all-contracts.sh` ya no tiene exclusiones. |
-| Contador de enlaces seguidos | `565fdd12` (TASK-153) | Módulo puro `scripts/measure/link_follow.py`; 13 casos y una mutación que sobrevivió y se mató. |
-| Productor de trazas reales de enlaces | `e42ea35f` (TASK-154) | Una sesión `cognicode-mcp` real ofrece `inspect-risk` tras `build_graph` → `analyze_impact`; los goals del perfil `default` no ofrecieron enlaces en las llamadas probadas. |
+| El snapshot se regenera sobre la punta | `d38ae0ae` (TASK-155) | La cabecera, la prosa y una fila por unidad viajan juntas; el ratchet de deriva queda verde. |
+| El fallo del generador de provenance se declara | `ff670d40` (TASK-156) | Un generador que falla ya no se lee como un contrato sin casos. |
+| El SKIP de mutantes dice cuándo llega el siguiente turno | `b4066249` (TASK-157) | Campo `calendar-next` en `gate_scope.py`; el log del gate nombra las fusiones que faltan en vez de callar. |
+| Toda llamada a subprocess de los contratos lleva plazo | `4064f3da` (TASK-159) | Contrato por `ast` en `test_subprocess_deadlines.py`; un remoto que no contesta es «sin respuesta», no un veredicto. |
+| Toda llamada a subprocess del harness de medición lleva plazo | `765ea29f` (TASK-160) | Cinco llamadas de `scripts/measure/harness_ab.py` con plazo y degradación; una corrida que lo agota es una fila de timeout. |
 
 ## Release: la última publicada es la v0.101.30
 

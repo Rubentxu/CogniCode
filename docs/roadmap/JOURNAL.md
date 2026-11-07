@@ -38837,3 +38837,15 @@ Gate NOT_RUN: el lote lleva 2 de 10 desde `ff670d40` (TASK-157, 159).
 **Verificación.** `test_roadmap_coherence.py` verde (deriva de `CURRENT.md` 4 → 5 al fusionar, en el máximo, sin regenerar). `bash scripts/ci/run-all-contracts.sh` `rc=0`.
 
 Gate NOT_RUN: el lote lleva 3 de 10 desde `ff670d40` (TASK-157, 159, 160).
+
+## 2026-11-07 — scripts/ y scripts/product: toda llamada a subprocess lleva plazo (TASK-161)
+
+**Medido.** Con `ast`, 19 llamadas sin `timeout`: 9 en `scripts/*.py` (`affected-tests-recall.py` 5, `gate_scope.py`, `run_contract_tests.py`) y 10 en `scripts/product/*.py` (no 11, como se estimó). Era la deuda que TASK-160 dejó fuera.
+
+**Cambio.** `test_subprocess_deadlines.py` recorre ya `scripts/ci`, `scripts/measure`, `scripts` y `scripts/product`. Las 19 llevan plazo (120 s; 900 s el runner de contratos). Tres con semántica propia: `gate_scope.py` pasa todo `git` por `_bounded` y un plazo agotado deja el radio `Undetermined` (gate entero, falla cerrado); `run_contract_tests.py` define `SUITE_DEADLINE_S` y un contrato que no termina cuenta como contrato fallido; el `ls-remote` de `test_oss_foundation.py` trata el plazo como remoto sin respuesta.
+
+**RED/GREEN.** Antes 3 de 6 fallaban (19 llamadas y los dos comportamientos nuevos); después 6/6. `test_oss_foundation.py` y `test_gate_contracts.py` siguen verdes (35/35 en conjunto).
+
+**Verificación.** `CURRENT.md` regenerado en el mismo PR sobre `765ea29f` (cabecera, prosa y una fila por unidad); `test_roadmap_coherence.py` 29/29. `bash scripts/ci/run-all-contracts.sh` `rc=0`.
+
+Gate NOT_RUN: el lote lleva 4 de 10 desde `ff670d40` (TASK-157, 159, 160, 161).
