@@ -38250,3 +38250,26 @@ Rust lee también `enum_item`, `trait_item` y `union_item` como símbolos de tip
 Otros lenguajes que leen un solo nodo de clase pueden tener el mismo hueco; la respuesta de `find` sigue sin declarar su cobertura. `inspect` no se ha reverificado.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-145: `find` declara los tipos que el índice no lee
+
+SHA inicial: `d07c4a25`. Pruebas con `CARGO_BUILD_JOBS=2`, `nice -n 19 ionice -c3`, un paquete cada vez.
+
+### Medición (AC1)
+
+Los lenguajes que leen un solo nodo de clase y declaran más en `LanguageSymbols::class_types` dejan tipos fuera del índice: C, C++ (`struct_specifier`, `union_specifier`), Dart, Erlang, Fortran, Haskell, Java, PHP, Ruby, Rust (`impl_item`, a propósito), Scala, SystemVerilog, Swift, TypeScript, Verilog y Zig. Kotlin, C# y Groovy leen sus conjuntos declarados y no pierden nada. La medición es estática (nodos declarados frente al nodo leído); no se ha ejecutado cada gramática.
+
+### Qué cambió (AC2)
+
+- `Language::unread_class_kinds()` es la fuente única de lo que se deja fuera; un test fija la lista medida y sólo puede encogerse.
+- Cuando `find` no encuentra nada, el resumen añade «The answer is not complete: these declarations are not indexed: …» con los lenguajes presentes en el workspace y sus nodos no leídos. Sin esquema nuevo: sigue siendo texto de `summary`.
+
+### Pruebas (RED → GREEN)
+
+`goals::find::an_empty_answer_names_the_kinds_the_index_does_not_read`: RED → GREEN. `unread_class_kinds_tests` 2/2 y `find` 5/5. Los filtrados no certifican. El gate completo no se corrió: se pasa por lote de 10 tareas. `inspect` y el MCP real: NOT_RUN.
+
+### Siguiente paso
+
+Migrar cada lenguaje a sus conjuntos declarados (cambia lo que publica) y quitarlo de la lista del test.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
