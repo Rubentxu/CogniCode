@@ -1038,8 +1038,22 @@ mod unread_class_kinds_tests {
     /// index. It may only shrink: a language that migrates is removed
     /// here, one that gains a hole fails this test.
     const MEASURED: &[&str] = &[
-        "C", "C++", "Dart", "Erlang", "Fortran", "Haskell", "Java", "PHP", "Ruby", "Rust",
-        "Scala", "SystemVerilog", "Swift", "TypeScript", "Verilog", "Zig",
+        "C",
+        "C++",
+        "Dart",
+        "Erlang",
+        "Fortran",
+        "Haskell",
+        "Java",
+        "PHP",
+        "Ruby",
+        "Rust",
+        "Scala",
+        "SystemVerilog",
+        "Swift",
+        "TypeScript",
+        "Verilog",
+        "Zig",
     ];
 
     #[test]

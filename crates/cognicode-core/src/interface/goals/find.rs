@@ -92,7 +92,9 @@ fn unindexed_note(workspace: &Path) -> String {
     let mut gaps: Vec<String> = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for file in inventory(workspace).source_files() {
-        let Some(language) = file.language else { continue };
+        let Some(language) = file.language else {
+            continue;
+        };
         let kinds = language.unread_class_kinds();
         if kinds.is_empty() || !seen.insert(language.name()) {
             continue;
@@ -171,8 +173,11 @@ mod tests {
     #[test]
     fn an_empty_answer_names_the_kinds_the_index_does_not_read() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("a.c"), "typedef int T;\nint f(void){return 0;}\n")
-            .expect("write");
+        std::fs::write(
+            dir.path().join("a.c"),
+            "typedef int T;\nint f(void){return 0;}\n",
+        )
+        .expect("write");
 
         let answer = find(dir.path(), "nowhere").expect("the goal answers");
 
@@ -191,7 +196,11 @@ mod tests {
 
         let answer = find(dir.path(), "nowhere").expect("the goal answers");
 
-        assert!(!answer.summary.contains("not indexed"), "{}", answer.summary);
+        assert!(
+            !answer.summary.contains("not indexed"),
+            "{}",
+            answer.summary
+        );
     }
 
     #[test]
