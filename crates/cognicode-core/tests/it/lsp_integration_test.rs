@@ -1,7 +1,10 @@
 //! LSP Integration Tests
 //!
-//! End-to-end tests that validate the complete LSP stack with real language server binaries.
-//! These tests are ignored by default and run only when the respective LSP binaries are available.
+//! End-to-end tests that validate the LSP stack against a real `rust-analyzer` binary.
+//!
+//! Known limitation: `definition` and `references` through pyright are not
+//! verified. `LspProxyService` owns a concrete `CompositeProvider` with no port
+//! to substitute, so there is no deterministic way to exercise that path.
 
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -30,14 +33,9 @@ fn rust_analyzer_available() -> bool {
     command_reports_version("rust-analyzer")
 }
 
-/// Checks if pyright binary is available on the system
-fn pyright_available() -> bool {
-    command_reports_version("pyright")
-}
-
 /// Por que `Ok(None)` ya no se acepta como veredicto.
 ///
-/// MEDIDO 2026-10-04: los cuatro tests LSP de integracion tenian un brazo
+/// MEDIDO 2026-10-04: los tests LSP de integracion tenian un brazo
 /// `Ok(Ok(None)) => {}` que no afirmaba nada, con el comentario "this can
 /// happen if the LSP did not return anything useful but we should not error".
 /// Medido lo que ese brazo escondia: los tests PASABAN con el shim de
@@ -57,7 +55,7 @@ fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
          {detail}\n\
          Un test que pasa igual con y sin el sistema que dice ejercitar no \
          mide nada. Antes este brazo aceptaba `None` con un comentario, y por eso \
-         los cuatro tests LSP daban verde con el shim de rustup roto."
+         los tests LSP daban verde con el shim de rustup roto."
     );
 }
 
@@ -242,158 +240,6 @@ fn main() {
     }
 }
 
-#[tokio::test]
-#[ignore = "requires pyright binary"]
-async fn test_pyright_goto_definition() {
-    use cognicode_core::application::services::analysis_service::AnalysisService;
-    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
-
-    // Create a temporary Python project
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_dir = temp_dir.path().to_path_buf();
-
-    // Create a simple Python file
-    let python_file = project_dir.join("test_file.py");
-    std::fs::write(
-        &python_file,
-        r#"
-def calculate(x, y):
-    return x + y
-
-result = calculate(5, 3)
-print(result)
-"#,
-    )
-    .expect("Failed to write Python file");
-
-    // Create the LSP proxy service
-    let service = LspProxyService::new(Arc::new(AnalysisService::new()), project_dir.clone());
-    let mut service = service;
-    service.enable_proxy_mode_with_provider();
-
-    // Request goto-definition on the call to calculate (line 5, column 7)
-    // Should return the definition at line 2
-    let params = serde_json::json!({
-        "textDocument": {
-            "uri": format!("file://{}", python_file.display())
-        },
-        "position": {
-            "line": 5,
-            "character": 7
-        }
-    });
-
-    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        service
-            .route_operation("textDocument/definition", &params)
-            .await
-    })
-    .await;
-
-    match result {
-        Ok(Ok(Some(response))) => {
-            let response_str = response.to_string();
-            assert!(
-                response_str.contains("file://") || response_str.contains("test_file.py"),
-                "Definition response should contain file path, got: {}",
-                response_str
-            );
-        }
-        Ok(Ok(None)) => none_is_not_a_verdict(
-            "goto_definition (pyright)",
-            "Igual que el de rust-analyzer: si el servidor arranco, una \
-             definicion que existe tiene que aparecer.",
-        ),
-        Ok(Err(e)) => {
-            panic!("Definition request failed: {}", e);
-        }
-        Err(_) => {
-            panic!("Definition request timed out after 30 seconds");
-        }
-    }
-}
-
-#[tokio::test]
-#[ignore = "requires pyright binary"]
-async fn test_pyright_find_references() {
-    use cognicode_core::application::services::analysis_service::AnalysisService;
-    use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
-
-    // Create a temporary Python project
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let project_dir = temp_dir.path().to_path_buf();
-
-    // Create a Python file with a variable used in multiple places
-    let python_file = project_dir.join("test_refs.py");
-    std::fs::write(
-        &python_file,
-        r#"
-message = "Hello"
-
-def greet():
-    print(message)
-
-def farewell():
-    print(message)
-
-greet()
-farewell()
-"#,
-    )
-    .expect("Failed to write Python file");
-
-    // Create the LSP proxy service
-    let service = LspProxyService::new(Arc::new(AnalysisService::new()), project_dir.clone());
-    let mut service = service;
-    service.enable_proxy_mode_with_provider();
-
-    // Request find-references on "message" at line 1 (the definition)
-    let params = serde_json::json!({
-        "textDocument": {
-            "uri": format!("file://{}", python_file.display())
-        },
-        "position": {
-            "line": 1,
-            "character": 0
-        }
-    });
-
-    let result = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        service.route_operation("find_references", &params).await
-    })
-    .await;
-
-    match result {
-        Ok(Ok(Some(response))) => {
-            // Should find multiple references to "message"
-            // Verify response is an array (list of references)
-            assert!(
-                response.is_array(),
-                "References response should be an array, got: {}",
-                response
-            );
-            let refs = response.as_array().unwrap();
-            // Should find at least the definition + 3 usages
-            assert!(
-                refs.len() >= 2,
-                "Should find at least 2 references (definition + usage), got {}",
-                refs.len()
-            );
-        }
-        Ok(Ok(None)) => none_is_not_a_verdict(
-            "find_references (pyright)",
-            "Si pyright arranco, las referencias de un simbolo declarado tienen que \
-             existir.",
-        ),
-        Ok(Err(e)) => {
-            panic!("Find references request failed: {}", e);
-        }
-        Err(_) => {
-            panic!("Find references request timed out after 30 seconds");
-        }
-    }
-}
-
 #[test]
 fn test_availability_detection_asks_the_binary_and_not_the_filesystem() {
     // Un test que no puede fallar no es un test, y este lo decia en su
@@ -448,26 +294,22 @@ fn test_availability_detection_asks_the_binary_and_not_the_filesystem() {
 
 #[test]
 fn test_availability_detection_of_the_lsp_servers_agrees_with_the_binaries() {
-    // Los dos detectores concretos, medidos y publicados en vez de supuestos.
+    // El detector concreto, medido y publicados en vez de supuestos.
     //
     // Que este test afirme el valor exacto del entorno seria una trampa: en
     // otra maquina rust-analyzer si esta instalado y la afirmacion
     // fallaria sin que nada este roto. Lo que se afirma es la COHERENCIA
     // entre lo que el detector dice y lo que el binario hace, que es lo
     // unico que vale en cualquier parte.
-    for (name, detected) in [
-        ("rust-analyzer", rust_analyzer_available()),
-        ("pyright", pyright_available()),
-    ] {
-        let real = command_reports_version(name);
-        assert_eq!(
-            detected, real,
-            "{name}: la deteccion y el binario discrepan. Si la deteccion dice \
-             que hay servidor y el binario no responde, el servicio degrada a \
-             tree-sitter en silencio y el test que lo ejercita pasa sin haber \
-             ejercitado el LSP."
-        );
-    }
+    let detected = rust_analyzer_available();
+    let real = command_reports_version("rust-analyzer");
+    assert_eq!(
+        detected, real,
+        "rust-analyzer: la deteccion y el binario discrepan. Si la deteccion dice \
+         que hay servidor y el binario no responde, el servicio degrada a \
+         tree-sitter en silencio y el test que lo ejercita pasa sin haber \
+         ejercitado el LSP."
+    );
 }
 
 #[tokio::test]
