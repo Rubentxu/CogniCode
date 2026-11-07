@@ -52,6 +52,13 @@ depend on a Control Plane. If you find a code path where the core phones home
 without an explicit, documented capability grant, that is a reportable
 vulnerability.
 
+The one local record the server can write is opt-in and named by the
+operator: with `COGNICODE_LINK_TRACE=<file>` set, `cognicode-mcp` appends one
+JSON line per tool call (tool, arguments, offered links, a per-process session
+id) to that file. It is off by default, never leaves the machine, and a write
+failure never fails the call. Arguments can contain paths and symbol names, so
+treat the file as sensitive.
+
 ### MCP is JSON-RPC over stdout
 
 The MCP server speaks JSON-RPC over stdout. Observability goes to stderr.

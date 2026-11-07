@@ -38919,3 +38919,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Pendiente.** Las lanes restauradas viven en `/tmp/rel-hist/` y no están versionadas; restaurarlas del tag `v0.101.30` exige repetir las adaptaciones. `v0.102.0` queda como tag sin release.
 
 Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.
+
+## 2026-11-07 — TASK-94 (parcial): la traza de enlaces la escribe el servidor, no el transcript
+
+**Medido.** Los `_links` viajan solo en `structuredContent` (`tool_response.rs`); un transcript de Claude Code conserva `content`, que lleva las líneas `Siguiente: <tool> <args> — <motivo>` pero sin `rel`, y `link_follow.py` cuenta por `rel`. Un adaptador transcript→JSONL sería parcial y dependería de prosa; tras 350 ciclos sin trazas era además el único camino previsto.
+
+**Decisión.** Traza local opt-in en el servidor: `COGNICODE_LINK_TRACE=<fichero>` añade una línea JSON por llamada (`tool`, `arguments`, `links`, `session`), la entrada exacta de `link_follow.py`. Sin variable no escribe nada; un fallo de escritura es un aviso por stderr, nunca un error de la llamada. Documentada en `SECURITY.md` como concesión explícita.
+
+**Cambio.** `interface/mcp/link_trace.rs` (núcleo puro `link_trace_line` + `append_line` + `record`), una llamada en `rmcp_adapter.rs`, 4 tests unitarios y 2 contratos en `test_link_trace_contracts.py` contra el binario release reconstruido (la traza del servidor coincide con lo observado por el cliente; sin variable no se escribe nada).
+
+**Verificación.** `cargo test -p cognicode-core --lib link_trace` 4/4; `test_link_trace_contracts.py` 9/9; clippy `-D warnings` y `cargo fmt --check` limpios. Implementación y tests se escribieron juntos: no hay RED medido.
+
+**Pendiente.** TASK-94 sigue abierta: AC2 necesita 4 semanas de trazas de agente real. Para generarlas, arrancar el cliente con `COGNICODE_LINK_TRACE` apuntando a un fichero y contar con `link_follow.py`. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.

@@ -872,12 +872,16 @@ impl ServerHandler for CogniCodeHandler {
             let result = call_tool_handler(&request_ctx, request).await;
 
             match result {
-                Ok(output) => Ok(crate::interface::mcp::tool_response::success_result(
-                    &tool_name,
-                    output,
-                    &arguments,
-                    &handle_context,
-                )),
+                Ok(output) => {
+                    let answered = crate::interface::mcp::tool_response::success_result(
+                        &tool_name,
+                        output,
+                        &arguments,
+                        &handle_context,
+                    );
+                    crate::interface::mcp::link_trace::record(&tool_name, &arguments, &answered);
+                    Ok(answered)
+                }
                 Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
             }
         }
