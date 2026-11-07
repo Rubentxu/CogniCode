@@ -38547,3 +38547,17 @@ Sin compilar, sin suites; no se lanzó el gate. Base verde: nuevo rc 0, original
 Aparte: la prueba de la parte 18 que quedó NOT_RUN se ejecutó después sola (`CARGO_BUILD_JOBS=1 nice -n 19`, 1 test OK en 19,8 s) y consta como nota de TASK-74.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 20) — el contrato de rutas absorbe el de `--validate-paths`
+
+`scripts/ci/test_openspec_conformance_validate_paths.py` (43 líneas, `unittest`) se fusiona como sección III en `scripts/ci/test_paths_that_must_exist.py`, que ya tenía las secciones I (build.rs sin rutas de git) y II (configuración sin citas a documentos ausentes). Tema común: una ruta ausente se nombra y falla. Quedan 25 ficheros `test_*.py`.
+
+Para evitar colisiones, `SCRIPT` pasa a `OPENSPEC_SCRIPT` y `run` a `run_validate_paths`, sin cambiar su semántica; la clase `ValidatePaths` y sus dos pruebas se conservan. El `main` único ejecuta las funciones del módulo y después la clase, y vuelca sus fallos en la misma lista.
+
+Punteros: ninguna referencia al nombre retirado fuera del propio fichero (`AGENTS.md`, `run-all-contracts.sh` y los docstrings no lo mencionaban).
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base verde: nuevo 0, originales 0/0. Mutaciones del sujeto (nuevo / paths / validate_paths): `sys.exit(1)` → `sys.exit(0)` en `openspec_conformance.py` 2/0/1; validación omitida 2/0/1; mensaje sin el nombre de la clave 2/0/1; ruta de git fija añadida a `build.rs` 1/1/0. El nuevo falla exactamente donde falla el original correspondiente (el 2 es el fallo de `unittest` más su línea en `main`). Ficheros restaurados con `cp -p`, `touch` y `cmp`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
