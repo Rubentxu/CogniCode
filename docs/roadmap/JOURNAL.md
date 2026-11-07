@@ -38603,3 +38603,17 @@ Punteros: `odd/tasks/2026-Q4-work-loop.md` citaba el fichero retirado y ahora ci
 Sin compilar, sin suites; no se lanzó el gate. Base: el original de coherencia ya fallaba 4 pruebas ejecutado desde `main` (las dos de `CURRENT.md` y las dos de §11, por el texto de recibos previos); el del libro mayor, 0. El nuevo falla esas mismas 4 y nada más (4 / coherencia 4 / libro mayor 0). Rojos previos que esta unidad no toca ni arregla. Mutación del sujeto: `goal-compass.json` con JSON roto: las 6 pruebas de la misión que fallaban en el original también fallan en el nuevo (2 `FAIL` y 4 `ERROR` por excepción, que el `main` de coherencia registra aparte). Descartados los controles `"evidence"`→`"evidenceX"` y un cambio de estado en `odd/tasks/2026-Q4-work-loop.md` (0/0/0: ninguna prueba los observa). Restaurado con `cp -p`, `touch` y `cmp`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 24) — el contrato de escaneo del código absorbe el del servicio de ficheros
+
+`scripts/ci/test_file_service_contracts.py` (390 líneas) se fusiona como secciones III y IV en `scripts/ci/test_source_scan_contracts.py`, que ya llevaba el escáner de escritores de entorno y el de alfabetos ajenos. Tema común: contratos que leen el código y el texto versionados sin ejecutar el servicio. Quedan 21 ficheros `test_*.py`.
+
+Sin colisiones de nombres de nivel de módulo (comprobado con `ast`); `REPO_ROOT` era idéntico y se comparte. Se retira la lista global `failures` y el `main` del servicio de ficheros: el `main` único es el del destino (orden de código, captura de `AssertionError` y de excepciones, línea `ok`/`FAIL`). Las docstrings de las dos secciones se trasladan a la del módulo.
+
+Punteros: ningún fichero vivo citaba el retirado; la única mención restante es el comentario de procedencia de la sección. Las menciones históricas del JOURNAL no se tocan.
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base: 21 pruebas en verde (12 del destino + 9 del servicio de ficheros). Mutaciones del sujeto (incremento nuevo / destino / servicio de ficheros, contando una prueba fallida): `AppError::InternalError(` añadido a `file_ops_handlers.rs` +1/0/+1; `pub fn`→`fn` en `text_boundary.rs` +1/0/+1; corte por índice de byte `&s[..10]` añadido a `file_operations.rs` +1/0/+1. Ningún control 0/0/0. Restaurado con `cp -p`, `touch` y `cmp`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
