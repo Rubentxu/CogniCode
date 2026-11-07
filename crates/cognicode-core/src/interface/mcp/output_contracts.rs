@@ -98,13 +98,17 @@ fn build_tool_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("project_insights", schema_of::<ProjectInsightsOutput>());
     m.insert("project_overview", schema_of::<ProjectOverviewOutput>());
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
-    // TASK-82 — el goal `status`: el contrato sale del tipo que serializa su
-    // respuesta, así que la forma que el cliente ve es la que el servidor
-    // produce.
-    m.insert(
-        "status",
-        schema_of::<crate::interface::goals::status::GoalStatus>(),
-    );
+    // TASK-84 — los goals NO publican un `outputSchema`.
+    //
+    // MEDIDO el 2026-11-07 sobre este árbol: la lista del perfil por
+    // defecto —los cinco goals— pesa 4.290 bytes sin esquema (4.350 por el
+    // cable); con el esquema del sobre bajo cada goal pesaría entre 26.420 y
+    // 65.890, y el presupuesto de la superficie por defecto es de 6 KB. Así
+    // que el goal anuncia qué pregunta responde —su `inputSchema`— y no la
+    // forma de su respuesta.
+    //
+    // El maestro y el runtime tienen que decir lo mismo sobre esto, y lo
+    // comprueba `a012_structured_output`.
     // The findings answer is derived only in the builds that ship the tool:
     // the findings pipeline grounds its findings in the canonical evidence
     // kernel, and a contract for a tool this build does not advertise would

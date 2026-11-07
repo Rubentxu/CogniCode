@@ -40,6 +40,14 @@ struct Args {
     /// Timeout in seconds for each response (default: 30)
     #[arg(short, long, default_value = "30")]
     timeout: u64,
+
+    /// The surface the server publishes (passed to it as `--profile`).
+    ///
+    /// TASK-84: the server announces one surface. The capture of the whole
+    /// catalogue is the `full` one; the default surface announces the goals
+    /// that answer before the analysis.
+    #[arg(long, default_value = "default")]
+    server_profile: String,
 }
 
 #[tokio::main]
@@ -81,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
     // Spawn server as child process and use stdin/stdout as transport
     let mut cmd = tokio::process::Command::new(&server_bin);
     cmd.arg("--cwd").arg(&args.workspace);
+    cmd.arg("--profile").arg(&args.server_profile);
 
     // Connect via rmcp using TokioChildProcess (handles length-prefixed framing)
     let client = ().serve(TokioChildProcess::new(cmd)?).await?;

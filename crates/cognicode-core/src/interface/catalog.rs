@@ -59,7 +59,7 @@ pub struct ToolDescriptor {
     pub input_schema: Value,
     #[serde(default)]
     pub output_schema: Value,
-    /// B3.W2 — Affordances for `cognicode inspect`. The set of
+    /// B3.W2 — Affordances for `cognicode intent`. The set of
     /// `Intent` variants (`Locate`, `Summarize`, `Verify`, `Read`)
     /// that route to this tool. Agents introspect this field to
     /// discover which intent each tool resolves without reading

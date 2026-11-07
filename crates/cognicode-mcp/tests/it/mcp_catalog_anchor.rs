@@ -55,9 +55,14 @@ async fn tools_list_is_not_empty_when_spawned_outside_the_repository() {
     // `--cwd` points at the repository (the analysis workspace) while the
     // process CWD points outside it. This is exactly how an MCP client
     // launches the server.
-    let mut session = McpSession::spawn_from(&repo, outside.path())
-        .await
-        .expect("spawn server from outside the repository");
+    // TASK-84: the `full` surface is asked for explicitly. The server's
+    // default surface announces the goals, and the sentinel below is a tool:
+    // the point of this test is that the catalogue resolved, and the
+    // catalogue is the tools.
+    let mut session =
+        McpSession::spawn_from_with_flags(&repo, outside.path(), &["--profile", "full"])
+            .await
+            .expect("spawn server from outside the repository");
 
     let tools = session.list_tools().await.expect("tools/list");
 
@@ -90,9 +95,13 @@ async fn read_only_tools_are_still_advertised_when_spawned_outside_the_repositor
     let repo = common::repo_root();
     let outside = tempfile::tempdir().expect("create tempdir outside the repo");
 
-    let mut session = McpSession::spawn_from_with_flags(&repo, outside.path(), &["--read-only"])
-        .await
-        .expect("spawn server in read-only posture");
+    let mut session = McpSession::spawn_from_with_flags(
+        &repo,
+        outside.path(),
+        &["--read-only", "--profile", "full"],
+    )
+    .await
+    .expect("spawn server in read-only posture");
 
     let tools = session.list_tools().await.expect("tools/list");
     assert!(

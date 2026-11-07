@@ -17,10 +17,10 @@
 //!
 //! ## Lo que NO se comprueba aquí
 //!
-//! - Que los nueve goals de TASK-84 existan. Este fichero habla del goal que
-//!   el registro declara hoy.
-//! - Que la cobertura del workspace se publique. El goal `status` no la
-//!   publica todavía, y su `limitations` lo dice en el catálogo.
+//! - Que los nueve goals de TASK-84 existan, ni qué anuncia cada perfil: eso
+//!   lo mide `the_nine_goals_and_the_profiles`.
+//! - Que el workspace se mida: el goal `status` publica la cobertura de la
+//!   lectura, y el test la mira en la respuesta del goal, no en el catálogo.
 
 use serde_json::Value;
 
@@ -136,20 +136,37 @@ fn the_published_input_schema_is_the_derived_one() {
     );
 }
 
-/// El `outputSchema` publicado es el derivado del tipo que serializa la
-/// respuesta.
+/// El goal **no** publica `outputSchema`, y el maestro tampoco.
+///
+/// TASK-84: medido el 2026-11-07 sobre este árbol, la lista del perfil por
+/// defecto —los cinco goals— pesa 4.290 bytes sin esquema (4.350 por el
+/// cable); con el esquema del sobre bajo cada goal pesaría entre 26.420 y
+/// 65.890 bytes, y el criterio de aceptación pide 6 KB o menos. Un goal
+/// anuncia **qué pregunta responde** (`inputSchema`) y **cómo se llama**: el
+/// sobre es el mismo para todos, y por eso no se anuncia por goal.
+///
+/// La ausencia es también un contrato: el maestro y el runtime tienen que
+/// decir lo mismo, y el maestro se escribe a mano.
 #[test]
-fn the_published_output_schema_is_the_derived_one() {
+fn the_goal_publishes_no_output_schema() {
     let goal = the_goal();
-    let published = entry_of(goal.name)
-        .get("output_schema")
-        .cloned()
-        .expect("the goal publishes an output schema");
-    let derived = Value::Object(goals::output_schema(goal));
+    let entry = entry_of(goal.name);
 
+    // El maestro declara los trece campos de cada entrada: el campo está, y
+    // vale `null` —la respuesta honesta para «no hay contrato», la misma que
+    // dan las tools sin esquema. Un goal que publicara un esquema en el
+    // maestro, o que lo omitiera, rompería el contrato de trece campos.
     assert_eq!(
-        published, derived,
-        "the catalogue publishes a shape the answer does not have"
+        entry.get("output_schema"),
+        Some(&Value::Null),
+        "the catalogue publishes an output schema for the goal `{}`: {:?}",
+        goal.name,
+        entry.get("output_schema")
+    );
+    assert!(
+        goals::output_schema(goal).is_empty(),
+        "the runtime announces an output schema for the goal `{}`",
+        goal.name
     );
 }
 
@@ -261,9 +278,14 @@ fn the_default_of_the_flag_is_the_default_of_the_wire() {
 
 /// El CLI y el MCP devuelven el mismo sobre.
 ///
-/// El goal se implementa una vez; el CLI y el MCP son dos proyecciones de la misma
-/// implementación. Si los dos compiten, el agente y la persona reciben
+/// El goal se implementa una vez; el CLI y el MCP son dos proyecciones de la
+/// misma implementación. Si los dos compiten, el agente y la persona reciben
 /// respuestas distintas de la misma pregunta.
+///
+/// TASK-84: el CLI imprime el **sobre** —el mismo que el MCP publica en su
+/// `structuredContent`—, así que lo que se compara es el `result` del sobre
+/// con la respuesta del goal. El sobre entero se compara en
+/// `the_nine_goals_and_the_profiles`, que lo construye por las dos vías.
 #[tokio::test]
 async fn the_cli_and_the_mcp_return_the_same_answer() {
     let goal = the_goal();
@@ -279,7 +301,7 @@ async fn the_cli_and_the_mcp_return_the_same_answer() {
     let CommandOutput::Rendered { text, .. } = output else {
         panic!("the goal returns a rendered answer");
     };
-    let cli_answer: Value = serde_json::from_str(&text).expect("the answer is JSON");
+    let cli_envelope: Value = serde_json::from_str(&text).expect("the envelope is JSON");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(workspace.path().to_path_buf())
@@ -289,7 +311,8 @@ async fn the_cli_and_the_mcp_return_the_same_answer() {
         .expect("the goal answers");
 
     assert_eq!(
-        cli_answer, mcp_answer,
+        cli_envelope.get("result"),
+        Some(&mcp_answer),
         "the CLI and the MCP answer the same question differently"
     );
 }

@@ -79,6 +79,7 @@ Python, Rust, JavaScript, TypeScript (4 lenguajes)
 | `composite`          | `gated`          | Hereda                       | Compuesto             | Hereda                     |
 | `aix`                | `experimental`    | language-agnostic (NL+heuristic) | Heuristic NL       | n/a                        |
 | `infra`              | `experimental`    | language-agnostic             | n/a                  | n/a                        |
+| `goal`               | `stable`         | según el dueño: los que miran el workspace son language-agnostic; los que leen el grafo o un fichero, los del parser (21) | AST para los que leen código; n/a para los que sólo miran el workspace | n/a (el goal se monta sobre un dueño) |
 
 El conjunto de tools registradas, con su estabilidad y su categoría, vive
 en `crates/cognicode-core/src/interface/mcp/capabilities.rs` y en

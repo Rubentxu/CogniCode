@@ -23,6 +23,7 @@ pub mod robustness;
 pub mod schemas;
 pub mod security;
 pub mod status;
+pub mod surface_tools;
 pub mod tool_response;
 
 pub use error::{InterfaceError, InterfaceResult};

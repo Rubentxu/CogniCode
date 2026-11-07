@@ -50,6 +50,15 @@ pub struct ProjectGraph {
 /// when it cannot. A command that builds its own graph is a command that
 /// ignores what the product already calculated.
 pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
+    service_with_graph(dir).map(|(_, project)| project)
+}
+
+/// El servicio con el grafo del workspace, y el grafo.
+///
+/// El servicio se queda con el grafo en su caché, así que las respuestas
+/// que salen del servicio —las estadísticas, el código que no se usa— son
+/// las del dueño, y no una cuenta hecha aparte.
+pub fn service_with_graph(dir: &Path) -> Result<(AnalysisService, ProjectGraph), String> {
     let cache_root = crate::application::graph_cache::default_cache_root();
     // The daemon's word, when there is a daemon to ask: a daemon that
     // watches the tree can say that the index is still fresh without the
@@ -80,10 +89,13 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
     // only exists for a build that had none of them. The coverage is
     // measured by the one owner of that decision, when the graph is
     // loaded; this function only carries what it said.
-    Ok(ProjectGraph {
-        graph: loaded.graph,
-        coverage: loaded.coverage,
-    })
+    Ok((
+        service,
+        ProjectGraph {
+            graph: loaded.graph,
+            coverage: loaded.coverage,
+        },
+    ))
 }
 
 /// Says what the build could not cover.

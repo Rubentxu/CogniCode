@@ -66,6 +66,25 @@ pub fn parse_cli() -> Result<ParsedCli, clap::Error> {
             verbose: matches.get_flag("verbose"),
         });
     }
+
+    // `cognicode` sin subcomando es el goal `status`: la raíz del producto.
+    // Es el goal que responde «qué ofrece este build y qué se ve del
+    // workspace», y esa es la primera pregunta de quien llega.
+    if matches.subcommand_name().is_none() {
+        let format = match matches.get_one::<Format>("format") {
+            Some(Format::Json) => Format::Json,
+            _ => Format::Text,
+        };
+        let arguments = crate::interface::goals::clap_command(&crate::interface::goals::STATUS)
+            .get_matches_from(["status"]);
+        return Ok(ParsedCli::Goal {
+            goal: &crate::interface::goals::STATUS,
+            arguments,
+            format,
+            verbose: matches.get_flag("verbose"),
+        });
+    }
+
     Ok(ParsedCli::Command(Cli::from_arg_matches(&matches)?))
 }
 
@@ -89,7 +108,22 @@ impl CommandExecutor {
             .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
         let text = match format {
-            Format::Json => serde_json::to_string_pretty(&answer)?,
+            // El mismo sobre que el MCP publica: el dueño del sobre es el
+            // mismo en las dos superficies, así que la terminal y el cable no
+            // pueden decir cosas distintas de la misma respuesta.
+            Format::Json => {
+                let context = crate::interface::hateoas::HandleContext {
+                    workspace: workspace.to_string_lossy().to_string(),
+                    snapshot: "none".to_string(),
+                };
+                let envelope = crate::interface::hateoas::envelope_for(
+                    goal.name,
+                    &values.as_object().cloned().unwrap_or_default(),
+                    &answer,
+                    &context,
+                );
+                serde_json::to_string_pretty(&envelope)?
+            }
             Format::Text => (goal.render)(&answer),
         };
         Ok(CommandOutput::rendered(format!("{text}\n")))

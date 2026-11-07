@@ -15,6 +15,9 @@ pub mod intent;
 pub mod lsp;
 pub mod mcp;
 pub mod symbol_identity;
+// TASK-84 — la superficie que el servidor publica: los perfiles `default`,
+// `full` y `legacy`.
+pub mod surface;
 // Lo que se ve del workspace, compartido por el doctor y el goal `status`.
 pub mod workspace;
 

@@ -20,8 +20,11 @@ CogniCode is a code-analysis companion you can drive two ways:
 
 - **CLI** — `cognicode` and `cogh` shell commands. Best for scripts,
   CI, and one-shot operations.
-- **MCP** — a 79-tool server an agent drives through JSON-RPC. Best
-  for multi-step, interactive reasoning.
+- **MCP** — an agent drives it through JSON-RPC. It publishes one
+  surface, chosen with `--profile`: by default the five goals that
+  answer before the analysis, or the whole catalogue — 87 entries —
+  with `--profile full`. Best for multi-step, interactive
+  reasoning.
 
 This skill teaches the smallest set of commands and tools you need
 to **get oriented** in a project. Deeper workflows live in

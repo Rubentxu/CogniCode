@@ -1,20 +1,28 @@
 //! El goal `status`: qué ofrece este build y qué se ve del workspace.
 //!
-//! Es el primero de los goals porque es el único que no necesita el grafo:
-//! responde con datos que el producto ya tiene —las fases, los goals
-//! declarados— y con los que se ven mirando el workspace —los lenguajes—.
+//! Es el primero de los goals porque es la raíz: un cliente lo llama antes de
+//! decidir, y `cognicode` sin argumentos es este goal.
+//!
+//! ## Lo que responde
+//!
+//! - **las fases** del producto y lo que cada una significa;
+//! - **los lenguajes** que se han detectado en el workspace;
+//! - **la cobertura** de la lectura: los ficheros que no se pudieron leer;
+//! - **los goals** que este build ofrece, con sus plantillas de argumentos.
 //!
 //! ## Lo que NO dice
 //!
-//! La cobertura del workspace no se publica aquí. Medirla exige el
-//! snapshot durable, y un `status` que dijera «cobertura: 0» sin medir
-//! sería un número inventado. El campo no está: lo que no se ha medido no
-//! se anuncia, y lo que sí se anuncia dice de dónde sale.
+//! La cobertura que publica es la de la **lectura**. Las referencias que el
+//! grafo no pudo atar y las relaciones que el repositorio rechazó las mide
+//! el grafo, y este goal no lo construye: publicarlas vacías sería publicar
+//! una cuenta que nadie midió.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::interface::coverage::CoverageInfo;
+use crate::interface::goals::common::coverage_of;
 use crate::interface::goals::{GoalInfo, GoalPhase, goal_info, registry};
 use crate::interface::workspace::detect_languages;
 
@@ -62,6 +70,8 @@ pub struct GoalStatus {
     pub phases: Vec<PhaseInfo>,
     /// El workspace que se ha mirado.
     pub workspace: WorkspaceStatus,
+    /// La cobertura de la lectura del workspace.
+    pub coverage: CoverageInfo,
     /// Los goals que este build ofrece.
     pub goals: Vec<GoalInfo>,
 }
@@ -108,11 +118,14 @@ pub fn status(input: &StatusInput, workspace: &Path) -> GoalStatus {
         Vec::new()
     };
 
+    let coverage = coverage_of(workspace);
     let version = env!("CARGO_PKG_VERSION");
     let summary = format!(
-        "CogniCode {version}: {} goal(s), workspace con {} lenguaje(s) detectado(s).",
+        "CogniCode {version}: {} goal(s), workspace con {} lenguaje(s) detectado(s), \
+cobertura {}.",
         goals.len(),
-        languages.len()
+        languages.len(),
+        coverage.status
     );
 
     GoalStatus {
@@ -125,6 +138,7 @@ pub fn status(input: &StatusInput, workspace: &Path) -> GoalStatus {
             path: workspace.to_string_lossy().to_string(),
             languages,
         },
+        coverage,
         goals,
     }
 }
@@ -180,6 +194,11 @@ pub fn render_text(answer: &GoalStatus) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     ));
+    text.push_str(&format!(
+        "  coverage: {} ({} file(s) unreadable)\n",
+        answer.coverage.status,
+        answer.coverage.skipped_files.len()
+    ));
     for goal in &answer.goals {
         text.push_str(&format!(
             "  goal {} ({}): {}\n",
@@ -210,6 +229,25 @@ mod tests {
         assert_eq!(answer.phases.len(), GoalPhase::ALL.len());
         assert_eq!(answer.goals.len(), registry().len());
         assert!(!answer.summary.is_empty());
+    }
+
+    #[test]
+    fn the_answer_carries_the_coverage_of_the_read() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
+
+        let answer = status(
+            &StatusInput {
+                include_goals: false,
+            },
+            dir.path(),
+        );
+
+        assert_eq!(
+            answer.coverage.status, "complete",
+            "a tree that can be read has a complete coverage"
+        );
+        assert!(answer.coverage.skipped_files.is_empty());
     }
 
     #[test]
