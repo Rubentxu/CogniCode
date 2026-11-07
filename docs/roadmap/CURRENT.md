@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `d0225b3f66a8ee6c0dfe3c2b254dd73e62efa4cc` (la
+> **Snapshot**: 2026-11-07, sobre `f05bbab50a6099aebc8e464a010ccf02a44ead10` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -311,16 +311,20 @@
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`ffa1bd02` → `d0225b3f66a8ee6c0dfe3c2b254dd73e62efa4cc`)
+## Qué cambió desde el snapshot anterior (`d0225b3f` → `f05bbab50a6099aebc8e464a010ccf02a44ead10`)
 
-Entre una punta y otra entraron **2 commits** (`git rev-list --count ffa1bd0252425dcee0cbd246ff46d11bc372a9a1..d0225b3f66a8ee6c0dfe3c2b254dd73e62efa4cc`).
+Entre una punta y otra entraron **39 commits** (`git rev-list --count d0225b3f66a8ee6c0dfe3c2b254dd73e62efa4cc..f05bbab50a6099aebc8e464a010ccf02a44ead10`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
-en qué commit está medido.
+en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El recibo de TASK-84 | `9659d822` (TASK-84) | El recibo append-only de la unidad anterior —los nueve goals, los perfiles y `status` como raíz—, con su RED anti-vacuitad medido perturbando el producto cinco veces (**1 rojo** cada una: el veredicto, el tag de integridad, el recuento de agujeros, el umbral de fan-in y el `BasisDto` del maestro) y con la lista de lo que el contrato **no** comprueba. |
-| El ejecutor de recetas, con memo, fases, paralelismo, presupuesto y `--plan` | `d0225b3f` (TASK-85) | Una receta es una pregunta compuesta: el goal `recipe` —el décimo— corre una secuencia de goals en el orden de sus fases, memoiza cada paso por `(goal, args, hash del árbol)` —el mismo hash que decide si el snapshot está fresco—, corre en paralelo lo que es independiente y dice lo que costaría **antes** de correrlo. El producto trae **cinco recetas** compiladas (`context`, `onboard`, `pre-change`, `post-change`, `review`) y un workspace puede añadir las suyas en `.cognicode/goals.toml`: sólo con goals de lectura, y una receta que invoque `change` se rechaza **entera** con su motivo. Un paso que falla deja la receta en `partial`, con el motivo y el enlace `retry` —el séptimo caso del sobre—. Medido: el RED anti-vacuitad perturbando el producto seis veces (**1 rojo** cada una: el hash del árbol, el plan que corría, el estado `partial`, la receta que invocaba `change`, los parámetros publicados como texto y los pasos en serie), cada fichero restaurado byte a byte contra el hash del blob; la superficie por defecto **no cambia** —cinco goals y **4.350 bytes** por el cable, los mismos— porque el goal declara la fase `Analyze`; el perfil `full` publica **88** entradas y el de sólo lectura **84**, sin `change`; y en vivo: el plan dice **2 pasos y 60 ms** sin correr nada, la primera corrida computa 2 pasos en 15 ms, la segunda los sirve de la memo en 0 ms, un cambio del árbol los vuelve a computar, y el sobre de la terminal y el del cable son **idénticos** —con `params` como **objeto** en los dos. Verde: **6.962 tests** del workspace (0 en rojo), **336 checks** de contrato (0 fallos), clippy y fmt limpios, y los ratchets de tamaño de fichero y de CR-06 en pie. |
+| `find` encuentra los `enum`, `trait` y `union` de Rust, y declara los tipos que el índice no lee | `d07c4a25` (TASK-143), `a41f97d9` (TASK-145) | Dos defectos de cobertura del índice: lo que no se lee ya se declara en vez de callarse. |
+| Un tipo por forma de payload y retirada de la feature `rig` sin build | `c2db47c3` (TASK-81), `8b98a5da` (TASK-125) | Menos copias en el sandbox y una feature muerta menos. |
+| Harness A/B con una llamada por proceso y `validate-paths` sin morir sin directorio de specs | `7f6a56b9` (TASK-93), `87398989` (TASK-144) | El harness mide un proceso por llamada; el script ya no cae con un árbol sin specs. |
+| Fusión de los contratos Python en menos ficheros | `26332c33`…`dea75b7d`, 26 commits (TASK-74) | Los contratos duplicados se funden en uno por tema; la suite de contratos conserva sus casos. |
+| Un contrato de procedencia sin pin propio de cosign y un `rustfmt` aplicado | `5173c478` (TASK-70), `2a3fa5e5` (TASK-147) | Higiene medida por su contrato; el gate del lote de 25 tareas dio rc=0 sobre `2a3fa5e5` (`1e1a013a`). |
+| Una prueba ignorada que descargaba de GitHub, retirada; el contrato de §11 distingue citar de afirmar un cierre; un perfil que cargo ignoraba, retirado | `803b149a` (TASK-148), `d7564395` (TASK-149), `f05bbab5` (TASK-150) | Cada corrección lleva su test que fallaba antes y pasa después; clippy `rc=0` y `npm test` 944 tests `rc=0`. |
 
 ## Release: la última publicada es la v0.101.30
 

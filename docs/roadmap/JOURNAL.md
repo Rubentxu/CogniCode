@@ -38721,3 +38721,11 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Cambio.** Se retira el bloque. `scripts/ci/test_cargo_environment_contracts.py` gana `test_no_workspace_member_declares_a_profile`, que recorre `crates/*/Cargo.toml` (salvo los excluidos del workspace, que son su propia raíz).
 
 **RED/GREEN.** Antes: el contrato falla nombrando `cognicode-graph-wasm`. Después: `PASS`, 6 tests. `cargo check -p cognicode-graph-wasm` ya no emite el aviso. `cargo nextest run --profile gate -p cognicode-graph-wasm`: 19 run, 19 passed. Gate NOT_RUN: el lote lleva 3 de 10 (TASK-148, TASK-149 y TASK-150).
+
+## 2026-11-07 — Regenerar el snapshot CURRENT.md sobre la punta (TASK-151)
+
+**Medido.** `python3 scripts/run_contract_tests.py scripts/ci/test_roadmap_coherence.py` daba 2 rojos (`test_current_sha_matches_head`, `test_control_all_green`): `CURRENT.md` declaraba `d0225b3f66a8` y `git rev-list --count d0225b3f66a8..f05bbab5` da 39, con ventana de 5.
+
+**Decisión.** Regenerar con la receta de TASK-126, sin tocar el contrato: la cabecera declara `f05bbab50a6099aebc8e464a010ccf02a44ead10` (una punta que vive en `main`), y la tabla «Qué cambió» pasa a describir `d0225b3f..f05bbab5` en seis filas por unidad, con la distancia medida (39 commits; 26 de ellos de TASK-74). Porque el ratchet es un contrato y no un paso del gate: su rojo es deriva de ritmo y se cierra aquí, no se acepta como preexistente.
+
+**RED/GREEN.** Antes: 27 pasan, 2 fallan (solo `CURRENT.md`). Después: `test_roadmap_coherence.py` 29 pasan, 0 fallan; `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts_151.log`). El criterio de aceptación que citaba `test_roadmap_version_ratchet.py` apuntaba a un fichero que TASK-74 fusionó; se sustituyó por la corrida completa de contratos. Gate NOT_RUN: el lote lleva 4 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151).
