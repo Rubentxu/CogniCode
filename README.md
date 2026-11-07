@@ -366,7 +366,6 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `persistence` | enabled | RedbGraphStore for persistent graph cache |
-| `rig` | disabled | `rig-core` AI agent framework integration |
 
 ## Development
 

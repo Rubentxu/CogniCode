@@ -38208,3 +38208,23 @@ SHA inicial: `7f6a56b9` (la rama `fix/task-81` iba 133 commits por detrás; se f
 `one_dto_per_shape`: RED (no compilaba) → 6/6. `cognicode-core --lib interface::mcp` 429/429; `--test it` filtrado a esquemas publicados, b5_w1, b5_w2 y goals: 32/32; `cognicode-sandbox` 178/178. Los filtrados no certifican la unidad. Gate: NOT_RUN (se pasa por lote de 10).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-125: se retira la feature `rig` y `interface/rig`
+
+SHA inicial: `c2db47c3`. Pruebas con `CARGO_BUILD_JOBS=2`, `nice -n 19 ionice -c3`, un paquete cada vez.
+
+### Decisión
+
+Ningún crate del workspace compilaba la feature `rig`: 1.513 líneas de `interface/rig/tools.rs` sin build ni test. Una superficie que nadie puede construir no se puede afirmar (estrategia de tests), así que se retira en lugar de cubrirla.
+
+### Qué cambió
+
+- Fuera `interface/rig/`, la feature `rig`, la dependencia `rig-core` (core y workspace) y su entrada en `enabled_features()`; `Cargo.lock` se resolvió con cargo (−496/+6 líneas).
+- README (en/es) sin la fila `rig`; comentarios de `workspace_session.rs` sin «rig-core».
+- `sandbox/reports/evidence_map.yaml`: `entry-point-resolver` apunta ahora a `workspace_session.rs` (donde vive `get_entry_points`).
+
+### Pruebas (RED → GREEN)
+
+`no_dead_rig_surface`: RED 0/2 → GREEN 2/2. `cognicode-core --lib snapshot_key` 8/8. Los filtrados no certifican. `openspec_conformance.py --validate-paths` falla con `KeyError: pct_verified` (defecto ajeno al cambio, sin tarea); el nuevo `evidence_path` se comprobó a mano: existe. El gate completo no se corrió: se pasa por lote de 10 tareas.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

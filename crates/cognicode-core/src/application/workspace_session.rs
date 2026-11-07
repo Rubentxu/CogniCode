@@ -1,6 +1,6 @@
 //! WorkspaceSession - Transport-neutral facade for CogniCode operations
 //!
-//! This module provides a unified API surface for MCP, CLI, and rig-core integrations.
+//! This module provides a unified API surface for MCP and CLI integrations.
 //! It owns all service instances and cached state for a single workspace session.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(
@@ -145,7 +145,7 @@ pub struct WorkspaceCapabilities {
 /// Transport-neutral facade for CogniCode operations.
 ///
 /// Owns all service instances and cached state for a single workspace.
-/// This is the primary API surface for MCP, CLI, and rig-core integrations.
+/// This is the primary API surface for MCP and CLI integrations.
 pub struct WorkspaceSession {
     /// Root directory of the workspace
     workspace_root: PathBuf,

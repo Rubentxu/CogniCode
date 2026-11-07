@@ -14,7 +14,6 @@ license = "MIT OR Apache-2.0"
 # persistence backend (e29-7 full postgres removal); the domain ports are
 # unconditionally available and adapters implement them against lbug.
 default = ["persistence"]
-rig = ["dep:rig-core"]
 persistence = ["dep:blake3"]
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
@@ -184,7 +183,6 @@ pulldown-cmark.workspace = true
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 # Rig-core (optional)
-rig-core = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true

@@ -234,7 +234,6 @@ rmcp = { version = "1.7", features = ["server", "transport-io", "client", "trans
 process-wrap = "9.1"
 
 # Rig-core (optional)
-rig-core = { version = "0.35", default-features = false, features = ["rustls"] }
 
 # TOML parsing for C4 architecture inference (E6 ADR-039)
 toml = "0.8"

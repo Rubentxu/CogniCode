@@ -23,5 +23,3 @@ pub mod surface;
 // Lo que se ve del workspace, compartido por el doctor y el goal `status`.
 pub mod workspace;
 
-#[cfg(feature = "rig")]
-pub mod rig;

@@ -154,7 +154,7 @@ lsp-proxy:
   evidence_path: crates/cognicode-core/src/application/services/lsp_proxy_service.rs
 entry-point-resolver:
   status: verified
-  evidence_path: crates/cognicode-core/src/interface/rig/tools.rs
+  evidence_path: crates/cognicode-core/src/application/workspace_session.rs
 explorer-forward-reach:
   status: verified
   evidence_path: crates/cognicode-core/src/application/services/impact_analysis.rs
