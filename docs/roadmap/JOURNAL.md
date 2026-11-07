@@ -38761,3 +38761,17 @@ Gate NOT_RUN: el lote lleva 6 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 1
 **RED/GREEN.** `scripts/ci/test_link_follow_contracts.py`: antes 0 pasan, 12 fallan; después 13 pasan, 0 fallan. Mutaciones: ventana de búsqueda que incluye la propia llamada (sobrevivió; se añadió la prueba de «una llamada que se ofrece a sí misma» y ahora la mata), mínimo de ofertas (1 fallo), «sin datos» (4), comparación de `required_args` (1). `test_script_drift_and_recall.py` (harness) 33/33; `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (`/tmp/contracts_153.log`).
 
 **Limitación conocida.** No hay productor de trazas en el árbol: el contador está verificado con trazas sintéticas con la forma de `Link` (`rel`, `tool`, `required_args`), no con una corrida de agente real. AC2 de TASK-94 sigue abierto y solo se evalúa con datos reales. Gate NOT_RUN: el lote lleva 7 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153).
+
+## 2026-11-07 — Productor de trazas de enlaces en scripts/measure (TASK-154, sigue a TASK-153)
+
+**Medido.** Con el binario release real y un fixture (`hub` con 12 llamantes), una sesión encadenada `build_graph` → `analyze_impact` hace que el servidor ofrezca `inspect-risk → get_file_symbols {file_path}`. Los goals del perfil `default` (`find`, `trace`, `inspect`) no ofrecieron ningún enlace en las llamadas probadas, y `get_file_symbols` sin grafo construido no respondió en 120 s: por eso la sesión tiene que ser encadenada.
+
+**Cambio.** `scripts/measure/link_trace.py` abre un solo `cognicode-mcp` (vía `McpClient`), ejecuta un guion y, por cada `_links` ofrecido, aplica una política determinista (`all`, `none` o una lista de `rel`) llamando a la tool del enlace con exactamente sus `required_args`. Una oferta repetida se sigue una vez y el seguimiento está acotado (`MAX_FOLLOWS`). Salida: JSONL con el formato que lee `link_follow.py`. Ni el servidor ni el core cambian.
+
+**RED/GREEN.** `scripts/ci/test_link_trace_contracts.py`: antes 6 fallan (falta el módulo); después 7 pasan. Mutaciones sobre `link_trace.py`: argumentos de seguimiento vacíos (2 tests lo atrapan), política ignorada (1), sin deduplicar (sobrevivió; se añadió `test_a_repeated_offer_is_followed_once` y quedó atrapada).
+
+**Verificación.** `bash scripts/ci/run-all-contracts.sh`: `rc=0` en la segunda corrida. La primera dio `rc=1` por `test_provenance_generation.py::test_the_bundle_verifies_with_the_key_that_ships_with_the_release` (no encontró `probe.pub`); aislado pasa 4 de 4 veces y no toca nada de este cambio. Causa NO determinada: queda como flaky observado, sin explicar.
+
+**Limitación conocida.** Mide el contrato de cable y la política, no a un agente: con `all` la tasa es 1 por construcción. TASK-94 AC2 (retirar enlaces con tasa cero tras 4 semanas) sigue necesitando trazas de agentes reales.
+
+Gate NOT_RUN: el lote lleva 8 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151, 152, 146, 153, 154).
