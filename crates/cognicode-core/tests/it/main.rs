@@ -50,6 +50,7 @@ mod c30_capabilities_declare_the_languages_the_registry_reads;
 mod cached_coverage_is_honest;
 mod callgraph_projection_orientation;
 mod checkpoint_integration;
+mod core_declares_only_the_dependencies_it_uses;
 mod cp5_tie_break;
 mod cu1_w2_facade_contract;
 mod cu1_w2_service_analyzer_contract;
