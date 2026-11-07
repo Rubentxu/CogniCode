@@ -38529,3 +38529,21 @@ Punteros vivos repuntados: dos en `AGENTS.md`, dos en el docstring de `test_assu
 Sin compilar, sin suites; no se lanzó el gate. `test_actually_uses_isolated_target_for_real_build` compila un crate (`cargo build -p cognicode-graph-algos`) y NO se ejecutó (NOT_RUN) ni en el nuevo ni en el original; el resto de las clases ejecuta solo `cargo metadata --no-deps`. Base verde: nuevo 0 fallos, originales 0 (5 funciones + 5 tests unittest). Mutaciones del sujeto (problemas nuevo / build_env / cargo_iso): `MEASUREMENTS=(` renombrado en `build-time.sh` 1/1/0; hash del checkout fijo en `cargo-iso.sh` 1/0/1; `--gate` que pisa un `CARGO_TARGET_DIR` explícito 1/0/1; `[profile.dev]` añadido a `Cargo.toml` 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde. `scripts/run_contract_tests.py` sobre el fichero nuevo: 5 passed, 0 failed. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 19): los ratchets de tamaño, de homónimos y de CR-06 son un contrato
+
+### Qué cambió
+
+`test_ratchets.py` (268 líneas, 7 tests) y `test_cr06_ratchet.py` (802, 6) se fusionan en `scripts/ci/test_ratchets.py` (1039): 1070 → 1039 líneas, 2 ficheros → 1 (26 en `scripts/ci`). Los dos miden la cabeza contra el commit base del PR y fallan cerrado si no lo resuelven. Se conserva el nombre `test_ratchets.py`, que ya estaba en el glob. Las 13 comprobaciones conservan nombre, docstring y fallos cerrados.
+
+Los helpers que chocaban se resolvieron así. `git`, `check`, `failures` y `resolve_base` eran idénticos en semántica y quedan UNA vez (se conservó la versión con docstring). La medición `M` de cada familia se renombra: `SIZE` (clase `SizeMeasure`) y `CR06` (clase `Cr06Measurement`). Los dos `setup` pasan a `setup_size_and_homonyms` y `setup_cr06`, y un `setup()` único los llama a ambos (el runner llama a `setup()` si el módulo lo define). El `main` único imprime las tres líneas de medición, un solo bloque de fallos y las dos líneas PASS originales; `--self-test` se conserva.
+
+Punteros repuntados: el comentario de `scripts/run_contract_tests.py`, dos menciones en `scripts/ci/test_ci_contracts.py` y una línea de comentario en `cr06_allowlist.rs` (solo el nombre del fichero en un comentario; no se compiló). `AGENTS.md` y `run-all-contracts.sh` no mencionaban ninguno de los dos nombres. Las menciones históricas del JOURNAL no se tocan.
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0 (28 → 28 en CR-06, 0 añadidas). Mutaciones del sujeto (problemas nuevo / ratchets / cr06): 2100 líneas antepuestas a `identity.rs` 1/1/0; `pub struct FindInput;` antepuesto a `find.rs` 1/1/0; `cr06_allowlist.rs` ausente 4/0/4; `CI_CONTRACTS` renombrado en `run-all-contracts.sh` 1/0/1. El nuevo falla exactamente lo que falla el original que corresponde. `scripts/run_contract_tests.py` sobre el fichero nuevo: 13 passed, 0 failed. Ficheros restaurados (`cp -p`, `touch`, `cmp`, `mv`).
+
+Aparte: la prueba de la parte 18 que quedó NOT_RUN se ejecutó después sola (`CARGO_BUILD_JOBS=1 nice -n 19`, 1 test OK en 19,8 s) y consta como nota de TASK-74.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

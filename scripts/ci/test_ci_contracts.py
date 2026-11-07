@@ -31,7 +31,7 @@ source — `set -euo pipefail` present, `run_contract_tests.py` invoked,
 `pytest` never mentioned. All three were true only because the text said
 so, and two of them describe a mechanism PipelineK does not have. The
 properties behind them are now asserted against the things that actually
-decide what runs: `test_cr06_ratchet.py` walks the chain from the merge
+decide what runs: `test_ratchets.py` walks the chain from the merge
 authority through `run-all-contracts.sh` to this glob, and the
 `no_contract_test_imports_pytest` and `suite_runs_without_pytest_installed`
 checks below cover the portability property without reading any
@@ -199,7 +199,7 @@ def test_runner_honours_the_accumulating_failures_pattern() -> None:
 def test_runner_calls_a_contract_setup_before_its_checks() -> None:
     """A contract that must measure before it asserts has to be able to.
 
-    `test_cr06_ratchet.py` reads state its own `main()` populates first.
+    `test_ratchets.py` reads state its own `main()` populates first.
     Run without that, three of its six checks reported that the CR-06
     allowlist contained no entries -- describing a measurement that was
     never taken as a corrupt inventory. The runner cannot know which

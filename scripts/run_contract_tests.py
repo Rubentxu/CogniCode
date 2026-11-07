@@ -125,8 +125,8 @@ def run_one(path: Path) -> tuple[int, int, list[str]]:
     failures: list[str] = []
 
     # A contract may need to do work before its assertions are meaningful.
-    # `test_cr06_ratchet.py` reads `M.head_entries`, which its own main()
-    # populates with `M.resolve()`; run without that, three of its six
+    # `test_ratchets.py` reads `CR06.head_entries`, which its own main()
+    # populates with `CR06.resolve()`; run without that, three of its six
     # checks report "no entries were parsed" -- a false alarm about a
     # measurement that never happened. The runner has to reproduce what
     # main() does, so `setup()` is the hook for it, and a contract that

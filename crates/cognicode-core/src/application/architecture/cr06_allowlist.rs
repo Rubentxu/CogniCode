@@ -927,7 +927,7 @@ mod tests {
             // in ST-02 slice 1, in step with `exceptions()`. Two things caught
             // that this pair has to be kept in step with: the Rust test walks
             // these paths to prove they are genuinely test-only, and
-            // `scripts/ci/test_cr06_ratchet.py` parses this very constant and
+            // `scripts/ci/test_ratchets.py` parses this very constant and
             // cross-checks it against the inventory. When only `exceptions()`
             // was widened the ratchet went RED with "the Rust guard lists ...
             // but this contract cannot find it in the inventory" — which is
