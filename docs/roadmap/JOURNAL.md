@@ -38431,3 +38431,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones del sujeto (rc nuevo / gate / lane): `= "1" ]`→`= "2" ]` en `verify-provenance.sh` 1/1/0; pin `3.1.3`→`3.1.4` en `cosign-tool.sh` 1/0/1; `gh attestation verify` en otro script 1/1/0; segunda asignación de `COGNICODE_COSIGN_VERSION` en el generador 1/0/1; `cosign attest-blob` suelto en el generador 1/0/1; `${RELEASE_REQUIRE_PROVENANCE` expandida en otro script 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde (mismo recuento de hallazgos en la mutación del pin). Control 0/0/0 (un comentario en `verify-provenance.sh`) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 11): los dos contratos de las skills publicadas son uno
+
+### Qué cambió
+
+`test_skill_cli_invocations.py` (651 líneas) y `test_skill_surface_claims.py` (408) se fusionan en `scripts/ci/test_skill_contracts.py` (1015): 1059 → 1015 líneas, 2 ficheros → 1 (34 en `scripts/ci`). Los dos barren los mismos `skills/*/SKILL.md` que `SKILL_BUNDLES` marca como publicados, y cada uno duplicaba `published_skill_ids` y `skill_files` (el segundo lo declaraba: «dos listas serían dos fuentes de verdad»); queda una sola copia. No es un sujeto único: la parte A contrasta las invocaciones `cognicode ...` con las firmas clap de `commands.rs`; la B, las cifras de superficie con `product/*.json`. Las 21 comprobaciones conservan su nombre, su docstring y sus fallos cerrados, salvo dos renombres por colisión (`test_the_real_skills_are_clean` → `..._teach_no_broken_invocation` y `..._claim_no_false_surface`) y el test `published_set_is_not_empty_and_is_covered`, idéntico en los dos, que queda una vez. `audit` pasa a `audit_invocations` y `audit_claims`. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. La tabla de la docstring apunta al nombre nuevo; la cita de `CHANGELOG.md:1168` es histórica y no se toca.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (21 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / invocaciones / afirmaciones): `default_value = "."` quitado en `commands.rs` 7/7/0; variante `SymbolCode` renombrada 3/3/0; «88 tools» → «70 tools» en el cuerpo de `cognicode-mcp` 1/0/1; `runtime_tool_count` 88 → 87 en `product/tools.json` 2/0/2; `<file:line:column>` → `<symbol>` en `cognicode-pr-review` 1/1/0; `88-tool` → `70-tool` en el frontmatter 1/0/1; bloque ```bash con `index symbol-code MySymbol` añadido 1/1/0; `published: true` → `false` en `release_contract.rs` 1/1/1 (el test común cuenta una vez). El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (un comentario HTML al final de una skill) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
