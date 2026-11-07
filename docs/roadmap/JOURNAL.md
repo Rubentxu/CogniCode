@@ -38729,3 +38729,15 @@ Los unitarios bajan de 4701 a 4493 y los de integración de 6794 a 6660 respecto
 **Decisión.** Regenerar con la receta de TASK-126, sin tocar el contrato: la cabecera declara `f05bbab50a6099aebc8e464a010ccf02a44ead10` (una punta que vive en `main`), y la tabla «Qué cambió» pasa a describir `d0225b3f..f05bbab5` en seis filas por unidad, con la distancia medida (39 commits; 26 de ellos de TASK-74). Porque el ratchet es un contrato y no un paso del gate: su rojo es deriva de ritmo y se cierra aquí, no se acepta como preexistente.
 
 **RED/GREEN.** Antes: 27 pasan, 2 fallan (solo `CURRENT.md`). Después: `test_roadmap_coherence.py` 29 pasan, 0 fallan; `bash scripts/ci/run-all-contracts.sh` `rc=0`, 0 `FAIL` (log `/tmp/contracts_151.log`). El criterio de aceptación que citaba `test_roadmap_version_ratchet.py` apuntaba a un fichero que TASK-74 fusionó; se sustituyó por la corrida completa de contratos. Gate NOT_RUN: el lote lleva 4 de 10 desde `1e1a013a` (TASK-148, 149, 150, 151).
+
+## 2026-11-07 — Retirar las dos pruebas de pyright que nunca corrían (TASK-152)
+
+**Medido.** `which pyright pyright-langserver` no encuentra el binario; `crates/cognicode-core/tests/it/lsp_integration_test.rs` llevaba `#[ignore = "requires pyright binary"]` en `test_pyright_goto_definition` y `test_pyright_find_references`, así que ni esta máquina ni el gate las ejecutaban. La cobertura determinista de `route_operation` se limita a los caminos «deshabilitado» y «sin LSP» (`lsp_proxy_service.rs`).
+
+**Decisión.** Retirarlas y no escribir un doble de LSP: `LspProxyService` posee un `CompositeProvider` concreto sin puerto, y un doble exigiría una abstracción nueva sin acoplamiento probado (AGENTS.md). Un `#[ignore]` que nunca corre afirma una cobertura que no existe. Se conservan las pruebas de rust-analyzer (binario presente).
+
+**Cambio.** Se borran las dos pruebas, el helper `pyright_available` (quedó sin uso) y su par en el test de coherencia de detectores, que ahora comprueba solo rust-analyzer. El doc del módulo ya no dice que las pruebas se ignoran por defecto.
+
+**Limitación conocida.** `definition` y `references` a través de pyright NO están verificados. No se afirma esa capacidad; queda documentada en el doc del módulo.
+
+**Verificación.** `grep -c 'requires pyright binary'` = 0. `cargo clippy -p cognicode-core --test it -- -D warnings` `rc=0`. `cargo nextest run --profile gate -p cognicode-core --test it lsp_integration`: 5 pasan, 0 omitidas por pyright (corrida filtrada: acota el feedback, no certifica). Gate NOT_RUN: el lote lleva 5 de 10 desde `1e1a013a`.
