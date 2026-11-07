@@ -73,13 +73,22 @@ def validate_paths(evidence_map):
     return missing
 
 
+def _with_percentages(summary):
+    """The one place the percentages are computed, so that every way out of
+    ``scan_specs`` (including a missing specs directory) publishes them."""
+    active_total = summary["total"] - summary["legacy_obsolete"]
+    summary["pct_verified"] = round(summary["verified"] / active_total * 100, 1) if active_total else 0.0
+    summary["pct_triaged"] = round((summary["verified"] + summary["legacy_obsolete"]) / summary["total"] * 100, 1) if summary["total"] else 0.0
+    return summary
+
+
 def scan_specs(specs_dir, evidence_map):
     specs_dir = Path(specs_dir)
     rows = []
     summary = {"total": 0, "verified": 0, "legacy_obsolete": 0, "no_evidence": 0,
                "specs": 0, "phantom_dirs": 0}
     if not specs_dir.exists():
-        return rows, summary
+        return rows, _with_percentages(summary)
     for spec_dir in sorted(specs_dir.iterdir()):
         if not spec_dir.is_dir():
             continue
@@ -125,10 +134,7 @@ def scan_specs(specs_dir, evidence_map):
                          "evidence_note": ev_note if (status == "no_evidence" and ev_note) else None})
             summary[status] += 1
             summary["total"] += 1
-    active_total = summary["total"] - summary["legacy_obsolete"]
-    summary["pct_verified"] = round(summary["verified"] / active_total * 100, 1) if active_total else 0.0
-    summary["pct_triaged"] = round((summary["verified"] + summary["legacy_obsolete"]) / summary["total"] * 100, 1) if summary["total"] else 0.0
-    return rows, summary
+    return rows, _with_percentages(summary)
 
 
 def emit_yaml(rows, summary, out):
