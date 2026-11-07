@@ -48,7 +48,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol_name"
@@ -111,7 +111,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "question"
@@ -157,7 +157,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
@@ -226,7 +226,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol_name"
@@ -760,7 +760,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "follow_ups": [
         "get_call_hierarchy",
@@ -825,7 +825,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "follow_ups": [
         "query_symbol_index",
@@ -949,7 +949,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -1011,7 +1011,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -1061,7 +1061,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31",
+        "tool_version": "0.102.0",
         "gate_authority": false,
         "produces_observations_only": true
       },
@@ -1367,7 +1367,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Summarize"
@@ -1423,7 +1423,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
@@ -1482,7 +1482,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "feature": "persistence",
       "required_args": [
@@ -1544,7 +1544,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -1601,7 +1601,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -1732,7 +1732,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -1809,7 +1809,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "path",
@@ -2105,7 +2105,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -2192,7 +2192,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -2246,7 +2246,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -2302,7 +2302,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "intent"
@@ -2371,7 +2371,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path",
@@ -2427,7 +2427,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -2478,7 +2478,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -2521,7 +2521,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
@@ -2586,7 +2586,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path",
@@ -2658,7 +2658,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol_name"
@@ -2716,7 +2716,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "gated",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "function_name",
@@ -2792,7 +2792,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol_name",
@@ -2854,7 +2854,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path"
@@ -2911,7 +2911,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -2972,7 +2972,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path"
@@ -3026,7 +3026,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -3332,7 +3332,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "trait_name"
@@ -3621,7 +3621,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path"
@@ -3670,7 +3670,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -3963,7 +3963,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "class_name"
@@ -4014,7 +4014,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path"
@@ -4076,7 +4076,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Locate"
@@ -4402,7 +4402,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol_name"
@@ -4467,7 +4467,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path",
@@ -4533,7 +4533,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "from_symbol",
@@ -4848,7 +4848,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -4897,7 +4897,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -4957,7 +4957,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "community_id"
@@ -5002,7 +5002,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -5366,7 +5366,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "symbol"
@@ -5414,7 +5414,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -5462,7 +5462,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -5504,7 +5504,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -5558,7 +5558,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -5930,7 +5930,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "question"
@@ -6347,7 +6347,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "question"
@@ -6392,7 +6392,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -6449,7 +6449,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "query"
@@ -6494,7 +6494,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -6549,7 +6549,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph",
@@ -6611,7 +6611,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_path",
@@ -6957,7 +6957,7 @@
         "requires_graph": true,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "resource_id"
@@ -7052,7 +7052,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "limitations": [
         ".gitignore aware; honors workspace root"
@@ -7091,7 +7091,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "follow_ups": [
         "read_view_spec"
@@ -7139,7 +7139,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "file_paths"
@@ -7195,7 +7195,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "query"
@@ -7586,7 +7586,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -7943,7 +7943,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -8001,7 +8001,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Locate"
@@ -8103,7 +8103,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Locate",
@@ -8162,7 +8162,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "id"
@@ -8222,7 +8222,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -8308,7 +8308,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "feature": "persistence",
       "required_args": [
@@ -8379,7 +8379,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Verify"
@@ -8683,7 +8683,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "files"
@@ -8748,7 +8748,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "action",
@@ -8811,7 +8811,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "plan_path"
@@ -8911,7 +8911,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Locate",
@@ -9038,7 +9038,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -9160,7 +9160,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -9218,7 +9218,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "intent_tags": [
         "Locate"
@@ -9273,7 +9273,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
@@ -9311,7 +9311,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "prerequisites": [
         "build_graph"
@@ -9442,7 +9442,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -9503,7 +9503,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -9569,7 +9569,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "source",
@@ -9638,7 +9638,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "contract_id",
@@ -9704,7 +9704,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "path",
@@ -9829,7 +9829,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "algorithm_params"
@@ -9880,7 +9880,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "limitations": [
         "requires evidence-cli-ladybug feature"
@@ -9934,7 +9934,7 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "stable",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "query"
@@ -10487,7 +10487,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.101.31"
+        "tool_version": "0.102.0"
       },
       "required_args": [
         "path"

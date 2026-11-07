@@ -38887,3 +38887,13 @@ Gate NOT_RUN: el lote lleva 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 1
 **Verificación.** Solo documentación; `test_roadmap_coherence.py` y `bash scripts/ci/run-all-contracts.sh` antes del PR.
 
 Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162, 163); esta entrada no cuenta como tarea.
+
+## 2026-11-07 — Release v0.102.0: bump de versión y corte (sin tarea)
+
+**Cambio.** `workspace.package.version` 0.101.30 → 0.102.0 (`Cargo.toml`, `Cargo.lock`), espejos del producto (`product-manifest.json`, `platforms.json`, `languages.json`, `tool_version` de `tools.json` y `tool-catalog-runtime.json`), `CHANGELOG.md`, `SECURITY.md`, `README.md` y `#[deprecated(since)]` de cuatro sitios del core. El corte incluye el contenido de la 0.101.31, que nunca se publicó; `SECURITY.md` deja de nombrarla porque el contrato exige versiones realmente publicadas.
+
+**Verificación.** `cargo build --release --bin cognicode-mcp --bin cognicode --bin cogh` `rc=0`. `bash scripts/ci/run-all-contracts.sh` `rc=0` (antes del cambio de `SECURITY.md` falló `test_security_policy_supported_versions_are_real`). `test_roadmap_coherence.py` 29/29.
+
+**Pendiente tras la fusión.** Tag anotado `v0.102.0`, candidato y publicación con las lanes del tag `v0.101.30` (las lanes vivas se retiraron el 2026-11-04), verificación como consumidor e instalación local. Provenance: sin generador; se publica sin ella y se dice.
+
+Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.

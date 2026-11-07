@@ -10,6 +10,46 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.102.0] — 2026-11-07
+
+**Minor: el grafo se publica en un orden canónico, el sobre de la respuesta
+tiene un solo dueño y las preguntas dicen con qué cobertura se contestaron.**
+Incluye el contenido de la v0.101.31 (identidad de lo que leyó el control
+plane), que nunca llegó a publicarse.
+
+**Superficie (cambios visibles para un consumidor).**
+- Los nueve *goals* (`status` como raíz) y los perfiles de superficie salen de
+  un registro único: de él se derivan el `inputSchema` de MCP, el comando de
+  la CLI, la entrada de `tools.json` y la ayuda. `tools/list` se pagina de 20
+  en 20.
+- El sobre de la respuesta lleva el resultado, su base (cobertura y momento) y
+  lo que sigue (`_links`), con handles firmados; `content[0]` no cambia.
+- `find` encuentra los `enum`, `trait` y `union` de Rust y declara los tipos
+  que el índice no lee. El impacto nombra los tests que alcanza y el comando
+  que los corre.
+- Un árbol sin nada que leer tiene un estado propio y las dos superficies lo
+  dicen igual. Las preguntas publican la cobertura con la que se respondieron;
+  `Partial/Unknown` ya no se presenta como completo.
+- El MCP usa el daemon si existe y lo dice en el `basis`; el reindexado
+  incremental declara lo que costó.
+- Ejecutor de recetas con memo, fases, paralelismo y `--plan`.
+
+**Reproducibilidad.** Comunidades, ciclos, *god nodes*, llamantes, caminos
+calientes, dependencias entre módulos, símbolos y aristas del grafo se
+publican en el mismo orden en cada corrida. El conjunto de retroalimentación
+y la complejidad de un proyecto real terminan.
+
+**Correcciones.** `project_overview` publica el nivel que entrega; el formato
+de `mermaid` lo declara su dueño; el diagrama de `export_callflow` dibuja las
+comunidades que dice; los tests dejan de escribir la configuración real del
+IDE.
+
+**Herramientas de desarrollo (no afectan a los binarios).** El gate mide un
+radio decidido por script y los mutantes de uno en uno con techo de memoria;
+el entorno de compilación declara perfil, linker y caché; se retira la
+*feature* `rig`; se fusionan los contratos de CI y se añaden el contador y el
+productor de trazas de enlaces (`scripts/measure`).
+
 ## [v0.101.31] — 2026-10-24
 
 **La lectura del control plane dice sobre qué código se emitió.** La

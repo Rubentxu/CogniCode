@@ -98,13 +98,13 @@ impl std::error::Error for DependencyPathError {}
 /// keep compiling. The parser reports inline paths too, so the old
 /// name no longer describes what it carries.
 #[deprecated(
-    since = "0.101.31",
+    since = "0.102.0",
     note = "el parser ya no solo lee sentencias `use`: usa DependencyPath"
 )]
 pub type UseStatement = DependencyPath;
 
 /// The former name of [`DependencyPathError`].
-#[deprecated(since = "0.101.31", note = "renombrado a DependencyPathError")]
+#[deprecated(since = "0.102.0", note = "renombrado a DependencyPathError")]
 pub type UseStatementError = DependencyPathError;
 
 // ============================================================================
@@ -174,7 +174,7 @@ pub fn parse_dependency_paths(
 /// paths too, which is why the name is deprecated.
 #[allow(deprecated)]
 #[deprecated(
-    since = "0.101.31",
+    since = "0.102.0",
     note = "el parser ya no solo lee sentencias `use`: usa parse_dependency_paths"
 )]
 pub fn parse_use_lines(
