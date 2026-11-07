@@ -31,7 +31,7 @@
 #                         una cuarta parte de lo que una máquina de esta
 #                         clase tiene libre, con sitio para el resto del
 #                         workspace. Lo fija
-#                         `scripts/ci/test_mutant_memory_budget.py`.
+#                         `scripts/ci/test_gate_contracts.py`.
 #
 #   MUTANTS_GATE_VMEM_KIB 2 GiB por binario de test. El valor que el
 #                         runner ya usaba por defecto, y el que el gate
@@ -57,7 +57,7 @@
 #                         desborda antes de que se lleve la máquina.
 #
 # El contrato que vigila estos tres números y las dos rutas es
-# `scripts/ci/test_mutant_memory_budget.py`.
+# `scripts/ci/test_gate_contracts.py`.
 
 # El presupuesto: lo que las corridas de mutación pueden pedir a la vez.
 MUTANTS_BUDGET_KIB=16777216

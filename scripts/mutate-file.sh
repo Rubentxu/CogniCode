@@ -34,7 +34,7 @@
 #   scripts/mutate-file.sh --plan crates/cognicode-core/src/lib.rs
 #
 # `--plan` imprime lo que la corrida haría, sin mutar nada: es lo que
-# lee el contrato `scripts/ci/test_mutant_memory_budget.py`.
+# lee el contrato `scripts/ci/test_gate_contracts.py`.
 #
 # EL TECHO Y EL PRESUPUESTO
 #
