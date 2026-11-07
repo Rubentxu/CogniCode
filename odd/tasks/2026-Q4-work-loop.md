@@ -121,7 +121,7 @@
 **B1..B6 está cerrado.** El programa terminó el 2026-10-12 con la
 publicación de `v0.101.16` y su veredicto C8-R. La tabla anterior seguía
 diciendo `B1 PENDING` / `B2..B6 BLOCKED` cuatro días después, que es
-precisamente el caso que `scripts/ci/test_block_ledger_coherence.py` impide
+precisamente el caso que `scripts/ci/test_ledger_and_mission_declarations.py` impide
 volver a ocurrir.
 
 El trabajo en marcha no está aquí: es **CU — Consumer-First SDK/CLI/MCP**
