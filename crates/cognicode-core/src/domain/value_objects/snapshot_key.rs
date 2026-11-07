@@ -115,9 +115,6 @@ fn enabled_features() -> Vec<String> {
     if cfg!(feature = "program-analysis-server") {
         features.push("program-analysis-server".to_string());
     }
-    if cfg!(feature = "rig") {
-        features.push("rig".to_string());
-    }
     if cfg!(feature = "test-support") {
         features.push("test-support".to_string());
     }

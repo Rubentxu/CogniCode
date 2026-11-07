@@ -353,7 +353,6 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 | Feature | Por defecto | Descripción |
 |---------|-------------|-------------|
 | `persistence` | activado | RedbGraphStore para caché persistente de grafos |
-| `rig` | desactivado | Integración con el framework de agentes `rig-core` |
 
 ## Desarrollo
 
