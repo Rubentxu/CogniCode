@@ -691,7 +691,10 @@ def binary_version(binary: Path) -> str:
 
 
 def publish(arms: dict[str, Any], binary: Path, config: dict[str, Any]) -> Path:
-    commit = _git("rev-parse", "HEAD")
+    # El producto medido es el de la base en `main`: ese SHA sobrevive al squash
+    # de la rama; el de la rama, no.
+    commit = _git("merge-base", "HEAD", "origin/main")
+    harness_commit = _git("rev-parse", "HEAD")
     version = binary_version(binary)
     if not version:
         raise RuntimeError("the binary does not report a version; nothing to publish against")
@@ -699,6 +702,7 @@ def publish(arms: dict[str, Any], binary: Path, config: dict[str, Any]) -> Path:
         "schema_version": "cognicode.measurement/v1",
         "version": version,
         "commit": commit,
+        "harness_commit": harness_commit,
         "dirty": bool(_git("status", "--porcelain", "--untracked-files=no")),
         "measured_on": dt.date.today().isoformat(),
         "method": "one process per call; cold server per call; timeout and MemoryMax per call",
