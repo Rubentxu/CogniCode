@@ -38575,3 +38575,17 @@ Punteros: solo las menciones históricas del JOURNAL, que no se tocan; ningún o
 Sin compilar, sin suites; no se lanzó el gate. Base: el original de coherencia ya fallaba 2 (`test_current_sha_matches_head` y su control, por la deriva de `CURRENT.md`: decisión pendiente del operador, no tocada); el nuevo falla los mismos 2 y §11 daba 0. Mutaciones del sujeto (incremento nuevo / coherencia / §11): `H24 closed` añadido al JOURNAL +2/0/+4; cita `docs/roadmap/NOPE-X.md` en §11 +1/0/+1; ancla de unidades abiertas retirada +4/0/+4; retirada falsa de `JOURNAL.md` +1/+1/0. El nuevo falla donde falla el original correspondiente. Restaurado con `cp -p`, `touch` y `cmp`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 22) — el contrato de los binarios de la lane absorbe el del preflight
+
+`scripts/ci/test_preflight_contracts.py` (532 líneas) se fusiona como «Parte 3» en `scripts/ci/test_lane_binaries.py`, que ya llevaba la frescura del binario (parte 1) y la ejecución de binarios extranjeros (parte 2). Tema común: scripts de la lane ejercitados con árboles y binarios de mentira. Quedan 23 ficheros `test_*.py`.
+
+Las únicas colisiones eran `REPO_ROOT` (idéntico, compartido) y `main`. La lista global `failures` del preflight solo se usaba en su `main` y se retira. El `main` único es el de `test_lane_binaries.py` (orden de código, línea PASS/FAIL por prueba) y además registra como fallo una excepción inesperada, como hacía el del preflight, en vez de abortar la corrida. La docstring del preflight se traslada a la del módulo.
+
+Punteros: solo el `Run:` del propio fichero retirado; ningún otro fichero lo citaba (las menciones históricas del JOURNAL no se tocan).
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base: `test_a_branch_checkout_still_names_its_branch` ya fallaba en el original del preflight, también ejecutado desde el checkout principal (un checkout en `main` resuelve la ref a vacío); el nuevo falla esa misma prueba y nada más (1 / lane 0 / preflight 1). Es un rojo previo de entorno que esta unidad no toca ni arregla. Mutaciones del sujeto (incremento nuevo / lane / preflight): ratchet de `passed` sin disparo en `preflight-clean-clone.sh` +2/0/+2; ratchet invertido +4/0/+4; `exit 1`→`exit 0` en `check-built-binary.sh` +1/+1/0; costura `--print-clone-ref` retirada +2/0/+2. Descartado el control `exit 2`→`exit 0` en `run-target-binary.sh` (0/0/0: ninguna prueba lo observa). Restaurado con `cp -p`, `touch` y `cmp`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
