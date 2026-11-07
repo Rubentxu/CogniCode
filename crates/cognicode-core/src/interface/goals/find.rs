@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::cli::project_graph::service_with_graph;
 use crate::interface::goals::GoalEnvironment;
 
@@ -69,7 +70,9 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
         .collect();
 
     let summary = if locations.is_empty() {
-        format!("`{symbol}` is not in the project's symbols.")
+        let mut text = format!("`{symbol}` is not in the project's symbols.");
+        text.push_str(&unindexed_note(workspace));
+        text
     } else {
         format!("`{symbol}` is declared in {} place(s).", locations.len())
     };
@@ -81,6 +84,28 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
         symbol: symbol.to_string(),
         locations,
     })
+}
+
+/// Lo que una respuesta vacía no puede afirmar: los tipos que el índice no
+/// lee en los lenguajes del proyecto. Vacío si no falta ninguno.
+fn unindexed_note(workspace: &Path) -> String {
+    let mut gaps: Vec<String> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for file in inventory(workspace).source_files() {
+        let Some(language) = file.language else { continue };
+        let kinds = language.unread_class_kinds();
+        if kinds.is_empty() || !seen.insert(language.name()) {
+            continue;
+        }
+        gaps.push(format!("{} ({})", language.name(), kinds.join(", ")));
+    }
+    if gaps.is_empty() {
+        return String::new();
+    }
+    format!(
+        " The answer is not complete: these declarations are not indexed: {}.",
+        gaps.join("; ")
+    )
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
@@ -141,6 +166,32 @@ mod tests {
                 answer.summary
             );
         }
+    }
+
+    #[test]
+    fn an_empty_answer_names_the_kinds_the_index_does_not_read() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.c"), "typedef int T;\nint f(void){return 0;}\n")
+            .expect("write");
+
+        let answer = find(dir.path(), "nowhere").expect("the goal answers");
+
+        assert!(answer.locations.is_empty());
+        assert!(
+            answer.summary.contains("not indexed") && answer.summary.contains("C"),
+            "an empty answer over a language with unread kinds must say so: {}",
+            answer.summary
+        );
+    }
+
+    #[test]
+    fn an_empty_answer_over_a_fully_read_language_does_not_hedge() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("k.kt"), "class K\n").expect("write");
+
+        let answer = find(dir.path(), "nowhere").expect("the goal answers");
+
+        assert!(!answer.summary.contains("not indexed"), "{}", answer.summary);
     }
 
     #[test]

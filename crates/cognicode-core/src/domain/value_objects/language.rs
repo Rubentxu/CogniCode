@@ -834,6 +834,25 @@ impl Language {
         self.symbols().class_types.first().copied().unwrap_or("")
     }
 
+    /// The type-like node kinds the language declares but the symbol index
+    /// does not read, so a name declared with one of them is not findable.
+    ///
+    /// The index reads `class_node_type()` only (plus Rust's `enum`, `trait`
+    /// and `union`), except for the languages that read their declared
+    /// sets. This is the single list of what is left out: whoever answers
+    /// "is it declared?" says it instead of rebuilding it. It can only
+    /// shrink, as a language migrates to its declared set.
+    pub fn unread_class_kinds(self) -> &'static [&'static str] {
+        if self.reads_declared_symbol_sets() {
+            return &[];
+        }
+        let declared = self.symbols().class_types;
+        match self {
+            Language::Rust => &["impl_item"],
+            _ => declared.get(1..).unwrap_or(&[]),
+        }
+    }
+
     /// Returns the node type for variable declarations in this language.
     ///
     /// An empty string means the language declares no such thing, with the
@@ -1008,6 +1027,43 @@ mod from_path_tests {
             Language::from_path(Path::new("build.gradle")),
             Some(Language::Groovy)
         );
+    }
+}
+
+#[cfg(test)]
+mod unread_class_kinds_tests {
+    use super::Language;
+
+    /// The measured list of languages that leave type kinds out of the
+    /// index. It may only shrink: a language that migrates is removed
+    /// here, one that gains a hole fails this test.
+    const MEASURED: &[&str] = &[
+        "C", "C++", "Dart", "Erlang", "Fortran", "Haskell", "Java", "PHP", "Ruby", "Rust",
+        "Scala", "SystemVerilog", "Swift", "TypeScript", "Verilog", "Zig",
+    ];
+
+    #[test]
+    fn the_languages_with_unread_kinds_only_shrink() {
+        let mut now: Vec<&str> = Language::all_languages()
+            .iter()
+            .filter(|l| !l.unread_class_kinds().is_empty())
+            .map(|l| l.name())
+            .collect();
+        now.sort_unstable();
+        for name in &now {
+            assert!(
+                MEASURED.contains(name),
+                "{name} gained unread type kinds; the list can only shrink"
+            );
+        }
+    }
+
+    #[test]
+    fn a_language_that_reads_its_declared_sets_leaves_nothing_out() {
+        for l in [Language::Kotlin, Language::CSharp, Language::Groovy] {
+            assert!(l.unread_class_kinds().is_empty(), "{l:?}");
+        }
+        assert_eq!(Language::Rust.unread_class_kinds(), &["impl_item"]);
     }
 }
 
