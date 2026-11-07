@@ -38907,3 +38907,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Cambio.** Versión 0.102.0 → 0.102.1 en los mismos ficheros. El test del snapshot deriva la versión simulada de la real (cada dígito a 9) y exige que difiera. El cert solo mueve `cp5_workspace_version`; sus entradas NO se re-ejecutaron y la evidencia del cert lo dice.
 
 Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.
+
+## 2026-11-07 — Release v0.102.1 publicada e instalada (sin tarea)
+
+**Candidato.** Tag `v0.102.1` sobre `5c813212`. Lane candidata del tag `v0.101.30` restaurada fuera del repo y adaptada (TASK-71 consolidó los tests en `--test it|release`; `m011_rustdoc_gate` ahora es `just docs-check`): todas las etapas en verde, `rc=0`.
+
+**Publicación.** Lane de publicación del mismo tag, con la etapa `verify-asset-set` sustituida por una comparación en línea (`sandbox/scripts/test_release_asset_set.sh` ya no existe): 8 assets, iguales a `release/`. `gh release view`: `isDraft=false`, `isPrerelease=false`; `/releases/latest` resuelve `v0.102.1`. Provenance: sin generador; la lane lo avisó (`NO PROVENANCE`) y se publicó sin ella.
+
+**Consumidor.** `COGNICODE_VERSION=v0.102.1 bash install.sh` (checksum verificado) y `cogh install mcp-server --version 0.102.1 --profile reviewer`. `cognicode`, `cognicode-mcp` y `cogh` reportan 0.102.1; `cogh doctor` healthy; `initialize` del MCP devuelve `serverInfo.version` 0.102.1.
+
+**Pendiente.** Las lanes restauradas viven en `/tmp/rel-hist/` y no están versionadas; restaurarlas del tag `v0.101.30` exige repetir las adaptaciones. `v0.102.0` queda como tag sin release.
+
+Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta como tarea.
