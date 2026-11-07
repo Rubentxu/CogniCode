@@ -353,6 +353,39 @@ def test_the_calendar_fires_when_the_batch_crosses_its_period() -> None:
         )
 
 
+def test_a_waiting_calendar_says_how_far_its_next_turn_is() -> None:
+    """`waits` con una cuenta mayor que el periodo no es un turno vencido: el
+    ultimo cruce ya paso y el siguiente esta por delante. El radio lo dice, para
+    que el log no deje leer «85 fusiones, cada 50» como un hueco sin acotar."""
+    with tempfile.TemporaryDirectory(prefix="gate-scope-") as tmp:
+        root = Path(tmp)
+        base, _ = _fixture(root)
+        for every, expected in (("3", "1"), ("50", "48")):
+            answer, rc = _radius(
+                root,
+                "--base",
+                base,
+                "--affordable",
+                "alpha",
+                "--calendar-crate",
+                "alpha",
+                "--calendar-every",
+                every,
+                "--calendar-marker",
+                base,
+            )
+            check(rc == 0, "el calendario no pudo decidir: {}".format(answer.get("reason")))
+            check(
+                answer.get("calendar") == "waits",
+                f"con periodo {every} el lote no deberia disparar: {answer.get('calendar')!r}",
+            )
+            check(
+                answer.get("calendar-next") == expected,
+                f"con periodo {every} faltan {expected} fusiones para el proximo turno, "
+                f"el radio dice {answer.get('calendar-next')!r}",
+            )
+
+
 def test_an_uncertain_calendar_measures_the_crate_now() -> None:
     """The calendar failing to count is not a calendar that never fires: the
     crate is measured now. An uncertain measurement must never mean less
