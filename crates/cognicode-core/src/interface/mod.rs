@@ -11,12 +11,12 @@ pub mod daemon;
 pub mod goals;
 // TASK-83 — el sobre de la respuesta: result, basis, budget y enlaces.
 pub mod hateoas;
-pub mod intent;
+pub use crate::domain::intent;
 pub mod lsp;
 pub mod mcp;
 // TASK-85 — las recetas: preguntas compuestas, con su memo y su presupuesto.
 pub mod recipes;
-pub mod symbol_identity;
+pub use crate::domain::symbol_identity;
 // TASK-84 — la superficie que el servidor publica: los perfiles `default`,
 // `full` y `legacy`.
 pub mod surface;

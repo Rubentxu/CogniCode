@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
-use crate::interface::symbol_identity::SymbolId;
+use crate::domain::symbol_identity::SymbolId;
 
 #[derive(
     Debug,
