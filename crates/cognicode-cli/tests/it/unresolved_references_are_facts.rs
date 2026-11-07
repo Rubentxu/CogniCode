@@ -12,12 +12,12 @@
 
 use crate::fixtures;
 
+use cognicode_cli::cli::presenter_bridge::present_graph_full;
+use cognicode_cli::cli::result::GraphResult;
 use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, Analyze, OutcomeState,
 };
 use cognicode_core::application::services::analyze::ServiceAnalyzer;
-use cognicode_core::interface::cli::presenter_bridge::present_graph_full;
-use cognicode_core::interface::cli::result::GraphResult;
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };

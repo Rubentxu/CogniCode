@@ -2,7 +2,7 @@
 //!
 //! Provides comprehensive checking of external tooling needed to run CogniCode.
 
-use crate::infrastructure::parser::Language;
+use cognicode_core::infrastructure::parser::Language;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -389,7 +389,7 @@ pub fn run_doctor_checks(workspace_path: Option<&Path>) -> DoctorReport {
 
     // Detect workspace languages if path provided
     let detected_languages = workspace_path
-        .map(crate::interface::workspace::detect_languages)
+        .map(cognicode_core::interface::workspace::detect_languages)
         .unwrap_or_default();
 
     let workspace_info = workspace_path.map(|p| WorkspaceInfo {

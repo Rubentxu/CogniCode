@@ -34,11 +34,13 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::domain::value_objects::{MermaidFormat, SymbolKind, published_column, published_line};
+use cognicode_core::domain::value_objects::{
+    MermaidFormat, SymbolKind, published_column, published_line,
+};
 
-pub use crate::domain::traits::code_intelligence::ReferenceKind;
-pub use crate::infrastructure::graph::SymbolLocation;
-pub use crate::infrastructure::semantic::outline::OutlineNode;
+pub use cognicode_core::domain::traits::code_intelligence::ReferenceKind;
+pub use cognicode_core::infrastructure::graph::SymbolLocation;
+pub use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 
 /// Una posición como la publica el producto.
 ///
@@ -278,7 +280,7 @@ pub enum CommandOutput {
     /// observations with evidence, never a gate. The catalog declares
     /// `gate_authority: false` + `produces_observations_only: true` so an
     /// MCP client can verify the contract without reading the prompt.
-    Architecture(crate::architecture::ArchitectureDiagnostic),
+    Architecture(cognicode_core::architecture::ArchitectureDiagnostic),
     /// An answer the core rendered and the presenter writes.
     ///
     /// The core does not write to the standard output: it returns the
@@ -373,7 +375,7 @@ impl CommandOutput {
 //     o un campo opcional en cada variant. Decidirlo entonces,
 //     no ahora — el pilot (PerFile) no emite esa warning.
 
-use crate::domain::value_objects::Location;
+use cognicode_core::domain::value_objects::Location;
 
 /// A flat reference to a symbol in the graph (used by `EntryPoints`,
 /// `LeafFunctions`, and as a step in path traces). The presenter
@@ -492,7 +494,7 @@ pub enum GraphResult {
         /// what the file states that the graph does not hold. A surface
         /// that publishes the counts and stays silent about these says
         /// "this file states nothing" about a file that states plenty.
-        pending_references: Vec<crate::interface::coverage::PendingReferenceInfo>,
+        pending_references: Vec<cognicode_core::interface::coverage::PendingReferenceInfo>,
     },
     /// `cognicode graph full [--rebuild] [--format text|json] <path>`
     /// El pre-migration code ya tenía un `FullGraphJson` ad-hoc; este
@@ -514,14 +516,14 @@ pub enum GraphResult {
         /// half of the same question: a graph that read every file and
         /// tied every reference is complete, and a consumer has to be able
         /// to tell which of the two is missing.
-        pending_references: Vec<crate::interface::coverage::PendingReferenceInfo>,
+        pending_references: Vec<cognicode_core::interface::coverage::PendingReferenceInfo>,
         /// The relations the repository refused to take.
         ///
         /// The `dependencies` count says how many relations the graph
         /// *holds*. A refused relation is not one of them, so it has to be
         /// named next to the count: otherwise the count reads as "every
         /// relation the build found".
-        rejected_relations: Vec<crate::interface::coverage::RejectedRelationInfo>,
+        rejected_relations: Vec<cognicode_core::interface::coverage::RejectedRelationInfo>,
     },
     /// `cognicode graph hot-paths [--limit N] [--min-fan-in N] <path>`
     HotPaths {
@@ -601,7 +603,7 @@ pub enum GraphResult {
         /// The entries are what the graph holds. Over a graph that does
         /// not cover the whole tree, that is not what the tree holds, and
         /// a reader that is not told so reads a zero as a finding.
-        coverage: crate::interface::coverage::CoverageInfo,
+        coverage: cognicode_core::interface::coverage::CoverageInfo,
         elapsed_ms: u128,
     },
     /// `cognicode graph complexity <path>`
@@ -639,13 +641,13 @@ pub enum GraphResult {
         ///
         /// Empty when no test reaches the change, and empty is the truth
         /// then: a change nothing tests has no test to name.
-        affected_tests: Vec<crate::application::dto::AffectedTest>,
+        affected_tests: Vec<cognicode_core::application::dto::AffectedTest>,
         /// What the graph the answer was computed from covers.
         ///
         /// The counts are what the graph holds. Over a graph that does
         /// not cover the whole tree, that is not what the tree holds, and
         /// a reader that is not told so reads a zero as a finding.
-        coverage: crate::interface::coverage::CoverageInfo,
+        coverage: cognicode_core::interface::coverage::CoverageInfo,
         elapsed_ms: u128,
     },
 }
@@ -659,9 +661,9 @@ impl GraphResult {
     /// entero, no son las del árbol, y una respuesta que no lo dice lee un
     /// cero como un hallazgo—.
     pub fn impact_of(
-        impact: crate::application::services::impact_of::ImpactOf,
+        impact: cognicode_core::application::services::impact_of::ImpactOf,
         symbol: String,
-        coverage: &crate::application::services::analyze::Coverage,
+        coverage: &cognicode_core::application::services::analyze::Coverage,
         elapsed_ms: u128,
     ) -> Self {
         GraphResult::Impact {
@@ -673,7 +675,7 @@ impl GraphResult {
             impacted_symbols: impact.symbols,
             impacted_files: impact.files,
             affected_tests: impact.affected_tests,
-            coverage: crate::interface::coverage::CoverageInfo::of(coverage),
+            coverage: cognicode_core::interface::coverage::CoverageInfo::of(coverage),
             elapsed_ms,
         }
     }

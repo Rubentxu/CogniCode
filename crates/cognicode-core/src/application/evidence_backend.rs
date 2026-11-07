@@ -1,7 +1,7 @@
 // E1.W3 — Evidence CLI backend registry.
 //
 // The `cognicode evidence <list|search>` subcommand is wired into the
-// `CliCommand` enum inside `interface::cli::commands` (gated behind the
+// `CliCommand` enum inside `cognicode_cli::cli::commands` (gated behind the
 // `evidence-cli-ladybug` feature). To keep `cognicode-core` free of the
 // `lbug` native dependency, the actual query implementation is provided
 // by an `EvidenceBackend` registered at startup by `cognicode-cli`

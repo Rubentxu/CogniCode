@@ -558,11 +558,11 @@ fn a_recipe_with_a_parameter_needs_that_parameter() {
 #[test]
 fn the_plan_flag_is_written_without_its_value() {
     let goal = goals::find("recipe").expect("the registry declares the goal `recipe`");
-    let matches = goals::clap_command(goal)
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from([goal.name, "--name", "onboard", "--plan"])
         .expect("the command reads its arguments");
 
-    let values = goals::arguments_from_matches(goal, &matches);
+    let values = cognicode_cli::cli::goals_clap::arguments_from_matches(goal, &matches);
 
     assert_eq!(
         values["plan"],
@@ -574,7 +574,7 @@ fn the_plan_flag_is_written_without_its_value() {
 #[test]
 fn the_terminal_publishes_the_parameters_as_an_object_like_the_wire() {
     let goal = goals::find("recipe").expect("the registry declares the goal `recipe`");
-    let matches = goals::clap_command(goal)
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from([
             goal.name,
             "--name",
@@ -584,7 +584,7 @@ fn the_terminal_publishes_the_parameters_as_an_object_like_the_wire() {
         ])
         .expect("the command reads its arguments");
 
-    let values = goals::arguments_from_matches(goal, &matches);
+    let values = cognicode_cli::cli::goals_clap::arguments_from_matches(goal, &matches);
 
     assert_eq!(
         values["params"],

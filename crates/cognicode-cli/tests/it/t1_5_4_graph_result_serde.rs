@@ -27,11 +27,11 @@
 //!     changes a field type (e.g. `String` to `PathBuf`) breaks
 //!     the test before the bin silently gets a different shape.
 
-use cognicode_core::domain::value_objects::MermaidFormat;
-use cognicode_core::interface::cli::result::{
+use cognicode_cli::cli::result::{
     ComplexityMetrics, DepthBucket, DepthEntry, GraphResult, HotPathEntry, PathHop, SkippedFile,
     SymbolRef,
 };
+use cognicode_core::domain::value_objects::MermaidFormat;
 use serde_json::Value;
 
 /// The coverage of a graph that covered the whole tree.

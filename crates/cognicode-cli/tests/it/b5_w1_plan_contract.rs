@@ -19,10 +19,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use cognicode_cli::cli::Cli;
+use cognicode_cli::cli::commands::CliCommand;
 use cognicode_core::application::analysis_basis::AnalysisBasis;
 use cognicode_core::architecture::diagnostic::Severity;
-use cognicode_core::interface::cli::Cli;
-use cognicode_core::interface::cli::commands::CliCommand;
 use cognicode_core::refactor::plan::{
     BuildPlanError, PlannedEdit, Precondition, RefactorPlan, Risk, build_plan, load_plan_from_file,
     save_plan_to_file, verify_digest,

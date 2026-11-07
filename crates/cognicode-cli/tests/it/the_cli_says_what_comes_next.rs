@@ -14,9 +14,9 @@
 //! - Que el grafo se construya de verdad: aquí la respuesta es un
 //!   valor, no una construcción.
 
+use cognicode_cli::cli::commands::Format as CliFormat;
+use cognicode_cli::cli::result::{CommandOutput, GraphResult, SkippedFile};
 use cognicode_cli::presenter::present_output;
-use cognicode_core::interface::cli::commands::Format as CliFormat;
-use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, SkippedFile};
 
 /// La respuesta que el CLI imprime, en texto.
 fn printed(output: &CommandOutput) -> String {

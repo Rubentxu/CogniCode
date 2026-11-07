@@ -22,14 +22,14 @@
 //!      reportan el MISMO estado para el mismo outcome: paridad de
 //!      semántica CLI/MCP/SDK (aceptación CU-1).
 
+use cognicode_cli::cli::presenter_bridge::present_graph_full;
+use cognicode_cli::cli::result::GraphResult;
 use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisError, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze, OutcomeState,
 };
 use cognicode_core::application::consumer_analysis::{
     CapabilityRequest, ConsumerAnalysisFacade, ServiceAnalyzer,
 };
-use cognicode_core::interface::cli::presenter_bridge::present_graph_full;
-use cognicode_core::interface::cli::result::GraphResult;
 use cognicode_core::interface::mcp::presenter_bridge::present_build_graph;
 
 // ---------------------------------------------------------------------------

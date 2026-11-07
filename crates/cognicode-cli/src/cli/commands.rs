@@ -2,23 +2,25 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::map_flatten)]
 
-use crate::application::services::analysis_service::AnalysisService;
-use crate::domain::services::CallGraphAnalyzer;
-use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
-use crate::domain::value_objects::{published_column, published_line};
-use crate::infrastructure::graph::{
-    GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
-    TraversalDirection,
-};
-use crate::infrastructure::parser::Language;
-use crate::infrastructure::semantic::SymbolCodeService;
-use crate::interface::cli::capabilities::{build_capabilities_doc, format_capabilities_text};
-use crate::interface::cli::mermaid_format;
-use crate::interface::cli::progress::progress_line;
-use crate::interface::cli::result::{
+use crate::cli::capabilities::{build_capabilities_doc, format_capabilities_text};
+use crate::cli::mermaid_format;
+use crate::cli::progress::progress_line;
+use crate::cli::result::{
     CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
 };
 use clap::{Parser, Subcommand, ValueEnum};
+use cognicode_core::application::analysis_basis;
+use cognicode_core::application::services::{analysis_service::AnalysisService, graph_queries};
+use cognicode_core::domain::services::CallGraphAnalyzer;
+use cognicode_core::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use cognicode_core::domain::value_objects::{published_column, published_line};
+use cognicode_core::infrastructure::graph::{
+    GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
+    TraversalDirection,
+};
+use cognicode_core::infrastructure::parser::Language;
+use cognicode_core::infrastructure::semantic::SymbolCodeService;
+use cognicode_core::interface::{coverage, intent};
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
@@ -240,7 +242,7 @@ pub enum CliCommand {
     /// (which is in turn activated by `cognicode-cli`'s `--features
     /// ladybug`). The default build (no features) does NOT compile
     /// this variant — keeping the lbug native dep opt-in.
-    #[cfg(feature = "evidence-cli-ladybug")]
+    #[cfg(feature = "ladybug")]
     #[command(name = "evidence", subcommand)]
     Evidence(EvidenceCommand),
 
@@ -346,11 +348,11 @@ pub enum ExportFormat {
 /// identical inputs. Output formats are `text` (human) and `json`
 /// (machine) — both stable contracts.
 ///
-/// Compiled only under `feature = "evidence-cli-ladybug"`. The enum lives
+/// Compiled only under `feature = "ladybug"`. The enum lives
 /// in core because the CLI variant `CliCommand::Evidence` references it;
 /// moving it into the cli crate would split the clap derive across two
 /// files and force a re-export dance for no benefit.
-#[cfg(feature = "evidence-cli-ladybug")]
+#[cfg(feature = "ladybug")]
 #[derive(Debug, Subcommand)]
 pub enum EvidenceCommand {
     /// List evidence rows for a workspace, optionally filtered by kind.
@@ -669,16 +671,16 @@ impl CommandExecutor {
             // On any input it must (a) not panic, (b) emit the
             // PROPOSED status marker to stderr, and (c) exit 0.
             // The actual routing chain is delegated to
-            // `crate::interface::intent::route_intent`. B3.W5 pins
+            // `cognicode_core::interface::intent::route_intent`. B3.W5 pins
             // the final shape; for now the contract is
             // "scaffold compiles, no panic, announces PROPOSED".
             Some(CliCommand::Intent { intent_args }) => {
-                let intent = crate::interface::intent::parse_intent_args(intent_args);
-                let chain = crate::interface::intent::route_intent(&intent);
+                let intent = intent::parse_intent_args(intent_args);
+                let chain = intent::route_intent(&intent);
                 eprintln!(
                     "PROPOSED: contract under review; see B3.W5. \
                      intent={} next_steps={}",
-                    crate::interface::intent::intent_kind_label(&intent),
+                    intent::intent_kind_label(&intent),
                     chain.len(),
                 );
                 // TASK-84: the command says where it came from — the name it
@@ -732,12 +734,11 @@ impl CommandExecutor {
                 // malformed. The free-form preview path remains valid
                 // when `--plan-file` is omitted.
                 if let Some(plan_path) = plan_file.as_deref() {
-                    let plan = crate::refactor::plan::load_plan_from_file(plan_path).map_err(
-                        |e| -> Box<dyn std::error::Error> {
+                    let plan = cognicode_core::refactor::plan::load_plan_from_file(plan_path)
+                        .map_err(|e| -> Box<dyn std::error::Error> {
                             format!("failed to load --plan-file {}: {}", plan_path.display(), e)
                                 .into()
-                        },
-                    )?;
+                        })?;
                     eprintln!(
                         "B5.W1 plan preview: id={} files={} edits={} \
                          risks={} digest={}",
@@ -817,7 +818,7 @@ impl CommandExecutor {
                 repo,
                 include_git_log,
             }) => Ok(Self::execute_issues_ingest(owner, repo, *include_git_log).await?),
-            #[cfg(feature = "evidence-cli-ladybug")]
+            #[cfg(feature = "ladybug")]
             Some(CliCommand::Evidence(cmd)) => Ok(Self::execute_evidence(cmd).await?),
             Some(CliCommand::Capabilities { format, json }) => {
                 let effective = if *json { "json" } else { format.as_str() };
@@ -827,7 +828,7 @@ impl CommandExecutor {
                 info!("CogniCode CLI initialized");
                 // The help, if no command was given — the tree with the
                 // goals in it, so `cognicode --help` lists them.
-                let mut cmd = crate::interface::cli::goal_command::cli_command();
+                let mut cmd = crate::cli::goal_command::cli_command();
                 let help = cmd.render_help().to_string();
                 Ok(CommandOutput::rendered(format!("{help}\n")))
             }
@@ -924,7 +925,7 @@ impl CommandExecutor {
                 let language = Language::from_extension(std::path::Path::new(file).extension())
                     .unwrap_or(Language::Rust);
 
-                let outline = crate::infrastructure::semantic::build_outline(
+                let outline = cognicode_core::infrastructure::semantic::build_outline(
                     &source,
                     file,
                     language,
@@ -980,7 +981,7 @@ impl CommandExecutor {
         command: &GraphCommand,
         output_format: Format,
     ) -> Result<GraphResult, Box<dyn std::error::Error>> {
-        use crate::interface::cli::result::{
+        use crate::cli::result::{
             DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SymbolRef,
         };
         match command {
@@ -1037,11 +1038,9 @@ impl CommandExecutor {
                         // are part of the answer, not a footnote: the counts
                         // say how much the graph holds, and these say what the
                         // file states that the graph does not hold.
-                        let pending_references: Vec<
-                            crate::interface::coverage::PendingReferenceInfo,
-                        > = pending
+                        let pending_references: Vec<coverage::PendingReferenceInfo> = pending
                             .iter()
-                            .map(crate::interface::coverage::PendingReferenceInfo::from_reference)
+                            .map(coverage::PendingReferenceInfo::from_reference)
                             .collect();
                         let result = GR::PerFile {
                             file: file.clone(),
@@ -1105,21 +1104,20 @@ impl CommandExecutor {
                 // daemon's word, when there is one, is asked by the
                 // analyzer the CLI builds.
                 let dir = PathBuf::from(&path);
-                let analyzer = crate::interface::cli::analyzer::cli_analyzer(&dir);
-                let basis = crate::application::analysis_basis::AnalysisBasis::for_workspace(
-                    std::path::PathBuf::from(&path),
-                );
-                let outcome = crate::application::analysis_basis::Analyze::execute(
+                let analyzer = crate::cli::analyzer::cli_analyzer(&dir);
+                let basis =
+                    analysis_basis::AnalysisBasis::for_workspace(std::path::PathBuf::from(&path));
+                let outcome = analysis_basis::Analyze::execute(
                     &analyzer,
                     &basis,
-                    crate::application::analysis_basis::AnalysisOp::GraphFull {
+                    analysis_basis::AnalysisOp::GraphFull {
                         path: dir.clone(),
                         rebuild: *rebuild,
                     },
                 );
 
                 match outcome.state() {
-                    crate::application::analysis_basis::OutcomeState::Failed => {
+                    analysis_basis::OutcomeState::Failed => {
                         let msg = outcome
                             .error()
                             .map(|e| e.message.clone())
@@ -1128,12 +1126,10 @@ impl CommandExecutor {
                         Err(msg.into())
                     }
                     _ => {
-                        let result = crate::interface::cli::presenter_bridge::present_graph_full(
+                        let result = crate::cli::presenter_bridge::present_graph_full(
                             &outcome, path, *rebuild,
                         );
-                        crate::interface::cli::presenter_bridge::report_graph_full(
-                            &outcome, &result,
-                        );
+                        crate::cli::presenter_bridge::report_graph_full(&outcome, &result);
                         Ok(result)
                     }
                 }
@@ -1338,7 +1334,7 @@ impl CommandExecutor {
                 // There is one renderer and this is it: the diagram the
                 // CLI publishes is the diagram the MCP publishes for the
                 // same project.
-                let options = crate::domain::aggregates::call_graph::MermaidOptions {
+                let options = cognicode_core::domain::aggregates::call_graph::MermaidOptions {
                     root: None,
                     max_depth: 0,
                     theme: None,
@@ -1385,9 +1381,9 @@ impl CommandExecutor {
                 let graph = built.graph;
 
                 let dir_enum = match direction.to_lowercase().as_str() {
-                    "in" => crate::application::services::graph_queries::Direction::Callers,
-                    "out" => crate::application::services::graph_queries::Direction::Callees,
-                    _ => crate::application::services::graph_queries::Direction::Both,
+                    "in" => graph_queries::Direction::Callers,
+                    "out" => graph_queries::Direction::Callees,
+                    _ => graph_queries::Direction::Both,
                 };
 
                 // The question has one owner: the MCP asks it too.
@@ -1439,7 +1435,7 @@ impl CommandExecutor {
                     root_column: published_column(root.location().column()),
                     buckets,
                     total_entries: entries.len(),
-                    coverage: crate::interface::coverage::CoverageInfo::of(&built.coverage),
+                    coverage: coverage::CoverageInfo::of(&built.coverage),
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4j: text formatting is in the
@@ -1458,7 +1454,7 @@ impl CommandExecutor {
                 let complexity = analyzer.calculate_complexity(&graph);
 
                 let elapsed = start.elapsed().as_millis();
-                use crate::interface::cli::result::ComplexityMetrics;
+                use crate::cli::result::ComplexityMetrics;
                 let result = GR::Complexity {
                     path: path.clone(),
                     metrics: ComplexityMetrics {
@@ -1515,8 +1511,8 @@ impl CommandExecutor {
                 // a JSON object via stdout (T1-5.4 pre-migration
                 // pattern for sub-commands not yet migrated to
                 // `GraphResult`).
-                use crate::impact::composite::{CompositeImpactQuery, execute_composite};
-                use crate::interface::symbol_identity::SymbolId;
+                use cognicode_core::impact::composite::{CompositeImpactQuery, execute_composite};
+                use cognicode_core::interface::symbol_identity::SymbolId;
                 use std::ops::Range;
                 use std::path::PathBuf;
 
@@ -1593,12 +1589,10 @@ impl CommandExecutor {
     /// `NavigateError::Backend { operation, file, line, column,
     /// workspace, source }` (preserva la chain vía `#[source]`).
     async fn execute_navigate(command: &NavigateCommand) -> Result<NavigateResult, NavigateError> {
-        use crate::domain::traits::code_intelligence::Reference as DomainReference;
-        use crate::domain::value_objects::Location;
-        use crate::infrastructure::lsp::providers::CompositeProvider;
-        use crate::interface::cli::result::{
-            DefinitionLocation, HoverResult, NavigateResult, ReferenceEntry,
-        };
+        use crate::cli::result::{DefinitionLocation, HoverResult, NavigateResult, ReferenceEntry};
+        use cognicode_core::domain::traits::code_intelligence::Reference as DomainReference;
+        use cognicode_core::domain::value_objects::Location;
+        use cognicode_core::infrastructure::lsp::providers::CompositeProvider;
         use std::path::Path;
 
         match command {
@@ -1780,7 +1774,7 @@ impl CommandExecutor {
     async fn execute_export_assurance(
         command: &ExportAssuranceCommand,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::assurance_export::{
+        use cognicode_core::assurance_export::{
             API_VERSION, ExtractionCapabilities, MEDIA_TYPE_CBOR as COBOR_MEDIA_TYPE, ProducerInfo,
             WorkspaceInfo, encode_to_cbor_with_digest, encode_to_json_with_digest,
             extract_from_workspace,
@@ -1873,7 +1867,7 @@ impl CommandExecutor {
         // humana (capabilities producidas, gaps, digest). El digest se
         // computa aqui porque `envelope.digest` es vacio hasta que
         // `encode_to_cbor_with_digest` lo asigna en una copia interna.
-        use crate::assurance_export::digest_of;
+        use cognicode_core::assurance_export::digest_of;
         let digest_display = digest_of(&envelope);
         eprintln!(
             "schema: {} producer: {} v{} workspace: {} (rev {})",
@@ -1892,7 +1886,7 @@ impl CommandExecutor {
                 .values()
                 .filter(|c| matches!(
                     c,
-                    crate::assurance_export::CapabilityCompleteness::Unsupported { .. }
+                    cognicode_core::assurance_export::CapabilityCompleteness::Unsupported { .. }
                 ))
                 .count(),
             envelope.gaps.len(),
@@ -1912,9 +1906,7 @@ impl CommandExecutor {
         format: &str,
         cwd: &str,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::interface::cli::doctor::{
-            format_doctor_json, format_doctor_text, run_doctor_checks,
-        };
+        use crate::cli::doctor::{format_doctor_json, format_doctor_text, run_doctor_checks};
 
         let workspace_path = std::path::Path::new(cwd);
         let workspace_path = if workspace_path.exists() && workspace_path.is_dir() {
@@ -1932,10 +1924,10 @@ impl CommandExecutor {
 
         // The exit code follows the overall status.
         let exit_code = match report.overall_status() {
-            crate::interface::cli::doctor::DoctorStatus::Missing => 1,
-            crate::interface::cli::doctor::DoctorStatus::Ok
-            | crate::interface::cli::doctor::DoctorStatus::Warn
-            | crate::interface::cli::doctor::DoctorStatus::Info => 0,
+            crate::cli::doctor::DoctorStatus::Missing => 1,
+            crate::cli::doctor::DoctorStatus::Ok
+            | crate::cli::doctor::DoctorStatus::Warn
+            | crate::cli::doctor::DoctorStatus::Info => 0,
         };
 
         Ok(CommandOutput::Rendered {
@@ -1988,8 +1980,8 @@ impl CommandExecutor {
         path: &str,
         _recursive: bool,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::domain::traits::source_extractor::{SourceExtractor, SourcePath};
-        use crate::infrastructure::extraction::docs_extractor::DocsExtractor;
+        use cognicode_core::domain::traits::source_extractor::{SourceExtractor, SourcePath};
+        use cognicode_core::infrastructure::extraction::docs_extractor::DocsExtractor;
         use std::path::PathBuf;
 
         let path_buf = PathBuf::from(path);
@@ -2063,10 +2055,10 @@ impl CommandExecutor {
         repo: &str,
         _include_git_log: bool,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::domain::traits::source_extractor::{SourceExtractor, SourcePath};
-        use crate::infrastructure::extraction::issues_extractor::IssuesExtractor;
-        use crate::infrastructure::github::client::GitHubClient;
-        use crate::infrastructure::github::octocrab_client::OctocrabClient;
+        use cognicode_core::domain::traits::source_extractor::{SourceExtractor, SourcePath};
+        use cognicode_core::infrastructure::extraction::issues_extractor::IssuesExtractor;
+        use cognicode_core::infrastructure::github::client::GitHubClient;
+        use cognicode_core::infrastructure::github::octocrab_client::OctocrabClient;
         use std::sync::Arc;
 
         if owner.is_empty() {
@@ -2142,9 +2134,11 @@ impl CommandExecutor {
         format: &str,
         quiet: bool,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
-        use crate::interface::mcp::schemas::{FindUsagesOutput, UsageEntry};
-        use crate::interface::mcp::security::InputValidator;
+        use cognicode_core::application::services::analysis_service::{
+            AnalysisService, UsageSearchParams,
+        };
+        use cognicode_core::interface::mcp::schemas::{FindUsagesOutput, UsageEntry};
+        use cognicode_core::interface::mcp::security::InputValidator;
 
         // 1) Input validation: cwd exists.
         let cwd_path = PathBuf::from(cwd);
@@ -2185,7 +2179,7 @@ impl CommandExecutor {
                 context: u.context,
                 is_definition: u.is_definition,
                 surrounding_lines: u.context_lines.map(|c| {
-                    crate::interface::mcp::schemas::ContextLines {
+                    cognicode_core::interface::mcp::schemas::ContextLines {
                         before: c.before,
                         current: c.current,
                         after: c.after,
@@ -2202,9 +2196,13 @@ impl CommandExecutor {
             // precision + provider so the JSON presenter emits them in
             // the same shape as the MCP wire. The CLI text path ignores
             // these fields; the JSON path is the one that needs them.
-            precision: crate::interface::symbol_identity::precision_floor_for_tool("find_usages"),
-            provider: crate::interface::symbol_identity::default_provider_for_tool("find_usages")
-                .to_string(),
+            precision: cognicode_core::interface::symbol_identity::precision_floor_for_tool(
+                "find_usages",
+            ),
+            provider: cognicode_core::interface::symbol_identity::default_provider_for_tool(
+                "find_usages",
+            )
+            .to_string(),
         };
 
         // 4) Render the answer. The core does not write to the
@@ -2239,8 +2237,8 @@ impl CommandExecutor {
 
     /// Execute analyze subcommand
     async fn execute_analyze(path: &str) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::WorkspaceSession;
-        use crate::interface::mcp::security::InputValidator;
+        use cognicode_core::WorkspaceSession;
+        use cognicode_core::interface::mcp::security::InputValidator;
         use std::sync::Arc;
 
         let mut text = String::new();
@@ -2251,7 +2249,7 @@ impl CommandExecutor {
         // name `interface::mcp::security`. The session receives the port.
         let path_policy =
             Arc::new(InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]));
-        let capabilities = crate::interface::composition::default_capabilities(
+        let capabilities = cognicode_core::interface::composition::default_capabilities(
             std::path::Path::new(path),
             path_policy,
         );
@@ -2328,8 +2326,8 @@ impl CommandExecutor {
         new_name: Option<&str>,
         format: &str,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::WorkspaceSession;
-        use crate::interface::mcp::security::InputValidator;
+        use cognicode_core::WorkspaceSession;
+        use cognicode_core::interface::mcp::security::InputValidator;
         use std::sync::Arc;
 
         let path = ".";
@@ -2338,7 +2336,7 @@ impl CommandExecutor {
         // `execute_analyze` for the same shape.
         let path_policy =
             Arc::new(InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]));
-        let capabilities = crate::interface::composition::default_capabilities(
+        let capabilities = cognicode_core::interface::composition::default_capabilities(
             std::path::Path::new(path),
             path_policy,
         );
@@ -2378,7 +2376,7 @@ impl CommandExecutor {
                                 action: &'a str,
                                 applied: bool,
                                 success: bool,
-                                changes: Vec<crate::application::dto::ChangeEntry>,
+                                changes: Vec<cognicode_core::application::dto::ChangeEntry>,
                                 error: Option<&'a str>,
                             }
                             let doc = RefactorPreviewJson {
@@ -2498,11 +2496,13 @@ impl CommandExecutor {
         authorization_token: &str,
         format: &str,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::refactor::apply::{AuthorizationToken, apply, compute_workspace_state_digest};
         use chrono::Utc;
+        use cognicode_core::refactor::apply::{
+            AuthorizationToken, apply, compute_workspace_state_digest,
+        };
 
         // Carga el plan desde disco (B5.W1).
-        let plan = crate::refactor::plan::load_plan_from_file(plan_file).map_err(|e| {
+        let plan = cognicode_core::refactor::plan::load_plan_from_file(plan_file).map_err(|e| {
             format!(
                 "B5.W3: failed to read --plan-file {}: {}",
                 plan_file.display(),
@@ -2541,8 +2541,8 @@ impl CommandExecutor {
                 // La revalidacion dice que se verifico y que no: un apply
                 // que no dice nada sobre la verificacion se lee como si la
                 // hubiera hecho.
-                let revalidation = crate::refactor::revalidate::run_revalidation(
-                    &crate::refactor::revalidate::build_revalidation_plan(&plan, &outcome),
+                let revalidation = cognicode_core::refactor::revalidate::run_revalidation(
+                    &cognicode_core::refactor::revalidate::build_revalidation_plan(&plan, &outcome),
                     &workspace_root,
                 );
 
@@ -2556,7 +2556,7 @@ impl CommandExecutor {
                         committed: bool,
                         plan_id: uuid::Uuid,
                         applied_files: Vec<String>,
-                        revalidation: crate::refactor::revalidate::RevalidationReport,
+                        revalidation: cognicode_core::refactor::revalidate::RevalidationReport,
                     }
                     let doc = ApplyOkJson {
                         schema_version: "cognicode.refactor.apply/v1",
@@ -2598,12 +2598,12 @@ impl CommandExecutor {
     ///      tool emits, so the equivalence test in
     ///      `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`
     ///      can byte-compare JSON outputs.
-    #[cfg(feature = "evidence-cli-ladybug")]
+    #[cfg(feature = "ladybug")]
     async fn execute_evidence(
         cmd: &EvidenceCommand,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use crate::domain::ports::evidence_store::EvidenceKind;
-        use crate::interface::cli::evidence_backend;
+        use cognicode_core::application::evidence_backend;
+        use cognicode_core::domain::ports::evidence_store::EvidenceKind;
         use std::path::PathBuf;
 
         // Pull the per-invocation `--db-path` (if any) so the factory
@@ -2679,7 +2679,7 @@ impl CommandExecutor {
 /// `<cwd>/.cognicode/evidence.lbdb`. Created on first run by the
 /// adapter via `LadybugStore::open` (which initializes the schema
 /// idempotently).
-#[cfg(feature = "evidence-cli-ladybug")]
+#[cfg(feature = "ladybug")]
 fn default_evidence_db_path() -> std::path::PathBuf {
     let mut p = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     p.push(".cognicode");
@@ -2688,16 +2688,16 @@ fn default_evidence_db_path() -> std::path::PathBuf {
     p
 }
 
-#[cfg(feature = "evidence-cli-ladybug")]
-pub(crate) use crate::application::evidence_rows::render_evidence_rows_json;
+#[cfg(feature = "ladybug")]
+pub(crate) use cognicode_core::application::evidence_rows::render_evidence_rows_json;
 
 /// E1.W3 — Text (human) renderer for `cognicode evidence`.
-#[cfg(feature = "evidence-cli-ladybug")]
+#[cfg(feature = "ladybug")]
 fn render_evidence_rows(
-    rows: Vec<crate::domain::ports::evidence_store::EvidenceSummary>,
+    rows: Vec<cognicode_core::domain::ports::evidence_store::EvidenceSummary>,
     format: &str,
 ) -> String {
-    use crate::domain::ports::evidence_store::EvidenceKind;
+    use cognicode_core::domain::ports::evidence_store::EvidenceKind;
 
     if format == "json" {
         return format!("{}\n", render_evidence_rows_json(rows));
@@ -2727,14 +2727,14 @@ fn render_evidence_rows(
 }
 
 /// Prints the outline tree with indentation
-/// T1-5.3d: removed — moved to `crate::interface::cli::presenter`
+/// T1-5.3d: removed — moved to `crate::cli::presenter`
 /// alongside `present_index_result`, where the snapshot test can
 /// exercise the same recursion the bin does. The migration kept
 /// the byte-identical output; see `tests/t1_5_3d_index_presenter_snapshot.rs`.
 /// T1-5.3c — present an `IndexResult` to stdout.
 ///
 /// T1-5.3d moved the implementation to
-/// `crate::interface::cli::presenter::present_index_result`
+/// `crate::cli::presenter::present_index_result`
 /// (a `&mut dyn Write` parameter makes it testable from
 /// `tests/t1_5_3d_index_presenter_snapshot.rs`). T1-5.5
 /// moved the whole presenter to `cognicode_cli::presenter`
@@ -2755,7 +2755,7 @@ fn render_evidence_rows(
 /// The core returns it and the presenter writes it: a core that
 /// prints its own answer can interleave it with the document a
 /// consumer is parsing.
-fn render_text(out: &crate::interface::mcp::schemas::FindUsagesOutput) -> String {
+fn render_text(out: &cognicode_core::interface::mcp::schemas::FindUsagesOutput) -> String {
     let mut text = String::new();
     if out.usages.is_empty() {
         text.push_str("(no usages found)\n");
@@ -3051,9 +3051,9 @@ mod f0_1_find_usages_tests {
 /// command that shows one and hides the other tells half the truth.
 fn project_graph_of(
     dir: &std::path::Path,
-) -> Result<crate::interface::cli::project_graph::ProjectGraph, Box<dyn std::error::Error>> {
-    let built = crate::interface::cli::project_graph::project_graph(dir)
+) -> Result<cognicode_core::interface::project_graph::ProjectGraph, Box<dyn std::error::Error>> {
+    let built = cognicode_core::interface::project_graph::project_graph(dir)
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    crate::interface::cli::project_graph::warn_incomplete(&built);
+    cognicode_core::interface::project_graph::warn_incomplete(&built);
     Ok(built)
 }

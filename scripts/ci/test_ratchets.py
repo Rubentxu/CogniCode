@@ -231,6 +231,21 @@ def measured_files() -> list[str]:
     )
 
 
+def parse_renames(name_status: str) -> dict[str, str]:
+    """`new path -> old path` from `git diff -M --name-status` output.
+
+    A file that moved between crates keeps the size it had: measuring it as
+    "new" at its destination would make a move look like a file born over the
+    limit, and the ratchet would force a split nobody asked for.
+    """
+    moved: dict[str, str] = {}
+    for line in name_status.splitlines():
+        fields = line.split("\t")
+        if len(fields) == 3 and fields[0].startswith("R"):
+            moved[fields[2]] = fields[1]
+    return moved
+
+
 def base_sources(base: str) -> list[str]:
     """Same filter as `measured_files`, over the tree at `base` (moves-safe)."""
     listing = git("ls-tree", "-r", "--name-only", base, "crates")
@@ -271,8 +286,9 @@ def setup_size_and_homonyms() -> None:
         SIZE.files += 1
         SIZE.names += public_names(text)
     if SIZE.base:
+        moved = parse_renames(git("diff", "-M", "--name-status", SIZE.base, "--", "crates") or "")
         for rel in SIZE.oversize:
-            old = git("show", f"{SIZE.base}:{rel}")
+            old = git("show", f"{SIZE.base}:{moved.get(rel, rel)}")
             SIZE.base_sizes[rel] = None if old is None else production_lines(old)
         for rel in base_sources(SIZE.base):
             old = git("show", f"{SIZE.base}:{rel}")
@@ -295,6 +311,12 @@ def test_file_size_counting_stops_at_the_first_cfg_test() -> None:
     check(production_lines("a\nb\nc\n") == 3, "counts all lines without cfg(test)")
     check(production_lines("a\n    #[cfg(test)]\n") == 2, "indented cfg(test) is not a module boundary")
     check(production_lines("") == 0, "empty file is zero lines")
+
+
+def test_a_moved_file_is_measured_against_the_path_it_came_from() -> None:
+    moved = parse_renames("R094\tcrates/a/src/x.rs\tcrates/b/src/y.rs\nM\tcrates/a/src/z.rs\n")
+    check(moved == {"crates/b/src/y.rs": "crates/a/src/x.rs"}, f"renames: {moved}")
+    check(parse_renames("") == {}, "no output, no renames")
 
 
 def test_file_size_scan_found_sources() -> None:

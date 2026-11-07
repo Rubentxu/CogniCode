@@ -32,8 +32,8 @@
 
 use serde_json::{Map, Value};
 
-use cognicode_core::interface::cli::commands::{CommandExecutor, Format};
-use cognicode_core::interface::cli::result::CommandOutput;
+use cognicode_cli::cli::commands::{CommandExecutor, Format};
+use cognicode_cli::cli::result::CommandOutput;
 use cognicode_core::interface::goals;
 use cognicode_core::interface::hateoas::HandleContext;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
@@ -239,7 +239,7 @@ async fn the_cli_and_the_mcp_return_the_same_envelope() {
 
     // La terminal. El comando del goal ya es el comando: el primer
     // elemento de la lista es el nombre del binario, no un argumento.
-    let matches = goals::clap_command(goal)
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from([goal.name])
         .expect("the command reads its arguments");
     let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)
@@ -280,9 +280,7 @@ async fn the_cli_and_the_mcp_return_the_same_envelope() {
 #[test]
 fn cognicode_without_arguments_is_the_status_goal() {
     let goal = goals::find("status").expect("the registry declares the goal `status`");
-    let help = cognicode_core::interface::cli::cli_command()
-        .render_help()
-        .to_string();
+    let help = cognicode_cli::cli::cli_command().render_help().to_string();
 
     assert!(
         help.contains(goal.name),
@@ -292,7 +290,7 @@ fn cognicode_without_arguments_is_the_status_goal() {
 
     // El árbol de comandos acepta `status` como subcomando: el goal se
     // escribe en la terminal como se escribe en el cable.
-    let command = cognicode_core::interface::cli::cli_command();
+    let command = cognicode_cli::cli::cli_command();
     let matches = command
         .try_get_matches_from(["cognicode", "status"])
         .expect("the goal is a subcommand of the root");

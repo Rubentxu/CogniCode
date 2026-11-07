@@ -123,7 +123,7 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
     // contract that proves nothing.
     let inspected: &[(&str, &[&str])] = &[
         (
-            "src/interface/cli/capabilities.rs",
+            "../cognicode-cli/src/cli/capabilities.rs",
             &[
                 "fn build_capabilities_doc",
                 "fn resolve_product_assets_root",

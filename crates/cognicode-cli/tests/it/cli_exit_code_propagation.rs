@@ -236,7 +236,7 @@ fn navigate_with_wellformed_position_does_not_fail_on_missing_definition() {
 /// El cuerpo de `CommandExecutor::execute`, entre el `match &cli.command` y
 /// el `Ok(())` que lo cierra.
 fn dispatch_source() -> String {
-    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let path = common::repo_root().join("crates/cognicode-cli/src/cli/commands.rs");
     let text =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read commands.rs: {e}"));
 
@@ -365,7 +365,7 @@ fn every_dispatch_arm_is_accounted_for() {
          e6860cf9, scaffold propuesto — se llamaba `Inspect` hasta que el goal \
          `inspect` tomó ese nombre en TASK-84; propaga Ok(CommandOutput::Other) \
          y emite PROPOSED y el aviso de deprecación a stderr). Verifica con `grep Some\\ \
-         (CliCommand:: crates/cognicode-core/src/interface/cli/commands.rs`."
+         (CliCommand:: crates/cognicode-cli/src/cli/commands.rs`."
     );
     assert!(
         !arms.is_empty() && arms.iter().all(|n| !n.is_empty()),
@@ -381,7 +381,7 @@ fn every_dispatch_arm_is_accounted_for() {
 /// feature, aquí se nota, porque se lee el fichero entero.
 #[test]
 fn feature_gated_arms_still_propagate_in_source() {
-    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let path = common::repo_root().join("crates/cognicode-cli/src/cli/commands.rs");
     let text = std::fs::read_to_string(&path).expect("read commands.rs");
     let dispatch = dispatch_source();
 
@@ -535,7 +535,7 @@ fn no_arm_is_exempt_that_does_not_exist() {
 /// arriba: no es que el brazo trague el error, es que **no hay brazo**.
 #[test]
 fn every_cli_command_variant_has_a_dispatch_arm() {
-    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let path = common::repo_root().join("crates/cognicode-cli/src/cli/commands.rs");
     let text = std::fs::read_to_string(&path).expect("read commands.rs");
 
     let enum_start = text
@@ -761,7 +761,7 @@ fn is_multimodal_gated(lines: &[&str], declaration: usize) -> bool {
 /// Las seis llamadas, con la funcion que las contiene y si esa funcion esta
 /// cerrada por la feature que el binario publicado no enciende.
 fn measured_process_exits() -> Vec<(usize, String, bool)> {
-    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let path = common::repo_root().join("crates/cognicode-cli/src/cli/commands.rs");
     let text =
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read commands.rs: {e}"));
     let lines: Vec<&str> = text.lines().collect();

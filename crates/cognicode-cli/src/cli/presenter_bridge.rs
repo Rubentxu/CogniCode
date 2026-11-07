@@ -6,11 +6,11 @@
 //! byte-compatible con lo que `CommandExecutor::execute_graph`
 //! producía a mano (T1-5.5): ningún consumidor N−1 cambia.
 
-use crate::application::analysis_basis::{
+use crate::cli::result::{GraphResult, SkippedFile};
+use cognicode_core::application::analysis_basis::{
     AnalysisOutcome, AnalysisValue, GraphSource, OutcomeState,
 };
-use crate::interface::cli::result::{GraphResult, SkippedFile};
-use crate::interface::coverage::{PendingReferenceInfo, RejectedRelationInfo};
+use cognicode_core::interface::coverage::{PendingReferenceInfo, RejectedRelationInfo};
 
 /// Presenta un outcome de `graph.full` como `GraphResult::Full` N−1.
 ///
@@ -37,14 +37,16 @@ pub fn present_graph_full(
     rebuild: bool,
 ) -> GraphResult {
     let (symbols, dependencies, elapsed_ms, pending, rejected) = match outcome.value() {
-        Some(AnalysisValue::Graph(crate::application::analysis_basis::GraphValue::Full {
-            symbols,
-            dependencies,
-            elapsed_ms,
-            pending_references,
-            rejected_relations,
-            ..
-        })) => (
+        Some(AnalysisValue::Graph(
+            cognicode_core::application::analysis_basis::GraphValue::Full {
+                symbols,
+                dependencies,
+                elapsed_ms,
+                pending_references,
+                rejected_relations,
+                ..
+            },
+        )) => (
             *symbols,
             *dependencies,
             *elapsed_ms,
@@ -66,7 +68,7 @@ pub fn present_graph_full(
             .iter()
             .filter(|gap| {
                 gap.capability.as_deref()
-                    == Some(crate::application::analysis_basis::SKIPPED_FILE_CAPABILITY)
+                    == Some(cognicode_core::application::analysis_basis::SKIPPED_FILE_CAPABILITY)
             })
             .filter_map(|gap| {
                 // El gap message llega como "path: reason" cuando

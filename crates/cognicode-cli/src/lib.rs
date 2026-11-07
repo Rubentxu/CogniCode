@@ -14,10 +14,12 @@
 //!
 //! Public surface (intentionally minimal):
 //! - `presenter`: text + JSON dispatch for `CommandOutput`.
+//! - `cli`: the command line (arguments, commands, results, doctor).
 //! - `identity`: B1.W2 — version + source SHA + compiled features.
 
 pub use cognicode_core;
 
+pub mod cli;
 pub mod identity;
 pub mod lifecycle;
 pub mod presenter;

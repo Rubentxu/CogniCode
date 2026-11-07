@@ -28,7 +28,7 @@ use crate::source_scan::{declares_word, rust_sources};
 /// The three surfaces that ask the impact question.
 const SURFACES: [&str; 3] = [
     "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
-    "crates/cognicode-core/src/interface/cli/commands.rs",
+    "crates/cognicode-cli/src/cli/commands.rs",
     "crates/cognicode-core/src/application/workspace_session.rs",
 ];
 

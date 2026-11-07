@@ -324,7 +324,7 @@ fn catalog_candidate_paths() -> Vec<PathBuf> {
 /// Resolve the directory that holds the running product's own data.
 ///
 /// **This is the single source of truth for product-asset location.**
-/// `crate::interface::cli::commands::resolve_product_assets_root`
+/// `cognicode_cli::cli::commands::resolve_product_assets_root`
 /// delegates here; so does the MCP catalogue. Two resolvers with two
 /// answers is how an installed server ends up advertising an empty
 /// tool catalogue while the CLI works perfectly against the same

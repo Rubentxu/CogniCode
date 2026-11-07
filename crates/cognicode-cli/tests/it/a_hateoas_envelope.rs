@@ -25,7 +25,7 @@
 
 use serde_json::{Map, Value, json};
 
-use cognicode_core::interface::cli::follow_ups;
+use cognicode_cli::cli::follow_ups;
 use cognicode_core::interface::hateoas::{
     HandleContext, HandleKind, envelope_for, mint_handle, verify_handle,
 };
@@ -521,7 +521,7 @@ fn the_cli_prints_links_as_commands_its_own_tree_accepts() {
         "the reindex link is a copyable command: {commands:?}"
     );
 
-    let tree = cognicode_core::interface::cli::goal_command::cli_command();
+    let tree = cognicode_cli::cli::goal_command::cli_command();
     for command in &commands {
         let mut argv = vec!["cognicode"];
         argv.extend(command.split_whitespace().skip(1));

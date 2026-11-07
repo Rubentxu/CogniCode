@@ -50,7 +50,7 @@ use crate::source_scan::{declares_word, rust_sources};
 /// published a different list on every run.
 const SURFACES: [(&str, &[&str]); 5] = [
     (
-        "crates/cognicode-core/src/interface/cli/commands.rs",
+        "crates/cognicode-cli/src/cli/commands.rs",
         &[
             "hot_paths",
             "entry_points",
