@@ -38589,3 +38589,17 @@ Punteros: solo el `Run:` del propio fichero retirado; ningún otro fichero lo ci
 Sin compilar, sin suites; no se lanzó el gate. Base: `test_a_branch_checkout_still_names_its_branch` ya fallaba en el original del preflight, también ejecutado desde el checkout principal (un checkout en `main` resuelve la ref a vacío); el nuevo falla esa misma prueba y nada más (1 / lane 0 / preflight 1). Es un rojo previo de entorno que esta unidad no toca ni arregla. Mutaciones del sujeto (incremento nuevo / lane / preflight): ratchet de `passed` sin disparo en `preflight-clean-clone.sh` +2/0/+2; ratchet invertido +4/0/+4; `exit 1`→`exit 0` en `check-built-binary.sh` +1/+1/0; costura `--print-clone-ref` retirada +2/0/+2. Descartado el control `exit 2`→`exit 0` en `run-target-binary.sh` (0/0/0: ninguna prueba lo observa). Restaurado con `cp -p`, `touch` y `cmp`.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## TASK-74 (parte 23) — el contrato de coherencia del ROADMAP absorbe el del libro mayor y la misión
+
+`scripts/ci/test_ledger_and_mission_declarations.py` (518 líneas) se fusiona como «Parte 4» en `scripts/ci/test_roadmap_coherence.py`, que ya llevaba la coherencia del ROADMAP (partes 1 y 2) y la sección 11 (parte 3). Tema común: lo que el ROADMAP y `goal-compass.json` declaran frente a lo que existe. Quedan 22 ficheros `test_*.py`.
+
+Colisiones: `REPO_ROOT` y `ROADMAP` (idénticos, compartidos), `_read()` (renombrada `_read_declaration()` porque la del destino lee otra cosa) y `main` (se conserva el del destino, que recorre los `test_*` del módulo). Se añade `import json`. La docstring del libro mayor se traslada a la del módulo y su línea `Ejecutar:` apunta al fichero destino.
+
+Punteros: `odd/tasks/2026-Q4-work-loop.md` citaba el fichero retirado y ahora cita el destino; las menciones históricas del JOURNAL no se tocan.
+
+### Pruebas
+
+Sin compilar, sin suites; no se lanzó el gate. Base: el original de coherencia ya fallaba 4 pruebas ejecutado desde `main` (las dos de `CURRENT.md` y las dos de §11, por el texto de recibos previos); el del libro mayor, 0. El nuevo falla esas mismas 4 y nada más (4 / coherencia 4 / libro mayor 0). Rojos previos que esta unidad no toca ni arregla. Mutación del sujeto: `goal-compass.json` con JSON roto: las 6 pruebas de la misión que fallaban en el original también fallan en el nuevo (2 `FAIL` y 4 `ERROR` por excepción, que el `main` de coherencia registra aparte). Descartados los controles `"evidence"`→`"evidenceX"` y un cambio de estado en `odd/tasks/2026-Q4-work-loop.md` (0/0/0: ninguna prueba los observa). Restaurado con `cp -p`, `touch` y `cmp`.
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
