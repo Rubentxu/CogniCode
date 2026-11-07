@@ -302,7 +302,7 @@ su cierre técnico está verificado. Ver
 > (WUs, UAT/AAT, referencias, criterios de cierre) vive en el documento
 > enlazado.
 >
-> Contrato de coherencia: `python3 scripts/ci/test_roadmap_version_ratchet.py`
+> Contrato de coherencia: `python3 scripts/ci/test_roadmap_coherence.py`
 > pinea que la versión del workspace aparece aquí o en `JOURNAL.md` reciente,
 > y que `CURRENT.md` no tiene más de 14 días sin regenerarse.
 
