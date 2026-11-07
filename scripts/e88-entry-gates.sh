@@ -12,8 +12,8 @@ rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK"
 echo "== [0] clean env, fresh download of public cogh =="
 env -u COGNICODE_BUNDLE_MANIFEST -u COGNICODE_API_BASE_URL -u COGNICODE_ASSET_BASE_URL -u COGNICODE_RELEASE_BASE_URL true
 
-curl -fsSLO "https://github.com/$REPO/releases/download/$TAG/cogh-$VER-x86_64-unknown-linux-gnu.tar.gz"
-curl -fsSLO "https://github.com/$REPO/releases/download/$TAG/SHA256SUMS"
+curl -fsSLO --connect-timeout 10 --max-time 300 "https://github.com/$REPO/releases/download/$TAG/cogh-$VER-x86_64-unknown-linux-gnu.tar.gz"
+curl -fsSLO --connect-timeout 10 --max-time 300 "https://github.com/$REPO/releases/download/$TAG/SHA256SUMS"
 grep "cogh-$VER-x86_64-unknown-linux-gnu.tar.gz" SHA256SUMS | sha256sum -c -
 tar xzf "cogh-$VER-x86_64-unknown-linux-gnu.tar.gz"
 COGH="$WORK/bin/cogh"
@@ -27,7 +27,7 @@ echo "version: $V"
 echo "== [E88-G0a] product install resolves a PUBLIC release (not DEV fixture) =="
 export HOME="$WORK/home"; mkdir -p "$HOME"
 # Real bootstrap journey first: public install.sh creates ~/.cognicode/bin (Layer 0).
-curl -fsSL "https://raw.githubusercontent.com/$REPO/$TAG/install.sh" -o install.sh
+curl -fsSL --connect-timeout 10 --max-time 300 "https://raw.githubusercontent.com/$REPO/$TAG/install.sh" -o install.sh
 sh install.sh > /dev/null
 [ -x "$HOME/.cognicode/bin/cogh" ] || { echo "FAIL bootstrap: install.sh"; exit 1; }
 OUT="$($COGH install mcp-server --version $VER --profile reviewer 2>&1)"

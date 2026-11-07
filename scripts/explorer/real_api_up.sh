@@ -7,7 +7,7 @@ PORT="${1:-8010}"
 PID_FILE="$TMP_DIR/api.pid"
 LOG_FILE="$TMP_DIR/api.log"
 
-if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+if curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
   echo "✅ Explorer API already running on :${PORT}"
   exit 0
 fi
@@ -23,7 +23,7 @@ DATABASE_URL="$DB_URL" nohup "$ROOT_DIR/target/debug/explorer-api" \
 echo $! > "$PID_FILE"
 
 for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
     echo "✅ Explorer API ready on http://127.0.0.1:${PORT}"
     exit 0
   fi

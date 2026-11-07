@@ -15,7 +15,7 @@ BEFORE="$(tracked_status)"
 ensure_pg
 bash "$(cd "$(dirname "$0")" && pwd)/real_api_up.sh" "$PORT" >/dev/null
 
-curl -fsS -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
+curl -fsS --connect-timeout 5 --max-time 60 -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
   -H "Content-Type: application/json" \
   -d "{\"root_path\":\"$WORKSPACE\"}" \
   > "$TMP_DIR/workspace.json"
@@ -23,14 +23,14 @@ curl -fsS -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \
 WORKSPACE_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$TMP_DIR/workspace.json")"
 echo "Workspace: $WORKSPACE_ID"
 
-curl -fsS -X POST "http://127.0.0.1:${PORT}/api/workspaces/${WORKSPACE_ID}/scan" \
+curl -fsS --connect-timeout 5 --max-time 60 -X POST "http://127.0.0.1:${PORT}/api/workspaces/${WORKSPACE_ID}/scan" \
   > "$TMP_DIR/scan-start.json"
 
 JOB_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["job_id"])' "$TMP_DIR/scan-start.json")"
 echo "Scan job: $JOB_ID"
 
 for _ in $(seq 1 240); do
-  curl -fsS "http://127.0.0.1:${PORT}/api/jobs/${JOB_ID}" > "$TMP_DIR/scan-status.json"
+  curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/api/jobs/${JOB_ID}" > "$TMP_DIR/scan-status.json"
   STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$TMP_DIR/scan-status.json")"
   if [[ "$STATUS" == "Completed" || "$STATUS" == "completed" ]]; then
     break

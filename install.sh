@@ -51,7 +51,7 @@ api="https://api.github.com/repos/$REPO"
 tag="${COGNICODE_VERSION:-}"
 if [ -z "$tag" ]; then
   # Latest stable release (gh /releases/latest excludes drafts and prereleases).
-  tag="$(curl -fsSL "$api/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  tag="$(curl -fsSL --connect-timeout 10 --max-time 30 "$api/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
   [ -n "$tag" ] || fail "cannot resolve latest release from $api/releases/latest"
 fi
 case "$tag" in
@@ -70,7 +70,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 archive="$tmpdir/$asset"
 
 log "install.sh: downloading $asset_url"
-curl -fsSL --retry 3 -o "$archive" "$asset_url" || fail "download failed: $asset_url"
+curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "$archive" "$asset_url" || fail "download failed: $asset_url"
 
 # Non-empty archive: a partial download must never proceed.
 [ -s "$archive" ] || fail "downloaded archive is empty (partial download?)"
@@ -78,7 +78,7 @@ curl -fsSL --retry 3 -o "$archive" "$asset_url" || fail "download failed: $asset
 # --- 4. Checksum verification (fail closed) --------------------------------
 # Fetch SHA256SUMS from the same release; it is the public digest surface.
 sums="$tmpdir/SHA256SUMS"
-curl -fsSL --retry 3 -o "$sums" "$base/SHA256SUMS" \
+curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 -o "$sums" "$base/SHA256SUMS" \
   || fail "cannot download SHA256SUMS from $base — refusing to install without a checksum (fail closed)"
 
 expected="$(grep " $asset\$" "$sums" | awk '{print $1}')"

@@ -96,7 +96,7 @@ url="https://github.com/sigstore/cosign/releases/download/v${COGNICODE_COSIGN_VE
 echo "descargando ${url}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
-curl -sSfL -o "${tmp}/cosign" "${url}" \
+curl -sSfL --connect-timeout 10 --max-time 300 -o "${tmp}/cosign" "${url}" \
     || die "no se pudo descargar ${url}" \
            "El lane necesita red para fijar la herramienta. Una vez instalada, ya no."
 
