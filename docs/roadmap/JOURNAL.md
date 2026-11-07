@@ -38407,3 +38407,15 @@ Sin cargo ni suites; no se lanzó el gate. Base: nuevo 1 fallo, ratchet 0, clone
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones de los fuentes Rust (fallos nuevo / corte / rechazo): helper `floor_char_boundary` no público 1/1/0; `text_boundary` no público en `application/mod.rs` 1/1/0; `content.get(offset..)`→`content[offset..]` 2/2/0; presenter sin `truncate_at_boundary` 1/1/0; `AppError::InternalError(` en un handler 1/0/1; `instrument_tool` devolviendo `Result<T, ToolError>` 1/0/1; un caso de la tabla de frontera renombrado 1/0/1. Descartada una mutación 0/0/0 (renombrar `instrument_tool` a `instrument_toolx`: la subcadena sigue presente). El nuevo falla exactamente la suma de los originales en las siete. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 9): los dos contratos de rutas que deben existir son uno
+
+### Qué cambió
+
+`test_build_scripts_watch_paths_that_exist.py` (68 líneas) y `test_executable_config_cites_no_absent_document.py` (273) se fusionan en `scripts/ci/test_paths_that_must_exist.py` (334): 341 → 334 líneas, 2 ficheros → 1 (36 en `scripts/ci`). Comparten el defecto de fondo (una ruta que no está) pero **no un sujeto único**: la sección I vigila los `build.rs` de `cognicode-core` y `cognicode-cli`; la II, las configuraciones ejecutables (`scripts/*.sh`, `apps/explorer-ui`, `*.pipeline.kts`). Las 6 comprobaciones (2 y 4) conservan su nombre y sus fallos cerrados; `REPO` y `REPO_ROOT` eran la misma ruta y queda `REPO_ROOT`; el `main()` unifica los dos estilos (`check` que acumula y `assert` que lanza) y devuelve 1 ante cualquiera de ellos. Prefijo `test_` conservado para el glob de `run-all-contracts.sh`. Sin punteros vivos que actualizar: solo la línea «Run:» de la docstring.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0, originales rc 0. Mutaciones del sujeto (rc nuevo / build / config): `cargo:rerun-if-changed=../../.git/HEAD` en el `build.rs` del core 1/1/0; ruta `.git/index` en el del CLI 1/1/0; cita `"docs/inventory/nope.md"` en `scripts/test-gate.sh` 1/0/1; nombre `.md` inexistente en `preflight-clean-clone.sh` 1/0/1; cita en `vite.config.ts` 1/0/1. Control 0/0/0 (la misma línea de `.git` comentada con `//`) descartado como no discriminante y conservado como prueba de que el detector ignora comentarios. En las citas rotas el nuevo falla los mismos dos tests que el original de configuración. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
