@@ -260,6 +260,11 @@ def run_files_parallel(jobs: int, files: list[str]) -> int:
 
     results: dict[str, subprocess.CompletedProcess[str]] = {}
 
+    # El destino del informe es del runner padre. Un contrato que lanza un runner
+    # anidado que falla a proposito no puede heredarlo: dejaria un informe falso
+    # en cada suite verde y enterraria el de un fallo real.
+    child_env = {k: v for k, v in os.environ.items() if k != "CONTRACTS_FAILURE_REPORT"}
+
     def _run(raw: str) -> tuple[str, subprocess.CompletedProcess[str]]:
         try:
             done = subprocess.run(
@@ -268,6 +273,7 @@ def run_files_parallel(jobs: int, files: list[str]) -> int:
                 text=True,
                 check=False,
                 timeout=SUITE_DEADLINE_S,
+                env=child_env,
             )
         except subprocess.TimeoutExpired:
             done = subprocess.CompletedProcess(

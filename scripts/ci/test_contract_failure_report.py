@@ -116,3 +116,23 @@ def test_the_report_builder_is_pure_over_its_inputs() -> None:
     )
     assert "test_x.py" in text and "rc=3" in text and "OUT" in text and "ERR" in text, text
     assert "loadavg: 1.0 2.0 3.0" in text and "free_bytes: 42" in text, text
+
+
+def test_a_contract_does_not_inherit_the_report_destination() -> None:
+    """Los contratos lanzan runners anidados que fallan a proposito. Si heredan
+    `CONTRACTS_FAILURE_REPORT`, cada suite verde deja un informe falso que
+    entierra el de un fallo real."""
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = Path(tmp)
+        probe = directory / "test_probe.py"
+        probe.write_text(
+            "import os\n"
+            "def test_variable_is_absent():\n"
+            "    assert 'CONTRACTS_FAILURE_REPORT' not in os.environ\n",
+            encoding="utf-8",
+        )
+        _, passing = write_contracts(directory)
+        report = directory / "report.txt"
+        done = run_runner([probe, passing], report)
+        assert done.returncode == 0, (done.stdout, done.stderr)
+        assert not report.exists()
