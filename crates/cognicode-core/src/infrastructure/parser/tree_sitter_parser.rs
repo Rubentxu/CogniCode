@@ -215,7 +215,13 @@ impl TreeSitterParser {
             let is_class = if by_sets {
                 declared.class_types.contains(&kind)
             } else {
+                // Rust declares its types in four nodes, and the single
+                // `class_node_type` names only the first: an `enum` or a
+                // `trait` would be in the file and not in the symbols,
+                // and `find` would answer "not there" for a type that is.
                 kind == class_type
+                    || (self.language == Language::Rust
+                        && matches!(kind, "enum_item" | "trait_item" | "union_item"))
             };
 
             // Rust treats `let`/`const`/`static` as variable-shaped
