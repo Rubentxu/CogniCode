@@ -82,6 +82,7 @@ proporcionan distintas experiencias de usuario sobre los mismos servicios.
 | 2026-10-12 | release | `e496cd5a` | bump 0.101.12 → 0.101.13; golden CBOR regen. |
 | 2026-10-12 | veredicto | `af2b9077` | per MERGE-GATE-BYPASS-POLICY §4. |
 | 2026-10-12 | tag | v0.101.13 | anotado + pushed + GitHub Release con 3 tarballs. |
+| 2026-11-07 | TASK-84 | `ffa1bd02` | El scaffold `cognicode inspect` (PROPOSED, B3.W5) pasa a ser `cognicode intent`: el goal `inspect` toma el nombre publicado, y cada corrida del comando imprime el aviso de que el nombre cambió. La fila se añade **sin tocar las anteriores**: el histórico de B3 sigue siendo el que se midió entonces. Con esto queda cerrado el AC2 de TASK-82 —los 78 nombres antiguos como alias con aviso de deprecación—: los 78 se publican en el perfil `legacy` con su aviso, y los 13 que un goal sustituye nombran al goal que contesta la misma pregunta. |
 
 ### B3 cierre
 

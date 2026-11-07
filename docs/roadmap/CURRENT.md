@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7` (la
+> **Snapshot**: 2026-11-07, sobre `ffa1bd0252425dcee0cbd246ff46d11bc372a9a1` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -237,9 +237,11 @@
 > a 79 tools **sin retirar ninguna**, y la captura del runtime —regenerada con
 > el binario de tres features— coincide byte a byte con la que ya lo traía; y
 > AC2 —los 78 nombres antiguos registrados como alias con aviso de
-> deprecación— **sigue abierta**, porque un alias traduce un nombre a un goal
-> y el vocabulario de los nueve goals es TASK-84: lo que esta unidad entrega
-> es el mecanismo y el primer goal montado;
+> deprecación— **queda cerrado**: los 78 nombres se publican en el perfil
+> `legacy` con su aviso, y los 13 que un goal sustituye nombran al goal que
+> contesta la misma pregunta —los otros 65 dicen la verdad: que la
+> superficie de goals todavía no contesta esa pregunta y que la tool la
+> calcula—;
 > y la respuesta ya es un **sobre**: cada respuesta dice QUÉ encontró, SOBRE QUÉ
 > se apoya, QUÉ dejó fuera y QUÉ se puede hacer ahora; el sobre tiene un solo
 > dueño (`interface/hateoas.rs`) y las dos superficies lo adaptan sin decir
@@ -260,22 +262,42 @@
 > el grafo, no el índice de símbolos—, la dirección de la jerarquía se lee
 > del enlace en vez de estar escrita, y el motivo de un enlace cuenta en
 > palabras («1 file», no «1 files»);
+> y los nueve goals ya son un vocabulario con un dueño: un goal es lo que un
+> consumidor **pide** y una tool es lo que el producto **calcula**, así que el
+> registro (`interface::goals::GoalSpec`) declara una vez cada goal —nombre,
+> título, descripción con ejemplos, autoridad, fase mínima, dueño, argumentos
+> y los nombres legados que sustituye— y de ahí salen las cuatro superficies;
+> los nueve —`status`, `context`, `find`, `inspect`, `trace`, `impact`,
+> `overview`, `audit` y `change`— se montan sobre los dueños que ya
+> calculaban eso, sin recalcular nada; y la superficie que el servidor
+> anuncia la decide un perfil —`default`, `full`, `legacy`—, con una regla
+> que tiene un solo dueño: la fase mínima del goal, de modo que un goal
+> nuevo que declara su fase sabe si sale por defecto; medido: el perfil por
+> defecto anuncia **cinco goals** y la lista pesa **4.350 bytes** por el
+> cable —el presupuesto es de 6 KB—, porque los goals no publican
+> `outputSchema`: con el esquema del sobre bajo cada uno, la lista pesaría
+> entre 26.420 y 65.890 bytes; el perfil `legacy` publica las 78 tools con
+> el aviso que nombra al goal que las sustituye, y ese aviso lo declara el
+> goal, no el perfil; y `cognicode` sin argumentos ya es el goal `status`: la
+> raíz del producto; medido en vivo: el sobre que imprime la terminal y el
+> que publica el cable son **idénticos** —las mismas seis claves con los
+> mismos valores—, y un servidor de sólo lectura **no anuncia** `change`
+> (83 entradas en vez de 87);
 > Versión del workspace: `0.101.31`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`5235eacb` → `2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7`)
+## Qué cambió desde el snapshot anterior (`2d43f7bf` → `ffa1bd0252425dcee0cbd246ff46d11bc372a9a1`)
 
-Entre una punta y otra entraron **3 commits** (`git rev-list --count 5235eacb79b3cf31e50105511dc504939b4e0310..2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7`).
+Entre una punta y otra entraron **2 commits** (`git rev-list --count 2d43f7bf18e55ed8e7c54a6fec09e943deac4cd7..ffa1bd0252425dcee0cbd246ff46d11bc372a9a1`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commit está medido.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El recibo de TASK-82 | `f87aa02a` (TASK-82) | El recibo append-only de la unidad anterior —el registro de goals y el goal `status`—, con su RED anti-vacuitad medido perturbando el producto (**1 rojo** con el título del maestro perturbado, **2 rojos** con el valor por defecto del struct perturbado) y con la lista de lo que el contrato **no** comprueba. |
-| La respuesta es un sobre | `5e17cc9d` (TASK-83) | Cada respuesta lleva ahora el resultado, la base que lo sostiene (cobertura, frescura, aristas confirmadas por LSP), el presupuesto (lo que quedó fuera) y los enlaces (qué se puede hacer ahora, con los argumentos rellenos). El sobre tiene **un solo dueño** (`interface/hateoas.rs`) y las dos superficies lo adaptan sin decir cosas distintas: el MCP lo publica en `structuredContent` y el CLI lo imprime como órdenes copiables; los handles (`sym:`, `page:`, `plan:`) van firmados y anclados, con un tag de integridad del payload, y el adaptador los resuelve **antes** del despacho. Medido: `4987 tests run: 4987 passed, 3 skipped`, `336 checks, 0 fallos` en los contratos, clippy y fmt en verde, la captura del runtime con 79 tools y 17 con contrato coincidiendo byte a byte con el maestro, y el RED anti-vacuitad medido perturbando el producto cinco veces (**1 rojo** cada una: el veredicto, el tag de integridad, el recuento de agujeros, el umbral de fan-in y el `BasisDto` del maestro). La cláusula de compatibilidad se mantiene: `content[0]` sigue llevando el payload byte a byte. |
-| El reindexado reconstruye el grafo, y su motivo cuenta en palabras | `2d43f7bf` (TASK-83) | La proyección del sobre en la terminal decía dos cosas que no eran ciertas: el enlace del reindexado se imprimía como `cognicode index build` —que construye el índice de símbolos, no el grafo— y la dirección de la jerarquía estaba fija en `--direction in` en vez de leerse del enlace; además, la construcción del grafo —la respuesta que más huecos declara— no se proyectaba, y el motivo de un enlace contaba sin leer («1 files»). Medido: el radio lo decidió `scripts/gate_scope.py` (`touched=cognicode-cli cognicode-core`, ocho paquetes en el `test-scope`, `mutant-scope` vacío, `calendar=waits`), **4454** tests unitarios y **6590** de integración en verde, contratos y clippy en verde, y el RED medido con el código anterior restaurado byte a byte (**4 rojos**: la orden del reindexado, la dirección fija, el motivo sin contar y la construcción sin proyectar; el control negativo —una construcción completa **no** imprime siguiente paso— pasa antes y después). En vivo: `cognicode graph full .` sobre un árbol con un fichero ilegible imprime `cognicode graph full --rebuild . — 1 file, 0 references and 0 relations were left out of the answer`, y la orden impresa se ejecutó con `rc=0`. |
+| El recibo de TASK-83 | `e66f693a` (TASK-83) | El recibo append-only de la unidad anterior —el sobre de la respuesta: el resultado, su base, su presupuesto y los enlaces—, con su RED anti-vacuitad medido perturbando el producto cinco veces (**1 rojo** cada una: el veredicto, el tag de integridad, el recuento de agujeros, el umbral de fan-in y el `BasisDto` del maestro) y con la lista de lo que el contrato **no** comprueba. |
+| Los nueve goals, los perfiles y `status` como raíz | `ffa1bd02` (TASK-84) | Un goal es lo que un consumidor pide y una tool es lo que el producto calcula: los nueve goals —`status`, `context`, `find`, `inspect`, `trace`, `impact`, `overview`, `audit` y `change`— se montan sobre los dueños que ya calculaban eso, sin recalcular nada, y la superficie que el servidor anuncia la decide un perfil —`default`, `full`, `legacy`— con una regla que tiene un solo dueño: la fase mínima del goal, de modo que un goal nuevo que declara su fase sabe si sale por defecto. Medido: el perfil por defecto anuncia **cinco goals** y la lista pesa **4.350 bytes** por el cable —el presupuesto es de 6 KB—, porque los goals no publican `outputSchema`: con el esquema del sobre bajo cada uno, la lista pesaría entre 26.420 y 65.890 bytes; el perfil `legacy` publica las 78 tools con el aviso que nombra al goal que las sustituye, y ese aviso lo declara el goal, no el perfil; `cognicode` sin argumentos ya es el goal `status`; y en vivo: el sobre que imprime la terminal y el que publica el cable son **idénticos**, y un servidor de sólo lectura **no anuncia** `change` (83 entradas en vez de 87). Verde: **6.933 tests** del workspace (0 en rojo), **336 checks** de contrato (0 fallos), clippy y fmt limpios, y los ratchets de tamaño de fichero y de CR-06 en pie. |
 
 ## Release: la última publicada es la v0.101.30
 
