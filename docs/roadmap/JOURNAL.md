@@ -38873,3 +38873,17 @@ Gate NOT_RUN: el lote lleva 5 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 1
 **Verificación.** Contratos de consumidor del instalador y `test_roadmap_coherence.py` verdes; `bash scripts/ci/run-all-contracts.sh` `rc=0`.
 
 Gate NOT_RUN: el lote lleva 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162, 163).
+
+## 2026-11-07 — Rust: la regla dura 7 no deja deuda que justifique tarea (medición, sin tarea)
+
+**Medido.** Con el backlog ejecutable vacío (solo TASK-94 y TASK-158, fuera de alcance), se midió la regla dura 7 en tests de Rust. Comando: `git ls-files 'crates/**/*.rs' 'apps/**/*.rs' | grep -v '^crates/spike-ladybug/' | xargs grep -lE '\.spawn\(\)'`, y por cada fichero `grep -qE 'timeout|deadline|try_wait|Instant::now|recv_timeout'`. Resultado: 17 ficheros con `.spawn()`; 16 llevan señal de plazo (`recv_timeout`, bucles con `deadline`, `tokio::time::timeout`). La búsqueda es por fichero, no por llamada; los de `cognicode-mcp` y `cognicode-cli` se revisaron a mano.
+
+**Fuera de alcance.** `crates/spike-ladybug` (`s3_*`, `s4_*` leen sin plazo) está en `exclude` del `Cargo.toml` raíz: ni el gate ni el radio lo ven.
+
+**Único caso sin plazo.** `crates/cognicode-cli/src/cmd/release_test_support.rs:88`: `read_line` sobre el stdout de un servidor `python3` que imprime el puerto justo tras enlazar. Si python muere, `read_line` devuelve EOF y falla de inmediato; colgarse exige un proceso vivo y callado, implausible.
+
+**Decisión.** No se crea tarea ni contrato por `syn`: una llamada de riesgo bajo y ningún patrón repetido no justifica el coste (sería fabricar trabajo). Se reabre si aparece un cuelgue real o un segundo caso.
+
+**Verificación.** Solo documentación; `test_roadmap_coherence.py` y `bash scripts/ci/run-all-contracts.sh` antes del PR.
+
+Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40` (TASK-157, 159, 160, 161, 162, 163); esta entrada no cuenta como tarea.
