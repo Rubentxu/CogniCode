@@ -15,9 +15,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::domain::findings::Finding;
+use crate::domain::intent::ToolRef;
+use crate::domain::symbol_identity::SymbolId;
 use crate::interface::catalog::load_tool_catalog;
-use crate::interface::intent::ToolRef;
-use crate::interface::symbol_identity::SymbolId;
 
 /// Razon canonica, constante y estaticamente anclada, por la que
 /// una consulta compuesta nunca produce un veredicto. Es parte del

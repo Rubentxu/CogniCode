@@ -97,6 +97,7 @@ mod h28_refused_writes_leave_nothing_and_edits_are_simultaneous;
 mod h43_no_invented_local_homonym_edges;
 mod iac_query_answers_with_the_edge_it_has;
 mod iac_query_speaks_the_domain_vocabulary;
+mod identity_and_intent_belong_to_the_domain;
 mod inc007_integration;
 mod inherits_edges_without_lsp;
 mod inherits_goldens_without_lsp;

@@ -71,11 +71,13 @@ pub mod federation;
 // Hexagonal "driven" ports for the Generic Graph Layer.
 // `GraphRepository` / `GraphError` / `GraphResult` / `SearchPage`
 // are available in the default build (multimodal gates WRITE only).
+pub mod intent;
 pub mod investigation;
 pub mod investigation_store;
 pub mod plan;
 pub mod ports;
 pub mod services;
+pub mod symbol_identity;
 pub mod traits;
 pub mod value_objects;
 
