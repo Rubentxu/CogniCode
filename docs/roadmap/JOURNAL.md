@@ -38383,3 +38383,15 @@ Sin cargo. Base verde: nuevo 15 passed, originales 9 y 6 passed, rc 0. Mutacione
 Única unidad con `cargo metadata` (el fixture de `gate_scope` es un workspace real), autorizada por el operador solo para esta unidad; no se lanzó el gate ni ninguna suite. Base verde: nuevo rc 0, originales rc 0. Mutaciones (rc nuevo / gate_scope / presupuesto): cierre inverso reemplazado por los paquetes tocados 1/1/0; veredicto del calendario invertido 1/1/0; `undetermined`→`determined` 1/1/0; calendario incierto→`waits` 1/1/0; `MUTANTS_JOBS=1`→`8` 1/1/1; `MUTANT_CALENDAR_EVERY_N=abc` 1/1/0; presupuesto del dueño duplicado 1/0/1; techo del runner a 20 GiB 1/0/1; `gitignore=false` en la ruta focal 1/0/1; `AGENTS.md` sin nombrar `mutate-file.sh` 1/0/1. El nuevo falla en las diez y reproduce la unión de lo que cazan los originales. Ficheros restaurados (`cp -p`, `touch`, `cmp`). `run_contract_tests.py` sobre el nuevo: 16 passed.
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 7): los dos contratos del preflight son uno
+
+### Qué cambió
+
+`test_preflight_passed_ratchet.py` (272 líneas) y `test_preflight_clone_ref.py` (310) se fusionan en `scripts/ci/test_preflight_contracts.py` (532): 582 → 532 líneas, 2 ficheros → 1 (38 en `scripts/ci`). Los dos vigilan `scripts/ci/preflight-clean-clone.sh` por sus dos costuras baratas. Las 12 comprobaciones (7 del ratchet de `passed`, 5 de la referencia del clon) conservan su nombre, su docstring y sus fallos cerrados; el prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. Cada costura tiene su constante (`PASSED_SEAM`, `CLONE_REF_SEAM`); `REPO_ROOT`, `SCRIPT` y los dos plazos (20 s y 30 s) eran idénticos y quedan compartidos. Sin punteros vivos que actualizar: solo la línea «Run:» de cada docstring.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base: nuevo 1 fallo, ratchet 0, clone_ref 1. Ese fallo es preexistente y compartido: el hook global de git rechaza el commit del fixture de `test_a_branch_checkout_still_names_its_branch` (mensaje `x`, identidad `c`), el repositorio temporal queda sin commits y la resolución devuelve vacío. Efecto colateral: los casos «detached» y «clonable» no ejercitan lo que dicen en esta máquina. No se corrige aquí (cambiaría el fixture, otra unidad). Mutaciones sobre el sujeto (fallos nuevo / ratchet / clone_ref): `-gt`→`-ge` 2/1/1; sin inversión de signo 4/3/1; llamada del stage 1 a otro resolver 2/0/2; `--branch` sin la variable 2/0/2; mensaje sin «por debajo del baseline» 2/1/1; seam `--print-clone-ref` ausente 3/0/3; seam `--print-passed-verdict` ausente 6/5/1. El nuevo falla exactamente la suma de los originales en las siete. Fichero restaurado (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
