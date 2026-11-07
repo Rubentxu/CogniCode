@@ -21,5 +21,9 @@ pub async fn handle_goal(
     goal: &GoalSpec,
     arguments: serde_json::Value,
 ) -> HandlerResult<serde_json::Value> {
-    (goal.run)(ctx.working_dir(), &arguments).map_err(HandlerError::InvalidInput)
+    // El contexto de la sesión es el contexto del goal: el workspace que se
+    // analiza y dónde guarda el producto lo que deriva de él.
+    let context =
+        crate::interface::goals::GoalEnvironment::new(ctx.working_dir(), ctx.cache_root());
+    (goal.run)(&context, &arguments).map_err(HandlerError::InvalidInput)
 }

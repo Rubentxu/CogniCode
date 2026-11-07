@@ -104,7 +104,12 @@ impl CommandExecutor {
         format: Format,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         let values = crate::interface::goals::arguments_from_matches(goal, arguments);
-        let answer = (goal.run)(workspace, &values)
+        // La terminal no tiene una caché inyectada: usa la del entorno, la
+        // misma que usa el resto del producto.
+        let cache_root = crate::application::graph_cache::default_cache_root();
+        let context =
+            crate::interface::goals::GoalEnvironment::new(workspace, cache_root.as_deref());
+        let answer = (goal.run)(&context, &values)
             .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
         let text = match format {

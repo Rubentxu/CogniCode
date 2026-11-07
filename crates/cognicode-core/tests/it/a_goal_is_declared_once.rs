@@ -17,7 +17,7 @@
 //!
 //! ## Lo que NO se comprueba aquí
 //!
-//! - Que los nueve goals de TASK-84 existan, ni qué anuncia cada perfil: eso
+//! - Qué goals existen, ni qué anuncia cada perfil: eso
 //!   lo mide `the_nine_goals_and_the_profiles`.
 //! - Que el workspace se mida: el goal `status` publica la cobertura de la
 //!   lectura, y el test la mira en la respuesta del goal, no en el catálogo.

@@ -407,7 +407,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -1082,7 +1082,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -1690,7 +1690,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -2621,7 +2621,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -2913,7 +2913,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -3218,7 +3218,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -3579,7 +3579,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -3986,7 +3986,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -4433,7 +4433,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -4923,7 +4923,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -5315,7 +5315,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -5831,7 +5831,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -6350,7 +6350,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -6679,7 +6679,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -6996,6 +6996,54 @@
     }
   },
   {
+    "name": "recipe",
+    "description": "Corre una receta: varios goals en el orden de sus fases, memoizados por lo que el árbol ha cambiado, con los pasos independientes en paralelo. Con `plan: true` dice qué correría, qué está en caché y lo que costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, `cognicode recipe --name pre-change --params '{\"symbol\":\"helper\"}'`, `cognicode recipe --name onboard --plan`.",
+    "inputSchema": {
+      "description": "Input for the `recipe` goal",
+      "properties": {
+        "name": {
+          "description": "The name of the recipe to run",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "The values of the recipe's parameters",
+          "type": "object"
+        },
+        "plan": {
+          "default": false,
+          "description": "Say what would run, what is in the cache and what it would cost, without running it",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.31"
+      }
+    }
+  },
+  {
     "name": "reparse_on_edit",
     "description": "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
     "inputSchema": {
@@ -7288,7 +7336,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {
@@ -8811,7 +8859,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
               "type": "string"
             },
             "required_args": {

@@ -14,6 +14,8 @@ pub mod hateoas;
 pub mod intent;
 pub mod lsp;
 pub mod mcp;
+// TASK-85 — las recetas: preguntas compuestas, con su memo y su presupuesto.
+pub mod recipes;
 pub mod symbol_identity;
 // TASK-84 — la superficie que el servidor publica: los perfiles `default`,
 // `full` y `legacy`.

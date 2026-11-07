@@ -14,6 +14,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::interface::cli::project_graph::service_with_graph;
+use crate::interface::goals::GoalEnvironment;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `find` goal
@@ -83,7 +84,8 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
-pub fn run(workspace: &Path, arguments: &Value) -> Result<Value, String> {
+pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
+    let workspace = ctx.workspace;
     let input: FindInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `find` are not valid: {error}"))?;
     let answer = find(workspace, &input.symbol)?;

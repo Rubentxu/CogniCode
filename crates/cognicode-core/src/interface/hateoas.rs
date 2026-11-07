@@ -32,12 +32,13 @@
 //! Un enlace que nombra una tool que este build no anuncia no se publica:
 //! un enlace muerto es peor que no tener enlaces.
 //!
-//! Los seis casos que producen un enlace: la **ambigüedad** (una
+//! Los siete casos que producen un enlace: la **ambigüedad** (una
 //! referencia que declara un nombre que varios símbolos llevan), el
 //! **recorte** (la respuesta dice que está cortada), el **fan-in alto**
 //! (muchos dependen de un símbolo), la **cobertura parcial** (la respuesta
-//! deja agujeros), el **riesgo** (la respuesta dice que el riesgo es alto) y
-//! el **plan de cambio** (la respuesta propone cambiar algo).
+//! deja agujeros), el **riesgo** (la respuesta dice que el riesgo es alto), el
+//! **plan de cambio** (la respuesta propone cambiar algo) y el **reintento**
+//! (un paso de la receta falló).
 //!
 //! ## Los handles
 //!
@@ -173,7 +174,8 @@ pub struct Budget {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Link {
     /// Qué clase de enlace es: `resolve-ambiguity`, `continue`,
-    /// `inspect-callers`, `reindex`, `inspect-risk` o `preview-change`.
+    /// `inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o
+    /// `retry`.
     pub rel: String,
 
     /// La tool que responde al enlace.
@@ -379,10 +381,35 @@ fn links_for(
         reindex_link(result, ctx),
         risk_link(result, ctx),
         preview_link(result, ctx),
+        retry_link(tool, args, result),
     ]
     .into_iter()
     .flatten()
     .collect()
+}
+
+/// El reintento: un paso de la receta falló, y la receta se puede volver a
+/// correr.
+///
+/// El enlace lleva los argumentos de la llamada —el nombre de la receta y sus
+/// parámetros— sin el `plan`: reintentar no es planificar. Un consumidor que
+/// ve un `partial` sabe qué volver a correr y con qué.
+fn retry_link(tool: &str, args: &Map<String, Value>, result: &Value) -> Option<Link> {
+    if tool != "recipe" {
+        return None;
+    }
+    let failure = result.get("failure")?.as_object()?;
+    let goal = failure.get("goal")?.as_str()?;
+    let reason = failure.get("reason")?.as_str()?;
+    let mut filled = args.clone();
+    filled.remove("plan");
+    Some(link(
+        "retry",
+        "recipe",
+        filled,
+        format!("the step `{goal}` failed: {reason}"),
+        None,
+    ))
 }
 
 /// La ambigüedad: una referencia declara un nombre que varios símbolos
