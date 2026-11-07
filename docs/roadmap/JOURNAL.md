@@ -38345,3 +38345,15 @@ Sin cargo. Mutando ROADMAP/JOURNAL (rc nuevo / autoridad / cierre): cierre de H2
 Sin cargo. En `main` el snapshot de `CURRENT.md` declara `d0225b3f66a8`, a 10 commits de HEAD (tope 5): el original `test_roadmap_version_ratchet.py` ya estaba rojo ANTES de esta fusión y el fusionado da los mismos 2 fallos. Para medir con base verde se apuntó, sólo en el worktree y de forma reversible, el SHA declarado a `87398989` (HEAD~3): nuevo y originales rc 0. Mutaciones (rc nuevo / versión+snapshot / retirada): versión del workspace `7.31.4159` 1/1/0; SHA no ancestro 1/1/0; fecha de 2026-01-01 1/1/0; deriva (SHA a 10 commits) 1/1/0; retirada de `JOURNAL.md` presente 1/0/1; retirada de `CURRENT.md` presente 1/0/1; control con retirada negada 0/0/0. Una primera mutación de versión (`9.9.9`) no discriminó, porque el JOURNAL ya contiene esa cadena, y se rehízo. Ficheros restaurados con `cmp` y `touch`. El snapshot sigue sin regenerar (otra unidad, tres bloques). El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 4): los dos contratos de higiene del índice son uno
+
+### Qué cambió
+
+`test_no_conflict_markers.py` (188 líneas) y `test_no_runtime_state_tracked.py` (225) se fusionan en `scripts/ci/test_repo_hygiene.py` (391): 413 → 391 líneas, 2 ficheros → 1 (41 en `scripts/ci`). Los dos leen el índice de git y fallan cerrado si no se puede leer. Las 6 comprobaciones conservan su nombre, las dos docstrings completas, los umbrales (más de 100 ficheros en el índice) y la construcción de los marcadores por trozos. Se unifican `check`, `failures` y `main` (el de marcadores no capturaba excepciones; ahora sí, y una excepción cuenta como fallo). Se actualiza el único puntero vivo: `test_ci_contracts.py:379`, que usa un contrato como ejemplar del runner sin pytest.
+
+### Pruebas
+
+Sin cargo. Base verde: nuevo y originales rc 0. Mutaciones (rc nuevo / marcadores / estado): marcadores de conflicto en `ROADMAP.md` 1/1/0; `leases/probe.lock` rastreado 1/0/1; `!leases/` en `.gitignore` 1/0/1; `aaaa-s1-0/result.txt` rastreado 1/0/1; negación de la regla del directorio de paso 1/0/1. Índice y ficheros restaurados (`git rm --cached`, `cmp`, `touch`). `run_contract_tests.py` recoge las 6 pruebas del nuevo, rc 0. No se corrió `test_ci_contracts.py`. El gate no se corrió (TASK-74 no suma al lote hasta cerrarse).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.

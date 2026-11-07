@@ -376,7 +376,7 @@ def test_suite_runs_without_pytest_installed() -> None:
         [
             sys.executable,
             str(REPO_ROOT / "scripts" / "run_contract_tests.py"),
-            str(REPO_ROOT / "scripts" / "ci" / "test_no_conflict_markers.py"),
+            str(REPO_ROOT / "scripts" / "ci" / "test_repo_hygiene.py"),
         ],
         capture_output=True,
         text=True,
