@@ -107,7 +107,7 @@ fn walk_up_for_product_data(start: &Path) -> Option<PathBuf> {
 ///
 /// **Scope.** The rule applies to every function that participates in
 /// product-asset resolution, in both files that take part: `capabilities.rs`
-/// (CLI capabilities document) and `catalog.rs` (the catalogue the MCP
+/// (CLI capabilities document) and `tool_catalog.rs` (the catalogue the MCP
 /// `tools/list` is derived from). Checking only `commands.rs` is what let
 /// the MCP regression through — the two had separate resolvers, one of
 /// which grew the literal back while the test watched the other.
@@ -130,7 +130,7 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
             ],
         ),
         (
-            "src/interface/catalog.rs",
+            "src/infrastructure/tool_catalog.rs",
             &[
                 "fn product_assets_root",
                 "fn load_tool_catalog()",

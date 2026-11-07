@@ -3,7 +3,7 @@
 //! Used by both the MCP handlers (consolidated_handlers.rs) and the explorer
 //! registry (registry.rs) to avoid duplicating the descriptor list.
 
-use crate::interface::mcp::schemas::ViewDescriptor;
+use super::view_descriptor::ViewDescriptor;
 
 /// Raw descriptor data that can be used to construct ViewDescriptors at runtime.
 pub struct BuiltinDescriptorRaw {

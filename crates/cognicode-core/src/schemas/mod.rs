@@ -5,5 +5,6 @@
 //! between MCP handlers and the explorer registry.
 
 pub mod builtin_descriptors;
+pub mod view_descriptor;
 
 pub use builtin_descriptors::{BUILTIN_DESCRIPTORS_RAW, BuiltinDescriptorRaw, builtin_descriptors};

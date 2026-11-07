@@ -158,7 +158,7 @@ def test_committed_catalog_is_self_consistent_and_schema_valid() -> None:
 
     1. Regeneraba `tools.json` desde la captura commiteada y comparaba byte
        a byte. Eso solo puede pasar si `tools.json` es un artefacto generado,
-       y no lo es: `interface/catalog.rs` lo declara fuente de verdad
+       y no lo es: `infrastructure/tool_catalog.rs` lo declara fuente de verdad
        ("si se añade una tool, va a `tools.json` primero, luego el loader la
        expone"), y nueve campos —`limitations`, `prerequisites`,
        `follow_ups`, `required_args`, `intent_tags`, `language_scope`,

@@ -1,22 +1,24 @@
-//! `SymbolId` and `Intent` are pure vocabulary (serde only). An inner layer
-//! that has to import them from `interface` points the dependency outwards,
-//! which is what keeps the interface layer inside the core crate.
+//! An inner layer that imports from `interface` points the dependency
+//! outwards, which is what keeps the interface layer inside the core crate.
+//! No production code outside `interface` may `use crate::interface::...`.
 //!
-//! The published paths `interface::symbol_identity` and `interface::intent`
-//! stay as re-exports so older consumers keep compiling.
+//! The published paths (`interface::symbol_identity`, `interface::intent`,
+//! `interface::catalog`, `interface::mcp::schemas::ViewDescriptor`) stay as
+//! re-exports so older consumers keep compiling.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const INNER_LAYERS: [&str; 6] = [
+const INNER_LAYERS: [&str; 8] = [
     "domain",
     "application",
     "infrastructure",
     "impact",
     "architecture",
     "refactor",
+    "schemas",
+    "incremental",
 ];
-const MOVED: [&str; 2] = ["interface::symbol_identity", "interface::intent"];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
@@ -33,25 +35,25 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// Production imports only: stop at the first `#[cfg(test)]`.
-fn imports_of_moved_modules(text: &str) -> Vec<String> {
+fn interface_imports(text: &str) -> Vec<String> {
     text.lines()
         .take_while(|line| !line.trim_start().starts_with("#[cfg(test)]"))
         .filter(|line| line.trim_start().starts_with("use crate::"))
-        .filter(|line| MOVED.iter().any(|m| line.contains(m)))
+        .filter(|line| line.contains("crate::interface::"))
         .map(|line| line.trim().to_string())
         .collect()
 }
 
 #[test]
 fn the_scan_sees_an_outward_import() {
-    let found = imports_of_moved_modules("use crate::interface::symbol_identity::SymbolId;\n");
+    let found = interface_imports("use crate::interface::symbol_identity::SymbolId;\n");
     assert_eq!(found.len(), 1, "{found:?}");
     let test_only = "#[cfg(test)]\nmod t { use crate::interface::intent::Intent; }\n";
-    assert!(imports_of_moved_modules(test_only).is_empty());
+    assert!(interface_imports(test_only).is_empty());
 }
 
 #[test]
-fn inner_layers_do_not_import_identity_or_intent_from_interface() {
+fn no_inner_layer_imports_interface() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut offenders = Vec::new();
     for layer in INNER_LAYERS {
@@ -59,7 +61,7 @@ fn inner_layers_do_not_import_identity_or_intent_from_interface() {
         rust_files(&src.join(layer), &mut files);
         for file in files {
             let text = fs::read_to_string(&file).expect("readable source");
-            for line in imports_of_moved_modules(&text) {
+            for line in interface_imports(&text) {
                 offenders.push(format!(
                     "{}: {line}",
                     file.strip_prefix(&src).unwrap().display()
@@ -76,4 +78,14 @@ fn the_published_interface_paths_still_resolve() {
     let same = cognicode_core::domain::symbol_identity::Precision::Lsp;
     assert_eq!(id.as_str(), same.as_str());
     let _ = cognicode_core::interface::intent::route_intent;
+    let _ = cognicode_core::interface::catalog::load_tool_catalog;
+    let view = cognicode_core::interface::mcp::schemas::ViewDescriptor {
+        id: "x".into(),
+        title: "t".into(),
+        view_kind: String::new(),
+        is_builtin: true,
+        source: None,
+    };
+    let same: cognicode_core::schemas::view_descriptor::ViewDescriptor = view;
+    assert_eq!(same.id, "x");
 }

@@ -1,6 +1,6 @@
 //! Interface Layer - External interfaces (CLI, MCP, LSP)
 
-pub mod catalog;
+pub use crate::infrastructure::tool_catalog as catalog;
 pub mod cli;
 pub mod composition;
 pub mod coverage;
