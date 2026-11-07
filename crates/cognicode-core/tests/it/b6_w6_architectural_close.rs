@@ -68,10 +68,10 @@ fn line_count(path: &Path) -> usize {
     }
 }
 
-/// CLI coordinator: `cognicode-core/src/interface/cli/commands.rs`.
-/// Coordinador CLI: `cognicode-core/src/interface/cli/commands.rs`.
+/// CLI coordinator: `cognicode-cli/src/cli/commands.rs`.
+/// Coordinador CLI: `cognicode-cli/src/cli/commands.rs`.
 fn cli_coordinator_path() -> PathBuf {
-    repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs")
+    repo_root().join("crates/cognicode-cli/src/cli/commands.rs")
 }
 
 /// MCP coordinator: `cognicode-core/src/interface/mcp/rmcp_adapter.rs`.

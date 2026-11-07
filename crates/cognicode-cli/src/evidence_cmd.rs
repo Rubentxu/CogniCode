@@ -8,7 +8,7 @@
 //      LadybugDB file at the requested path and wraps it as a
 //      `LadybugEvidenceBackend`. The factory is registered once at
 //      CLI startup via
-//      `cognicode_core::interface::cli::evidence_backend::
+//      `cognicode_core::application::evidence_backend::
 //      register_evidence_backend`.
 //   2. Delegates `list` / `search` to the `LadybugEvidenceStore`
 //      instance built around the same store.
@@ -19,10 +19,10 @@
 // `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs` can pin the
 // JSON shape without two implementations to drift apart.
 
-use cognicode_core::domain::ports::evidence_store::{EvidenceKind, EvidenceSummary};
-use cognicode_core::interface::cli::evidence_backend::{
+use cognicode_core::application::evidence_backend::{
     EvidenceBackend, EvidenceBackendFactory, register_evidence_backend,
 };
+use cognicode_core::domain::ports::evidence_store::{EvidenceKind, EvidenceSummary};
 use cognicode_ladybug::LadybugStore;
 use std::path::PathBuf;
 use std::sync::Arc;

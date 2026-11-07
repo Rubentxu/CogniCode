@@ -6598,8 +6598,11 @@ mod tests {
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| loc.file.clone());
-                    let published = crate::interface::cli::result::PublishedLocation::from(&loc);
-                    (basename, published.line, published.column)
+                    (
+                        basename,
+                        crate::domain::value_objects::published_line(loc.line),
+                        crate::domain::value_objects::published_column(loc.column),
+                    )
                 })
                 .collect()
         }

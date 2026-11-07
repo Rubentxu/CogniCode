@@ -64,7 +64,7 @@
 //!     error en modo JSON, donde la salida estándar es el documento
 //!     entero.
 //!
-//! La regla vive en `cognicode_core::interface::cli::progress`; los
+//! La regla vive en `crate::cli::progress`; los
 //! cuatro sitios que la usan son `trace-path`, `mermaid`, `hierarchy` e
 //! `impact`, los comandos cuyo resultado no lleva el camino del
 //! proyecto.
@@ -75,14 +75,14 @@
 
 use std::io::{self, Write};
 
-use cognicode_core::application::text_boundary::truncate_at_boundary;
-use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
-use cognicode_core::interface::cli::commands::Format as CliFormat;
-use cognicode_core::interface::cli::follow_ups;
-use cognicode_core::interface::cli::result::{
+use crate::cli::commands::Format as CliFormat;
+use crate::cli::follow_ups;
+use crate::cli::result::{
     CommandOutput, GraphResult, HoverResult, IndexResult, NavigateResult, ReferenceEntry,
 };
-use cognicode_core::interface::cli::result::{PublishedOutlineNode, PublishedPosition};
+use crate::cli::result::{PublishedOutlineNode, PublishedPosition};
+use cognicode_core::application::text_boundary::truncate_at_boundary;
+use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
 use cognicode_core::interface::hateoas::{HandleContext, envelope_for};
 
 /// Render an `IndexResult` as text into `w`.
@@ -92,7 +92,7 @@ use cognicode_core::interface::hateoas::{HandleContext, envelope_for};
 /// grep-based UAT depend on this stability). The T1-5.3d snapshot
 /// test pins the exact bytes for every variant.
 pub fn present_index_result(result: &IndexResult, w: &mut dyn Write) -> std::io::Result<()> {
-    use cognicode_core::interface::cli::result::IndexResult as R;
+    use crate::cli::result::IndexResult as R;
     match result {
         R::Build {
             path: _,
@@ -260,7 +260,7 @@ pub mod test_helpers {
 //   3. Add a snapshot test in tests/t1_5_4_<x>_presenter_snapshot.rs.
 
 // (no import needed: the presenter uses the fully-qualified
-// `cognicode_core::interface::cli::result::GraphResult` path in its
+// `crate::cli::result::GraphResult` path in its
 // signature. A `use ... as _` import would also work but adds
 // noise; the fully-qualified path is short enough.)
 
@@ -279,10 +279,10 @@ pub mod test_helpers {
 /// counts are indented with two spaces (matches the other
 /// graph sub-commands' bullet-style output).
 pub fn present_graph_perfile(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::PerFile {
+    if let crate::cli::result::GraphResult::PerFile {
         file,
         symbols,
         dependencies,
@@ -333,10 +333,10 @@ pub fn present_graph_perfile(
 /// line uses `total`, not `symbols.len()`, so the user sees
 /// "Found 47 entry points" even when only 20 are listed.
 pub fn present_graph_entrypoints(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::EntryPoints {
+    if let crate::cli::result::GraphResult::EntryPoints {
         path,
         symbols,
         total,
@@ -376,10 +376,10 @@ pub fn present_graph_entrypoints(
 /// `match` in the caller a one-liner and lets each presenter's
 /// snapshot test pin its exact text independently.
 pub fn present_graph_leaffunctions(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::LeafFunctions {
+    if let crate::cli::result::GraphResult::LeafFunctions {
         path,
         symbols,
         total,
@@ -430,10 +430,10 @@ pub fn present_graph_leaffunctions(
 /// returns at most `limit` rows; the data side already has
 /// at most that many).
 pub fn present_graph_hotpaths(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::HotPaths {
+    if let crate::cli::result::GraphResult::HotPaths {
         path,
         limit,
         min_fan_in,
@@ -504,10 +504,10 @@ pub fn present_graph_hotpaths(
 /// line; the section header 'Complexity Metrics:' is preceded
 /// by a blank line (after the warning goes to stderr).
 pub fn present_graph_complexity(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::Complexity {
+    if let crate::cli::result::GraphResult::Complexity {
         path,
         metrics,
         elapsed_ms,
@@ -568,10 +568,10 @@ pub fn present_graph_complexity(
 /// re-compute). The path has no leading '→ ' or similar
 /// arrow; just a number prefix.
 pub fn present_graph_tracepath_found(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::TracePathFound {
+    if let crate::cli::result::GraphResult::TracePathFound {
         from: _,
         to: _,
         hops,
@@ -627,10 +627,10 @@ pub fn present_graph_tracepath_found(
 /// where the standard output is the document. The presenter
 /// emits the result block + summary.
 pub fn present_graph_tracepath_notfound(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::TracePathNotFound {
+    if let crate::cli::result::GraphResult::TracePathNotFound {
         from,
         to,
         elapsed_ms,
@@ -680,10 +680,10 @@ pub fn present_graph_tracepath_notfound(
 /// diagram length (NOT the truncated length); the user
 /// always sees the real size.
 pub fn present_graph_mermaid(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::Mermaid {
+    if let crate::cli::result::GraphResult::Mermaid {
         path: _,
         diagram,
         diagram_len,
@@ -762,10 +762,10 @@ pub fn present_graph_mermaid(
 /// is the only sub-command that uses the parenthesized
 /// 3-tuple form; the snapshot pins it.
 pub fn present_graph_ondemand(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::OnDemand {
+    if let crate::cli::result::GraphResult::OnDemand {
         symbol,
         depth,
         direction,
@@ -833,10 +833,10 @@ pub fn present_graph_ondemand(
 /// data side already has these slices applied; the
 /// presenter just iterates `buckets`.
 pub fn present_graph_hierarchy(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::Hierarchy {
+    if let crate::cli::result::GraphResult::Hierarchy {
         symbol,
         depth: _,
         direction: _,
@@ -919,10 +919,10 @@ pub fn present_graph_hierarchy(
 /// ad-hoc struct that the bin serializes separately; T1-5.5
 /// will consolidate.
 pub fn present_graph_full(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::Full {
+    if let crate::cli::result::GraphResult::Full {
         path,
         rebuild,
         elapsed_ms,
@@ -1014,10 +1014,10 @@ pub fn present_graph_full(
 /// symbols + '... and N more' if N > 20, first 10 files +
 /// '... and N more' if N > 10.
 pub fn present_graph_impact(
-    result: &cognicode_core::interface::cli::result::GraphResult,
+    result: &crate::cli::result::GraphResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::GraphResult::Impact {
+    if let crate::cli::result::GraphResult::Impact {
         symbol,
         risk_level,
         direct_dependents,
@@ -1154,10 +1154,10 @@ pub fn present_graph_impact(
 /// and column widths (4 / 4 / 6) are part of the contract (downstream
 /// `column -t` consumers depend on the alignment).
 pub fn present_navigate_definition(
-    result: &cognicode_core::interface::cli::result::NavigateResult,
+    result: &crate::cli::result::NavigateResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::NavigateResult::Definition {
+    if let crate::cli::result::NavigateResult::Definition {
         file,
         line,
         column,
@@ -1211,10 +1211,10 @@ pub fn present_navigate_definition(
 /// (visually aligns the two field labels despite "Docs" being
 /// shorter than "Type").
 pub fn present_navigate_hover(
-    result: &cognicode_core::interface::cli::result::NavigateResult,
+    result: &crate::cli::result::NavigateResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::NavigateResult::Hover {
+    if let crate::cli::result::NavigateResult::Hover {
         file,
         line,
         column,
@@ -1275,10 +1275,10 @@ pub fn present_navigate_hover(
 /// substitution happens in `execute_navigate` so the data side
 /// carries a `String`, not `Option<String>`.
 pub fn present_navigate_references(
-    result: &cognicode_core::interface::cli::result::NavigateResult,
+    result: &crate::cli::result::NavigateResult,
     w: &mut dyn std::io::Write,
 ) -> std::io::Result<()> {
-    if let cognicode_core::interface::cli::result::NavigateResult::References {
+    if let crate::cli::result::NavigateResult::References {
         file,
         line,
         column,
@@ -1355,7 +1355,7 @@ pub fn present_navigate_references(
 
 /// Emit `IndexResult` as JSON (pretty-printed, newline-terminated).
 ///
-/// `cognicode_core::interface::cli::result::IndexResult` carries
+/// `crate::cli::result::IndexResult` carries
 /// `#[serde(tag = "kind", rename_all = "snake_case")]`, so the JSON
 /// has a top-level `"kind": "<variant>"|"` field that distinguishes
 /// `Build` / `Query` / `QueryEmpty` / `Outline` / `SymbolCode`.

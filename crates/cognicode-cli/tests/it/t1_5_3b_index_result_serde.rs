@@ -20,10 +20,10 @@
 //!   - Adding a new variant without declaring its wire
 //!     form is caught (the test enumerates the known kinds).
 
-use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
-use cognicode_core::interface::cli::result::{
+use cognicode_cli::cli::result::{
     IndexError, IndexResult, PublishedLocation, PublishedOutlineNode, PublishedPosition,
 };
+use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
 use serde_json::Value;
 use std::path::PathBuf;
 

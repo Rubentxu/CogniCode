@@ -23,9 +23,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::application::consumer_analysis::ServiceAnalyzer;
-use crate::application::graph_cache;
-use crate::interface::daemon::DaemonOracle;
+use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
+use cognicode_core::application::graph_cache;
+use cognicode_core::interface::daemon::DaemonOracle;
 
 /// The analyzer the CLI answers with, asking the daemon when there is one.
 pub fn cli_analyzer(workspace: &Path) -> ServiceAnalyzer {

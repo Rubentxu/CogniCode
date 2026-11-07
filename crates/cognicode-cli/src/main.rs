@@ -2,9 +2,9 @@
 //!
 //! This binary provides the command-line interface for CogniCode.
 
-use cognicode_core::CommandExecutor;
-use cognicode_core::interface::cli::commands::CliCommand;
-use cognicode_core::interface::cli::{ParsedCli, parse_cli};
+use cognicode_cli::cli::CommandExecutor;
+use cognicode_cli::cli::commands::CliCommand;
+use cognicode_cli::cli::{ParsedCli, parse_cli};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
 
@@ -138,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let output = CommandExecutor::execute(cli).await?;
 
-    use cognicode_core::interface::cli::result::CommandOutput;
+    use cognicode_cli::cli::result::CommandOutput;
     if !matches!(output, CommandOutput::Other) {
         let mut stdout = std::io::stdout();
         cognicode_cli::presenter::present_output(&output, cli_format, &mut stdout)?;

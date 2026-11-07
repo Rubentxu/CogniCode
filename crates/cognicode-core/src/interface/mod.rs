@@ -1,7 +1,6 @@
 //! Interface Layer - External interfaces (CLI, MCP, LSP)
 
 pub use crate::infrastructure::tool_catalog as catalog;
-pub mod cli;
 pub mod composition;
 pub mod coverage;
 // TASK-92 (slice 1) — the daemon's local socket: how a client on this

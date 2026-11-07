@@ -414,6 +414,7 @@ name = "cognicode"
 version = "0.102.1"
 dependencies = [
  "anyhow",
+ "cognicode-cli",
  "cognicode-core",
 ]
 
@@ -422,6 +423,7 @@ name = "cognicode-cli"
 version = "0.102.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "cognicode-core",
@@ -443,6 +445,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -457,7 +460,6 @@ dependencies = [
  "blake3",
  "chrono",
  "ciborium",
- "clap",
  "cognicode-graph-algos",
  "cognicode-macros",
  "criterion",

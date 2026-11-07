@@ -28,7 +28,7 @@ use serde_json::Value;
 /// Sources (in precedence order):
 ///   1. `product/tools.json` for the public tool catalogue.
 ///   2. `product/profiles.json` for the public profile surface.
-///   3. `crate::product::PROFILE_POSTURES` (canonical runtime
+///   3. `cognicode_core::product::PROFILE_POSTURES` (canonical runtime
 ///      posture; overrides the published `mutating` flag if the two
 ///      disagree — the runtime is authoritative).
 ///   4. `CogniCodeHandler::MUTATING_TOOLS` (canonical runtime
@@ -42,7 +42,7 @@ use serde_json::Value;
 /// unless `json_emission` is set: JSON output is pipeable unfiltered,
 /// so a successful run must never write diagnostics to stderr.
 pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
-    use crate::product::PROFILE_POSTURES;
+    use cognicode_core::product::PROFILE_POSTURES;
 
     let workspace_root = resolve_product_assets_root();
     let tools_path = workspace_root.join("product").join("tools.json");
@@ -97,7 +97,7 @@ pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
     // The catalogue file stays the source of truth on disk; the `feature`
     // field says which entries are live in this build (73 in the default
     // build, 74 with `evidence-cli-ladybug`).
-    let catalog = crate::interface::catalog::load_tool_catalog_active();
+    let catalog = cognicode_core::interface::catalog::load_tool_catalog_active();
     let tools_arr: Vec<Value> = catalog
         .iter()
         .map(|d| serde_json::to_value(d).expect("ToolDescriptor is serialisable"))
@@ -112,7 +112,7 @@ pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
 
     // Derived from the tools' own declarations, so this report cannot
     // disagree with what `--read-only` actually refuses.
-    let mutating_tools = crate::interface::mcp::rmcp_adapter::mutating_tool_names();
+    let mutating_tools = cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names();
     doc["runtime"] = serde_json::json!({
         "mutating_tools": mutating_tools,
         "mutating_tools_count": mutating_tools.len(),
@@ -123,7 +123,7 @@ pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
 
 /// Resolve the root that carries `product/*.json` for the **running** binary.
 ///
-/// Thin wrapper over [`crate::interface::catalog::product_assets_root`],
+/// Thin wrapper over [`cognicode_core::interface::catalog::product_assets_root`],
 /// which owns the anchor and the reasoning behind it. The CLI and the MCP
 /// catalogue must resolve product assets the same way; the second copy of this
 /// logic is what let an installed server advertise an empty tool catalogue
@@ -144,7 +144,7 @@ pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
 /// absolute path there would only make the warning point at somewhere
 /// meaningless.
 pub(crate) fn resolve_product_assets_root() -> PathBuf {
-    crate::interface::catalog::product_assets_root()
+    cognicode_core::interface::catalog::product_assets_root()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 

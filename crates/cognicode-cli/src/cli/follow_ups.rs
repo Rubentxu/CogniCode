@@ -11,7 +11,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::interface::hateoas::{Envelope, Link};
+use cognicode_core::interface::hateoas::{Envelope, Link};
 
 /// Las órdenes que los enlaces del sobre piden.
 ///

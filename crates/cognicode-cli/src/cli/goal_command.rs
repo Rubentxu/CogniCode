@@ -1,20 +1,20 @@
 //! La línea de órdenes de los goals: el árbol, el parseo y la ejecución.
 //!
-//! Los goals **no** son variantes de [`super::commands::CliCommand`]: el
+//! Los goals **no** son variantes de [`crate::cli::commands::CliCommand`]: el
 //! registro los construye, y un enum los duplicaría —el nombre del goal, su
 //! descripción y sus argumentos vivirían en dos sitios—. Por eso el parseo no
 //! es `Cli::parse()` sino [`parse_cli`], que mira primero si lo que se
 //! escribió es un goal.
 //!
 //! Lo que hay aquí es la proyección del goal a la terminal: el comando clap
-//! lo construye el registro ([`crate::interface::goals::clap_command`]), y lo
+//! lo construye el registro ([`crate::cli::goals_clap::clap_command`]), y lo
 //! que se ejecuta es la misma implementación que ejecuta el MCP.
 
 use clap::{CommandFactory, FromArgMatches};
 
-use crate::interface::cli::commands::{Cli, CommandExecutor, Format};
-use crate::interface::cli::result::CommandOutput;
-use crate::interface::goals::GoalSpec;
+use crate::cli::commands::{Cli, CommandExecutor, Format};
+use crate::cli::result::CommandOutput;
+use cognicode_core::interface::goals::GoalSpec;
 
 /// Lo que el parseo de la línea de órdenes encontró.
 #[derive(Debug)]
@@ -39,7 +39,7 @@ pub enum ParsedCli {
 /// El árbol se construye con los goals dentro, así que `cognicode --help`
 /// los lista y `cognicode <goal> --help` explica el goal.
 pub fn cli_command() -> clap::Command {
-    Cli::command().subcommands(crate::interface::goals::clap_commands())
+    Cli::command().subcommands(crate::cli::goals_clap::clap_commands())
 }
 
 /// Parsea la línea de órdenes, goals incluidos.
@@ -50,7 +50,7 @@ pub fn cli_command() -> clap::Command {
 pub fn parse_cli() -> Result<ParsedCli, clap::Error> {
     let matches = cli_command().get_matches();
     if let Some((name, arguments)) = matches.subcommand()
-        && let Some(goal) = crate::interface::goals::find(name)
+        && let Some(goal) = cognicode_core::interface::goals::find(name)
     {
         // El formato lo elige el comando del goal, no la raiz: es la
         // convencion de los comandos que tienen su propia forma de
@@ -75,10 +75,11 @@ pub fn parse_cli() -> Result<ParsedCli, clap::Error> {
             Some(Format::Json) => Format::Json,
             _ => Format::Text,
         };
-        let arguments = crate::interface::goals::clap_command(&crate::interface::goals::STATUS)
-            .get_matches_from(["status"]);
+        let arguments =
+            crate::cli::goals_clap::clap_command(&cognicode_core::interface::goals::STATUS)
+                .get_matches_from(["status"]);
         return Ok(ParsedCli::Goal {
-            goal: &crate::interface::goals::STATUS,
+            goal: &cognicode_core::interface::goals::STATUS,
             arguments,
             format,
             verbose: matches.get_flag("verbose"),
@@ -103,12 +104,14 @@ impl CommandExecutor {
         workspace: &std::path::Path,
         format: Format,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        let values = crate::interface::goals::arguments_from_matches(goal, arguments);
+        let values = crate::cli::goals_clap::arguments_from_matches(goal, arguments);
         // La terminal no tiene una caché inyectada: usa la del entorno, la
         // misma que usa el resto del producto.
-        let cache_root = crate::application::graph_cache::default_cache_root();
-        let context =
-            crate::interface::goals::GoalEnvironment::new(workspace, cache_root.as_deref());
+        let cache_root = cognicode_core::application::graph_cache::default_cache_root();
+        let context = cognicode_core::interface::goals::GoalEnvironment::new(
+            workspace,
+            cache_root.as_deref(),
+        );
         let answer = (goal.run)(&context, &values)
             .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
@@ -117,11 +120,11 @@ impl CommandExecutor {
             // mismo en las dos superficies, así que la terminal y el cable no
             // pueden decir cosas distintas de la misma respuesta.
             Format::Json => {
-                let context = crate::interface::hateoas::HandleContext {
+                let context = cognicode_core::interface::hateoas::HandleContext {
                     workspace: workspace.to_string_lossy().to_string(),
                     snapshot: "none".to_string(),
                 };
-                let envelope = crate::interface::hateoas::envelope_for(
+                let envelope = cognicode_core::interface::hateoas::envelope_for(
                     goal.name,
                     &values.as_object().cloned().unwrap_or_default(),
                     &answer,

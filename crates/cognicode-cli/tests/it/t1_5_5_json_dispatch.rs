@@ -43,14 +43,14 @@
 //!   swapped, kind discriminator removed from the enum) would
 //!   pass the serde tests but fail here.
 
+use cognicode_cli::cli::commands::Format;
+use cognicode_cli::cli::result::PublishedLocation;
+use cognicode_cli::cli::result::{CommandOutput, GraphResult, IndexResult};
 use cognicode_cli::presenter::test_helpers::outline_node;
 use cognicode_cli::presenter::{
     present_graph_result_json, present_index_result_json, present_output,
 };
 use cognicode_core::domain::value_objects::{MermaidFormat, SymbolKind};
-use cognicode_core::interface::cli::commands::Format;
-use cognicode_core::interface::cli::result::PublishedLocation;
-use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, IndexResult};
 use serde_json::Value;
 
 /// The coverage of a graph that covered the whole tree, written by the
@@ -344,7 +344,7 @@ fn json_graph_hierarchy_shape() {
 
 #[test]
 fn json_graph_complexity_shape() {
-    use cognicode_core::interface::cli::result::ComplexityMetrics;
+    use cognicode_cli::cli::result::ComplexityMetrics;
     let r = GraphResult::Complexity {
         path: "/repo".to_string(),
         metrics: ComplexityMetrics {

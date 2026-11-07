@@ -9,4 +9,5 @@ publish = false
 
 [dependencies]
 cognicode-core = { path = "../cognicode-core" }
+cognicode-cli = { path = "../cognicode-cli" }
 anyhow.workspace = true

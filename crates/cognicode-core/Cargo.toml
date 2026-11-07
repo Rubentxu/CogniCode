@@ -163,7 +163,6 @@ opentelemetry.workspace = true
 mermaid-rs-renderer.workspace = true
 
 # CLI
-clap.workspace = true
 
 # MCP
 rmcp.workspace = true

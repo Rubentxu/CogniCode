@@ -24,8 +24,8 @@
 
 use serde_json::Value;
 
-use cognicode_core::interface::cli::commands::{CommandExecutor, Format};
-use cognicode_core::interface::cli::result::CommandOutput;
+use cognicode_cli::cli::commands::{CommandExecutor, Format};
+use cognicode_cli::cli::result::CommandOutput;
 use cognicode_core::interface::goals::{self, GoalSpec};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::goal::handle_goal;
@@ -195,7 +195,7 @@ fn the_server_announces_the_goal() {
 #[test]
 fn the_clap_command_comes_from_the_declaration() {
     let goal = the_goal();
-    let command = goals::clap_command(goal);
+    let command = cognicode_cli::cli::goals_clap::clap_command(goal);
 
     assert_eq!(command.get_name(), goal.name);
     assert_eq!(
@@ -224,9 +224,7 @@ fn the_clap_command_comes_from_the_declaration() {
 #[test]
 fn the_help_lists_the_goal() {
     let goal = the_goal();
-    let help = cognicode_core::interface::cli::cli_command()
-        .render_help()
-        .to_string();
+    let help = cognicode_cli::cli::cli_command().render_help().to_string();
 
     assert!(
         help.contains(goal.name),
@@ -264,11 +262,11 @@ fn the_default_of_the_flag_is_the_default_of_the_wire() {
         "the argument's default is not the one the struct declares"
     );
 
-    let command = goals::clap_command(goal);
+    let command = cognicode_cli::cli::goals_clap::clap_command(goal);
     let matches = command
         .try_get_matches_from(["status"])
         .expect("the command reads its arguments");
-    let values = goals::arguments_from_matches(goal, &matches);
+    let values = cognicode_cli::cli::goals_clap::arguments_from_matches(goal, &matches);
     assert_eq!(
         values.get("include_goals"),
         Some(&Value::Bool(true)),
@@ -292,7 +290,7 @@ async fn the_cli_and_the_mcp_return_the_same_answer() {
     let workspace = tempfile::tempdir().expect("tempdir");
     std::fs::write(workspace.path().join("Cargo.toml"), "[package]\n").expect("write");
 
-    let matches = goals::clap_command(goal)
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from(["status"])
         .expect("the command reads its arguments");
     let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)

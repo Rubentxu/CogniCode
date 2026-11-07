@@ -25,9 +25,6 @@ pub mod schemas;
 pub use application::dto;
 pub use application::workspace_session::{WorkspaceError, WorkspaceResult, WorkspaceSession};
 
-// Re-export CLI types
-pub use interface::cli::{Cli, CommandExecutor};
-
 // Re-export commonly used types
 pub use anyhow::Context;
 pub use anyhow::Result;

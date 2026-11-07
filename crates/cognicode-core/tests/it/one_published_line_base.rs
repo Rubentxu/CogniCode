@@ -202,7 +202,7 @@ async fn the_graph_tools_publish_the_line_the_file_declares() {
 /// The core's CLI module writes to the standard output in one place
 /// only: the channel rule.
 ///
-/// The rule is `interface::cli::progress::progress_line` — the
+/// The rule is `cli::progress::progress_line` — the
 /// progress line, in text mode. Everything else the core returns, and
 /// the presenter prints it. A core that prints its own answer can
 /// interleave it with the document a consumer is parsing, and the
@@ -213,7 +213,7 @@ async fn the_graph_tools_publish_the_line_the_file_declares() {
 /// still a `println!`.
 #[test]
 fn the_core_prints_only_through_the_channel_rule() {
-    let cli_module = repo_root().join("crates/cognicode-core/src/interface/cli");
+    let cli_module = repo_root().join("crates/cognicode-cli/src/cli");
     let mut offenders: Vec<String> = Vec::new();
 
     let mut files: Vec<PathBuf> = std::fs::read_dir(&cli_module)

@@ -241,7 +241,7 @@ fn the_findings_block_says_when_nothing_was_searched() {
 /// dice que se verifico y que no.
 #[test]
 fn the_revalidation_has_a_production_home() {
-    let source = include_str!("../../src/interface/cli/commands.rs");
+    let source = include_str!("../../../cognicode-cli/src/cli/commands.rs");
     assert!(
         source.contains("run_revalidation"),
         "the CLI's `refactor apply` must call the revalidation; a function \

@@ -22,12 +22,12 @@
 //! `cached_coverage_is_honest.rs` ya probó que las dos tienen que ser la
 //! MISMA respuesta, campo por campo.
 
+use cognicode_cli::cli::presenter_bridge::present_graph_full;
+use cognicode_cli::cli::result::GraphResult;
 use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, Analyze, GraphSource, OutcomeState,
 };
 use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
-use cognicode_core::interface::cli::presenter_bridge::present_graph_full;
-use cognicode_core::interface::cli::result::GraphResult;
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, BuildGraphOutput, HandlerContext, handle_build_graph,
 };
@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 fn corpus_path() -> PathBuf {
     let manifest = std::env::var("CARGO_MANIFEST_DIR")
         .expect("CARGO_MANIFEST_DIR must be set during cargo test");
-    PathBuf::from(manifest).join("testdata/silent_errors_corpus")
+    PathBuf::from(manifest).join("../cognicode-core/testdata/silent_errors_corpus")
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {

@@ -5,7 +5,7 @@
 //! writes, and the table below is the whole of the translation. A name the
 //! graph cannot publish has no row, and a name without a row is refused.
 
-use crate::domain::value_objects::MermaidFormat;
+use cognicode_core::domain::value_objects::MermaidFormat;
 
 /// The names the command publishes, and the format each one asks for.
 ///

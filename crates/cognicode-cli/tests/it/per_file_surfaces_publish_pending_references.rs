@@ -27,10 +27,8 @@
 //! `pending_references`, el mismo nombre que usan el grafo completo y
 //! `MergeCoverage`.
 
-use cognicode_core::interface::cli::commands::{
-    Cli, CliCommand, CommandExecutor, Format, GraphCommand,
-};
-use cognicode_core::interface::cli::result::CommandOutput;
+use cognicode_cli::cli::commands::{Cli, CliCommand, CommandExecutor, Format, GraphCommand};
+use cognicode_cli::cli::result::CommandOutput;
 use cognicode_core::interface::mcp::handlers::{HandlerContext, handle_get_per_file_graph};
 use cognicode_core::interface::mcp::schemas::GetPerFileGraphInput;
 use serde_json::Value;
