@@ -38455,3 +38455,15 @@ Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (21 PASS), ori
 Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (16 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / fecha / snapshot): `pub fn epoch_millis(` hecho privado 1/1/0; `pub analyzer:` renombrado en `snapshot_key.rs` 1/0/1; `pub schema:` renombrado 1/0/1; `pub fn measured_nanos(` hecho privado 1/1/0. El nuevo falla exactamente lo que falla el original que corresponde. Control 0/0/0 (comentario al final de `file_time.rs`) descartado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
 
 **Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
+
+## 2026-11-07 — TASK-74 (parte 13): los contratos del libro mayor de bloques y de la mision son uno
+
+### Qué cambió
+
+`test_block_ledger_coherence.py` (237 líneas, 4 tests) y `test_mission_declaration.py` (297, 6) se fusionan en `scripts/ci/test_ledger_and_mission_declarations.py` (518): 534 → 518 líneas, 2 ficheros → 1 (32 en `scripts/ci`). No comparten sujeto: la parte A contrasta los goal docs y la tabla del work-loop con ROADMAP §10; la B, `goal-compass.json` con los campos que lee el cargador del plugin. Ambos son lecturas de fichero sin git ni procesos. Las 10 comprobaciones conservan nombre, docstring y fallos cerrados, salvo los dos controles homónimos, que pasan a `test_control_ledger_all_green` y `test_control_mission_all_green`. El prefijo `test_` se mantiene para el glob de `run-all-contracts.sh`. El puntero vivo de `odd/tasks/2026-Q4-work-loop.md:124` apunta al nombre nuevo.
+
+### Pruebas
+
+Sin cargo ni suites; no se lanzó el gate. Base verde: nuevo rc 0 (10 PASS), originales rc 0. Mutaciones del sujeto (fallos nuevo / libro mayor / misión): `**Estado**: CLOSED` → `PENDING` en el goal doc de B1 4/4/0; fila B1 de la tabla del work-loop a `PENDING` 4/4/0; `evidenceRefs` → `evidence` en `goal-compass.json` 3/0/3; `doneWhen` → `done` 3/0/3; ruta de evidencia inexistente 2/0/2. El nuevo falla exactamente lo que falla el original que corresponde. Descartadas por 0/0/0: prioridad cambiada (hay un único candidato, no puede desordenarse) y tag de la fila B1 de ROADMAP alterado. Ficheros restaurados (`cp -p`, `touch`, `cmp`).
+
+**Créditos.** Autoría de Claude Code; el hook `commit-msg` no admite `Co-Authored-By`.
