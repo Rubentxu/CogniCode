@@ -50,6 +50,14 @@ graph LR
 - [observed] `parse` is declared twice in the crate root, at different lines.
 - [inferred] The crate provides procedural macros for newtypes, tools and rules.
 
+## Applications
+
+- [curated] These crates ship binaries, not libraries; they are listed only to show which SDK libraries they build on. Their symbols are not documented here, and `cognicode-explorer` stays out until the TASK-177 decision is lifted.
+- [observed] `cognicode-cli` depends on `cognicode-core`
+- [observed] `cognicode-mcp` depends on `cognicode-core`
+- [observed] `cognicode-sandbox` depends on `cognicode-core`
+- [inferred] No application depends on `cognicode-graph-algos`, `cognicode-macros` or `cognicode-graph-wasm` directly; the graph algorithms reach them through `cognicode-core`.
+
 ## Regenerate
 
 Run from the repository root with the installed `cognicode` CLI:

@@ -108,6 +108,38 @@ def metadata_edges(libraries):
     return edges
 
 
+def application_crates():
+    declared = json.loads(DECLARATION.read_text(encoding="utf-8"))["crates"]
+    return sorted(
+        name for name, info in declared.items()
+        if info["class"] == "application" and name != OUT_OF_SCOPE
+    )
+
+
+APPLICATION_EDGE = re.compile(
+    r"^- \[observed\] `(?P<app>[^`]+)` depends on `(?P<lib>[^`]+)`", re.M
+)
+
+
+def documented_application_edges(body):
+    return {(m.group("app"), m.group("lib")) for m in APPLICATION_EDGE.finditer(body)}
+
+
+def application_edges(applications, libraries):
+    out = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+        timeout=COMMAND_DEADLINE_SECONDS,
+    ).stdout
+    packages = {p["name"]: p for p in json.loads(out)["packages"]}
+    return {
+        (name, dep["name"])
+        for name in applications
+        for dep in packages[name]["dependencies"]
+        if dep["kind"] is None and dep["name"] in libraries
+    }
+
+
 def inspected_functions(crate):
     out = subprocess.run(
         ["cognicode", "inspect", "--file", f"crates/{crate}/src/lib.rs"],
@@ -138,7 +170,7 @@ class SdkArchitectureDocument(unittest.TestCase):
         found = sections(read_document())
         checked = 0
         for title, body in found.items():
-            if title in library_crates() or title in ("Dependency graph", "Scope"):
+            if title in library_crates() or title in ("Dependency graph", "Scope", "Applications"):
                 checked += len([ln for ln in body.splitlines() if ln.startswith("- ")])
                 with self.subTest(section=title):
                     self.assertEqual(unlabelled_statements(body), [])
@@ -166,6 +198,15 @@ class SdkArchitectureDocument(unittest.TestCase):
                 self.assertIn(command, body)
                 self.assertTrue((ROOT / "crates" / crate / "src" / "lib.rs").is_file())
         self.assertIn("cargo metadata --no-deps --offline", body)
+
+    def test_application_dependencies_on_the_libraries_equal_cargo_metadata(self):
+        applications, libraries = application_crates(), library_crates()
+        self.assertTrue(applications, "no application crate declared: nothing to describe")
+        body = sections(read_document()).get("Applications")
+        self.assertIsNotNone(body, "no Applications section")
+        expected = application_edges(applications, libraries)
+        self.assertTrue(expected, "cargo metadata reported no application->library edge")
+        self.assertEqual(documented_application_edges(body), expected)
 
     def test_observed_functions_equal_what_cognicode_reports_now(self):
         if shutil.which("cognicode") is None:
@@ -265,6 +306,12 @@ class ContractDiscriminates(unittest.TestCase):
     def test_functions_are_read_only_from_observed_bullets(self):
         body = "- [observed] `a` (function)\n- [inferred] `b` (function)"
         self.assertEqual(documented_functions(body), {"a"})
+
+    def test_application_edges_are_read_only_from_observed_bullets(self):
+        body = ("- [observed] `a` depends on `b`\n- [curated] `c` depends on `d`\n"
+                "- [observed] `e` mentions `f`")
+        self.assertEqual(documented_application_edges(body), {("a", "b")})
+        self.assertEqual(documented_application_edges(""), set())
 
     def test_a_missing_or_extra_edge_changes_the_edge_set(self):
         text = "```mermaid\ngraph LR\n  a_b --> c_d\n```\n"
