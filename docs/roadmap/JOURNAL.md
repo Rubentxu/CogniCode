@@ -39065,3 +39065,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 947 tests. `tsc -p tsconfig.app.json --noEmit`: 0 errores. `npm run lint`: rc=0 (0 errores, 9 avisos ya registrados). `git diff --check` limpio.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-195-spotter-highlight`, commit `673d7d1b`.
+
+## 2026-11-08 — TASK-196: el atajo Cmd+N del Spotter tiene test propio
+
+**Medición inicial.** TASK-195 cableó el resaltado, pero `pendingViewId` (Cmd+N y Enter) no tenía ningún test: nada fallaba si el atajo dejaba de hacer algo.
+
+**Causa.** No hay defecto de producto. Dos hallazgos del test: (1) con el fixture completo el primer chip deshabilitado es el 11.º, fuera del rango Cmd+1..9, así que el caso «chip deshabilitado» necesita un objeto con dos vistas (placeholder en 3.ª posición); (2) la caché de SWR es de módulo y la clave es la consulta, así que dos tests con la misma consulta y distinto cuerpo MSW reciben el cuerpo del primero.
+
+**Cambios.** `Spotter.test.tsx`: tres tests en «Cmd+N chip shortcut» (Cmd+3 + Enter abre `source` en vez de `call-graph`; Enter solo abre el defecto; Cmd+3 sobre chip deshabilitado se ignora). Sin cambios de producción.
+
+**Verificación.** RED medido anulando `setPendingViewId(chip.viewId)` en `Spotter.tsx` (copia en /tmp, restaurado): falla `expected 'call-graph' to be 'source'`. `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 950 tests (antes 947). tsc 0 errores, lint rc=0 (9 avisos ya registrados), `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-196-spotter-cmd-n`, commit `d0c777fd`.
