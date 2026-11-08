@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-07, sobre `5c813212050cb7927119e910b0109e13fefa2be9` (la
+> **Snapshot**: 2026-11-08, sobre `aebb183c94233b650c785952d197dcddf0b52ced` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -315,25 +315,29 @@
 > siguiente turno del calendario; y el plazo alcanza también a `scripts/` y
 > `scripts/product/`, al recorrido recursivo de `sandbox/scripts` y a todo `curl`
 > de los scripts de shell; y la release `v0.102.1` está publicada e instalada
-> (la `v0.102.0` no pasó su suite, no tiene release y no se mueve).
+> (la `v0.102.0` no pasó su suite, no tiene release y no se mueve); y
+> la interfaz CLI vive ya en `cognicode-cli` y el core no importa
+> `interface::cli` ni arrastra `opentelemetry-otlp` (TASK-165), y los
+> contratos dejan un informe con salida y entorno en su primer fallo (TASK-158).
 > Versión del workspace: `0.102.1`. Última release publicada: `v0.102.1`
 > (2026-11-07, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`765ea29f` → `5c813212050cb7927119e910b0109e13fefa2be9`)
+## Qué cambió desde el snapshot anterior (`5c813212` → `aebb183c94233b650c785952d197dcddf0b52ced`)
 
-Entre una punta y otra entraron **6 commits** (`git rev-list --count 765ea29fc3b4eb9eae23b00982aea1603489263c..5c813212050cb7927119e910b0109e13fefa2be9`).
+Entre una punta y otra entraron **12 commits** (`git rev-list --count 5c813212050cb7927119e910b0109e13fefa2be9..aebb183c94233b650c785952d197dcddf0b52ced`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| `scripts/` y `scripts/product` llevan plazo en todo subprocess | `cccb3bdf` (TASK-161) | El contrato por `ast` cubre los scripts raíz y los de producto; una llamada sin plazo es un rojo. |
-| El contrato de plazos es recursivo y cubre `sandbox/scripts` | `040af78e` (TASK-162) | El recorrido ya no se detiene en el primer nivel. |
-| Todo `curl` de los scripts shell lleva plazo | `dce24aab` (TASK-163) | Un remoto que no contesta es «sin respuesta», no un veredicto. |
-| Recibo: la regla dura 7 en Rust no deja deuda | `b62f715b` (sin tarea) | Se midió que no hay llamada de Rust que justifique una tarea. |
-| Corte `v0.102.0` (sin release) y `v0.102.1` | `8eec4c63`, `5c813212` (sin tarea) | `v0.102.0` no pasó su suite; `v0.102.1` lleva los dos arreglos y se publicó con 8 assets. |
+| Recibo de la `v0.102.1` publicada e instalada | `d09c2a9c` (sin tarea) | Es el snapshot anterior regenerado; no mueve código. |
+| El servidor MCP escribe una traza de enlaces opt-in y se documenta cómo contarla | `ed72b4a6`, `e92e7d6b` (TASK-94) | La medición es del contrato de cable; el recibo está en el `JOURNAL`. |
+| Los contratos dejan un informe con salida y entorno en su primer fallo, sin heredar el destino del informe | `829c048b`, `3a086163` (TASK-158) | El fallo intermitente deja evidencia en vez de un rojo mudo. |
+| `interface/cli` pasa a `cognicode-cli`; el core ya no importa `interface::cli` ni lleva `opentelemetry-otlp` | `c6ecb8fa`, `cb9cbc2f`, `12b4c25b`, `bd11c41b`, `de8b1022` (TASK-165) | `SymbolId` e `Intent` pasan a `domain`; `ViewDescriptor` y el catálogo salen de `interface`. |
+| El cliente MCP admite trazas encadenadas de rmcp | `a6787e44` (TASK-94) | Es el productor de la traza real de enlaces. |
+| Recibo de la verificación del consumidor de TASK-165 | `aebb183c` (TASK-165) | Documental. |
 
 ## Release: la última publicada es la v0.102.1
 

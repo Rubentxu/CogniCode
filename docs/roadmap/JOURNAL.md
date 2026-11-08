@@ -38969,3 +38969,13 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Consumidores.** Contratos MCP focales: 4/4 (`mcp_catalog_anchor` y `mcp_failure_arrives_as_failure`). Contratos `cogh_cli`: 7/7. Contratos `cognicode`: 3/3 (`graph_cli_mcp_equivalence` y `json_stdout_is_one_document`). `cargo check -p cognicode`: `rc=0`.
 
 **Resultado.** AC2 y AC3 tienen evidencia focal suficiente sobre el commit solicitado. No se ejecutó el gate global, no se modificó el producto, no se repitió TASK-164 y no se tocaron trazas. AC1 permanece separada y sin marcar en TASK-165; el script local `backlog-import-producto-v2.sh` continúa fuera del repositorio.
+
+## 2026-11-08 — TASK-186: CURRENT.md regenerado sobre aebb183c
+
+**Causa.** `test_roadmap_coherence` tenía dos rojos (`test_current_sha_matches_head`, `test_control_all_green`): el snapshot declaraba `5c813212`, a 12 commits de la base con `main` (`aebb183c`), y la ventana es 5.
+
+**Cambio.** Cabecera (fecha y SHA completo `aebb183c94233b650c785952d197dcddf0b52ced`, que vive en `main`), una cláusula de prosa (TASK-165, TASK-158) y la tabla «Qué cambió» con una fila por unidad; el recuento de 12 commits está medido con `git rev-list --count`.
+
+**Segundo hallazgo.** `bash scripts/ci/run-all-contracts.sh` salía rc=1 por `test_pr_merge_guard.py` y `test_sdk_surfaces.py` (TASK-183/178): son clases `unittest` y el runner solo lee funciones `test_*` de módulo, así que ejecutaban 0 casos («exposes no test_* function»). Se añadió un puente por fichero que carga la clase, exige `testsRun > 0` y falla con la causa de cada caso rojo.
+
+**Verificación.** `scripts/run_contract_tests.py scripts/ci/test_roadmap_coherence.py` 29/29 (antes 2 rojos); los dos contratos puenteados 1/1 cada uno, y por su ruta directa 11 y 34 casos OK. Gate NOT_RUN (política de lotes).
