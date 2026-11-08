@@ -44,6 +44,7 @@ mod cached_coverage_is_honest;
 mod callgraph_projection_orientation;
 mod checkpoint_integration;
 mod core_declares_only_the_dependencies_it_uses;
+mod context_semantics;
 mod cp5_tie_break;
 mod cu1_w2_facade_contract;
 mod cu1_w2_service_analyzer_contract;
