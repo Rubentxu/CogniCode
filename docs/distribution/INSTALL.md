@@ -121,3 +121,34 @@ versionado** como `~/.local/opt/cognicode-mcp/<versión>/bin/`. La configuració
 de OpenCode puede apuntar temporalmente a ese binario; el estado de
 `cogh doctor` no cambia por instalar una copia externa. No confundir este
 procedimiento de recuperación con una reparación de la instalación gestionada.
+
+## Consuming the SDK
+
+This section is written in English; the rest of this guide is in Spanish.
+
+The four `library` crates declared in
+[`SDK_SURFACES.json`](SDK_SURFACES.json) are the SDK. Their layout is described
+in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
+[`SDK_RELEASE.md`](SDK_RELEASE.md).
+
+**Limitation: the SDK is not yet published on crates.io.** Publishing needs a
+registry token and an explicit operator confirmation, and it is tracked by
+TASK-178 (acceptance criterion 4). Until then the commands below do not
+resolve from the registry and will fail. They document the intended usage at
+the workspace version `0.102.1`.
+
+Once published, add the crates in publication order, dependencies first
+(`cognicode-core` depends on `cognicode-graph-algos` and `cognicode-macros`;
+`cognicode-graph-wasm` depends on `cognicode-graph-algos`):
+
+```bash
+cargo add cognicode-graph-algos@=0.102.1
+cargo add cognicode-macros@=0.102.1
+cargo add cognicode-core@=0.102.1
+cargo add cognicode-graph-wasm@=0.102.1
+```
+
+Add only the crates your project uses; the order matters for publishing, not
+for consuming. Pin every crate to the same version (`=`), because they are
+released together. Feature combinations and the supported toolchain are listed
+in `SDK_RELEASE.md`.

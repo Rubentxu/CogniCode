@@ -181,6 +181,64 @@ class SdkArchitectureDocument(unittest.TestCase):
         self.assertGreater(compared, 0, "no function compared: the check would be vacuous")
 
 
+def consuming_section(text):
+    """Body of the `## Consuming the SDK` section, or None."""
+    return sections(text).get("Consuming the SDK")
+
+
+def cargo_add_lines(body, version):
+    """Crates named by `cargo add <crate>@=<version>` lines, in document order."""
+    pattern = r"^cargo add (\S+)@=" + re.escape(version) + r"\s*$"
+    return re.findall(pattern, body, re.M)
+
+
+def release_order():
+    """Publication order, read from the numbered list of SDK_RELEASE.md."""
+    text = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+    start = text.index("Publication order")
+    return re.findall(r"^\d+\. `([^`]+)`$", text[start:].split("Procedure", 1)[0], re.M)
+
+
+def workspace_version():
+    text = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    return re.search(r"\[workspace\.package\][^\[]*?\nversion = \"([^\"]+)\"", text).group(1)
+
+
+class SdkConsumptionGuide(unittest.TestCase):
+    GUIDE = ROOT / "docs" / "distribution" / "INSTALL.md"
+
+    def body(self):
+        body = consuming_section(self.GUIDE.read_text(encoding="utf-8"))
+        self.assertIsNotNone(body, "INSTALL.md has no 'Consuming the SDK' section")
+        return body
+
+    def test_every_library_crate_is_added_at_the_workspace_version_in_release_order(self):
+        libraries = library_crates()
+        order = release_order()
+        self.assertTrue(libraries and order, "no crate or order read: the check would be vacuous")
+        self.assertEqual(sorted(order), libraries, "SDK_RELEASE.md order and SDK_SURFACES.json disagree")
+        self.assertEqual(cargo_add_lines(self.body(), workspace_version()), order)
+
+    def test_registry_dependent_instructions_are_marked_as_a_limitation(self):
+        body = self.body()
+        self.assertIn("crates.io", body)
+        self.assertIn("TASK-178", body)
+        self.assertRegex(body, r"(?i)not (yet )?published")
+
+    def test_the_section_stays_inside_the_sdk_scope(self):
+        self.assertNotIn("Explorer handoff", self.body())
+
+
+class ConsumptionCheckDiscriminates(unittest.TestCase):
+    def test_a_missing_section_or_wrong_version_or_order_is_detected(self):
+        self.assertIsNone(consuming_section("## Other\n- x"))
+        doc = "## Consuming the SDK\ncargo add a@=1.0.0\ncargo add b@=1.0.0\n## Next\n"
+        body = consuming_section(doc)
+        self.assertEqual(cargo_add_lines(body, "1.0.0"), ["a", "b"])
+        self.assertEqual(cargo_add_lines(body, "2.0.0"), [])
+        self.assertNotEqual(cargo_add_lines(body, "1.0.0"), ["b", "a"])
+
+
 class DeveloperGuideLinks(unittest.TestCase):
     """CONTRIBUTING.md must lead a developer to the SDK architecture sources."""
 
