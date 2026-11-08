@@ -38,7 +38,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.96.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.102.1`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@0.96.0`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.102.1`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 ### Binario precompilado publicado (recuperación independiente)
 
@@ -377,9 +377,8 @@ código** de los agentes de IA. En lugar de pedirle al agente que lea archivos
 e intuya la estructura, le das herramientas que devuelven respuestas precisas
 y estructuradas.
 
-📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contiene 20 escenarios
-de prompts listos para usar, con cadenas de razonamiento completas y secuencias
-de tool calls. Un vistazo:
+Un vistazo a los escenarios de prompts, con sus cadenas de razonamiento y
+secuencias de tool calls:
 
 ---
 
@@ -423,7 +422,31 @@ Estos son solo 2 de los 20 escenarios. La guía completa cubre **detección de
 código muerto, refactoring seguro con rename, auditorías de complejidad,
 trazado de rutas de ejecución** y mucho más.
 
-👉 [Lee la Guía Completa de Prompts para Agentes →](docs/agent-prompts-es.md) · [English version →](docs/agent-prompts.md)
+## Versionado
+
+- **Release vigente:** `v0.102.1`, cortada desde este árbol con ese tag. La
+  release publicada desde él es la que sirve un `install.sh` sin versión
+  fijada. La anterior publicada es
+  [`v0.101.30`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.30);
+  `v0.101.24`, `v0.101.25` y `v0.101.26` tienen tag pero nunca se publicaron,
+  y un tag que no se publicó no se mueve. v0.102.1 es una versión menor: el
+  grafo se publica en orden canónico, el sobre de la respuesta (resultado,
+  base, enlaces siguientes) tiene un solo dueño y cada pregunta declara la
+  cobertura con la que se respondió.
+- **Los binarios informan:** `0.102.1` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1).
+- **Tags sin release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
+  `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` y
+  `v0.101.26` existen y nunca se publicaron; cada uno tiene una entrada en el
+  changelog que explica el motivo.
+- **Releases publicadas con un conjunto de assets incompleto:** `v0.101.11` a
+  `v0.101.16` publican 3 de 8 assets. La causa está en la entrada de
+  v0.101.17 del changelog.
+- **Autoridad de seguimiento:** la fila `PRODUCT-1.0` de [`docs/roadmap/ROADMAP.md` §2](docs/roadmap/ROADMAP.md).
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+
+Las releases se derivan de `[workspace.package] version` en `Cargo.toml` y las
+comprueba `scripts/ci/release-tag-coherence.sh` (R8).
 
 ## Licencia
 

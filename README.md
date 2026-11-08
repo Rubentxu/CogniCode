@@ -70,9 +70,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # MCP daemon
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # expect: cogh 0.101.10
-./target/release/cognicode --version    # expect: cognicode 0.101.10
-./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.101.10
+./target/release/cogh --version         # expect: cogh 0.102.1
+./target/release/cognicode --version    # expect: cognicode 0.102.1
+./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.102.1
 ```
 
 > **Note:** the published binaries also include the binaries for the cross-toolchain
@@ -389,9 +389,8 @@ CogniCode is designed to be the **code intelligence backbone** for AI agents.
 Instead of asking an agent to read files and guess at structure, you give it
 tools that return precise, structured answers.
 
-📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contains 20 ready-to-use
-prompt scenarios with full reasoning chains and tool call sequences. Here's a
-taste:
+Here is a taste of the prompt scenarios, with their reasoning chains and tool
+call sequences:
 
 ---
 
@@ -432,8 +431,6 @@ files, and the full call chain — before touching a single line of code.
 
 These are just 2 of 20 scenarios. The full guide covers **dead code detection,
 safe rename refactoring, complexity audits, execution path tracing**, and more.
-
-👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md) · [Versión en español →](docs/agent-prompts-es.md)
 
 ## Versioning
 
