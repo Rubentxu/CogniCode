@@ -18,6 +18,7 @@ because there was nothing to compare.
 import json
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,15 @@ def local_links(path: Path) -> list[str]:
         for t in targets
         if not re.match(r"[a-z]+:|#|mailto:", t) and t.split("#", 1)[0]
     ]
+
+
+def root_markdown() -> list[Path]:
+    """Tracked Markdown files at the repository root."""
+    return sorted(ROOT / f for f in tracked_files() if "/" not in f and f.endswith(".md"))
+
+
+def missing_links(path: Path, links: list[str]) -> list[str]:
+    return sorted({l for l in links if not (path.parent / l).exists()})
 
 
 def install_docs() -> list[Path]:
@@ -758,6 +768,31 @@ class ReadmeContract(unittest.TestCase):
                 [], missing, f"{path.relative_to(ROOT)} links to missing files"
             )
         self.assertTrue(total, "no install guide has a local link: nothing checked")
+
+    def test_root_markdown_links_exist_relative_to_the_document(self):
+        roots = root_markdown()
+        total = 0
+        for path in roots:
+            links = local_links(path)
+            total += len(links)
+            self.assertEqual(
+                [], missing_links(path, links), f"{path.name} links to missing files"
+            )
+        self.assertGreaterEqual(len(roots), 8, "too few root documents: nothing checked")
+        self.assertTrue(total, "no root document has a local link: nothing checked")
+
+    def test_the_root_link_check_discriminates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "real.md").write_text("x", encoding="utf-8")
+            doc = base / "doc.md"
+            doc.write_text(
+                "[ok](real.md#a) [gone](docs/ghost.md#b) [web](https://x.y) [a](#top)",
+                encoding="utf-8",
+            )
+            self.assertEqual(["docs/ghost.md"], missing_links(doc, local_links(doc)))
+            doc.write_text("[ok](real.md)", encoding="utf-8")
+            self.assertEqual([], missing_links(doc, local_links(doc)))
 
     def test_developer_guides_cite_scripts_paths_and_recipes_that_exist(self):
         files, recipes = tracked_files(), justfile_recipes()
