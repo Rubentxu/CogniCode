@@ -244,7 +244,7 @@ def kebab(name: str) -> str:
 
 def clap_variants(source: str, enum: str) -> set[str]:
     """Kebab-case variant names of a clap enum, plus explicit `name = \"x\"` renames."""
-    m = re.search(r"pub enum %s \{(.*?)\n\}" % enum, source, re.S)
+    m = re.search(r"(?:pub )?enum %s \{(.*?)\n\}" % enum, source, re.S)
     if not m:
         return set()
     body = m.group(1)
@@ -295,6 +295,60 @@ def readme_reference_gaps(text: str, meta: dict, files: set[str], tools: set[str
         gaps += [f"cognicode {group} {x}" for x in sorted(subs[group] - clap_variants(source, enum))]
     if positional:
         gaps.append("cognicode refactor lists operations positionally; clap takes --operation")
+    return gaps
+
+
+CLI_SRC = ROOT / "crates" / "cognicode-cli" / "src"
+# binary -> (sources defining its clap surface, enum holding its subcommands)
+BINARY_SURFACES = {
+    "cognicode": ([CLI_SRC / "main.rs", *sorted((CLI_SRC / "cli").glob("*.rs"))], "CliCommand"),
+    "cogh": ([CLI_SRC / "bin" / "cogh.rs", *sorted((CLI_SRC / "cmd").glob("*.rs"))], "Command"),
+    "cognicode-release": ([CLI_SRC / "bin" / "release.rs"], "Command"),
+    "cognicode-mcp": ([ROOT / "crates" / "cognicode-mcp" / "src" / "main.rs"], None),
+}
+ARG_ATTR = re.compile(r"#\[(?:arg|clap)\(([^\]]*?)\)\]\s*(?:pub\s+)?(\w+)\s*:", re.S)
+BINARY_CALL = re.compile(r"(?:^|[\s/])(cogh|cognicode-release|cognicode-mcp|cognicode)(?=\s|$)(.*)$")
+
+
+def clap_flags(sources: list[Path]) -> set[str]:
+    """Long and short flags a clap-derive source declares, plus the implicit ones."""
+    flags = {"--help", "-h", "--version", "-V"}
+    for src in sources:
+        for attr, field in ARG_ATTR.findall(src.read_text(encoding="utf-8")):
+            if re.search(r"\blong\b", attr):
+                named = re.search(r'long\s*=\s*"([\w-]+)"', attr)
+                flags.add("--" + (named.group(1) if named else field.replace("_", "-")))
+            if re.search(r"\bshort\b", attr):
+                named = re.search(r"short\s*=\s*'(\w)'", attr)
+                flags.add("-" + (named.group(1) if named else field[0]))
+    return flags
+
+
+def binary_references(text: str) -> dict[str, tuple[set[str], set[str]]]:
+    """{binary: (flags, first subcommand words)} cited in code spans."""
+    found = {b: (set(), set()) for b in BINARY_SURFACES}
+    for span in code_spans(text):
+        for line in span.splitlines():
+            line = re.sub(r"\s+#.*$", "", line)
+            for binary, rest in BINARY_CALL.findall(line):
+                flags, subs = found[binary]
+                flags.update(re.findall(r"(?<![\w-])(--?[A-Za-z][\w-]*)", rest))
+                word = re.match(r"\s+([a-z][\w-]*)", rest)
+                if word:
+                    subs.add(word.group(1))
+    return found
+
+
+def binary_surface_gaps(text: str) -> list[str]:
+    gaps = []
+    for binary, (flags, subs) in binary_references(text).items():
+        sources, enum = BINARY_SURFACES[binary]
+        known_flags = clap_flags(sources)
+        gaps += [f"{binary} {f}" for f in sorted(flags - known_flags)]
+        if enum:
+            joined = "\n".join(src.read_text(encoding="utf-8") for src in sources)
+            known = clap_variants(joined, enum) | {"help"}
+            gaps += [f"{binary} {w}" for w in sorted(subs - known)]
     return gaps
 
 
@@ -453,6 +507,28 @@ class ReadmeContract(unittest.TestCase):
         ):
             gaps = readme_reference_gaps(bad, meta, files, tools)
             self.assertTrue(any(label in g for g in gaps), (label, gaps))
+
+
+    def test_readme_flags_and_subcommands_exist_in_the_clap_sources(self):
+        for readme in (EN, ES):
+            text = readme.read_text(encoding="utf-8")
+            cited = binary_references(text)
+            for binary in ("cognicode", "cogh", "cognicode-mcp"):
+                flags, subs = cited[binary]
+                self.assertTrue(flags or subs, f"{readme.name}: {binary} is never cited")
+            self.assertEqual([], binary_surface_gaps(text), readme.name)
+
+    def test_binary_surface_check_discriminates(self):
+        self.assertEqual([], binary_surface_gaps("`cogh install --ide x --profile y`\n`cognicode graph hot-paths -n 3`"))
+        for bad, label in (
+            ("`cogh install --ghost-flag`", "cogh --ghost-flag"),
+            ("`cognicode-mcp --ghost`", "cognicode-mcp --ghost"),
+            ("`cognicode-release skills --ghost`", "cognicode-release --ghost"),
+            ("`cogh ghostcmd`", "cogh ghostcmd"),
+            ("`cognicode-release ghostcmd`", "cognicode-release ghostcmd"),
+            ("`cognicode ghostcmd`", "cognicode ghostcmd"),
+        ):
+            self.assertIn(label, binary_surface_gaps(bad))
 
 
 if __name__ == "__main__":
