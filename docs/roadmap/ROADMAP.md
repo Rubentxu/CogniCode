@@ -466,8 +466,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     dos rutas y silencio en la tercera, un directorio que no existe se
 >     rechaza en una sola, y el orden de los resultados no lo fija la
 >     asíncrona. La forma, en `docs/adr/ADR-056-the-routes-say-the-same.md`.
->     Medido el primer par: completa y per-file publican la misma pérdida con
->     su motivo (`TASK-14`); faltan la asíncrona y la semántica, que exige `C23`.
+>     Medido el primer par; la coherencia completa/per-file/asíncrona y la cobertura MCP per-file quedaron cerradas en `TASK-166` (PR #744); `C23` aún debe cerrar la semántica compartida.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
