@@ -25,6 +25,8 @@ import {
   type AppState,
 } from "../state/context";
 import { Spotter } from "./Spotter";
+import { chipsFromResult } from "./Spotter/IntentFooter";
+import type { SpotterSearchResult } from "../api/schemas";
 import { inspectableObjectFixture } from "../mocks/fixtures";
 
 /**
@@ -416,6 +418,106 @@ describe("Spotter (open)", () => {
     expect(screen.getByTestId("spotter-intent-footer")).not.toHaveTextContent(
       /pick a result/i,
     );
+  });
+
+  describe("Cmd+N chip shortcut", () => {
+    /** Loads one symbol hit, types into the palette and returns the live state. */
+    async function openWithOneHit() {
+      server.use(
+        http.get("/api/workspaces/:workspace_id/spotter", async () => {
+          await delay(20);
+          return HttpResponse.json([
+            {
+              kind: "symbol",
+              result: {
+                object: inspectableObjectFixture,
+                score: 0.9,
+                match_type: "name_exact",
+              },
+            },
+          ]);
+        }),
+      );
+      const user = userEvent.setup();
+      const captured: { current: AppState | null } = { current: null };
+      render(
+        <Harness
+          initial={{ spotterOpen: true }}
+          onState={(s) => {
+            captured.current = s;
+          }}
+        />,
+      );
+      await user.type(screen.getByTestId("spotter-input"), "build");
+      await screen.findByTestId("spotter-intent-overview");
+      return { user, captured };
+    }
+
+    // The fixture lists overview, call-graph, source, ...: the symbol default
+    // is call-graph (2nd chip), so Cmd+3 (source) is distinguishable from it.
+    it("Cmd+3 then Enter opens the third chip's view instead of the kind default", async () => {
+      const { user, captured } = await openWithOneHit();
+      await user.keyboard("{Meta>}3{/Meta}");
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("source");
+      });
+      expect(captured.current?.activeObjectId).toBe(inspectableObjectFixture.id);
+      expect(captured.current?.spotterOpen).toBe(false);
+    });
+
+    it("Enter without Cmd+N opens the kind default view", async () => {
+      const { user, captured } = await openWithOneHit();
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("call-graph");
+      });
+    });
+
+    it("Cmd+N on a disabled chip is ignored and Enter keeps the default view", async () => {
+      // Two real views leave the "Open as C4" placeholder (disabled) at
+      // position 3, inside the Cmd+1..9 range.
+      const twoViews = {
+        ...inspectableObjectFixture,
+        available_views: inspectableObjectFixture.available_views.slice(0, 2),
+      };
+      server.use(
+        http.get("/api/workspaces/:workspace_id/spotter", async () => {
+          await delay(20);
+          return HttpResponse.json([
+            {
+              kind: "symbol",
+              result: { object: twoViews, score: 0.9, match_type: "name_exact" },
+            },
+          ]);
+        }),
+      );
+      const user = userEvent.setup();
+      const captured: { current: AppState | null } = { current: null };
+      render(
+        <Harness
+          initial={{ spotterOpen: true }}
+          onState={(s) => {
+            captured.current = s;
+          }}
+        />,
+      );
+      // A query no other test uses: SWR's module-level cache is keyed on it and
+      // would otherwise answer with the full-view object cached by a sibling.
+      await user.type(screen.getByTestId("spotter-input"), "two views");
+      await screen.findByTestId("spotter-intent-overview");
+      const chips = chipsFromResult({
+        kind: "symbol",
+        result: { object: twoViews, score: 0.9, match_type: "name_exact" },
+      } as SpotterSearchResult);
+      expect(chips[2]?.disabled).toBe(true);
+
+      await user.keyboard("{Meta>}3{/Meta}");
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("call-graph");
+      });
+    });
   });
 
   it("Cmd+1 with no highlighted result does not crash", async () => {
