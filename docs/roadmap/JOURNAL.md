@@ -39017,3 +39017,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** Matriz relanzada completa: 31/31 con rc=0 (antes 19/12), sin avisos en las combinaciones de core. `cargo nextest run --profile gate -p cognicode-core --lib --tests` (sin filtro, en serie, binarios release en `/tmp/t184/target/release`): 3605 passed, 0 skipped, rc=0. Mismo comando con `-p cognicode-runtime`: 18 passed, 0 skipped, rc=0. `git diff --check` rc=0. Logs en `/tmp/t184/matrix/`, tabla previa en `/tmp/t184/summary-before.txt`.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commits locales en `task-191-feature-matrix`.
+
+## 2026-11-08 — TASK-192: benches, examples y `#[ignore]` ejecutados de verdad
+
+**Medición inicial.** `cargo test --workspace --benches --examples --no-fail-fast -j1` (destino aislado `/tmp/t184/target`): rc=0. Se ejecutaron una vez los 5 benches (`b6_w2_reproducible_perf`, `fact_bridge_benchmarks`, `graph_benchmarks`, `reparse_benchmarks` en core; `explorerql_benchmarks` en explorer) y el example `page_rank` de graph-algos; ninguno hizo panic. `crates/spike-ladybug` está excluido del workspace (sus 12 examples son experimentos y `s5_query_pg` exige Postgres): NOT_RUN. Inventario de `#[ignore]`: 0 atributos vivos; las 15 apariciones eran comentarios.
+
+**Causa.** Un único comentario seguía describiendo un test `#[ignore]` ya inexistente (`cmd_update_zero_component_profile_does_not_pin_tracker`, bug anterior al arreglo e86.1) y mandaba a correrlo con `--ignored`.
+
+**Cambios.** `crates/cognicode-cli/src/cmd/layout.rs`: se elimina ese bloque de 44 líneas; el comentario vigente de e86.1 se conserva. Sin cambio de comportamiento.
+
+**Verificación.** `cargo nextest run --profile gate -p cognicode-cli --lib --tests` (sin filtro, en serie, binarios release): 765 passed, 0 skipped, rc=0. `git diff --check` rc=0. Logs: `/tmp/t184/benches-examples.log`, `/tmp/t184/nextest-cli.log`.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commits locales en `task-192-bench-example-ignore-audit`.
