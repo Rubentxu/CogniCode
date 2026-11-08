@@ -39041,3 +39041,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** Log en `/tmp/t184/explorer-ui.log`. `git diff --check` rc=0.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commit local en `task-193-explorer-ui-suite`.
+
+## 2026-11-08 — TASK-194: lint y type-check del explorer-ui
+
+**Medición inicial.** Ni el gate ni las auditorías previas ejecutaban `eslint` ni `tsc`, y `vitest` transpila sin comprobar tipos. `npm run lint`: 37 problemas. `tsc -p tsconfig.app.json --noEmit`: 63 errores. `tsconfig.node.json`: limpio. Logs en `/tmp/t184/ui-lint.log`, `/tmp/t184/ui-tsc-app.log`.
+
+**Causa.** Una suite verde ocultaba tres defectos de comportamiento: (1) `updateInvestigation`/`deleteInvestigation` llamaban a `apiPut`/`apiDelete` sin schema y `handleResponse` fallaba con `TypeError … reading 'parse'`; (2) `PinEvidenceModal` enviaba `view_id: undefined` donde el schema exige `null`; (3) `Spotter` registraba un `onChange` en `Command.List` que cmdk no invoca (derivado a TASK-195). Además, imports rotos (`RequestOpts`, `/src/api/client`, `../../api/schemas`), `saved_exploration` ausente en `kindDefaultView`, un tipo de `multimodal.ts` que no reflejaba la tabla en runtime, d3 sin tipos por la entrada `d3-*` y código sin uso.
+
+**Cambios.** Tests RED→GREEN para (1) y (2) (`useInvestigations.test.ts`, `PinEvidenceModal.test.tsx`) y arreglo mínimo. Tipos y símbolos sin uso corregidos en producción y tests. `eslint.config.js`: patrón `^_` para variables sin uso, y `react-refresh/only-export-components` pasa a `warn` (es una comodidad del servidor de desarrollo, no de corrección; quedan 9 avisos visibles, 5 de ellos de esa regla).
+
+**Verificación.** `npm run lint` rc=0 (0 errores, 9 avisos). `tsc` app y node: 0 errores. `npm test` sin filtro: rc=0, 88 ficheros y 947 tests (antes 86 y 944), log `/tmp/t184/ui-vitest-194.log`. `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Ramas `task-194-explorer-ui-lint-types`. Pendiente: TASK-195 (resaltado de Spotter). Lint y tsc del explorer-ui pasan a ser pre-review checks con medición registrada.
