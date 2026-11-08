@@ -181,6 +181,22 @@ class SdkArchitectureDocument(unittest.TestCase):
         self.assertGreater(compared, 0, "no function compared: the check would be vacuous")
 
 
+class DeveloperGuideLinks(unittest.TestCase):
+    """CONTRIBUTING.md must lead a developer to the SDK architecture sources."""
+
+    GUIDE = ROOT / "CONTRIBUTING.md"
+    TARGETS = ("docs/distribution/SDK_ARCHITECTURE.md", "docs/distribution/SDK_SURFACES.json")
+
+    def test_contributing_links_to_the_architecture_document_and_the_surface_declaration(self):
+        text = self.GUIDE.read_text(encoding="utf-8")
+        self.assertTrue(text.strip(), "CONTRIBUTING.md is empty: the check would pass on nothing")
+        links = {m.group(1) for m in re.finditer(r"\]\(([^)#\s]+)", text)}
+        for target in self.TARGETS:
+            with self.subTest(target=target):
+                self.assertIn(target, links, f"CONTRIBUTING.md does not link to {target}")
+                self.assertTrue((ROOT / target).is_file(), f"{target} does not exist")
+
+
 class ContractDiscriminates(unittest.TestCase):
     """The checks above must be able to fail."""
 

@@ -19,6 +19,13 @@ is the MCP adapter, `crates/cognicode-cli` is the CLI adapter. Application ports
 must not depend on MCP adapters. If you are unsure where a change belongs, ask
 in an issue first — a change in the wrong layer costs more than a question.
 
+For the library crates published as the SDK, the crate classification
+(library, application, internal) is declared in
+[`docs/distribution/SDK_SURFACES.json`](docs/distribution/SDK_SURFACES.json),
+and their observed dependency graph and public entry points are described in
+[`docs/distribution/SDK_ARCHITECTURE.md`](docs/distribution/SDK_ARCHITECTURE.md).
+That document covers the library crates only; the Explorer is out of its scope.
+
 ## License
 
 By contributing you agree that your contribution is licensed under the same
