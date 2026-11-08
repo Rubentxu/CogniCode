@@ -32,6 +32,15 @@ SEMVER_POLICY = ROOT / "docs" / "distribution" / "SEMVER_POLICY.md"
 SEMVER_POLICY_URL = (
     "https://github.com/Rubentxu/CogniCode/blob/main/docs/distribution/SEMVER_POLICY.md"
 )
+SDK_RELEASE = ROOT / "docs" / "distribution" / "SDK_RELEASE.md"
+RELEASE_SECTIONS = (
+    "Dependency graph",
+    "Supported feature combinations",
+    "Toolchain",
+    "Examples",
+    "Release and rollback",
+)
+COMBINATION_STATUSES = {"checked", "not measured", "unsupported"}
 POLICY_SECTIONS = (
     "Scope",
     "Breaking changes",
@@ -101,6 +110,21 @@ def section(text, title):
         re.MULTILINE | re.DOTALL,
     )
     return match.group(1) if match else None
+
+
+def library_graph():
+    """Normal (non-dev, non-build) dependencies between the library crates."""
+    libs = library_packages()
+    return {
+        name: sorted(
+            d["name"] for d in pkg["dependencies"] if d["kind"] is None and d["name"] in libs
+        )
+        for name, pkg in libs.items()
+    }
+
+
+def release_text():
+    return SDK_RELEASE.read_text(encoding="utf-8")
 
 
 def declared_crates():
@@ -335,6 +359,103 @@ class SdkSurfaceContract(unittest.TestCase):
                 self.assertIn(SEMVER_POLICY_URL, readme, "README does not link the semver policy")
                 copied = [l.strip() for l in readme.splitlines() if l.strip() in policy_lines]
                 self.assertEqual(copied, [], "README copies policy text instead of linking it")
+
+    def test_one_sdk_release_document_has_every_section(self):
+        self.assertTrue(SDK_RELEASE.is_file(), f"missing {SDK_RELEASE.relative_to(ROOT)}")
+        stray = [
+            str(p.relative_to(ROOT))
+            for p in (ROOT / "docs").rglob("*")
+            if p.is_file() and "sdk_release" in p.name.lower() and p != SDK_RELEASE
+        ]
+        self.assertEqual(stray, [], "a second SDK release document exists")
+        for title in RELEASE_SECTIONS:
+            with self.subTest(section=title):
+                body = section(release_text(), title)
+                self.assertIsNotNone(body, f"no `## {title}` section")
+                self.assertTrue(body.strip(), f"section `{title}` is empty")
+
+    def test_documented_dependency_graph_equals_cargo_metadata(self):
+        body = section(release_text(), "Dependency graph") or ""
+        documented = {}
+        for crate, deps in re.findall(r"^- `([^`]+)` ->(.*)$", body, re.MULTILINE):
+            documented[crate] = sorted(re.findall(r"`([^`]+)`", deps))
+        self.assertTrue(library_graph(), "metadata returned no library graph")
+        self.assertEqual(documented, library_graph())
+
+    def test_documented_publication_order_respects_the_graph(self):
+        body = section(release_text(), "Release and rollback") or ""
+        order = re.findall(r"^\d+\. `(cognicode[^`]*)`", body, re.MULTILINE)
+        graph = library_graph()
+        self.assertEqual(sorted(order), sorted(graph), "order must list every library once")
+        for position, crate in enumerate(order):
+            for dep in graph[crate]:
+                with self.subTest(crate=crate, dependency=dep):
+                    self.assertLess(order.index(dep), position, "a dependency is published after its dependent")
+
+    def test_internal_dependency_versions_equal_the_workspace_version(self):
+        root = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+        version = re.search(r'^version = "([^"]+)"', root, re.MULTILINE).group(1)
+        pinned = re.findall(
+            r'^(cognicode-[\w-]+) = \{ path = "[^"]+", version = "([^"]+)"', root, re.MULTILINE
+        )
+        self.assertTrue(pinned, "no internal dependency pins a version")
+        for name, pin in pinned:
+            with self.subTest(dependency=name):
+                self.assertEqual(pin, version, "internal pin differs from [workspace.package] version")
+
+    def test_release_section_states_the_rollback_mechanism(self):
+        body = (section(release_text(), "Release and rollback") or "").lower()
+        for word in ("cargo package", "yank", "patch release", "semver_policy.md"):
+            with self.subTest(word=word):
+                self.assertIn(word, body)
+
+    def test_feature_combinations_are_declared_with_a_measured_status(self):
+        body = section(release_text(), "Supported feature combinations") or ""
+        rows = re.findall(r"^\|\s*`([^`]+)`\s*\|\s*`([^`]*)`\s*\|\s*([^|]+?)\s*\|", body, re.MULTILINE)
+        self.assertTrue(rows, "no combination rows")
+        by_crate = {}
+        for crate, flags, status in rows:
+            with self.subTest(crate=crate, flags=flags):
+                self.assertIn(status, COMBINATION_STATUSES)
+            by_crate.setdefault(crate, set()).add(flags)
+        for name, pkg in library_packages().items():
+            declared = by_crate.get(name, set())
+            with self.subTest(crate=name):
+                self.assertIn("(default)", declared, "default build has no row")
+                for feature in sorted(set(pkg["features"]) - {"default"}):
+                    self.assertIn(
+                        f"--no-default-features --features {feature}",
+                        declared,
+                        f"feature `{feature}` has no row",
+                    )
+                for flags in declared:
+                    named = re.findall(r"--features (\S+)", flags)
+                    self.assertEqual(set(named) - set(pkg["features"]), set())
+        self.assertEqual(set(by_crate) - set(library_packages()), set())
+
+    def test_toolchain_section_points_at_the_owner_and_repeats_no_number(self):
+        body = section(release_text(), "Toolchain") or ""
+        self.assertIn("manifest.toml", body)
+        self.assertIn("rust-version", body)
+        self.assertNotIn(declared_msrv(), release_text(), "the floor lives in manifest.toml only")
+
+    def test_examples_section_matches_the_examples_on_disk(self):
+        body = section(release_text(), "Examples") or ""
+        declared = {}
+        for crate, what in re.findall(r"^- `([^`]+)`:\s*(.+)$", body, re.MULTILINE):
+            declared[crate] = what.strip()
+        self.assertEqual(set(declared), set(library_packages()), "every library needs an entry")
+        for name, pkg in library_packages().items():
+            crate_dir = Path(pkg["manifest_path"]).parent
+            on_disk = sorted(p.name for p in (crate_dir / "examples").glob("*.rs"))
+            with self.subTest(crate=name):
+                if on_disk:
+                    for example in on_disk:
+                        self.assertIn(f"examples/{example}", declared[name], "undeclared example")
+                else:
+                    self.assertTrue(declared[name].lower().startswith("none"))
+                for path in re.findall(r"examples/([\w-]+\.rs)", declared[name]):
+                    self.assertIn(path, on_disk, "declared example does not exist")
 
     def test_internal_crates_are_marked_unpublishable(self):
         packages = workspace_packages()
