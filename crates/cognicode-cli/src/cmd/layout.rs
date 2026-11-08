@@ -2901,49 +2901,6 @@ components:
         );
     }
 
-    // ----- e86 followup T2d: profile filtering to zero components -----
-    //
-    // The bundle manifest declares components per profile. If the user
-    // requests a profile that matches zero components (e.g. a typo,
-    // or a profile name that the manifest does not list), the install
-    // pipeline must NOT silently succeed with an empty install. It
-    // must surface the issue — currently as a tracker not being
-    // written, since `InstallerTransaction::commit` only writes the
-    // tracker on the "components present" path.
-    //
-    // Pinning this prevents a future change from masking the
-    // "profile matches zero components" failure mode behind a
-    // successful-looking install.
-    //
-    // CURRENT BEHAVIOUR (pre-existing bug, pinned not fixed):
-    //   cmd_update returns Ok and the tracker IS pinned to 0.95.0,
-    //   with an empty `install/0.95.0/manifest.yaml`. This masks
-    //   the missing-profile failure mode behind a successful-looking
-    //   install — the user thinks they installed something, they
-    //   didn't. The pipeline trusts `InstallerTransaction::run`'s
-    //   `Ok(manifest_path)` and pins the tracker unconditionally.
-    //
-    // FIX SKETCH (out of scope for this cycle):
-    //   1. In `installer_transaction::run`, return a new variant
-    //      `EmptyInstall { version }` when the filtered component
-    //      set is empty, instead of writing an empty manifest.
-    //   2. In `install.rs:31-40`, match on `EmptyInstall` and write
-    //      the tracker to a sentinel value (e.g. "0.95.0-empty")
-    //      or refuse to write it at all and surface an error.
-    //   3. Add an integration test that asserts `cogh update
-    //      --profile no-such-profile` exits non-zero with a clear
-    //      "profile matches zero components" message.
-    //
-    // DELIVERY CHOICE: this test is marked `#[ignore]` so it does NOT
-    // break the cogh-suite gate (177/177) while the bug remains in
-    // scope. Run explicitly with:
-    //   cargo test -p cognicode-cli --bin cogh -- --ignored \
-    //     cmd_update_zero_component_profile_does_not_pin_tracker
-    // to see the current red. The pin is still the deliverable: every
-    // developer who runs the ignored suite sees the bug, and every CI
-    // run with --include-ignored reports it. When the bug is fixed,
-    // drop the `#[ignore]` and the test goes green.
-
     // ----- e86.1 REQ-LJ-04: zero-component profile must fail loudly -----
     //
     // A typo'd `--profile core-typo` matches zero components in the
