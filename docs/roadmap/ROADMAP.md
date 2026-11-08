@@ -489,10 +489,13 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   deltas en infraestructura, pero no está conectado a esta ruta. La
 >   caracterización de `TASK-172` confirma además que configuración, perfil y
 >   presupuesto de consumidor no cambian el grafo ni su identidad durable, y que
->   `AnalysisScope` pertenece a findings, no al snapshot. El siguiente criterio es
->   medir cold/warm/edit con un instrumento explícito fuera de la suite rápida,
->   distinguir `warm reuse` de `full rebuild` y no llamar `incremental delta` a
->   una reducción no observada. La forma, en
+>   `AnalysisScope` pertenece a findings, no al snapshot. La medición focal
+>   observó `full rebuild` en frío (36.981 ms), `warm reuse` sin cambios (33.788
+>   ms) y `full rebuild` tras editar (35.971 ms); el scanner separado procesó 2,
+>   0 y 1 ficheros en sus fases primera, sin cambios y edición de igual tamaño,
+>   y clasificó 1 añadido y 1 eliminado en la fase final. Esto no demuestra delta
+>   en la ruta real, que no publica `incremental delta` mientras el scanner siga
+>   desconectado. La forma, en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` y
 >   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >

@@ -33,6 +33,15 @@ cuando deja de ser reutilizable, llama a `build_project_graph` y reconstruye
 el grafo completo. `IncrementalScanner` y `FileManifest::compute_delta`
 existen como infraestructura separada, pero no están conectados a esta ruta.
 
+La medición reproducible del instrumento, con una muestra, observó `full
+rebuild` en frío (36.981 ms), `warm reuse` sin cambios (33.788 ms) y `full
+rebuild` después de editar manteniendo tamaño y mtime (35.971 ms). En la ruta
+separada de `IncrementalScanner`, la primera pasada procesó 2 ficheros, la
+pasada sin cambios procesó 0, la edición de igual tamaño clasificó 1 cambiado
+y 1 sin cambios, y la fase de alta/baja clasificó 1 añadido y 1 eliminado.
+Estos conteos caracterizan el scanner, no demuestran recomputación parcial en
+`load_or_build_graph`; por tanto, la ruta real no publica `incremental delta`.
+
 ## Invariantes
 
 - **CU-005.1** La identidad durable del grafo se obtiene con función pura de
