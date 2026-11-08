@@ -253,9 +253,11 @@ out of scope here: signatures and SBOMs are not asset kinds in
 
 This section is written in English; the rest of this guide is in Spanish.
 
-Three chained recipes for the `cognicode` CLI, run from the root of the project
+Four recipes for the `cognicode` CLI, run from the root of the project
 you want to analyse. Every subcommand and flag below is declared by the clap
-definitions in `crates/cognicode-cli/src/cli/commands.rs`; the values of
+definitions in `crates/cognicode-cli/src/cli/commands.rs` or, for the goal
+commands, generated from the goal registry in
+`crates/cognicode-core/src/interface/goals.rs`; the values of
 `--strategy`, `--operation` and `--format` are the closed sets those sources
 accept. Run `cognicode <command> --help` for the full list of options.
 
@@ -286,6 +288,24 @@ Without `--apply` the command is a preview and writes nothing. `--apply` is a
 separate authorization and also needs `--authorization-token`; it is not part of
 these recipes.
 
+Ask about one symbol with the goal commands. `status` reports the version and
+the phases the CLI offers; `find` locates a symbol by name; `trace` follows its
+callers and callees (`--direction` accepts `callers`, `callees` or `both`, the
+default, and `--depth` is the number of hops, default 1); `impact` lists what a
+change to it would reach.
+
+```bash
+cognicode status
+cognicode find --symbol helper
+cognicode trace --symbol helper --direction callers --depth 2
+cognicode impact --symbol helper --format json
+```
+
+Each of these accepts `--format text` (the default) or `--format json`, and
+works on the current workspace without the map recipe above. `status` also
+reports how many source files could not be read, so a partial answer is not
+mistaken for a complete one.
+
 Check the environment: `doctor` reports which language servers are available
 for the workspace.
 
@@ -294,7 +314,9 @@ cognicode doctor
 cognicode doctor --format json --cwd .
 ```
 
-Limitation: the flags and values are checked against the clap sources of this
-tree by `scripts/ci/test_readme_contract.py`, but the recipes were not executed
-against a published release or the remote installer. Their output is not
+Limitation: the flags and values are checked against the clap sources and the goal
+registry of this tree by `scripts/ci/test_readme_contract.py`. The goal commands
+were also run once against a two-function scratch project with the installed
+0.102.1 CLI; none of the recipes was executed against a published release or
+the remote installer. Their output is not
 described here because it was not recorded.

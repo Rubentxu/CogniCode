@@ -347,6 +347,28 @@ def clap_flags(sources: list[Path]) -> set[str]:
     return flags
 
 
+GOALS_SRC = ROOT / "crates" / "cognicode-core" / "src" / "interface" / "goals"
+INPUT_STRUCT = re.compile(r"pub struct \w+Input\s*\{(.*?)\n\}", re.S)
+
+
+def goal_flags() -> set[str]:
+    """Flags of the goal commands: goals_clap.rs derives one per field of each goal's input."""
+    flags = set()
+    for src in sorted(GOALS_SRC.glob("*.rs")):
+        for body in INPUT_STRUCT.findall(src.read_text(encoding="utf-8")):
+            for field in re.findall(r"^\s*pub (\w+):", body, re.M):
+                flags.add("--" + field.replace("_", "-"))
+    return flags
+
+
+GOALS_RS = GOALS_SRC.parent / "goals.rs"
+
+
+def goal_names() -> set[str]:
+    """Subcommands generated from the goal registry (one per GoalSpec)."""
+    return set(re.findall(r'^\s*name: "([a-z][\w-]*)",', GOALS_RS.read_text(encoding="utf-8"), re.M))
+
+
 def binary_references(text: str) -> dict[str, tuple[set[str], set[str]]]:
     """{binary: (flags, first subcommand words)} cited in code spans."""
     found = {b: (set(), set()) for b in BINARY_SURFACES}
@@ -366,11 +388,11 @@ def binary_surface_gaps(text: str) -> list[str]:
     gaps = []
     for binary, (flags, subs) in binary_references(text).items():
         sources, enum = BINARY_SURFACES[binary]
-        known_flags = clap_flags(sources)
+        known_flags = clap_flags(sources) | (goal_flags() if binary == "cognicode" else set())
         gaps += [f"{binary} {f}" for f in sorted(flags - known_flags)]
         if enum:
             joined = "\n".join(src.read_text(encoding="utf-8") for src in sources)
-            known = clap_variants(joined, enum) | {"help"}
+            known = clap_variants(joined, enum) | {"help"} | (goal_names() if binary == "cognicode" else set())
             gaps += [f"{binary} {w}" for w in sorted(subs - known)]
     return gaps
 
@@ -560,7 +582,11 @@ def published_matrix_gaps(text: str, certified: set[str], uncertified_arches: se
 
 WORKFLOWS_SECTION = "CLI workflows"
 # Commands the section must walk through; the flags and values come from the sources.
-WORKFLOW_COMMANDS = ("index build", "graph full", "graph hot-paths", "graph mermaid", "refactor", "doctor")
+WORKFLOW_COMMANDS = (
+    "index build", "graph full", "graph hot-paths", "graph mermaid", "refactor", "doctor",
+    # The goal commands `cognicode --help` lists for a symbol question.
+    "status", "find", "trace", "impact",
+)
 SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.S)
 COGNICODE_LINE = re.compile(r"^\s*cognicode\s+(\S.*)$")
 
@@ -1016,6 +1042,7 @@ class ReadmeContract(unittest.TestCase):
             "cognicode graph mermaid . --format svg\n"
             "```\n"
             "```bash\ncognicode refactor old new --operation rename\ncognicode doctor\n```\n"
+            "```bash\ncognicode status\ncognicode find --symbol helper\ncognicode trace --symbol helper\ncognicode impact --symbol helper\n```\n"
             "Limitation: not run against a published release.\n"
         )
         self.assertEqual([], cli_workflow_gaps(good, closed))
