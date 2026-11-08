@@ -87,7 +87,9 @@ Procedure, from a clean checkout of `main` at the release commit:
 3. Publish in the order above with the operator's registry token, waiting for
    each crate to be indexed before publishing the next.
 4. Verify from a clean consumer project that depends on the published
-   versions only.
+   versions only: `bash scripts/distribution/verify-sdk-consumer.sh
+   --confirm-published` (read-only; it builds a fresh project with exact
+   `=<version>` pins and rejects any path dependency).
 5. Tag the release commit.
 
 Rollback: a published version cannot be overwritten or deleted. If a release is

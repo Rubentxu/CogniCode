@@ -471,6 +471,27 @@ class SdkSurfaceContract(unittest.TestCase):
                 with self.subTest(crate=name):
                     self.assertFalse(entry.get("consumers"), "internal crates have no external consumers")
 
+    def test_consumer_verification_script_is_read_only_and_covers_every_library(self):
+        script = ROOT / "scripts" / "distribution" / "verify-sdk-consumer.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/verify-sdk-consumer.sh")
+        text = script.read_text(encoding="utf-8")
+        for name in library_packages():
+            with self.subTest(crate=name):
+                self.assertIn(name, text)
+        self.assertNotRegex(text, r"cargo\s+publish(?!\s+--dry-run)", "the script must never publish")
+        self.assertNotIn("cargo login", text)
+        self.assertIn("mktemp -d", text, "the consumer must be built in a fresh directory")
+        self.assertIn("--version", text, "the consumer must pin the published version")
+        self.assertNotRegex(text, r"path\s*=", "a path dependency would not prove the registry copy")
+        mode = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def test_consumer_script_refuses_without_explicit_confirmation(self):
+        script = ROOT / "scripts" / "distribution" / "verify-sdk-consumer.sh"
+        done = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("--confirm-published", done.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
