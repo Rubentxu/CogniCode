@@ -5,11 +5,8 @@
 //! ground truth matching, and quality scoring.
 
 pub mod artifacts;
-pub mod failure;
 pub mod ground_truth;
 pub mod history;
 pub mod manifest;
-pub mod mcp_core;
 pub mod read_source_reconstructor;
-pub mod resource;
 pub mod scoring;

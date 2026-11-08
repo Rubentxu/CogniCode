@@ -74,10 +74,10 @@ fn cli_coordinator_path() -> PathBuf {
     repo_root().join("crates/cognicode-cli/src/cli/commands.rs")
 }
 
-/// MCP coordinator: `cognicode-core/src/interface/mcp/rmcp_adapter.rs`.
-/// Coordinador MCP: `cognicode-core/src/interface/mcp/rmcp_adapter.rs`.
+/// MCP coordinator: `cognicode-mcp/src/rmcp_adapter.rs`.
+/// Coordinador MCP: `cognicode-mcp/src/rmcp_adapter.rs`.
 fn mcp_coordinator_path() -> PathBuf {
-    repo_root().join("crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs")
+    repo_root().join("crates/cognicode-mcp/src/rmcp_adapter.rs")
 }
 
 /// Read the dependency block of a `Cargo.toml` and return the

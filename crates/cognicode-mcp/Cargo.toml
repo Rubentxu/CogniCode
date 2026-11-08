@@ -34,10 +34,15 @@ name = "mcp-client"
 path = "src/mcp_client.rs"
 
 [features]
-default = []
-# `multimodal` is an opt-in feature that enables the multimodal MCP
-# tools (`docs_ingest`, `graph_search`). Off by default.
+default = ["persistence", "evidence-kernel"]
+# Keep feature-gated adapter paths aligned with the core capabilities they use.
+persistence = ["cognicode-core/persistence"]
 multimodal = ["cognicode-core/multimodal"]
+ownership = ["cognicode-core/ownership"]
+evidence-kernel = ["cognicode-core/evidence-kernel"]
+program-analysis-server = ["cognicode-core/program-analysis-server"]
+contract-store = ["cognicode-core/contract-store"]
+evidence-cli-ladybug = ["cognicode-core/evidence-cli-ladybug"]
 
 [dependencies]
 # The canonical evidence kernel is what grounds a finding, and the tool that
@@ -48,6 +53,7 @@ cognicode-core = { workspace = true, features = ["evidence-kernel"] }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -77,3 +83,6 @@ subtle.workspace = true
 # L1.3 compat tests (find_usages_compat_0_97): workspace tempdir para
 # construir fixtures ad-hoc. tempfile ya está en el workspace root.
 tempfile.workspace = true
+base64.workspace = true
+sha2.workspace = true
+futures-util.workspace = true

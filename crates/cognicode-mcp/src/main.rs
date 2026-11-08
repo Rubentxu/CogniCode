@@ -1,7 +1,7 @@
 //! CogniCode MCP Server Binary
 
 use clap::Parser;
-use cognicode_core::interface::mcp::CogniCodeHandler;
+use cognicode_mcp::rmcp_adapter::CogniCodeHandler;
 use opentelemetry::global;
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
