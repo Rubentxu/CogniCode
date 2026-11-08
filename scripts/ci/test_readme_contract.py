@@ -352,6 +352,72 @@ def binary_surface_gaps(text: str) -> list[str]:
     return gaps
 
 
+COMMANDS_RS = CLI_SRC / "cli" / "commands.rs"
+STRATEGY_RS = ROOT / "crates" / "cognicode-core" / "src" / "infrastructure" / "graph" / "strategy.rs"
+MERMAID_RS = CLI_SRC / "cli" / "mermaid_format.rs"
+FLAG_VALUES = re.compile(
+    r"cognicode\s+(refactor|index build|graph mermaid)\b[^\n]*?(--operation|--strategy|--format)"
+    r"\s+((?:[a-z_]+\|)+[a-z_]+)"
+)
+
+
+def closed_flag_values() -> dict[tuple[str, str], set[str]]:
+    """(command, flag) -> the values the sources accept, read from the sources."""
+    strategy = STRATEGY_RS.read_text(encoding="utf-8")
+    listed = re.search(r"fn available_strategies\(\)[^{]*\{\s*vec!\[([^\]]*)\]", strategy)
+    return {
+        ("refactor", "--operation"): clap_variants(COMMANDS_RS.read_text(encoding="utf-8"), "RefactorOperation"),
+        ("index build", "--strategy"): set(re.findall(r'"(\w+)"', listed.group(1))) if listed else set(),
+        ("graph mermaid", "--format"): set(
+            re.findall(r'\("(\w+)",\s*MermaidFormat', MERMAID_RS.read_text(encoding="utf-8"))
+        ),
+    }
+
+
+def flag_value_gaps(text: str, closed: dict[tuple[str, str], set[str]]) -> list[str]:
+    gaps = []
+    for span in code_spans(text):
+        for command, flag, values in FLAG_VALUES.findall(span):
+            accepted = closed[(command, flag)]
+            gaps += [
+                f"cognicode {command} {flag} {v}" for v in values.split("|") if v not in accepted
+            ]
+    return gaps
+
+
+def tool_schemas() -> dict[str, dict]:
+    catalog = json.loads((ROOT / "product" / "tool-catalog-runtime.json").read_text())
+    return {entry["name"]: entry["inputSchema"] for entry in catalog}
+
+
+def tool_example_gaps(text: str, schemas: dict[str, dict]) -> tuple[int, list[str]]:
+    """(examples checked, gaps) for the ```json {"tool", "arguments"} examples."""
+    checked, gaps = 0, []
+    for info, body in re.findall(r"```(\w*)[^\n]*\n(.*?)```", text, re.S):
+        if info != "json":
+            continue
+        try:
+            call = json.loads(body)
+        except ValueError:
+            continue
+        if not (isinstance(call, dict) and "tool" in call and "arguments" in call):
+            continue
+        checked += 1
+        name, args = call["tool"], call["arguments"]
+        schema = schemas.get(name)
+        if schema is None:
+            gaps.append(f"{name}: no such tool")
+            continue
+        props = schema.get("properties", {})
+        gaps += [f"{name}: argument '{k}' is not in the inputSchema" for k in sorted(set(args) - set(props))]
+        gaps += [f"{name}: required '{k}' is missing" for k in schema.get("required", []) if k not in args]
+        for key, value in args.items():
+            allowed = props.get(key, {}).get("enum")
+            if allowed and value not in allowed:
+                gaps.append(f"{name}: {key}={value!r} is not one of {allowed}")
+    return checked, gaps
+
+
 class ReadmeContract(unittest.TestCase):
     def test_both_readmes_have_the_same_heading_outline(self):
         en, es = outline(EN), outline(ES)
@@ -529,6 +595,50 @@ class ReadmeContract(unittest.TestCase):
             ("`cognicode ghostcmd`", "cognicode ghostcmd"),
         ):
             self.assertIn(label, binary_surface_gaps(bad))
+    def test_closed_flag_values_cited_in_the_readmes_are_accepted(self):
+        closed = closed_flag_values()
+        for key, accepted in closed.items():
+            self.assertTrue(accepted, f"{key}: no values read from the sources")
+        for readme in (EN, ES):
+            text = readme.read_text(encoding="utf-8")
+            self.assertTrue(FLAG_VALUES.search(text), f"{readme.name}: no closed value cited")
+            self.assertEqual([], flag_value_gaps(text, closed), readme.name)
+
+    def test_mcp_tool_examples_match_the_published_input_schema(self):
+        schemas = tool_schemas()
+        for readme in (EN, ES):
+            checked, gaps = tool_example_gaps(readme.read_text(encoding="utf-8"), schemas)
+            self.assertGreater(checked, 0, f"{readme.name}: no tool example checked")
+            self.assertEqual([], gaps, readme.name)
+
+    def test_value_and_example_checks_discriminate(self):
+        closed = closed_flag_values()
+        self.assertEqual([], flag_value_gaps("`cognicode refactor s --operation rename|move`", closed))
+        for bad, label in (
+            ("`cognicode refactor s --operation rename|ghost`", "--operation ghost"),
+            ("`cognicode index build --strategy full|ghost`", "--strategy ghost"),
+            ("`cognicode graph mermaid --format svg|ghost`", "--format ghost"),
+        ):
+            self.assertTrue(any(label in g for g in flag_value_gaps(bad, closed)), label)
+        schemas = {
+            "t": {
+                "properties": {"a": {"enum": ["x"]}, "b": {}},
+                "required": ["a"],
+            }
+        }
+
+        def example(args: str, tool: str = "t") -> str:
+            return '```json\n{"tool": "%s", "arguments": %s}\n```' % (tool, args)
+
+        self.assertEqual((1, []), tool_example_gaps(example('{"a": "x"}'), schemas))
+        for args, tool, label in (
+            ('{"a": "x", "ghost": 1}', "t", "argument 'ghost'"),
+            ('{"b": 1}', "t", "required 'a' is missing"),
+            ('{"a": "y"}', "t", "is not one of"),
+            ('{"a": "x"}', "nope", "no such tool"),
+        ):
+            gaps = tool_example_gaps(example(args, tool), schemas)[1]
+            self.assertTrue(any(label in g for g in gaps), (label, gaps))
 
 
 if __name__ == "__main__":

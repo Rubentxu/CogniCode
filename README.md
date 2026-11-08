@@ -129,10 +129,8 @@ Add CogniCode as an MCP server in your AI client configuration:
   "tool": "safe_refactor",
   "arguments": {
     "action": "rename",
-    "new_name": "new_function_name",
-    "file_path": "src/lib.rs",
-    "line": 42,
-    "column": 4
+    "target": "my_function",
+    "params": { "new_name": "new_function_name", "file_path": "src/lib.rs" }
   }
 }
 ```
