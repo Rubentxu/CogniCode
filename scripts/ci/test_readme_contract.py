@@ -535,6 +535,52 @@ def published_matrix_gaps(text: str, certified: set[str], uncertified_arches: se
     return gaps
 
 
+WORKFLOWS_SECTION = "CLI workflows"
+# Commands the section must walk through; the flags and values come from the sources.
+WORKFLOW_COMMANDS = ("index build", "graph full", "graph hot-paths", "graph mermaid", "refactor", "doctor")
+SHELL_BLOCK = re.compile(r"```(?:bash|sh)\n(.*?)```", re.S)
+COGNICODE_LINE = re.compile(r"^\s*cognicode\s+(\S.*)$")
+
+
+def cli_workflow_gaps(body: str | None, closed: dict[tuple[str, str], set[str]]) -> list[str]:
+    """What the CLI workflows section fails to say, given the clap sources' facts."""
+    if body is None:
+        return ["section missing"]
+    gaps = []
+    if "written in English" not in body:
+        gaps.append("no language notice")
+    chains = [
+        [m.group(1) for line in block.splitlines() if (m := COGNICODE_LINE.match(line))]
+        for block in SHELL_BLOCK.findall(body)
+    ]
+    if not chains:
+        gaps.append("no shell block")
+    gaps += [f"block with fewer than two chained commands: {c}" for c in chains if len(c) < 2]
+    calls = [call for chain in chains for call in chain]
+    for command in WORKFLOW_COMMANDS:
+        if not any(call == command or call.startswith(command + " ") for call in calls):
+            gaps.append(f"command not walked through: {command}")
+    joined = COMMANDS_RS.read_text(encoding="utf-8")
+    for group, enum in CLI_GROUPS.items():
+        known = clap_variants(joined, enum)
+        for call in calls:
+            words = call.split()
+            if words[0] == group and (len(words) < 2 or words[1] not in known):
+                gaps.append(f"unknown subcommand: {group} {words[1] if len(words) > 1 else ''}".rstrip())
+    for (command, flag), accepted in sorted(closed.items()):
+        for call in calls:
+            if call == command or call.startswith(command + " "):
+                value = re.search(rf"{re.escape(flag)}[ =](\w+)", call)
+                if value and value.group(1) not in accepted:
+                    gaps.append(f"value not accepted: {command} {flag} {value.group(1)}")
+    for (command, flag), accepted in sorted(closed.items()):
+        gaps += [f"value not documented: {command} {flag} {v}" for v in sorted(accepted) if f"`{v}`" not in body]
+    gaps += [f"not in the clap sources: {g}" for g in binary_surface_gaps(body)]
+    if not re.search(r"(?i)limitation", body):
+        gaps.append("no explicit limitation about published releases")
+    return gaps
+
+
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
         names = tool_names()
@@ -779,6 +825,46 @@ class ReadmeContract(unittest.TestCase):
         self.assertTrue(published_matrix_gaps("La matriz publicada es x86_64/aarch64.", {"x86_64-x"}, {"aarch64"}))
         self.assertTrue(published_matrix_gaps("La matriz publicada es aarch64.", {"x86_64-x"}, set()))
         self.assertTrue(published_matrix_gaps("Sin frase.", {"x86_64-x"}, set()))
+
+    def test_the_install_guide_walks_through_the_cli_workflows(self):
+        closed = closed_flag_values()
+        for key, values in closed.items():
+            self.assertTrue(values, f"closed values of {key} not read: the check would be vacuous")
+        body = guide_section(MCP_GUIDE.read_text(encoding="utf-8"), WORKFLOWS_SECTION)
+        if body is not None:
+            self.assertGreaterEqual(len(SHELL_BLOCK.findall(body)), 3, "too few workflow blocks")
+        self.assertEqual([], cli_workflow_gaps(body, closed))
+
+    def test_the_cli_workflow_checks_discriminate(self):
+        closed = closed_flag_values()
+        good = (
+            "This section is written in English; the rest of this guide is in Spanish.\n"
+            + " ".join(f"`{v}`" for values in closed.values() for v in sorted(values)) + "\n"
+            "```bash\n"
+            "cognicode index build . --strategy full\n"
+            "cognicode graph full . --rebuild\n"
+            "cognicode graph hot-paths . -n 5\n"
+            "cognicode graph mermaid . --format svg\n"
+            "```\n"
+            "```bash\ncognicode refactor old new --operation rename\ncognicode doctor\n```\n"
+            "Limitation: not run against a published release.\n"
+        )
+        self.assertEqual([], cli_workflow_gaps(good, closed))
+        self.assertEqual(["section missing"], cli_workflow_gaps(None, closed))
+        for bad, label in (
+            (good.replace("written in English", "written"), "no language notice"),
+            (good.replace("bash", "text"), "no shell block"),
+            (good.replace("cognicode graph full . --rebuild\n", ""), "command not walked through: graph full"),
+            (good.replace("cognicode doctor\n", ""), "fewer than two chained"),
+            (good.replace("hot-paths", "hot-path"), "unknown subcommand: graph hot-path"),
+            (good.replace("--strategy full", "--strategy turbo"), "value not accepted: index build --strategy turbo"),
+            (good.replace("--operation rename", "--operation vanish"), "value not accepted: refactor --operation vanish"),
+            (good.replace("-n 5", "--no-such-flag"), "cognicode --no-such-flag"),
+            (good.replace("`png`", ""), "value not documented: graph mermaid --format png"),
+            (good.replace("Limitation", "Note"), "no explicit limitation"),
+        ):
+            with self.subTest(label=label):
+                self.assertTrue(any(label in g for g in cli_workflow_gaps(bad, closed)), (label, cli_workflow_gaps(bad, closed)))
 
     def test_binary_surface_check_discriminates(self):
         self.assertEqual([], binary_surface_gaps("`cogh install --ide x --profile y`\n`cognicode graph hot-paths -n 3`"))

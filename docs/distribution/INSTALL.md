@@ -248,3 +248,53 @@ No published release was downloaded to write this section, so the names and
 the checksums are not confirmed against a real release. Provenance is also
 out of scope here: signatures and SBOMs are not asset kinds in
 `release_contract.rs`, and this guide does not describe how to verify them.
+
+## CLI workflows
+
+This section is written in English; the rest of this guide is in Spanish.
+
+Three chained recipes for the `cognicode` CLI, run from the root of the project
+you want to analyse. Every subcommand and flag below is declared by the clap
+definitions in `crates/cognicode-cli/src/cli/commands.rs`; the values of
+`--strategy`, `--operation` and `--format` are the closed sets those sources
+accept. Run `cognicode <command> --help` for the full list of options.
+
+Map a project: index it, build the call graph, find the most called functions
+and draw the graph.
+
+```bash
+cognicode index build . --strategy full
+cognicode graph full . --rebuild
+cognicode graph hot-paths . -n 5 --min-fan-in 2
+cognicode graph mermaid . --format svg
+```
+
+`--strategy` accepts `lightweight` (the default), `full` and `on_demand`.
+`hot-paths` lists at most `-n` functions (default 10) that have at least
+`--min-fan-in` callers (default 1). `graph mermaid --format` accepts `code`,
+`png`, `svg` and `txt`.
+
+Preview a refactor. The operation is chosen with `--operation` (`rename`,
+`extract`, `inline` or `move`), and the default is `rename`:
+
+```bash
+cognicode refactor old_name new_name --operation rename
+cognicode refactor old_name new_name --operation rename --format json
+```
+
+Without `--apply` the command is a preview and writes nothing. `--apply` is a
+separate authorization and also needs `--authorization-token`; it is not part of
+these recipes.
+
+Check the environment: `doctor` reports which language servers are available
+for the workspace.
+
+```bash
+cognicode doctor
+cognicode doctor --format json --path .
+```
+
+Limitation: the flags and values are checked against the clap sources of this
+tree by `scripts/ci/test_readme_contract.py`, but the recipes were not executed
+against a published release or the remote installer. Their output is not
+described here because it was not recorded.
