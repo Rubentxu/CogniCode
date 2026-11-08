@@ -38961,3 +38961,11 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Evidencia real.** Se ejecutó el cliente oficial RMCP contra un fixture aislado y el binario autorizado `/home/rubentxu/.local/share/cognicode/dev-trace/cognicode-mcp`, verificado con `COGNICODE_LINK_TRACE`. La sesión terminó `rc=0` y produjo 21 líneas en un fichero externo. `python3 -I scripts/measure/link_follow.py <traza>` informó `inspect-risk`: 20 ofertas, 0 seguimientos, tasa 0.0, `candidato a retirar`; las demás relaciones quedaron `sin datos`.
 
 **Límite.** Esta es evidencia de un cliente MCP real y del cable, no del comportamiento de un agente autónomo: la secuencia fue declarada por el harness y no siguió los enlaces. Por ello no se retira ningún enlace ni se marca AC3 como decisión de producto. AC1 y AC2 tienen evidencia de capacidad; la decisión final de TASK-164 permanece condicionada a muestra de uso externo suficiente. La traza y el fixture quedan fuera de Git. Gate NOT_RUN por política de lote.
+
+## 2026-11-08 — TASK-165: AC2/AC3 sobre 129d7afe
+
+**Método.** Se creó `/tmp/cognicode-task165-ac2` desacoplado exactamente en `129d7afe`, con target Cargo aislado. El baseline compiló `cognicode-core` y `cognicode-mcp`. Se añadió únicamente un comentario temporal a `cognicode-mcp/src/rmcp_adapter.rs`; la segunda compilación terminó `rc=0`, informó `Fresh cognicode-core` y recompiló solo `cognicode-mcp`. El diff temporal confirmó un único fichero modificado y el worktree fue eliminado.
+
+**Consumidores.** Contratos MCP focales: 4/4 (`mcp_catalog_anchor` y `mcp_failure_arrives_as_failure`). Contratos `cogh_cli`: 7/7. Contratos `cognicode`: 3/3 (`graph_cli_mcp_equivalence` y `json_stdout_is_one_document`). `cargo check -p cognicode`: `rc=0`.
+
+**Resultado.** AC2 y AC3 tienen evidencia focal suficiente sobre el commit solicitado. No se ejecutó el gate global, no se modificó el producto, no se repitió TASK-164 y no se tocaron trazas. AC1 permanece separada y sin marcar en TASK-165; el script local `backlog-import-producto-v2.sh` continúa fuera del repositorio.
