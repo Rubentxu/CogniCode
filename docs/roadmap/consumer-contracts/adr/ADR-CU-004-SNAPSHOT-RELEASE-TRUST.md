@@ -35,6 +35,20 @@ Guard puede etiquetar su caché como core/v{versión de Guard}, y un source-code
 - En caso de incompatibilidad N−1 o Guard aún no migrado, el estado es
   `BLOCKED_EXTERNAL`, no PASS. Publicar rollback/changelog claros.
 
+## Frontera medida para H5/C11
+
+La ruta real reutiliza el snapshot completo cuando `SnapshotKey` y
+`FileManifest` son compatibles. Cuando el manifest deja de ser reutilizable,
+`load_or_build_graph` llama a `build_project_graph` y reconstruye el grafo
+completo. `IncrementalScanner` y `FileManifest::compute_delta` existen como
+infraestructura separada, pero no están conectados a esta ruta.
+
+El hito de medición usa una fixture aislada y caché temporal, y registra
+`cold full`, `warm reuse` y `full rebuild after edit` con muestras y percentiles
+reales. No publica `incremental delta` hasta demostrar reducción de
+recomputación. No cambia `SnapshotKey`, bincode, persistencia ni introduce otro
+almacén.
+
 ## Trazabilidad de la decisión
 
 La inspección de `save_durable_snapshot`/`load_durable_snapshot` confirma que
