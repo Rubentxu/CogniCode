@@ -436,6 +436,121 @@ async fn the_routes_still_build_a_graph() {
     }
 }
 
+/// The per-file route must expose the same coverage state and relationships
+/// as the project route over the same non-empty corpus.
+#[tokio::test]
+async fn the_per_file_route_publishes_the_same_semantics() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("project");
+    corpus_with_files_the_graph_does_not_analyse(&root);
+
+    let whole = {
+        let service = AnalysisService::new();
+        service
+            .build_project_graph(&root)
+            .expect("the whole-project graph builds");
+        (
+            service
+                .get_last_build_report()
+                .expect("the whole-project route publishes its report"),
+            service.get_coverage_metrics(),
+        )
+    };
+    let per_file = {
+        let service = AnalysisService::new();
+        let report = service
+            .build_graph_per_file_with_report(&root)
+            .expect("the per-file graph builds");
+        (report, service.get_coverage_metrics())
+    };
+
+    let whole_coverage = whole.1.as_ref().map(|coverage| {
+        (
+            coverage.total_source_files,
+            coverage.covered_files,
+            coverage.unresolved_edges,
+        )
+    });
+    let per_file_coverage = per_file.1.as_ref().map(|coverage| {
+        (
+            coverage.total_source_files,
+            coverage.covered_files,
+            coverage.unresolved_edges,
+        )
+    });
+    assert_eq!(
+        whole_coverage, per_file_coverage,
+        "the whole-project and per-file routes published different coverage metrics"
+    );
+    assert!(
+        whole_coverage.is_some(),
+        "a semantic-equivalence test must compare published coverage"
+    );
+    assert_eq!(
+        whole.0.status, per_file.0.status,
+        "the whole-project and per-file routes published different coverage semantics"
+    );
+    assert_eq!(
+        relations(&whole.0.graph),
+        relations(&per_file.0.graph),
+        "the whole-project and per-file routes published different relations"
+    );
+    assert!(
+        !relations(&whole.0.graph).is_empty(),
+        "a semantic-equivalence test must compare a non-empty graph"
+    );
+}
+
+/// A corpus with an ambiguous call: both routes must retain the same
+/// rejected relation instead of silently choosing a target.
+#[tokio::test]
+async fn the_per_file_route_keeps_unresolved_relations_partial() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().join("project");
+    std::fs::create_dir_all(&root).expect("create root");
+    std::fs::write(root.join("a.rs"), "fn target() {}\n").expect("write a");
+    std::fs::write(root.join("b.rs"), "fn target() {}\n").expect("write b");
+    std::fs::write(root.join("caller.rs"), "fn caller() { target(); }\n").expect("write caller");
+
+    let whole = {
+        let service = AnalysisService::new();
+        service
+            .build_project_graph(&root)
+            .expect("the whole-project graph builds");
+        (
+            service
+                .get_last_build_report()
+                .expect("the whole-project route publishes its report"),
+            service.get_coverage_metrics(),
+        )
+    };
+    let per_file = {
+        let service = AnalysisService::new();
+        let report = service
+            .build_graph_per_file_with_report(&root)
+            .expect("the per-file graph builds");
+        (report, service.get_coverage_metrics())
+    };
+
+    assert_eq!(
+        whole.0.status, per_file.0.status,
+        "the routes disagree about the unresolved relation"
+    );
+    assert_eq!(
+        whole.1.as_ref().map(|coverage| coverage.unresolved_edges),
+        per_file
+            .1
+            .as_ref()
+            .map(|coverage| coverage.unresolved_edges),
+        "the routes disagree about unresolved relation coverage"
+    );
+    assert!(
+        matches!(whole.0.status, BuildStatus::Partial { .. }),
+        "an unresolved relation must not be published as Complete: {:?}",
+        whole.0.status
+    );
+}
+
 /// The paths a route reports, for a message about where a file was seen.
 #[allow(dead_code)]
 fn reported_paths(report: &BuildReport) -> Vec<PathBuf> {
