@@ -82,8 +82,14 @@ Procedure, from a clean checkout of `main` at the release commit:
 1. Set the version in the root `Cargo.toml`: `[workspace.package]` and the
    three `version =` of the internal entries in `[workspace.dependencies]`,
    which must equal it (a contract checks this). The four crates inherit it.
-2. Run `cargo package --locked` for the four crates together and fix anything
-   it reports before publishing anything.
+2. Rehearse the whole release without uploading: `bash
+   scripts/distribution/rehearse-sdk-publish.sh`. It runs one
+   `cargo publish --dry-run --locked` that names the four crates (it runs the
+   same `cargo package` build of each tarball that a real publish would), so `core` and
+   `graph-wasm` verify against the packaged copy of `graph-algos` even though it
+   is not yet on the registry. Running the dry-run per crate fails for those two
+   (`no matching package named cognicode-graph-algos`); that is the ordering,
+   not a defect. Fix anything it reports before publishing.
 3. Publish in the order above with the operator's registry token, waiting for
    each crate to be indexed before publishing the next.
 4. Verify from a clean consumer project that depends on the published

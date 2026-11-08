@@ -19,6 +19,12 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+RELEASE_ORDER = [
+    "cognicode-graph-algos",
+    "cognicode-macros",
+    "cognicode-core",
+    "cognicode-graph-wasm",
+]
 DECLARATION = ROOT / "docs" / "distribution" / "SDK_SURFACES.json"
 CLASSES = {"library", "application", "internal"}
 METADATA_DEADLINE_SECONDS = 120
@@ -491,6 +497,26 @@ class SdkSurfaceContract(unittest.TestCase):
         done = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=30)
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("--confirm-published", done.stderr)
+
+    def test_publish_rehearsal_is_one_dry_run_in_release_order(self):
+        script = ROOT / "scripts" / "distribution" / "rehearse-sdk-publish.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/rehearse-sdk-publish.sh")
+        text = script.read_text(encoding="utf-8")
+        self.assertRegex(text, r"cargo\s+publish\s+--dry-run")
+        self.assertNotRegex(text, r"cargo\s+publish(?!\s+--dry-run)", "the rehearsal must never publish")
+        self.assertNotIn("cargo login", text)
+        self.assertIn("--locked", text)
+        self.assertIn("CARGO_TARGET_DIR", text, "the rehearsal must not reuse the shared target dir")
+        positions = [text.find(f"-p {name}") for name in RELEASE_ORDER]
+        self.assertNotIn(-1, positions, "every library must be named with -p")
+        self.assertEqual(positions, sorted(positions), "crates must follow the release order")
+        self.assertEqual(sorted(RELEASE_ORDER), sorted(library_packages()))
+        mode = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def test_release_guide_names_the_rehearsal(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/rehearse-sdk-publish.sh", guide)
 
 
 if __name__ == "__main__":
