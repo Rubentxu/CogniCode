@@ -461,13 +461,15 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
 >     Cerrado: el extractor genérico y el campo que el consumidor lee.
 >   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
->     abierto. La vía completa, la filtrada y la asíncrona son de producción y
->     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
->     dos rutas y silencio en la tercera, un directorio que no existe se
->     rechaza en una sola, y el orden de los resultados no lo fija la
->     asíncrona. La forma, en `docs/adr/ADR-056-the-routes-say-the-same.md`.
->     Medido el primer par: completa y per-file publican la misma pérdida con
->     su motivo (`TASK-14`); faltan la asíncrona y la semántica, que exige `C23`.
+>     cerrado en su contrato observable. La vía completa, la filtrada y la
+>     asíncrona son de producción y responden sobre el mismo árbol con la misma
+>     cobertura, relaciones, huecos, resolución y orden; el contrato H24 evita
+>     que una ruta publique un resultado distinto o una cobertura falsa. La
+>     forma está en `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     TASK-166 (PR #744) y TASK-167 (PR #746) verifican la coherencia
+>     completa/per-file/asíncrona y la cobertura MCP per-file. La extracción de
+>     un motor común queda como mejora futura no bloqueante, condicionada a
+>     valor medido.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
@@ -480,9 +482,22 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >
 >   **H5** — la caché incremental. Cerrado: el snapshot declara quién lo
 >   produjo —versión, commit y capacidades— y un snapshot de otro analizador
->   no se sirve; la fecha solo se publica si se midió. Queda la
->   incrementalidad: reconstruir solo lo cambiado, y medir frío, tibio y
->   edición. La forma, en `docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
+>   no se sirve; la fecha solo se publica si se midió. La frontera restante está
+>   medida en la ruta: `load_or_build_graph` reutiliza el snapshot completo cuando
+>   `SnapshotKey` y `FileManifest` son compatibles; cuando el manifest deja de ser
+>   reutilizable, reconstruye el grafo completo. `IncrementalScanner` calcula
+>   deltas en infraestructura, pero no está conectado a esta ruta. La
+>   caracterización de `TASK-172` confirma además que configuración, perfil y
+>   presupuesto de consumidor no cambian el grafo ni su identidad durable, y que
+>   `AnalysisScope` pertenece a findings, no al snapshot. La medición focal
+>   observó `full rebuild` en frío (36.981 ms), `warm reuse` sin cambios (33.788
+>   ms) y `full rebuild` tras editar (35.971 ms); el scanner separado procesó 2,
+>   0 y 1 ficheros en sus fases primera, sin cambios y edición de igual tamaño,
+>   y clasificó 1 añadido y 1 eliminado en la fase final. Esto no demuestra delta
+>   en la ruta real, que no publica `incremental delta` mientras el scanner siga
+>   desconectado. La forma, en
+>   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` y
+>   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`). **Lo ya cerrado no se

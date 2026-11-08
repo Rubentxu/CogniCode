@@ -12,8 +12,10 @@ path = "src/main.rs"
 
 [dependencies]
 cognicode-core.workspace = true
+cognicode-mcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 chrono.workspace = true
 walkdir.workspace = true
 tempfile.workspace = true

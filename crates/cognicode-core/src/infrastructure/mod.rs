@@ -23,6 +23,7 @@ pub mod lsp;
 pub mod mermaid;
 pub mod parser;
 pub mod persistence;
+pub mod process_memory;
 pub mod refactor;
 pub mod safety;
 pub mod semantic;

@@ -32,7 +32,7 @@
 //! the typed error into a JSON-RPC error frame.
 
 use base64::Engine;
-use cognicode_core::interface::mcp::cursor::{
+use cognicode_core::interface::cursor::{
     CursorContext, CursorErrorKind, encode_cursor, verify_cursor,
 };
 use serde_json::Value;
@@ -135,7 +135,7 @@ fn cursor_serializes_to_typed_json_for_wire_response() {
     // document with a stable `kind` field and a `reason` that
     // preserves the cause. This is the "sin perder causas" half
     // of the spec.
-    use cognicode_core::interface::mcp::cursor::CursorError;
+    use cognicode_core::interface::cursor::CursorError;
     let err = CursorError {
         kind: CursorErrorKind::WorkspaceMismatch,
         reason: "cursor workspace='/repo/a' but request workspace='/repo/b'".to_string(),

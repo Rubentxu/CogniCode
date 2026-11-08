@@ -31,7 +31,7 @@ use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, BuildGraphOutput, HandlerContext, handle_build_graph,
 };
-use cognicode_core::interface::mcp::presenter_bridge::present_build_graph;
+use cognicode_mcp::presenter_bridge::present_build_graph;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------

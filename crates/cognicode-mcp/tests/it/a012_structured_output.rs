@@ -20,10 +20,10 @@
 //! all, so the black-box assertions below could not even be written.
 
 use cognicode_core::interface::catalog::tool_feature_enabled;
-use cognicode_core::interface::mcp::output_contracts::{
+use cognicode_mcp::output_contracts::{
     output_schema_for, published_output_schemas, tools_with_output_schema,
 };
-use cognicode_core::interface::mcp::rmcp_adapter::build_all_tools;
+use cognicode_mcp::rmcp_adapter::build_all_tools;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::process::Stdio;
