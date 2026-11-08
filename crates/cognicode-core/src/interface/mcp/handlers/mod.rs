@@ -75,6 +75,8 @@ use crate::infrastructure::graph::{
     TraversalDirection,
 };
 use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
+#[cfg(feature = "persistence")]
+use crate::interface::mcp::schemas::{ReparseOnEditInput, ReparseOnEditOutput};
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
     // Existing schemas
@@ -173,8 +175,6 @@ use crate::interface::mcp::schemas::{
     RefactorAction,
     ReferenceEntry,
     RejectedRelationInfo,
-    ReparseOnEditInput,
-    ReparseOnEditOutput,
     SafeRefactorInput,
     SafeRefactorOutput,
     SafeRefactorPreviewInput,

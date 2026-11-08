@@ -37,7 +37,9 @@ use crate::domain::value_objects::Location;
 use crate::domain::value_objects::MermaidFormat;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
+#[cfg(feature = "persistence")]
 use crate::domain::value_objects::file_time::measured_seconds;
+#[cfg(feature = "persistence")]
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 use crate::domain::value_objects::{published_column, published_line};
 

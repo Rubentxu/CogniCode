@@ -12,6 +12,7 @@ mod a_new_session_serves_what_the_last_one_calculated;
 mod a_project_under_a_skipped_name_is_still_read;
 mod a_rejection_arrives_as_a_rejection;
 mod a_snapshot_says_who_produced_it;
+#[cfg(feature = "persistence")]
 mod a_symbol_count_is_published_only_when_it_was_measured;
 mod analytics_bounded_paths;
 mod analytics_registry_admission;
@@ -30,6 +31,7 @@ mod b2_w4_export_invariants;
 mod b3_w1_semantic_navigation;
 mod b3_w2_progressive_context;
 mod b3_w3_agent_discovery;
+#[cfg(feature = "persistence")]
 mod b3_w4_incremental_analysis;
 mod b4_w2_architecture_diagnostic;
 mod b4_w4_evidence_export_enriched;
@@ -152,6 +154,7 @@ mod the_mermaid_tool_only_offers_formats_it_can_publish;
 mod the_product_observes_one_set_of_files;
 mod the_product_publishes_the_name_a_symbol_carries;
 mod the_published_arguments_are_the_declared_ones;
+#[cfg(feature = "persistence")]
 mod the_reparse_says_what_it_cost;
 mod the_same_project_gives_the_same_communities;
 mod the_same_project_gives_the_same_cycles_and_god_nodes;
