@@ -469,6 +469,72 @@ def mcp_section_gaps(body: str | None, flags: set[str], profiles: set[str], env:
     return gaps
 
 
+RELEASE_RS = ROOT / "crates" / "cognicode-cli" / "src" / "cmd" / "release_contract.rs"
+PLATFORMS_JSON = ROOT / "product" / "platforms.json"
+RELEASE_SECTION = "Release assets"
+ASSET_NAME = re.compile(r"[\w.-]+\.(?:tar\.gz|yaml|json)\b")
+
+
+def release_facts() -> dict:
+    """What a release publishes, read from the contract source and platforms.json."""
+    src = RELEASE_RS.read_text(encoding="utf-8")
+    platforms = json.loads(PLATFORMS_JSON.read_text(encoding="utf-8"))["platforms"]
+    certified = {p["target"] for p in platforms if p["support_level"] == "certified"}
+    arch = lambda target: target.split("-")[0]  # noqa: E731
+    uncertified = {arch(p["target"]) for p in platforms} - {arch(t) for t in certified}
+    stems = dict(re.findall(r'ArtifactKind::(\w+) => "([^"]+)",', src))
+    components = re.search(r"pub const COMPONENTS.*?\n\];", src, re.S).group(0)
+    published = re.findall(r"kind: ArtifactKind::(\w+),.*?published: (true|false)", components, re.S)
+    bundles = re.search(r"pub const SKILL_BUNDLES.*?\n\];", src, re.S).group(0)
+    bundle_ids = [i for i, p in re.findall(r'id: "([^"]+)",.*?published: (true|false)', bundles, re.S) if p == "true"]
+    templates = dict(re.findall(r"pub fn (\w+)\([^)]*\) -> String \{\s*format!\(\"([^\"]+)\"", src))
+    return {
+        "certified": certified,
+        "uncertified_arches": uncertified,
+        "stems": [stems[k] for k, p in published if p == "true"],
+        "bundle_ids": bundle_ids,
+        "templates": templates,
+    }
+
+
+def expected_assets(facts: dict, version: str) -> set[str]:
+    """Asset file names of one release, rendered from the templates of the source."""
+    t, names = facts["templates"], {"SHA256SUMS"}
+    for target in facts["certified"]:
+        for stem in facts["stems"]:
+            names.add(t["artifact_filename"].replace("{stem}", stem).replace("{version}", version).replace("{}", target))
+        names.add(t["bundle_manifest_filename"].replace("{version}", version).replace("{}", target))
+    names.add(t["release_inventory_filename"].replace("{version}", version))
+    for bundle in facts["bundle_ids"]:
+        names.add(t["skill_bundle_filename"].replace("{id}", bundle).replace("{version}", version))
+    return names
+
+
+def release_section_gaps(body: str | None, assets: set[str]) -> list[str]:
+    """What the release-assets section fails to say, given the contract's names."""
+    if body is None:
+        return ["section missing"]
+    gaps = [f"asset not documented: {a}" for a in sorted(assets) if a not in body]
+    gaps += [f"unknown asset cited: {a}" for a in sorted(set(ASSET_NAME.findall(body)) - assets) if a.count(".") > 0 and "-" in a]
+    if "sha256sum --check" not in body or "SHA256SUMS" not in body:
+        gaps.append("integrity verification against SHA256SUMS is not described")
+    if not re.search(r"(?i)limitation", body):
+        gaps.append("no explicit limitation about published releases")
+    return gaps
+
+
+def published_matrix_gaps(text: str, certified: set[str], uncertified_arches: set[str]) -> list[str]:
+    """The sentence naming the published platform matrix must match platforms.json."""
+    sentences = [s for s in re.split(r"(?<=\.)\s+", " ".join(text.split())) if "matriz publicada" in s]
+    if not sentences:
+        return ["no sentence states the published platform matrix"]
+    gaps = []
+    for sentence in sentences:
+        gaps += [f"matrix names a platform that is not certified: {a}" for a in sorted(uncertified_arches) if a in sentence]
+        gaps += [f"matrix omits a certified platform: {t.split('-')[0]}" for t in sorted(certified) if t.split("-")[0] not in sentence]
+    return gaps
+
+
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
         names = tool_names()
@@ -681,6 +747,38 @@ class ReadmeContract(unittest.TestCase):
             (good.replace("Limitation", "Note"), "no explicit limitation"),
         ):
             self.assertTrue(any(label in g for g in mcp_section_gaps(bad, flags, profiles, env)), label)
+
+    def test_the_install_guide_lists_the_release_assets_and_the_certified_matrix(self):
+        facts = release_facts()
+        assets = expected_assets(facts, workspace_version())
+        self.assertTrue(facts["certified"] and facts["stems"] and facts["bundle_ids"], "facts not read")
+        self.assertTrue(facts["uncertified_arches"], "no uncertified arch read: the matrix check would be vacuous")
+        self.assertLessEqual(
+            {"artifact_filename", "bundle_manifest_filename", "release_inventory_filename", "skill_bundle_filename"},
+            set(facts["templates"]), "name templates not read from release_contract.rs",
+        )
+        self.assertGreater(len(assets), 5, "too few assets derived: the check would be vacuous")
+        guide = MCP_GUIDE.read_text(encoding="utf-8")
+        self.assertEqual([], release_section_gaps(guide_section(guide, RELEASE_SECTION), assets))
+        self.assertEqual([], published_matrix_gaps(guide, facts["certified"], facts["uncertified_arches"]))
+
+    def test_the_release_asset_checks_discriminate(self):
+        assets = {"a-1.0.0-t.tar.gz", "SHA256SUMS"}
+        good = "`a-1.0.0-t.tar.gz` `SHA256SUMS`\n`sha256sum --check SHA256SUMS`\nLimitation: not published.\n"
+        self.assertEqual([], release_section_gaps(good, assets))
+        self.assertEqual(["section missing"], release_section_gaps(None, assets))
+        for bad, label in (
+            (good.replace("`a-1.0.0-t.tar.gz`", ""), "asset not documented: a-1.0.0-t.tar.gz"),
+            (good + " `b-1.0.0-t.tar.gz`", "unknown asset cited: b-1.0.0-t.tar.gz"),
+            (good.replace("sha256sum --check", "cat"), "integrity verification"),
+            (good.replace("Limitation", "Note"), "no explicit limitation"),
+        ):
+            self.assertTrue(any(label in g for g in release_section_gaps(bad, assets)), label)
+        ok = "La matriz publicada es Linux x86_64 GNU. Otra cosa."
+        self.assertEqual([], published_matrix_gaps(ok, {"x86_64-unknown-linux-gnu"}, {"aarch64"}))
+        self.assertTrue(published_matrix_gaps("La matriz publicada es x86_64/aarch64.", {"x86_64-x"}, {"aarch64"}))
+        self.assertTrue(published_matrix_gaps("La matriz publicada es aarch64.", {"x86_64-x"}, set()))
+        self.assertTrue(published_matrix_gaps("Sin frase.", {"x86_64-x"}, set()))
 
     def test_binary_surface_check_discriminates(self):
         self.assertEqual([], binary_surface_gaps("`cogh install --ide x --profile y`\n`cognicode graph hot-paths -n 3`"))

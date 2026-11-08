@@ -14,7 +14,8 @@ bajo `versions/<v>/skills/<bundle-id>` y los integra sin sobrescribir otros
 bundles de OpenCode. Los binarios de `explorer-api`/`explorer-mcp` y las
 plataformas Windows/macOS **no** forman parte de esta superficie estable:
 no anunciarlos como instalables mediante `cogh` hasta publicar y certificar
-sus artefactos y perfiles. Linux x86_64/aarch64 GNU es la matriz publicada.
+sus artefactos y perfiles. Linux x86_64 GNU es la matriz publicada.
+Las variantes `aarch64` y `musl` son experimentales y no se publican (`product/platforms.json`).
 
 La skill de auditoría externa
 [`cognicode-quality-investigator`](https://github.com/Rubentxu/agent-skill/tree/main/skills/cognicode-quality-investigator)
@@ -200,3 +201,50 @@ Limitation: `cogh install` and the remote `install.sh` fetch a published
 release, and they were not run to write this section. Until a release carries
 this version, build the binary from source as the README describes and
 register its absolute path as `command`.
+
+## Release assets
+
+This section is written in English; the rest of this guide is in Spanish.
+
+A release `v0.102.1` publishes the files below, named by the functions of
+`crates/cognicode-cli/src/cmd/release_contract.rs`. Only the certified platform
+`x86_64-unknown-linux-gnu` is published; `product/platforms.json` marks
+`aarch64` and `musl` as experimental and macOS and Windows as unsupported.
+
+Binaries, one tarball per component and platform:
+
+- `cogh-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-mcp-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+
+Skill bundles, platform-independent (they are skills, not executables):
+
+- `cognicode-0.102.1.tar.gz`
+- `cognicode-mcp-0.102.1.tar.gz`
+
+Manifests and checksums:
+
+- `bundle-0.102.1-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
+  `cogh` resolves.
+- `release-inventory-0.102.1.json`: the inventory of the release.
+- `SHA256SUMS`: the checksum of every file above.
+
+`explorer-api` and `explorer-mcp` are not published, and neither is the
+`cognicode-developer` skill bundle.
+
+Verify integrity after downloading every file you need into one empty
+directory (the URL base is
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.102.1/`):
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+`--ignore-missing` lets you check only the files you downloaded; a file that is
+present and does not match still fails the command.
+
+Limitation: these names are derived from the release contract in this tree.
+No published release was downloaded to write this section, so the names and
+the checksums are not confirmed against a real release. Provenance is also
+out of scope here: signatures and SBOMs are not asset kinds in
+`release_contract.rs`, and this guide does not describe how to verify them.
