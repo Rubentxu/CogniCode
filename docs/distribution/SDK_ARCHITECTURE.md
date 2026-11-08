@@ -65,9 +65,10 @@ graph LR
 
 ## Evidence ledger
 
-- [observed] The `cognicode-graph-wasm` functions above were recorded with the cognicode-diagrams flow on 2026-11-08: 2 structured queries (`cognicode inspect --format json` on `src/lib.rs`, engine `cognicode-cli 0.102.1`) and 12 entity claims, one per function; `evidence.py --check` reports all 12 as corroborated.
-- [curated] The ledger and the atlas live outside the repository under `~/.cognicode-diagrams/` and are not versioned, so the contract cannot read them; it only checks that this section names the recording commands and that the claim count equals the documented `cognicode-graph-wasm` functions.
-- [curated] Coverage is partial: only `cognicode-graph-wasm` has ledger entries; the other crates were documented from `cognicode inspect` and `cargo metadata` without recording them.
+- [observed] `cognicode-graph-wasm`: recorded with the cognicode-diagrams flow on 2026-11-08, 2 structured queries (`cognicode inspect --format json` on `src/lib.rs`, engine `cognicode-cli 0.102.1`) and 12 entity claims, one per function; `evidence.py --check` reports all as corroborated.
+- [observed] `cognicode-macros`: recorded the same way on 2026-11-08, 1 structured query and 6 entity claims, one per function declaration (`parse` is declared twice); `evidence.py --check` reports all as corroborated.
+- [curated] The ledger and the atlas live outside the repository under `~/.cognicode-diagrams/` and are not versioned, so the contract cannot read them; it only checks that this section names the recording commands and that each crate's claim count equals its documented function declarations.
+- [curated] Coverage is partial: only `cognicode-graph-wasm` and `cognicode-macros` have ledger entries; the other crates were documented from `cognicode inspect` and `cargo metadata` without recording them.
 
 ## Regenerate
 

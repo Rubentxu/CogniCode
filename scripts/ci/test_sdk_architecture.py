@@ -358,27 +358,43 @@ class DeveloperGuideLinks(unittest.TestCase):
                 self.assertTrue((ROOT / target).is_file(), f"{target} does not exist")
 
 
-def ledger_claim_count(body):
-    """Claims the ledger bullet says were recorded, read only from observed bullets."""
+def ledger_claim_counts(body):
+    """Claims per crate, read only from observed bullets shaped "`crate`: ... N entity claims"."""
+    counts = {}
     for line in body.splitlines():
         match = CLAIM.match(line)
         if match and match.group("label") == "observed":
-            found = re.search(r"(\d+) entity claims", match.group("text"))
+            found = re.match(r"`(?P<crate>[\w-]+)`: .*?(?P<n>\d+) entity claims", match.group("text"))
             if found:
-                return int(found.group(1))
-    return None
+                counts[found.group("crate")] = int(found.group("n"))
+    return counts
+
+
+def duplicated_declarations(body):
+    """Names the observed bullets say are declared twice."""
+    names = set()
+    for line in body.splitlines():
+        match = CLAIM.match(line)
+        if match and match.group("label") == "observed":
+            names.update(re.findall(r"`(\w+)` is declared twice", match.group("text")))
+    return names
 
 
 class EvidenceLedgerSection(unittest.TestCase):
     """The cognicode-diagrams ledger is external; the document must stay honest about it."""
 
-    def test_the_section_states_the_claim_count_of_the_documented_wasm_functions(self):
+    def test_the_section_states_one_claim_per_documented_function_declaration(self):
         document = sections(read_document())
         body = document.get("Evidence ledger", "")
         self.assertTrue(body, "no Evidence ledger section")
-        documented = documented_functions(document["cognicode-graph-wasm"])
-        self.assertTrue(documented, "no documented wasm functions to compare")
-        self.assertEqual(ledger_claim_count(body), len(documented))
+        counts = ledger_claim_counts(body)
+        for crate in ("cognicode-graph-wasm", "cognicode-macros"):
+            with self.subTest(crate=crate):
+                crate_body = document[crate]
+                documented = documented_functions(crate_body)
+                self.assertTrue(documented, "no documented functions to compare")
+                twice = duplicated_declarations(crate_body) & documented
+                self.assertEqual(counts.get(crate), len(documented) + len(twice))
 
     def test_the_section_labels_the_external_ledger_and_the_partial_coverage_as_curated(self):
         body = sections(read_document()).get("Evidence ledger", "")
@@ -394,10 +410,15 @@ class EvidenceLedgerSection(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, body)
 
-    def test_the_claim_count_is_read_only_from_observed_bullets(self):
-        self.assertEqual(ledger_claim_count("- [observed] 5 entity claims"), 5)
-        self.assertIsNone(ledger_claim_count("- [curated] 5 entity claims"))
-        self.assertIsNone(ledger_claim_count("- [observed] no count here"))
+    def test_the_claim_counts_are_read_only_from_observed_bullets_of_one_crate(self):
+        self.assertEqual(ledger_claim_counts("- [observed] `a-b`: 5 entity claims"), {"a-b": 5})
+        self.assertEqual(ledger_claim_counts("- [curated] `a`: 5 entity claims"), {})
+        self.assertEqual(ledger_claim_counts("- [observed] `a`: no count here"), {})
+        self.assertEqual(ledger_claim_counts("- [observed] `a`: 2 queries and 6 entity claims"), {"a": 6})
+
+    def test_a_declared_twice_name_is_read_only_from_observed_bullets(self):
+        self.assertEqual(duplicated_declarations("- [observed] `parse` is declared twice"), {"parse"})
+        self.assertEqual(duplicated_declarations("- [curated] `parse` is declared twice"), set())
 
 
 class ContractDiscriminates(unittest.TestCase):
