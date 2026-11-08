@@ -51,10 +51,11 @@ impl RouteStore for StubStore {
         routes: &[ApiRoute],
         edges: &[ApiRouteEdge],
     ) -> ExplorerResult<BatchStats> {
-        let mut stats = BatchStats::default();
-        stats.routes_created = routes.len();
-        stats.edges_created = edges.len();
-        Ok(stats)
+        Ok(BatchStats {
+            routes_created: routes.len(),
+            edges_created: edges.len(),
+            ..Default::default()
+        })
     }
 
     async fn find_route_by_method_path(

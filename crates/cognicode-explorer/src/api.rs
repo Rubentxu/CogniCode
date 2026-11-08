@@ -480,9 +480,8 @@ async fn get_decision_support_pack(
     // Get graph_query from the GraphService for RiskMap/ChangeImpactStory
     let graph_query = state.graph.graph_query();
 
-    let pack = DecisionSupportPackBuilder::build(&id, graph_query, None, Some(graph_repo.as_ref()))
+    let pack = DecisionSupportPackBuilder::build(id, graph_query, None, Some(graph_repo.as_ref()))
         .await
-        .map_err(ExplorerError::from)
         .map_err(ApiError)?;
 
     Ok(Json(pack).into_response())

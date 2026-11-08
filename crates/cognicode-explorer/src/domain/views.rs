@@ -4507,7 +4507,7 @@ impl ViewExecutor for DecisionGraphExecutor {
                     use cognicode_core::domain::aggregates::generic_graph::NodeId;
                     use cognicode_core::domain::ports::GraphRepository;
 
-                    let mvp = format!("decision:{id}");
+                    let _mvp = format!("decision:{id}");
 
                     let Some(repo) = ctx.graph_repo else {
                         return Err(crate::error::ExplorerError::FeatureDisabled(
@@ -4861,7 +4861,7 @@ impl ViewExecutor for DecisionTraceExecutor {
                     };
 
                     // Fetch rationale subgraph
-                    let (nodes, edges, truncated) = repo
+                    let (nodes, edges, _truncated) = repo
                         .rationale_subgraph(
                             &node_id,
                             DECISION_TRACE_MAX_DEPTH,
@@ -9154,7 +9154,7 @@ mod view_seam_tests {
         // No edges
 
         let target = super::InspectionTarget::Symbol(super::ResolvedSymbol {
-            id: SymbolId::new("SYM-LONE".to_string()),
+            id: SymbolId::new("SYM-LONE"),
             name: "lone_func".to_string(),
             kind: cognicode_core::domain::value_objects::SymbolKind::Function,
             file: "src/lib.rs".to_string(),
