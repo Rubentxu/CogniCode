@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@v0.102.1`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.102.1`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 ### Binario precompilado publicado (recuperación independiente)
 
@@ -232,7 +232,7 @@ cognicode graph mermaid [ruta] [--format svg|txt]
 cognicode graph complexity [ruta]
 cognicode graph impact <símbolo> [ruta]
 
-cognicode refactor rename|extract|inline|move <símbolo> [nuevo_nombre]
+cognicode refactor <símbolo> [nuevo_nombre] [--operation rename|extract|inline|move]
 
 cognicode navigate definition|hover|references <archivo:línea:col> [ruta]
 ```

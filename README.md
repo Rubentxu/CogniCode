@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.102.1`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.102.1`. Both channels install the same published release asset — the digest identity proof is no longer versioned in this tree (known limitation). Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -231,7 +231,7 @@ cognicode graph mermaid [path] [--format svg|txt]
 cognicode graph complexity [path]
 cognicode graph impact <symbol> [path]
 
-cognicode refactor rename|extract|inline|move <symbol> [new_name]
+cognicode refactor <symbol> [new_name] [--operation rename|extract|inline|move]
 
 cognicode navigate definition|hover|references <file:line:col> [path]
 ```
