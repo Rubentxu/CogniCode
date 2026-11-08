@@ -24,7 +24,8 @@ graph LR
   cognicode_graph_wasm --> cognicode_graph_algos
 ```
 
-- [curated] The diagram is drawn by hand; the test compares its edges with the normal dependencies `cargo metadata` reports between the libraries.
+- [observed] The diagram lines are printed by `python3 -I scripts/ci/sdk_dependency_edges.py` from the normal dependencies `cargo metadata` reports between the libraries; the test compares them with the block above.
+- [curated] The `graph LR` header and the choice of drawing only library crates are written by hand.
 - [inferred] `cognicode-graph-algos` and `cognicode-macros` have no dependency on another library, so they can be published first.
 
 ## cognicode-core
@@ -68,6 +69,7 @@ cognicode inspect --file crates/cognicode-graph-algos/src/lib.rs
 cognicode inspect --file crates/cognicode-graph-wasm/src/lib.rs
 cognicode inspect --file crates/cognicode-macros/src/lib.rs
 cargo metadata --no-deps --offline --format-version 1
+python3 -I scripts/ci/sdk_dependency_edges.py
 python3 -I scripts/ci/test_sdk_architecture.py
 ```
 

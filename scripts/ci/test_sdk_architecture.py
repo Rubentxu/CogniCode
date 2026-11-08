@@ -185,6 +185,24 @@ class SdkArchitectureDocument(unittest.TestCase):
         short = lambda n: n.replace("-", "_")  # noqa: E731 (mermaid ids)
         self.assertEqual(drawn, {(short(a), short(b)) for a, b in expected})
 
+    def test_the_generator_prints_the_diagram_lines_the_document_holds(self):
+        generator = ROOT / "scripts" / "ci" / "sdk_dependency_edges.py"
+        self.assertTrue(generator.is_file(), "no sdk_dependency_edges.py generator")
+        out = subprocess.run(
+            ["python3", "-I", str(generator)], cwd=ROOT, capture_output=True,
+            text=True, check=True, timeout=COMMAND_DEADLINE_SECONDS,
+        ).stdout
+        printed = out.splitlines()
+        self.assertTrue(printed, "the generator printed no edge")
+        block = re.search(r"```mermaid\n(.*?)```", read_document(), re.S)
+        self.assertIsNotNone(block, "no mermaid block")
+        drawn = [l for l in block.group(1).splitlines() if "-->" in l]
+        self.assertEqual(printed, drawn)
+
+    def test_the_regenerate_section_runs_the_generator(self):
+        body = sections(read_document()).get("Regenerate", "")
+        self.assertIn("python3 -I scripts/ci/sdk_dependency_edges.py", body)
+
     def test_the_diagram_is_labelled_curated(self):
         body = sections(read_document()).get("Dependency graph", "")
         self.assertIn("curated", labels_in(body))
