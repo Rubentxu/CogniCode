@@ -25,6 +25,12 @@ consumidor. Solo una opción que cambie el grafo producido puede ser parte de
 la identidad del proveedor; el perfil, ámbito o presupuesto de una consulta
 se validan en el resultado de esa consulta, no en el snapshot del grafo.
 
+La medición de H5/C11 fija además esta frontera operacional: cuando el
+manifest es fresco, `load_or_build_graph` reutiliza el snapshot completo;
+cuando deja de ser reutilizable, llama a `build_project_graph` y reconstruye
+el grafo completo. `IncrementalScanner` y `FileManifest::compute_delta`
+existen como infraestructura separada, pero no están conectados a esta ruta.
+
 ## Invariantes
 
 - **CU-005.1** La identidad durable del grafo se obtiene con función pura de
@@ -44,12 +50,17 @@ se validan en el resultado de esa consulta, no en el snapshot del grafo.
   `ManifestStore` y la validación de snapshots existente. No introducir otra
   DB, daemon ni autoridad paralela.
 - **CU-005.5** **No llamar incremental** al algoritmo que solo salta todo el
-  análisis por cache hit. Describir `cold full`, `warm reuse`, `incremental
-  delta` solo cuando el cambio parcial realmente reduzca recomputación medida.
-- **CU-005.6** Medir cold/warm/edit p50/p95, asignaciones y bytes de output de
-  una fixture representativa; no fijar tiempos inventados ni umbrales
-  inestables en tests de merge.
+  análisis por cache hit. Describir `cold full`, `warm reuse`, `full rebuild
+  after edit` e `incremental delta` solo cuando el cambio parcial realmente
+  reduzca recomputación medida.
+- **CU-005.6** Medir cold/warm/edit p50/p95 y muestras reales mediante un
+  instrumento explícito fuera de la suite rápida; no fijar tiempos inventados,
+  asignaciones no observadas ni umbrales inestables en tests de merge.
 
-**Aceptación:** cold y warm equivalen semánticamente; cambio semántico invalida; corrupción falla cerrado; diferencia de compilación y feature evita stale; workspace A != B. **Permanente:** una property pequeña con mutaciones del manifest; **UAT/AAT temporal** del recorrido completo.
+**Aceptación:** cold y warm equivalen semánticamente; el edit invalida de forma
+honesta; corrupción falla cerrado; la medición distingue reutilización completa
+de reconstrucción completa y no afirma delta sin observarlo. **Permanente:**
+una property pequeña con mutaciones del manifest; **UAT/AAT temporal** del
+recorrido completo.
 
 **Referencias:** `crates/cognicode-core/src/incremental/content_hash.rs`, `src/application/analysis_basis.rs`, `odd/tasks/b3-agent-code-understanding.md`, `odd/tasks/b6-agent-ready-runtime.md`; en Guard `guard-application/src/graph_cache.rs`, `guard-cli/src/main.rs`.
