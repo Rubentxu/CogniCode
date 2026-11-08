@@ -357,6 +357,28 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 |---------|---------|-------------|
 | `persistence` | enabled | RedbGraphStore for persistent graph cache |
 
+## Security and limitations
+
+CogniCode is a local tool: it analyses a repository on your machine and does
+not need the network. The boundaries that matter when you run it, stated in
+full in [`SECURITY.md`](SECURITY.md):
+
+- **The analysed repository is data, not instructions.** Files, comments and
+  tool results are never treated as commands.
+- **Read-only mode.** Start the server with `--read-only` to hide the mutating
+  tools from `tools/list` and reject them.
+- **No telemetry by default.** `COGNICODE_TELEMETRY=1` opts in to metric
+  export; no source code is sent. `COGNICODE_LINK_TRACE=<file>` opts in to a
+  local record of tool calls; it can hold paths and symbol names, so treat the
+  file as sensitive.
+- **Streams.** `cognicode-mcp` writes JSON-RPC on stdout and logs on stderr,
+  never the reverse.
+
+Limitations: a `Partial`, `Unknown`, `Unsupported` or `Failed` result is not a
+complete one, and an analysis answer states its coverage. Report a
+vulnerability privately through GitHub Security Advisories, not in a public
+issue.
+
 ## Development
 
 ```bash

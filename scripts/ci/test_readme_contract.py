@@ -581,6 +581,24 @@ def cli_workflow_gaps(body: str | None, closed: dict[tuple[str, str], set[str]])
     return gaps
 
 
+SECURITY_HEADINGS = {EN: "Security and limitations", ES: "Seguridad y límites"}
+LINK_TRACE_RS = ROOT / "crates" / "cognicode-core" / "src" / "interface" / "mcp" / "link_trace.rs"
+
+
+def security_section_gaps(body: str | None, flags: set[str], env: set[str]) -> list[str]:
+    """What a README security section fails to say, given facts read from the sources."""
+    if body is None:
+        return ["section missing"]
+    gaps = []
+    if "SECURITY.md" not in body:
+        gaps.append("no link to SECURITY.md")
+    gaps += [f"flag not documented: {f}" for f in sorted(flags) if f"`{f}`" not in body]
+    gaps += [f"environment variable not documented: {v}" for v in sorted(env) if v not in body]
+    if not ("stdout" in body and "stderr" in body):
+        gaps.append("no stdout/stderr rule")
+    return gaps
+
+
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
         names = tool_names()
@@ -921,6 +939,30 @@ class ReadmeContract(unittest.TestCase):
         ):
             gaps = tool_example_gaps(example(args, tool), schemas)[1]
             self.assertTrue(any(label in g for g in gaps), (label, gaps))
+
+
+    def test_both_readmes_state_the_security_boundaries_and_limitations(self):
+        flags = {"--read-only"} & clap_flags([MCP_MAIN])
+        env = set(re.findall(r'var\("(COGNICODE_\w+)"\)', MCP_MAIN.read_text(encoding="utf-8")))
+        env.add(re.search(r'LINK_TRACE_VARIABLE: &str = "(\w+)"', LINK_TRACE_RS.read_text(encoding="utf-8")).group(1))
+        self.assertTrue(flags and len(env) >= 2, "flags or environment not read: the check would be vacuous")
+        for readme, heading in SECURITY_HEADINGS.items():
+            with self.subTest(readme=readme.name):
+                body = guide_section(readme.read_text(encoding="utf-8"), heading)
+                self.assertEqual([], security_section_gaps(body, flags, env))
+
+    def test_the_security_section_check_discriminates(self):
+        flags, env = {"--read-only"}, {"COGNICODE_X"}
+        good = "[SECURITY.md](SECURITY.md) `--read-only` `COGNICODE_X` stdout carries JSON-RPC, stderr the logs."
+        self.assertEqual([], security_section_gaps(good, flags, env))
+        self.assertEqual(["section missing"], security_section_gaps(None, flags, env))
+        for bad, label in (
+            (good.replace("SECURITY.md", "X"), "no link to SECURITY.md"),
+            (good.replace("`--read-only`", ""), "flag not documented"),
+            (good.replace("`COGNICODE_X`", ""), "environment variable not documented"),
+            (good.replace("stderr", "log"), "no stdout/stderr rule"),
+        ):
+            self.assertTrue(any(label in g for g in security_section_gaps(bad, flags, env)), label)
 
 
 if __name__ == "__main__":
