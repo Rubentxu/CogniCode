@@ -39029,3 +39029,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** `cargo nextest run --profile gate -p cognicode-cli --lib --tests` (sin filtro, en serie, binarios release): 765 passed, 0 skipped, rc=0. `git diff --check` rc=0. Logs: `/tmp/t184/benches-examples.log`, `/tmp/t184/nextest-cli.log`.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commits locales en `task-192-bench-example-ignore-audit`.
+
+## 2026-11-08 — TASK-193: la suite del explorer-ui medida
+
+**Medición inicial.** `npm test --prefix apps/explorer-ui` (vitest + MSW, sin filtro, node v25.9.0, `node_modules` ya presente): rc=0, 86 ficheros y 944 tests pasados, 0 fallos, 11,60 s. Las líneas `Failed ...` del log (`C4Toolbar`: `Network error`, `URL.createObjectURL is not a function`) las escriben casos negativos que esperan ese error y pasan.
+
+**Causa.** No hay defecto: la suite que AGENTS.md exige antes de pedir review no figuraba en ninguna auditoría y estaba verde.
+
+**Cambios.** Ninguno de código.
+
+**Verificación.** Log en `/tmp/t184/explorer-ui.log`. `git diff --check` rc=0.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commit local en `task-193-explorer-ui-suite`.
