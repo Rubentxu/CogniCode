@@ -39077,3 +39077,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** RED medido anulando `setPendingViewId(chip.viewId)` en `Spotter.tsx` (copia en /tmp, restaurado): falla `expected 'call-graph' to be 'source'`. `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 950 tests (antes 947). tsc 0 errores, lint rc=0 (9 avisos ya registrados), `git diff --check` limpio.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-196-spotter-cmd-n`, commit `d0c777fd`.
+
+## 2026-11-08 — TASK-197: product contracts and explorer-ui build
+
+**Medición inicial.** `npm run build` del explorer-ui (`tsc -b && vite build`): rc=0 en 12 s, con avisos (chunk > 500 kB, 2 INEFFECTIVE_DYNAMIC_IMPORT, SOURCEMAP_BROKEN de tailwind), ninguno es fallo. `bash scripts/ci/run-all-contracts.sh`: rc=1, un único rojo, `test_the_touched_files_do_not_carry_more_debt_than_they_inherited` (`Spotter.test.tsx: 0 -> 1`).
+
+**Causa.** Un comentario añadido por TASK-196 citaba «C4», que el escáner de comentarios (`comment_scan.py`) lee como identificador de tarea. Defecto del test, no de producción.
+
+**Cambios.** Comentario reescrito sin la cita (`f3582cd8`).
+
+**Verificación.** `run-all-contracts.sh` sin filtro: rc=0. `Spotter.test.tsx`: 24 passed. Gate global: NOT_RUN (política de lotes). Sin push.
+
+**Estado.** PASS para contratos y build; los avisos del build quedan como observación.
