@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DECLARATION = ROOT / "docs" / "distribution" / "SDK_SURFACES.json"
 CLASSES = {"library", "application", "internal"}
 METADATA_DEADLINE_SECONDS = 120
+PACKAGE_LIST_DEADLINE_SECONDS = 120
+TEST_PAYLOAD_PREFIXES = ("tests/", "testdata/")
 
 
 def workspace_packages():
@@ -33,6 +35,19 @@ def workspace_packages():
         check=True,
     )
     return {p["name"]: p for p in json.loads(out.stdout)["packages"]}
+
+
+def packaged_files(name):
+    """Files `cargo package` would ship for `name`, as crate-relative paths."""
+    out = subprocess.run(
+        ["cargo", "package", "--list", "-p", name, "--offline", "--allow-dirty"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=PACKAGE_LIST_DEADLINE_SECONDS,
+        check=True,
+    )
+    return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
 def declared_crates():
@@ -113,6 +128,43 @@ class SdkSurfaceContract(unittest.TestCase):
                     self.assertNotEqual(
                         dep["req"], "*", "path dependency without a `version` cannot be packaged"
                     )
+
+    def test_a_library_does_not_package_tests_or_fixtures_unless_declared(self):
+        for name, entry in declared_crates().items():
+            if entry.get("class") != "library":
+                continue
+            allowed = tuple(entry.get("packaged_test_paths", []))
+            with self.subTest(crate=name):
+                files = packaged_files(name)
+                self.assertTrue(files, "cargo package --list returned nothing")
+                self.assertTrue(
+                    any(f.startswith("src/") for f in files), "package list has no src/"
+                )
+                leaked = [
+                    f
+                    for f in files
+                    if f.startswith(TEST_PAYLOAD_PREFIXES) and not f.startswith(allowed)
+                ]
+                self.assertEqual(
+                    leaked[:5], [], f"{len(leaked)} test/fixture files are packaged"
+                )
+
+    def test_declared_test_payload_exceptions_are_narrow_and_justified(self):
+        for name, entry in declared_crates().items():
+            allowed = entry.get("packaged_test_paths")
+            if allowed is None:
+                continue
+            with self.subTest(crate=name):
+                self.assertEqual(entry.get("class"), "library")
+                self.assertTrue(allowed, "an empty exception list must be omitted")
+                self.assertTrue(
+                    all(p in TEST_PAYLOAD_PREFIXES or p.startswith(TEST_PAYLOAD_PREFIXES) for p in allowed),
+                    "exceptions may only name tests/ or testdata/ paths",
+                )
+                self.assertTrue(
+                    (entry.get("packaged_test_paths_reason") or "").strip(),
+                    "an exception needs a reason",
+                )
 
     def test_internal_crates_are_marked_unpublishable(self):
         packages = workspace_packages()

@@ -5,22 +5,51 @@
     "cognicode-core": {
       "class": "library",
       "summary": "Code intelligence engine: parsing, symbol graph, analysis services.",
-      "consumers": ["tools that embed CogniCode analysis", "cognicode-cli", "cognicode-mcp"]
+      "consumers": [
+        "tools that embed CogniCode analysis",
+        "cognicode-cli",
+        "cognicode-mcp"
+      ],
+      "packaged_test_paths": [
+        "testdata/analyze_impact_equivalence/",
+        "testdata/cross_file_scope_aware/",
+        "testdata/equivalence_full_vs_perfile/",
+        "testdata/massive_collision_corpus/",
+        "testdata/outline_equivalence/",
+        "testdata/per_file_correctness/",
+        "testdata/per_file_equivalence/",
+        "testdata/per_file_partial_corpus/",
+        "testdata/query_index_equivalence/",
+        "testdata/silent_errors_corpus/"
+      ],
+      "packaged_test_paths_reason": "Unit tests inside src/ read these corpora through CARGO_MANIFEST_DIR; the other fixture directories and tests/ are not read by src/ and are excluded."
     },
     "cognicode-graph-algos": {
       "class": "library",
       "summary": "Dependency-free graph algorithms (ranking, communities, dominators, slicing).",
-      "consumers": ["any Rust project needing graph algorithms", "cognicode-core", "cognicode-graph-wasm"]
+      "consumers": [
+        "any Rust project needing graph algorithms",
+        "cognicode-core",
+        "cognicode-graph-wasm"
+      ]
     },
     "cognicode-macros": {
       "class": "library",
       "summary": "Procedural macros used by the domain types.",
-      "consumers": ["cognicode-core"]
+      "consumers": [
+        "cognicode-core"
+      ],
+      "packaged_test_paths": [
+        "tests/"
+      ],
+      "packaged_test_paths_reason": "trybuild compile-fail cases (44 KiB) travel with the crate so packagers can run its suite."
     },
     "cognicode-graph-wasm": {
       "class": "library",
       "summary": "WebAssembly build of the graph algorithms for browser consumers.",
-      "consumers": ["web front ends that run graph algorithms client-side"]
+      "consumers": [
+        "web front ends that run graph algorithms client-side"
+      ]
     },
     "cognicode-cli": {
       "class": "application",

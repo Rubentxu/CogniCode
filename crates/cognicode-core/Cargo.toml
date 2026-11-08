@@ -7,6 +7,14 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 repository.workspace = true
 readme = "README.md"
+# Integration tests and the fixture corpora that src/ does not read stay out of
+# the published crate; the corpora read by unit tests in src/ travel with it.
+exclude = [
+    "/tests/",
+    "/testdata/ana02_corpus/",
+    "/testdata/identity_corpus/",
+    "/testdata/u10_compat_corpus/",
+]
 
 [features]
 # Default is `["persistence"]`. The Graph Intelligence v2 cleanup removed

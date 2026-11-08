@@ -7,6 +7,7 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 repository.workspace = true
 readme = "README.md"
+exclude = ["/tests/"]
 
 [features]
 default = []
