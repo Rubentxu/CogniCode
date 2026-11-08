@@ -467,8 +467,9 @@ pub fn load_durable_snapshot_capped(
     // is still cut at the cap, and a cut snapshot fails to decode.
     let mut bytes = Vec::new();
     file.take(max_bytes).read_to_end(&mut bytes).ok()?;
-    let (snapshot, _): ((String, _, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != SNAPSHOT_SCHEMA {
+    let (snapshot, consumed): ((String, _, _, _), usize) =
+        decode_from_slice(&bytes, standard()).ok()?;
+    if consumed != bytes.len() || snapshot.0 != SNAPSHOT_SCHEMA {
         return None;
     }
     Some((snapshot.1, snapshot.2, snapshot.3))
@@ -775,6 +776,29 @@ mod tests {
         assert!(
             after.graph.symbol_count() > 1,
             "the tree was read again, and the new symbol is in the graph"
+        );
+    }
+
+    #[test]
+    fn a_snapshot_with_trailing_bytes_is_not_valid_evidence() {
+        let (_root, workspace, cache) = workspace_with_root();
+        load_or_build_graph(
+            &AnalysisService::new(),
+            &workspace,
+            Some(&cache),
+            None,
+            false,
+        )
+        .expect("the first call answers");
+
+        let snapshot = graph_cache::snapshot_path(&cache, &workspace);
+        let mut bytes = std::fs::read(&snapshot).expect("the snapshot is written");
+        bytes.push(0xff);
+        std::fs::write(&snapshot, bytes).expect("the snapshot is corrupted");
+
+        assert!(
+            load_durable_snapshot(&snapshot).is_none(),
+            "a valid prefix followed by garbage must not be served as a snapshot"
         );
     }
 }

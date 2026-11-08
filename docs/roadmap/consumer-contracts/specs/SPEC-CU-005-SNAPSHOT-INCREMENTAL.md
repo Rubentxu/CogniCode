@@ -6,14 +6,49 @@
 
 Guard construye una clave de caché indicando `cognicode-core/v{CARGO_PKG_VERSION}` desde `guard-cli` y el literal `no-git-rev`: versiona el consumer, no el proveedor, y no ancla la revisión. CogniCode ya posee lógica de hash/incremental y bases de análisis. Un contrato de identidad correcto debe evitar resultados stale sin crear un almacenamiento paralelo.
 
+## Frontera verificada del contrato
+
+La ruta durable vigente persiste una tupla formada por `SNAPSHOT_SCHEMA`,
+`SnapshotKey`, `CallGraph` y `FileManifest` en
+`application/graph_snapshot.rs`. `SnapshotKey` identifica el proveedor del
+análisis, el workspace canónico y el schema; `FileManifest` identifica los
+paths y bytes que el grafo leyó. `load_or_build_graph` valida primero el
+proveedor y después la frescura del manifest, y trata un decode corrupto o un
+schema incompatible como snapshot ausente.
+
+La configuración publicada en `BasisDto.config_digest` es provenance de la
+respuesta: actualmente resume `HandlerContext.log_level` y no se persiste en
+la tupla durable. `AnalysisBasis.profile` y `AnalysisBasis.budget` tampoco se
+pasan a `load_or_build_graph`; no hay evidencia de que cambien la semántica
+del grafo. Por tanto, no se deben añadir al `SnapshotKey` por pertenecer al
+consumidor. Solo una opción que cambie el grafo producido puede ser parte de
+la identidad del proveedor; el perfil, ámbito o presupuesto de una consulta
+se validan en el resultado de esa consulta, no en el snapshot del grafo.
+
 ## Invariantes
 
-- **CU-005.1** `SnapshotKey` se obtiene con función pura de estructura canónica ordenada: `workspace_identity`, paths normalizados+hashes **con el path asociado**, content manifest completo, source revision (si existe), dirty digest, analyzer build commit/version reales, schema, enabled features, config/capability profile y scope. Sin suposiciones de hora/mtime como autoridad.
-- **CU-005.2** Una edición con mismo tamaño y mtime distinto solo de contenido invalida; un path diferente con los mismos bytes debe invalidar si su resolución semántica importa. Hashes de archivo no se pasan como lista sin identidad/orden estable.
-- **CU-005.3** Cache hit exige validez de clave + decode validado + schema + integridad. Corrupt/stale/missing => recompute o `Unknown/Failed` explícito; nunca `Complete` usando datos stale.
-- **CU-005.4** Hacerlo primero reutilizando `incremental/content_hash.rs` y cache de sesión existente. Evitar introducir otra DB o daemon.
-- **CU-005.5** **No llamar incremental** al algoritmo que solo salta todo el análisis por cache hit. Describir `cold full`, `warm reuse`, `incremental delta` solo cuando el cambio parcial realmente reduce recomputación medido.
-- **CU-005.6** Medir cold/warm/edit p50/p95, asignaciones y bytes de output de 1 fixture representativa; no fijar tiempos inventados. Ningún test en merge debe exigir tiempos inestables; budget reproducible en integración/RC.
+- **CU-005.1** La identidad durable del grafo se obtiene con función pura de
+  `workspace_identity`, proveedor real (versión, commit y features) y schema;
+  el `FileManifest` asociado conserva paths normalizados y hashes de contenido.
+  Configuración, perfil y scope solo entran en esta identidad si una prueba
+  demuestra que cambian el grafo producido. Sin suposiciones de hora/mtime
+  como autoridad.
+- **CU-005.2** Una edición con mismo tamaño y mtime pero distinto contenido
+  invalida; un path diferente con los mismos bytes invalida cuando cambia la
+  resolución semántica. Los hashes no se pasan como lista sin identidad ni
+  orden estable.
+- **CU-005.3** Cache hit exige proveedor compatible, decode validado, schema e
+  integridad/frescura del manifest. Corrupt/stale/missing implica recompute o
+  `Unknown/Failed` explícito; nunca `Complete` con datos stale.
+- **CU-005.4** Reutilizar `incremental/content_hash.rs`, `FileManifest`,
+  `ManifestStore` y la validación de snapshots existente. No introducir otra
+  DB, daemon ni autoridad paralela.
+- **CU-005.5** **No llamar incremental** al algoritmo que solo salta todo el
+  análisis por cache hit. Describir `cold full`, `warm reuse`, `incremental
+  delta` solo cuando el cambio parcial realmente reduzca recomputación medida.
+- **CU-005.6** Medir cold/warm/edit p50/p95, asignaciones y bytes de output de
+  una fixture representativa; no fijar tiempos inventados ni umbrales
+  inestables en tests de merge.
 
 **Aceptación:** cold y warm equivalen semánticamente; cambio semántico invalida; corrupción falla cerrado; diferencia de compilación y feature evita stale; workspace A != B. **Permanente:** una property pequeña con mutaciones del manifest; **UAT/AAT temporal** del recorrido completo.
 
