@@ -45,6 +45,14 @@ La ruta real reutiliza el snapshot completo cuando `SnapshotKey` y
 completo. `IncrementalScanner` y `FileManifest::compute_delta` existen como
 infraestructura separada, pero no están conectados a esta ruta.
 
+La medición observó, con una muestra, `full rebuild` en frío (36.981 ms),
+`warm reuse` sin cambios (33.788 ms) y `full rebuild after edit` (35.971 ms).
+El instrumento separado del scanner observó 2 ficheros procesados en la
+primera pasada, 0 en la pasada sin cambios, 1 cambiado ante una edición de
+igual tamaño, y 1 añadido más 1 eliminado en la fase correspondiente. Esta
+última evidencia no se proyecta a la ruta real: no hay base para publicar
+`incremental delta` mientras el scanner siga desconectado.
+
 El hito de medición usa una fixture aislada y caché temporal, y registra
 `cold full`, `warm reuse` y `full rebuild after edit` con muestras y percentiles
 reales. No publica `incremental delta` hasta demostrar reducción de
