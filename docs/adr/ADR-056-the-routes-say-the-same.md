@@ -1,6 +1,7 @@
 # ADR-056 — Las tres rutas que construyen el grafo tienen que decir lo mismo
 
-**Estado**: EJECUTADO (decidido y aplicado el 2026-10-24; verificado en el código y en la suite)
+**Estado**: EJECUTADO (contrato observable cerrado; decidido y aplicado el 2026-10-24;
+verificado en el código y en la suite; TASK-166/PR #744 y TASK-167/PR #746)
 **Fecha**: 2026-10-24
 **Decisores**: Maintainer
 **Contexto**: H24 · construcción del grafo del proyecto (`crates/cognicode-core/src/application/services/analysis_service.rs`), candidato `C23` de la cola de la misión
@@ -16,9 +17,10 @@ compartir inventario, lectura, resolución y reporte entre las variantes síncro
 filtrada y asíncrona. Su criterio de cierre es: «un mismo corpus produce relaciones y
 cobertura equivalentes por las tres vías».
 
-El roadmap ya tenía dueño para este defecto: la auditoría interna del 2026-10-21 lo
+El roadmap dio dueño a este defecto: la auditoría interna del 2026-10-21 lo
 anotó como «los constructores que no comparten motor» y le dio los candidatos `C16` y
-`C23`. `C16` está cerrado; `C23` es el que sigue vivo en la cola.
+`C23`. `C16` y el contrato observable de `C23` están cerrados; la extracción de un
+motor común queda como mejora futura no bloqueante.
 
 ### Lo que muestra el árbol
 
@@ -126,7 +128,8 @@ ven. Su archivo declinado no lo cuenta nadie.
 
 **Lo que esta unidad NO hace.**
 
-- No extrae el motor común. `C23` sigue abierto por su primer criterio de cierre.
+- No extrae el motor común. Esa extracción queda fuera del contrato observable
+  cerrado y solo se retomará como mejora futura si aporta valor medido.
 - No toca las otras dos vías (`per_file` y `lightweight`): construyen otros grafos y
   tienen su propio contrato (`h16`). Su cobertura, además, la publica otra.
 
@@ -176,9 +179,9 @@ la desmiente.
 
 **El GREEN.** 7/7. La suite del core entera: 3.116 pruebas y 0 fallos.
 
-**Lo que queda abierto.** El motor común no está extraído: `C23` sigue vivo por su
-primer criterio de cierre. Lo que esta ejecución deja es la red que hace segura la
-extracción.
+**Lo que queda como mejora futura.** El motor común no está extraído. La
+extracción no bloquea el contrato observable: solo se retomará si una medición
+muestra valor suficiente y con la equivalencia ya protegida por el contrato.
 
 ## Referencias
 
