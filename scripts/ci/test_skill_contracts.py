@@ -157,7 +157,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-COMMANDS_RS = REPO_ROOT / "crates" / "cognicode-core" / "src" / "interface" / "cli" / "commands.rs"
+COMMANDS_RS = REPO_ROOT / "crates" / "cognicode-cli" / "src" / "cli" / "commands.rs"
 RELEASE_CONTRACT_RS = (
     REPO_ROOT / "crates" / "cognicode-cli" / "src" / "cmd" / "release_contract.rs"
 )
@@ -651,6 +651,14 @@ def _root_flags() -> set[str]:
     if ROOT_FLAGS is None:
         ROOT_FLAGS = cli_root_flags(COMMANDS_RS.read_text(encoding="utf-8"))
     return ROOT_FLAGS
+
+
+def test_the_clap_source_the_contract_parses_exists() -> None:
+    """Un fichero movido debe fallar aqui, con su ruta, y no como once errores de E/S."""
+    assert COMMANDS_RS.is_file(), (
+        f"el contrato lee las firmas de {COMMANDS_RS.relative_to(REPO_ROOT)} y ese "
+        "fichero no existe: si se movio, actualiza COMMANDS_RS"
+    )
 
 
 def test_the_parser_reads_the_real_signatures() -> None:
