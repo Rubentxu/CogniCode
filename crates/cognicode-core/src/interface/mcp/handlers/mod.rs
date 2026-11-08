@@ -2888,54 +2888,91 @@ pub async fn handle_get_per_file_graph(
 ) -> HandlerResult<GetPerFileGraphOutput> {
     let file_path = authorise_file_path(ctx, &input.file_path)?;
 
-    // Use per-file strategy
+    // Use the report-producing per-file route so this consumer publishes the
+    // same coverage facts as merge_graphs and the project routes.
     let strategy = PerFileStrategy::new();
-    match strategy.build_local_graph(&file_path) {
-        Ok((graph, pending)) => {
-            let symbols: Vec<SymbolLocationEntry> = graph
-                .symbols()
-                .map(|s| SymbolLocationEntry {
-                    file: s.location().file().to_string(),
-                    line: published_line(s.location().line()),
-                    column: published_column(s.location().column()),
-                    symbol_kind: format!("{:?}", s.kind()),
+    let report = strategy.merge_files_with_report(&[file_path.as_path()]);
+    let graph = report.graph;
+    let (coverage, pending_references) = match report.status {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
+            (MergeCoverage::Complete, Vec::new())
+        }
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+            skipped,
+            pending,
+            rejected,
+        } => {
+            use crate::infrastructure::graph::per_file_graph::SkipReason as R;
+            let skipped_info: Vec<SkippedFileInfo> = skipped
+                .into_iter()
+                .map(|s| {
+                    let (reason, detail) = match s.reason {
+                        R::Read(d) => (SkippedReasonKind::Read, d),
+                        R::Parse(d) => (SkippedReasonKind::Parse, d),
+                        R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
+                        R::Symlink { target } => (
+                            SkippedReasonKind::Symlink,
+                            format!("symlink to {target}, not followed"),
+                        ),
+                        R::Walk(d) => (SkippedReasonKind::Walk, d),
+                        R::Other(d) => (SkippedReasonKind::Other, d),
+                    };
+                    SkippedFileInfo {
+                        path: s.path,
+                        reason,
+                        detail,
+                    }
                 })
                 .collect();
-
-            let dependencies: Vec<DependencyInfo> = graph
-                .all_dependencies()
-                .filter_map(|(src_id, tgt_id, _)| {
-                    let src = graph.get_symbol(src_id)?;
-                    let tgt = graph.get_symbol(tgt_id)?;
-                    Some(DependencyInfo {
-                        caller: src.name().to_string(),
-                        caller_file: src.location().file().to_string(),
-                        caller_line: published_line(src.location().line()),
-                        callee: tgt.name().to_string(),
-                    })
-                })
-                .collect();
-
-            // The references the file states and nobody declared travel with
-            // the answer. The graph does not carry them, and a consumer that
-            // gets the graph alone reads a file with no references in it.
-            let pending_references: Vec<PendingReferenceInfo> = pending
+            let pending_info: Vec<PendingReferenceInfo> = pending
                 .iter()
                 .map(PendingReferenceInfo::from_reference)
                 .collect();
-
-            Ok(GetPerFileGraphOutput {
-                file_path: input.file_path,
-                symbols: symbols.clone(),
-                symbol_count: symbols.len(),
-                dependencies: dependencies.clone(),
-                dependency_count: dependencies.len(),
-                pending_reference_count: pending_references.len(),
-                pending_references,
-            })
+            let rejected_info: Vec<RejectedRelationInfo> = rejected
+                .iter()
+                .map(RejectedRelationInfo::from_rejection)
+                .collect();
+            (
+                MergeCoverage::from(skipped_info, pending_info.clone(), rejected_info),
+                pending_info,
+            )
         }
-        Err(e) => Err(HandlerError::App(AppError::AnalysisError(e.to_string()))),
-    }
+    };
+
+    let symbols: Vec<SymbolLocationEntry> = graph
+        .symbols()
+        .map(|s| SymbolLocationEntry {
+            file: s.location().file().to_string(),
+            line: published_line(s.location().line()),
+            column: published_column(s.location().column()),
+            symbol_kind: format!("{:?}", s.kind()),
+        })
+        .collect();
+
+    let dependencies: Vec<DependencyInfo> = graph
+        .all_dependencies()
+        .filter_map(|(src_id, tgt_id, _)| {
+            let src = graph.get_symbol(src_id)?;
+            let tgt = graph.get_symbol(tgt_id)?;
+            Some(DependencyInfo {
+                caller: src.name().to_string(),
+                caller_file: src.location().file().to_string(),
+                caller_line: published_line(src.location().line()),
+                callee: tgt.name().to_string(),
+            })
+        })
+        .collect();
+
+    Ok(GetPerFileGraphOutput {
+        file_path: input.file_path,
+        symbols: symbols.clone(),
+        symbol_count: symbols.len(),
+        dependencies: dependencies.clone(),
+        dependency_count: dependencies.len(),
+        coverage,
+        pending_reference_count: pending_references.len(),
+        pending_references,
+    })
 }
 
 /// Handler for merge_graphs tool
@@ -6536,6 +6573,70 @@ mod tests {
                 cli_set, mcp_set,
                 "dependency inventory differs between CLI and MCP per-file paths"
             );
+        }
+
+        #[tokio::test]
+        async fn mcp_per_file_publishes_the_same_coverage_contract_as_merge_graphs() {
+            let p = corpus_file();
+            let ctx = HandlerContext::builder()
+                .with_working_dir(p.parent().unwrap())
+                .build();
+            let output = handle_get_per_file_graph(
+                &ctx,
+                GetPerFileGraphInput {
+                    file_path: p.to_string_lossy().to_string(),
+                },
+            )
+            .await
+            .expect("handler must succeed");
+
+            assert!(
+                output.symbol_count > 0,
+                "coverage test must build a non-empty graph"
+            );
+            assert!(
+                output.dependency_count > 0,
+                "coverage test must build a non-empty graph"
+            );
+            assert_eq!(
+                output.coverage,
+                MergeCoverage::Complete,
+                "a fully readable corpus file must not be published as partial"
+            );
+        }
+
+        #[tokio::test]
+        async fn mcp_per_file_keeps_unresolved_relations_partial() {
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("partial.rs");
+            std::fs::write(
+                &file,
+                "fn target() {}\nfn target() {}\nfn caller() { target(); }\n",
+            )
+            .unwrap();
+            let ctx = HandlerContext::builder()
+                .with_working_dir(dir.path().to_path_buf())
+                .build();
+
+            let output = handle_get_per_file_graph(
+                &ctx,
+                GetPerFileGraphInput {
+                    file_path: file.to_string_lossy().to_string(),
+                },
+            )
+            .await
+            .expect("a readable file with an unresolved relation still yields a report");
+
+            assert!(
+                output.symbol_count > 0,
+                "partial test must build a non-empty graph"
+            );
+            assert!(
+                matches!(output.coverage, MergeCoverage::Partial { .. }),
+                "an unresolved relation must never be published as Complete: {:?}",
+                output.coverage
+            );
+            assert!(output.pending_reference_count > 0);
         }
     }
 
