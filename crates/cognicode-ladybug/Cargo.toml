@@ -16,7 +16,6 @@ multimodal-9ports = ["multimodal"]
 cognicode-core = { path = "../cognicode-core", features = ["persistence"] }
 lbug = "0.19"
 async-trait = "0.1"
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }

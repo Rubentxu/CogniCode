@@ -21,5 +21,4 @@ js-sys = "0.3"
 cognicode-graph-algos = { path = "../cognicode-graph-algos", features = [] }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
 serde_json = { workspace = true }

@@ -52,7 +52,6 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 rmcp.workspace = true
-process-wrap.workspace = true
 opentelemetry.workspace = true
 opentelemetry_sdk.workspace = true
 opentelemetry-otlp.workspace = true
@@ -66,10 +65,7 @@ prometheus.workspace = true
 clap.workspace = true
 rayon.workspace = true
 axum = { workspace = true }
-tower = { workspace = true }
 http = "1"
-http-body-util = "0.1"
-tokio-util = "0.7"
 # M3.5: constant-time comparison for Bearer-token auth middleware.
 subtle.workspace = true
 

@@ -231,7 +231,6 @@ clap = { version = "4.4", features = ["derive", "env", "string"] }
 
 # MCP
 rmcp = { version = "1.7", features = ["server", "transport-io", "client", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-server-session", "which-command"] }
-process-wrap = "9.1"
 
 # Rig-core (optional)
 
@@ -240,7 +239,6 @@ toml = "0.8"
 
 # Dev deps
 tokio-test = "0.4"
-mockall = "0.11"
 serial_test = "3.0"
 
 # UUID v4 generation — CSPRNG-based, replaces hand-rolled implementation.

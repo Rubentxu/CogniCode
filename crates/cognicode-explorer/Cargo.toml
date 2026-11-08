@@ -79,7 +79,6 @@ path = "src/bin/control_plane.rs"
 
 [dev-dependencies]
 criterion.workspace = true
-tokio-test.workspace = true
 async-trait.workspace = true
 tempfile = "3.27"
 tower.workspace = true

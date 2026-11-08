@@ -166,7 +166,6 @@ mermaid-rs-renderer.workspace = true
 
 # MCP
 rmcp.workspace = true
-process-wrap.workspace = true
 
 # Markdown parser — gated behind the `multimodal` feature so the
 # default build is pulldown-free. Pulled in by the `DocsExtractor`
@@ -184,7 +183,6 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 [dev-dependencies]
 tokio-test.workspace = true
 serial_test.workspace = true
-mockall.workspace = true
 tempfile.workspace = true
 filetime.workspace = true
 criterion.workspace = true
