@@ -461,12 +461,15 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
 >     Cerrado: el extractor genérico y el campo que el consumidor lee.
 >   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
->     abierto. La vía completa, la filtrada y la asíncrona son de producción y
->     contestan distinto sobre el mismo árbol: un symlink declinado es hueco en
->     dos rutas y silencio en la tercera, un directorio que no existe se
->     rechaza en una sola, y el orden de los resultados no lo fija la
->     asíncrona. La forma, en `docs/adr/ADR-056-the-routes-say-the-same.md`.
->     Medido el primer par; la coherencia completa/per-file/asíncrona y la cobertura MCP per-file quedaron cerradas en `TASK-166` (PR #744); `C23` aún debe cerrar la semántica compartida.
+>     cerrado en su contrato observable. La vía completa, la filtrada y la
+>     asíncrona son de producción y responden sobre el mismo árbol con la misma
+>     cobertura, relaciones, huecos, resolución y orden; el contrato H24 evita
+>     que una ruta publique un resultado distinto o una cobertura falsa. La
+>     forma está en `docs/adr/ADR-056-the-routes-say-the-same.md`.
+>     TASK-166 (PR #744) y TASK-167 (PR #746) verifican la coherencia
+>     completa/per-file/asíncrona y la cobertura MCP per-file. La extracción de
+>     un motor común queda como mejora futura no bloqueante, condicionada a
+>     valor medido.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
