@@ -418,7 +418,43 @@ def tool_example_gaps(text: str, schemas: dict[str, dict]) -> tuple[int, list[st
     return checked, gaps
 
 
+TOOL_GROUP = re.compile(
+    r"^#{2,4} (.+?) \((\d+) (?:tools|herramientas)\)\s*\n\n(?:\|[^\n]*\n)+", re.M
+)
+
+
+def tool_table_gaps(text: str, names: set[str]) -> tuple[int, list[str]]:
+    """(tool rows checked, gaps) for the grouped tool tables of a README."""
+    checked, gaps = 0, []
+    for match in TOOL_GROUP.finditer(text):
+        group, declared = match.group(1), int(match.group(2))
+        rows = re.findall(r"^\|\s*`([\w-]+)`\s*\|", match.group(0), re.M)
+        checked += len(rows)
+        gaps += [f"{group}: '{r}' is not a published tool" for r in rows if r not in names]
+        if len(rows) != declared:
+            gaps.append(f"{group}: heading says {declared}, table lists {len(rows)}")
+    return checked, gaps
+
+
 class ReadmeContract(unittest.TestCase):
+    def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
+        names = tool_names()
+        for readme in (EN, ES):
+            checked, gaps = tool_table_gaps(readme.read_text(encoding="utf-8"), names)
+            self.assertGreater(checked, 20, f"{readme.name}: tool tables not found")
+            self.assertEqual([], gaps, readme.name)
+
+    def test_tool_table_check_discriminates(self):
+        table = "### G ({n} tools)\n\n| Tool | D |\n|---|---|\n{rows}\n"
+        good = table.format(n=1, rows="| `a` | x |")
+        self.assertEqual((1, []), tool_table_gaps(good, {"a"}))
+        ghost = tool_table_gaps(table.format(n=2, rows="| `a` | x |\n| `ghost` | y |"), {"a"})[1]
+        self.assertTrue(any("'ghost' is not a published tool" in g for g in ghost), ghost)
+        count = tool_table_gaps(table.format(n=3, rows="| `a` | x |"), {"a"})[1]
+        self.assertTrue(any("heading says 3, table lists 1" in g for g in count), count)
+        es = "### G (1 herramientas)\n\n| Herramienta | D |\n|---|---|\n| `ghost` | y |\n"
+        self.assertTrue(any("'ghost'" in g for g in tool_table_gaps(es, {"a"})[1]))
+
     def test_both_readmes_have_the_same_heading_outline(self):
         en, es = outline(EN), outline(ES)
         self.assertTrue(en and es, "a README without headings proves nothing")

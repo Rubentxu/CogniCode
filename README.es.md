@@ -145,7 +145,7 @@ verificada en CI, está en [`crates/cognicode-core/product/tools.json`](crates/c
 esquemas de entrada y salida por herramienta están en
 [`product/README.md`](product/README.md).
 
-### Análisis de Grafos (12 herramientas)
+### Análisis de Grafos (11 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -160,31 +160,23 @@ esquemas de entrada y salida por herramienta están en
 | `export_mermaid` | Exporta el grafo como diagrama Mermaid o SVG. |
 | `build_lightweight_index` | Construye un índice rápido de solo símbolos. |
 | `query_symbol_index` | Búsqueda de símbolos insensible a mayúsculas. |
-| `find_dead_code` | Encuentra símbolos no utilizados en el proyecto. |
 
-### Operaciones de Grafos (5 herramientas)
+### Operaciones de Grafos (3 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
 | `build_call_subgraph` | Construye un subgrafo bajo demanda centrado en un símbolo. |
 | `get_per_file_graph` | Obtiene el grafo de llamadas de un solo archivo. |
 | `merge_graphs` | Fusiona grafos de múltiples archivos. |
-| `get_module_dependencies` | Analiza dependencias a nivel de módulo. |
-| `get_all_symbols` | Obtiene todos los símbolos del workspace. |
 
-### Símbolos y Semántica (9 herramientas)
+### Símbolos y Semántica (4 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
 | `get_file_symbols` | Extrae símbolos de un archivo. Soporta resúmenes comprimidos. |
-| `get_outline` | Esquema jerárquico de símbolos (estructura de árbol). |
 | `get_symbol_code` | Obtiene el código fuente completo de un símbolo incluyendo documentación. |
 | `get_complexity` | Métricas de complejidad ciclomática, cognitiva y de anidamiento. |
-| `semantic_search` | Búsqueda difusa de símbolos con filtrado por tipo. |
 | `find_usages` | Encuentra todos los usos de un símbolo en el proyecto. |
-| `find_usages_with_context` | Encuentra usos con líneas de contexto circundante. |
-| `structural_search` | Búsqueda estructural basada en AST (pattern matching). |
-| `validate_syntax` | Valida la sintaxis de un archivo mediante Tree-sitter. |
 
 ### Navegación LSP (3 herramientas)
 

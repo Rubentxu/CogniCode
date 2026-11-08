@@ -144,7 +144,7 @@ surface. The authoritative list, generated from the code and checked in CI, is
 [`crates/cognicode-core/product/tools.json`](crates/cognicode-core/product/tools.json); per-tool input and output schemas are
 in [`product/README.md`](product/README.md).
 
-### Graph Analysis (12 tools)
+### Graph Analysis (11 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -159,31 +159,23 @@ in [`product/README.md`](product/README.md).
 | `export_mermaid` | Export call graph as Mermaid flowchart or SVG. |
 | `build_lightweight_index` | Build fast symbol-only index. |
 | `query_symbol_index` | Case-insensitive symbol lookup. |
-| `find_dead_code` | Find unused symbols across the project. |
 
-### Graph Operations (5 tools)
+### Graph Operations (3 tools)
 
 | Tool | Description |
 |------|-------------|
 | `build_call_subgraph` | Build on-demand subgraph centered on a symbol. |
 | `get_per_file_graph` | Get call graph for a single file. |
 | `merge_graphs` | Merge graphs from multiple files. |
-| `get_module_dependencies` | Analyze module-level dependencies. |
-| `get_all_symbols` | Get all symbols in the workspace. |
 
-### Symbols & Semantics (9 tools)
+### Symbols & Semantics (4 tools)
 
 | Tool | Description |
 |------|-------------|
 | `get_file_symbols` | Extract symbols from a file. Supports compressed summaries. |
-| `get_outline` | Hierarchical symbol outline (tree structure). |
 | `get_symbol_code` | Get full source code of a symbol including docstrings. |
 | `get_complexity` | Cyclomatic, cognitive, and nesting complexity metrics. |
-| `semantic_search` | Fuzzy symbol search with kind filtering. |
 | `find_usages` | Find all usages of a symbol across the project. |
-| `find_usages_with_context` | Find usages with surrounding context lines. |
-| `structural_search` | AST-based structural pattern matching. |
-| `validate_syntax` | Validate file syntax using Tree-sitter. |
 
 ### LSP Navigation (3 tools)
 
