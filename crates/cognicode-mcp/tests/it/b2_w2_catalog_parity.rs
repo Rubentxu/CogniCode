@@ -254,7 +254,7 @@ fn catalog_path() -> std::path::PathBuf {
     // CARGO_MANIFEST_DIR + parents).
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for ancestor in manifest.ancestors() {
-        let candidate = ancestor.join("product").join("tools.json");
+        let candidate = ancestor.join("crates").join("cognicode-core").join("product").join("tools.json");
         if candidate.is_file() {
             return candidate;
         }
