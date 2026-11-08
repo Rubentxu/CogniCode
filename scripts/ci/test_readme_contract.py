@@ -665,6 +665,34 @@ def troubleshooting_facts() -> dict:
     }
 
 
+CRATE_HEADINGS = {EN: "Workspace Crates", ES: "Crates del Workspace"}
+SDK_GUIDE_LINK = "docs/distribution/INSTALL.md#consuming-the-sdk"
+
+
+def crate_table_names(body: str | None) -> list[str]:
+    """Crate names in the first column of the markdown table of a section."""
+    if body is None:
+        return []
+    return re.findall(r"^\| `([^`]+)` \|", body, re.M)
+
+
+def crate_table_gaps(body: str | None, packages: set[str], libraries: set[str], text: str) -> list[str]:
+    """What a workspace-crates section gets wrong about the real workspace."""
+    names = crate_table_names(body)
+    if not names:
+        return ["table missing or empty"]
+    gaps = [f"{n}: not a workspace package" for n in names if n not in packages]
+    gaps += [f"{n}: SDK library crate not listed" for n in sorted(libraries - set(names))]
+    if SDK_GUIDE_LINK not in text:
+        gaps.append("no link to the SDK consumption guide")
+    return gaps
+
+
+def sdk_library_crates() -> set[str]:
+    declared = json.loads((ROOT / "docs" / "distribution" / "SDK_SURFACES.json").read_text(encoding="utf-8"))
+    return {n for n, info in declared["crates"].items() if info["class"] == "library"}
+
+
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
         names = tool_names()
@@ -1093,6 +1121,24 @@ class ReadmeContract(unittest.TestCase):
             (good.replace("stderr", "log"), "no stdout/stderr rule"),
         ):
             self.assertTrue(any(label in g for g in troubleshooting_gaps(bad, "exit status {}", facts)), label)
+
+    def test_workspace_crate_tables_list_real_packages_and_the_sdk_libraries(self):
+        packages = {p["name"] for p in workspace_metadata()["packages"]}
+        libraries = sdk_library_crates()
+        self.assertTrue(packages and libraries, "nothing to compare against: the check would be vacuous")
+        for readme, heading in CRATE_HEADINGS.items():
+            with self.subTest(readme=readme.name):
+                text = readme.read_text(encoding="utf-8")
+                self.assertEqual([], crate_table_gaps(guide_section(text, heading), packages, libraries, text))
+
+    def test_the_crate_table_check_discriminates(self):
+        body = "| Crate | D |\n|---|---|\n| `a` | x |\n| `b` | y |\n"
+        text = "see " + SDK_GUIDE_LINK
+        self.assertEqual([], crate_table_gaps(body, {"a", "b"}, {"a"}, text))
+        self.assertEqual(["table missing or empty"], crate_table_gaps(None, {"a"}, {"a"}, text))
+        self.assertEqual(["b: not a workspace package"], crate_table_gaps(body, {"a"}, {"a"}, text))
+        self.assertEqual(["c: SDK library crate not listed"], crate_table_gaps(body, {"a", "b", "c"}, {"c"}, text))
+        self.assertEqual(["no link to the SDK consumption guide"], crate_table_gaps(body, {"a", "b"}, {"a"}, "x"))
 
 
 if __name__ == "__main__":

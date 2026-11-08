@@ -341,7 +341,11 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 | `cognicode-mcp` | Servidor MCP (`cognicode-mcp`) y cliente de test (`mcp-client`) |
 | `cognicode-cli` | Interfaz de terminal (`cognicode`) |
 | `cognicode-sandbox` | Testing automatizado de escenarios y benchmarking |
-| `rcode-debug` | Integración de debugging time-travel (Chronos MCP) |
+| `cognicode-graph-algos` | Librería del SDK: algoritmos de grafos sin dependencias |
+| `cognicode-macros` | Librería del SDK: macros procedurales de los tipos de dominio |
+| `cognicode-graph-wasm` | Librería del SDK: bindings WebAssembly de los algoritmos de grafos |
+
+Las crates `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` y `cognicode-graph-wasm` forman la superficie del SDK. Todavía no están publicadas en crates.io; consulta [Consumir el SDK](docs/distribution/INSTALL.md#consuming-the-sdk) para los comandos exactos y esa limitación.
 
 ## Configuración
 
