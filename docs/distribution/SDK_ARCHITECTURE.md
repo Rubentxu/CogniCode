@@ -57,6 +57,10 @@ graph LR
 - [observed] `cognicode-cli` depends on `cognicode-core`
 - [observed] `cognicode-mcp` depends on `cognicode-core`
 - [observed] `cognicode-sandbox` depends on `cognicode-core`
+- [observed] `cognicode-cli` declares the root modules `cli`, `identity`, `lifecycle`, `presenter`, `skills`
+- [observed] `cognicode-mcp` declares the root modules `auth`, `exposure`
+- [observed] `cognicode-sandbox` has no `src/lib.rs`
+- [curated] The root modules are what `src/lib.rs` declares with `pub mod`; they are not an SDK API, carry no semver promise and their contents are not listed.
 - [inferred] No application depends on `cognicode-graph-algos`, `cognicode-macros` or `cognicode-graph-wasm` directly; the graph algorithms reach them through `cognicode-core`.
 
 ## Regenerate

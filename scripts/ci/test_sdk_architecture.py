@@ -140,6 +140,31 @@ def application_edges(applications, libraries):
     }
 
 
+ROOT_MODULES = re.compile(
+    r"^- \[observed\] `(?P<app>[^`]+)` declares the root modules (?P<mods>.+)$", re.M
+)
+NO_ROOT_LIBRARY = re.compile(r"^- \[observed\] `(?P<app>[^`]+)` has no `src/lib\.rs`", re.M)
+PUB_MOD = re.compile(r"^pub mod (\w+);", re.M)
+
+
+def documented_root_modules(body):
+    return {
+        m.group("app"): set(re.findall(r"`(\w+)`", m.group("mods")))
+        for m in ROOT_MODULES.finditer(body)
+    }
+
+
+def documented_without_root_library(body):
+    return {m.group("app") for m in NO_ROOT_LIBRARY.finditer(body)}
+
+
+def source_root_modules(crate):
+    lib = ROOT / "crates" / crate / "src" / "lib.rs"
+    if not lib.is_file():
+        return None
+    return set(PUB_MOD.findall(lib.read_text(encoding="utf-8")))
+
+
 def inspected_functions(crate):
     out = subprocess.run(
         ["cognicode", "inspect", "--file", f"crates/{crate}/src/lib.rs"],
@@ -225,6 +250,25 @@ class SdkArchitectureDocument(unittest.TestCase):
         expected = application_edges(applications, libraries)
         self.assertTrue(expected, "cargo metadata reported no application->library edge")
         self.assertEqual(documented_application_edges(body), expected)
+
+    def test_application_root_modules_equal_the_crate_roots(self):
+        applications = application_crates()
+        body = sections(read_document()).get("Applications")
+        self.assertIsNotNone(body, "no Applications section")
+        modules = documented_root_modules(body)
+        bare = documented_without_root_library(body)
+        compared = 0
+        for crate in applications:
+            with self.subTest(crate=crate):
+                actual = source_root_modules(crate)
+                if actual is None:
+                    self.assertIn(crate, bare, "no src/lib.rs and not documented as such")
+                    self.assertNotIn(crate, modules)
+                else:
+                    self.assertEqual(modules.get(crate), actual)
+                    self.assertNotIn(crate, bare)
+                    compared += len(actual)
+        self.assertGreater(compared, 0, "no root module compared: the check would be vacuous")
 
     def test_observed_functions_equal_what_cognicode_reports_now(self):
         if shutil.which("cognicode") is None:
@@ -330,6 +374,14 @@ class ContractDiscriminates(unittest.TestCase):
                 "- [observed] `e` mentions `f`")
         self.assertEqual(documented_application_edges(body), {("a", "b")})
         self.assertEqual(documented_application_edges(""), set())
+
+    def test_root_module_claims_are_read_only_from_observed_bullets(self):
+        body = ("- [observed] `a` declares the root modules `x`, `y`\n"
+                "- [curated] `b` declares the root modules `z`\n"
+                "- [observed] `c` has no `src/lib.rs`")
+        self.assertEqual(documented_root_modules(body), {"a": {"x", "y"}})
+        self.assertEqual(documented_without_root_library(body), {"c"})
+        self.assertEqual(PUB_MOD.findall("pub mod a;\n//! pub mod b;\nmod c;\npub mod d;"), ["a", "d"])
 
     def test_a_missing_or_extra_edge_changes_the_edge_set(self):
         text = "```mermaid\ngraph LR\n  a_b --> c_d\n```\n"
