@@ -112,7 +112,11 @@ pub(crate) fn build_capabilities_doc(json_emission: bool) -> Value {
 
     // Derived from the tools' own declarations, so this report cannot
     // disagree with what `--read-only` actually refuses.
-    let mutating_tools = cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names();
+    let mutating_tools: Vec<String> = catalog
+        .iter()
+        .filter(|descriptor| descriptor.authority != "read")
+        .map(|descriptor| descriptor.name.clone())
+        .collect();
     doc["runtime"] = serde_json::json!({
         "mutating_tools": mutating_tools,
         "mutating_tools_count": mutating_tools.len(),

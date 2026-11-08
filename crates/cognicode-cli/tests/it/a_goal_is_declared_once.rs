@@ -29,7 +29,7 @@ use cognicode_cli::cli::result::CommandOutput;
 use cognicode_core::interface::goals::{self, GoalSpec};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::goal::handle_goal;
-use cognicode_core::interface::mcp::rmcp_adapter::build_all_tools;
+use cognicode_mcp::rmcp_adapter::build_all_tools;
 
 /// El catálogo que el operador mantiene a mano.
 const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../product/tools.json");

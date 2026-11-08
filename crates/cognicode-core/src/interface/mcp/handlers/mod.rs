@@ -452,7 +452,7 @@ impl HandlerContext {
     /// the context.
     pub fn scoped_for_request(
         &self,
-    ) -> (Self, crate::interface::mcp::cancellation::CancellationFlag) {
+    ) -> (Self, crate::application::cancellation::CancellationFlag) {
         let flag = Arc::new(AtomicBool::new(false));
         let mut scoped = self.clone();
         scoped.cancellation_token = flag.clone();

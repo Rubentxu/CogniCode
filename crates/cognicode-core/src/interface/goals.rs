@@ -21,11 +21,10 @@
 //! ## Los argumentos tienen un dueño
 //!
 //! El struct que lee los argumentos **es** la declaración de los
-//! argumentos: de él se deriva el `inputSchema` que el MCP publica
-//! ([`crate::interface::mcp::input_contracts`]), y ese mismo esquema es el
-//! que el comando clap expone y el que el catálogo publica. El registro no
-//! vuelve a escribir los argumentos: si los escribiera, el esquema tendría
-//! dos dueños y podría mentir.
+//! argumentos: de él se deriva el `inputSchema` que el MCP publica, y ese
+//! mismo esquema es el que el comando clap expone y el que el catálogo publica.
+//! El registro no vuelve a escribir los argumentos: si los escribiera, el
+//! esquema tendría dos dueños y podría mentir.
 //!
 //! ## Lo que este registro NO es
 //!
@@ -423,7 +422,19 @@ pub fn find(name: &str) -> Option<&'static GoalSpec> {
 /// Es el mismo esquema que publica el MCP y el mismo que describe los
 /// argumentos del comando clap; el registro no lo reescribe.
 pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
-    crate::interface::mcp::input_contracts::input_schema_for(goal.name).unwrap_or_default()
+    match goal.name {
+        "status" => crate::interface::schema::schema_of::<status::StatusInput>(),
+        "context" => crate::interface::schema::schema_of::<context::ContextInput>(),
+        "find" => crate::interface::schema::schema_of::<find::FindInput>(),
+        "inspect" => crate::interface::schema::schema_of::<inspect::InspectInput>(),
+        "trace" => crate::interface::schema::schema_of::<trace::TraceInput>(),
+        "impact" => crate::interface::schema::schema_of::<impact::ImpactInput>(),
+        "overview" => crate::interface::schema::schema_of::<overview::OverviewInput>(),
+        "audit" => crate::interface::schema::schema_of::<audit::AuditInput>(),
+        "change" => crate::interface::schema::schema_of::<change::ChangeInput>(),
+        "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
+        _ => Map::new(),
+    }
 }
 
 /// Los argumentos del goal, tal y como los publica su esquema.
@@ -553,8 +564,8 @@ pub fn tools_json_entry(goal: &GoalSpec) -> Value {
 /// medido el 2026-11-07 sobre este árbol, el esquema del sobre bajo cada
 /// goal la dejaría entre 26.420 y 65.890 bytes. La función se queda para
 /// quien pregunte, y contesta la verdad: un mapa vacío.
-pub fn output_schema(goal: &GoalSpec) -> Map<String, Value> {
-    crate::interface::mcp::output_contracts::output_schema_for(goal.name).unwrap_or_default()
+pub fn output_schema(_goal: &GoalSpec) -> Map<String, Value> {
+    Map::new()
 }
 
 /// Los argumentos que el llamante tiene que mandar.

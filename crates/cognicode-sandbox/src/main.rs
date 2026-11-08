@@ -30,29 +30,32 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
-use cognicode_core::interface::mcp::rmcp_adapter::lookup_tool_deps;
+use cognicode_core::application::sandbox_failure::FailureClass;
+use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
 use cognicode_core::sandbox_core::artifacts::{
-    PipelineStageResult, ResourceUsage, ScenarioResult, Timing, ValidationResult,
+    PipelineStageResult, ScenarioResult, Timing, ValidationResult,
 };
-use cognicode_core::sandbox_core::failure::FailureClass;
 use cognicode_core::sandbox_core::ground_truth::GroundTruth;
 use cognicode_core::sandbox_core::history::{
     RunEntry, TrendDirection, append_run, compute_dimension_averages, compute_health_from_averages,
     compute_trends,
 };
 use cognicode_core::sandbox_core::manifest::{ExpandedScenario, Manifest};
-use cognicode_core::sandbox_core::mcp_core::{CapturedCall, McpError, McpServer};
-use cognicode_core::sandbox_core::resource::{compute_delta, take_snapshot};
 use cognicode_core::sandbox_core::scoring::{
     DimensionScores, ExecutionMetadata, MetricsDefinition, build_benchmark_result,
     compute_consistency_score, compute_latency_score, compute_robustness_score,
     compute_scalability_score, score_scenario,
 };
+use cognicode_mcp::rmcp_adapter::lookup_tool_deps;
+use mcp_core::{CapturedCall, McpError, McpServer};
+use resource::{compute_delta, take_snapshot};
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 
+mod mcp_core;
 mod reporting;
+mod resource;
 
 #[derive(Parser, Debug, Clone)]
 #[command(
@@ -4617,7 +4620,7 @@ mod dimension_scores_on_tool_error_tests {
 #[cfg(test)]
 mod aggregate_summary_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{ResourceUsage, ScenarioResult, Timing};
+    use cognicode_core::sandbox_core::artifacts::{ScenarioResult, Timing};
 
     fn make_result(
         outcome: &str,
@@ -6183,7 +6186,7 @@ mod bug_detection_tests {
                 teardown_ms: 5,
                 total_ms: 105,
             },
-            resource_usage: cognicode_core::sandbox_core::artifacts::ResourceUsage {
+            resource_usage: cognicode_core::application::sandbox_resource_usage::ResourceUsage {
                 peak_rss_mb: 50.0,
                 cpu_time_s: 0.5,
             },
@@ -6267,7 +6270,7 @@ mod edge_case_tests {
                 teardown_ms: 5,
                 total_ms: 105,
             },
-            resource_usage: cognicode_core::sandbox_core::artifacts::ResourceUsage {
+            resource_usage: cognicode_core::application::sandbox_resource_usage::ResourceUsage {
                 peak_rss_mb: 50.0,
                 cpu_time_s: 0.5,
             },
@@ -7075,7 +7078,7 @@ scenarios:
                 teardown_ms: 5,
                 total_ms: 105,
             },
-            resource_usage: cognicode_core::sandbox_core::artifacts::ResourceUsage {
+            resource_usage: cognicode_core::application::sandbox_resource_usage::ResourceUsage {
                 peak_rss_mb: 50.0,
                 cpu_time_s: 0.5,
             },
@@ -7486,7 +7489,7 @@ scenarios:
                 teardown_ms: 0,
                 total_ms: 5,
             },
-            resource_usage: cognicode_core::sandbox_core::artifacts::ResourceUsage {
+            resource_usage: cognicode_core::application::sandbox_resource_usage::ResourceUsage {
                 peak_rss_mb: 10.0,
                 cpu_time_s: 0.0,
             },

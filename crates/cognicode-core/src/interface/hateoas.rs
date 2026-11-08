@@ -43,7 +43,7 @@
 //! ## Los handles
 //!
 //! Un handle (`sym:`, `page:`, `plan:`) es una referencia firmada con el
-//! mecanismo de [`crate::interface::mcp::cursor`]: los mismos anclajes, el
+//! mecanismo de [`crate::interface::cursor`]: los mismos anclajes, el
 //! mismo hash, los mismos errores tipados. Un handle manipulado no pasa, y
 //! uno de otro workspace o de otra instantánea tampoco.
 
@@ -54,13 +54,13 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::interface::catalog::ToolDescriptor;
-use crate::interface::mcp::cursor::{self, CursorError, CursorErrorKind};
+use crate::interface::cursor::{self, CursorError, CursorErrorKind};
 
 /// El contexto al que se ancla un handle: el workspace y la instantánea.
 ///
 /// Es el contexto del cursor, con otro nombre: un handle y un cursor se
 /// firman igual y caducan igual.
-pub use crate::interface::mcp::cursor::CursorContext as HandleContext;
+pub use crate::interface::cursor::CursorContext as HandleContext;
 
 /// La versión de la forma del sobre.
 ///

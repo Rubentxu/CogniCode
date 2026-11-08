@@ -10,10 +10,10 @@
 
 use std::path::PathBuf;
 
+use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
 use cognicode_core::sandbox_core::artifacts::{
-    LanguageBreakdown, ResourceUsage, ScenarioResult, Timing, ToolBreakdown,
+    LanguageBreakdown, ScenarioResult, Timing, ToolBreakdown,
 };
-use cognicode_core::sandbox_core::failure::FailureClass;
 
 /// Get project root (two ancestors up from crates/cognicode)
 fn project_root() -> PathBuf {
@@ -84,7 +84,7 @@ fn test_manifest_expand_produces_unique_ids() {
 
 #[test]
 fn test_failure_classification_capability_missing() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // CapabilityMissing should NOT be CI blocking
     assert!(
@@ -95,7 +95,7 @@ fn test_failure_classification_capability_missing() {
 
 #[test]
 fn test_failure_classification_expected_fail() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     assert!(
         !FailureClass::ExpectedFail.is_ci_blocking(),
@@ -105,7 +105,7 @@ fn test_failure_classification_expected_fail() {
 
 #[test]
 fn test_failure_classification_build_failure() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     assert!(
         FailureClass::BuildFailure.is_ci_blocking(),
@@ -123,7 +123,7 @@ fn test_failure_classification_build_failure() {
 
 #[test]
 fn test_failure_classification_preexisting_repo_failure() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     assert!(
         !FailureClass::PreexistingRepoFailure.is_ci_blocking(),
@@ -133,10 +133,10 @@ fn test_failure_classification_preexisting_repo_failure() {
 
 #[test]
 fn test_scenario_result_roundtrip_serde() {
+    use cognicode_core::application::sandbox_failure::FailureClass;
     use cognicode_core::sandbox_core::artifacts::{
-        MutationInfo, PipelineStageResult, ResourceUsage, ScenarioResult, Timing, ValidationResult,
+        MutationInfo, PipelineStageResult, ScenarioResult, Timing, ValidationResult,
     };
-    use cognicode_core::sandbox_core::failure::FailureClass;
 
     let result = ScenarioResult {
         scenario_id: "rust_rename_function".into(),
@@ -217,6 +217,8 @@ fn test_summary_aggregation() {
 }
 
 fn make_pass_result(scenario_id: &str) -> ScenarioResult {
+    use cognicode_core::application::sandbox_failure::FailureClass;
+
     ScenarioResult {
         scenario_id: scenario_id.into(),
         language: "rust".into(),
@@ -255,6 +257,8 @@ fn make_pass_result(scenario_id: &str) -> ScenarioResult {
 }
 
 fn make_fail_result(scenario_id: &str) -> ScenarioResult {
+    use cognicode_core::application::sandbox_failure::FailureClass;
+
     let mut r = make_pass_result(scenario_id);
     r.outcome = "unexpected_fail".into();
     r.failure_class = Some(FailureClass::BuildFailure);
@@ -747,7 +751,7 @@ scenarios:
 /// the outcome should be "path_safety_rejection".
 #[test]
 fn test_path_safety_rejection_classification() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // PathSafetyRejection should be CI blocking
     assert!(
@@ -761,7 +765,7 @@ fn test_path_safety_rejection_classification() {
 /// the outcome should be "semantic_regression".
 #[test]
 fn test_semantic_regression_classification() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // SemanticRegression should be CI blocking
     assert!(
@@ -775,7 +779,7 @@ fn test_semantic_regression_classification() {
 /// the outcome should be "resource_limit_exceeded".
 #[test]
 fn test_resource_limit_exceeded_classification() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // ResourceLimitExceeded should be CI blocking
     assert!(
@@ -789,7 +793,7 @@ fn test_resource_limit_exceeded_classification() {
 /// the outcome should be "nondeterministic".
 #[test]
 fn test_nondeterministic_classification() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // Nondeterministic should be CI blocking
     assert!(
@@ -803,7 +807,7 @@ fn test_nondeterministic_classification() {
 /// the outcome should be "timeout".
 #[test]
 fn test_timeout_classification() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
 
     // Timeout should be CI blocking
     assert!(
@@ -816,7 +820,7 @@ fn test_timeout_classification() {
 /// This ensures summary.json aggregation works correctly.
 #[test]
 fn test_all_failure_classes_have_unique_serde_names() {
-    use cognicode_core::sandbox_core::failure::FailureClass;
+    use cognicode_core::application::sandbox_failure::FailureClass;
     use std::collections::HashSet;
 
     let all_classes = [

@@ -27,7 +27,7 @@
 //! calling the handler trait directly, so what is proven is what an adopter
 //! would actually experience.
 
-use cognicode_core::interface::mcp::rmcp_adapter::CogniCodeHandler;
+use cognicode_mcp::rmcp_adapter::CogniCodeHandler;
 use cognicode_core::product::{PROFILE_POSTURES, ProfilePosture};
 
 use serde_json::Value;
