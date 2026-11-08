@@ -38991,3 +38991,11 @@ siga realmente los enlaces. La coherencia de las rutas completa, per-file y
 asíncrona queda referenciada en el estado H24 por `TASK-166`/PR #744; la
 semántica compartida de C23 permanece abierta. Gate NOT_RUN por política de
 lote.
+
+## 2026-11-08 — TASK-173: scanner frente a rebuild real
+
+**Instrumento.** Se añadió `scripts/measure/snapshot_incremental.py` con timeout y validación JSON, más el ejemplo aislado `measure_incremental_scanner`. La ruta de producto y el scanner se midieron por separado, sin cambiar `SnapshotKey`, bincode, persistencia ni conectar una migración especulativa.
+
+**Resultado observado.** Con una muestra: `full rebuild` en frío, 36.981 ms; `warm reuse` sin cambios, 33.788 ms; y `full rebuild` tras una edición de igual tamaño y mtime, 35.971 ms. El scanner procesó 2 ficheros en la primera pasada, 0 en la segunda, 1 ante la edición de igual tamaño, y clasificó 1 añadido y 1 eliminado. La igualdad semántica del grafo permanece respaldada por la caracterización focal de TASK-172: el CLI no emite el grafo JSON por stdout para calcular un digest en este instrumento.
+
+**Cierre.** La ruta real sigue publicando `warm reuse` o `full rebuild`; no se publica `incremental delta` mientras `IncrementalScanner` siga desconectado. PR #752 integrado con merge `0781e987b5cf5444eb77054e60bbf5e5cacb6c56`. Validación focal: `cargo check -p cognicode-core --example measure_incremental_scanner`, `rustfmt` focal, `py_compile` y `git diff --check`, `PASS`. Gate global `NOT_RUN` por política de lote.
