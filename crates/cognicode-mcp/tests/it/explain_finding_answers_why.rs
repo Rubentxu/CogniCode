@@ -390,7 +390,7 @@ fn the_catalogue_publishes_the_derived_contract() {
         .expect("the catalogue publishes the tool's contract");
 
     let derived =
-        cognicode_core::interface::mcp::output_contracts::output_schema_for("explain_finding")
+        cognicode_mcp::output_contracts::output_schema_for("explain_finding")
             .expect("the runtime derives the tool's contract");
 
     assert_eq!(

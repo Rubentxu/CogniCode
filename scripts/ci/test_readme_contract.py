@@ -605,7 +605,7 @@ def cli_workflow_gaps(body: str | None, closed: dict[tuple[str, str], set[str]])
 
 
 SECURITY_HEADINGS = {EN: "Security and limitations", ES: "Seguridad y límites"}
-LINK_TRACE_RS = ROOT / "crates" / "cognicode-core" / "src" / "interface" / "mcp" / "link_trace.rs"
+LINK_TRACE_RS = ROOT / "crates" / "cognicode-mcp" / "src" / "link_trace.rs"
 
 
 def security_section_gaps(body: str | None, flags: set[str], env: set[str]) -> list[str]:

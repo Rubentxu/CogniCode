@@ -30,7 +30,7 @@ use cognicode_core::application::analysis_basis::{
 use cognicode_core::application::consumer_analysis::{
     CapabilityRequest, ConsumerAnalysisFacade, ServiceAnalyzer,
 };
-use cognicode_core::interface::mcp::presenter_bridge::present_build_graph;
+use cognicode_mcp::presenter_bridge::present_build_graph;
 
 // ---------------------------------------------------------------------------
 // Fixture: workspace Rust con un fichero válido y uno corrupto (fuerza

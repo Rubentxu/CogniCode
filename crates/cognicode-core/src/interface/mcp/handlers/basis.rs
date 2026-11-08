@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use crate::application::analysis_basis::GraphSource;
 use crate::application::graph_snapshot::{build_manifest, hex_digest, source_digest};
 use crate::domain::value_objects::file_manifest::FileManifest;
-use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
+use crate::domain::value_objects::{AnalyzerBuild, SnapshotKey, SNAPSHOT_SCHEMA};
 
 use super::HandlerContext;
 
@@ -124,5 +124,56 @@ pub(super) fn compute_basis(
         snapshot_schema: key.schema,
         graph_source: source.published_label().to_string(),
         complete: workspace_ok,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::analysis_basis::GraphSource;
+
+    #[test]
+    fn log_level_changes_provenance_config_digest_not_snapshot_identity() {
+        let project = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            project.path().join("lib.rs"),
+            "pub fn answer() -> u32 { 42 }\n",
+        )
+        .expect("write fixture");
+
+        let info = HandlerContext::builder()
+            .with_working_dir(project.path())
+            .with_log_level(tracing::Level::INFO)
+            .build();
+        let debug = HandlerContext::builder()
+            .with_working_dir(project.path())
+            .with_log_level(tracing::Level::DEBUG)
+            .build();
+
+        info.analysis_service
+            .build_project_graph(project.path())
+            .expect("build info graph");
+        debug
+            .analysis_service
+            .build_project_graph(project.path())
+            .expect("build debug graph");
+        assert_eq!(
+            info.analysis_service.get_project_graph(),
+            debug.analysis_service.get_project_graph()
+        );
+
+        let info_basis = compute_basis(&info, project.path(), None, GraphSource::Built);
+        let debug_basis = compute_basis(&debug, project.path(), None, GraphSource::Built);
+
+        assert_ne!(info_basis.config_digest, debug_basis.config_digest);
+        assert_eq!(info_basis.workspace, debug_basis.workspace);
+        assert_eq!(
+            info_basis.source_manifest_digest,
+            debug_basis.source_manifest_digest
+        );
+        assert_eq!(info_basis.analyzer_version, debug_basis.analyzer_version);
+        assert_eq!(info_basis.analyzer_commit, debug_basis.analyzer_commit);
+        assert_eq!(info_basis.analyzer_features, debug_basis.analyzer_features);
+        assert_eq!(info_basis.snapshot_schema, debug_basis.snapshot_schema);
     }
 }

@@ -66,7 +66,7 @@ fn a016_tools_runtime_consistency_every_contract_mutating_is_in_runtime() {
         .as_array()
         .expect("`tools` must be a JSON array");
     let mutating_set: std::collections::HashSet<String> =
-        cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names()
+        cognicode_mcp::rmcp_adapter::mutating_tool_names()
             .into_iter()
             .collect();
     let contract_mutating: Vec<String> = tools_array
@@ -115,7 +115,7 @@ fn a016_tools_runtime_consistency_every_runtime_mutating_is_in_contract() {
         })
         .collect();
     let mut unexpected: Vec<String> = Vec::new();
-    for runtime_tool in cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names() {
+    for runtime_tool in cognicode_mcp::rmcp_adapter::mutating_tool_names() {
         match contract_authority.get(&runtime_tool) {
             Some(auth) if auth == "mutating" => {}
             Some(auth) => unexpected.push(format!(

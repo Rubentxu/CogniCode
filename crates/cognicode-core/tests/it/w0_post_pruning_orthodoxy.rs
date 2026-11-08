@@ -56,7 +56,7 @@ const RETIRED: &[&str] = &[
 
 const PROTECTED: &[&str] = &[
     "crates/cognicode-core/tests/workspace_isolation.rs",
-    "crates/cognicode-core/tests/prf_sec_07_adversarial_campaign.rs",
+    "crates/cognicode-mcp/tests/prf_sec_07_adversarial_campaign.rs",
     "crates/cognicode-core/tests/cu2_w2_finding_projection.rs",
     "crates/cognicode-core/tests/cu2_w3_guard_transfer.rs",
     "crates/cognicode-core/tests/cu2_w4_live_consumer.rs",
