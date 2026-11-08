@@ -1,6 +1,6 @@
 # CogniCode MCP Tools Reference
 
-CogniCode exposes a comprehensive set of MCP (Model Context Protocol) tools that let AI agents inspect, analyze, and navigate a code graph stored in PostgreSQL. This document catalogs every available tool, when to use it, and what it returns.
+CogniCode exposes a comprehensive set of MCP (Model Context Protocol) tools that let AI agents inspect, analyze, and navigate a code graph stored in LadybugDB. This document catalogs every available tool, when to use it, and what it returns.
 
 > **Total tools shipped: 49** (as of v0.19.0)
 >
@@ -600,7 +600,7 @@ When the server is built without a feature, calling a gated tool returns:
 }
 ```
 
-The default build enables `postgres` but **not** `multimodal`.
+The default build does **not** enable `multimodal`.
 
 ---
 

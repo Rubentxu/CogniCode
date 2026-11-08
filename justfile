@@ -108,7 +108,7 @@ start: stop
     fi
     ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
-# Run in dev mode — one command to start everything: PG + API + Frontend
+# Run in dev mode — one command to start everything: API + Frontend
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -138,7 +138,6 @@ dev:
     echo "═══════════════════════════════════════════════════════"
     echo "  Frontend:  http://localhost:$UI_PORT"
     echo "  API:       http://localhost:$API_PORT"
-    echo "  PG:        localhost:5432/cognicode"
     echo ""
     echo "  Press Ctrl+C to stop everything"
     echo "═══════════════════════════════════════════════════════"
@@ -374,7 +373,7 @@ setup: install build
 # Explorer UI (React + TypeScript)
 # ============================================================================
 
-# One command to rule them all: PG + API + Frontend
+# One command to rule them all: API + Frontend
 # Alias for `just dev` — kept for backwards compatibility.
 explorer-local:
     @just dev

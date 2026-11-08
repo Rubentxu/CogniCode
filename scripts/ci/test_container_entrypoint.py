@@ -148,3 +148,27 @@ def test_dockerfile_builder_matches_the_pinned_toolchain() -> None:
     assert pinned == got or pinned.rsplit(".", 1)[0] == got, (
         f"builder rust:{got} does not match toolchain {pinned}"
     )
+
+
+SKILL = REPO_ROOT / "skills" / "cognicode-developer" / "SKILL.md"
+MCP_TOOLS = REPO_ROOT / "crates" / "cognicode-explorer" / "MCP-TOOLS.md"
+
+
+def test_developer_docs_and_dev_recipe_do_not_describe_a_removed_postgresql_backend() -> None:
+    recipes = set(re.findall(r"^@?([A-Za-z][\w-]*)\b[^\n=:]*:(?!=)", _read(JUSTFILE), re.M))
+    skill = _read(SKILL)
+    offenders = []
+    for name in re.findall(r"^just ([\w-]+)", skill, re.M):
+        if name not in recipes:
+            offenders.append(f"SKILL.md names `just {name}`, which is not a recipe")
+    if re.search(r"Postgres", skill, re.I):
+        offenders.append("SKILL.md still names Postgres")
+    for recipe in ("dev",):
+        if re.search(r"\bPG\b", _comment_above(recipe)) or re.search(r"PG:\s", _recipe_body(recipe)):
+            offenders.append(f"justfile recipe {recipe} still names PG")
+    if re.search(r"One command to rule them all: PG", _read(JUSTFILE)):
+        offenders.append("justfile explorer-local comment still names PG")
+    tools = _read(MCP_TOOLS)
+    if re.search(r"stored in PostgreSQL|enables `postgres`", tools):
+        offenders.append("MCP-TOOLS.md still describes a PostgreSQL store/feature")
+    assert not offenders, f"stale PostgreSQL statements: {offenders}"
