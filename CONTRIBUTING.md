@@ -26,6 +26,11 @@ and their observed dependency graph and public entry points are described in
 [`docs/distribution/SDK_ARCHITECTURE.md`](docs/distribution/SDK_ARCHITECTURE.md).
 That document covers the library crates only; the Explorer is out of its scope.
 
+If your change alters what a published crate promises, read the
+[semver policy](docs/distribution/SEMVER_POLICY.md) first. The steps to
+publish those crates, and to roll a release back, are in
+[`docs/distribution/SDK_RELEASE.md`](docs/distribution/SDK_RELEASE.md).
+
 ## License
 
 By contributing you agree that your contribution is licensed under the same

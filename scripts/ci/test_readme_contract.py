@@ -1197,6 +1197,13 @@ class ReadmeContract(unittest.TestCase):
         self.assertEqual(["c: SDK library crate not listed"], crate_table_gaps(body, {"a", "b", "c"}, {"c"}, text))
         self.assertEqual(["no link to the SDK consumption guide"], crate_table_gaps(body, {"a", "b"}, {"a"}, "x"))
 
+    def test_contributing_links_the_sdk_release_process(self):
+        """A contributor who touches a published crate must find the release and rollback steps."""
+        text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        for guide in ("SDK_RELEASE.md", "SEMVER_POLICY.md"):
+            self.assertTrue((ROOT / "docs" / "distribution" / guide).exists(), guide)
+            self.assertIn(f"docs/distribution/{guide}", text, f"CONTRIBUTING.md does not link {guide}")
+
     def test_root_install_guide_points_to_the_real_one(self):
         """The root INSTALL.md was an unpacking note for an audit ZIP, not an install guide."""
         text = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
