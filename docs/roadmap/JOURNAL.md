@@ -38969,3 +38969,25 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Consumidores.** Contratos MCP focales: 4/4 (`mcp_catalog_anchor` y `mcp_failure_arrives_as_failure`). Contratos `cogh_cli`: 7/7. Contratos `cognicode`: 3/3 (`graph_cli_mcp_equivalence` y `json_stdout_is_one_document`). `cargo check -p cognicode`: `rc=0`.
 
 **Resultado.** AC2 y AC3 tienen evidencia focal suficiente sobre el commit solicitado. No se ejecutó el gate global, no se modificó el producto, no se repitió TASK-164 y no se tocaron trazas. AC1 permanece separada y sin marcar en TASK-165; el script local `backlog-import-producto-v2.sh` continúa fuera del repositorio.
+
+## 2026-11-08 — TASK-164: cierre contractual de la evidencia de `_links`
+
+**Contrato aplicado.** AC3 permite retirar un `rel` con tasa cero y 20+
+ofertas, o justificar por escrito su conservación; los `rel` con menos de
+20 ofertas se declaran sin muestra. No exige convertir una sesión de harness
+en evidencia de comportamiento autónomo.
+
+**Decisión.** `inspect-risk` conserva sus `_links`: `link_follow.py` midió 20
+ofertas y 0 seguimientos, pero la secuencia fue declarada por el harness RMCP
+y no demuestra que un agente autónomo eligiera no seguir el enlace. Retirarlo
+sería una inferencia no respaldada. Los demás `rel` quedan declarados sin
+muestra por no alcanzar `MIN_OFFERS=20`. Esta justificación satisface AC3 sin
+repetir la medición ni fabricar una traza.
+
+**Alcance.** No cambia el servidor, el core, el catálogo ni los enlaces
+publicados. TASK-164 queda cerrada como decisión de retención justificada;
+una futura retirada requiere una traza de un cliente/agente autorizado que
+siga realmente los enlaces. La coherencia de las rutas completa, per-file y
+asíncrona queda referenciada en el estado H24 por `TASK-166`/PR #744; la
+semántica compartida de C23 permanece abierta. Gate NOT_RUN por política de
+lote.

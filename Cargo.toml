@@ -37,6 +37,7 @@ license = "MIT OR Apache-2.0"
 criterion = "0.5"
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
+cognicode-mcp = { path = "crates/cognicode-mcp" }
 cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }
 # cognicode-axiom = { path = "crates/cognicode-axiom" }  # PARKED
 cognicode-macros = { path = "crates/cognicode-macros" }
@@ -130,7 +131,7 @@ which = "6"
 filetime = "0.2"
 
 # Time
-chrono = { version = "0.4", features = ["clock"] }
+chrono = { version = "0.4", features = ["clock", "serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 
 # Logging

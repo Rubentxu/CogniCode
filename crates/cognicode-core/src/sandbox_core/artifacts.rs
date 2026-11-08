@@ -5,10 +5,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::failure::FailureClass;
 use super::history::DimensionAverages;
 use super::read_source_reconstructor::ReconstructedContent;
 use super::scoring::DimensionScores;
+use crate::application::sandbox_failure::FailureClass;
+use crate::application::sandbox_resource_usage::ResourceUsage;
 
 /// Timing information for a scenario, broken down by phase (in milliseconds).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,15 +26,6 @@ pub struct Timing {
     pub teardown_ms: u64,
     /// Total wall-clock time
     pub total_ms: u64,
-}
-
-/// Resource usage observed during scenario execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceUsage {
-    /// Peak resident set size in MB
-    pub peak_rss_mb: f64,
-    /// Total CPU time in seconds
-    pub cpu_time_s: f64,
 }
 
 /// Warmup report for a tool's cold vs warm latency measurement.

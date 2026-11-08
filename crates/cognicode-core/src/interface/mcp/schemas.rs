@@ -909,6 +909,8 @@ pub struct GetPerFileGraphOutput {
     pub symbol_count: usize,
     pub dependencies: Vec<DependencyInfo>,
     pub dependency_count: usize,
+    /// The same coverage verdict and named holes published by the merged graph route.
+    pub coverage: MergeCoverage,
     /// The references this file states and nobody declared.
     ///
     /// They are part of the answer, not a footnote: a file that states a

@@ -5,6 +5,7 @@
 
 pub mod architecture;
 pub mod behaviors;
+pub mod cancellation;
 // M11 (AI Foundation, cycle e79) — read-only AI support.
 // Provides `FakeLlmPort` (deterministic in-memory adapter),
 // `SemanticMiner`, and `FindingCritic`. No canonical writes;
@@ -87,6 +88,8 @@ pub mod portable_execution;
 // not a second truth store. Reuses canonical SnapshotId; never mirrors
 // Facts. WU2 will add fork(); WU3 will compose with e68 SemanticFactDelta.
 pub mod program_analysis;
+pub mod sandbox_failure;
+pub mod sandbox_resource_usage;
 pub mod services;
 // What an incremental reindex costs, and what kind of rebuild it was.
 // The vocabulary lives here because the words are the product's, not the

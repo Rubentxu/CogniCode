@@ -164,10 +164,6 @@ mermaid-rs-renderer.workspace = true
 
 # CLI
 
-# MCP
-rmcp.workspace = true
-process-wrap.workspace = true
-
 # Markdown parser — gated behind the `multimodal` feature so the
 # default build is pulldown-free. Pulled in by the `DocsExtractor`
 # (`infrastructure::extraction::docs_extractor`). The dep is declared

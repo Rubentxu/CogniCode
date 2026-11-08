@@ -21,7 +21,7 @@
 //! RED→GREEN: before this change nothing compared the catalogue against the
 //! runtime, so any divergence between the two was invisible.
 
-use cognicode_core::interface::mcp::rmcp_adapter::tool_authority_map;
+use cognicode_mcp::rmcp_adapter::tool_authority_map;
 use cognicode_core::product::ProfilePosture;
 
 use serde_json::Value;
@@ -526,7 +526,7 @@ async fn every_published_mutating_tool_is_refused_under_read_only() {
 /// above is backed by the same invariant the runtime uses.
 #[test]
 fn every_tool_in_the_derived_mutating_set_is_published_as_mutating() {
-    for tool in cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names() {
+    for tool in cognicode_mcp::rmcp_adapter::mutating_tool_names() {
         assert_eq!(
             published_authority(&tool).as_deref(),
             Some("mutating"),

@@ -26,10 +26,10 @@
 use serde_json::{Map, Value, json};
 
 use cognicode_cli::cli::follow_ups;
+use cognicode_core::interface::cursor::CursorErrorKind;
 use cognicode_core::interface::hateoas::{
     HandleContext, HandleKind, envelope_for, mint_handle, verify_handle,
 };
-use cognicode_core::interface::mcp::cursor::CursorErrorKind;
 
 /// El contexto al que se ancla un handle: el workspace y la instantánea.
 fn context() -> HandleContext {
