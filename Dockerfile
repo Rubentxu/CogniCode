@@ -9,7 +9,7 @@
 # Run (multi-project, with Explorer API):
 #   docker run -e COGNICODE_MCP_AUTH_TOKEN=<secret> -p 9847:9847 -p 8010:8010 -v /home/projects:/workspaces:ro cognicode-mcp --multi
 
-FROM rust:1.82-slim-bookworm AS builder
+FROM rust:1.96.0-slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev \

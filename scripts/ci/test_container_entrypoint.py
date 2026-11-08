@@ -131,3 +131,20 @@ def test_justfile_explorer_real_comments_do_not_name_postgresql() -> None:
 
 def test_vite_config_does_not_cite_a_compose_file_that_no_longer_exists() -> None:
     assert "docker-compose" not in _read(VITE_CONFIG)
+
+
+TOOLCHAIN = REPO_ROOT / "rust-toolchain.toml"
+
+
+def test_dockerfile_builder_matches_the_pinned_toolchain() -> None:
+    channel = re.search(r'^channel\s*=\s*"(\d+\.\d+\.\d+)"', _read(TOOLCHAIN), re.M)
+    assert channel, "rust-toolchain.toml has no numeric channel"
+    builder = re.search(
+        r"^FROM\s+rust:(\d+\.\d+(?:\.\d+)?)\S*\s+AS\s+builder", _read(DOCKERFILE), re.M
+    )
+    assert builder, "the Dockerfile has no `FROM rust:<version> AS builder` stage"
+    pinned = channel.group(1)
+    got = builder.group(1)
+    assert pinned == got or pinned.rsplit(".", 1)[0] == got, (
+        f"builder rust:{got} does not match toolchain {pinned}"
+    )
