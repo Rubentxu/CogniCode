@@ -38951,3 +38951,13 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** RED: `test_a_contract_does_not_inherit_the_report_destination` fallaba (el hijo veía la variable). GREEN: `test_contract_failure_report.py` 6/6. Suite entera `bash scripts/ci/run-all-contracts.sh` rc=0 y el directorio de estado queda vacío tras borrar el informe falso.
 
 **Pendiente.** Igual que la entrada anterior: TASK-158 espera el próximo fallo real. Gate NOT_RUN: el lote sigue en 6 de 10; esta entrada no cuenta como tarea.
+
+## 2026-11-08 — TASK-164 (replan): cliente RMCP oficial y límite de evidencia
+
+**Causa.** La ruta del cliente Claude quedó bloqueada antes de MCP por el gateway (`401 invalid api key`, modelo no reconocido). No se repitió ni se alteró la autenticación del host.
+
+**Cambio.** `crates/cognicode-mcp/src/mcp_client.rs` conserva la llamada única y añade `--sequence <JSON>`: varias llamadas usan el mismo proceso servidor y la misma sesión `rmcp`. El cambio es solo del harness cliente; no modifica servidor, core ni el formato de `COGNICODE_LINK_TRACE`. La prueba unitaria fue RED por el parser ausente y GREEN con `sequence_file_preserves_order_and_params` 1/1.
+
+**Evidencia real.** Se ejecutó el cliente oficial RMCP contra un fixture aislado y el binario autorizado `/home/rubentxu/.local/share/cognicode/dev-trace/cognicode-mcp`, verificado con `COGNICODE_LINK_TRACE`. La sesión terminó `rc=0` y produjo 21 líneas en un fichero externo. `python3 -I scripts/measure/link_follow.py <traza>` informó `inspect-risk`: 20 ofertas, 0 seguimientos, tasa 0.0, `candidato a retirar`; las demás relaciones quedaron `sin datos`.
+
+**Límite.** Esta es evidencia de un cliente MCP real y del cable, no del comportamiento de un agente autónomo: la secuencia fue declarada por el harness y no siguió los enlaces. Por ello no se retira ningún enlace ni se marca AC3 como decisión de producto. AC1 y AC2 tienen evidencia de capacidad; la decisión final de TASK-164 permanece condicionada a muestra de uso externo suficiente. La traza y el fixture quedan fuera de Git. Gate NOT_RUN por política de lote.

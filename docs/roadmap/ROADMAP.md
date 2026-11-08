@@ -764,3 +764,24 @@ rojo. En `cognicode-graph-algos` la medición del crate entero
 `taint_forward`): un cuelgue sin plazo sigue siendo un agujero. El plazo no es una espera: el código sin
 mutar vuelve en microsegundos, y el plazo solo se alcanza cuando el código
 está roto.
+
+## 13. TASK-164 — evidencia externa de enlaces (replan 2026-11-08)
+
+La ruta del cliente Claude queda delimitada como bloqueada por infraestructura
+externa: el gateway respondió `401 invalid api key` y un modelo no reconocido
+antes de abrir una sesión MCP. Repetir esa ruta no produciría evidencia nueva,
+y cambiar credenciales del host queda fuera del alcance del repositorio.
+
+La siguiente milestone independiente usa el cliente oficial `mcp-client`, que
+ya existe en `crates/cognicode-mcp` y usa el SDK `rmcp`. Se añadirá únicamente
+una secuencia de llamadas sobre una única sesión stdio, conservando la llamada
+individual y sin cambiar `cognicode-mcp` servidor ni `cognicode-core`. El
+servidor autorizado debe contener `COGNICODE_LINK_TRACE`; las filas las
+produce el servidor al responder, nunca el cliente ni un fixture.
+
+La aceptación sigue siendo observacional: `link_follow.py` debe recibir una
+traza real y solo relaciones con `MIN_OFFERS=20` pueden decidirse. Si falta
+binario, conexión o muestra suficiente, el resultado es `BLOCKED`/sin muestra;
+no se marca verde por una ejecución del harness ni se fabrican transcripciones.
+La traza queda fuera de Git y la milestone no autoriza retirar enlaces por sí
+sola.
