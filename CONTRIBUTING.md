@@ -61,7 +61,7 @@ If your change touches the release contract, the MCP tool surface, or the
 product artifacts, there are narrower checks that are the real gate:
 
 ```bash
-python3 -m pytest -q scripts/product/    # product artifact projections
+for f in scripts/product/test_*.py; do python3 -I "$f" || break; done   # product artifact projections
 cargo deny check licenses                 # dependency and licence policy
 ```
 
