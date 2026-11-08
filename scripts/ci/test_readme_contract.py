@@ -598,6 +598,72 @@ def security_section_gaps(body: str | None, flags: set[str], env: set[str]) -> l
         gaps.append("no stdout/stderr rule")
     return gaps
 
+ENV_HEADINGS = {EN: "Environment Variables", ES: "Variables de Entorno"}
+TROUBLE_HEADINGS = {EN: "Troubleshooting", ES: "Solución de problemas"}
+EXIT_PHRASE = {EN: "exit status {}", ES: "estado de salida {}"}
+
+
+def subsection(text: str, title: str) -> str | None:
+    """Body of the `### title` subsection, or None when it is absent."""
+    match = re.search(rf"^### {re.escape(title)}\n(.*?)(?=^#{{2,3}} |\Z)", text, re.S | re.M)
+    return match.group(1) if match else None
+
+
+def env_table_gaps(body: str | None, expected: dict[str, str | None]) -> list[str]:
+    """Rows a README environment table lacks; a value, when given, must be in the row."""
+    if body is None:
+        return ["section missing"]
+    rows = {m.group(1): m.group(0) for m in re.finditer(r"^\|\s*`(\w+)`\s*\|.*$", body, re.M)}
+    gaps = []
+    for name, value in sorted(expected.items()):
+        if name not in rows:
+            gaps.append(f"row missing: {name}")
+        elif value is not None and value not in rows[name]:
+            gaps.append(f"value missing in row {name}: {value}")
+    if "OTEL_EXPORTER_OTLP_ENDPOINT" in rows and "COGNICODE_TELEMETRY" not in rows["OTEL_EXPORTER_OTLP_ENDPOINT"]:
+        gaps.append("OTEL_EXPORTER_OTLP_ENDPOINT row does not say it needs COGNICODE_TELEMETRY")
+    return gaps
+
+
+def troubleshooting_gaps(body: str | None, phrase: str, facts: dict) -> list[str]:
+    """What a troubleshooting section fails to say, given facts read from the sources."""
+    if body is None:
+        return ["section missing"]
+    gaps = []
+    gaps += [f"exit code not stated: {c}" for c in sorted(facts["exits"]) if phrase.format(c) not in body]
+    gaps += [f"flag not documented: {f}" for f in sorted(facts["flags"]) if f"`{f}`" not in body]
+    gaps += [f"profile not documented: {p}" for p in sorted(facts["profiles"]) if f"`{p}`" not in body]
+    cited = set(re.findall(r"(?<![\w-])(--?[A-Za-z][\w-]*)", "\n".join(re.findall(r"`([^`\n]+)`", body))))
+    gaps += [f"unknown flag cited: {f}" for f in sorted(cited - facts["known"])]
+    if "cognicode doctor" not in body:
+        gaps.append("no cognicode doctor check")
+    if not ("stdout" in body and "stderr" in body and "JSON-RPC" in body):
+        gaps.append("no stdout/stderr rule for JSON-RPC")
+    return gaps
+
+
+def doctor_flags(block: str) -> set[str]:
+    """Flags declared by the fields of the `Doctor` clap variant."""
+    flags = set()
+    for attr, field in ARG_ATTR.findall(block):
+        if re.search(r"\blong\b", attr):
+            flags.add("--" + field.replace("_", "-"))
+        if re.search(r"\bshort\b", attr):
+            flags.add("-" + field[0])
+    return flags
+
+
+def troubleshooting_facts() -> dict:
+    main = MCP_MAIN.read_text(encoding="utf-8")
+    doctor = re.search(r"Doctor\s*\{(.*?)\n    \}", COMMANDS_RS.read_text(encoding="utf-8"), re.S)
+    return {
+        "exits": set(re.findall(r"process::exit\((\d+)\)", main)),
+        "flags": {"--cwd", "--profile"} & clap_flags([MCP_MAIN]),
+        "profiles": set(re.findall(r'"(\w+)" => Some\(SurfaceProfile::', SURFACE_RS.read_text(encoding="utf-8"))),
+        "known": clap_flags([MCP_MAIN, COMMANDS_RS]),
+        "doctor": doctor.group(1) if doctor else "",
+    }
+
 
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
@@ -963,6 +1029,70 @@ class ReadmeContract(unittest.TestCase):
             (good.replace("stderr", "log"), "no stdout/stderr rule"),
         ):
             self.assertTrue(any(label in g for g in security_section_gaps(bad, flags, env)), label)
+
+
+    def test_the_environment_tables_list_every_variable_the_sources_read(self):
+        main = MCP_MAIN.read_text(encoding="utf-8")
+        link = re.search(r'LINK_TRACE_VARIABLE: &str = "(\w+)"', LINK_TRACE_RS.read_text(encoding="utf-8")).group(1)
+        endpoint = re.search(r"Default endpoint: (http\S+?) ", main).group(1)
+        telemetry = re.search(r'var\("(COGNICODE_TELEMETRY)"\)\.as_deref\(\) == Ok\("(\w+)"\)', main)
+        otel = "OTEL_EXPORTER_OTLP_ENDPOINT"
+        level = re.search(r'EnvFilter::new\("(\w+)"\)', main).group(1)
+        self.assertTrue(telemetry and otel in main and level, "sources not read: the check would be vacuous")
+        expected = {"RUST_LOG": level, otel: endpoint, telemetry.group(1): f"{telemetry.group(1)}={telemetry.group(2)}", link: None}
+        for readme, heading in ENV_HEADINGS.items():
+            with self.subTest(readme=readme.name):
+                body = subsection(readme.read_text(encoding="utf-8"), heading)
+                self.assertEqual([], env_table_gaps(body, expected))
+
+    def test_the_environment_table_check_discriminates(self):
+        table = "| `A` | `x` | d |\n| `OTEL_EXPORTER_OTLP_ENDPOINT` | `u` | needs COGNICODE_TELEMETRY |\n"
+        expected = {"A": "x", "OTEL_EXPORTER_OTLP_ENDPOINT": "u"}
+        self.assertEqual([], env_table_gaps(table, expected))
+        self.assertEqual(["section missing"], env_table_gaps(None, expected))
+        self.assertTrue(any("row missing" in g for g in env_table_gaps(table, {**expected, "B": None})))
+        self.assertTrue(any("value missing" in g for g in env_table_gaps(table, {**expected, "A": "y"})))
+        self.assertTrue(any("needs COGNICODE_TELEMETRY" in g for g in env_table_gaps(table.replace("needs COGNICODE_TELEMETRY", "x"), expected)))
+
+    def test_both_readmes_troubleshoot_the_failures_the_sources_produce(self):
+        facts = troubleshooting_facts()
+        self.assertEqual({"1", "2"}, facts["exits"])
+        self.assertTrue(facts["flags"] and facts["profiles"] and facts["doctor"], "facts not read")
+        for readme, heading in TROUBLE_HEADINGS.items():
+            with self.subTest(readme=readme.name):
+                body = guide_section(readme.read_text(encoding="utf-8"), heading)
+                self.assertEqual([], troubleshooting_gaps(body, EXIT_PHRASE[readme], facts))
+
+    def test_doctor_invocations_cite_only_the_flags_the_doctor_command_declares(self):
+        declared = doctor_flags(troubleshooting_facts()["doctor"])
+        self.assertTrue({"--format", "--cwd"} <= declared, f"doctor flags not read: {declared}")
+        checked = 0
+        for doc in (EN, ES, MCP_GUIDE):
+            for line in doc.read_text(encoding="utf-8").splitlines():
+                if re.match(r"\s*cognicode doctor\b", line):
+                    checked += 1
+                    cited = set(re.findall(r"(?<![\w-])(--?[A-Za-z][\w-]*)", line))
+                    self.assertEqual(set(), cited - declared - IMPLICIT_FLAGS, f"{doc.name}: {line}")
+        self.assertGreater(checked, 0, "no doctor invocation found: the check would be vacuous")
+
+    def test_the_doctor_flag_reader_discriminates(self):
+        block = "#[arg(long, default_value = \"text\")]\n format: String,\n #[arg(short, long)]\n cwd: String,"
+        self.assertEqual({"--format", "--cwd", "-c"}, doctor_flags(block))
+
+    def test_the_troubleshooting_check_discriminates(self):
+        facts = {"exits": {"2"}, "flags": {"--cwd"}, "profiles": {"full"}, "known": {"--cwd"}}
+        good = "`--cwd` `full` exit status 2: run `cognicode doctor`; stdout is JSON-RPC, stderr the logs."
+        self.assertEqual([], troubleshooting_gaps(good, "exit status {}", facts))
+        self.assertEqual(["section missing"], troubleshooting_gaps(None, "exit status {}", facts))
+        for bad, label in (
+            (good.replace("exit status 2", "oops"), "exit code not stated"),
+            (good.replace("`--cwd`", ""), "flag not documented"),
+            (good.replace("`full`", ""), "profile not documented"),
+            (good + " `--path`", "unknown flag cited"),
+            (good.replace("cognicode doctor", "x"), "no cognicode doctor check"),
+            (good.replace("stderr", "log"), "no stdout/stderr rule"),
+        ):
+            self.assertTrue(any(label in g for g in troubleshooting_gaps(bad, "exit status {}", facts)), label)
 
 
 if __name__ == "__main__":

@@ -349,7 +349,9 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RUST_LOG` | `info` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OpenTelemetry metrics endpoint |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OpenTelemetry metrics endpoint; only used when `COGNICODE_TELEMETRY=1` |
+| `COGNICODE_TELEMETRY` | unset (off) | `COGNICODE_TELEMETRY=1` opts in to metric export; any other value leaves it off |
+| `COGNICODE_LINK_TRACE` | unset (off) | Path of a file that receives one JSON line per tool call (sensitive: may hold paths and symbol names) |
 
 ### Feature Flags (`cognicode-core`)
 
@@ -378,6 +380,26 @@ Limitations: a `Partial`, `Unknown`, `Unsupported` or `Failed` result is not a
 complete one, and an analysis answer states its coverage. Report a
 vulnerability privately through GitHub Security Advisories, not in a public
 issue.
+
+## Troubleshooting
+
+- **The MCP client reports a parse error or "invalid JSON" when it starts the
+  server.** The client reads JSON-RPC from stdout, so anything else printed
+  there breaks it, for example a wrapper script or a shell profile that echoes.
+  `cognicode-mcp` itself writes its logs to stderr; raise them with `RUST_LOG`
+  and read them there.
+- **The server exits at start with exit status 2.** `--profile` received a
+  value that is not a surface profile. The accepted values are `default`,
+  `full` and `legacy`; the error on stderr lists them.
+- **The server exits at start with exit status 1.** The directory given to
+  `--cwd` does not exist; stderr says `Directory '...' does not exist`.
+  Pass a path that exists.
+- **A language is not analysed.** Run the doctor, which reports which language
+  servers are available for the workspace:
+
+```bash
+cognicode doctor --cwd . --format json
+```
 
 ## Development
 

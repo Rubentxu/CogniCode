@@ -291,7 +291,7 @@ for the workspace.
 
 ```bash
 cognicode doctor
-cognicode doctor --format json --path .
+cognicode doctor --format json --cwd .
 ```
 
 Limitation: the flags and values are checked against the clap sources of this

@@ -350,7 +350,9 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 | Variable | Por defecto | Descripción |
 |----------|-------------|-------------|
 | `RUST_LOG` | `info` | Nivel de log (`trace`, `debug`, `info`, `warn`, `error`) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Endpoint de métricas OpenTelemetry |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Endpoint de métricas OpenTelemetry; solo se usa con `COGNICODE_TELEMETRY=1` |
+| `COGNICODE_TELEMETRY` | sin definir (apagado) | `COGNICODE_TELEMETRY=1` activa la exportación de métricas; cualquier otro valor la deja apagada |
+| `COGNICODE_LINK_TRACE` | sin definir (apagado) | Ruta de un fichero que recibe una línea JSON por llamada a herramienta (sensible: puede contener rutas y nombres de símbolos) |
 
 ### Flags de Características (`cognicode-core`)
 
@@ -379,6 +381,26 @@ Límites: un resultado `Partial`, `Unknown`, `Unsupported` o `Failed` no es uno
 completo, y toda respuesta de análisis declara su cobertura. Reporta una
 vulnerabilidad en privado con GitHub Security Advisories, no en una issue
 pública.
+
+## Solución de problemas
+
+- **El cliente MCP informa de un error de parseo o «invalid JSON» al arrancar
+  el servidor.** El cliente lee JSON-RPC por stdout, así que cualquier otra
+  salida ahí lo rompe, por ejemplo un script envoltorio o un perfil de shell
+  que imprime texto. `cognicode-mcp` escribe sus logs por stderr; súbelos con
+  `RUST_LOG` y léelos ahí.
+- **El servidor termina al arrancar con estado de salida 2.** `--profile`
+  recibió un valor que no es un perfil de superficie. Los valores aceptados
+  son `default`, `full` y `legacy`; el error por stderr los lista.
+- **El servidor termina al arrancar con estado de salida 1.** El directorio
+  dado a `--cwd` no existe; stderr dice `Directory '...' does not exist`.
+  Pasa una ruta que exista.
+- **Un lenguaje no se analiza.** Ejecuta el doctor, que informa de qué
+  servidores de lenguaje están disponibles en el espacio de trabajo:
+
+```bash
+cognicode doctor --cwd . --format json
+```
 
 ## Desarrollo
 
