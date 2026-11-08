@@ -8,11 +8,42 @@ Guard puede etiquetar su caché como core/v{versión de Guard}, y un source-code
 
 ## Decisión propuesta
 
-- Identidad de análisis = función pura sobre manifest canónico con rutas, contenido, proveedor real, feature-set, scope, esquema y configuración. La versión procede del **build del proveedor**, no de consumidor.
-- Reutilizar cache/incremental existentes. Cambios de identidad causan miss, nunca «falso hit». Evitar persistir cachés dentro del workspace cuando la operación está tipada `Read` salvo permiso/ubicación explícitos.
-- Entrega: PipelineK actual (`merge-gate`, `integration`, `release-candidate`, `release`) sin un orquestador paralelo. Candidate immutable → release assets → descarga+verificación; presencia de **todo** el set exigido además de integridad de cada asset.
-- Gate proporcional: inner loop afectado; full antes de PR/tag según `AGENTS.md`; aceptación de distribución solo sobre binarios del release. Retirar UAT de sesión con `delivery-first-testing` tras conservar evidencia.
-- En caso de incompatibilidad N−1 o Guard aún no migrado, el estado es `BLOCKED_EXTERNAL`, no PASS. Publicar rollback/changelog claros.
+- La identidad durable del grafo se compone de workspace canónico, proveedor
+  real (versión, commit y feature-set) y schema. El `FileManifest` persistido
+  junto al grafo es la autoridad de paths y contenido; no se duplica dentro de
+  `SnapshotKey`.
+- `load_or_build_graph` mantiene una sola decisión de reutilización: valida
+  proveedor/schema, decodificación e integridad, y después compara el manifest
+  contra el árbol actual mediante hashes de contenido. Cambios de identidad o
+  del manifest causan miss, nunca «falso hit».
+- La configuración publicada (`BasisDto.config_digest`) y el contexto de
+  consumidor (`AnalysisBasis.profile`, budget y scope de consulta) describen
+  la respuesta o la operación que la consume. No forman parte del snapshot del
+  grafo mientras no cambien la semántica del grafo producido. Si una futura
+  capability sí cambia esa semántica, se incorpora al proveedor/features y se
+  versiona el schema según corresponda; no se crea una segunda caché.
+- Reutilizar cache/incremental existentes y evitar persistir cachés dentro del
+  workspace cuando la operación está tipada `Read`, salvo permiso/ubicación
+  explícitos.
+- Entrega: PipelineK actual (`merge-gate`, `integration`,
+  `release-candidate`, `release`) sin un orquestador paralelo. Candidate
+  immutable → release assets → descarga+verificación; presencia de todo el
+  set exigido además de integridad de cada asset.
+- Gate proporcional: inner loop afectado; full antes de PR/tag según
+  `AGENTS.md`; aceptación de distribución solo sobre binarios del release.
+  Retirar UAT de sesión con `delivery-first-testing` tras conservar evidencia.
+- En caso de incompatibilidad N−1 o Guard aún no migrado, el estado es
+  `BLOCKED_EXTERNAL`, no PASS. Publicar rollback/changelog claros.
+
+## Trazabilidad de la decisión
+
+La inspección de `save_durable_snapshot`/`load_durable_snapshot` confirma que
+la tupla durable actual solo contiene schema, `SnapshotKey`, grafo y manifest.
+La inspección de `compute_basis` confirma que `config_digest` se calcula para
+la respuesta a partir de `HandlerContext.log_level`, no para la decisión de
+reutilización. Esta frontera permite elegir B sin migrar bincode ni cambiar la
+superficie serializada: la aceptación se concentra en el seam existente de
+validación de snapshots y en la provenance publicada.
 
 ## Alternativas rechazadas
 
