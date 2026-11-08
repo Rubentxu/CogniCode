@@ -785,3 +785,19 @@ binario, conexión o muestra suficiente, el resultado es `BLOCKED`/sin muestra;
 no se marca verde por una ejecución del harness ni se fabrican transcripciones.
 La traza queda fuera de Git y la milestone no autoriza retirar enlaces por sí
 sola.
+
+## 14. TASK-165 — verificación focal de consumidores sobre 129d7afe
+
+La verificación de integración se hizo en un worktree temporal desacoplado del
+checkout de trabajo y anclado exactamente en `129d7afe`. Primero se construyó
+`cognicode-mcp` con un `CARGO_TARGET_DIR` aislado; después se añadió únicamente
+un comentario temporal a `crates/cognicode-mcp/src/rmcp_adapter.rs`.
+La segunda compilación informó `Fresh cognicode-core` y `Compiling
+cognicode-mcp`: el cambio de handler no recompiló `cognicode-core`.
+
+Los contratos mínimos de consumidores pasaron: cuatro casos MCP focalizados,
+los siete casos de `cogh_cli`, tres casos de paridad/JSON del binario
+`cognicode`, y `cargo check -p cognicode`. El worktree y su target temporal se
+eliminaron después de comprobar que solo el handler estaba modificado. Esta
+evidencia verifica AC2 y AC3 de forma focal; no ejecuta el gate global ni
+marca AC1, que conserva su evidencia separada de manifiesto/metadata.
