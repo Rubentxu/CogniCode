@@ -69,3 +69,23 @@ def test_container_surface_does_not_ship_postgresql() -> None:
         if re.search(r"postgres|pg_ctl|pg_isready|psql|PGDATA|DATABASE_URL", line, re.I)
     ]
     assert not offenders, f"PostgreSQL leftovers: {offenders}"
+
+
+JUSTFILE = REPO_ROOT / "justfile"
+SANDBOX_RECIPES = ("sandbox-iac", "sandbox-all", "sandbox-run", "sandbox-plan")
+
+
+def _recipe_body(name: str) -> str:
+    text = _read(JUSTFILE)
+    match = re.search(rf"^{name}\b[^\n]*:\s*\n((?:[ \t]+[^\n]*\n|\n)+)", text, re.M)
+    assert match, f"recipe {name} not found in the justfile"
+    return match.group(1)
+
+
+def test_no_compose_file_for_a_database_the_runtime_does_not_use() -> None:
+    assert not (REPO_ROOT / "docker-compose.yml").exists()
+
+
+def test_sandbox_recipes_do_not_export_a_variable_nobody_reads() -> None:
+    offenders = [n for n in SANDBOX_RECIPES if "DATABASE_URL" in _recipe_body(n)]
+    assert not offenders, f"recipes still export DATABASE_URL: {offenders}"

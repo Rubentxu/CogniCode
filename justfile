@@ -544,25 +544,20 @@ lsi-providers:
 sandbox-iac:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running IaC sandbox tests ==="
-    echo "DATABASE_URL=$DATABASE_URL"
     cargo run -p cognicode-sandbox -- run sandbox/manifests/iac/
 
-# Run full sandbox baseline (all manifests — requires PG)
+# Run full sandbox baseline (all manifests)
 sandbox-all:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running full sandbox baseline ==="
-    echo "DATABASE_URL=$DATABASE_URL"
     cargo run -p cognicode-sandbox -- run sandbox/manifests/
 
 # Run sandbox with specific manifest path
 sandbox-run manifests:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running sandbox: {{ manifests }} ==="
     cargo run -p cognicode-sandbox -- run {{ manifests }}
 
@@ -605,7 +600,6 @@ sandbox-stability manifests repeat="3":
 # Run sandbox in dry-run mode (list scenarios without executing)
 sandbox-plan manifests:
     #!/usr/bin/env bash
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Sandbox plan: {{ manifests }} ==="
     cargo run -p cognicode-sandbox -- run {{ manifests }} --dry-run 2>&1 | head -50
 
