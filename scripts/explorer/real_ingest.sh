@@ -12,7 +12,6 @@ fi
 echo "🧪 Real ingest target: $WORKSPACE"
 BEFORE="$(tracked_status)"
 
-ensure_pg
 bash "$(cd "$(dirname "$0")" && pwd)/real_api_up.sh" "$PORT" >/dev/null
 
 curl -fsS --connect-timeout 5 --max-time 60 -X POST "http://127.0.0.1:${PORT}/api/workspaces/open" \

@@ -408,12 +408,12 @@ explorer-full:
     @echo "  Frontend: http://127.0.0.1:{{ EXPLORER_PORT }}"
     @echo "  API:      http://127.0.0.1:{{ EXPLORER_API_PORT }}"
 
-# Build the current repo into PostgreSQL via the real MCP server.
-# Safe for git: ingest persists in local PostgreSQL only; tracked-file dirtiness is checked before/after.
+# Open and scan the current repo through the real Explorer API.
+# Safe for git: tracked-file dirtiness is checked before/after.
 explorer-real-ingest workspace="":
     bash scripts/explorer/real_ingest.sh "{{ workspace }}"
 
-# Start the real Explorer API against PostgreSQL in the background.
+# Start the real Explorer API in the background.
 # Logs/PID live under .tmp-explorer-real/ (gitignored).
 explorer-real-api-up:
     bash scripts/explorer/real_api_up.sh "{{ EXPLORER_REAL_API_PORT }}"

@@ -89,3 +89,45 @@ def test_no_compose_file_for_a_database_the_runtime_does_not_use() -> None:
 def test_sandbox_recipes_do_not_export_a_variable_nobody_reads() -> None:
     offenders = [n for n in SANDBOX_RECIPES if "DATABASE_URL" in _recipe_body(n)]
     assert not offenders, f"recipes still export DATABASE_URL: {offenders}"
+
+
+EXPLORER_SCRIPTS = REPO_ROOT / "scripts/explorer"
+VITE_CONFIG = REPO_ROOT / "apps/explorer-ui/vite.config.ts"
+STALE_DB_WORDS = re.compile(r"postgres|ensure_pg|DATABASE_URL|DB_URL|pg_isready|dev-pg", re.I)
+
+
+def test_explorer_real_stack_scripts_do_not_start_or_wait_for_postgresql() -> None:
+    scripts = sorted(EXPLORER_SCRIPTS.glob("*.sh"))
+    assert scripts, "no scripts found under scripts/explorer"
+    offenders = [
+        f"{path.name}:{number}"
+        for path in scripts
+        for number, line in enumerate(_read(path).splitlines(), 1)
+        if STALE_DB_WORDS.search(line)
+    ]
+    assert not offenders, f"PostgreSQL leftovers: {offenders}"
+
+
+def _comment_above(recipe: str) -> str:
+    lines = _read(JUSTFILE).splitlines()
+    index = next(i for i, ln in enumerate(lines) if ln.startswith(f"{recipe}"))
+    block = []
+    for line in reversed(lines[:index]):
+        if not line.startswith("#"):
+            break
+        block.append(line)
+    assert block, f"recipe {recipe} has no comment above it"
+    return "\n".join(block)
+
+
+def test_justfile_explorer_real_comments_do_not_name_postgresql() -> None:
+    offenders = [
+        r
+        for r in ("explorer-real-ingest", "explorer-real-api-up")
+        if re.search("postgres", _comment_above(r), re.I)
+    ]
+    assert not offenders, f"comments still name PostgreSQL: {offenders}"
+
+
+def test_vite_config_does_not_cite_a_compose_file_that_no_longer_exists() -> None:
+    assert "docker-compose" not in _read(VITE_CONFIG)

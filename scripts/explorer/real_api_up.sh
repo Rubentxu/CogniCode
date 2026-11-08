@@ -12,10 +12,9 @@ if curl -fsS --connect-timeout 5 --max-time 60 "http://127.0.0.1:${PORT}/health"
   exit 0
 fi
 
-ensure_pg
 cargo build -p cognicode-runtime --bin explorer-api >/dev/null
 
-DATABASE_URL="$DB_URL" nohup "$ROOT_DIR/target/debug/explorer-api" \
+nohup "$ROOT_DIR/target/debug/explorer-api" \
   --cwd "$ROOT_DIR" \
   --listen "127.0.0.1:${PORT}" \
   > "$LOG_FILE" 2>&1 &
