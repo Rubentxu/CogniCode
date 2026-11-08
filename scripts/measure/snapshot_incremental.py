@@ -68,13 +68,55 @@ def run_graph(binary: Path, workspace: Path, cache: Path, timeout: float) -> dic
     }
 
 
-def measure(binary: Path, samples: int, timeout: float) -> dict[str, object]:
+def run_scanner(workspace: Path, timeout: float) -> dict[str, object]:
+    repo_root = Path(__file__).resolve().parents[2]
+    command = [
+        "cargo",
+        "run",
+        "--quiet",
+        "-p",
+        "cognicode-core",
+        "--example",
+        "measure_incremental_scanner",
+        "--",
+        str(workspace),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        return {"status": "BLOCKED", "reason": f"timeout after {timeout}s", "stderr": str(error)}
+    if completed.returncode != 0:
+        return {
+            "status": "FAIL",
+            "returncode": completed.returncode,
+            "stderr": completed.stderr[-2000:],
+        }
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return {
+            "status": "BLOCKED",
+            "reason": f"scanner output is not JSON: {error}",
+            "stdout": completed.stdout[-2000:],
+            "stderr": completed.stderr[-2000:],
+        }
+    return {"status": "PASS", "evidence": result}
+
+
     rows: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory(prefix="cognicode-h5-") as root:
         root_path = Path(root)
         workspace = root_path / "workspace"
         source = workspace / "src" / "lib.rs"
         cache = root_path / "cache"
+        scanner_workspace = root_path / "scanner"
         source.parent.mkdir(parents=True)
         workspace.joinpath("Cargo.toml").write_text(
             "[package]\nname = \"h5_fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
@@ -93,8 +135,18 @@ def measure(binary: Path, samples: int, timeout: float) -> dict[str, object]:
             result = run_graph(binary, workspace, cache, timeout)
             rows.append({"sample": sample, "phase": "edit", **result})
 
+        scanner = run_scanner(scanner_workspace, timeout)
+
     pass_rows = [row for row in rows if row.get("status") == "PASS"]
-    summary: dict[str, object] = {"samples": samples, "rows": rows}
+    summary: dict[str, object] = {
+        "samples": samples,
+        "rows": rows,
+        "graph_semantics": {
+            "status": "NOT_RUN",
+            "instrument_observation": "NOT_RUN: CLI route emits no graph JSON on stdout",
+        },
+        "scanner": scanner,
+    }
     for phase in ("cold", "warm", "edit"):
         values = [
             float(row["elapsed_ms"])
