@@ -60,12 +60,26 @@ MCP persistente: es un build local de desarrollo. Utiliza preferentemente
 
 ### Desde fuente
 
+> **No es el camino recomendado.** Para el uso normal, usa `install.sh` (Capa 0) + `cogh install mcp-server` (Capa 1).
+> Desde fuente es para quien contribuye y para compilaciones reproducibles.
+
 ```bash
 git clone https://github.com/Rubentxu/CogniCode.git
 cd CogniCode
+# Binarios del CLI (cogh, cognicode, cognicode-release)
+cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
+# Daemon MCP
 cargo build --release -p cognicode-mcp
-./target/release/cognicode-mcp --cwd /ruta/a/tu/proyecto
+./target/release/cogh --version         # esperado: cogh 0.102.1
+./target/release/cognicode --version    # esperado: cognicode 0.102.1
+./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.102.1
 ```
+
+> **Nota:** los binarios publicados también incluyen los de la cadena de herramientas cruzada
+> que el host no ejecuta de forma nativa (p. ej. `aarch64-unknown-linux-gnu`); los produce
+> el pipeline de release. Compilarlos en local requiere el target correspondiente con
+> `rustup target add <triple>` y un linker configurado. Las compilaciones desde fuente
+> son nativas del host por defecto.
 
 ### Claude Desktop / Cursor / Windsurf
 
@@ -99,7 +113,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 3. **Traza el camino de ejecución** entre dos símbolos:
 
 ```json
-{ "tool": "trace_path", "arguments": { "source": "main", "target": "manjar_peticion" } }
+{ "tool": "trace_path", "arguments": { "source": "main", "target": "manejar_peticion" } }
 ```
 
 4. **Encuentra caminos críticos** — funciones más llamadas:

@@ -15,6 +15,7 @@ README with no headings, no pinned example or no link fails instead of passing
 because there was nothing to compare.
 """
 
+import json
 import re
 import subprocess
 import unittest
@@ -144,6 +145,82 @@ def missing_references(
     return gone, sorted(cited - recipes)
 
 
+SHELL_INFO = {"bash", "sh", "shell", "console"}
+URL = re.compile(r"https?://[^\s)>\]\"'`]+")
+FLAG = re.compile(r"(?<![\w-])--?[A-Za-z][\w-]*")
+NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)*(?![\w.])")
+WORD = re.compile(r"[A-Za-z_][\w-]*")
+
+
+def readme_sections(path: Path) -> list[tuple[str, str]]:
+    """(heading, body) for the intro and every `##`/`###` section, fences respected."""
+    out, title, body, in_fence = [], "(intro)", [], False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(FENCE):
+            in_fence = not in_fence
+        m = None if in_fence else re.match(r"#{2,3} (\S.*)", line)
+        if m:
+            out.append((title, "\n".join(body)))
+            title, body = m.group(1), []
+        else:
+            body.append(line)
+    out.append((title, "\n".join(body)))
+    return out
+
+
+def tool_names() -> set[str]:
+    catalog = json.loads((ROOT / "product" / "tool-catalog-runtime.json").read_text())
+    return {t["name"] for t in catalog}
+
+
+def block_signature(info: str, body: str, tools: set[str]) -> tuple:
+    """What a fenced block says regardless of the language of its prose.
+
+    Comments and translated placeholders (`path` / `ruta`) are not compared;
+    the number of live lines, the leading command of each shell line, flags,
+    numbers, URLs and published tool names are.
+    """
+    lines = []
+    for raw in body.splitlines():
+        line = re.sub(r"\s+#.*$", "", raw).strip()
+        if line and not line.startswith("#"):
+            lines.append(line)
+    text = "\n".join(lines)
+    lead = (
+        tuple(l.split()[0] for l in lines) if info.strip() in SHELL_INFO else ()
+    )
+    return (
+        info.strip(),
+        len(lines),
+        lead,
+        tuple(sorted(FLAG.findall(text))),
+        tuple(sorted(NUMBER.findall(text))),
+        tuple(sorted(URL.findall(text))),
+        tuple(sorted(w for w in WORD.findall(text) if w in tools)),
+    )
+
+
+def section_facts(text: str, tools: set[str]) -> tuple[list[tuple], list[str]]:
+    blocks = [block_signature(i, b, tools) for i, b in FENCED.findall(text)]
+    urls = sorted({u.rstrip(".,;:") for u in URL.findall(text)})
+    return blocks, urls
+
+
+def parity_differences(en: Path, es: Path, tools: set[str]) -> list[str]:
+    en_s, es_s = readme_sections(en), readme_sections(es)
+    if len(en_s) != len(es_s):
+        return [f"section count differs: EN {len(en_s)}, ES {len(es_s)}"]
+    found = []
+    for (t_en, b_en), (t_es, b_es) in zip(en_s, es_s):
+        blocks_en, urls_en = section_facts(b_en, tools)
+        blocks_es, urls_es = section_facts(b_es, tools)
+        if blocks_en != blocks_es:
+            found.append(f"'{t_en}' / '{t_es}': fenced blocks differ")
+        if urls_en != urls_es:
+            found.append(f"'{t_en}' / '{t_es}': URLs differ")
+    return found
+
+
 class ReadmeContract(unittest.TestCase):
     def test_both_readmes_have_the_same_heading_outline(self):
         en, es = outline(EN), outline(ES)
@@ -226,6 +303,47 @@ class ReadmeContract(unittest.TestCase):
         self.assertEqual(([], []), missing_references(skipped, files, recipes))
         placeholder = "`bash scripts/<name>.sh` and `docs/*.md`"
         self.assertEqual(([], []), missing_references(placeholder, files, recipes))
+
+    def test_fenced_blocks_and_urls_match_section_by_section(self):
+        tools = tool_names()
+        self.assertTrue(tools, "empty tool catalogue: tool names cannot be compared")
+        blocks = urls = named = 0
+        for _, body in readme_sections(EN):
+            sections_blocks, sections_urls = section_facts(body, tools)
+            blocks += len(sections_blocks)
+            urls += len(sections_urls)
+            named += sum(len(b[-1]) for b in sections_blocks)
+        self.assertTrue(blocks and urls, "README has no fenced block or URL: nothing checked")
+        self.assertTrue(named, "no block names a published tool: catalogue check is vacuous")
+        self.assertEqual([], parity_differences(EN, ES, tools))
+
+    def test_parity_check_discriminates(self):
+        import tempfile
+
+        tools = {"build_graph"}
+        en = "## A\n```bash\ncargo build --release # comment\nrun --version\n```\nsee https://x.io/a\n"
+        ok = "## B\n```bash\ncargo build --release # comentario\nrun --version\n```\nver https://x.io/a\n"
+        short = "## B\n```bash\ncargo build --release\n```\nver https://x.io/a\n"
+        flag = ok.replace("--release", "--debug")
+        url = ok.replace("x.io/a", "x.io/b")
+        tool = "## B\n```json\n{ \"tool\": \"build_graph\" }\n```\n"
+        tool_en = tool.replace("build_graph", "trace_path")
+        with tempfile.TemporaryDirectory() as d:
+            def write(name, text):
+                path = Path(d) / name
+                path.write_text(text, encoding="utf-8")
+                return path
+            base = write("en.md", en)
+            self.assertEqual([], parity_differences(base, write("ok.md", ok), tools))
+            for name, text in (("short", short), ("flag", flag), ("url", url)):
+                self.assertTrue(
+                    parity_differences(base, write(name + ".md", text), tools), name
+                )
+            self.assertTrue(
+                parity_differences(
+                    write("t1.md", tool), write("t2.md", tool_en), {"build_graph", "trace_path"}
+                )
+            )
 
 
 if __name__ == "__main__":
