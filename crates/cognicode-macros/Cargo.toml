@@ -1,8 +1,11 @@
 [package]
 name = "cognicode-macros"
+description = "Procedural macros for CogniCode: newtype derive, aix_tool attribute and declare_rule"
 version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
+repository.workspace = true
+readme = "README.md"
 
 [lib]
 proc-macro = true

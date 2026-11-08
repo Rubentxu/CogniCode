@@ -75,6 +75,53 @@ class SdkSurfaceContract(unittest.TestCase):
                     packages[name]["publish"], [], "library crate has `publish = false`"
                 )
 
+    def test_every_library_declares_its_registry_metadata(self):
+        packages = workspace_packages()
+        for name, entry in declared_crates().items():
+            if entry.get("class") != "library" or name not in packages:
+                continue
+            for field in ("description", "license", "repository", "readme"):
+                with self.subTest(crate=name, field=field):
+                    self.assertTrue(
+                        (packages[name].get(field) or "").strip(),
+                        f"library crate does not declare `{field}`",
+                    )
+
+    def test_library_readme_files_exist_inside_the_crate(self):
+        packages = workspace_packages()
+        for name, entry in declared_crates().items():
+            if entry.get("class") != "library" or name not in packages:
+                continue
+            readme = packages[name].get("readme")
+            if not readme:
+                continue
+            crate_dir = Path(packages[name]["manifest_path"]).parent
+            with self.subTest(crate=name):
+                self.assertTrue((crate_dir / readme).is_file(), f"{readme} is not a file in the crate")
+
+    def test_library_dependencies_are_not_path_only(self):
+        packages = workspace_packages()
+        for name, entry in declared_crates().items():
+            if entry.get("class") != "library" or name not in packages:
+                continue
+            for dep in packages[name]["dependencies"]:
+                if dep.get("kind") == "dev":
+                    continue
+                if dep.get("path") is None and dep.get("source") is not None:
+                    continue
+                with self.subTest(crate=name, dependency=dep["name"]):
+                    self.assertNotEqual(
+                        dep["req"], "*", "path dependency without a `version` cannot be packaged"
+                    )
+
+    def test_internal_crates_are_marked_unpublishable(self):
+        packages = workspace_packages()
+        for name, entry in declared_crates().items():
+            if entry.get("class") != "internal" or name not in packages:
+                continue
+            with self.subTest(crate=name):
+                self.assertEqual(packages[name]["publish"], [], "internal crate lacks `publish = false`")
+
     def test_internal_crates_do_not_claim_consumers(self):
         for name, entry in declared_crates().items():
             if entry.get("class") == "internal":

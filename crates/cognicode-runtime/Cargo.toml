@@ -3,6 +3,8 @@ name = "cognicode-runtime"
 version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
+# Internal: shared runtime support for the binaries, no stable API (see SDK_SURFACES.json).
+publish = false
 
 [[bin]]
 name = "explorer-api"

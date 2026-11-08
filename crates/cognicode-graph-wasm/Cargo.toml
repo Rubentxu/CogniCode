@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "MIT OR Apache-2.0"
+repository.workspace = true
+readme = "README.md"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -18,7 +20,7 @@ wasm-bindgen-macro = "0.2.125"
 serde = { workspace = true }
 serde_json = { workspace = true }
 js-sys = "0.3"
-cognicode-graph-algos = { path = "../cognicode-graph-algos", features = [] }
+cognicode-graph-algos = { path = "../cognicode-graph-algos", version = "0.102.1", features = [] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
