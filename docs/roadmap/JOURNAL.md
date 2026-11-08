@@ -39053,3 +39053,15 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Verificación.** `npm run lint` rc=0 (0 errores, 9 avisos). `tsc` app y node: 0 errores. `npm test` sin filtro: rc=0, 88 ficheros y 947 tests (antes 86 y 944), log `/tmp/t184/ui-vitest-194.log`. `git diff --check` limpio.
 
 **Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Ramas `task-194-explorer-ui-lint-types`. Pendiente: TASK-195 (resaltado de Spotter). Lint y tsc del explorer-ui pasan a ser pre-review checks con medición registrada.
+
+## 2026-11-08 — TASK-195: el resaltado del Spotter vuelve a llegar al pie de intención
+
+**Medición inicial.** Tras TASK-194 nada llamaba a `setHighlightedResult`, así que `IntentFooter` mostraba siempre «Pick a result to see views». Los dos tests del pie eran vacuos: ninguno cargaba un hit. Test nuevo con MSW (un hit `symbol` con `inspectableObjectFixture`): RED con `Unable to find an element by: [data-testid="spotter-intent-overview"]`.
+
+**Causa.** cmdk 1.1.1 solo avisa de su selección mediante `onValueChange`. Con un `onValueChange` en el `Command` sin `value` controlado, el primer ítem queda `aria-selected="true"` pero el callback no se dispara (medido: item seleccionado, pie intacto). Con `value` controlado sí.
+
+**Cambios.** `Spotter.tsx`: el `Command` raíz es controlado (`value={highlightedId}`, `onValueChange={setHighlightedId}`) y `highlightedResult` se deriva con `useMemo` de `filteredResults` y el id; al reabrir se limpia el id. `Spotter.test.tsx`: los dos tests vacuos se sustituyen por «asks to pick a result while nothing is loaded» y «shows the view chips of the highlighted hit».
+
+**Verificación.** `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 947 tests. `tsc -p tsconfig.app.json --noEmit`: 0 errores. `npm run lint`: rc=0 (0 errores, 9 avisos ya registrados). `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-195-spotter-highlight`, commit `673d7d1b`.
