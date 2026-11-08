@@ -46,7 +46,7 @@ Strict [Conventional Commits](https://www.conventionalcommits.org/):
 type(scope): description
 ```
 
-Allowed types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
+Allowed types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `build`, `ci`, `release`, `evidence`, `cert`.
 Breaking changes are marked with `!` after the scope, or with a
 `BREAKING CHANGE:` footer.
 

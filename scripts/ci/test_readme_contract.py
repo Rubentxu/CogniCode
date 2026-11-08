@@ -1204,6 +1204,24 @@ class ReadmeContract(unittest.TestCase):
             self.assertTrue((ROOT / "docs" / "distribution" / guide).exists(), guide)
             self.assertIn(f"docs/distribution/{guide}", text, f"CONTRIBUTING.md does not link {guide}")
 
+    def test_contributing_lists_every_commit_type_the_hook_accepts(self):
+        """The commit-msg hook judges the type; a guide that omits an accepted one misleads contributors.
+
+        The hook's policy lives in a per-machine private config that a clean
+        clone does not have, so this contract cannot read it. The accepted
+        types are therefore declared here, copied from that policy when this
+        test was written; update this tuple when the policy changes.
+        """
+        hook_types = (
+            "feat", "fix", "docs", "refactor", "perf", "test",
+            "build", "ci", "chore", "release", "evidence", "cert",
+        )
+        text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        line = next((l for l in text.splitlines() if l.startswith("Allowed types:")), "")
+        self.assertTrue(line, "CONTRIBUTING.md has no 'Allowed types:' line")
+        listed = set(re.findall(r"`([a-z]+)`", line))
+        self.assertEqual([], sorted(set(hook_types) - listed), "types the hook accepts but the guide omits")
+
     def test_root_install_guide_points_to_the_real_one(self):
         """The root INSTALL.md was an unpacking note for an audit ZIP, not an install guide."""
         text = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
