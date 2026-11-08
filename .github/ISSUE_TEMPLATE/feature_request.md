@@ -34,7 +34,7 @@ detailed solution. -->
 <!--
 Does this touch a published contract?
 
-- [ ] A new or renamed MCP tool (see `product/tools.json` for the current surface)
+- [ ] A new or renamed MCP tool (see `crates/cognicode-core/product/tools.json` for the current surface)
 - [ ] A CLI command or flag
 - [ ] A change to what an existing tool returns
 - [ ] A new language, or a language moving from `experimental` to `supported`

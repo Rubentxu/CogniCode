@@ -43,7 +43,7 @@ const FIXTURE: &str = "fn alpha() { beta(); } fn beta() {}\n";
 
 /// The catalogue the product publishes, and the capture of what the
 /// runtime publishes.
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../product/tools.json");
+const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/product/tools.json");
 const CAPTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../product/tool-catalog-runtime.json"

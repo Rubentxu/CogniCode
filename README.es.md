@@ -129,7 +129,7 @@ CogniCode publica **88 herramientas MCP**: 78 herramientas y los 10 goals que
 las responden. Las tablas siguientes son una
 **selección curada**, agrupada por la capacidad que más le importa al lector,
 no la superficie completa. La lista autoritativa, generada desde el código y
-verificada en CI, está en [`product/tools.json`](product/tools.json); los
+verificada en CI, está en [`crates/cognicode-core/product/tools.json`](crates/cognicode-core/product/tools.json); los
 esquemas de entrada y salida por herramienta están en
 [`product/README.md`](product/README.md).
 

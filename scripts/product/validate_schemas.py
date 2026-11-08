@@ -56,6 +56,13 @@ DOCUMENT_SCHEMA_PAIRS: dict[str, str] = {
     "skills": "skills.v1.schema.json",
 }
 
+#: Where a document lives when it is not in ``product/``. ``tools.json`` is
+#: compiled into ``cognicode-core`` with ``include_str!``, so it has to sit
+#: inside that crate for the crate to be packageable; it keeps one copy.
+DOCUMENT_HOMES: dict[str, Path] = {
+    "tools": Path("crates") / "cognicode-core" / "product",
+}
+
 
 def _load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -86,7 +93,7 @@ def validate_document(document_name: str, schema_name: str, root: Path = ROOT) -
             "Install it or add it to the project's test dependencies."
         )
 
-    document_path = root / "product" / f"{document_name}.json"
+    document_path = root / DOCUMENT_HOMES.get(document_name, Path("product")) / f"{document_name}.json"
     schema_path = root / "product" / "schemas" / schema_name
     document = _load(document_path)
     schema = _load(schema_path)

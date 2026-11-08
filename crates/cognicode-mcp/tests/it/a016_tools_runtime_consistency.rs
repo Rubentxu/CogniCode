@@ -40,6 +40,8 @@ fn product_tools_json_path() -> PathBuf {
         .parent()
         .and_then(|p| p.parent())
         .expect("CARGO_MANIFEST_DIR has a parent")
+        .join("crates")
+        .join("cognicode-core")
         .join("product")
         .join("tools.json")
 }

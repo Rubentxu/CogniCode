@@ -42,7 +42,7 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../product/tools.json");
+const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/product/tools.json");
 
 fn load() -> Value {
     let bytes = std::fs::read(CATALOG).expect("read catalog");

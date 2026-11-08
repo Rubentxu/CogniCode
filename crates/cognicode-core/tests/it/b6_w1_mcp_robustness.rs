@@ -761,8 +761,6 @@ fn large_response_uses_pagination() {
 /// fact about the walk, not about the build.
 fn master_catalogue() -> (BTreeSet<String>, BTreeSet<String>) {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
         .join("product")
         .join("tools.json");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -1339,8 +1337,6 @@ fn wire_tools_list_matches_hand_authored_catalog() {
     // never regenerate it`). The wire surface must match it
     // field-for-field on the name set.
     let catalog_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
         .join("product")
         .join("tools.json");
     let bytes = std::fs::read(&catalog_path)

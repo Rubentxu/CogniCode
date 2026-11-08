@@ -77,7 +77,7 @@ fn arguments(format: &str) -> Result<ExportMermaidInput, String> {
 
 /// The master, read straight from disk.
 fn master() -> serde_json::Value {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../product/tools.json");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("product/tools.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
     serde_json::from_str(&text).expect("the master is a JSON document")

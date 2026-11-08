@@ -26,7 +26,7 @@ current on purpose:
 
 - `product/README.md` — the product contract: what ships, what does not, and
   what each MCP tool actually returns.
-- `product/tools.json` — the generated tool surface. If a tool is not in here,
+- `crates/cognicode-core/product/tools.json` — the generated tool surface. If a tool is not in here,
   it is not a shipped tool, whatever the README says.
 - `product/languages.json` — language support with evidence. Languages are
   marked `supported` or `experimental`; an `experimental` language is parsed and

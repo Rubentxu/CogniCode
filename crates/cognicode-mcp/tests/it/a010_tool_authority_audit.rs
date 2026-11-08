@@ -35,7 +35,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn tool_document() -> Value {
-    let path = repo_root().join("product/tools.json");
+    let path = repo_root().join("crates/cognicode-core/product/tools.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("tools.json must be readable: {e}"));
     serde_json::from_str(&text).expect("tools.json must be valid JSON")

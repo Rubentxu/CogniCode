@@ -57,4 +57,4 @@ in the "What happened" section — that is itself a reportable defect.
 ## Anything else
 
 <!-- Contract surfaces involved: an MCP tool name, a CLI flag, a published
-contract. Check product/README.md and product/tools.json first. -->
+contract. Check product/README.md and crates/cognicode-core/product/tools.json first. -->

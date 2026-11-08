@@ -38,11 +38,12 @@ use std::path::{Path, PathBuf};
 
 /// Does `dir` look like a workspace root that carries the product data?
 ///
-/// Checks the two files the capabilities document actually reads, so a stray
-/// directory named `product` does not count.
+/// Checks the file the capabilities document reads from disk, so a stray
+/// directory named `product` does not count. The tool catalogue is no longer a
+/// sibling of it: `tools.json` lives inside this crate and is compiled into
+/// the binary, so the installed layout is anchored by `profiles.json`.
 fn holds_product_data(dir: &Path) -> bool {
-    dir.join("product").join("tools.json").is_file()
-        && dir.join("product").join("profiles.json").is_file()
+    dir.join("product").join("profiles.json").is_file()
 }
 
 // ============================================================================
@@ -70,8 +71,7 @@ fn product_data_is_resolved_by_walking_up_from_a_runtime_anchor() {
 
     assert!(
         holds_product_data(&found),
-        "the resolver returned {}, which does not carry product/tools.json \
-         and product/profiles.json",
+        "the resolver returned {}, which does not carry product/profiles.json",
         found.display()
     );
 }
@@ -242,10 +242,7 @@ fn the_product_assets_come_from_the_installation_and_not_from_the_workspace() {
 fn the_versioned_tool_catalog_is_present_and_populated() {
     // Locate `product/tools.json` from this crate, which is inside the
     // checkout, so the assertion does not depend on install layout.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crate is two levels below the repo root");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let tools_path = root.join("product").join("tools.json");
     assert!(
         tools_path.is_file(),

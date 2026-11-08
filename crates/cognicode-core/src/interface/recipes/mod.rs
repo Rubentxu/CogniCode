@@ -9,7 +9,7 @@
 //!
 //! | Origen | Dónde vive | Quién la escribe |
 //! |---|---|---|
-//! | el producto | `product/goals.toml`, compilado en el binario | el producto |
+//! | el producto | `crates/cognicode-core/product/goals.toml`, compilado en el binario | el producto |
 //! | el equipo | `<workspace>/.cognicode/goals.toml` | quien tiene el workspace |
 //!
 //! Las dos se leen con el mismo formato y se validan con el **mismo** validador
@@ -49,7 +49,7 @@ use crate::interface::goals::GoalAuthority;
 /// se compila aquí: una receta publicada existe en el mismo binario que la
 /// sirve, así que no hay una receta que el catálogo prometa y el binario no
 /// sepa correr.
-const PRODUCT_RECIPES: &str = include_str!("../../../../../product/goals.toml");
+const PRODUCT_RECIPES: &str = include_str!("../../../product/goals.toml");
 
 /// El fichero del workspace donde el equipo declara sus recetas.
 const WORKSPACE_RECIPES: &str = ".cognicode/goals.toml";

@@ -143,7 +143,7 @@ CogniCode ships **88 MCP tools**: 78 tools and the 10 goals that answer them.
 The tables below are a **curated selection**,
 grouped by the capability a reader is most likely to care about — not the full
 surface. The authoritative list, generated from the code and checked in CI, is
-[`product/tools.json`](product/tools.json); per-tool input and output schemas are
+[`crates/cognicode-core/product/tools.json`](crates/cognicode-core/product/tools.json); per-tool input and output schemas are
 in [`product/README.md`](product/README.md).
 
 ### Graph Analysis (12 tools)

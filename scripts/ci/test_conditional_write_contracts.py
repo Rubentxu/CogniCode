@@ -300,7 +300,7 @@ def test_the_write_detectors_see_a_violation_when_there_is_one() -> None:
         )
 
 
-CATALOG = "product/tools.json"
+CATALOG = "crates/cognicode-core/product/tools.json"
 CAPTURE = "product/tool-catalog-runtime.json"
 MAPPING = "crates/cognicode-core/src/interface/mcp/dto_mapping.rs"
 SCHEMAS = "crates/cognicode-core/src/interface/mcp/schemas.rs"

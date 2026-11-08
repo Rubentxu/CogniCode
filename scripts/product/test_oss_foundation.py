@@ -294,7 +294,7 @@ def test_security_policy_supported_versions_are_real() -> None:
 
 
 def test_readme_publishes_only_verifiable_numbers() -> None:
-    tools = json.loads(read("product/tools.json"))
+    tools = json.loads(read("crates/cognicode-core/product/tools.json"))
     languages = json.loads(read("product/languages.json"))
     tool_count = tools["runtime_tool_count"]
     total = len(languages["languages"])

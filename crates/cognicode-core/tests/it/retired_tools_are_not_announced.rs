@@ -42,7 +42,7 @@ use cognicode_core::interface::mcp::schemas::CompositeImpactQueryInput;
 use crate::fixtures;
 
 /// The catalogue the operator maintains by hand.
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../product/tools.json");
+const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/product/tools.json");
 
 /// The capture of what the server ships.
 const RUNTIME: &str = concat!(
