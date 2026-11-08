@@ -119,6 +119,19 @@ def tracked_files() -> set[str]:
     return {line for line in out.splitlines() if line}
 
 
+def untracked_on_disk(cited: list[str]) -> list[str]:
+    """Cited paths that exist in the working tree but are not in the git index."""
+    return sorted(p for p in cited if (ROOT / p).exists())
+
+
+def untracked_message(doc: Path, cited: list[str]) -> str:
+    return "; ".join(
+        f"{doc.name} cites {p}, which exists but is not in the git index; run git add"
+        f" (git add -f if the path is ignored)"
+        for p in untracked_on_disk(cited)
+    )
+
+
 def justfile_recipes() -> set[str]:
     return set(RECIPE_DEF.findall((ROOT / "justfile").read_text(encoding="utf-8")))
 
@@ -805,10 +818,19 @@ class ReadmeContract(unittest.TestCase):
             cited_paths += len(paths)
             cited_recipes += len(cited)
             gone, unknown = missing_references(text, files, recipes)
+            if untracked_on_disk(gone):
+                self.fail(untracked_message(path, gone))
             self.assertEqual([], gone, f"{path.name} cites paths that do not exist")
             self.assertEqual([], unknown, f"{path.name} cites unknown just recipes")
         self.assertTrue(cited_paths, "no guide cites a repo path: nothing checked")
         self.assertTrue(cited_recipes, "no guide cites a just recipe: nothing checked")
+
+    def test_untracked_citation_message_names_the_file_and_the_fix(self):
+        real = "scripts/ci/test_readme_contract.py"
+        self.assertEqual([real], untracked_on_disk([real, "scripts/ci/ghost_nowhere.py"]))
+        msg = untracked_message(Path("GUIDE.md"), [real, "scripts/ci/ghost_nowhere.py"])
+        self.assertIn(f"{real}, which exists but is not in the git index; run git add", msg)
+        self.assertNotIn("ghost_nowhere", msg)
 
     def test_guides_do_not_require_pytest(self):
         # The repo declares no pytest and its harness is pytest-free
