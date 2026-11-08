@@ -486,10 +486,13 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   medida en la ruta: `load_or_build_graph` reutiliza el snapshot completo cuando
 >   `SnapshotKey` y `FileManifest` son compatibles; cuando el manifest deja de ser
 >   reutilizable, reconstruye el grafo completo. `IncrementalScanner` calcula
->   deltas en infraestructura, pero no está conectado a esta ruta. El siguiente
->   criterio es medir cold/warm/edit con un instrumento explícito fuera de la suite
->   rápida, distinguir `warm reuse` de `full rebuild` y no llamar `incremental delta`
->   a una reducción no observada. La forma, en
+>   deltas en infraestructura, pero no está conectado a esta ruta. La
+>   caracterización de `TASK-172` confirma además que configuración, perfil y
+>   presupuesto de consumidor no cambian el grafo ni su identidad durable, y que
+>   `AnalysisScope` pertenece a findings, no al snapshot. El siguiente criterio es
+>   medir cold/warm/edit con un instrumento explícito fuera de la suite rápida,
+>   distinguir `warm reuse` de `full rebuild` y no llamar `incremental delta` a
+>   una reducción no observada. La forma, en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` y
 >   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >
