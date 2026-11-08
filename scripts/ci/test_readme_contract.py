@@ -1197,6 +1197,14 @@ class ReadmeContract(unittest.TestCase):
         self.assertEqual(["c: SDK library crate not listed"], crate_table_gaps(body, {"a", "b", "c"}, {"c"}, text))
         self.assertEqual(["no link to the SDK consumption guide"], crate_table_gaps(body, {"a", "b"}, {"a"}, "x"))
 
+    def test_root_install_guide_points_to_the_real_one(self):
+        """The root INSTALL.md was an unpacking note for an audit ZIP, not an install guide."""
+        text = (ROOT / "INSTALL.md").read_text(encoding="utf-8")
+        self.assertIn("docs/distribution/INSTALL.md", text)
+        self.assertTrue((ROOT / "docs" / "distribution" / "INSTALL.md").exists())
+        for stale in ("ZIP", "production-ready", "QW-03"):
+            self.assertNotIn(stale, text, f"root INSTALL.md still carries the audit-package note: {stale}")
+
 
 if __name__ == "__main__":
     unittest.main()
