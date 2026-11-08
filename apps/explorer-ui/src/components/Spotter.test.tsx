@@ -475,7 +475,7 @@ describe("Spotter (open)", () => {
     });
 
     it("Cmd+N on a disabled chip is ignored and Enter keeps the default view", async () => {
-      // Two real views leave the "Open as C4" placeholder (disabled) at
+      // Two real views leave the first disabled placeholder chip at
       // position 3, inside the Cmd+1..9 range.
       const twoViews = {
         ...inspectableObjectFixture,
