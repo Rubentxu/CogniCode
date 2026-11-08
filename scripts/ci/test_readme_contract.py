@@ -79,6 +79,22 @@ def local_links(path: Path) -> list[str]:
     ]
 
 
+def install_docs() -> list[Path]:
+    """Install and contribution guides a reader follows with a pinned version."""
+    docs = [ROOT / "INSTALL.md", ROOT / "CONTRIBUTING.md"]
+    docs += sorted((ROOT / "docs" / "distribution").glob("*.md"))
+    return docs
+
+
+GUIDE_PINNED = re.compile(r"(?:--version |@)v?(\d+\.\d+\.\d+)")
+
+
+def guide_versions(path: Path) -> list[str]:
+    return PINNED.findall(path.read_text(encoding="utf-8")) + GUIDE_PINNED.findall(
+        path.read_text(encoding="utf-8")
+    )
+
+
 class ReadmeContract(unittest.TestCase):
     def test_both_readmes_have_the_same_heading_outline(self):
         en, es = outline(EN), outline(ES)
@@ -101,6 +117,31 @@ class ReadmeContract(unittest.TestCase):
             self.assertTrue(links, f"{path.name} has no local link: nothing checked")
             missing = sorted({l for l in links if not (ROOT / l).exists()})
             self.assertEqual([], missing, f"{path.name} links to missing files")
+
+    def test_install_guides_pin_the_workspace_version(self):
+        expected = workspace_version()
+        docs = install_docs()
+        self.assertGreaterEqual(len(docs), 3, "install guides not found: nothing checked")
+        all_found = []
+        for path in docs:
+            found = guide_versions(path)
+            all_found += found
+            stale = sorted({v for v in found if v != expected})
+            self.assertEqual([], stale, f"{path.relative_to(ROOT)} pins stale versions")
+        self.assertTrue(all_found, "no install guide pins a version: nothing checked")
+
+    def test_install_guide_links_exist_relative_to_the_document(self):
+        total = 0
+        for path in install_docs():
+            links = local_links(path)
+            total += len(links)
+            missing = sorted(
+                {l for l in links if not (path.parent / l).exists()}
+            )
+            self.assertEqual(
+                [], missing, f"{path.relative_to(ROOT)} links to missing files"
+            )
+        self.assertTrue(total, "no install guide has a local link: nothing checked")
 
 
 if __name__ == "__main__":
