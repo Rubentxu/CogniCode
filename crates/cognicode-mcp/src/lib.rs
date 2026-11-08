@@ -14,4 +14,19 @@
 //!   start, and on which address.
 
 pub mod auth;
+pub mod cancellation;
+pub mod capabilities;
 pub mod exposure;
+pub mod input_contracts;
+pub mod output_contracts;
+pub mod link_trace;
+pub mod parameter_aliases;
+pub mod presenter_bridge;
+pub mod rmcp_adapter;
+pub mod robustness;
+pub mod surface_tools;
+pub mod status;
+pub mod tool_response;
+
+#[cfg(test)]
+mod mcp_roundtrip_tests;

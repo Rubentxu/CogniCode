@@ -8,6 +8,10 @@ pub mod coverage;
 pub mod daemon;
 // TASK-82 — el registro de goals: una declaración y sus cuatro superficies.
 pub mod goals;
+// Esquemas derivados que comparten las superficies sin importar un adaptador.
+pub mod schema;
+// Cursores y handles firmados: los comparten el sobre y los adaptadores.
+pub mod cursor;
 // TASK-83 — el sobre de la respuesta: result, basis, budget y enlaces.
 pub mod hateoas;
 pub use crate::domain::intent;

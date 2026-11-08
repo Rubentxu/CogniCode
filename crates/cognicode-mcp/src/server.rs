@@ -34,7 +34,7 @@ use axum::{
     routing::get,
 };
 use clap::Parser;
-use cognicode_core::interface::mcp::CogniCodeHandler;
+use cognicode_mcp::rmcp_adapter::CogniCodeHandler;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use opentelemetry::global;
 use opentelemetry_sdk::metrics::SdkMeterProvider;

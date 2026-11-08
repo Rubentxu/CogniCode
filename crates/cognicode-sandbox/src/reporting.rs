@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use cognicode_core::application::sandbox_failure::FailureClass;
 use cognicode_core::sandbox_core::artifacts::{ScenarioResult, Summary};
-use cognicode_core::sandbox_core::failure::FailureClass;
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
