@@ -13,6 +13,7 @@ than passing because there was nothing to compare.
 """
 
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -27,6 +28,18 @@ LICENSE_FILES = ("LICENSE-MIT", "LICENSE-APACHE")
 MAX_KEYWORDS = 5
 # crates.io category slugs this workspace may use. A closed list because the
 # registry rejects unknown slugs at publish time and offline we cannot ask it.
+SEMVER_POLICY = ROOT / "docs" / "distribution" / "SEMVER_POLICY.md"
+SEMVER_POLICY_URL = (
+    "https://github.com/Rubentxu/CogniCode/blob/main/docs/distribution/SEMVER_POLICY.md"
+)
+POLICY_SECTIONS = (
+    "Scope",
+    "Breaking changes",
+    "Features",
+    "Toolchain",
+    "Deprecation",
+    "Release cadence",
+)
 KNOWN_CATEGORIES = {
     "algorithms",
     "data-structures",
@@ -78,6 +91,16 @@ def declared_msrv():
         if line.startswith("compatibility") and "rust>=" in line:
             return line.split("rust>=", 1)[1].strip().strip('"')
     raise AssertionError("manifest.toml declares no `rust>=` compatibility")
+
+
+def section(text, title):
+    """Body of the first `## <title...>` section of a markdown document, else None."""
+    match = re.search(
+        rf"^#{{2,3}}\s+{re.escape(title)}\b.*?$(.*?)(?=^#{{1,3}}\s|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    return match.group(1) if match else None
 
 
 def declared_crates():
@@ -242,6 +265,76 @@ class SdkSurfaceContract(unittest.TestCase):
                     self.assertEqual(
                         path.read_bytes(), (ROOT / lic).read_bytes(), "license text differs from the root"
                     )
+
+    def test_library_readmes_document_every_feature(self):
+        for name, pkg in library_packages().items():
+            crate_dir = Path(pkg["manifest_path"]).parent
+            readme = (crate_dir / pkg["readme"]).read_text(encoding="utf-8")
+            features = sorted(set(pkg["features"]) - {"default"})
+            with self.subTest(crate=name):
+                body = section(readme, "Features")
+                self.assertIsNotNone(body, "README has no `## Features` section")
+                if not features:
+                    self.assertIn(
+                        "no optional features",
+                        body.lower(),
+                        "a crate without features must say so",
+                    )
+                    continue
+                for feature in features:
+                    self.assertIn(f"`{feature}`", body, f"feature `{feature}` is undocumented")
+                listed = set(re.findall(r"^\|\s*`([^`]+)`", body, re.MULTILINE))
+                self.assertEqual(
+                    listed - set(pkg["features"]), set(), "README lists features the crate does not declare"
+                )
+
+    def test_default_features_are_stated_in_the_readme(self):
+        for name, pkg in library_packages().items():
+            crate_dir = Path(pkg["manifest_path"]).parent
+            readme = (crate_dir / pkg["readme"]).read_text(encoding="utf-8")
+            body = section(readme, "Features") or ""
+            default = pkg["features"].get("default", [])
+            with self.subTest(crate=name):
+                if default:
+                    for feature in default:
+                        self.assertIn(f"`{feature}`", body)
+                    self.assertIn("default", body.lower())
+
+    def test_one_semver_policy_exists_and_covers_every_library(self):
+        self.assertTrue(SEMVER_POLICY.is_file(), f"missing {SEMVER_POLICY.relative_to(ROOT)}")
+        stray = [
+            str(p.relative_to(ROOT))
+            for p in (ROOT / "docs").rglob("*")
+            if p.is_file() and "semver" in p.name.lower() and p != SEMVER_POLICY
+        ]
+        self.assertEqual(stray, [], "a second semver policy document exists")
+        text = SEMVER_POLICY.read_text(encoding="utf-8")
+        for title in POLICY_SECTIONS:
+            with self.subTest(section=title):
+                body = section(text, title)
+                self.assertIsNotNone(body, f"policy has no `## {title}` section")
+                self.assertTrue(body.strip(), f"policy section `{title}` is empty")
+        for name in library_packages():
+            with self.subTest(crate=name):
+                self.assertIn(f"`{name}`", text)
+
+    def test_semver_policy_does_not_restate_the_toolchain_floor(self):
+        text = SEMVER_POLICY.read_text(encoding="utf-8")
+        self.assertNotIn(declared_msrv(), text, "the floor lives in manifest.toml only")
+
+    def test_library_readmes_link_the_policy_without_copying_it(self):
+        policy_lines = {
+            line.strip()
+            for line in SEMVER_POLICY.read_text(encoding="utf-8").splitlines()
+            if len(line.strip()) > 40
+        }
+        for name, pkg in library_packages().items():
+            crate_dir = Path(pkg["manifest_path"]).parent
+            readme = (crate_dir / pkg["readme"]).read_text(encoding="utf-8")
+            with self.subTest(crate=name):
+                self.assertIn(SEMVER_POLICY_URL, readme, "README does not link the semver policy")
+                copied = [l.strip() for l in readme.splitlines() if l.strip() in policy_lines]
+                self.assertEqual(copied, [], "README copies policy text instead of linking it")
 
     def test_internal_crates_are_marked_unpublishable(self):
         packages = workspace_packages()
