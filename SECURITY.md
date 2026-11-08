@@ -90,20 +90,21 @@ reportable correctness and safety issue.
 | Version | Supported |
 |---|---|
 | 0.102.1 (current cut) | yes |
-| 0.101.30 (previous published release, `v0.101.30`) | yes |
-| 0.101.29 (previous published release, `v0.101.29`) | yes |
-| 0.101.28 (previous published release, `v0.101.28`) | yes |
-| 0.101.27 (previous published release, `v0.101.27`) | yes |
+| 0.102.0 (previous published release, `v0.102.0`) | yes |
+| 0.101.30 (previous published release, `v0.101.30`) | no |
+| 0.101.29 (previous published release, `v0.101.29`) | no |
+| 0.101.28 (previous published release, `v0.101.28`) | no |
+| 0.101.27 (previous published release, `v0.101.27`) | no |
 | 0.101.26 (previous cut, never published) | no |
 | 0.101.25 (previous cut, never published) | no |
 | 0.101.24 (previous cut, never published) | no |
-| 0.101.23 (previous published release, `v0.101.23`) | yes |
-| 0.101.22 (previous published release, `v0.101.22`) | yes |
-| 0.101.21 (previous published release, `v0.101.21`) | yes |
-| 0.101.20 (previous published release, `v0.101.20`) | yes |
-| 0.101.17 (previous published release, `v0.101.17`) | yes |
-| 0.101.9 (previous release, `v0.101.9`) | yes |
-| 0.98.1 (previous release, `v0.98.1`) | yes |
+| 0.101.23 (previous published release, `v0.101.23`) | no |
+| 0.101.22 (previous published release, `v0.101.22`) | no |
+| 0.101.21 (previous published release, `v0.101.21`) | no |
+| 0.101.20 (previous published release, `v0.101.20`) | no |
+| 0.101.17 (previous published release, `v0.101.17`) | no |
+| 0.101.9 (previous release, `v0.101.9`) | no |
+| 0.98.1 (previous release, `v0.98.1`) | no |
 
 Older lines are not patched. If you are on an older release and find a
 vulnerability, the report is still useful; tell us the version so the fix can
