@@ -381,7 +381,14 @@ describe("Spotter (open)", () => {
     ).toBeInTheDocument();
   });
 
-  it("IntentFooter shows 'Pick a result' when no result is highlighted", async () => {
+  it("IntentFooter asks to pick a result while nothing is loaded", async () => {
+    render(<Harness initial={{ spotterOpen: true }} />);
+    const footer = await screen.findByTestId("spotter-intent-footer");
+    expect(footer).toHaveTextContent(/pick a result/i);
+    expect(screen.queryByTestId("spotter-intent-overview")).toBeNull();
+  });
+
+  it("IntentFooter shows the view chips of the highlighted hit", async () => {
     server.use(
       http.get("/api/workspaces/:workspace_id/spotter", async () => {
         await delay(20);
@@ -399,27 +406,16 @@ describe("Spotter (open)", () => {
     );
     const user = userEvent.setup();
     render(<Harness initial={{ spotterOpen: true }} />);
-    const input = screen.getByTestId("spotter-input");
-    await user.type(input, "build");
-    await screen.findByTestId(
-      `spotter-item-${inspectableObjectFixture.id}`,
-    );
-    const footer = await screen.findByTestId("spotter-intent-footer");
-    expect(footer).toHaveTextContent(/pick a result/i);
-  });
+    await user.type(screen.getByTestId("spotter-input"), "build");
+    await screen.findByTestId(`spotter-item-${inspectableObjectFixture.id}`);
 
-  it("IntentFooter shows chips when result is keyboard-highlighted", async () => {
-    // This test verifies the IntentFooter integration: when Command.List fires
-    // onChange with a highlighted item, the footer renders chips.
-    // We test the footer directly with a non-null result to avoid cmdk
-    // keyboard-nav complexity in jsdom.
-    render(
-      <Harness initial={{ spotterOpen: true }} />,
+    // cmdk highlights the first item on its own and reports it through the
+    // root `onValueChange`; the footer must follow that signal.
+    const chip = await screen.findByTestId("spotter-intent-overview");
+    expect(chip).toBeEnabled();
+    expect(screen.getByTestId("spotter-intent-footer")).not.toHaveTextContent(
+      /pick a result/i,
     );
-    // IntentFooter is rendered inside Spotter; we verify it's present when
-    // the spotter is open (shows "Pick a result" when nothing is highlighted).
-    const footer = await screen.findByTestId("spotter-intent-footer");
-    expect(footer).toBeInTheDocument();
   });
 
   it("Cmd+1 with no highlighted result does not crash", async () => {

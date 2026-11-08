@@ -126,8 +126,12 @@ export function Spotter() {
   const [kind, setKind] = useState<KindFilter>(spotterKind ?? ALL_KINDS);
   const debouncedQuery = useDebounced(rawQuery, DEBOUNCE_MS);
 
-  /** Tracks the currently-highlighted result via Command.List onChange. */
-  const [highlightedResult, setHighlightedResult] = useState<SpotterSearchResult | null>(null);
+  /**
+   * Id of the hit cmdk highlights. The root `Command` is controlled: cmdk
+   * only reports its own selection (including the auto-selected first item)
+   * through `onValueChange` when `value` is controlled.
+   */
+  const [highlightedId, setHighlightedId] = useState("");
 
   /**
    * Set by IntentFooter chip click or Cmd+N when a result is highlighted.
@@ -147,7 +151,7 @@ export function Spotter() {
         setRawQuery("");
         // Don't reset kind if spotterKind was set by caller
         setKind((currentKind) => spotterKind ?? currentKind ?? ALL_KINDS);
-        setHighlightedResult(null);
+        setHighlightedId("");
         setPendingViewId(null);
       });
     }
@@ -171,6 +175,11 @@ export function Spotter() {
     if (kind === ALL_KINDS) return data;
     return data.filter((r) => r.kind === kind);
   }, [data, kind]);
+
+  const highlightedResult = useMemo(
+    () => filteredResults.find((r) => normalizeHit(r).id === highlightedId) ?? null,
+    [filteredResults, highlightedId],
+  );
 
   const grouped = useMemo(() => groupByKind(filteredResults), [filteredResults]);
   const kindOptions = useMemo(
@@ -232,6 +241,8 @@ export function Spotter() {
           // query in React state so the chip filter can read the
           // latest value.
           shouldFilter={false}
+          value={highlightedId}
+          onValueChange={setHighlightedId}
           className="flex flex-col"
         >
           <div
