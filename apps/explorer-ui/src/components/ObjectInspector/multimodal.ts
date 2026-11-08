@@ -42,6 +42,20 @@ export interface MultimodalSuggestion {
   readonly question: string;
 }
 
+/** Style classes that carry multimodal info (the keys of the table below). */
+type MultimodalStyleClass = Exclude<
+  GraphNodeStyleClass,
+  | "function"
+  | "module"
+  | "external"
+  | "node-code"
+  | "drift-missing"
+  | "drift-extra"
+  | "drift-wrong-kind"
+  | "hotspot-high"
+  | "hotspot-med"
+>;
+
 /**
  * The full map of multimodal kinds to their `MultimodalKindInfo`.
  * The 3 legacy kinds (function / module / external) are NOT
@@ -49,7 +63,7 @@ export interface MultimodalSuggestion {
  * return of [`recognizeMultimodalKind`] before accessing the map.
  */
 export const MULTIMODAL_KIND_INFO: Readonly<
-  Record<Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "boundary-violation-error" | "boundary-violation-warning" | "boundary-violation-info" | "hotspot-high" | "hotspot-med">, MultimodalKindInfo>
+  Record<MultimodalStyleClass, MultimodalKindInfo>
 > = {
   "node-decision": {
     styleClass: "node-decision",
@@ -179,7 +193,7 @@ export function recognizeMultimodalKind(
   if (!styleClass) return null;
   if (styleClass in MULTIMODAL_KIND_INFO) {
     return MULTIMODAL_KIND_INFO[
-      styleClass as Exclude<GraphNodeStyleClass, "function" | "module" | "external" | "node-code" | "drift-missing" | "drift-extra" | "drift-wrong-kind" | "boundary-violation-error" | "boundary-violation-warning" | "boundary-violation-info" | "hotspot-high" | "hotspot-med">
+      styleClass as MultimodalStyleClass
     ];
   }
   return null;

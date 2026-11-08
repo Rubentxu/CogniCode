@@ -15,9 +15,6 @@ import {
   useInvestigationComposedNarrative,
   createInvestigation,
   deleteInvestigation,
-  addMermaidArtifact,
-  addSvgArtifact,
-  addDrawioArtifact,
 } from "../../hooks/useInvestigations";
 import type { InvestigationDto, ArtifactDto, ContextualView } from "../../api/types";
 

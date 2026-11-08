@@ -972,10 +972,8 @@ function SaveStep({
   title,
   objectLabel,
   onTitleChange,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- prop required by interface
   saving: _saving,
   saveError,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- prop required by interface
   onSave: _onSave,
 }: SaveStepProps) {
   return (

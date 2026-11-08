@@ -430,7 +430,6 @@ export function GraphLanding({ workspaceId }: { workspaceId: string }) {
         const GAP = 8;
         const VISIBLE = 4; // visible rows
         const COLS = 8;
-        const BUFFER = COLS * 2; // render 2 extra rows above/below
         const useVirt = data.nodes.length > THRESHOLD;
 
         if (!useVirt) {

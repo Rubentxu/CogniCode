@@ -26,7 +26,6 @@ import {
   viewBlockAnySchema,
   viewBlockSchema,
   viewDescriptorSchema,
-  viewSpecSummarySchema,
   workspaceSummarySchema,
   unknownViewBlockSchema,
 } from "./schemas";

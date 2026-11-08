@@ -9,7 +9,7 @@
  */
 import type { AppState } from "../context";
 import { navigationReducer } from "./navigation";
-import { spotterReducer, initialSpotterState } from "./spotter";
+import { spotterReducer } from "./spotter";
 import { workspaceReducer } from "./workspace";
 import { perspectiveReducer } from "./perspective";
 import { lensSidebarReducer } from "./lensSidebar";

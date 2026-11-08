@@ -35,12 +35,11 @@ function C4ToolbarWithState({
 }: {
   perspective?: AppState["perspective"];
   workspaceId?: string;
-  notificationContextValue?: { showNotification: typeof vi.fn };
+  notificationContextValue?: { showNotification: (message: string) => void };
 }) {
   const notifValue = notificationContextValue ?? { showNotification: vi.fn() };
 
   const [state, dispatch] = useReducer(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused action param
     (s: AppState, _action: Action): AppState => s,
     {
       ...initialState,

@@ -14,6 +14,7 @@
  *   - workspace|module   → overview
  *   - quality_issue|rule → quality
  *   - investigation      → overview (default; no dedicated view kind yet)
+ *   - saved_exploration  → overview
  *
  * Falls back to "overview" for unknown kinds.
  */
@@ -33,12 +34,16 @@ const KIND_TO_DEFAULT_VIEW: Readonly<Record<InspectableObjectType, string>> = {
   rule: "quality",
   investigation: "overview",
   adr: "adr-source",
+  saved_exploration: "overview",
 };
 
 /**
  * Pure lookup — no React state needed. Call at render time.
+ *
+ * Accepts a plain string because the wire `SpotterResult.object_type` is
+ * not narrowed to the enum; anything outside the table falls back.
  */
-export function kindDefaultView(kind: InspectableObjectType | null | undefined): string {
-  if (!kind) return "overview";
-  return KIND_TO_DEFAULT_VIEW[kind] ?? "overview";
+export function kindDefaultView(kind: string | null | undefined): string {
+  if (!kind || !Object.hasOwn(KIND_TO_DEFAULT_VIEW, kind)) return "overview";
+  return KIND_TO_DEFAULT_VIEW[kind as InspectableObjectType];
 }

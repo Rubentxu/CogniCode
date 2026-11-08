@@ -352,7 +352,7 @@ describe("buildStylesheet — E19 C4 overlay selectors", () => {
         s.selector === 'node[style_class = "drift-missing"]',
     );
     expect(entry).toBeDefined();
-    const style = (entry as { style: Record<string, unknown> }).style;
+    const style = (entry as unknown as { style: Record<string, unknown> }).style;
     expect(style["border-color"]).toBe("#ef4444");
     expect(style["border-width"]).toBe("3px");
   });
@@ -364,7 +364,7 @@ describe("buildStylesheet — E19 C4 overlay selectors", () => {
         s.selector === 'node[style_class = "drift-extra"]',
     );
     expect(entry).toBeDefined();
-    const style = (entry as { style: Record<string, unknown> }).style;
+    const style = (entry as unknown as { style: Record<string, unknown> }).style;
     expect(style["border-color"]).toBe("#f59e0b");
     expect(style["border-width"]).toBe("3px");
   });
@@ -376,7 +376,7 @@ describe("buildStylesheet — E19 C4 overlay selectors", () => {
         s.selector === 'node[style_class = "drift-wrong-kind"]',
     );
     expect(entry).toBeDefined();
-    const style = (entry as { style: Record<string, unknown> }).style;
+    const style = (entry as unknown as { style: Record<string, unknown> }).style;
     expect(style["border-color"]).toBe("#eab308");
     expect(style["border-width"]).toBe("3px");
   });
@@ -388,7 +388,7 @@ describe("buildStylesheet — E19 C4 overlay selectors", () => {
         s.selector === 'node[style_class = "hotspot-high"]',
     );
     expect(entry).toBeDefined();
-    const style = (entry as { style: Record<string, unknown> }).style;
+    const style = (entry as unknown as { style: Record<string, unknown> }).style;
     expect(style["border-color"]).toBe("#dc2626");
     expect(style["border-width"]).toBe("4px");
   });
@@ -400,7 +400,7 @@ describe("buildStylesheet — E19 C4 overlay selectors", () => {
         s.selector === 'node[style_class = "hotspot-med"]',
     );
     expect(entry).toBeDefined();
-    const style = (entry as { style: Record<string, unknown> }).style;
+    const style = (entry as unknown as { style: Record<string, unknown> }).style;
     expect(style["border-color"]).toBe("#f97316");
     expect(style["border-width"]).toBe("2px");
   });

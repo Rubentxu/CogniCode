@@ -15,10 +15,15 @@
  */
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
-import { hierarchy, treemap, type HierarchyRectangularNode } from "d3-hierarchy";
-import { scaleLinear, scaleSequential } from "d3-scale";
-import { interpolateRgb } from "d3-interpolate";
-import { max as d3Max } from "d3-array";
+import {
+  hierarchy,
+  interpolateRgb,
+  max as d3Max,
+  scaleLinear,
+  scaleSequential,
+  treemap,
+  type HierarchyRectangularNode,
+} from "d3";
 
 import type { TreemapData, TreemapLeaf } from "./types";
 

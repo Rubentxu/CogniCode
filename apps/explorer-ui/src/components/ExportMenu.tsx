@@ -15,7 +15,6 @@ import { fetchSnapshot } from "../api/client";
 import { handleOpenInDrawIo } from "../utils/drawio";
 import { downloadSnapshot } from "../utils/download";
 import {
-  addMermaidArtifact,
   addDrawioArtifact,
   addSvgArtifact,
   addPngArtifact,

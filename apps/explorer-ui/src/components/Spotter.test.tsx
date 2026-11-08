@@ -413,7 +413,7 @@ describe("Spotter (open)", () => {
     // onChange with a highlighted item, the footer renders chips.
     // We test the footer directly with a non-null result to avoid cmdk
     // keyboard-nav complexity in jsdom.
-    const { rerender } = render(
+    render(
       <Harness initial={{ spotterOpen: true }} />,
     );
     // IntentFooter is rendered inside Spotter; we verify it's present when

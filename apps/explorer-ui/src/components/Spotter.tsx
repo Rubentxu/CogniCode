@@ -23,11 +23,10 @@ import { Command } from "cmdk";
 import { useApp, useAppDispatch } from "../state/context";
 import { useSpotter } from "../hooks/useSpotter";
 import { useWorkspaceList } from "../hooks/useWorkspace";
-import type { SpotterResult, SpotterSearchResult } from "../api/schemas";
+import type { SpotterSearchResult } from "../api/schemas";
 import { kindDefaultView } from "../api/kindDefaultView";
 import { IntentFooter, chipsFromResult } from "./Spotter/IntentFooter";
 import { installGlobalShortcut } from "./Spotter/globalShortcut";
-import type { ViewSpecSummary } from "../api/schemas";
 
 /** Debounce window for the search input. Tuned for ~50 WPM typing. */
 const DEBOUNCE_MS = 200;
@@ -275,13 +274,6 @@ export function Spotter() {
             className="max-h-80 overflow-y-auto p-1"
             aria-label="Search results"
             aria-busy={isValidating}
-            onChange={(value) => {
-              // cmdk sets the value to the highlighted item's `value` prop
-              const found = filteredResults.find((r) =>
-                isViewSpecHit(r) ? r.result.id === value : r.result.object.id === value,
-              );
-              setHighlightedResult(found ?? null);
-            }}
           >
             <Command.Empty>
               <EmptyState

@@ -73,11 +73,8 @@ async function callMcpTool(tool: ToolName, args: IngestOpenApiArgs | TraceRouteA
   // We use the same `apiPost` helper the rest of the client uses, pointing
   // at the MCP endpoint.  When VITE_USE_MOCKS=true, MSW intercepts this
   // call and returns deterministic fixtures.
-  // NOTE: using absolute path /src/... for Vite module resolution reliability.
-  const { apiPost } = await import("/src/api/client");
   // Use z.any() schema to bypass schema.parse() in handleResponse.
   // The caller is responsible for type-checking the result.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return apiPost("/mcp/tools/call", { name: tool, args }, z.any()) as Promise<ToolCallResult>;
 }
 

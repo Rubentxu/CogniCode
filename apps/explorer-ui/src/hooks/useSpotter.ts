@@ -18,10 +18,10 @@ import { z } from "zod";
 import { spotterSearchResultSchema } from "../api/schemas";
 import type { SpotterSearchResult } from "../api/schemas";
 import { ApiError, makeSwrFetcher } from "../api/client";
+import type { RequestOpts } from "../api/client";
 
 /** Raw wire format — validated at the API boundary. */
 const spotterWireSchema = z.array(spotterSearchResultSchema);
-type SpotterWire = z.infer<typeof spotterWireSchema>;
 
 const spotterFetcher = makeSwrFetcher(spotterWireSchema);
 

@@ -8,7 +8,6 @@ import path from "path";
 // Add to package.json devDependencies: "vite-plugin-wasm": "^3.3.0"
 // Then run: wasm-pack build crates/cognicode-graph-wasm \
 //             --target web --out-dir ../../apps/explorer-ui/src/wasm
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import wasm from "vite-plugin-wasm";
 
 // https://vite.dev/config/

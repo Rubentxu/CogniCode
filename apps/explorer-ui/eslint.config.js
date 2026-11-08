@@ -18,5 +18,21 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // `_`-prefixed names are the documented way to say "intentionally unused".
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+        },
+      ],
+      // Fast refresh is a dev-server convenience: a file that also exports a
+      // hook or a context still works, it only reloads the page instead of
+      // patching it. Not a correctness rule, so it reports without failing.
+      'react-refresh/only-export-components': 'warn',
+    },
   },
 ])

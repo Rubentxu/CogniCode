@@ -68,10 +68,9 @@ if (typeof window !== "undefined" && window.HTMLCanvasElement) {
       writable: true,
       value: function getContext(this: HTMLCanvasElement, kind: string) {
         if (kind !== "2d") return null;
-        const canvas = this;
         const noop = () => undefined;
         return new Proxy(
-          { canvas },
+          { canvas: this },
           {
             get(target, prop) {
               const bag = target as unknown as Record<string | symbol, unknown>;

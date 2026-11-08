@@ -13,7 +13,6 @@ import { server } from "../mocks/node";
 
 import { useSpotter } from "./useSpotter";
 import type { SpotterSearchResult } from "../api/schemas";
-import { spotterResultSchema, viewSpecSummarySchema } from "../api/schemas";
 
 // Test fixtures
 const baseResult = {
