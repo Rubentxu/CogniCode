@@ -63,6 +63,12 @@ graph LR
 - [curated] The root modules are what `src/lib.rs` declares with `pub mod`; they are not an SDK API, carry no semver promise and their contents are not listed.
 - [inferred] No application depends on `cognicode-graph-algos`, `cognicode-macros` or `cognicode-graph-wasm` directly; the graph algorithms reach them through `cognicode-core`.
 
+## Evidence ledger
+
+- [observed] The `cognicode-graph-wasm` functions above were recorded with the cognicode-diagrams flow on 2026-11-08: 2 structured queries (`cognicode inspect --format json` on `src/lib.rs`, engine `cognicode-cli 0.102.1`) and 12 entity claims, one per function; `evidence.py --check` reports all 12 as corroborated.
+- [curated] The ledger and the atlas live outside the repository under `~/.cognicode-diagrams/` and are not versioned, so the contract cannot read them; it only checks that this section names the recording commands and that the claim count equals the documented `cognicode-graph-wasm` functions.
+- [curated] Coverage is partial: only `cognicode-graph-wasm` has ledger entries; the other crates were documented from `cognicode inspect` and `cargo metadata` without recording them.
+
 ## Regenerate
 
 Run from the repository root with the installed `cognicode` CLI:
@@ -75,6 +81,15 @@ cognicode inspect --file crates/cognicode-macros/src/lib.rs
 cargo metadata --no-deps --offline --format-version 1
 python3 -I scripts/ci/sdk_dependency_edges.py
 python3 -I scripts/ci/test_sdk_architecture.py
+```
+
+To record the same observations in the external ledger (skill `cognicode-diagrams`, run from its directory; each payload is JSON facts, the tool stamps the ids):
+
+```bash illustrative
+python3 -I scripts/record.py query --repo <repo-root> --payload query.json
+python3 -I scripts/record.py claim --repo <repo-root> --payload claim.json
+python3 -I scripts/evidence.py --repo <repo-root> --check
+python3 scripts/atlas.py sync --repo <repo-root>
 ```
 
 - [curated] The last command fails when an observed list or a diagram edge no longer matches the tools' output.

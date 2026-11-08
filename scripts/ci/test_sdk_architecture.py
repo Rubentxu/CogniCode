@@ -358,6 +358,48 @@ class DeveloperGuideLinks(unittest.TestCase):
                 self.assertTrue((ROOT / target).is_file(), f"{target} does not exist")
 
 
+def ledger_claim_count(body):
+    """Claims the ledger bullet says were recorded, read only from observed bullets."""
+    for line in body.splitlines():
+        match = CLAIM.match(line)
+        if match and match.group("label") == "observed":
+            found = re.search(r"(\d+) entity claims", match.group("text"))
+            if found:
+                return int(found.group(1))
+    return None
+
+
+class EvidenceLedgerSection(unittest.TestCase):
+    """The cognicode-diagrams ledger is external; the document must stay honest about it."""
+
+    def test_the_section_states_the_claim_count_of_the_documented_wasm_functions(self):
+        document = sections(read_document())
+        body = document.get("Evidence ledger", "")
+        self.assertTrue(body, "no Evidence ledger section")
+        documented = documented_functions(document["cognicode-graph-wasm"])
+        self.assertTrue(documented, "no documented wasm functions to compare")
+        self.assertEqual(ledger_claim_count(body), len(documented))
+
+    def test_the_section_labels_the_external_ledger_and_the_partial_coverage_as_curated(self):
+        body = sections(read_document()).get("Evidence ledger", "")
+        self.assertEqual(unlabelled_statements(body), [])
+        self.assertIn("curated", labels_in(body))
+        self.assertIn("not versioned", body)
+        self.assertIn("partial", body)
+
+    def test_the_regenerate_section_names_the_recording_commands(self):
+        body = sections(read_document()).get("Regenerate", "")
+        for command in ("scripts/record.py query", "scripts/record.py claim",
+                        "scripts/evidence.py --repo <repo-root> --check", "scripts/atlas.py sync"):
+            with self.subTest(command=command):
+                self.assertIn(command, body)
+
+    def test_the_claim_count_is_read_only_from_observed_bullets(self):
+        self.assertEqual(ledger_claim_count("- [observed] 5 entity claims"), 5)
+        self.assertIsNone(ledger_claim_count("- [curated] 5 entity claims"))
+        self.assertIsNone(ledger_claim_count("- [observed] no count here"))
+
+
 class ContractDiscriminates(unittest.TestCase):
     """The checks above must be able to fail."""
 
