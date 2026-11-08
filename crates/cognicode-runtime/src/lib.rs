@@ -726,13 +726,6 @@ mod tests {
             quality_store: Some(quality.clone()),
             view_spec_store: Some(view_spec.clone()),
             call_graph_store: Some(cg_store.clone()),
-            analytics_lineage_store: None,
-            revision_store: None,
-            manifest_store: None,
-            session_store: None,
-            report_store: None,
-            narrative_store: None,
-            evidence_store: None,
             ..Default::default()
         };
 
