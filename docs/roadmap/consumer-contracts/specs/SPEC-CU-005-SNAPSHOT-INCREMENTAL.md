@@ -19,11 +19,13 @@ schema incompatible como snapshot ausente.
 La configuración publicada en `BasisDto.config_digest` es provenance de la
 respuesta: actualmente resume `HandlerContext.log_level` y no se persiste en
 la tupla durable. `AnalysisBasis.profile` y `AnalysisBasis.budget` tampoco se
-pasan a `load_or_build_graph`; no hay evidencia de que cambien la semántica
-del grafo. Por tanto, no se deben añadir al `SnapshotKey` por pertenecer al
-consumidor. Solo una opción que cambie el grafo producido puede ser parte de
-la identidad del proveedor; el perfil, ámbito o presupuesto de una consulta
-se validan en el resultado de esa consulta, no en el snapshot del grafo.
+pasan a `load_or_build_graph`; la caracterización de `TASK-172` confirma que
+variarlos no cambia el `CallGraph`, el manifest, la clave durable ni el origen
+publicado. `AnalysisScope` pertenece a la ejecución de findings y fija el par
+workspace/snapshot; no es un parámetro del grafo durable. Por tanto, no se deben
+añadir esos contextos al `SnapshotKey` mientras no cambien la semántica del
+grafo. Solo una opción que cambie el grafo producido puede ser parte de la
+identidad del proveedor.
 
 La medición de H5/C11 fija además esta frontera operacional: cuando el
 manifest es fresco, `load_or_build_graph` reutiliza el snapshot completo;
@@ -36,9 +38,9 @@ existen como infraestructura separada, pero no están conectados a esta ruta.
 - **CU-005.1** La identidad durable del grafo se obtiene con función pura de
   `workspace_identity`, proveedor real (versión, commit y features) y schema;
   el `FileManifest` asociado conserva paths normalizados y hashes de contenido.
-  Configuración, perfil y scope solo entran en esta identidad si una prueba
-  demuestra que cambian el grafo producido. Sin suposiciones de hora/mtime
-  como autoridad.
+  Configuración, perfil, presupuesto y scope solo entran en esta identidad si
+  una prueba demuestra que cambian el grafo producido. Sin suposiciones de
+  hora/mtime como autoridad.
 - **CU-005.2** Una edición con mismo tamaño y mtime pero distinto contenido
   invalida; un path diferente con los mismos bytes invalida cuando cambia la
   resolución semántica. Los hashes no se pasan como lista sin identidad ni
@@ -57,10 +59,11 @@ existen como infraestructura separada, pero no están conectados a esta ruta.
   instrumento explícito fuera de la suite rápida; no fijar tiempos inventados,
   asignaciones no observadas ni umbrales inestables en tests de merge.
 
-**Aceptación:** cold y warm equivalen semánticamente; el edit invalida de forma
-honesta; corrupción falla cerrado; la medición distingue reutilización completa
-de reconstrucción completa y no afirma delta sin observarlo. **Permanente:**
-una property pequeña con mutaciones del manifest; **UAT/AAT temporal** del
-recorrido completo.
+**Aceptación:** TASK-172 separa grafo, manifest, clave y provenance al variar
+configuración, perfil, presupuesto y scope; el edit invalida de forma honesta;
+corrupción falla cerrado; la medición distingue reutilización completa de
+reconstrucción completa y no afirma delta sin observarlo. **Permanente:** una
+property pequeña con mutaciones del manifest; **UAT/AAT temporal** del recorrido
+completo.
 
 **Referencias:** `crates/cognicode-core/src/incremental/content_hash.rs`, `src/application/analysis_basis.rs`, `odd/tasks/b3-agent-code-understanding.md`, `odd/tasks/b6-agent-ready-runtime.md`; en Guard `guard-application/src/graph_cache.rs`, `guard-cli/src/main.rs`.

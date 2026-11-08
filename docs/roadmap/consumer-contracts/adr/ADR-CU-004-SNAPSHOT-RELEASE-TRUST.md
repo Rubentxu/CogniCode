@@ -17,10 +17,12 @@ Guard puede etiquetar su caché como core/v{versión de Guard}, y un source-code
   contra el árbol actual mediante hashes de contenido. Cambios de identidad o
   del manifest causan miss, nunca «falso hit».
 - La configuración publicada (`BasisDto.config_digest`) y el contexto de
-  consumidor (`AnalysisBasis.profile`, budget y scope de consulta) describen
-  la respuesta o la operación que la consume. No forman parte del snapshot del
-  grafo mientras no cambien la semántica del grafo producido. Si una futura
-  capability sí cambia esa semántica, se incorpora al proveedor/features y se
+  consumidor (`AnalysisBasis.profile` y `budget`) describen la respuesta o la
+  operación que la consume. `AnalysisScope` fija la ejecución de findings a un
+  workspace y snapshot; no es una opción del grafo durable. La caracterización
+  de `TASK-172` confirma que variar esos contextos no cambia el grafo, el
+  manifest, la clave durable ni el origen publicado. Si una futura capability sí
+  cambia la semántica del grafo, se incorpora al proveedor/features y se
   versiona el schema según corresponda; no se crea una segunda caché.
 - Reutilizar cache/incremental existentes y evitar persistir cachés dentro del
   workspace cuando la operación está tipada `Read`, salvo permiso/ubicación
@@ -55,7 +57,9 @@ La inspección de `save_durable_snapshot`/`load_durable_snapshot` confirma que
 la tupla durable actual solo contiene schema, `SnapshotKey`, grafo y manifest.
 La inspección de `compute_basis` confirma que `config_digest` se calcula para
 la respuesta a partir de `HandlerContext.log_level`, no para la decisión de
-reutilización. Esta frontera permite elegir B sin migrar bincode ni cambiar la
+reutilización. TASK-172 añade la caracterización focal: los niveles de log
+cambian la provenance, mientras profile, budget y scope no cambian la identidad
+del grafo. Esta frontera permite elegir B sin migrar bincode ni cambiar la
 superficie serializada: la aceptación se concentra en el seam existente de
 validación de snapshots y en la provenance publicada.
 
