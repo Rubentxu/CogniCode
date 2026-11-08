@@ -584,6 +584,27 @@ impl AnalysisService {
         };
         all_skipped.extend(k0_skipped);
         all_skipped.extend(walk_skipped);
+        // `GraphCoverageMetrics` is the numeric projection of the same
+        // coverage fact carried by `BuildStatus`. The per-file route has no
+        // separate cache lifetime here, so every non-skipped analyzed file is
+        // parsed in this build; skipped analyzed files are not covered.
+        let total_source_files = file_paths.len();
+        let covered_files = file_paths
+            .iter()
+            .filter(|path| {
+                !all_skipped
+                    .iter()
+                    .any(|skipped| skipped.path == path.to_string_lossy())
+            })
+            .count();
+        let unresolved_edges = all_pending.len();
+        *self.coverage_metrics.lock().unwrap() = Some(GraphCoverageMetrics::new(
+            total_source_files,
+            covered_files,
+            0,
+            unresolved_edges,
+        ));
+
         let final_status =
             if all_skipped.is_empty() && all_pending.is_empty() && all_rejected.is_empty() {
                 PfgBuildStatus::Complete
