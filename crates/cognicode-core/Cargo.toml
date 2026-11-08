@@ -6,6 +6,11 @@ edition.workspace = true
 authors.workspace = true
 license = "MIT OR Apache-2.0"
 repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+documentation = "https://docs.rs/cognicode-core"
+keywords = ["code-analysis", "static-analysis", "call-graph", "tree-sitter", "ai-agents"]
+categories = ["development-tools", "parser-implementations"]
 readme = "README.md"
 # Integration tests and the fixture corpora that src/ does not read stay out of
 # the published crate; the corpora read by unit tests in src/ travel with it.

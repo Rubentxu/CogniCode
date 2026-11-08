@@ -23,6 +23,18 @@ CLASSES = {"library", "application", "internal"}
 METADATA_DEADLINE_SECONDS = 120
 PACKAGE_LIST_DEADLINE_SECONDS = 120
 TEST_PAYLOAD_PREFIXES = ("tests/", "testdata/")
+LICENSE_FILES = ("LICENSE-MIT", "LICENSE-APACHE")
+MAX_KEYWORDS = 5
+# crates.io category slugs this workspace may use. A closed list because the
+# registry rejects unknown slugs at publish time and offline we cannot ask it.
+KNOWN_CATEGORIES = {
+    "algorithms",
+    "data-structures",
+    "development-tools",
+    "development-tools::procedural-macro-helpers",
+    "parser-implementations",
+    "wasm",
+}
 
 
 def workspace_packages():
@@ -48,6 +60,24 @@ def packaged_files(name):
         check=True,
     )
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+
+
+def library_packages():
+    packages = workspace_packages()
+    return {
+        name: packages[name]
+        for name, entry in declared_crates().items()
+        if entry.get("class") == "library" and name in packages
+    }
+
+
+def declared_msrv():
+    """The toolchain floor the product publishes in manifest.toml (`rust>=X`)."""
+    for line in (ROOT / "manifest.toml").read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("compatibility") and "rust>=" in line:
+            return line.split("rust>=", 1)[1].strip().strip('"')
+    raise AssertionError("manifest.toml declares no `rust>=` compatibility")
 
 
 def declared_crates():
@@ -165,6 +195,53 @@ class SdkSurfaceContract(unittest.TestCase):
                     (entry.get("packaged_test_paths_reason") or "").strip(),
                     "an exception needs a reason",
                 )
+
+    def test_every_library_declares_discovery_metadata(self):
+        for name, pkg in library_packages().items():
+            for field in ("homepage", "documentation"):
+                with self.subTest(crate=name, field=field):
+                    self.assertTrue((pkg.get(field) or "").strip(), f"no `{field}`")
+            with self.subTest(crate=name, field="keywords"):
+                keywords = pkg.get("keywords") or []
+                self.assertTrue(keywords, "no keywords")
+                self.assertLessEqual(len(keywords), MAX_KEYWORDS)
+                for kw in keywords:
+                    self.assertRegex(kw, r"^[a-z0-9][a-z0-9_-]{0,19}$")
+            with self.subTest(crate=name, field="categories"):
+                categories = pkg.get("categories") or []
+                self.assertTrue(categories, "no categories")
+                self.assertLessEqual(len(categories), 5)
+                self.assertEqual(set(categories) - KNOWN_CATEGORIES, set())
+
+    def test_every_library_declares_the_published_toolchain_floor(self):
+        floor = declared_msrv()
+        for name, pkg in library_packages().items():
+            with self.subTest(crate=name):
+                declared = pkg.get("rust_version")
+                self.assertTrue(declared, "no `rust-version`")
+                self.assertEqual(
+                    tuple(int(x) for x in declared.split(".")),
+                    tuple(int(x) for x in floor.split(".")),
+                    "rust-version must equal the floor published in manifest.toml",
+                )
+
+    def test_every_library_package_carries_readme_and_both_licenses(self):
+        for name, pkg in library_packages().items():
+            with self.subTest(crate=name):
+                files = set(packaged_files(name))
+                for needed in (pkg["readme"], *LICENSE_FILES):
+                    self.assertIn(needed, files, f"{needed} is not in the package")
+
+    def test_license_files_in_crates_are_the_root_license_text(self):
+        for name, pkg in library_packages().items():
+            crate_dir = Path(pkg["manifest_path"]).parent
+            for lic in LICENSE_FILES:
+                with self.subTest(crate=name, file=lic):
+                    path = crate_dir / lic
+                    self.assertTrue(path.is_file(), f"{lic} missing in the crate")
+                    self.assertEqual(
+                        path.read_bytes(), (ROOT / lic).read_bytes(), "license text differs from the root"
+                    )
 
     def test_internal_crates_are_marked_unpublishable(self):
         packages = workspace_packages()

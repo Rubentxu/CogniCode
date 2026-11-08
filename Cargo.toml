@@ -28,6 +28,10 @@ authors = ["CogniCode Team"]
 # Matches every member crate exactly; both operands are in deny.toml's allow list.
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Rubentxu/CogniCode"
+homepage = "https://github.com/Rubentxu/CogniCode"
+# Same floor the product publishes in manifest.toml (`rust>=1.96.0`); the
+# repository is only verified against that toolchain, so no lower floor is claimed.
+rust-version = "1.96.0"
 
 [workspace.dependencies]
 # Benchmarks. MEDIDO 2026-10-04: `criterion = "0.5"` vivia solo en

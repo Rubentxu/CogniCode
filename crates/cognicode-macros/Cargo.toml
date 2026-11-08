@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license = "MIT OR Apache-2.0"
 repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+documentation = "https://docs.rs/cognicode-macros"
+keywords = ["proc-macro", "derive", "newtype", "macros"]
+categories = ["development-tools::procedural-macro-helpers"]
 readme = "README.md"
 
 [lib]
