@@ -221,6 +221,9 @@ fn catalog_active_is_a_strict_subset_of_catalog_full() {
 /// current build; a name this build cannot recognise resolves to
 /// `false` (the test pins the same fail-closed default the catalog
 /// loader does).
+// `cfg!` expands to a bool literal, so with every feature on the arms look like
+// `matches!`; the one-arm-per-feature table is the point of this mirror.
+#[allow(clippy::match_like_matches_macro)]
 fn cfg_match(feature: &str) -> bool {
     match feature {
         "contract-store" => cfg!(feature = "contract-store"),
