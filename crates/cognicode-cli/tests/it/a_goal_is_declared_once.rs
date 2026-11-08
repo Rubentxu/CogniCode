@@ -32,7 +32,10 @@ use cognicode_core::interface::mcp::handlers::goal::handle_goal;
 use cognicode_core::interface::mcp::rmcp_adapter::build_all_tools;
 
 /// El catálogo que el operador mantiene a mano.
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cognicode-core/product/tools.json");
+const CATALOG: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../cognicode-core/product/tools.json"
+);
 
 fn catalogue() -> Value {
     let path = std::path::Path::new(CATALOG);
