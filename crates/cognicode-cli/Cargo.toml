@@ -19,6 +19,9 @@ path = "src/lib.rs"
 [[bin]]
 name = "cognicode"
 path = "src/main.rs"
+# The lib crate `cognicode` (crates/cognicode) owns target/doc/cognicode;
+# documenting this bin too collides on the same output filename.
+doc = false
 
 [[bin]]
 name = "cogh"
