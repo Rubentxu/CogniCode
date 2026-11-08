@@ -38979,3 +38979,11 @@ Gate NOT_RUN: el lote sigue en 6 de 10 desde `ff670d40`; esta entrada no cuenta 
 **Segundo hallazgo.** `bash scripts/ci/run-all-contracts.sh` salía rc=1 por `test_pr_merge_guard.py` y `test_sdk_surfaces.py` (TASK-183/178): son clases `unittest` y el runner solo lee funciones `test_*` de módulo, así que ejecutaban 0 casos («exposes no test_* function»). Se añadió un puente por fichero que carga la clase, exige `testsRun > 0` y falla con la causa de cada caso rojo.
 
 **Verificación.** `scripts/run_contract_tests.py scripts/ci/test_roadmap_coherence.py` 29/29 (antes 2 rojos); los dos contratos puenteados 1/1 cada uno, y por su ruta directa 11 y 34 casos OK. Gate NOT_RUN (política de lotes).
+
+## 2026-11-08 — TASK-185/187/188: auditoría de superficies que el gate no mira
+
+**Causa raíz común.** `scripts/test-gate.sh` mide lib y tests por radio con las features por defecto; no ejecuta `--all-targets`, `--all-features`, `cargo fmt` ni `cargo clippy`. Tres ciclos seguidos encontraron un rojo escondido ahí: E0063 solo con `--all-targets --all-features` (TASK-185), dos contratos `unittest` con 0 casos (TASK-186) y formato (TASK-187).
+
+**Medición (target aislado `/tmp/t184/target`, en serie).** `cargo check --workspace --all-targets --all-features --keep-going`: rc=0. `cargo fmt --all --check`: 2 ficheros de test fuera de formato → `cargo fmt --all` (un `rustfmt --edition 2021` suelto ordena los imports distinto del edition del manifiesto). `cargo clippy --workspace --all-targets -- -D warnings`: rc=101 por 2 `needless_update`, ambos provocados por el arreglo de TASK-185 (`..Default::default()` en literales que sin `multimodal` ya listan todos los campos); ahora los literales nombran solo los puertos que el test ejercita y el comando documentado sale rc=0.
+
+**Resultado.** TASK-185, 187 y 188 cerradas; commits locales `ea9ee626`, `2bc4bd64`, `54fc7483`. Con `--all-features`, clippy sigue rojo: 74 hallazgos (72 en `cognicode-explorer`), registrados como TASK-189 sin tocar. No se añadió carril de CI ni paso nuevo al gate; si se quiere vigilar fmt/clippy/all-targets es una decisión de política del operador. Gate NOT_RUN (política de lotes). Sin push.
