@@ -152,3 +152,51 @@ Add only the crates your project uses; the order matters for publishing, not
 for consuming. Pin every crate to the same version (`=`), because they are
 released together. Feature combinations and the supported toolchain are listed
 in `SDK_RELEASE.md`.
+
+## Registering cognicode-mcp in an MCP client
+
+This section is written in English; the rest of this guide is in Spanish.
+
+`cognicode-mcp` is a stdio MCP server: the client starts it as a child process
+and talks to it over its standard streams. Register it in the client's MCP
+configuration (Claude Desktop, Cursor and Windsurf share this shape):
+
+```json
+{
+  "mcpServers": {
+    "cognicode": {
+      "command": "cognicode-mcp",
+      "args": ["--cwd", "/path/to/your/project", "--profile", "default"]
+    }
+  }
+}
+```
+
+Use the path that `cogh where cognicode-mcp` prints as `command` when the
+client does not inherit the shell `PATH`; that path is the managed shim, which
+points to the active version.
+
+Arguments, as declared by the clap definition in `crates/cognicode-mcp/src/main.rs`:
+
+- `--cwd <dir>` (short `-c`): the project root to analyse. The default is the
+  current directory of the client process, which is rarely the project, so set
+  it. The server exits with an error if the directory does not exist.
+- `--read-only`: hide the mutating tools from `tools/list` and reject them.
+- `--profile <name>`: the surface announced in `tools/list`. The accepted
+  values are `default`, `full` and `legacy`; any other value makes the server
+  exit with status 2. This is not the install profile of `cogh install`.
+
+Environment:
+
+- `COGNICODE_TELEMETRY=1` enables metric export; it is off by default and no
+  source code is ever sent.
+- `RUST_LOG` sets the log filter (the default level is `info`).
+
+Streams: JSON-RPC messages travel on stdout and nothing else may be written
+there; logs and diagnostics go to stderr. A client that shows a parse error on
+startup is reading something that is not JSON-RPC from stdout.
+
+Limitation: `cogh install` and the remote `install.sh` fetch a published
+release, and they were not run to write this section. Until a release carries
+this version, build the binary from source as the README describes and
+register its absolute path as `command`.

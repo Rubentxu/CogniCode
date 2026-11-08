@@ -436,6 +436,39 @@ def tool_table_gaps(text: str, names: set[str]) -> tuple[int, list[str]]:
     return checked, gaps
 
 
+MCP_MAIN = ROOT / "crates" / "cognicode-mcp" / "src" / "main.rs"
+SURFACE_RS = ROOT / "crates" / "cognicode-core" / "src" / "interface" / "surface.rs"
+MCP_GUIDE = ROOT / "docs" / "distribution" / "INSTALL.md"
+MCP_SECTION = "Registering cognicode-mcp in an MCP client"
+IMPLICIT_FLAGS = {"--help", "-h", "--version", "-V"}
+
+
+def guide_section(text: str, title: str) -> str | None:
+    """Body of the `## title` section of a guide, or None when it is absent."""
+    match = re.search(rf"^## {re.escape(title)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    return match.group(1) if match else None
+
+
+def mcp_section_gaps(body: str | None, flags: set[str], profiles: set[str], env: set[str]) -> list[str]:
+    """What the MCP registration section fails to say, given the sources' facts."""
+    if body is None:
+        return ["section missing"]
+    gaps = []
+    if not re.search(r'"command":\s*"cognicode-mcp"', body):
+        gaps.append("no client configuration with the cognicode-mcp command")
+    long_flags = {f for f in flags - IMPLICIT_FLAGS if f.startswith("--")}
+    gaps += [f"flag not documented: {f}" for f in sorted(long_flags) if f not in body]
+    cited = set(re.findall(r"(?<![\w-])(--?[A-Za-z][\w-]*)", body))
+    gaps += [f"unknown flag cited: {f}" for f in sorted(cited - flags)]
+    gaps += [f"profile not documented: {p}" for p in sorted(profiles) if f"`{p}`" not in body]
+    gaps += [f"environment variable not documented: {v}" for v in sorted(env) if v not in body]
+    if not ("stdout" in body and "stderr" in body and "JSON-RPC" in body):
+        gaps.append("stdout/stderr rule for JSON-RPC and logs is not stated")
+    if not re.search(r"(?i)limitation", body):
+        gaps.append("no explicit limitation about published releases")
+    return gaps
+
+
 class ReadmeContract(unittest.TestCase):
     def test_tool_tables_list_only_published_tools_and_their_counts_hold(self):
         names = tool_names()
@@ -619,6 +652,35 @@ class ReadmeContract(unittest.TestCase):
                 flags, subs = cited[binary]
                 self.assertTrue(flags or subs, f"{readme.name}: {binary} is never cited")
             self.assertEqual([], binary_surface_gaps(text), readme.name)
+
+    def test_the_install_guide_explains_how_to_register_the_mcp_server(self):
+        flags = clap_flags([MCP_MAIN])
+        profiles = set(re.findall(r'"(\w+)" => Some\(SurfaceProfile::', SURFACE_RS.read_text(encoding="utf-8")))
+        env = set(re.findall(r'var\("(COGNICODE_\w+)"\)', MCP_MAIN.read_text(encoding="utf-8")))
+        self.assertTrue({"--cwd", "--read-only", "--profile"} <= flags, "clap flags not read")
+        self.assertTrue(profiles and env, "profiles or environment not read: the check would be vacuous")
+        body = guide_section(MCP_GUIDE.read_text(encoding="utf-8"), MCP_SECTION)
+        self.assertEqual([], mcp_section_gaps(body, flags, profiles, env))
+
+    def test_the_mcp_section_check_discriminates(self):
+        flags, profiles, env = {"--cwd", "--help"}, {"full"}, {"COGNICODE_X"}
+        good = (
+            '```json\n{"command": "cognicode-mcp"}\n```\n`--cwd` `full` COGNICODE_X\n'
+            "JSON-RPC on stdout, logs on stderr.\nLimitation: not published.\n"
+        )
+        self.assertEqual([], mcp_section_gaps(good, flags, profiles, env))
+        self.assertIsNone(guide_section("## Other\nx", MCP_SECTION))
+        self.assertEqual(["section missing"], mcp_section_gaps(None, flags, profiles, env))
+        for bad, label in (
+            (good.replace("cognicode-mcp", "other"), "no client configuration"),
+            (good.replace("`--cwd`", ""), "flag not documented: --cwd"),
+            (good + " --ghost", "unknown flag cited: --ghost"),
+            (good.replace("`full`", ""), "profile not documented: full"),
+            (good.replace("COGNICODE_X", ""), "environment variable not documented"),
+            (good.replace("stderr", "log"), "stdout/stderr rule"),
+            (good.replace("Limitation", "Note"), "no explicit limitation"),
+        ):
+            self.assertTrue(any(label in g for g in mcp_section_gaps(bad, flags, profiles, env)), label)
 
     def test_binary_surface_check_discriminates(self):
         self.assertEqual([], binary_surface_gaps("`cogh install --ide x --profile y`\n`cognicode graph hot-paths -n 3`"))
