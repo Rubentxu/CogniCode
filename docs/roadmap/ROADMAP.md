@@ -479,9 +479,16 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >
 >   **H5** — la caché incremental. Cerrado: el snapshot declara quién lo
 >   produjo —versión, commit y capacidades— y un snapshot de otro analizador
->   no se sirve; la fecha solo se publica si se midió. Queda la
->   incrementalidad: reconstruir solo lo cambiado, y medir frío, tibio y
->   edición. La forma, en `docs/adr/ADR-065-a-snapshot-says-who-produced-it.md`.
+>   no se sirve; la fecha solo se publica si se midió. La frontera restante está
+>   medida en la ruta: `load_or_build_graph` reutiliza el snapshot completo cuando
+>   `SnapshotKey` y `FileManifest` son compatibles; cuando el manifest deja de ser
+>   reutilizable, reconstruye el grafo completo. `IncrementalScanner` calcula
+>   deltas en infraestructura, pero no está conectado a esta ruta. El siguiente
+>   criterio es medir cold/warm/edit con un instrumento explícito fuera de la suite
+>   rápida, distinguir `warm reuse` de `full rebuild` y no llamar `incremental delta`
+>   a una reducción no observada. La forma, en
+>   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` y
+>   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >
 >   Los candidatos —con su evidencia y su criterio de cierre— viven en la
 >   backlog de la misión (`goal-compass.json`). **Lo ya cerrado no se
