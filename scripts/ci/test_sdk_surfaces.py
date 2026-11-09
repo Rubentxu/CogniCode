@@ -697,7 +697,7 @@ class SdkSurfaceContract(unittest.TestCase):
             checkout = home / "checkout"
             checkout.mkdir()
             git = ["git", "-C", str(checkout)]
-            subprocess.run(git + ["init", "-q"], check=True)
+            subprocess.run(git + ["init", "-q"], check=True, timeout=30)
             conf = home / ".config" / "cognicode"
             conf.mkdir(parents=True)
             envfile = conf / "sdk-release.env"
@@ -727,7 +727,7 @@ class SdkSurfaceContract(unittest.TestCase):
             home = Path(tmp)
             checkout = home / "checkout"
             checkout.mkdir()
-            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True, timeout=30)
             plan = self._timer_install(home, "--checkout", str(checkout))
             self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
             self.assertIn("dry run", plan.stdout)
@@ -743,7 +743,7 @@ class SdkSurfaceContract(unittest.TestCase):
             home = Path(tmp)
             checkout = home / "checkout"
             checkout.mkdir()
-            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True, timeout=30)
             done = self._timer_install(home, "--checkout", str(checkout), "--apply")
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             envfile = home / ".config" / "cognicode" / "sdk-release.env"
