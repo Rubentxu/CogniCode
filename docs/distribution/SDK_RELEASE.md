@@ -108,6 +108,18 @@ Procedure, from a clean checkout of `main` at the release commit:
    `=<version>` pins and rejects any path dependency).
 6. Tag the release commit.
 
+One command for the whole procedure above: `bash
+scripts/distribution/release-sdk.sh <version>` (or `just sdk-release <version>`).
+It requires a clean tree at `origin/main`, a `<version>` greater than the current
+one, bumps the four places in the root `Cargo.toml`, refreshes `Cargo.lock`, runs
+the rehearsal, commits on `release/v<version>`, pushes it and opens the pull
+request. It never publishes or tags. `main` only accepts changes through a pull
+request, so merging that one PR is the only step left to you. After the merge, run
+`bash scripts/distribution/release-sdk.sh --publish` from `main`: it fast-forwards,
+runs `publish-sdk.sh --confirm-publish --resume`, and only if that succeeds creates
+the annotated tag `v<version>` and pushes it. It needs the registry credential
+already stored (it never logs in); the publish is irreversible.
+
 Automatic releases: after a version bump has merged into `main`, `bash
 scripts/distribution/auto-release-sdk.sh` (or `just sdk-auto-release`)
 publishes that version only if crates.io does not have it yet, by delegating to
