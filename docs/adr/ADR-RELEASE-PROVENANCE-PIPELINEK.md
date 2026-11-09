@@ -188,6 +188,7 @@ custody, not the mechanism.
 | Third digest, consumer download | where publishing happens | still the release lane's `gh attestation verify` |
 | Custody | — | **open, unchanged** |
 | `RELEASE_REQUIRE_PROVENANCE` default | `verify-provenance.sh` | still `0`, deliberately |
+| Latest published release | `v0.102.1` | **no attestation**: `gh attestation verify` on the `cogh` archive returns HTTP 404 (measured 2026-11-09); checksums match, so integrity holds and provenance does not |
 
 The generation stage lives in `release-candidate.pipeline.kts`, not in
 `release.pipeline.kts`, so the attestation covers the candidate that was
