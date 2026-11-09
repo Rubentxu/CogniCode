@@ -347,6 +347,22 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 
 Las crates `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` y `cognicode-graph-wasm` forman la superficie del SDK. Todavía no están publicadas en crates.io; consulta [Consumir el SDK](docs/distribution/INSTALL.md#consuming-the-sdk) para los comandos exactos y esa limitación.
 
+## Binarios
+
+Solo `cogh`, `cognicode` y `cognicode-mcp` se publican como assets de release. Cualquier otro binario se compila desde el código fuente y no tiene asset de release ni promesa de compatibilidad.
+
+| Binario | Paquete | Publicado |
+|---------|---------|-----------|
+| `cogh` | `cognicode-cli` | sí |
+| `cognicode` | `cognicode-cli` | sí |
+| `cognicode-mcp` | `cognicode-mcp` | sí |
+| `cognicode-release` | `cognicode-cli` | no (herramienta de release) |
+| `cognicode-mcp-server` | `cognicode-mcp` | no (`src/server.rs`) |
+| `mcp-client` | `cognicode-mcp` | no (cliente de test) |
+| `sandbox-orchestrator` | `cognicode-sandbox` | no (ejecutor de escenarios) |
+| `cognicode-control-plane` | `cognicode-explorer` | no (Explorer, ver [traspaso](docs/distribution/EXPLORER_HANDOFF.md)) |
+| `explorer-api`, `explorer-mcp` | `cognicode-runtime` | no (requieren la feature `ladybug`) |
+
 ## Configuración
 
 ### Variables de Entorno

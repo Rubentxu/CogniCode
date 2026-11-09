@@ -115,7 +115,7 @@ RECIPE_DEF = re.compile(r"^@?([A-Za-z_][\w-]*)(?:[ \t][^:\n]*)?:(?!=)", re.M)
 
 
 def tracked_files() -> set[str]:
-    out = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True)
+    out = subprocess.check_output(["git", "ls-files"], cwd=ROOT, text=True, timeout=60)
     return {line for line in out.splitlines() if line}
 
 
@@ -256,9 +256,27 @@ CLI_GROUPS = {"index": "IndexCommand", "graph": "GraphCommand", "navigate": "Nav
 def workspace_metadata() -> dict:
     out = subprocess.run(
         ["cargo", "metadata", "--no-deps", "--format-version", "1", "--offline"],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT, capture_output=True, text=True, check=True, timeout=120,
     )
     return json.loads(out.stdout)
+
+
+def workspace_binaries(metadata: dict) -> set[str]:
+    """Names of every `bin` target in the workspace, from `cargo metadata`."""
+    return {
+        t["name"]
+        for pkg in metadata["packages"]
+        for t in pkg["targets"]
+        if "bin" in t["kind"]
+    }
+
+
+def undocumented_binaries(text: str, binaries: set[str]) -> list[str]:
+    """Binaries the text never names as a whole token (`a-b` does not name `a`)."""
+    return sorted(
+        name for name in binaries
+        if not re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(name), text)
+    )
 
 
 def kebab(name: str) -> str:
@@ -1267,6 +1285,23 @@ class ReadmeContract(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertGreater(len(text), 0, f"{path.name} is empty")
             self.assertNotIn(phrase, text.lower(), f"{path.name} claims {phrase!r}")
+
+    def test_readmes_name_every_workspace_binary(self):
+        # A binary nobody documents is a binary nobody can tell is shipped or
+        # build-only; each README must say which it is for every `bin` target.
+        binaries = workspace_binaries(workspace_metadata())
+        self.assertGreaterEqual(len(binaries), 10, "cargo metadata reported too few binaries")
+        for path in (EN, ES):
+            gaps = undocumented_binaries(path.read_text(encoding="utf-8"), binaries)
+            self.assertEqual([], gaps, f"{path.name} does not name: {gaps}")
+
+    def test_the_binary_naming_check_discriminates(self):
+        self.assertEqual([], undocumented_binaries("`a-b` and `a`", {"a", "a-b"}))
+        # A longer name must not count as naming its prefix.
+        self.assertEqual(["a"], undocumented_binaries("only `a-b` here", {"a", "a-b"}))
+        self.assertEqual(["x"], undocumented_binaries("", {"x"}))
+        self.assertEqual({"c"}, workspace_binaries({"packages": [{"targets": [
+            {"name": "c", "kind": ["bin"]}, {"name": "l", "kind": ["lib"]}]}]}))
 
 
 if __name__ == "__main__":
