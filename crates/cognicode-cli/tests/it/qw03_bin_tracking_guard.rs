@@ -97,9 +97,7 @@ where
     let real = repo_root();
     let crate_names = [
         "cognicode-cli",
-        "cognicode-explorer",
         "cognicode-mcp",
-        "cognicode-runtime",
         "cognicode-sandbox",
     ];
     for cname in crate_names {
