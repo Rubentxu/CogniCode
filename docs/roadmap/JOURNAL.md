@@ -39119,3 +39119,15 @@ lote.
 **Verificación.** `run-all-contracts.sh` sin filtro: rc=0. `Spotter.test.tsx`: 24 passed. Gate global: NOT_RUN (política de lotes). Sin push.
 
 **Estado.** PASS para contratos y build; los avisos del build quedan como observación.
+
+## 2026-11-09 — TASK-179: main back to green after #757
+
+**Medición inicial.** Sobre `16f41c26`, `test_roadmap_coherence` y `test_script_drift_and_recall` en rojo; la batería completa reveló más: 4 rojos en coherencia del roadmap y 3 contratos `unittest` que el runner ejecutaba con 0 tests («exposes no test_* function»).
+
+**Causas (clasificadas).** Dato desfasado: `capabilities_drift_lint.py` apuntaba a la ruta anterior a #743. Documentos de estado: el bloque §11 de ROADMAP superaba el techo de 80 líneas y el snapshot de `CURRENT.md` llevaba 15 commits de deriva. Contratos que no corrían nada: `test_explorer_handoff`, `test_readme_contract`, `test_sdk_architecture`.
+
+**Cambios.** Ruta corregida; bloque §11 condensado solo en detalle cerrado ya presente en este JOURNAL (umbral intacto); snapshot regenerado sobre `16f41c26`; una función puente `test_*` por contrato que ejecuta sus casos `unittest` y falla si no corre ninguno.
+
+**Verificación.** `bash scripts/ci/run-all-contracts.sh`: rc=0. `GATE_BASE=origin/main bash scripts/test-gate.sh`: rc=0, 7009/7009 pasan; paso de mutantes NOT_RUN en este lote (el gate lo declara). `npm test --prefix apps/explorer-ui`: rc=0, 88 ficheros, 950 tests.
+
+**Estado.** PASS. PR #758, rama `task-179-green-main`. Decisión del operador registrada en la nota de TASK-179 (2026-11-09): no esperar aprobaciones ni abrir tareas BLOCKED para ellas. Tag y publicación en crates.io siguen requiriendo autorización nominal.
