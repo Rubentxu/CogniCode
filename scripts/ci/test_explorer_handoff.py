@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Contract: the Explorer handoff guide only states what the tree shows."""
+"""Contract: the Explorer decommission receipt only states what the tree shows."""
 
 import json
 import re
@@ -21,32 +21,32 @@ def claims_removed(text: str) -> bool:
 
 
 class ExplorerHandoff(unittest.TestCase):
-    def test_in_tree_crate_is_a_workspace_member_with_the_named_binary(self):
-        text = DOC.read_text()
+    def test_crates_are_not_workspace_members(self):
         root = tomllib.loads((ROOT / "Cargo.toml").read_text())
-        self.assertIn("crates/cognicode-explorer", root["workspace"]["members"])
-        self.assertIn("`crates/cognicode-explorer`", text)
-        manifest = tomllib.loads((ROOT / "crates/cognicode-explorer/Cargo.toml").read_text())
-        bins = [b["name"] for b in manifest.get("bin", [])]
-        self.assertTrue(bins, "non-vacuity: the crate declares binaries")
-        for name in re.findall(r"`(cognicode-control-plane)`", text):
-            self.assertIn(name, bins)
+        members = root["workspace"]["members"]
+        self.assertTrue(members, "non-vacuity: the workspace has members")
+        for name in ("crates/cognicode-explorer", "crates/cognicode-runtime"):
+            self.assertNotIn(name, members)
 
     def test_classification_matches_sdk_surfaces(self):
         surfaces = json.loads((ROOT / "docs/distribution/SDK_SURFACES.json").read_text())
-        blob = json.dumps(surfaces)
-        self.assertIn("cognicode-explorer", blob)
         crates = surfaces["crates"]
-        libs = [n for n, c in crates.items() if c["class"] == "library"]
-        self.assertTrue(libs, "non-vacuity")
-        self.assertIn("cognicode-explorer", crates)
-        self.assertNotEqual(crates["cognicode-explorer"]["class"], "library")
+        self.assertTrue([n for n, c in crates.items() if c["class"] == "library"], "non-vacuity")
+        for name in ("cognicode-explorer", "cognicode-runtime"):
+            self.assertNotIn(name, crates)
 
-    def test_external_repo_is_linked_and_no_removal_is_claimed(self):
+    def test_receipt_names_the_external_boundary(self):
         text = DOC.read_text()
         self.assertIn(EXTERNAL, text)
-        self.assertFalse(claims_removed(text))
-        self.assertIn("not merged", text)
+        self.assertIn("`v0.102.1`", text)
+        self.assertIn("`3f8e10f2`", text)
+        self.assertTrue(claims_removed("The crate has been removed from the workspace."))
+
+    def test_receipt_declares_the_paths_still_on_disk(self):
+        text = DOC.read_text()
+        for name in ("cognicode-explorer", "cognicode-runtime"):
+            if (ROOT / "crates" / name).exists():
+                self.assertIn(f"crates/{name}", text.split("## Limitations")[1])
 
     def test_removal_detector_discriminates(self):
         self.assertTrue(claims_removed("The in-tree copy has been removed."))
