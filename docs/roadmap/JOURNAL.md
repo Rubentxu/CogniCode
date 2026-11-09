@@ -39161,3 +39161,27 @@ pasos son un `cargo test --test` por suite y cuestan 40-70 s cada uno. Queda en
 `TASK-36`.
 
 **Nota.** Recibo tardío: la unidad se fusionó el 2026-11-01 (2f3f21d1) y este registro se incorpora el 2026-11-09 desde el PR #504, cerrado por conflicto. Append-only; no reescribe entradas previas.
+
+## 2026-11-09 — TASK-179: la documentación ya no dice que el SDK no está publicado
+
+`README.md`, `README.es.md` y la sección «Consuming the SDK» de
+`docs/distribution/INSTALL.md` seguían afirmando que el SDK no estaba en
+crates.io y que los `cargo add` fallarían, cuando TASK-178 lo publicó en
+v0.102.1 y `verify-sdk-consumer.sh --confirm-published` lo verificó desde un
+proyecto limpio.
+
+**Cambio.** Tres textos corregidos (la guía nombra el verificador). Dos
+contratos: `test_no_entry_point_says_the_sdk_is_unpublished` (nuevo, offline:
+rechaza la frase retirada en los tres textos) y
+`test_the_section_states_publication_and_names_the_consumer_check`, que
+sustituye al test que fijaba la afirmación obsoleta.
+
+**RED.** El contrato nuevo cayó 4 veces sobre la base (EN, ES y dos frases en la
+guía). Tras corregir, `test_readme_contract` 45/45, `test_sdk_architecture`
+27/27, `test_sdk_surfaces` 46/46, `test_explorer_handoff` 5/5.
+
+**No ejecutado.** El gate de cargo y `npm test` no se corrieron: el cambio no
+toca código Rust ni el explorer-ui. `run-all-contracts.sh` termina rc=1 solo por
+`test_roadmap_coherence` (`CURRENT.md` cita `16f41c264cc0`, HEAD era `60958c13`),
+deriva previa en `main` ajena a esta unidad; regenerar el snapshot queda aparte.
+No se publicó, no se etiquetó y no se tocó TASK-177.

@@ -132,13 +132,12 @@ The four `library` crates declared in
 in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
 [`SDK_RELEASE.md`](SDK_RELEASE.md).
 
-**Limitation: the SDK is not yet published on crates.io.** Publishing needs a
-registry token and an explicit operator confirmation, and it is tracked by
-TASK-178 (acceptance criterion 4). Until then the commands below do not
-resolve from the registry and will fail. They document the intended usage at
-the workspace version `0.102.1`.
+The four crates are published on crates.io at version `0.102.1`, and a clean
+consumer project that depends on those exact versions builds and runs. You can
+repeat that check with
+`bash scripts/distribution/verify-sdk-consumer.sh --confirm-published`.
 
-Once published, add the crates in publication order, dependencies first
+Add the crates in publication order, dependencies first
 (`cognicode-core` depends on `cognicode-graph-algos` and `cognicode-macros`;
 `cognicode-graph-wasm` depends on `cognicode-graph-algos`):
 
