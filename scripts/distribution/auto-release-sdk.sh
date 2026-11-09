@@ -21,6 +21,14 @@ for arg in "$@"; do
   esac
 done
 
+# The timer's checkout is cloned once. Fast-forward it to origin/main before
+# reading the version, or a bump merged later would never be seen. --check stays
+# read-only and offline; a checkout that cannot fast-forward stops the run.
+if [ "$check" -eq 0 ]; then
+  git fetch origin main
+  git merge --ff-only origin/main
+fi
+
 crates=(cognicode-graph-algos cognicode-macros cognicode-core cognicode-graph-wasm)
 version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p&&/^version *=/{gsub(/"/,"",$3);print $3;exit}' Cargo.toml)"
 [ -n "$version" ] || { echo "cannot read the workspace version" >&2; exit 1; }
@@ -45,5 +53,4 @@ fi
 
 # The runner re-checks credential, clean tree and HEAD == origin/main, and stops
 # before any upload when one is missing.
-git fetch origin main
 exec bash scripts/distribution/publish-sdk.sh --confirm-publish --resume

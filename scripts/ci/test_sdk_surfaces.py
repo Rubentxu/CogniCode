@@ -643,6 +643,57 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertNotIn(RELEASE_ORDER[0] + " ", done.stdout.split("PENDING", 1)[1])
         self.assertFalse(cargo_ran, "--check must never run cargo")
 
+    def test_auto_release_sees_a_version_bump_merged_after_the_checkout_was_made(self):
+        """The timer's checkout is cloned once; a later bump on main must still be seen."""
+        script_dir = ROOT / "scripts" / "distribution"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            ident = [subprocess.run(["git", "config", "--get", f"user.{k}"], cwd=ROOT, capture_output=True,
+                                    text=True, timeout=30).stdout.strip() for k in ("name", "email")]
+            genv = dict(os.environ)
+
+            def git(cwd, *args):
+                done = subprocess.run(["git", "-c", f"user.name={ident[0]}", "-c", f"user.email={ident[1]}", *args],
+                                      cwd=cwd, capture_output=True, text=True, timeout=60, env=genv)
+                self.assertEqual(done.returncode, 0, done.stderr)
+
+            work, remote, checkout = tmp / "work", tmp / "remote.git", tmp / "checkout"
+            (work / "scripts" / "distribution").mkdir(parents=True)
+            for name in ("auto-release-sdk.sh", "publish-sdk.sh", "preflight-sdk-publish.sh",
+                         "verify-sdk-consumer.sh"):
+                (work / "scripts" / "distribution" / name).write_text(
+                    (script_dir / name).read_text(encoding="utf-8"), encoding="utf-8")
+            manifest = '[workspace.package]\nversion = "%s"\n'
+            (work / "Cargo.toml").write_text(manifest % "0.1.0", encoding="utf-8")
+            git(tmp, "init", "-q", "-b", "main", str(work))
+            git(work, "add", "-A")
+            git(work, "commit", "-q", "-m", "chore: release 0.1.0")
+            git(tmp, "init", "-q", "--bare", "-b", "main", str(remote))
+            git(work, "push", "-q", str(remote), "main")
+            git(tmp, "clone", "-q", str(remote), str(checkout))
+            git(checkout, "config", "user.name", ident[0])
+            git(checkout, "config", "user.email", ident[1])
+            git(checkout, "remote", "set-url", "origin", str(remote))
+            (work / "Cargo.toml").write_text(manifest % "0.2.0", encoding="utf-8")
+            git(work, "commit", "-q", "-am", "chore: bump to 0.2.0")
+            git(work, "push", "-q", str(remote), "main")
+
+            registry = tmp / "registry"
+            registry.mkdir()
+            for name in RELEASE_ORDER:
+                (registry / name).write_text('{"versions":[{"num":"0.1.0"}]}', encoding="utf-8")
+            fake = tmp / "bin"
+            fake.mkdir()
+            marker = tmp / "cargo-was-called"
+            (fake / "cargo").write_text(f"#!/bin/sh\ntouch {marker}\nexit 0\n", encoding="utf-8")
+            (fake / "cargo").chmod(0o755)
+            env = {**genv, "PATH": f"{fake}:{os.environ['PATH']}", "CARGO_HOME": str(tmp), "CARGO_REGISTRY_TOKEN": "",
+                   "SDK_REGISTRY_API": f"file://{registry}"}
+            done = subprocess.run(["bash", str(checkout / "scripts" / "distribution" / "auto-release-sdk.sh")],
+                                  capture_output=True, text=True, timeout=60, env=env)
+            self.assertIn("PENDING for 0.2.0", done.stdout, done.stdout + done.stderr)
+            self.assertFalse(marker.exists(), "no upload may happen without a credential")
+
     def test_auto_release_delegates_to_the_runner_and_never_publishes_itself(self):
         text = self._auto_path().read_text(encoding="utf-8")
         self.assertNotRegex(text, r"cargo\s+publish")
