@@ -3,14 +3,15 @@
 asdf plugin that installs `cogh`, the CogniCode installer, from the GitHub
 Release assets. It checks the tarball against the release `SHA256SUMS` and
 stops on a mismatch. `cogh` then installs `cognicode` and `cognicode-mcp`
-(`cogh install mcp-server`). Only Linux x86_64 GNU is published.
+(`cogh install mcp-server --profile reviewer`). Only Linux x86_64 GNU is published.
 
 asdf installs plugins from a git repository whose root holds `bin/`, so this
-directory must be published as its own repository before
-`asdf plugin add cogh <url>` can use it. Until then, test it by copying the
-directory to `$ASDF_DATA_DIR/plugins/cogh`.
+directory is published as its own repository,
+https://github.com/Rubentxu/asdf-cogh. This directory stays the source; copy
+changes there to publish them.
 
 ```sh
+asdf plugin add cogh https://github.com/Rubentxu/asdf-cogh.git
 asdf list all cogh
 asdf install cogh 0.103.0
 asdf set cogh 0.103.0
