@@ -129,6 +129,11 @@ them is the operator's step:
 3. `systemctl --user daemon-reload` and
    `systemctl --user enable --now cognicode-sdk-auto-release.timer`.
 
+Before enabling, `bash scripts/distribution/check-sdk-timer.sh` (or `just sdk-timer-check`)
+reads the operator-side prerequisites and prints `READY` or `BLOCKED` naming each
+missing one: the unit templates load, `sdk-release.env` exists with mode 600 and
+names a clean checkout, and a registry credential is present. It changes nothing.
+
 Disable it with `systemctl --user disable --now
 cognicode-sdk-auto-release.timer`. Until then nothing publishes by itself.
 

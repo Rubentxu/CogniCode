@@ -221,6 +221,10 @@ mutants:
 sdk-auto-release *ARGS:
     bash scripts/distribution/auto-release-sdk.sh {{ARGS}}
 
+# Read-only: what would stop the SDK auto-release timer from running.
+sdk-timer-check:
+    bash scripts/distribution/check-sdk-timer.sh
+
 # Measure the build times: cold, no-change, touch a test, touch the core.
 # Not a test: it compiles the workspace four times, so it is asked for on
 # purpose and it lives outside the suite. It measures in an isolated target

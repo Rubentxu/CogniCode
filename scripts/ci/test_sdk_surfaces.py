@@ -676,6 +676,45 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertIn("Persistent=true", timer)
         self.assertRegex(timer, r"(?m)^WantedBy=timers\.target$")
 
+    def _timer_check(self, home, extra_env=None):
+        env = {"PATH": os.environ["PATH"], "HOME": str(home), "CARGO_HOME": str(home / ".cargo")}
+        env.update(extra_env or {})
+        return subprocess.run(
+            ["bash", str(ROOT / "scripts" / "distribution" / "check-sdk-timer.sh"), "--skip-units"],
+            capture_output=True, text=True, timeout=60, env=env,
+        )
+
+    def test_timer_check_blocks_and_names_what_the_operator_has_not_done(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done = self._timer_check(Path(tmp))
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("BLOCKED", done.stdout)
+        self.assertIn("sdk-release.env", done.stdout)
+
+    def test_timer_check_is_ready_only_with_env_file_clean_checkout_and_credential(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            checkout = home / "checkout"
+            checkout.mkdir()
+            git = ["git", "-C", str(checkout)]
+            subprocess.run(git + ["init", "-q"], check=True)
+            conf = home / ".config" / "cognicode"
+            conf.mkdir(parents=True)
+            envfile = conf / "sdk-release.env"
+            envfile.write_text(f"COGNICODE_CHECKOUT={checkout}\n", encoding="utf-8")
+            envfile.chmod(0o600)
+            cargo = home / ".cargo"
+            cargo.mkdir()
+            (cargo / "credentials.toml").write_text("[registry]\ntoken = \"x\"\n", encoding="utf-8")
+            ready = self._timer_check(home)
+            self.assertEqual(ready.returncode, 0, ready.stdout + ready.stderr)
+            self.assertIn("READY", ready.stdout)
+            self.assertNotIn('token = "x"', ready.stdout + ready.stderr)
+            envfile.chmod(0o644)
+            loose = self._timer_check(home)
+        self.assertNotEqual(loose.returncode, 0)
+        self.assertIn("mode 600", loose.stdout)
+
     def test_the_guide_describes_enabling_the_scheduler_as_the_operators_step(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
         self.assertIn("scripts/distribution/systemd/", guide)
