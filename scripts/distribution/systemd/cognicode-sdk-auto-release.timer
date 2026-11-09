@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily check for an unpublished CogniCode SDK version
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+Unit=cognicode-sdk-auto-release.service
+
+[Install]
+WantedBy=timers.target
