@@ -92,6 +92,11 @@ def packaged_files(name):
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
+def workspace_version():
+    section = re.search(r"^\[workspace\.package\]\n(.*?)(?=^\[)", (ROOT / "Cargo.toml").read_text(encoding="utf-8"), re.S | re.M)
+    return re.search(r'^version\s*=\s*"([^"]+)"', section.group(1), re.M).group(1)
+
+
 def library_packages():
     packages = workspace_packages()
     return {
@@ -597,6 +602,61 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertRegex(text, r"api/v1/crates", "must poll the registry for indexation")
         mode = subprocess.run(["bash", "-n", str(self._runner_path())], capture_output=True, text=True, timeout=30)
         self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def _auto_path(self):
+        script = ROOT / "scripts" / "distribution" / "auto-release-sdk.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/auto-release-sdk.sh")
+        return script
+
+    def _auto_check(self, published):
+        """Runs --check against a file:// registry listing `published` crates."""
+        script = self._auto_path()
+        version = workspace_version()
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry"
+            registry.mkdir()
+            for name in published:
+                (registry / name).write_text('{"versions":[{"num":"%s"}]}' % version, encoding="utf-8")
+            fake = Path(tmp) / "bin"
+            fake.mkdir()
+            marker = Path(tmp) / "cargo-was-called"
+            (fake / "cargo").write_text(f"#!/bin/sh\ntouch {marker}\nexit 0\n", encoding="utf-8")
+            (fake / "cargo").chmod(0o755)
+            env = {"PATH": f"{fake}:{os.environ['PATH']}", "HOME": tmp, "CARGO_HOME": tmp,
+                   "SDK_REGISTRY_API": f"file://{registry}"}
+            done = subprocess.run(["bash", str(script), "--check"],
+                                  capture_output=True, text=True, timeout=60, env=env)
+            return done, marker.exists()
+
+    def test_auto_release_does_nothing_when_the_version_is_already_published(self):
+        done, cargo_ran = self._auto_check(RELEASE_ORDER)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("up to date", done.stdout)
+        self.assertFalse(cargo_ran)
+
+    def test_auto_release_check_names_the_pending_crates_without_publishing(self):
+        done, cargo_ran = self._auto_check(RELEASE_ORDER[:2])
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("PENDING", done.stdout)
+        self.assertIn(RELEASE_ORDER[2], done.stdout)
+        self.assertIn(RELEASE_ORDER[3], done.stdout)
+        self.assertNotIn(RELEASE_ORDER[0] + " ", done.stdout.split("PENDING", 1)[1])
+        self.assertFalse(cargo_ran, "--check must never run cargo")
+
+    def test_auto_release_delegates_to_the_runner_and_never_publishes_itself(self):
+        text = self._auto_path().read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"cargo\s+publish")
+        self.assertNotIn("cargo login", text)
+        self.assertIn("publish-sdk.sh --confirm-publish --resume", text)
+        mode = subprocess.run(["bash", "-n", str(self._auto_path())], capture_output=True, text=True, timeout=30)
+        self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def test_auto_release_is_documented_and_has_a_just_recipe(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/auto-release-sdk.sh", guide)
+        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+        self.assertIn("sdk-auto-release", justfile)
+        self.assertIn("auto-release-sdk.sh", justfile)
 
     def test_release_guide_names_the_publish_runner(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")

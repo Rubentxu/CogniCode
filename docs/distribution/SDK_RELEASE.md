@@ -108,6 +108,15 @@ Procedure, from a clean checkout of `main` at the release commit:
    `=<version>` pins and rejects any path dependency).
 6. Tag the release commit.
 
+Automatic releases: after a version bump has merged into `main`, `bash
+scripts/distribution/auto-release-sdk.sh` (or `just sdk-auto-release`)
+publishes that version only if crates.io does not have it yet, by delegating to
+`publish-sdk.sh --confirm-publish --resume`; with nothing new it exits 0 and
+uploads nothing. `--check` prints the decision without publishing. It needs the
+registry credential in the environment and is meant to be run by hand or from a
+scheduler the operator owns (for example a user cron entry); it never logs in
+and never tags, so step 6 stays a separate, explicit decision.
+
 Rollback: a published version cannot be overwritten or deleted. If a release is
 defective, run `cargo yank --version <x.y.z> <crate>` for every affected crate
 (this stops new resolutions and leaves existing lockfiles working), then
