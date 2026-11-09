@@ -241,21 +241,6 @@ uat-guided-v1.0.0-current.html
 # passed and CI failed with "can't find bin". A repository-level negation wins
 # over core.excludesFile, so declare the layout here.
 !crates/cognicode-cli/src/bin/
-# Same protection for cognicode-explorer/src/bin/ (E2.W2 introduced
-# `cognicode-control-plane` there on 2026-09-25). The bin itself was
-# designed and tested locally, but committed without the source file
-# because this blanket ignore was not negated for explorer. Bug
-# detected on first pr-ci.yml run after E2.W2 (workflow could not
-# find the bin source file). Mirror the cli exemption.
-!crates/cognicode-explorer/src/bin/
-# Same protection for cognicode-runtime/src/bin/ (`explorer-api` and
-# `explorer-mcp`). The mutation gate copies the tree before it mutates
-# anything, and the copy honours the ignore rules — including the ones
-# that live in the operator's global gitignore, where a bare `bin/` sits
-# next to the Go artefacts. Without this negation the copy was missing
-# both bin sources and the copy failed to build with the very same
-# "can't find bin" error that the two exemptions above were written for.
-!crates/cognicode-runtime/src/bin/
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
 *.cdx.xml
