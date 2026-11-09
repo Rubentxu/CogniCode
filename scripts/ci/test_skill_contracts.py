@@ -163,6 +163,8 @@ RELEASE_CONTRACT_RS = (
 )
 SKILLS_DIR = REPO_ROOT / "skills"
 PRODUCT_DIR = REPO_ROOT / "product"
+# `tools.json` is owned by the crate that embeds it, so it ships inside the package.
+CORE_PRODUCT_DIR = REPO_ROOT / "crates" / "cognicode-core" / "product"
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +554,7 @@ CLAIM_PATTERN = re.compile(
 
 
 def _load(document: str) -> dict[str, Any]:
-    path = PRODUCT_DIR / document
+    path = (CORE_PRODUCT_DIR if document == "tools.json" else PRODUCT_DIR) / document
     if not path.is_file():
         raise AssertionError(
             f"{path} no existe. La autoridad de una afirmacion de skill no puede "

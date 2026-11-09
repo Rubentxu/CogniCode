@@ -579,7 +579,7 @@ SNAPSHOT_OWNER = "crates/cognicode-core/src/application/graph_snapshot.rs"
 # the same decision.
 ANALYZER = "crates/cognicode-core/src/application/services/analyze.rs"
 CORE_MANIFEST = "crates/cognicode-core/Cargo.toml"
-CATALOG = "product/tools.json"
+CATALOG = "crates/cognicode-core/product/tools.json"
 
 KEY_COMPONENTS = ("workspace", "analyzer", "schema")
 BUILD_COMPONENTS = ("version", "commit", "features")

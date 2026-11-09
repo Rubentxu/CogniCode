@@ -41,7 +41,7 @@ use serde_json::Value;
 // working directory set to the package root (crates/cognicode-core/),
 // not the tests/ folder; a relative path from there is two
 // directories up to the repo root, then product/.
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../product/tools.json");
+const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/product/tools.json");
 const RUNTIME: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../product/tool-catalog-runtime.json"

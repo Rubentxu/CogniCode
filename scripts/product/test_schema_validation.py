@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from validate_schemas import DOCUMENT_SCHEMA_PAIRS, ROOT, validate_all, validate_document
+from validate_schemas import DOCUMENT_HOMES, DOCUMENT_SCHEMA_PAIRS, ROOT, validate_all, validate_document
 
 
 def _copy_product_tree(destination_root: Path, source_root: Path = ROOT) -> Path:
@@ -26,6 +26,10 @@ def _copy_product_tree(destination_root: Path, source_root: Path = ROOT) -> Path
             destination = target / path.relative_to(source_root / "product")
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    for name, home in DOCUMENT_HOMES.items():
+        moved = destination_root / home / f"{name}.json"
+        moved.parent.mkdir(parents=True, exist_ok=True)
+        moved.write_text((source_root / home / f"{name}.json").read_text(encoding="utf-8"), encoding="utf-8")
     return destination_root
 
 
@@ -46,7 +50,7 @@ def test_every_document_on_disk_is_registered() -> None:
         path.stem
         for path in (ROOT / "product").glob("*.json")
         if path.name not in {"tool-catalog-runtime.json"}
-    }
+    } | set(DOCUMENT_HOMES)
     registered = set(DOCUMENT_SCHEMA_PAIRS)
     assert documents == registered, (
         f"product/ has documents {sorted(documents)} but only "

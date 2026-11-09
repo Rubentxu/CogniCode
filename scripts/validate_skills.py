@@ -56,7 +56,7 @@ SKILLS_DIR = REPO_ROOT / "skills"
 # in both, so the divergence was latent rather than active. It is the
 # same shape as the `EvidenceStore` lesson: resolve against the
 # published authority so the two cannot drift apart unnoticed.
-PUBLISHED_CATALOG = REPO_ROOT / "product/tools.json"
+PUBLISHED_CATALOG = REPO_ROOT / "crates/cognicode-core/product/tools.json"
 CORE_MANIFEST = REPO_ROOT / "crates/cognicode-core/Cargo.toml"
 
 # The published profile document, for the same reason: a profile id is

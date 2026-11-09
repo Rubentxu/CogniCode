@@ -24,9 +24,9 @@ The JSON Schema is `product/schemas/product-manifest.v1.schema.json`.
 
 ## Ownership boundaries
 
-- `public_surface.mcp.tool_catalog` points to the generated `product/tools.json`. Tool definitions remain authoritative in the runtime MCP registry. A-004 publishes a normalized projection from a real `tools/list` capture and never duplicates the registry.
+- `public_surface.mcp.tool_catalog` points to the generated `crates/cognicode-core/product/tools.json`. Tool definitions remain authoritative in the runtime MCP registry. A-004 publishes a normalized projection from a real `tools/list` capture and never duplicates the registry.
 - `product/tool-catalog-runtime.json` is the captured `tools/list` input used to generate the committed catalog. It is provenance input, not a second tool registry.
-- `product/tools.json` preserves runtime metadata, sorts by tool name, and represents undeclared output/cache/network fields as `null` with `requirements_status: "not_declared"`. Null is not a negative capability claim.
+- `crates/cognicode-core/product/tools.json` preserves runtime metadata, sorts by tool name, and represents undeclared output/cache/network fields as `null` with `requirements_status: "not_declared"`. Null is not a negative capability claim.
 - `public_profiles` is **derived** from `product/profiles.json`. The product manifest no longer hard-codes a profile list. See "Public profiles and stability" below.
 - Language entries currently prove parser presence only and are conservatively marked `experimental`. A-005 owns the evidence-backed support matrix.
 - Platforms are limited to Linux GNU release lanes that already have release evidence. macOS and Windows are intentionally absent.
@@ -90,7 +90,7 @@ Schema: `product/schemas/profiles.v1.schema.json`.
 
 ## Tool catalog
 
-`product/tools.json` is the **master catalog**: every tool the product
+`crates/cognicode-core/product/tools.json` is the **master catalog**: every tool the product
 publishes, including the ones a default build does not expose. The runtime
 list is the **active subset**. They are not the same set, and capturing the
 wrong one is silent — it produces a smaller catalog that still validates.
@@ -150,7 +150,7 @@ The input schema is derived too: the runtime derives it from the struct that
 reads the tool's arguments, so the shape a client builds a call from is the
 shape the server honours.
 
-**`product/tools.json` is hand-authored. Do not write the generator's output
+**`crates/cognicode-core/product/tools.json` is hand-authored. Do not write the generator's output
 over it.** The generator does not own nine of the fields (listed below), so
 running it over the master drops all nine. Use it to see what the runtime
 would publish, and compare that against the committed document:

@@ -38,7 +38,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.96.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.102.1`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@0.96.0`. Ambos canales instalan el mismo asset de la release publicada — ver `docs/e87-mise-identity-receipt.md` para la prueba de identidad por digest. Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.102.1`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 ### Binario precompilado publicado (recuperación independiente)
 
@@ -60,12 +60,26 @@ MCP persistente: es un build local de desarrollo. Utiliza preferentemente
 
 ### Desde fuente
 
+> **No es el camino recomendado.** Para el uso normal, usa `install.sh` (Capa 0) + `cogh install mcp-server` (Capa 1).
+> Desde fuente es para quien contribuye y para compilaciones reproducibles.
+
 ```bash
 git clone https://github.com/Rubentxu/CogniCode.git
 cd CogniCode
+# Binarios del CLI (cogh, cognicode, cognicode-release)
+cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
+# Daemon MCP
 cargo build --release -p cognicode-mcp
-./target/release/cognicode-mcp --cwd /ruta/a/tu/proyecto
+./target/release/cogh --version         # esperado: cogh 0.102.1
+./target/release/cognicode --version    # esperado: cognicode 0.102.1
+./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.102.1
 ```
+
+> **Nota:** los binarios publicados también incluyen los de la cadena de herramientas cruzada
+> que el host no ejecuta de forma nativa (p. ej. `aarch64-unknown-linux-gnu`); los produce
+> el pipeline de release. Compilarlos en local requiere el target correspondiente con
+> `rustup target add <triple>` y un linker configurado. Las compilaciones desde fuente
+> son nativas del host por defecto.
 
 ### Claude Desktop / Cursor / Windsurf
 
@@ -99,7 +113,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 3. **Traza el camino de ejecución** entre dos símbolos:
 
 ```json
-{ "tool": "trace_path", "arguments": { "source": "main", "target": "manjar_peticion" } }
+{ "tool": "trace_path", "arguments": { "source": "main", "target": "manejar_peticion" } }
 ```
 
 4. **Encuentra caminos críticos** — funciones más llamadas:
@@ -115,10 +129,8 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
   "tool": "safe_refactor",
   "arguments": {
     "action": "rename",
-    "new_name": "nuevo_nombre_funcion",
-    "file_path": "src/lib.rs",
-    "line": 42,
-    "column": 4
+    "target": "my_function",
+    "params": { "new_name": "new_function_name", "file_path": "src/lib.rs" }
   }
 }
 ```
@@ -129,11 +141,11 @@ CogniCode publica **88 herramientas MCP**: 78 herramientas y los 10 goals que
 las responden. Las tablas siguientes son una
 **selección curada**, agrupada por la capacidad que más le importa al lector,
 no la superficie completa. La lista autoritativa, generada desde el código y
-verificada en CI, está en [`product/tools.json`](product/tools.json); los
+verificada en CI, está en [`crates/cognicode-core/product/tools.json`](crates/cognicode-core/product/tools.json); los
 esquemas de entrada y salida por herramienta están en
 [`product/README.md`](product/README.md).
 
-### Análisis de Grafos (12 herramientas)
+### Análisis de Grafos (11 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
@@ -148,31 +160,23 @@ esquemas de entrada y salida por herramienta están en
 | `export_mermaid` | Exporta el grafo como diagrama Mermaid o SVG. |
 | `build_lightweight_index` | Construye un índice rápido de solo símbolos. |
 | `query_symbol_index` | Búsqueda de símbolos insensible a mayúsculas. |
-| `find_dead_code` | Encuentra símbolos no utilizados en el proyecto. |
 
-### Operaciones de Grafos (5 herramientas)
+### Operaciones de Grafos (3 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
 | `build_call_subgraph` | Construye un subgrafo bajo demanda centrado en un símbolo. |
 | `get_per_file_graph` | Obtiene el grafo de llamadas de un solo archivo. |
 | `merge_graphs` | Fusiona grafos de múltiples archivos. |
-| `get_module_dependencies` | Analiza dependencias a nivel de módulo. |
-| `get_all_symbols` | Obtiene todos los símbolos del workspace. |
 
-### Símbolos y Semántica (9 herramientas)
+### Símbolos y Semántica (4 herramientas)
 
 | Herramienta | Descripción |
 |-------------|-------------|
 | `get_file_symbols` | Extrae símbolos de un archivo. Soporta resúmenes comprimidos. |
-| `get_outline` | Esquema jerárquico de símbolos (estructura de árbol). |
 | `get_symbol_code` | Obtiene el código fuente completo de un símbolo incluyendo documentación. |
 | `get_complexity` | Métricas de complejidad ciclomática, cognitiva y de anidamiento. |
-| `semantic_search` | Búsqueda difusa de símbolos con filtrado por tipo. |
 | `find_usages` | Encuentra todos los usos de un símbolo en el proyecto. |
-| `find_usages_with_context` | Encuentra usos con líneas de contexto circundante. |
-| `structural_search` | Búsqueda estructural basada en AST (pattern matching). |
-| `validate_syntax` | Valida la sintaxis de un archivo mediante Tree-sitter. |
 
 ### Navegación LSP (3 herramientas)
 
@@ -218,7 +222,7 @@ cognicode graph mermaid [ruta] [--format svg|txt]
 cognicode graph complexity [ruta]
 cognicode graph impact <símbolo> [ruta]
 
-cognicode refactor rename|extract|inline|move <símbolo> [nuevo_nombre]
+cognicode refactor <símbolo> [nuevo_nombre] [--operation rename|extract|inline|move]
 
 cognicode navigate definition|hover|references <archivo:línea:col> [ruta]
 ```
@@ -337,7 +341,11 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 | `cognicode-mcp` | Servidor MCP (`cognicode-mcp`) y cliente de test (`mcp-client`) |
 | `cognicode-cli` | Interfaz de terminal (`cognicode`) |
 | `cognicode-sandbox` | Testing automatizado de escenarios y benchmarking |
-| `rcode-debug` | Integración de debugging time-travel (Chronos MCP) |
+| `cognicode-graph-algos` | Librería del SDK: algoritmos de grafos sin dependencias |
+| `cognicode-macros` | Librería del SDK: macros procedurales de los tipos de dominio |
+| `cognicode-graph-wasm` | Librería del SDK: bindings WebAssembly de los algoritmos de grafos |
+
+Las crates `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` y `cognicode-graph-wasm` forman la superficie del SDK. Todavía no están publicadas en crates.io; consulta [Consumir el SDK](docs/distribution/INSTALL.md#consuming-the-sdk) para los comandos exactos y esa limitación.
 
 ## Configuración
 
@@ -346,13 +354,57 @@ CogniCode sigue **Domain-Driven Design** con Clean Architecture y 4 bounded cont
 | Variable | Por defecto | Descripción |
 |----------|-------------|-------------|
 | `RUST_LOG` | `info` | Nivel de log (`trace`, `debug`, `info`, `warn`, `error`) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Endpoint de métricas OpenTelemetry |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | Endpoint de métricas OpenTelemetry; solo se usa con `COGNICODE_TELEMETRY=1` |
+| `COGNICODE_TELEMETRY` | sin definir (apagado) | `COGNICODE_TELEMETRY=1` activa la exportación de métricas; cualquier otro valor la deja apagada |
+| `COGNICODE_LINK_TRACE` | sin definir (apagado) | Ruta de un fichero que recibe una línea JSON por llamada a herramienta (sensible: puede contener rutas y nombres de símbolos) |
 
 ### Flags de Características (`cognicode-core`)
 
 | Feature | Por defecto | Descripción |
 |---------|-------------|-------------|
 | `persistence` | activado | RedbGraphStore para caché persistente de grafos |
+
+## Seguridad y límites
+
+CogniCode es una herramienta local: analiza un repositorio de tu máquina y no
+necesita red. Los límites que importan al ejecutarla, descritos completos en
+[`SECURITY.md`](SECURITY.md):
+
+- **El repositorio analizado es dato, no instrucciones.** Los ficheros, los
+  comentarios y los resultados de herramientas nunca se tratan como órdenes.
+- **Modo de solo lectura.** Arranca el servidor con `--read-only` para ocultar
+  las herramientas que modifican de `tools/list` y rechazarlas.
+- **Sin telemetría por defecto.** `COGNICODE_TELEMETRY=1` activa la exportación
+  de métricas; nunca se envía código fuente. `COGNICODE_LINK_TRACE=<fichero>`
+  activa un registro local de llamadas; puede contener rutas y nombres de
+  símbolos, así que trata el fichero como sensible.
+- **Flujos.** `cognicode-mcp` escribe JSON-RPC por stdout y los logs por
+  stderr, nunca al revés.
+
+Límites: un resultado `Partial`, `Unknown`, `Unsupported` o `Failed` no es uno
+completo, y toda respuesta de análisis declara su cobertura. Reporta una
+vulnerabilidad en privado con GitHub Security Advisories, no en una issue
+pública.
+
+## Solución de problemas
+
+- **El cliente MCP informa de un error de parseo o «invalid JSON» al arrancar
+  el servidor.** El cliente lee JSON-RPC por stdout, así que cualquier otra
+  salida ahí lo rompe, por ejemplo un script envoltorio o un perfil de shell
+  que imprime texto. `cognicode-mcp` escribe sus logs por stderr; súbelos con
+  `RUST_LOG` y léelos ahí.
+- **El servidor termina al arrancar con estado de salida 2.** `--profile`
+  recibió un valor que no es un perfil de superficie. Los valores aceptados
+  son `default`, `full` y `legacy`; el error por stderr los lista.
+- **El servidor termina al arrancar con estado de salida 1.** El directorio
+  dado a `--cwd` no existe; stderr dice `Directory '...' does not exist`.
+  Pasa una ruta que exista.
+- **Un lenguaje no se analiza.** Ejecuta el doctor, que informa de qué
+  servidores de lenguaje están disponibles en el espacio de trabajo:
+
+```bash
+cognicode doctor --cwd . --format json
+```
 
 ## Desarrollo
 
@@ -377,9 +429,8 @@ código** de los agentes de IA. En lugar de pedirle al agente que lea archivos
 e intuya la estructura, le das herramientas que devuelven respuestas precisas
 y estructuradas.
 
-📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contiene 20 escenarios
-de prompts listos para usar, con cadenas de razonamiento completas y secuencias
-de tool calls. Un vistazo:
+Un vistazo a los escenarios de prompts, con sus cadenas de razonamiento y
+secuencias de tool calls:
 
 ---
 
@@ -423,7 +474,31 @@ Estos son solo 2 de los 20 escenarios. La guía completa cubre **detección de
 código muerto, refactoring seguro con rename, auditorías de complejidad,
 trazado de rutas de ejecución** y mucho más.
 
-👉 [Lee la Guía Completa de Prompts para Agentes →](docs/agent-prompts-es.md) · [English version →](docs/agent-prompts.md)
+## Versionado
+
+- **Release vigente:** `v0.102.1`, cortada desde este árbol con ese tag. La
+  release publicada desde él es la que sirve un `install.sh` sin versión
+  fijada. La anterior publicada es
+  [`v0.101.30`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.30);
+  `v0.101.24`, `v0.101.25` y `v0.101.26` tienen tag pero nunca se publicaron,
+  y un tag que no se publicó no se mueve. v0.102.1 es una versión menor: el
+  grafo se publica en orden canónico, el sobre de la respuesta (resultado,
+  base, enlaces siguientes) tiene un solo dueño y cada pregunta declara la
+  cobertura con la que se respondió.
+- **Los binarios informan:** `0.102.1` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1).
+- **Tags sin release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
+  `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` y
+  `v0.101.26` existen y nunca se publicaron; cada uno tiene una entrada en el
+  changelog que explica el motivo.
+- **Releases publicadas con un conjunto de assets incompleto:** `v0.101.11` a
+  `v0.101.16` publican 3 de 8 assets. La causa está en la entrada de
+  v0.101.17 del changelog.
+- **Autoridad de seguimiento:** la fila `PRODUCT-1.0` de [`docs/roadmap/ROADMAP.md` §2](docs/roadmap/ROADMAP.md).
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+
+Las releases se derivan de `[workspace.package] version` en `Cargo.toml` y las
+comprueba `scripts/ci/release-tag-coherence.sh` (R8).
 
 ## Licencia
 

@@ -177,7 +177,7 @@ def test_committed_catalog_is_self_consistent_and_schema_valid() -> None:
     comprueba por nombre, que es lo que la arquitectura garantiza; el resto
     del documento es autoria humana y lo vigilan el schema y el conteo.
     """
-    catalog = json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))
+    catalog = json.loads((ROOT / "crates/cognicode-core/product/tools.json").read_text(encoding="utf-8"))
     capture = json.loads(
         (ROOT / "product/tool-catalog-runtime.json").read_text(encoding="utf-8")
     )

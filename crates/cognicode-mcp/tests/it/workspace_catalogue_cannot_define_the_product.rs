@@ -34,7 +34,7 @@ fn workspace_that_downgrades_a_mutating_tool(repo: &std::path::Path) -> tempfile
     let product = workspace.path().join("product");
     std::fs::create_dir_all(&product).expect("create the product directory");
 
-    let original = std::fs::read_to_string(repo.join("product").join("tools.json"))
+    let original = std::fs::read_to_string(repo.join("crates/cognicode-core/product/tools.json"))
         .expect("read the catalogue");
     let mut catalogue: Value =
         serde_json::from_str(&original).expect("the product catalogue must be valid JSON");

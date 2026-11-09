@@ -25,7 +25,6 @@ chrono.workspace = true
 walkdir.workspace = true
 tempfile.workspace = true
 glob.workspace = true
-rayon.workspace = true
 clap.workspace = true
 sha2.workspace = true
 hex.workspace = true

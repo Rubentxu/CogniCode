@@ -283,7 +283,7 @@ fn the_published_schema_documents_the_line_base() {
     let mut offenders: Vec<String> = Vec::new();
 
     // The inputs: the master catalog, hand-authored.
-    let master = read_json(&repo_root().join("product").join("tools.json"));
+    let master = read_json(&repo_root().join("crates/cognicode-core/product/tools.json"));
     for tool in master["tools"].as_array().into_iter().flatten() {
         let Some(name) = tool["name"].as_str() else {
             continue;

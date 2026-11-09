@@ -518,7 +518,7 @@ fn catalog_tools_with_output_schema() -> std::collections::BTreeSet<String> {
 fn catalog_path() -> std::path::PathBuf {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for ancestor in manifest.ancestors() {
-        let candidate = ancestor.join("product").join("tools.json");
+        let candidate = ancestor.join("crates").join("cognicode-core").join("product").join("tools.json");
         if candidate.is_file() {
             return candidate;
         }

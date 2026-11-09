@@ -5,6 +5,21 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license = "MIT OR Apache-2.0"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+documentation = "https://docs.rs/cognicode-core"
+keywords = ["code-analysis", "static-analysis", "call-graph", "tree-sitter", "ai-agents"]
+categories = ["development-tools", "parser-implementations"]
+readme = "README.md"
+# Integration tests and the fixture corpora that src/ does not read stay out of
+# the published crate; the corpora read by unit tests in src/ travel with it.
+exclude = [
+    "/tests/",
+    "/testdata/ana02_corpus/",
+    "/testdata/identity_corpus/",
+    "/testdata/u10_compat_corpus/",
+]
 
 [features]
 # Default is `["persistence"]`. The Graph Intelligence v2 cleanup removed
@@ -180,7 +195,6 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 [dev-dependencies]
 tokio-test.workspace = true
 serial_test.workspace = true
-mockall.workspace = true
 tempfile.workspace = true
 filetime.workspace = true
 criterion.workspace = true

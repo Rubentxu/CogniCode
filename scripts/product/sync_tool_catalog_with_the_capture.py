@@ -61,7 +61,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from generate_tool_catalog import render  # noqa: E402
 
-DEFAULT_MASTER = Path("product/tools.json")
+DEFAULT_MASTER = Path("crates/cognicode-core/product/tools.json")
 DEFAULT_CAPTURE = Path("product/tool-catalog-runtime.json")
 
 

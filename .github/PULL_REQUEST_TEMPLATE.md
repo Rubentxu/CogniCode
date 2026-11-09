@@ -68,7 +68,7 @@ Does this change a published contract or a shipped artifact?
       history, not chosen by hand
 
 If yes, which:
-- [ ] An MCP tool is added, removed, or renamed (`product/tools.json`)
+- [ ] An MCP tool is added, removed, or renamed (`crates/cognicode-core/product/tools.json`)
 - [ ] What an existing MCP tool returns changes
 - [ ] A CLI command or flag changes
 - [ ] A language is added, or moves between `supported` / `experimental`

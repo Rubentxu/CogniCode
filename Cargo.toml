@@ -27,6 +27,11 @@ authors = ["CogniCode Team"]
 # ADR-011 (CP1.1): license of record, formalising the deferral M0.9 left open.
 # Matches every member crate exactly; both operands are in deny.toml's allow list.
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/Rubentxu/CogniCode"
+homepage = "https://github.com/Rubentxu/CogniCode"
+# Same floor the product publishes in manifest.toml (`rust>=1.96.0`); the
+# repository is only verified against that toolchain, so no lower floor is claimed.
+rust-version = "1.96.0"
 
 [workspace.dependencies]
 # Benchmarks. MEDIDO 2026-10-04: `criterion = "0.5"` vivia solo en
@@ -36,11 +41,11 @@ license = "MIT OR Apache-2.0"
 # medicion, y la que se desincroniza sin que nada falle.
 criterion = "0.5"
 # Internal
-cognicode-core = { path = "crates/cognicode-core" }
+cognicode-core = { path = "crates/cognicode-core", version = "0.102.1" }
 cognicode-mcp = { path = "crates/cognicode-mcp" }
-cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }
+cognicode-graph-algos = { path = "crates/cognicode-graph-algos", version = "0.102.1" }
 # cognicode-axiom = { path = "crates/cognicode-axiom" }  # PARKED
-cognicode-macros = { path = "crates/cognicode-macros" }
+cognicode-macros = { path = "crates/cognicode-macros", version = "0.102.1" }
 
 # Distribution (E32-B)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
@@ -232,7 +237,6 @@ clap = { version = "4.4", features = ["derive", "env", "string"] }
 
 # MCP
 rmcp = { version = "1.7", features = ["server", "transport-io", "client", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-server-session", "which-command"] }
-process-wrap = "9.1"
 
 # Rig-core (optional)
 
@@ -241,7 +245,6 @@ toml = "0.8"
 
 # Dev deps
 tokio-test = "0.4"
-mockall = "0.11"
 serial_test = "3.0"
 
 # UUID v4 generation — CSPRNG-based, replaces hand-rolled implementation.

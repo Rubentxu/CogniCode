@@ -178,7 +178,7 @@ pub fn load_tool_catalog_active() -> Vec<ToolDescriptor> {
 
 /// The catalogue baked into the binary at compile time.
 ///
-/// `product/tools.json` is versioned and hand-authored; `include_str!`
+/// `crates/cognicode-core/product/tools.json` is versioned and hand-authored; `include_str!`
 /// compiles that exact file in, so there is still **one** source of truth —
 /// it is simply also *inside* the binary, where no install layout can lose
 /// it. The filesystem lookup above stays as the first choice so a checkout
@@ -192,7 +192,7 @@ pub fn load_tool_catalog_active() -> Vec<ToolDescriptor> {
 /// and each one was invisible to the suite because the suite ran where the
 /// data happened to be. A catalogue that cannot be found is indistinguishable
 /// from a product with no tools, so the binary carries its own answer.
-const EMBEDDED_TOOLS: &str = include_str!("../../../../product/tools.json");
+const EMBEDDED_TOOLS: &str = include_str!("../../product/tools.json");
 
 /// The catalogue as it ships inside the binary, parsed.
 ///

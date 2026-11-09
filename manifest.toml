@@ -50,7 +50,7 @@ capabilities = [
 paths = [
     "product/product-manifest.json",
     "product/platforms.json",
-    "product/tools.json",
+    "crates/cognicode-core/product/tools.json",
     "product/languages.json",
     "product/profiles.json",
 ]
