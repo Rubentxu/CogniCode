@@ -39185,3 +39185,34 @@ toca código Rust ni el explorer-ui. `run-all-contracts.sh` termina rc=1 solo po
 `test_roadmap_coherence` (`CURRENT.md` cita `16f41c264cc0`, HEAD era `60958c13`),
 deriva previa en `main` ajena a esta unidad; regenerar el snapshot queda aparte.
 No se publicó, no se etiquetó y no se tocó TASK-177.
+
+## 2026-11-09 — TASK-179 AC4: auditoría de la guía de instalación y una referencia muerta
+
+Auditoría de solo lectura de `README.md`, `README.es.md` y
+`docs/distribution/INSTALL.md` sobre `40d8461e`.
+
+**Verificado.** Enlaces relativos y anclas: sin ausentes. Rutas citadas: todas
+existen salvo artefactos de build y `src/server.rs`, que es relativa a
+`crates/cognicode-mcp`. `cogh`, `cognicode` y `cognicode-mcp` reportan 0.102.1.
+`gh release view v0.102.1`: publicada, no borrador, 8 assets, cuyos nombres
+coinciden con los de la guía (`SHA256SUMS` incluido). `install.sh` y las URLs de
+release de `Rubentxu/CogniCode` resuelven.
+
+**Defecto.** La guía enlazaba y mandaba instalar con `npx skills add` la skill
+`cognicode-quality-investigator` de `Rubentxu/agent-skill`. `gh api` devuelve
+404 para esa ruta: el repositorio es `Rubentxu/agent-skills` y no contiene esa
+skill. Se retiraron el enlace y el comando; la guía dice ahora que los únicos
+bundles son los dos que instala `cogh`.
+
+**RED.** `test_the_guide_does_not_cite_an_external_skill_that_is_not_published`
+cayó 3 veces sobre la base. Después: `test_readme_contract` 46/46,
+`test_sdk_architecture` 27/27, `test_sdk_surfaces` 46/46,
+`test_explorer_handoff` 5/5, `git diff --check` limpio.
+
+**NOT_RUN.** Los flags de cada subcomando frente a `--help` real (los vigila ya
+`test_readme_contract` contra las fuentes clap, pero no se contrastaron con la
+salida de los binarios instalados); descarga de los assets y verificación de
+`SHA256SUMS` (la sección «Release assets» sigue declarando esa limitación);
+`run-all-contracts.sh` completo (dos rojos previos en `test_roadmap_coherence`
+por deriva de `CURRENT.md`, ajenos a este cambio); gate de cargo y `npm test`
+(sin cambios de código). Sin tag, sin publicación, sin tocar TASK-177.

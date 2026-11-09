@@ -1262,6 +1262,23 @@ class ReadmeContract(unittest.TestCase):
                 with self.subTest(path=path.name, phrase=phrase):
                     self.assertNotIn(phrase, text)
 
+    def test_the_guide_does_not_cite_an_external_skill_that_is_not_published(self):
+        """An install step must not point at a repository path that answers 404.
+
+        Verified on 2026-11-09 with `gh api` (read-only): the repository is
+        `Rubentxu/agent-skills` and has no `cognicode-quality-investigator`
+        skill, so the link and the `npx skills add` command led nowhere. The
+        suite is offline, so it rejects those exact references instead of
+        querying GitHub; add a reference here only after it was seen to 404.
+        """
+        dead = ("cognicode-quality-investigator", "Rubentxu/agent-skill/", "skills add")
+        for path in (EN, ES, MCP_GUIDE):
+            text = path.read_text(encoding="utf-8")
+            self.assertTrue(text, f"{path.name} is empty: the check would be vacuous")
+            for reference in dead:
+                with self.subTest(path=path.name, reference=reference):
+                    self.assertNotIn(reference, text)
+
     def test_contributing_links_the_sdk_release_process(self):
         """A contributor who touches a published crate must find the release and rollback steps."""
         text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")

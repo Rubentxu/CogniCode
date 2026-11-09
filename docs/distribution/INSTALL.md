@@ -17,10 +17,9 @@ no anunciarlos como instalables mediante `cogh` hasta publicar y certificar
 sus artefactos y perfiles. Linux x86_64 GNU es la matriz publicada.
 Las variantes `aarch64` y `musl` son experimentales y no se publican (`product/platforms.json`).
 
-La skill de auditoría externa
-[`cognicode-quality-investigator`](https://github.com/Rubentxu/agent-skill/tree/main/skills/cognicode-quality-investigator)
-se instala **independientemente** desde `Rubentxu/agent-skill`; no debe
-confundirse con los bundles de skills internos de CogniCode.
+Los bundles de skills de esta release son únicamente los dos que `cogh`
+instala (`cognicode` y `cognicode-mcp`). No existe una skill de auditoría
+externa publicada por separado: no hay nada más que instalar con `npx`.
 
 ## Instalación desde cero en Linux
 
@@ -51,12 +50,6 @@ perfil ligero `core`. `core` **no** incluye el daemon MCP y es incorrecto
 usarlo para configurar una conexión MCP. El selector `--version latest`
 se resuelve a la versión publicada antes de registrar el servidor en el IDE:
 no deben aparecer directorios literales `versions/latest` ni rutas de build.
-
-La instalación de la skill externa es independiente:
-
-```sh
-npx skills add Rubentxu/agent-skill --skill cognicode-quality-investigator --agent opencode --global
-```
 
 ## Actualizar, reparar, volver atrás y desinstalar
 
