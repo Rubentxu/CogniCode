@@ -39330,3 +39330,25 @@ shell no interactiva no lo carga; el valor nunca se imprimió.
 **NOT_RUN.** Assets de la release de GitHub 0.103.0 (binarios y `SHA256SUMS`);
 procedencia: sin clave cosign la release sale sin atestación (TASK-180 AC6).
 AC2, AC4 y AC5 de TASK-180 siguen pendientes de TASK-177. Sin tocar TASK-177.
+
+## TASK-180 — plugin asdf de `cogh` publicado (2026-11-09)
+
+Base `12538b81`; PR #783 → `ce9c4227`.
+
+**Cambio.** El plugin vive ahora en https://github.com/Rubentxu/asdf-cogh
+(`559ce9d`); `scripts/distribution/asdf-cogh/` sigue siendo la fuente.
+`INSTALL.md` y el README del plugin lo citan. Un primer `asdf plugin add` falló
+porque un ignore global (`bin/`) dejó fuera `bin/`; se corrigió con `!bin/` y se
+verificó siempre desde el repositorio remoto, no desde la copia local.
+
+**Medido.** `asdf plugin add cogh <url>` + `asdf install cogh 0.103.0`:
+«La suma coincide», `cogh 0.103.0`; 9.9.9 falla en download. Contratos
+(`run-all-contracts.sh`): 8 passed, rc=0.
+
+**Operador.** `opencode.json` apunta al shim `cognicode-mcp` → 0.103.0
+(`cogh install mcp-server --profile reviewer`; sin perfil el bundle no instala
+`cognicode-mcp`). Repo externo: PR #2 fusionado (`3f8e10f2`), tag `v0.102.1`.
+
+**NOT_RUN.** Clave cosign (custodia en KeePass, la genera la persona):
+TASK-180 AC3/AC6 siguen abiertos; `release.sh --publish` del externo,
+`deps` y `docker build`. Sin tocar TASK-177.
