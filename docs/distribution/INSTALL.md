@@ -125,7 +125,7 @@ The four `library` crates declared in
 in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
 [`SDK_RELEASE.md`](SDK_RELEASE.md).
 
-The four crates are published on crates.io at version `0.102.1`, and a clean
+The four crates are published on crates.io at version `0.103.0`, and a clean
 consumer project that depends on those exact versions builds and runs. You can
 repeat that check with
 `bash scripts/distribution/verify-sdk-consumer.sh --confirm-published`.
@@ -135,10 +135,10 @@ Add the crates in publication order, dependencies first
 `cognicode-graph-wasm` depends on `cognicode-graph-algos`):
 
 ```bash
-cargo add cognicode-graph-algos@=0.102.1
-cargo add cognicode-macros@=0.102.1
-cargo add cognicode-core@=0.102.1
-cargo add cognicode-graph-wasm@=0.102.1
+cargo add cognicode-graph-algos@=0.103.0
+cargo add cognicode-macros@=0.103.0
+cargo add cognicode-core@=0.103.0
+cargo add cognicode-graph-wasm@=0.103.0
 ```
 
 Add only the crates your project uses; the order matters for publishing, not
