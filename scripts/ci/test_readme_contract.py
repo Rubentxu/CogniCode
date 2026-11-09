@@ -1304,5 +1304,21 @@ class ReadmeContract(unittest.TestCase):
             {"name": "c", "kind": ["bin"]}, {"name": "l", "kind": ["lib"]}]}]}))
 
 
+def test_readme_contract_unittest_cases_pass() -> None:
+    """`scripts/run_contract_tests.py` reads module-level `test_*` functions only,
+    so the `unittest` classes above would run zero cases there and look green."""
+    import io
+
+    suite = unittest.TestSuite()
+    for case in (ReadmeContract,):
+        suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(case))
+    result = unittest.TextTestRunner(stream=io.StringIO(), verbosity=0).run(suite)
+    assert result.testsRun > 0, "the test_readme_contract suite ran no case"
+    assert result.wasSuccessful(), "; ".join(
+        f"{case.id()}: {trace.strip().splitlines()[-1]}"
+        for case, trace in result.failures + result.errors
+    )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-08, sobre `aebb183c94233b650c785952d197dcddf0b52ced` (la
+> **Snapshot**: 2026-11-09, sobre `16f41c264cc0e66596a2e84ec7c034e21e70fb0a` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -318,26 +318,37 @@
 > (la `v0.102.0` no pasó su suite, no tiene release y no se mueve); y
 > la interfaz CLI vive ya en `cognicode-cli` y el core no importa
 > `interface::cli` ni arrastra `opentelemetry-otlp` (TASK-165), y los
-> contratos dejan un informe con salida y entorno en su primer fallo (TASK-158).
+> contratos dejan un informe con salida y entorno en su primer fallo (TASK-158);
+> los adaptadores MCP y sandbox salen del core (`efa36360`); la cobertura por
+> fichero y las tres rutas del grafo dicen lo mismo (TASK-166, TASK-167, H24); un
+> snapshot durable malformado se rechaza (`150e16f9`); la frontera de H5 está
+> medida: el scanner sigue desconectado de la ruta real (TASK-170, TASK-173); los
+> crates del SDK están listos para el registro con ensayo de publicación (sin
+> publicar); el host de contenedor del Explorer entra (TASK-191..202); y los README
+> sólo afirman lo que el producto hace: búsqueda difusa de símbolos y los
+> binarios del workspace con cuáles se publican (TASK-179).
 > Versión del workspace: `0.102.1`. Última release publicada: `v0.102.1`
 > (2026-11-07, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`5c813212` → `aebb183c94233b650c785952d197dcddf0b52ced`)
+## Qué cambió desde el snapshot anterior (`aebb183c` → `16f41c264cc0e66596a2e84ec7c034e21e70fb0a`)
 
-Entre una punta y otra entraron **12 commits** (`git rev-list --count 5c813212050cb7927119e910b0109e13fefa2be9..aebb183c94233b650c785952d197dcddf0b52ced`).
+Entre una punta y otra entraron **15 commits** (`git rev-list --count aebb183c94233b650c785952d197dcddf0b52ced..16f41c264cc0e66596a2e84ec7c034e21e70fb0a`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| Recibo de la `v0.102.1` publicada e instalada | `d09c2a9c` (sin tarea) | Es el snapshot anterior regenerado; no mueve código. |
-| El servidor MCP escribe una traza de enlaces opt-in y se documenta cómo contarla | `ed72b4a6`, `e92e7d6b` (TASK-94) | La medición es del contrato de cable; el recibo está en el `JOURNAL`. |
-| Los contratos dejan un informe con salida y entorno en su primer fallo, sin heredar el destino del informe | `829c048b`, `3a086163` (TASK-158) | El fallo intermitente deja evidencia en vez de un rojo mudo. |
-| `interface/cli` pasa a `cognicode-cli`; el core ya no importa `interface::cli` ni lleva `opentelemetry-otlp` | `c6ecb8fa`, `cb9cbc2f`, `12b4c25b`, `bd11c41b`, `de8b1022` (TASK-165) | `SymbolId` e `Intent` pasan a `domain`; `ViewDescriptor` y el catálogo salen de `interface`. |
-| El cliente MCP admite trazas encadenadas de rmcp | `a6787e44` (TASK-94) | Es el productor de la traza real de enlaces. |
-| Recibo de la verificación del consumidor de TASK-165 | `aebb183c` (TASK-165) | Documental. |
+| Los adaptadores MCP y sandbox salen del core | `efa36360` | Refactor; las suites del radio en verde. |
+| La cobertura por fichero se publica en el MCP y en el core (H24, C23) | `ea7af14d`, `97964977` (TASK-166, TASK-167) | Las tres rutas del grafo responden con la misma cobertura. |
+| El snapshot durable malformado se rechaza | `150e16f9` | Test que fallaba antes y pasa después. |
+| Se cierra el contrato observable de C23 y se reconcilia H24 | `73c7ccd9`, `436c6a92`, `ea43ce1a` | Documental. |
+| Se mide la reutilización del snapshot y el scanner frente al rebuild (H5) | `95daf95e`, `d8a32c7a`, `8cceb194`, `c35c1371` (TASK-170, TASK-172, TASK-173) | Cifras en el recibo del `JOURNAL`; el scanner sigue sin conectarse a la ruta real. |
+| Crates del SDK listos para el registro y ensayo de publicación | `6f9a29f6` | Ensayo sin subir nada; no hay publicación. |
+| Host de contenedor del Explorer y arreglos de explorer-ui | `6bd10a03` (TASK-191..202) | `docker build` NOT_RUN. |
+| README: la búsqueda semántica sin respaldo pasa a búsqueda difusa de símbolos | `3f80ac2b` (TASK-179) | Contrato de README en verde. |
+| README: todo binario del workspace se nombra y se dice cuáles se publican | `16f41c26` (TASK-179) | Contrato nuevo: 44/44. |
 
 ## Release: la última publicada es la v0.102.1
 

@@ -52,7 +52,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-CODE_FILE = REPO_ROOT / "crates/cognicode-core/src/interface/mcp/capabilities.rs"
+CODE_FILE = REPO_ROOT / "crates/cognicode-mcp/src/capabilities.rs"
 DOC_FILE = REPO_ROOT / "docs/roadmap/consumer-contracts/specs/CAPABILITIES-MATRIX.md"
 CATALOG_FILE = REPO_ROOT / "product/languages.json"
 
