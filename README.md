@@ -344,7 +344,7 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | `cognicode-macros` | SDK library: procedural macros used by the domain types |
 | `cognicode-graph-wasm` | SDK library: WebAssembly bindings for the graph algorithms |
 
-The `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` and `cognicode-graph-wasm` crates are the SDK surface. They are not published on crates.io yet; see [Consuming the SDK](docs/distribution/INSTALL.md#consuming-the-sdk) for the exact commands and that limitation.
+The `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` and `cognicode-graph-wasm` crates are the SDK surface. They are published on crates.io; see [Consuming the SDK](docs/distribution/INSTALL.md#consuming-the-sdk) for the exact commands.
 
 ## Binaries
 

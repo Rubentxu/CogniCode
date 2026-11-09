@@ -322,11 +322,13 @@ class SdkConsumptionGuide(unittest.TestCase):
         self.assertEqual(sorted(order), libraries, "SDK_RELEASE.md order and SDK_SURFACES.json disagree")
         self.assertEqual(cargo_add_lines(self.body(), workspace_version()), order)
 
-    def test_registry_dependent_instructions_are_marked_as_a_limitation(self):
+    def test_the_section_states_publication_and_names_the_consumer_check(self):
+        """The SDK is on crates.io at the workspace version; the section says so and how to re-verify it."""
         body = self.body()
         self.assertIn("crates.io", body)
-        self.assertIn("TASK-178", body)
-        self.assertRegex(body, r"(?i)not (yet )?published")
+        self.assertIn(f"`{workspace_version()}`", body)
+        self.assertIn("scripts/distribution/verify-sdk-consumer.sh --confirm-published", body)
+        self.assertNotRegex(body, r"(?i)not (yet )?published")
 
     def test_the_section_stays_inside_the_sdk_scope(self):
         self.assertNotIn("Explorer handoff", self.body())

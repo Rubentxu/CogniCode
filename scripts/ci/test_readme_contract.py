@@ -1242,6 +1242,26 @@ class ReadmeContract(unittest.TestCase):
         self.assertEqual(["c: SDK library crate not listed"], crate_table_gaps(body, {"a", "b", "c"}, {"c"}, text))
         self.assertEqual(["no link to the SDK consumption guide"], crate_table_gaps(body, {"a", "b"}, {"a"}, "x"))
 
+    def test_no_entry_point_says_the_sdk_is_unpublished(self):
+        """The SDK is on crates.io (TASK-178); a reader must not be told it fails to resolve.
+
+        Offline on purpose: the registry is not reachable from the suite, so the
+        contract rejects the retired wording instead of querying crates.io.
+        """
+        retired = (
+            "not yet published",
+            "not published on crates.io",
+            "todavía no están publicadas",
+            "will fail",
+        )
+        guide = ROOT / "docs" / "distribution" / "INSTALL.md"
+        for path in (EN, ES, guide):
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertTrue(text, f"{path.name} is empty: the check would be vacuous")
+            for phrase in retired:
+                with self.subTest(path=path.name, phrase=phrase):
+                    self.assertNotIn(phrase, text)
+
     def test_contributing_links_the_sdk_release_process(self):
         """A contributor who touches a published crate must find the release and rollback steps."""
         text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
