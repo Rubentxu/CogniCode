@@ -128,36 +128,8 @@ uploads nothing. Before deciding it fast-forwards its checkout to `origin/main`
 (`git fetch` + `git merge --ff-only`), so a bump merged after the checkout was made
 is still seen; a checkout that cannot fast-forward stops the run. `--check` prints
 the decision without publishing and without touching the checkout. It needs the
-registry credential in the environment and is meant to be run by hand or from a
-scheduler the operator owns (for example a user cron entry); it never logs in
-and never tags, so step 6 stays a separate, explicit decision.
-
-Scheduler templates live in `scripts/distribution/systemd/` (a oneshot service
-and a daily, persistent timer). They are not installed by anything; enabling
-them is the operator's step:
-
-1. Make a dedicated clean checkout of `main` and create
-   `~/.config/cognicode/sdk-release.env` (mode 600) with
-   `COGNICODE_CHECKOUT=<that checkout>`; add `CARGO_REGISTRY_TOKEN=...` only
-   if `cargo login` has not stored a credential.
-2. Copy both unit files to `~/.config/systemd/user/`.
-3. `systemctl --user daemon-reload` and
-   `systemctl --user enable --now cognicode-sdk-auto-release.timer`.
-
-Steps 1 and 2 can be done in one command: `bash
-scripts/distribution/install-sdk-timer.sh --checkout <clean checkout of main>`
-prints the plan (a dry run); add `--apply` to write it (or `just sdk-timer-install
-<checkout>` for the plan). It creates the mode 600 env file and copies the units,
-keeps an existing env file, stops on a unit file you edited, and never enables
-the timer, runs `systemctl` or stores a credential.
-
-Before enabling, `bash scripts/distribution/check-sdk-timer.sh` (or `just sdk-timer-check`)
-reads the operator-side prerequisites and prints `READY` or `BLOCKED` naming each
-missing one: the unit templates load, `sdk-release.env` exists with mode 600 and
-names a clean checkout, and a registry credential is present. It changes nothing.
-
-Disable it with `systemctl --user disable --now
-cognicode-sdk-auto-release.timer`. Until then nothing publishes by itself.
+registry credential in the environment and is a building block for a scheduler the operator may add; the supported path is
+`release-sdk.sh` above. It never logs in and never tags.
 
 Rollback: a published version cannot be overwritten or deleted. If a release is
 defective, run `cargo yank --version <x.y.z> <crate>` for every affected crate
