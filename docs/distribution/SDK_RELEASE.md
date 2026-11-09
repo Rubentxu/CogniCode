@@ -112,7 +112,10 @@ Automatic releases: after a version bump has merged into `main`, `bash
 scripts/distribution/auto-release-sdk.sh` (or `just sdk-auto-release`)
 publishes that version only if crates.io does not have it yet, by delegating to
 `publish-sdk.sh --confirm-publish --resume`; with nothing new it exits 0 and
-uploads nothing. `--check` prints the decision without publishing. It needs the
+uploads nothing. Before deciding it fast-forwards its checkout to `origin/main`
+(`git fetch` + `git merge --ff-only`), so a bump merged after the checkout was made
+is still seen; a checkout that cannot fast-forward stops the run. `--check` prints
+the decision without publishing and without touching the checkout. It needs the
 registry credential in the environment and is meant to be run by hand or from a
 scheduler the operator owns (for example a user cron entry); it never logs in
 and never tags, so step 6 stays a separate, explicit decision.
