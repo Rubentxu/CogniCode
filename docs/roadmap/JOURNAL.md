@@ -39309,3 +39309,24 @@ sin filtro: surfaces 48, architecture, readme 47, explorer_handoff.
 
 **NOT_RUN.** Instalación y activación del timer (decisión del operador); una
 ejecución real con credencial; tag; publicación. Sin tocar TASK-177.
+
+## TASK-180 — release 0.103.0 del SDK publicada en crates.io (2026-11-09)
+
+Base `97d63cc5` (#777). Versión elegida y confirmada por la persona: 0.103.0.
+
+**Causa del fallo previo de `release-sdk.sh`.** `cognicode-graph-wasm` fijaba la
+versión de `cognicode-graph-algos` en su manifiesto; ahora usa
+`workspace = true` y `InternalVersionsHaveOneOwner` (`test_sdk_architecture.py`)
+lo vigila. RED medido contra el manifiesto antiguo.
+
+**Ejecución real.** `cargo publish --dry-run` de las cuatro crates: OK.
+`release-sdk.sh --publish` (rc=0) publicó `cognicode-graph-algos`,
+`cognicode-macros`, `cognicode-core` y `cognicode-graph-wasm` 0.103.0 y empujó
+el tag anotado `v0.103.0`. `verify-sdk-consumer.sh --confirm-published`: proyecto
+limpio con pins exactos, «consumer verification passed for version 0.103.0».
+Un falso BLOCKED del preflight venía de que el token vive en `~/.bashrc` y la
+shell no interactiva no lo carga; el valor nunca se imprimió.
+
+**NOT_RUN.** Assets de la release de GitHub 0.103.0 (binarios y `SHA256SUMS`);
+procedencia: sin clave cosign la release sale sin atestación (TASK-180 AC6).
+AC2, AC4 y AC5 de TASK-180 siguen pendientes de TASK-177. Sin tocar TASK-177.
