@@ -39288,3 +39288,24 @@ handshake MCP del servidor instalado desde un cliente real; `SHA256SUMS` con
 `run-all-contracts.sh` completo (dos rojos previos de `test_roadmap_coherence`,
 ajenos); gate de cargo y `npm test` (sin cambios de código). Sin tag, sin
 publicación, sin tocar TASK-177.
+
+## TASK-178 — plantillas del programador de la publicación automática del SDK (2026-11-09)
+
+**Hallazgo.** `auto-release-sdk.sh` existe (#763) pero nada lo ejecuta de forma
+periódica: sin workflow alojado (por diseño), sin timer ni `crontab`. Comparado:
+timer de usuario systemd (elegido: `Persistent=true`, journal, misma convención
+que `cognicode-trash-purge`, reversible), cron (sin recuperación tras apagado,
+no instalado) y sólo documentar (nada ejecutable que verificar).
+
+**Cambio.** `scripts/distribution/systemd/cognicode-sdk-auto-release.{service,timer}`
+(oneshot diario, persistente), sin credencial ni tag en la unidad; el
+checkout y, si hace falta, `CARGO_REGISTRY_TOKEN` viven en
+`~/.config/cognicode/sdk-release.env`, del operador. `SDK_RELEASE.md` describe
+los tres pasos para activarlo y cómo desactivarlo.
+
+**RED/GREEN.** Dos tests nuevos en `test_sdk_surfaces.py` fallaban (unidades
+inexistentes) y pasan; `systemd-analyze verify --user` sin avisos. Contratos
+sin filtro: surfaces 48, architecture, readme 47, explorer_handoff.
+
+**NOT_RUN.** Instalación y activación del timer (decisión del operador); una
+ejecución real con credencial; tag; publicación. Sin tocar TASK-177.

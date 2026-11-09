@@ -117,6 +117,21 @@ registry credential in the environment and is meant to be run by hand or from a
 scheduler the operator owns (for example a user cron entry); it never logs in
 and never tags, so step 6 stays a separate, explicit decision.
 
+Scheduler templates live in `scripts/distribution/systemd/` (a oneshot service
+and a daily, persistent timer). They are not installed by anything; enabling
+them is the operator's step:
+
+1. Make a dedicated clean checkout of `main` and create
+   `~/.config/cognicode/sdk-release.env` (mode 600) with
+   `COGNICODE_CHECKOUT=<that checkout>`; add `CARGO_REGISTRY_TOKEN=...` only
+   if `cargo login` has not stored a credential.
+2. Copy both unit files to `~/.config/systemd/user/`.
+3. `systemctl --user daemon-reload` and
+   `systemctl --user enable --now cognicode-sdk-auto-release.timer`.
+
+Disable it with `systemctl --user disable --now
+cognicode-sdk-auto-release.timer`. Until then nothing publishes by itself.
+
 Rollback: a published version cannot be overwritten or deleted. If a release is
 defective, run `cargo yank --version <x.y.z> <crate>` for every affected crate
 (this stops new resolutions and leaves existing lockfiles working), then

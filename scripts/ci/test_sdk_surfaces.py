@@ -658,6 +658,29 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertIn("sdk-auto-release", justfile)
         self.assertIn("auto-release-sdk.sh", justfile)
 
+    def _timer_unit(self, suffix):
+        path = ROOT / "scripts" / "distribution" / "systemd" / f"cognicode-sdk-auto-release.{suffix}"
+        self.assertTrue(path.is_file(), f"missing {path.relative_to(ROOT)}")
+        return path.read_text(encoding="utf-8")
+
+    def test_the_scheduler_templates_run_only_the_auto_release_script(self):
+        service = self._timer_unit("service")
+        self.assertIn("Type=oneshot", service)
+        self.assertIn("scripts/distribution/auto-release-sdk.sh", service)
+        self.assertRegex(service, r"(?m)^EnvironmentFile=%h/\.config/cognicode/sdk-release\.env$")
+        for forbidden in ("cargo publish", "cargo login", "git tag", "CARGO_REGISTRY_TOKEN=", "--no-verify"):
+            self.assertNotIn(forbidden, service)
+        timer = self._timer_unit("timer")
+        self.assertIn("Unit=cognicode-sdk-auto-release.service", timer)
+        self.assertRegex(timer, r"(?m)^OnCalendar=\S+")
+        self.assertIn("Persistent=true", timer)
+        self.assertRegex(timer, r"(?m)^WantedBy=timers\.target$")
+
+    def test_the_guide_describes_enabling_the_scheduler_as_the_operators_step(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/systemd/", guide)
+        self.assertIn("systemctl --user enable --now cognicode-sdk-auto-release.timer", guide)
+
     def test_release_guide_names_the_publish_runner(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
         self.assertIn("scripts/distribution/publish-sdk.sh", guide)
