@@ -334,6 +334,37 @@ class SdkConsumptionGuide(unittest.TestCase):
         self.assertNotIn("Explorer handoff", self.body())
 
 
+class InternalVersionsHaveOneOwner(unittest.TestCase):
+    """A crate manifest must not pin a sibling's version: release-sdk.sh bumps
+    only the root Cargo.toml, so a fixed `version = "x.y.z"` on an internal
+    path dependency breaks the next minor bump (cargo update cannot resolve)."""
+
+    INTERNAL = ("cognicode-core", "cognicode-graph-algos", "cognicode-macros")
+
+    @staticmethod
+    def pinned_internal_versions(text, names):
+        found = []
+        for line in text.splitlines():
+            m = re.match(r"\s*([A-Za-z0-9_-]+)\s*=\s*\{(.*)\}", line)
+            if m and m.group(1) in names and re.search(r'\bversion\s*=\s*"', m.group(2)):
+                found.append(line.strip())
+        return found
+
+    def test_no_crate_manifest_pins_an_internal_version(self):
+        offenders = []
+        for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
+            text = manifest.read_text(encoding="utf-8")
+            for line in self.pinned_internal_versions(text, self.INTERNAL):
+                offenders.append(f"{manifest.relative_to(ROOT)}: {line}")
+        self.assertEqual(offenders, [], "use `workspace = true` for internal crates")
+
+    def test_the_check_detects_a_pinned_version(self):
+        bad = 'cognicode-graph-algos = { path = "../x", version = "0.1.0" }'
+        good = 'cognicode-graph-algos = { workspace = true, features = [] }'
+        self.assertEqual(len(self.pinned_internal_versions(bad, self.INTERNAL)), 1)
+        self.assertEqual(self.pinned_internal_versions(good, self.INTERNAL), [])
+
+
 class ConsumptionCheckDiscriminates(unittest.TestCase):
     def test_a_missing_section_or_wrong_version_or_order_is_detected(self):
         self.assertIsNone(consuming_section("## Other\n- x"))
