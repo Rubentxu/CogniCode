@@ -39131,3 +39131,33 @@ lote.
 **Verificación.** `bash scripts/ci/run-all-contracts.sh`: rc=0. `GATE_BASE=origin/main bash scripts/test-gate.sh`: rc=0, 7009/7009 pasan; paso de mutantes NOT_RUN en este lote (el gate lo declara). `npm test --prefix apps/explorer-ui`: rc=0, 88 ficheros, 950 tests.
 
 **Estado.** PASS. PR #758, rama `task-179-green-main`. Decisión del operador registrada en la nota de TASK-179 (2026-11-09): no esperar aprobaciones ni abrir tareas BLOCKED para ellas. Tag y publicación en crates.io siguen requiriendo autorización nominal.
+
+## 2026-11-01 — TASK-5: el grafo del workspace tiene un solo dueño
+
+`WorkspaceSession` guardaba una segunda copia del grafo
+(`Arc<RwLock<Option<Arc<CallGraph>>>>`, 7 escrituras y 14 lecturas) junto al
+`graph_cache` de `AnalysisService`. Un `replace` hecho por otro camino, como un
+handler MCP, dejaba a la sesión sirviendo el grafo anterior, y «hay grafo» se
+decidía con `symbol_count() > 0`, que confunde un grafo vacío con la ausencia
+de grafo.
+
+**Cambio.** La sesión ya no tiene campo `graph`: lee del `graph_cache` por
+`held_graph()` y decide presencia con `current_id()`, que es `None` hasta la
+primera publicación. El grafo cargado desde persistencia se publica por
+`replace()`. Un solo fichero de producción, `workspace_session.rs`.
+
+**RED.** `test_graph_stats_follow_a_replace_made_by_another_path` cayó con
+`left: 1, right: 2` (AC #3) y `test_a_graph_emptied_of_symbols_still_counts_as_present`
+cayó en la base (AC #4). `test_a_project_without_symbols_is_built_once` ya
+pasaba antes: es de caracterización, no un RED.
+
+**Gates.** `full` rc=0 con 6508 pasados, 0 fallidos y 34 ignorados; CR-06
+28 → 28; `merge-gate` en SUCCESS sobre `cd7e7a8b` (rc=0). PR #503 fusionado por
+squash en `main` 2f3f21d1 el 2026-11-01 con autorización del operador. Como el
+squash borra los commits de la rama, el SHA citable es 2f3f21d1 y no `cd7e7a8b`.
+
+**Medición aparte.** El gate de esta unidad tardó más de 40 minutos; 22 de sus
+pasos son un `cargo test --test` por suite y cuestan 40-70 s cada uno. Queda en
+`TASK-36`.
+
+**Nota.** Recibo tardío: la unidad se fusionó el 2026-11-01 (2f3f21d1) y este registro se incorpora el 2026-11-09 desde el PR #504, cerrado por conflicto. Append-only; no reescribe entradas previas.
