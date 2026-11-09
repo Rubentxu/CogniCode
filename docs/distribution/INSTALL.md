@@ -300,10 +300,16 @@ Limitations, all measured:
   attestations and SLSA provenance, but none are published for v0.103.0, so
   that step proves nothing about provenance.
 
-`asdf` has no route. asdf 0.19.0 has no built-in GitHub backend, it installs
-only through a plugin, and this repository ships none. No asdf plugin exists
-for CogniCode, so use `mise` or the direct download. Publishing a plugin is a
-separate repository and a decision for the maintainer.
+`asdf` has no published route yet. asdf 0.19.0 has no built-in GitHub backend
+and installs only through a plugin, and no plugin is published for CogniCode.
+The repository carries a working one in `scripts/distribution/asdf-cogh/`
+(`list-all`, `download` with SHA256SUMS check, `install`). Measured with asdf
+0.19.0 on x86_64 Linux in a fresh data directory, with the plugin copied to
+`plugins/cogh`: `asdf install cogh 0.103.0` verified the checksum and
+`asdf which cogh` pointed to the installed `cogh 0.103.0`; version 9.9.9 failed
+with a 404. It installs `cogh` only; `cogh` installs the rest. `asdf plugin add`
+needs the plugin in its own git repository, so publishing it is a decision for
+the maintainer; until then use `mise` or the direct download.
 
 ## CLI workflows
 

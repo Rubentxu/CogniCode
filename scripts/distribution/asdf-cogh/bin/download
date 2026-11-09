@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Downloads the cogh tarball for ASDF_INSTALL_VERSION and verifies it against the
+# release SHA256SUMS. Only x86_64 Linux GNU is published.
+set -euo pipefail
+repo="${COGH_REPO_URL:-https://github.com/Rubentxu/CogniCode}"
+v="$ASDF_INSTALL_VERSION"
+[ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ] || { echo "asdf-cogh: only Linux x86_64 is published" >&2; exit 1; }
+t="x86_64-unknown-linux-gnu"
+name="cogh-${v}-${t}.tar.gz"
+base="$repo/releases/download/v${v}"
+mkdir -p "$ASDF_DOWNLOAD_PATH"
+curl -fsSL "$base/$name" -o "$ASDF_DOWNLOAD_PATH/$name"
+curl -fsSL "$base/SHA256SUMS" -o "$ASDF_DOWNLOAD_PATH/SHA256SUMS"
+( cd "$ASDF_DOWNLOAD_PATH" && grep -F "  $name" SHA256SUMS | sha256sum -c - ) >&2 \
+  || { echo "asdf-cogh: checksum mismatch or missing entry for $name" >&2; exit 1; }
+tar -xzf "$ASDF_DOWNLOAD_PATH/$name" -C "$ASDF_DOWNLOAD_PATH"
+rm -f "$ASDF_DOWNLOAD_PATH/$name"

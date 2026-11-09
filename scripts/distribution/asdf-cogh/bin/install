@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$ASDF_INSTALL_TYPE" = "version" ] || { echo "asdf-cogh: only version installs" >&2; exit 1; }
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+src="$ASDF_DOWNLOAD_PATH/bin/cogh"
+[ -f "$src" ] || src="$(find "$ASDF_DOWNLOAD_PATH" -type f -name cogh | head -n1)"
+[ -n "$src" ] && [ -f "$src" ] || { echo "asdf-cogh: cogh not found in the tarball" >&2; exit 1; }
+install -m 0755 "$src" "$ASDF_INSTALL_PATH/bin/cogh"
+"$ASDF_INSTALL_PATH/bin/cogh" --version >&2
