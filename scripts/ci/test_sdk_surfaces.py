@@ -13,8 +13,10 @@ than passing because there was nothing to compare.
 """
 
 import json
+import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -513,6 +515,47 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertEqual(sorted(RELEASE_ORDER), sorted(library_packages()))
         mode = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, timeout=30)
         self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def _preflight(self, env_extra, tmp):
+        script = ROOT / "scripts" / "distribution" / "preflight-sdk-publish.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/preflight-sdk-publish.sh")
+        env = {"PATH": os.environ["PATH"], "HOME": tmp, "CARGO_HOME": tmp}
+        env.update(env_extra)
+        return subprocess.run(
+            ["bash", str(script), "--skip-registry", "--skip-git"], capture_output=True, text=True, timeout=60, env=env
+        )
+
+    def test_publish_preflight_names_the_missing_credential_and_exits_nonzero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done = self._preflight({}, tmp)
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("BLOCKED", done.stdout)
+        self.assertIn("crates.io credential", done.stdout)
+        self.assertNotIn("READY", done.stdout)
+
+    def test_publish_preflight_is_ready_with_a_credential_and_never_prints_it(self):
+        secret = "cio-not-a-real-token-0123456789"
+        with tempfile.TemporaryDirectory() as tmp:
+            done = self._preflight({"CARGO_REGISTRY_TOKEN": secret}, tmp)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("READY", done.stdout)
+        self.assertNotIn(secret, done.stdout + done.stderr)
+
+    def test_publish_preflight_never_publishes_or_logs_in(self):
+        script = ROOT / "scripts" / "distribution" / "preflight-sdk-publish.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/preflight-sdk-publish.sh")
+        text = script.read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"cargo\s+publish")
+        self.assertNotIn("cargo login", text)
+        for name in library_packages():
+            with self.subTest(crate=name):
+                self.assertIn(name, text)
+        mode = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def test_release_guide_names_the_preflight(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/preflight-sdk-publish.sh", guide)
 
     def test_release_guide_names_the_rehearsal(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
