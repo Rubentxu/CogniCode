@@ -257,12 +257,53 @@ draft. On the same day the x86_64 Linux assets were downloaded to a fresh
 directory and `sha256sum --check SHA256SUMS` matched every entry; the
 `cognicode`, `cognicode-mcp` and `cogh` binaries extracted from them ran
 `--version` and reported 0.103.0. The remote `install.sh` installed `cogh`
-0.103.0 into a temporary directory, and `mise` installed the release when it
-was pinned with `@0.103.0`. Only that one platform was exercised, and a full
-MCP start was not. Provenance is out of scope here and is absent from
+0.103.0 into a temporary directory. Only that one platform was exercised, and
+a full MCP start was not. The `mise` and `asdf` routes are described in the
+next section, with what was and was not measured. Provenance is out of scope here and is absent from
 v0.103.0: no attestation is published, and signatures and SBOMs are not asset
 kinds in `release_contract.rs`. How provenance is produced is an open key
 custody decision (see `scripts/ci/attest-provenance.sh`).
+
+## mise and asdf
+
+This section is written in English. It records what was run on November 9,
+2026 with mise 2026.8.6 and asdf 0.19.0 on x86_64 Linux, each in a fresh data
+directory.
+
+`mise` installs from the GitHub release with its `github:` backend, with no
+plugin. A bare `github:Rubentxu/CogniCode@0.103.0` picks the first matching
+asset, which is the `cognicode` tarball. To get another binary, name its asset
+in a `mise.toml`:
+
+```toml
+[tools."github:Rubentxu/CogniCode"]
+version = "0.103.0"
+asset_pattern = "cogh-*-x86_64-unknown-linux-gnu.tar.gz"
+bin = "cogh"
+```
+
+With `cognicode-mcp-*-x86_64-unknown-linux-gnu.tar.gz` and `bin = "cognicode-mcp"`
+the same recipe installed `cognicode-mcp`. In each case the binary in the
+mise install directory, run by its full path, reported 0.103.0.
+
+Limitations, all measured:
+
+- One repository key gives one binary. Two `[tools]` entries for the same
+  repository, even with different options in the key, collapsed into one and
+  installed only `cognicode`. To have the three binaries you need three
+  separate configurations (for example one directory per binary), or the
+  direct download above.
+- Check the path, not the name. `mise exec ... -- cogh --version` printed
+  `0.102.1` because an older `cogh` was first on `PATH`; it was not the one mise
+  had installed. Compare `command -v` with the mise install directory.
+- Only x86_64 Linux was exercised. mise reported that it verified artifact
+  attestations and SLSA provenance, but none are published for v0.103.0, so
+  that step proves nothing about provenance.
+
+`asdf` has no route. asdf 0.19.0 has no built-in GitHub backend, it installs
+only through a plugin, and this repository ships none. No asdf plugin exists
+for CogniCode, so use `mise` or the direct download. Publishing a plugin is a
+separate repository and a decision for the maintainer.
 
 ## CLI workflows
 
