@@ -39216,3 +39216,38 @@ salida de los binarios instalados); descarga de los assets y verificación de
 `run-all-contracts.sh` completo (dos rojos previos en `test_roadmap_coherence`
 por deriva de `CURRENT.md`, ajenos a este cambio); gate de cargo y `npm test`
 (sin cambios de código). Sin tag, sin publicación, sin tocar TASK-177.
+
+## 2026-11-09 — TASK-179 AC4: `--help` real frente a la guía y la «Limitation» de Release assets
+
+Contraste de solo lectura, sobre `ca3df4e8`, de los comandos y flags citados en
+`README.md`, `README.es.md` y `docs/distribution/INSTALL.md` con la salida de
+`--help` de `cogh`, `cognicode` y `cognicode-mcp` 0.102.1 instalados.
+
+**Resultado: sin desajuste, así que no hay test RED.** Coinciden los diez
+subcomandos de `cogh` citados y sus flags (`install --version --profile --ide`,
+`update --dry-run`, `uninstall --version --ide`, `rollback`, `reshim`, `where`,
+`init`); los de `cognicode` (`analyze`, `doctor --format --cwd`,
+`index build --strategy`, `index query|outline|symbol-code`,
+`graph full --rebuild`, `graph hot-paths -n --min-fan-in`, `graph trace-path`,
+`graph mermaid --format`, `graph complexity|impact`,
+`refactor --operation`, `navigate definition|hover|references`, `status`,
+`find --symbol`, `trace --symbol --direction --depth`, `impact --symbol`); y
+`cognicode-mcp --version` y `--cwd`.
+
+**Cambio.** La «Limitation» de Release assets decía que no se había contrastado
+ningún nombre con una release. `gh release view v0.102.1` (lectura) lista 8
+assets, no borrador, y los 8 nombres coinciden con la guía; el texto lo dice
+ahora, y mantiene que no se descargó nada, así que `SHA256SUMS` y los hashes
+siguen sin confirmar. Ningún contrato fijaba el párrafo.
+
+**Contratos sin filtro:** readme 46, architecture 27, surfaces 46,
+explorer_handoff 5; `git diff --check` limpio.
+
+**NOT_RUN.** Los valores de cada flag que `--help` no enumera; descarga de
+assets y verificación de `SHA256SUMS`; ejecución de `cogh install` /
+`install.sh` contra la release (la «Limitation» de la sección MCP, que dice
+«hasta que una release lleve esta versión», sigue sin reescribir: la release ya
+existe pero la instalación no se ejecutó); `run-all-contracts.sh` completo (dos
+rojos previos de `test_roadmap_coherence` por deriva de `CURRENT.md`, ajenos);
+gate de cargo y `npm test` (sin cambios de código). Sin tag, sin publicación,
+sin tocar TASK-177.

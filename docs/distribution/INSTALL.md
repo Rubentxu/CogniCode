@@ -235,11 +235,13 @@ sha256sum --check --ignore-missing SHA256SUMS
 `--ignore-missing` lets you check only the files you downloaded; a file that is
 present and does not match still fails the command.
 
-Limitation: these names are derived from the release contract in this tree.
-No published release was downloaded to write this section, so the names and
-the checksums are not confirmed against a real release. Provenance is also
-out of scope here: signatures and SBOMs are not asset kinds in
-`release_contract.rs`, and this guide does not describe how to verify them.
+Limitation: these names are derived from the release contract in this tree and
+were compared, on November 9, 2026, with the asset list that
+`gh release view v0.102.1` reports: all eight match and the release is not a
+draft. No asset was downloaded, so the contents of `SHA256SUMS` and the
+checksums themselves are not confirmed. Provenance is also out of scope here:
+signatures and SBOMs are not asset kinds in `release_contract.rs`, and this
+guide does not describe how to verify them.
 
 ## CLI workflows
 
