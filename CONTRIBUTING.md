@@ -19,6 +19,18 @@ is the MCP adapter, `crates/cognicode-cli` is the CLI adapter. Application ports
 must not depend on MCP adapters. If you are unsure where a change belongs, ask
 in an issue first — a change in the wrong layer costs more than a question.
 
+For the library crates published as the SDK, the crate classification
+(library, application, internal) is declared in
+[`docs/distribution/SDK_SURFACES.json`](docs/distribution/SDK_SURFACES.json),
+and their observed dependency graph and public entry points are described in
+[`docs/distribution/SDK_ARCHITECTURE.md`](docs/distribution/SDK_ARCHITECTURE.md).
+That document covers the library crates only; the Explorer is out of its scope.
+
+If your change alters what a published crate promises, read the
+[semver policy](docs/distribution/SEMVER_POLICY.md) first. The steps to
+publish those crates, and to roll a release back, are in
+[`docs/distribution/SDK_RELEASE.md`](docs/distribution/SDK_RELEASE.md).
+
 ## License
 
 By contributing you agree that your contribution is licensed under the same
@@ -34,7 +46,7 @@ Strict [Conventional Commits](https://www.conventionalcommits.org/):
 type(scope): description
 ```
 
-Allowed types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
+Allowed types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `build`, `ci`, `release`, `evidence`, `cert`.
 Breaking changes are marked with `!` after the scope, or with a
 `BREAKING CHANGE:` footer.
 
@@ -61,7 +73,7 @@ If your change touches the release contract, the MCP tool surface, or the
 product artifacts, there are narrower checks that are the real gate:
 
 ```bash
-python3 -m pytest -q scripts/product/    # product artifact projections
+for f in scripts/product/test_*.py; do python3 -I "$f" || break; done   # product artifact projections
 cargo deny check licenses                 # dependency and licence policy
 ```
 

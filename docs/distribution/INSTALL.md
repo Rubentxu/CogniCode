@@ -14,7 +14,8 @@ bajo `versions/<v>/skills/<bundle-id>` y los integra sin sobrescribir otros
 bundles de OpenCode. Los binarios de `explorer-api`/`explorer-mcp` y las
 plataformas Windows/macOS **no** forman parte de esta superficie estable:
 no anunciarlos como instalables mediante `cogh` hasta publicar y certificar
-sus artefactos y perfiles. Linux x86_64/aarch64 GNU es la matriz publicada.
+sus artefactos y perfiles. Linux x86_64 GNU es la matriz publicada.
+Las variantes `aarch64` y `musl` son experimentales y no se publican (`product/platforms.json`).
 
 La skill de auditoría externa
 [`cognicode-quality-investigator`](https://github.com/Rubentxu/agent-skill/tree/main/skills/cognicode-quality-investigator)
@@ -71,7 +72,7 @@ cogh rollback                 # revierte la última transición registrada, si e
 cogh install mcp-server --version latest --profile reviewer --ide opencode
 
 # Retira una versión instalada y su integración IDE de forma explícita:
-cogh uninstall mcp-server --version v0.99.2 --ide opencode
+cogh uninstall mcp-server --version v0.102.1 --ide opencode
 ```
 
 `cogh update --profile core` es un cambio deliberado de perfil y retirará
@@ -121,3 +122,201 @@ versionado** como `~/.local/opt/cognicode-mcp/<versión>/bin/`. La configuració
 de OpenCode puede apuntar temporalmente a ese binario; el estado de
 `cogh doctor` no cambia por instalar una copia externa. No confundir este
 procedimiento de recuperación con una reparación de la instalación gestionada.
+
+## Consuming the SDK
+
+This section is written in English; the rest of this guide is in Spanish.
+
+The four `library` crates declared in
+[`SDK_SURFACES.json`](SDK_SURFACES.json) are the SDK. Their layout is described
+in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
+[`SDK_RELEASE.md`](SDK_RELEASE.md).
+
+**Limitation: the SDK is not yet published on crates.io.** Publishing needs a
+registry token and an explicit operator confirmation, and it is tracked by
+TASK-178 (acceptance criterion 4). Until then the commands below do not
+resolve from the registry and will fail. They document the intended usage at
+the workspace version `0.102.1`.
+
+Once published, add the crates in publication order, dependencies first
+(`cognicode-core` depends on `cognicode-graph-algos` and `cognicode-macros`;
+`cognicode-graph-wasm` depends on `cognicode-graph-algos`):
+
+```bash
+cargo add cognicode-graph-algos@=0.102.1
+cargo add cognicode-macros@=0.102.1
+cargo add cognicode-core@=0.102.1
+cargo add cognicode-graph-wasm@=0.102.1
+```
+
+Add only the crates your project uses; the order matters for publishing, not
+for consuming. Pin every crate to the same version (`=`), because they are
+released together. Feature combinations and the supported toolchain are listed
+in `SDK_RELEASE.md`.
+
+## Registering cognicode-mcp in an MCP client
+
+This section is written in English; the rest of this guide is in Spanish.
+
+`cognicode-mcp` is a stdio MCP server: the client starts it as a child process
+and talks to it over its standard streams. Register it in the client's MCP
+configuration (Claude Desktop, Cursor and Windsurf share this shape):
+
+```json
+{
+  "mcpServers": {
+    "cognicode": {
+      "command": "cognicode-mcp",
+      "args": ["--cwd", "/path/to/your/project", "--profile", "default"]
+    }
+  }
+}
+```
+
+Use the path that `cogh where cognicode-mcp` prints as `command` when the
+client does not inherit the shell `PATH`; that path is the managed shim, which
+points to the active version.
+
+Arguments, as declared by the clap definition in `crates/cognicode-mcp/src/main.rs`:
+
+- `--cwd <dir>` (short `-c`): the project root to analyse. The default is the
+  current directory of the client process, which is rarely the project, so set
+  it. The server exits with an error if the directory does not exist.
+- `--read-only`: hide the mutating tools from `tools/list` and reject them.
+- `--profile <name>`: the surface announced in `tools/list`. The accepted
+  values are `default`, `full` and `legacy`; any other value makes the server
+  exit with status 2. This is not the install profile of `cogh install`.
+
+Environment:
+
+- `COGNICODE_TELEMETRY=1` enables metric export; it is off by default and no
+  source code is ever sent.
+- `RUST_LOG` sets the log filter (the default level is `info`).
+
+Streams: JSON-RPC messages travel on stdout and nothing else may be written
+there; logs and diagnostics go to stderr. A client that shows a parse error on
+startup is reading something that is not JSON-RPC from stdout.
+
+Limitation: `cogh install` and the remote `install.sh` fetch a published
+release, and they were not run to write this section. Until a release carries
+this version, build the binary from source as the README describes and
+register its absolute path as `command`.
+
+## Release assets
+
+This section is written in English; the rest of this guide is in Spanish.
+
+A release `v0.102.1` publishes the files below, named by the functions of
+`crates/cognicode-cli/src/cmd/release_contract.rs`. Only the certified platform
+`x86_64-unknown-linux-gnu` is published; `product/platforms.json` marks
+`aarch64` and `musl` as experimental and macOS and Windows as unsupported.
+
+Binaries, one tarball per component and platform:
+
+- `cogh-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-mcp-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+
+Skill bundles, platform-independent (they are skills, not executables):
+
+- `cognicode-0.102.1.tar.gz`
+- `cognicode-mcp-0.102.1.tar.gz`
+
+Manifests and checksums:
+
+- `bundle-0.102.1-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
+  `cogh` resolves.
+- `release-inventory-0.102.1.json`: the inventory of the release.
+- `SHA256SUMS`: the checksum of every file above.
+
+`explorer-api` and `explorer-mcp` are not published, and neither is the
+`cognicode-developer` skill bundle.
+
+Verify integrity after downloading every file you need into one empty
+directory (the URL base is
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.102.1/`):
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+`--ignore-missing` lets you check only the files you downloaded; a file that is
+present and does not match still fails the command.
+
+Limitation: these names are derived from the release contract in this tree.
+No published release was downloaded to write this section, so the names and
+the checksums are not confirmed against a real release. Provenance is also
+out of scope here: signatures and SBOMs are not asset kinds in
+`release_contract.rs`, and this guide does not describe how to verify them.
+
+## CLI workflows
+
+This section is written in English; the rest of this guide is in Spanish.
+
+Four recipes for the `cognicode` CLI, run from the root of the project
+you want to analyse. Every subcommand and flag below is declared by the clap
+definitions in `crates/cognicode-cli/src/cli/commands.rs` or, for the goal
+commands, generated from the goal registry in
+`crates/cognicode-core/src/interface/goals.rs`; the values of
+`--strategy`, `--operation` and `--format` are the closed sets those sources
+accept. Run `cognicode <command> --help` for the full list of options.
+
+Map a project: index it, build the call graph, find the most called functions
+and draw the graph.
+
+```bash
+cognicode index build . --strategy full
+cognicode graph full . --rebuild
+cognicode graph hot-paths . -n 5 --min-fan-in 2
+cognicode graph mermaid . --format svg
+```
+
+`--strategy` accepts `lightweight` (the default), `full` and `on_demand`.
+`hot-paths` lists at most `-n` functions (default 10) that have at least
+`--min-fan-in` callers (default 1). `graph mermaid --format` accepts `code`,
+`png`, `svg` and `txt`.
+
+Preview a refactor. The operation is chosen with `--operation` (`rename`,
+`extract`, `inline` or `move`), and the default is `rename`:
+
+```bash
+cognicode refactor old_name new_name --operation rename
+cognicode refactor old_name new_name --operation rename --format json
+```
+
+Without `--apply` the command is a preview and writes nothing. `--apply` is a
+separate authorization and also needs `--authorization-token`; it is not part of
+these recipes.
+
+Ask about one symbol with the goal commands. `status` reports the version and
+the phases the CLI offers; `find` locates a symbol by name; `trace` follows its
+callers and callees (`--direction` accepts `callers`, `callees` or `both`, the
+default, and `--depth` is the number of hops, default 1); `impact` lists what a
+change to it would reach.
+
+```bash
+cognicode status
+cognicode find --symbol helper
+cognicode trace --symbol helper --direction callers --depth 2
+cognicode impact --symbol helper --format json
+```
+
+Each of these accepts `--format text` (the default) or `--format json`, and
+works on the current workspace without the map recipe above. `status` also
+reports how many source files could not be read, so a partial answer is not
+mistaken for a complete one.
+
+Check the environment: `doctor` reports which language servers are available
+for the workspace.
+
+```bash
+cognicode doctor
+cognicode doctor --format json --cwd .
+```
+
+Limitation: the flags and values are checked against the clap sources and the goal
+registry of this tree by `scripts/ci/test_readme_contract.py`. The goal commands
+were also run once against a two-function scratch project with the installed
+0.102.1 CLI; none of the recipes was executed against a published release or
+the remote installer. Their output is not
+described here because it was not recorded.

@@ -59,12 +59,13 @@ lower floor was measured, so none is claimed.
 
 ## Examples
 
-There are no `core`, `macros` or `graph-wasm` programs under `examples/`; the
-runnable material for those crates is the documentation tests that
-`cargo test --doc` executes (core: 2 run, macros: 6 are marked `ignore`).
+There are no `macros` or `graph-wasm` programs under `examples/`, and the one in
+`core` is a measurement instrument, not a usage example; the runnable material
+for those crates is the documentation tests that `cargo test --doc` executes
+(core: 2 run, macros: 6 are marked `ignore`).
 
 - `cognicode-graph-algos`: `examples/page_rank.rs`, run with `cargo run --example page_rank -p cognicode-graph-algos`
-- `cognicode-core`: none yet
+- `cognicode-core`: `examples/measure_incremental_scanner.rs`, a measurement instrument for the incremental scanner (not a product route), run with `cargo run --example measure_incremental_scanner -p cognicode-core`
 - `cognicode-macros`: none yet
 - `cognicode-graph-wasm`: none yet
 

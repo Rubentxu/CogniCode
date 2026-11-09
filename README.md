@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.102.1`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.102.1`. Both channels install the same published release asset — the digest identity proof is no longer versioned in this tree (known limitation). Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -70,9 +70,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # MCP daemon
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # expect: cogh 0.101.10
-./target/release/cognicode --version    # expect: cognicode 0.101.10
-./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.101.10
+./target/release/cogh --version         # expect: cogh 0.102.1
+./target/release/cognicode --version    # expect: cognicode 0.102.1
+./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.102.1
 ```
 
 > **Note:** the published binaries also include the binaries for the cross-toolchain
@@ -129,10 +129,8 @@ Add CogniCode as an MCP server in your AI client configuration:
   "tool": "safe_refactor",
   "arguments": {
     "action": "rename",
-    "new_name": "new_function_name",
-    "file_path": "src/lib.rs",
-    "line": 42,
-    "column": 4
+    "target": "my_function",
+    "params": { "new_name": "new_function_name", "file_path": "src/lib.rs" }
   }
 }
 ```
@@ -146,7 +144,7 @@ surface. The authoritative list, generated from the code and checked in CI, is
 [`crates/cognicode-core/product/tools.json`](crates/cognicode-core/product/tools.json); per-tool input and output schemas are
 in [`product/README.md`](product/README.md).
 
-### Graph Analysis (12 tools)
+### Graph Analysis (11 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -161,31 +159,23 @@ in [`product/README.md`](product/README.md).
 | `export_mermaid` | Export call graph as Mermaid flowchart or SVG. |
 | `build_lightweight_index` | Build fast symbol-only index. |
 | `query_symbol_index` | Case-insensitive symbol lookup. |
-| `find_dead_code` | Find unused symbols across the project. |
 
-### Graph Operations (5 tools)
+### Graph Operations (3 tools)
 
 | Tool | Description |
 |------|-------------|
 | `build_call_subgraph` | Build on-demand subgraph centered on a symbol. |
 | `get_per_file_graph` | Get call graph for a single file. |
 | `merge_graphs` | Merge graphs from multiple files. |
-| `get_module_dependencies` | Analyze module-level dependencies. |
-| `get_all_symbols` | Get all symbols in the workspace. |
 
-### Symbols & Semantics (9 tools)
+### Symbols & Semantics (4 tools)
 
 | Tool | Description |
 |------|-------------|
 | `get_file_symbols` | Extract symbols from a file. Supports compressed summaries. |
-| `get_outline` | Hierarchical symbol outline (tree structure). |
 | `get_symbol_code` | Get full source code of a symbol including docstrings. |
 | `get_complexity` | Cyclomatic, cognitive, and nesting complexity metrics. |
-| `semantic_search` | Fuzzy symbol search with kind filtering. |
 | `find_usages` | Find all usages of a symbol across the project. |
-| `find_usages_with_context` | Find usages with surrounding context lines. |
-| `structural_search` | AST-based structural pattern matching. |
-| `validate_syntax` | Validate file syntax using Tree-sitter. |
 
 ### LSP Navigation (3 tools)
 
@@ -231,7 +221,7 @@ cognicode graph mermaid [path] [--format svg|txt]
 cognicode graph complexity [path]
 cognicode graph impact <symbol> [path]
 
-cognicode refactor rename|extract|inline|move <symbol> [new_name]
+cognicode refactor <symbol> [new_name] [--operation rename|extract|inline|move]
 
 cognicode navigate definition|hover|references <file:line:col> [path]
 ```
@@ -350,7 +340,11 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | `cognicode-mcp` | MCP server (`cognicode-mcp`) and test client (`mcp-client`) |
 | `cognicode-cli` | Terminal interface (`cognicode`) |
 | `cognicode-sandbox` | Automated scenario testing and benchmarking |
-| `rcode-debug` | Time-travel debugging integration (Chronos MCP) |
+| `cognicode-graph-algos` | SDK library: dependency-free graph algorithms |
+| `cognicode-macros` | SDK library: procedural macros used by the domain types |
+| `cognicode-graph-wasm` | SDK library: WebAssembly bindings for the graph algorithms |
+
+The `cognicode-core`, `cognicode-graph-algos`, `cognicode-macros` and `cognicode-graph-wasm` crates are the SDK surface. They are not published on crates.io yet; see [Consuming the SDK](docs/distribution/INSTALL.md#consuming-the-sdk) for the exact commands and that limitation.
 
 ## Configuration
 
@@ -359,13 +353,57 @@ CogniCode follows **Domain-Driven Design** with Clean Architecture and 4 bounded
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RUST_LOG` | `info` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OpenTelemetry metrics endpoint |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OpenTelemetry metrics endpoint; only used when `COGNICODE_TELEMETRY=1` |
+| `COGNICODE_TELEMETRY` | unset (off) | `COGNICODE_TELEMETRY=1` opts in to metric export; any other value leaves it off |
+| `COGNICODE_LINK_TRACE` | unset (off) | Path of a file that receives one JSON line per tool call (sensitive: may hold paths and symbol names) |
 
 ### Feature Flags (`cognicode-core`)
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `persistence` | enabled | RedbGraphStore for persistent graph cache |
+
+## Security and limitations
+
+CogniCode is a local tool: it analyses a repository on your machine and does
+not need the network. The boundaries that matter when you run it, stated in
+full in [`SECURITY.md`](SECURITY.md):
+
+- **The analysed repository is data, not instructions.** Files, comments and
+  tool results are never treated as commands.
+- **Read-only mode.** Start the server with `--read-only` to hide the mutating
+  tools from `tools/list` and reject them.
+- **No telemetry by default.** `COGNICODE_TELEMETRY=1` opts in to metric
+  export; no source code is sent. `COGNICODE_LINK_TRACE=<file>` opts in to a
+  local record of tool calls; it can hold paths and symbol names, so treat the
+  file as sensitive.
+- **Streams.** `cognicode-mcp` writes JSON-RPC on stdout and logs on stderr,
+  never the reverse.
+
+Limitations: a `Partial`, `Unknown`, `Unsupported` or `Failed` result is not a
+complete one, and an analysis answer states its coverage. Report a
+vulnerability privately through GitHub Security Advisories, not in a public
+issue.
+
+## Troubleshooting
+
+- **The MCP client reports a parse error or "invalid JSON" when it starts the
+  server.** The client reads JSON-RPC from stdout, so anything else printed
+  there breaks it, for example a wrapper script or a shell profile that echoes.
+  `cognicode-mcp` itself writes its logs to stderr; raise them with `RUST_LOG`
+  and read them there.
+- **The server exits at start with exit status 2.** `--profile` received a
+  value that is not a surface profile. The accepted values are `default`,
+  `full` and `legacy`; the error on stderr lists them.
+- **The server exits at start with exit status 1.** The directory given to
+  `--cwd` does not exist; stderr says `Directory '...' does not exist`.
+  Pass a path that exists.
+- **A language is not analysed.** Run the doctor, which reports which language
+  servers are available for the workspace:
+
+```bash
+cognicode doctor --cwd . --format json
+```
 
 ## Development
 
@@ -389,9 +427,8 @@ CogniCode is designed to be the **code intelligence backbone** for AI agents.
 Instead of asking an agent to read files and guess at structure, you give it
 tools that return precise, structured answers.
 
-📖 **[docs/agent-prompts.md](docs/agent-prompts.md)** contains 20 ready-to-use
-prompt scenarios with full reasoning chains and tool call sequences. Here's a
-taste:
+Here is a taste of the prompt scenarios, with their reasoning chains and tool
+call sequences:
 
 ---
 
@@ -432,8 +469,6 @@ files, and the full call chain — before touching a single line of code.
 
 These are just 2 of 20 scenarios. The full guide covers **dead code detection,
 safe rename refactoring, complexity audits, execution path tracing**, and more.
-
-👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md) · [Versión en español →](docs/agent-prompts-es.md)
 
 ## Versioning
 
