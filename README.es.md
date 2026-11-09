@@ -38,7 +38,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.102.1`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.103.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@v0.102.1`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.103.0`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 ### Binario precompilado publicado (recuperación independiente)
 
@@ -70,9 +70,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # Daemon MCP
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # esperado: cogh 0.102.1
-./target/release/cognicode --version    # esperado: cognicode 0.102.1
-./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.102.1
+./target/release/cogh --version         # esperado: cogh 0.103.0
+./target/release/cognicode --version    # esperado: cognicode 0.103.0
+./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.103.0
 ```
 
 > **Nota:** los binarios publicados también incluyen los de la cadena de herramientas cruzada
@@ -492,17 +492,17 @@ trazado de rutas de ejecución** y mucho más.
 
 ## Versionado
 
-- **Release vigente:** `v0.102.1`, cortada desde este árbol con ese tag. La
+- **Release vigente:** `v0.103.0`, cortada desde este árbol con ese tag. La
   release publicada desde él es la que sirve un `install.sh` sin versión
   fijada. La anterior publicada es
-  [`v0.101.30`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.30);
+  [`v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1);
   `v0.101.24`, `v0.101.25` y `v0.101.26` tienen tag pero nunca se publicaron,
-  y un tag que no se publicó no se mueve. v0.102.1 es una versión menor: el
-  grafo se publica en orden canónico, el sobre de la respuesta (resultado,
-  base, enlaces siguientes) tiene un solo dueño y cada pregunta declara la
-  cobertura con la que se respondió.
-- **Los binarios informan:** `0.102.1` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1).
+  y un tag que no se publicó no se mueve. v0.103.0 es una versión menor: los
+  cuatro crates de librería del SDK se publican en crates.io, los adaptadores
+  de MCP y del sandbox salen del core, y la release sale sin atestación de
+  procedencia (decisión abierta sobre la custodia de la clave).
+- **Los binarios informan:** `0.103.0` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.103.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.0).
 - **Tags sin release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` y
   `v0.101.26` existen y nunca se publicaron; cada uno tiene una entrada en el

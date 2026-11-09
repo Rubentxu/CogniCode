@@ -65,7 +65,7 @@ cogh rollback                 # revierte la última transición registrada, si e
 cogh install mcp-server --version latest --profile reviewer --ide opencode
 
 # Retira una versión instalada y su integración IDE de forma explícita:
-cogh uninstall mcp-server --version v0.102.1 --ide opencode
+cogh uninstall mcp-server --version v0.103.0 --ide opencode
 ```
 
 `cogh update --profile core` es un cambio deliberado de perfil y retirará
@@ -213,27 +213,27 @@ absolute path as `command`.
 
 This section is written in English; the rest of this guide is in Spanish.
 
-A release `v0.102.1` publishes the files below, named by the functions of
+A release `v0.103.0` publishes the files below, named by the functions of
 `crates/cognicode-cli/src/cmd/release_contract.rs`. Only the certified platform
 `x86_64-unknown-linux-gnu` is published; `product/platforms.json` marks
 `aarch64` and `musl` as experimental and macOS and Windows as unsupported.
 
 Binaries, one tarball per component and platform:
 
-- `cogh-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-mcp-0.102.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cogh-0.103.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-0.103.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-mcp-0.103.0-x86_64-unknown-linux-gnu.tar.gz`
 
 Skill bundles, platform-independent (they are skills, not executables):
 
-- `cognicode-0.102.1.tar.gz`
-- `cognicode-mcp-0.102.1.tar.gz`
+- `cognicode-0.103.0.tar.gz`
+- `cognicode-mcp-0.103.0.tar.gz`
 
 Manifests and checksums:
 
-- `bundle-0.102.1-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
+- `bundle-0.103.0-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
   `cogh` resolves.
-- `release-inventory-0.102.1.json`: the inventory of the release.
+- `release-inventory-0.103.0.json`: the inventory of the release.
 - `SHA256SUMS`: the checksum of every file above.
 
 `explorer-api` and `explorer-mcp` are not published, and neither is the
@@ -241,7 +241,7 @@ Manifests and checksums:
 
 Verify integrity after downloading every file you need into one empty
 directory (the URL base is
-`https://github.com/Rubentxu/CogniCode/releases/download/v0.102.1/`):
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.103.0/`):
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
@@ -252,15 +252,16 @@ present and does not match still fails the command.
 
 Limitation: these names are derived from the release contract in this tree and
 were compared, on November 9, 2026, with the asset list that
-`gh release view v0.102.1` reports: all eight match and the release is not a
+`gh release view v0.103.0` reports: all eight match and the release is not a
 draft. On the same day the x86_64 Linux assets were downloaded to a fresh
 directory and `sha256sum --check SHA256SUMS` matched every entry; the
 `cognicode`, `cognicode-mcp` and `cogh` binaries extracted from them ran
-`--version` and reported 0.102.1. Only that one platform and `--version` were
-exercised: the remote installer and a full MCP start were not. Provenance is
-out of scope here and is absent from v0.102.1: `gh attestation verify` finds no
-attestation for the `cogh` archive (HTTP 404), and signatures and SBOMs are not
-asset kinds in `release_contract.rs`. How provenance is produced is an open key
+`--version` and reported 0.103.0. The remote `install.sh` installed `cogh`
+0.103.0 into a temporary directory, and `mise` installed the release when it
+was pinned with `@0.103.0`. Only that one platform was exercised, and a full
+MCP start was not. Provenance is out of scope here and is absent from
+v0.103.0: no attestation is published, and signatures and SBOMs are not asset
+kinds in `release_contract.rs`. How provenance is produced is an open key
 custody decision (see `scripts/ci/attest-provenance.sh`).
 
 ## CLI workflows
