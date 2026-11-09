@@ -89,8 +89,8 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.102.1 (current cut) | yes |
-| 0.102.0 (previous published release, `v0.102.0`) | yes |
+| 0.103.0 (current cut) | yes |
+| 0.102.1 (previous published release, `v0.102.1`) | yes |
 | 0.101.30 (previous published release, `v0.101.30`) | no |
 | 0.101.29 (previous published release, `v0.101.29`) | no |
 | 0.101.28 (previous published release, `v0.101.28`) | no |

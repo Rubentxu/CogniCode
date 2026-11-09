@@ -10,6 +10,26 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.103.0] — 2026-11-09
+
+**Minor: el SDK se publica en crates.io, los adaptadores de MCP y del sandbox
+salen del core y la distribución se corta con un solo comando.**
+
+**Superficie (cambios visibles para un consumidor).**
+- Los cuatro crates de librería (`cognicode-core`, `cognicode-graph-algos`,
+  `cognicode-macros`, `cognicode-graph-wasm`) están publicados en crates.io en
+  esta versión, con ensayo de publicación, verificación desde un consumidor
+  limpio y herramientas de release (`release-sdk.sh`, `publish-sdk.sh`).
+- `interface/cli` pasa de `cognicode-core` a `cognicode-cli`; el core ya no
+  depende de `opentelemetry-otlp` ni del SDK de OpenTelemetry.
+- Los adaptadores de MCP y del sandbox quedan aislados del core.
+- La cobertura por fichero se publica en las respuestas de análisis.
+- Los snapshots durables mal formados se rechazan en vez de leerse.
+
+**Distribución.** La release sale sin atestación de procedencia (decisión
+abierta sobre la custodia de la clave; ver el ADR de TASK-180). `install.sh`,
+`cogh install` y `mise` instalan 0.103.0.
+
 ## [v0.102.1] — 2026-11-07
 
 **Minor: el grafo se publica en un orden canónico, el sobre de la respuesta
