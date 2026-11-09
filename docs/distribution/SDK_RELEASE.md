@@ -91,13 +91,18 @@ Procedure, from a clean checkout of `main` at the release commit:
    is not yet on the registry. Running the dry-run per crate fails for those two
    (`no matching package named cognicode-graph-algos`); that is the ordering,
    not a defect. Fix anything it reports before publishing.
-3. Publish in the order above with the operator's registry token, waiting for
+3. Check what would stop the upload, read-only: `bash
+   scripts/distribution/preflight-sdk-publish.sh`. It prints `READY` or
+   `BLOCKED` naming each missing condition (registry credential, a crate name
+   or version already taken on crates.io, an unclean tree, `HEAD` not at
+   `origin/main`) and exits non-zero unless ready. It never publishes or logs in.
+4. Publish in the order above with the operator's registry token, waiting for
    each crate to be indexed before publishing the next.
-4. Verify from a clean consumer project that depends on the published
+5. Verify from a clean consumer project that depends on the published
    versions only: `bash scripts/distribution/verify-sdk-consumer.sh
    --confirm-published` (read-only; it builds a fresh project with exact
    `=<version>` pins and rejects any path dependency).
-5. Tag the release commit.
+6. Tag the release commit.
 
 Rollback: a published version cannot be overwritten or deleted. If a release is
 defective, run `cargo yank --version <x.y.z> <crate>` for every affected crate
