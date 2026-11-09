@@ -300,16 +300,25 @@ Limitations, all measured:
   attestations and SLSA provenance, but none are published for v0.103.0, so
   that step proves nothing about provenance.
 
-`asdf` has no published route yet. asdf 0.19.0 has no built-in GitHub backend
-and installs only through a plugin, and no plugin is published for CogniCode.
-The repository carries a working one in `scripts/distribution/asdf-cogh/`
-(`list-all`, `download` with SHA256SUMS check, `install`). Measured with asdf
-0.19.0 on x86_64 Linux in a fresh data directory, with the plugin copied to
-`plugins/cogh`: `asdf install cogh 0.103.0` verified the checksum and
-`asdf which cogh` pointed to the installed `cogh 0.103.0`; version 9.9.9 failed
-with a 404. It installs `cogh` only; `cogh` installs the rest. `asdf plugin add`
-needs the plugin in its own git repository, so publishing it is a decision for
-the maintainer; until then use `mise` or the direct download.
+`asdf` 0.19.0 has no built-in GitHub backend and installs only through a
+plugin, so CogniCode publishes one in its own repository,
+[Rubentxu/asdf-cogh](https://github.com/Rubentxu/asdf-cogh) (a published copy of
+`scripts/distribution/asdf-cogh/`, which stays the source). Measured on November
+9, 2026 with asdf 0.19.0 on x86_64 Linux in a fresh data directory, from the
+published repository and not from a local copy:
+
+```sh
+asdf plugin add cogh https://github.com/Rubentxu/asdf-cogh.git
+asdf install cogh 0.103.0
+"$(asdf where cogh 0.103.0)/bin/cogh" --version   # cogh 0.103.0
+```
+
+`asdf install` verified the tarball against `SHA256SUMS` ("La suma coincide")
+and the installed binary reported `cogh 0.103.0`; version 9.9.9 failed in the
+download step. The plugin installs `cogh` only; `cogh` installs the rest
+(`cogh install mcp-server --profile reviewer`; without the profile the 0.103.0
+bundle installs `cognicode` but not `cognicode-mcp`). The same limits as `mise`
+apply: only x86_64 Linux was exercised and no provenance is published.
 
 ## CLI workflows
 
