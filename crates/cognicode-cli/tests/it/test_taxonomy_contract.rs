@@ -307,8 +307,6 @@ fn the_mutation_scope_is_declared_and_resolvable() {
     // scope that claims more coverage than it has.
     for excluded in [
         "cognicode-core",
-        "cognicode-explorer",
-        "cognicode-runtime",
         "cognicode-mcp",
         "cognicode-graph-wasm",
         "cognicode-macros",
