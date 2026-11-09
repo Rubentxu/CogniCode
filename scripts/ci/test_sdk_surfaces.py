@@ -553,6 +553,54 @@ class SdkSurfaceContract(unittest.TestCase):
         mode = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, timeout=30)
         self.assertEqual(mode.returncode, 0, mode.stderr)
 
+    def _runner_path(self):
+        script = ROOT / "scripts" / "distribution" / "publish-sdk.sh"
+        self.assertTrue(script.is_file(), "missing scripts/distribution/publish-sdk.sh")
+        return script
+
+    def test_publish_runner_refuses_without_explicit_confirmation(self):
+        script = self._runner_path()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {"PATH": os.environ["PATH"], "HOME": tmp, "CARGO_HOME": tmp}
+            done = subprocess.run(["bash", str(script)], capture_output=True, text=True, timeout=60, env=env)
+        self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
+        self.assertIn("--confirm-publish", done.stdout + done.stderr)
+
+    def test_publish_runner_stops_at_a_blocked_preflight_before_any_upload(self):
+        script = self._runner_path()
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "bin"
+            fake.mkdir()
+            marker = Path(tmp) / "cargo-was-called"
+            (fake / "cargo").write_text(f"#!/bin/sh\ntouch {marker}\nexit 0\n", encoding="utf-8")
+            (fake / "cargo").chmod(0o755)
+            env = {"PATH": f"{fake}:{os.environ['PATH']}", "HOME": tmp, "CARGO_HOME": tmp,
+                   "SDK_PUBLISH_PREFLIGHT_ARGS": "--skip-registry --skip-git"}
+            done = subprocess.run(["bash", str(script), "--confirm-publish"],
+                                  capture_output=True, text=True, timeout=60, env=env)
+            self.assertNotEqual(done.returncode, 0)
+            self.assertIn("BLOCKED", done.stdout)
+            self.assertFalse(marker.exists(), "cargo ran although the preflight was BLOCKED")
+
+    def test_publish_runner_publishes_in_order_waits_for_the_index_and_verifies(self):
+        text = self._runner_path().read_text(encoding="utf-8")
+        self.assertNotIn("cargo login", text)
+        self.assertIn("preflight-sdk-publish.sh", text)
+        self.assertIn("verify-sdk-consumer.sh", text)
+        self.assertIn("--confirm-published", text)
+        self.assertRegex(text, r"cargo publish --locked -p")
+        self.assertNotIn("--no-verify", text)
+        self.assertNotIn("--allow-dirty", text)
+        positions = [text.index(name) for name in RELEASE_ORDER]
+        self.assertEqual(positions, sorted(positions), "crates must be listed in release order")
+        self.assertRegex(text, r"api/v1/crates", "must poll the registry for indexation")
+        mode = subprocess.run(["bash", "-n", str(self._runner_path())], capture_output=True, text=True, timeout=30)
+        self.assertEqual(mode.returncode, 0, mode.stderr)
+
+    def test_release_guide_names_the_publish_runner(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/publish-sdk.sh", guide)
+
     def test_release_guide_names_the_preflight(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
         self.assertIn("scripts/distribution/preflight-sdk-publish.sh", guide)

@@ -97,7 +97,11 @@ Procedure, from a clean checkout of `main` at the release commit:
    or version already taken on crates.io, an unclean tree, `HEAD` not at
    `origin/main`) and exits non-zero unless ready. It never publishes or logs in.
 4. Publish in the order above with the operator's registry token, waiting for
-   each crate to be indexed before publishing the next.
+   each crate to be indexed before publishing the next. One command does
+   steps 3 to 5 and refuses to start unless the preflight says `READY`:
+   `bash scripts/distribution/publish-sdk.sh --confirm-publish` (irreversible;
+   `--resume` finishes a release that stopped halfway, skipping crates already
+   on crates.io). It never logs in.
 5. Verify from a clean consumer project that depends on the published
    versions only: `bash scripts/distribution/verify-sdk-consumer.sh
    --confirm-published` (read-only; it builds a fresh project with exact
