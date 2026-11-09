@@ -189,10 +189,25 @@ Streams: JSON-RPC messages travel on stdout and nothing else may be written
 there; logs and diagnostics go to stderr. A client that shows a parse error on
 startup is reading something that is not JSON-RPC from stdout.
 
-Limitation: `cogh install` and the remote `install.sh` fetch a published
-release, and they were not run to write this section. Until a release carries
-this version, build the binary from source as the README describes and
-register its absolute path as `command`.
+Limitation: release `v0.102.1` is published (`gh release view` reports it as
+not a draft, with eight assets), so you can install the server with `cogh`
+instead of building it; the commands are in the installation section above.
+On November 9, 2026 that sequence was run once against the release, on
+`x86_64-unknown-linux-gnu`, with the `cogh` home set to a new, empty temporary
+directory: `cogh init`, then the `reviewer` install for OpenCode, which
+reported version 0.102.1. The `cognicode` and `cognicode-mcp` shims printed
+0.102.1; `cogh current`, `cogh where cognicode-mcp` and `cogh doctor`
+(`overall: healthy`) passed; and a dry run of `cogh update` resolved the bundle of
+`v0.102.1` without downloading it. The hashes of the two component tarballs it
+cached matched the entries of the release `SHA256SUMS`. Two behaviors of that
+run matter to you: installing a plugin fails without a prior `cogh init`, and
+it downloads and writes under the `cogh` home even without the apply option
+(which only governs the self-install of `cogh`), so rehearse it in a throwaway
+home. Not run: the remote `install.sh`, an install into the real home, an IDE
+other than OpenCode, and a handshake of the installed server from a real MCP
+client; none of those is confirmed here. If `cogh` is unavailable, you can
+still compile the server from source (see the README) and register its
+absolute path as `command`.
 
 ## Release assets
 

@@ -39251,3 +39251,40 @@ existe pero la instalación no se ejecutó); `run-all-contracts.sh` completo (do
 rojos previos de `test_roadmap_coherence` por deriva de `CURRENT.md`, ajenos);
 gate de cargo y `npm test` (sin cambios de código). Sin tag, sin publicación,
 sin tocar TASK-177.
+
+## TASK-179 — la «Limitation» de la sección MCP deja de decir que no hay release (2026-11-09)
+
+Base `276aa1e5` (#766). Rama `docs/task-179-mcp-limitation-observed`.
+
+**RED.** `test_the_guide_does_not_say_no_release_carries_this_version` en
+`scripts/ci/test_readme_contract.py` (offline) rechaza «Until a release carries
+this version» y «build the binary from source as the README describes» en
+README, README.es e INSTALL.md. Sobre la base falló con 2 subtests en
+`INSTALL.md`.
+
+**Ejecución real, en un `--home` nuevo y vacío bajo `/tmp`** (la instalación de
+un plugin NO está protegida por `--apply`: descarga y escribe en `--home`, así
+que no se hizo en el home real; la configuración de OpenCode, `~/.cognicode`,
+`~/.claude.json` y `~/.codex` no cambió, comprobado con `find -newermt`):
+sin `cogh init` el `install` falla (`failed to read plugin manifest`); con
+`init`, `cogh install mcp-server --version latest --profile reviewer --ide
+opencode` termina rc=0 («Installed version 0.102.1»); los shims `cognicode` y
+`cognicode-mcp` imprimen 0.102.1; `cogh current`, `cogh where cognicode-mcp` y
+`cogh doctor` (`overall: healthy`) pasan; `cogh update --dry-run` resuelve
+`bundle-0.102.1-x86_64-unknown-linux-gnu.yaml` sin descargar. Los sha256 de los
+tarballs `cognicode` y `cognicode-mcp` de la caché coinciden con una entrada
+cada uno de `SHA256SUMS` de la release (descargado aparte, lectura).
+
+**Cambio.** La «Limitation» de la sección MCP cuenta eso, con fecha y
+plataforma, y lista lo no ejecutado. Se redactó sin citar flags de `cogh`
+porque el contrato de esa sección sólo admite los de `cognicode-mcp`.
+
+**Contratos sin filtro:** readme 47, architecture 27, surfaces 46,
+explorer_handoff 5; `git diff --check` limpio.
+
+**NOT_RUN.** `install.sh` remoto; instalación en el home real; otros IDE;
+handshake MCP del servidor instalado desde un cliente real; `SHA256SUMS` con
+`sha256sum --check` sobre los ocho assets (sólo se compararon dos tarballs);
+`run-all-contracts.sh` completo (dos rojos previos de `test_roadmap_coherence`,
+ajenos); gate de cargo y `npm test` (sin cambios de código). Sin tag, sin
+publicación, sin tocar TASK-177.

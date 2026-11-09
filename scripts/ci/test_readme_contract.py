@@ -1279,6 +1279,23 @@ class ReadmeContract(unittest.TestCase):
                 with self.subTest(path=path.name, reference=reference):
                     self.assertNotIn(reference, text)
 
+    def test_the_guide_does_not_say_no_release_carries_this_version(self):
+        """The MCP limitation must not claim that the version is unreleased.
+
+        Verified on 2026-11-09 with `gh release view v0.102.1` (read-only): the
+        release is published with its bundle, tarballs and `SHA256SUMS`, and
+        `cogh init` + `cogh install mcp-server` ran against it in a throwaway
+        `--home`. The suite is offline, so it rejects the retired wording
+        instead of querying GitHub.
+        """
+        retired = ("until a release carries this version", "build the binary from source as the readme describes")
+        for path in (EN, ES, MCP_GUIDE):
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertTrue(text, f"{path.name} is empty: the check would be vacuous")
+            for phrase in retired:
+                with self.subTest(path=path.name, phrase=phrase):
+                    self.assertNotIn(phrase, " ".join(text.split()))
+
     def test_contributing_links_the_sdk_release_process(self):
         """A contributor who touches a published crate must find the release and rollback steps."""
         text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
