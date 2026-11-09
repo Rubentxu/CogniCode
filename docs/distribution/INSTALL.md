@@ -253,10 +253,15 @@ present and does not match still fails the command.
 Limitation: these names are derived from the release contract in this tree and
 were compared, on November 9, 2026, with the asset list that
 `gh release view v0.102.1` reports: all eight match and the release is not a
-draft. No asset was downloaded, so the contents of `SHA256SUMS` and the
-checksums themselves are not confirmed. Provenance is also out of scope here:
-signatures and SBOMs are not asset kinds in `release_contract.rs`, and this
-guide does not describe how to verify them.
+draft. On the same day the x86_64 Linux assets were downloaded to a fresh
+directory and `sha256sum --check SHA256SUMS` matched every entry; the
+`cognicode`, `cognicode-mcp` and `cogh` binaries extracted from them ran
+`--version` and reported 0.102.1. Only that one platform and `--version` were
+exercised: the remote installer and a full MCP start were not. Provenance is
+out of scope here and is absent from v0.102.1: `gh attestation verify` finds no
+attestation for the `cogh` archive (HTTP 404), and signatures and SBOMs are not
+asset kinds in `release_contract.rs`. How provenance is produced is an open key
+custody decision (see `scripts/ci/attest-provenance.sh`).
 
 ## CLI workflows
 
