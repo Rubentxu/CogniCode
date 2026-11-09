@@ -14,9 +14,7 @@ members = [
     # cognicode-axiom → docs/parked-crates/cognicode-axiom/
     # cognicode-quality → docs/parked-crates/cognicode-quality/
     # cognicode-rule-test-harness → docs/parked-crates/cognicode-rule-test-harness/
-    "crates/cognicode-explorer",
     "crates/cognicode-ladybug",
-    "crates/cognicode-runtime",
 ]
 exclude = ["crates/spike-ladybug"]
 
