@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Lists installable cogh versions: the v* tags that have a published release.
+set -euo pipefail
+repo="${COGH_REPO_URL:-https://github.com/Rubentxu/CogniCode}"
+git ls-remote --tags --refs "$repo" 'v*' \
+  | sed -E 's|.*refs/tags/v||' \
+  | sort -V | tr '\n' ' '
+echo
