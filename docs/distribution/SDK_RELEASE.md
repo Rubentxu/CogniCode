@@ -129,6 +129,18 @@ them is the operator's step:
 3. `systemctl --user daemon-reload` and
    `systemctl --user enable --now cognicode-sdk-auto-release.timer`.
 
+Steps 1 and 2 can be done in one command: `bash
+scripts/distribution/install-sdk-timer.sh --checkout <clean checkout of main>`
+prints the plan (a dry run); add `--apply` to write it (or `just sdk-timer-install
+<checkout>` for the plan). It creates the mode 600 env file and copies the units,
+keeps an existing env file, stops on a unit file you edited, and never enables
+the timer, runs `systemctl` or stores a credential.
+
+Before enabling, `bash scripts/distribution/check-sdk-timer.sh` (or `just sdk-timer-check`)
+reads the operator-side prerequisites and prints `READY` or `BLOCKED` naming each
+missing one: the unit templates load, `sdk-release.env` exists with mode 600 and
+names a clean checkout, and a registry credential is present. It changes nothing.
+
 Disable it with `systemctl --user disable --now
 cognicode-sdk-auto-release.timer`. Until then nothing publishes by itself.
 
