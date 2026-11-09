@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-09, sobre `16f41c264cc0e66596a2e84ec7c034e21e70fb0a` (la
+> **Snapshot**: 2026-11-09, sobre `be7ae08ffc1ed5cbe590bb63848bf7eabb621d8c` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -326,15 +326,17 @@
 > crates del SDK están listos para el registro con ensayo de publicación (sin
 > publicar); el host de contenedor del Explorer entra (TASK-191..202); y los README
 > sólo afirman lo que el producto hace: búsqueda difusa de símbolos y los
-> binarios del workspace con cuáles se publican (TASK-179).
+> binarios del workspace con cuáles se publican (TASK-179); y el SDK se
+> publica con un solo comando, `release-sdk.sh`, que prepara el bump y el PR y,
+> tras la fusión, publica y etiqueta; no hay temporizador (TASK-178).
 > Versión del workspace: `0.102.1`. Última release publicada: `v0.102.1`
 > (2026-11-07, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`aebb183c` → `16f41c264cc0e66596a2e84ec7c034e21e70fb0a`)
+## Qué cambió desde el snapshot anterior (`16f41c264cc0e66596a2e84ec7c034e21e70fb0a` → `be7ae08ffc1ed5cbe590bb63848bf7eabb621d8c`)
 
-Entre una punta y otra entraron **15 commits** (`git rev-list --count aebb183c94233b650c785952d197dcddf0b52ced..16f41c264cc0e66596a2e84ec7c034e21e70fb0a`).
+Entre una punta y otra entraron **15 commits** (`git rev-list --count 16f41c264cc0e66596a2e84ec7c034e21e70fb0a..be7ae08ffc1ed5cbe590bb63848bf7eabb621d8c`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
@@ -349,6 +351,13 @@ en qué commits está; la medición de cada unidad está en su recibo del `JOURN
 | Host de contenedor del Explorer y arreglos de explorer-ui | `6bd10a03` (TASK-191..202) | `docker build` NOT_RUN. |
 | README: la búsqueda semántica sin respaldo pasa a búsqueda difusa de símbolos | `3f80ac2b` (TASK-179) | Contrato de README en verde. |
 | README: todo binario del workspace se nombra y se dice cuáles se publican | `16f41c26` (TASK-179) | Contrato nuevo: 44/44. |
+| Preflight de publicación del SDK, de sólo lectura, que nombra cada bloqueo | `7aa0d5ff` (TASK-178) | Contrato de superficies del SDK en verde. |
+| Un comando que publica el SDK tras el preflight, y fija la comprobación del consumidor | `4164cd6d`, `9e7888d5` (TASK-178) | Nada se sube sin `--confirm-publish`. |
+| `auto-release-sdk.sh` publica la versión de `main` si crates.io no la tiene | `60958c13`, `5ee877fd` (TASK-178) | Se conserva como pieza; sin temporizador. |
+| `release-sdk.sh <versión>` prepara el bump y el PR; `--publish` publica y etiqueta | `4b2aabd0` (TASK-178) | `test_sdk_surfaces`: 52 OK; no se publicó ni se etiquetó nada. |
+| Se añade y se retira el temporizador del auto-release | `fda07186`, `6bab221b`, `be7ae08f` (TASK-178) | Cero referencias huérfanas medidas con `rg`. |
+| Docs de instalación y del SDK medidas contra `v0.102.1` | `40d8461e`, `ca3df4e8`, `276aa1e5`, `26ac7b65` (TASK-179) | Contratos de documentación en verde. |
+| Correcciones de CI, snapshot y recibo de TASK-5 | `40b2afa1`, `f731f0ea` | Documental y de contratos. |
 
 ## Release: la última publicada es la v0.102.1
 
