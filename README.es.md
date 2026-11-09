@@ -10,14 +10,14 @@
 
 ---
 
-CogniCode es un servidor de inteligencia de código escrito en Rust que proporciona análisis profundo, grafos de llamadas, búsqueda semántica y refactorización segura a agentes de IA a través del [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Imagina las capacidades de IntelliJ IDEA — expuestas como herramientas que tu IA puede invocar.
+CogniCode es un servidor de inteligencia de código escrito en Rust que proporciona análisis profundo, grafos de llamadas, búsqueda difusa de símbolos y refactorización segura a agentes de IA a través del [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Imagina las capacidades de IntelliJ IDEA — expuestas como herramientas que tu IA puede invocar.
 
 Construido con **Domain-Driven Design** y **Clean Architecture**, analiza 31
 lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales.
 
 ## Características
 
-- **88 herramientas MCP** — 78 herramientas y los 10 goals que las responden: grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
+- **88 herramientas MCP** — 78 herramientas y los 10 goals que las responden: grafos de llamadas, análisis de impacto, búsqueda difusa de símbolos, refactorización segura, métricas de complejidad y más
 - **31 lenguajes** — 20 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML, Kotlin, Groovy) y 11 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
 - **3 estrategias de grafo** — `full`, `lightweight`, `on_demand`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)

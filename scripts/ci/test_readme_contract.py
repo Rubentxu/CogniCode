@@ -1257,6 +1257,17 @@ class ReadmeContract(unittest.TestCase):
         for stale in ("ZIP", "production-ready", "QW-03"):
             self.assertNotIn(stale, text, f"root INSTALL.md still carries the audit-package note: {stale}")
 
+    def test_readmes_do_not_claim_semantic_search(self):
+        # The only search the core ships is name matching (exact, prefix,
+        # contains, fuzzy) in `infrastructure/semantic/semantic_search.rs`;
+        # there is no embedding or vector index, so "semantic search" would
+        # promise a capability the product does not have.
+        sources = {EN: "semantic search", ES: "búsqueda semántica"}
+        for path, phrase in sources.items():
+            text = path.read_text(encoding="utf-8")
+            self.assertGreater(len(text), 0, f"{path.name} is empty")
+            self.assertNotIn(phrase, text.lower(), f"{path.name} claims {phrase!r}")
+
 
 if __name__ == "__main__":
     unittest.main()

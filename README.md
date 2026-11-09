@@ -10,14 +10,14 @@
 
 ---
 
-CogniCode is a Rust-based code intelligence server that provides deep analysis, call graphs, semantic search, and safe refactoring to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Think IntelliJ IDEA's capabilities — exposed as tools your AI can call.
+CogniCode is a Rust-based code intelligence server that provides deep analysis, call graphs, fuzzy symbol search, and safe refactoring to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Think IntelliJ IDEA's capabilities — exposed as tools your AI can call.
 
 Built with **Domain-Driven Design** and **Clean Architecture**, it analyses 31
 languages out of the box — 20 with full acceptance evidence, 11 experimental.
 
 ## Features
 
-- **88 MCP tools** — 78 tools and the 10 goals that answer them: call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
+- **88 MCP tools** — 78 tools and the 10 goals that answer them: call graphs, impact analysis, fuzzy symbol search, safe refactoring, complexity metrics, and more
 - **31 languages** — 20 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML, Kotlin, Groovy) and 11 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
 - **3 graph strategies** — `full`, `lightweight`, `on_demand`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
