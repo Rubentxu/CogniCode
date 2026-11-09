@@ -715,6 +715,59 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertNotEqual(loose.returncode, 0)
         self.assertIn("mode 600", loose.stdout)
 
+    def _timer_install(self, home, *args):
+        env = {"PATH": os.environ["PATH"], "HOME": str(home)}
+        return subprocess.run(
+            ["bash", str(ROOT / "scripts" / "distribution" / "install-sdk-timer.sh"), *args],
+            capture_output=True, text=True, timeout=60, env=env,
+        )
+
+    def test_timer_install_plans_by_default_and_writes_nothing_without_apply(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            checkout = home / "checkout"
+            checkout.mkdir()
+            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True)
+            plan = self._timer_install(home, "--checkout", str(checkout))
+            self.assertEqual(plan.returncode, 0, plan.stdout + plan.stderr)
+            self.assertIn("dry run", plan.stdout)
+            self.assertFalse((home / ".config").exists())
+            missing = self._timer_install(home)
+            self.assertNotEqual(missing.returncode, 0)
+            not_git = self._timer_install(home, "--checkout", str(home), "--apply")
+            self.assertNotEqual(not_git.returncode, 0)
+            self.assertFalse((home / ".config").exists())
+
+    def test_timer_install_prepares_the_operator_side_without_enabling_or_storing_a_token(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            checkout = home / "checkout"
+            checkout.mkdir()
+            subprocess.run(["git", "-C", str(checkout), "init", "-q"], check=True)
+            done = self._timer_install(home, "--checkout", str(checkout), "--apply")
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            envfile = home / ".config" / "cognicode" / "sdk-release.env"
+            self.assertEqual(envfile.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(envfile.read_text(encoding="utf-8"), f"COGNICODE_CHECKOUT={checkout}\n")
+            units = home / ".config" / "systemd" / "user"
+            for name in ("cognicode-sdk-auto-release.service", "cognicode-sdk-auto-release.timer"):
+                self.assertEqual(
+                    (units / name).read_bytes(),
+                    (ROOT / "scripts" / "distribution" / "systemd" / name).read_bytes(),
+                )
+            self.assertNotIn("CARGO_REGISTRY_TOKEN", envfile.read_text(encoding="utf-8"))
+            self.assertIn("systemctl --user enable --now", done.stdout)
+            self.assertFalse((units / "timers.target.wants").exists())
+            # Idempotent, and it never overwrites what the operator edited.
+            envfile.write_text(f"COGNICODE_CHECKOUT={checkout}\nCARGO_REGISTRY_TOKEN=keep\n", encoding="utf-8")
+            again = self._timer_install(home, "--checkout", str(checkout), "--apply")
+            self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+            self.assertIn("keep", envfile.read_text(encoding="utf-8"))
+            (units / "cognicode-sdk-auto-release.timer").write_text("edited\n", encoding="utf-8")
+            clash = self._timer_install(home, "--checkout", str(checkout), "--apply")
+            self.assertNotEqual(clash.returncode, 0)
+            self.assertEqual((units / "cognicode-sdk-auto-release.timer").read_text(encoding="utf-8"), "edited\n")
+
     def test_the_guide_describes_enabling_the_scheduler_as_the_operators_step(self):
         guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
         self.assertIn("scripts/distribution/systemd/", guide)

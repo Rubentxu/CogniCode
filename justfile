@@ -225,6 +225,10 @@ sdk-auto-release *ARGS:
 sdk-timer-check:
     bash scripts/distribution/check-sdk-timer.sh
 
+# Dry run of the operator-side install of the SDK auto-release timer (add --apply by hand to write).
+sdk-timer-install checkout:
+    bash scripts/distribution/install-sdk-timer.sh --checkout {{checkout}}
+
 # Measure the build times: cold, no-change, touch a test, touch the core.
 # Not a test: it compiles the workspace four times, so it is asked for on
 # purpose and it lives outside the suite. It measures in an isolated target
