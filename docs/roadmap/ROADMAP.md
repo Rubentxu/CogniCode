@@ -460,16 +460,10 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     categoría del extractor genérico no contradice la semántica del
 >     lenguaje, y un lenguaje sin lector semántico declara su precisión.
 >     Cerrado: el extractor genérico y el campo que el consumidor lee.
->   - **Las tres rutas que construyen el grafo tienen que decir lo mismo** —
->     cerrado en su contrato observable. La vía completa, la filtrada y la
->     asíncrona son de producción y responden sobre el mismo árbol con la misma
->     cobertura, relaciones, huecos, resolución y orden; el contrato H24 evita
->     que una ruta publique un resultado distinto o una cobertura falsa. La
->     forma está en `docs/adr/ADR-056-the-routes-say-the-same.md`.
->     TASK-166 (PR #744) y TASK-167 (PR #746) verifican la coherencia
->     completa/per-file/asíncrona y la cobertura MCP per-file. La extracción de
->     un motor común queda como mejora futura no bloqueante, condicionada a
->     valor medido.
+>   - **Las tres rutas que construyen el grafo dicen lo mismo** — cerrado en
+>     su contrato observable (`TASK-166`, `TASK-167`; forma en
+>     `docs/adr/ADR-056-the-routes-say-the-same.md`). Extraer un motor común
+>     queda como mejora futura no bloqueante, condicionada a valor medido.
 >
 >   **H29** — leer y editar un fichero no puede abortar el proceso que lo
 >   intenta, ni perder lo que escribe. El nucleo esta cerrado: el corte se
@@ -481,21 +475,12 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   `docs/adr/ADR-063-a-rejection-arrives-as-a-rejection.md`.
 >
 >   **H5** — la caché incremental. Cerrado: el snapshot declara quién lo
->   produjo —versión, commit y capacidades— y un snapshot de otro analizador
->   no se sirve; la fecha solo se publica si se midió. La frontera restante está
->   medida en la ruta: `load_or_build_graph` reutiliza el snapshot completo cuando
->   `SnapshotKey` y `FileManifest` son compatibles; cuando el manifest deja de ser
->   reutilizable, reconstruye el grafo completo. `IncrementalScanner` calcula
->   deltas en infraestructura, pero no está conectado a esta ruta. La
->   caracterización de `TASK-172` confirma además que configuración, perfil y
->   presupuesto de consumidor no cambian el grafo ni su identidad durable, y que
->   `AnalysisScope` pertenece a findings, no al snapshot. La medición focal
->   observó `full rebuild` en frío (36.981 ms), `warm reuse` sin cambios (33.788
->   ms) y `full rebuild` tras editar (35.971 ms); el scanner separado procesó 2,
->   0 y 1 ficheros en sus fases primera, sin cambios y edición de igual tamaño,
->   y clasificó 1 añadido y 1 eliminado en la fase final. Esto no demuestra delta
->   en la ruta real, que no publica `incremental delta` mientras el scanner siga
->   desconectado. La forma, en
+>   produjo —versión, commit y capacidades— y uno de otro analizador no se
+>   sirve. Frontera abierta, medida (cifras en el Journal, `TASK-173`):
+>   `load_or_build_graph` reutiliza el snapshot completo si `SnapshotKey` y
+>   `FileManifest` son compatibles y, si no, reconstruye el grafo entero;
+>   `IncrementalScanner` calcula deltas pero no está conectado a esa ruta, así
+>   que no se publica `incremental delta`. La forma, en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` y
 >   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >
