@@ -694,6 +694,111 @@ class SdkSurfaceContract(unittest.TestCase):
             self.assertIn("PENDING for 0.2.0", done.stdout, done.stdout + done.stderr)
             self.assertFalse(marker.exists(), "no upload may happen without a credential")
 
+    def _release_fixture(self, tmp):
+        """A repo with the release script, a bare remote, and fake cargo/gh/runners."""
+        script_dir = ROOT / "scripts" / "distribution"
+        ident = [subprocess.run(["git", "config", "--get", f"user.{k}"], cwd=ROOT, capture_output=True,
+                                text=True, timeout=30).stdout.strip() for k in ("name", "email")]
+        genv = dict(os.environ)
+
+        def git(cwd, *args, check=True):
+            done = subprocess.run(["git", "-c", f"user.name={ident[0]}", "-c", f"user.email={ident[1]}", *args],
+                                  cwd=cwd, capture_output=True, text=True, timeout=60, env=genv)
+            if check:
+                self.assertEqual(done.returncode, 0, done.stderr)
+            return done
+
+        work, remote = tmp / "work", tmp / "remote.git"
+        dist = work / "scripts" / "distribution"
+        dist.mkdir(parents=True)
+        (dist / "release-sdk.sh").write_text((script_dir / "release-sdk.sh").read_text(encoding="utf-8"),
+                                             encoding="utf-8")
+        calls = tmp / "calls.log"
+        for name in ("rehearse-sdk-publish.sh", "publish-sdk.sh"):
+            (dist / name).write_text(f'#!/bin/sh\necho "{name} $@" >> {calls}\nexit 0\n', encoding="utf-8")
+        (work / "Cargo.toml").write_text(
+            '[workspace.package]\nversion = "0.1.0"\n\n[workspace.dependencies]\n'
+            'cognicode-core = { path = "crates/core", version = "0.1.0" }\n'
+            'cognicode-graph-algos = { path = "crates/g", version = "0.1.0" }\n'
+            'cognicode-macros = { path = "crates/m", version = "0.1.0" }\n'
+            'serde = { version = "0.1.0" }\n', encoding="utf-8")
+        git(tmp, "init", "-q", "-b", "main", str(work))
+        git(work, "config", "user.name", ident[0])
+        git(work, "config", "user.email", ident[1])
+        git(work, "add", "-A")
+        git(work, "commit", "-q", "-m", "chore: release 0.1.0")
+        git(tmp, "init", "-q", "--bare", "-b", "main", str(remote))
+        git(work, "remote", "add", "origin", str(remote))
+        git(work, "push", "-q", "-u", "origin", "main")
+        fake = tmp / "bin"
+        fake.mkdir()
+        for tool in ("cargo", "gh"):
+            (fake / tool).write_text(f'#!/bin/sh\necho "{tool} $@" >> {calls}\nexit 0\n', encoding="utf-8")
+            (fake / tool).chmod(0o755)
+        env = {**genv, "PATH": f"{fake}:{os.environ['PATH']}"}
+        return work, remote, calls, env, git
+
+    def _run_release(self, work, env, *args):
+        return subprocess.run(["bash", str(work / "scripts" / "distribution" / "release-sdk.sh"), *args],
+                              cwd=work, capture_output=True, text=True, timeout=60, env=env)
+
+    def test_release_prepares_the_bump_on_a_branch_and_opens_the_pull_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work, remote, calls, env, git = self._release_fixture(Path(tmp))
+            done = self._run_release(work, env, "0.2.0")
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            manifest = (work / "Cargo.toml").read_text(encoding="utf-8")
+            self.assertEqual(manifest.count('"0.2.0"'), 4, manifest)
+            self.assertIn('serde = { version = "0.1.0" }', manifest)
+            log = calls.read_text(encoding="utf-8")
+            self.assertIn("rehearse-sdk-publish.sh", log)
+            self.assertIn("gh pr create", log)
+            self.assertNotIn("publish-sdk.sh", log, "preparing must never publish")
+            branches = git(work, "ls-remote", "--heads", "origin", "release/v0.2.0").stdout
+            self.assertIn("release/v0.2.0", branches)
+            tags = git(work, "tag", "--list").stdout
+            self.assertEqual(tags.strip(), "", "preparing must never tag")
+
+    def test_release_refuses_a_version_that_is_not_greater_and_a_dirty_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work, remote, calls, env, git = self._release_fixture(Path(tmp))
+            for bad in ("0.1.0", "0.0.9", "abc"):
+                done = self._run_release(work, env, bad)
+                self.assertNotEqual(done.returncode, 0, bad)
+            (work / "stray.txt").write_text("x", encoding="utf-8")
+            done = self._run_release(work, env, "0.2.0")
+            self.assertNotEqual(done.returncode, 0)
+            self.assertIn("not clean", done.stderr)
+            self.assertFalse(calls.exists(), "a refused release must run nothing")
+
+    def test_release_publish_runs_the_runner_then_tags_and_pushes_the_tag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work, remote, calls, env, git = self._release_fixture(Path(tmp))
+            done = self._run_release(work, env, "0.2.0")
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            git(work, "checkout", "-q", "main")
+            git(work, "merge", "-q", "--ff-only", "release/v0.2.0")
+            git(work, "push", "-q", "origin", "main")
+            done = self._run_release(work, env, "--publish")
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertIn("publish-sdk.sh --confirm-publish --resume", calls.read_text(encoding="utf-8"))
+            self.assertIn("refs/tags/v0.2.0", git(work, "ls-remote", "--tags", "origin").stdout)
+
+    def test_release_publish_does_not_tag_when_the_runner_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work, remote, calls, env, git = self._release_fixture(Path(tmp))
+            (work / "scripts" / "distribution" / "publish-sdk.sh").write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+            done = self._run_release(work, env, "--publish")
+            self.assertNotEqual(done.returncode, 0)
+            self.assertEqual(git(work, "ls-remote", "--tags", "origin").stdout.strip(), "")
+
+    def test_release_is_documented_and_has_a_just_recipe(self):
+        guide = (ROOT / "docs" / "distribution" / "SDK_RELEASE.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/distribution/release-sdk.sh", guide)
+        justfile = (ROOT / "justfile").read_text(encoding="utf-8")
+        self.assertIn("sdk-release", justfile)
+        self.assertIn("release-sdk.sh", justfile)
+
     def test_auto_release_delegates_to_the_runner_and_never_publishes_itself(self):
         text = self._auto_path().read_text(encoding="utf-8")
         self.assertNotRegex(text, r"cargo\s+publish")

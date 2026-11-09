@@ -216,6 +216,12 @@ mutants:
     @echo "🧬 Running mutants..."
     bash scripts/test-gate.sh --mutants
 
+# One command per SDK release. `just sdk-release 0.103.0` bumps the version,
+# rehearses, and opens the PR; after merging it, `just sdk-release --publish`
+# publishes, verifies and tags.
+sdk-release *ARGS:
+    bash scripts/distribution/release-sdk.sh {{ARGS}}
+
 # Publish the SDK crates at the workspace version if crates.io does not have it
 # yet; does nothing otherwise. `just sdk-auto-release --check` only reports.
 sdk-auto-release *ARGS:
