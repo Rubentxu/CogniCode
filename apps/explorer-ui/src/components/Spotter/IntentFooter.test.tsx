@@ -12,7 +12,7 @@ function makeSearchResult(viewIds: string[]): SpotterSearchResult {
         id: "test:1",
         label: "test-label",
         object_type: "symbol",
-        available_views: viewIds.map((id, i) => ({
+        available_views: viewIds.map((id) => ({
           id,
           title: `View ${id}`,
           applies_to: "symbol",
@@ -21,7 +21,7 @@ function makeSearchResult(viewIds: string[]): SpotterSearchResult {
       },
       score: 1.0,
       matched_field: "label",
-    } as SpotterResult,
+    } as unknown as SpotterResult,
   };
 }
 

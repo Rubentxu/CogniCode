@@ -17,16 +17,14 @@ use cognicode_core::domain::value_objects::SymbolKind;
 use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
 use cognicode_core::domain::value_objects::provenance::Provenance;
-use serde_json::Value;
 use tower::ServiceExt;
 
 use crate::adapters::InMemoryGraphRepository;
 use crate::api::{ApiState, router_with_state};
 use crate::facades::{
-    GraphService, MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
+    MoldQLService, PersistenceService, SearchService, ViewService, WorkspaceService,
     graph::GraphServiceImpl,
 };
-use crate::ports::source_reader::SourceReader;
 use crate::ports::symbol_repository::{GraphStats, SymbolRepository};
 use cognicode_core::domain::aggregates::SymbolId;
 use cognicode_core::domain::ports::graph_repository::GraphRepository;
@@ -66,21 +64,6 @@ impl SymbolRepository for EmptySymbolRepo {
     }
     fn graph_stats(&self) -> GraphStats {
         GraphStats::default()
-    }
-}
-
-struct EmptyReader;
-impl SourceReader for EmptyReader {
-    fn read_source(&self, _file: &str) -> crate::error::ExplorerResult<String> {
-        Ok(String::new())
-    }
-    fn read_lines(
-        &self,
-        _file: &str,
-        _start: u32,
-        _end: u32,
-    ) -> crate::error::ExplorerResult<Vec<(u32, String)>> {
-        Ok(Vec::new())
     }
 }
 
@@ -251,6 +234,7 @@ impl MoldQLService for MockMoldQLService {
     ) -> crate::ExplorerResult<crate::moldql::MoldQLResult> {
         Err(crate::error::ExplorerError::FeatureDisabled("mock".into()))
     }
+    #[allow(deprecated)] // the trait method still takes the deprecated CompileTarget
     async fn execute_query_with_target(
         &self,
         _query: &str,
@@ -542,7 +526,7 @@ async fn support_pack_pane_fields_are_complete() {
 
     // Check the first pane (decision_graph) has all required fields
     // PackPane fields: view_id, title, view, status
-    let first_pane = panes.get(0).expect("first pane");
+    let first_pane = panes.first().expect("first pane");
     let pane_obj = first_pane.as_object().expect("pane should be an object");
 
     // Required pane-level fields per DecisionSupportPack struct

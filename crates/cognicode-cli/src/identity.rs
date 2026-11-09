@@ -48,6 +48,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Lista de features que estaban ON al compilar este binario.
 #[allow(unused_mut)] // `mut` solo se usa bajo `#[cfg(feature = "ladybug")]`
+#[allow(clippy::vec_init_then_push)] // cada feature anade su propio `push` bajo `#[cfg]`
 pub fn features() -> Vec<&'static str> {
     // Lista hardcoded contra `cognicode-cli/Cargo.toml [features]`.
     // Si anades una feature a `cognicode-cli`, agregala aqui.

@@ -210,7 +210,9 @@ harness = false
 [[bench]]
 name = "b6_w2_reproducible_perf"
 harness = false
+required-features = ["persistence"]
 
 [[bench]]
 name = "reparse_benchmarks"
 harness = false
+required-features = ["persistence"]

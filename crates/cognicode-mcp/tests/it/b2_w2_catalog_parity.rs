@@ -221,6 +221,9 @@ fn catalog_active_is_a_strict_subset_of_catalog_full() {
 /// current build; a name this build cannot recognise resolves to
 /// `false` (the test pins the same fail-closed default the catalog
 /// loader does).
+// `cfg!` expands to a bool literal, so with every feature on the arms look like
+// `matches!`; the one-arm-per-feature table is the point of this mirror.
+#[allow(clippy::match_like_matches_macro)]
 fn cfg_match(feature: &str) -> bool {
     match feature {
         "contract-store" => cfg!(feature = "contract-store"),
@@ -254,12 +257,12 @@ fn catalog_path() -> std::path::PathBuf {
     // CARGO_MANIFEST_DIR + parents).
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for ancestor in manifest.ancestors() {
-        let candidate = ancestor.join("crates").join("cognicode-core").join("product").join("tools.json");
+        let candidate = ancestor.join("crates/cognicode-core/product/tools.json");
         if candidate.is_file() {
             return candidate;
         }
     }
-    panic!("could not locate product/tools.json above {:?}", manifest);
+    panic!("could not locate crates/cognicode-core/product/tools.json above {:?}", manifest);
 }
 
 #[allow(dead_code)]

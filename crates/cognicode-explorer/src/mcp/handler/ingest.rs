@@ -153,8 +153,7 @@ impl ToolHandler for DocsIngestHandler {
 
         let files_processed = result
             .iter()
-            .map(|n| n.potential_node.source_path.clone())
-            .filter_map(|p| p)
+            .filter_map(|n| n.potential_node.source_path.clone())
             .map(|p| p.to_string_lossy().into_owned())
             .collect::<std::collections::BTreeSet<_>>()
             .len();

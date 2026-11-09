@@ -115,17 +115,14 @@ vi.mock("cytoscape", () => {
       const all = [...this.nodes, ...this.edgeElements];
       return new CyCollection(all.filter((i) => i.id === String(id)));
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     edges(_?: string) {
       return new CyCollection(this.edgeElements);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     // @ts-expect-error -- intentional duplicate with property above; method is the public API
     nodes(_?: string) {
       return new CyCollection(this.nodes);
     }
     destroy() { destroyCallCount++; }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     layout(_?: { name: string; rows?: number }) {
       return { run: () => {} }; // cytoscape layout returns a runnable descriptor
     }

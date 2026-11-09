@@ -10,7 +10,7 @@
 //!
 //! The findings are not invented here. They come from the grounded finding
 //! flow, which is the product's only path from a source file to a
-//! [`Finding`](crate::domain::findings::Finding): the same admission, the
+//! [`Finding`]: the same admission, the
 //! same detector execution, the same assembler and the same verifier. The
 //! handler runs that flow over the requested file and projects what it says.
 //!

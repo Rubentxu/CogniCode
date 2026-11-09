@@ -222,10 +222,9 @@ mod tests {
 #[cfg(feature = "multimodal")]
 pub(crate) mod handlers {
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     use async_trait::async_trait;
-    use rmcp::model::{CallToolResult, Content};
+    use rmcp::model::CallToolResult;
     use serde::Deserialize;
     use serde_json::Value;
     use sha2::{Digest, Sha256};
@@ -233,9 +232,7 @@ pub(crate) mod handlers {
     use crate::mcp::McpContext;
     use crate::mcp::envelope::{err_envelope, ok_envelope};
     use crate::mcp::handler::ToolHandler;
-    use crate::ports::route_store::{
-        ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, PROTOCOL_HTTP, RouteStore,
-    };
+    use crate::ports::route_store::{ApiRoute, ApiRouteEdge, EDGE_KIND_HTTP_CALLS, PROTOCOL_HTTP};
 
     // Tool name imported from explorer.rs
     use crate::mcp::explorer::{TOOL_INGEST_OPENAPI, TOOL_TRACE_ROUTE};

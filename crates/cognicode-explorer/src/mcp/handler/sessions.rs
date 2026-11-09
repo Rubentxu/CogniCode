@@ -226,59 +226,57 @@ impl ToolHandler for BrainOpenHandler {
         #[cfg(feature = "multimodal")]
         let mut space_errors: Vec<String> = Vec::new();
         #[cfg(feature = "multimodal")]
-        if let Some(ref space_specs) = args.spaces {
-            if !space_specs.is_empty() {
-                use cognicode_core::domain::value_objects::{Space, SpaceId, SpaceKind};
-                if let Ok(session) = ctx.session_registry.get(&session_id) {
-                    for spec in space_specs {
-                        if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind) {
-                            if !name.is_empty() && !k.is_empty() {
-                                let kind = match k.to_lowercase().as_str() {
-                                    "repo" => SpaceKind::Repo,
-                                    "docs" => SpaceKind::Docs,
-                                    "issues" => SpaceKind::Issues,
-                                    other => {
-                                        space_errors.push(format!(
-                                            "unknown space_kind '{other}' for space '{name}'"
-                                        ));
-                                        continue;
-                                    }
-                                };
-                                let sid = match SpaceId::try_new(name.clone()) {
-                                    Ok(s) => s,
-                                    Err(_) => {
-                                        space_errors.push(format!("invalid space id '{name}'"));
-                                        continue;
-                                    }
-                                };
-                                let space = match Space::try_new(sid, name.clone(), kind) {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        space_errors
-                                            .push(format!("could not build space '{name}': {e}"));
-                                        continue;
-                                    }
-                                };
-                                let space = match spec.source_path {
-                                    Some(ref p) if !p.is_empty() => {
-                                        space.with_source_path(p.clone())
-                                    }
-                                    _ => space,
-                                };
-                                if let Err(e) = session.add_space(space) {
-                                    space_errors.push(format!("add_space('{name}') failed: {e}"));
-                                }
+        if let Some(ref space_specs) = args.spaces
+            && !space_specs.is_empty()
+        {
+            use cognicode_core::domain::value_objects::{Space, SpaceId, SpaceKind};
+            if let Ok(session) = ctx.session_registry.get(&session_id) {
+                for spec in space_specs {
+                    if let (Some(name), Some(k)) = (&spec.space_name, &spec.space_kind)
+                        && !name.is_empty()
+                        && !k.is_empty()
+                    {
+                        let kind = match k.to_lowercase().as_str() {
+                            "repo" => SpaceKind::Repo,
+                            "docs" => SpaceKind::Docs,
+                            "issues" => SpaceKind::Issues,
+                            other => {
+                                space_errors.push(format!(
+                                    "unknown space_kind '{other}' for space '{name}'"
+                                ));
+                                continue;
                             }
+                        };
+                        let sid = match SpaceId::try_new(name.clone()) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                space_errors.push(format!("invalid space id '{name}'"));
+                                continue;
+                            }
+                        };
+                        let space = match Space::try_new(sid, name.clone(), kind) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                space_errors.push(format!("could not build space '{name}': {e}"));
+                                continue;
+                            }
+                        };
+                        let space = match spec.source_path {
+                            Some(ref p) if !p.is_empty() => space.with_source_path(p.clone()),
+                            _ => space,
+                        };
+                        if let Err(e) = session.add_space(space) {
+                            space_errors.push(format!("add_space('{name}') failed: {e}"));
                         }
                     }
                 }
-                if !space_errors.is_empty() {
-                    tracing::warn!(
-                        "brain_open: {} space(s) failed to attach: {:?}",
-                        space_errors.len(),
-                        space_errors
-                    );
-                }
+            }
+            if !space_errors.is_empty() {
+                tracing::warn!(
+                    "brain_open: {} space(s) failed to attach: {:?}",
+                    space_errors.len(),
+                    space_errors
+                );
             }
         }
 

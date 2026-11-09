@@ -10,14 +10,10 @@
 use std::sync::Arc;
 
 use cognicode_core::domain::aggregates::generic_graph::{GraphEdge, GraphNode, NodeId};
-use cognicode_core::domain::ports::GraphRepository;
 use cognicode_core::domain::traits::graph_query_port::GraphQueryPort;
-use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 use cognicode_core::domain::value_objects::node_kind::NodeKind;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 
-use crate::domain::decision_graph_topology::DecisionGraphTopology;
 use crate::dto::{ContextualView, EvidenceBlock, ViewBlock};
 use crate::error::ExplorerResult;
 use crate::ports::symbol_repository::ResolvedSymbol;
@@ -481,6 +477,7 @@ mod tests {
     use super::*;
     use crate::adapters::InMemoryGraphRepository;
     use cognicode_core::domain::value_objects::Provenance;
+    use cognicode_core::domain::value_objects::edge_kind::EdgeKind;
 
     fn make_decision_node(id: &str, label: &str) -> GraphNode {
         GraphNode {

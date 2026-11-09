@@ -12,7 +12,7 @@ use rmcp::model::CallToolResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domain::snapshot::{SnapshotError, SnapshotFormat, SnapshotService};
+use crate::domain::snapshot::{SnapshotError, SnapshotFormat};
 use crate::domain::snapshot_dispatch::SnapshotViewKind;
 use crate::mcp::McpContext;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
@@ -167,16 +167,14 @@ async fn emit_mermaid_for_snapshot(
     view_kind: SnapshotViewKind,
     target: Option<&str>,
 ) -> Result<String, String> {
-    use crate::domain::snapshot::SnapshotError as SE;
-
     let graph_svc = ctx
         .graph_service
         .as_ref()
-        .ok_or_else(|| "graph service not wired")?;
+        .ok_or("graph service not wired")?;
     let workspace_svc = ctx
         .workspace
         .as_ref()
-        .ok_or_else(|| "workspace service not wired")?;
+        .ok_or("workspace service not wired")?;
 
     crate::domain::snapshot_dispatch::emit_mermaid_for_snapshot(
         &**graph_svc,
@@ -233,35 +231,6 @@ mod tests {
     use super::*;
 
     use crate::mcp::handler::ToolHandlerRegistry;
-    use rmcp::model::CallToolResult;
-    use serde_json::{Value, json};
-
-    // ------------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------------
-
-    fn extract_env(result: &CallToolResult) -> Value {
-        let text = result
-            .content
-            .first()
-            .and_then(|c| c.raw.as_text())
-            .map(|t| t.text.as_str())
-            .expect("CallToolResult should contain a text content");
-        serde_json::from_str(text).expect("response text must be JSON")
-    }
-
-    fn err_code(result: &CallToolResult) -> String {
-        assert_eq!(
-            result.is_error,
-            Some(true),
-            "expected err envelope, got: {result:?}"
-        );
-        let env = extract_env(result);
-        env["payload"]["error_code"]
-            .as_str()
-            .expect("err envelope payload must have `error_code`")
-            .to_string()
-    }
 
     // ------------------------------------------------------------------------
     // SnapshotViewKind::from_str

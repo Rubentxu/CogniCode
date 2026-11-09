@@ -68,10 +68,10 @@ function ExportMenuWithContext({
 }: {
   view?: ContextualView | null;
   workspaceId?: string;
-  onShowNotification?: typeof vi.fn;
+  onShowNotification?: (message: string) => void;
 }) {
   return (
-    <ExportMenu view={view} workspaceId={workspaceId} onShowNotification={onShowNotification} />
+    <ExportMenu view={view} workspaceId={workspaceId} investigationId={null} onShowNotification={onShowNotification} />
   );
 }
 

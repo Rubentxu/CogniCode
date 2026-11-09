@@ -11,7 +11,6 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { NoteEditor } from "./NoteEditor";
 import type { Pane } from "../../state/slices/navigation/types";
-import React from "react";
 
 const makePane = (note?: string): Pane => ({
   id: "pane-1",

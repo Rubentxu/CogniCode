@@ -30,7 +30,6 @@ function GraphLandingWithState({
   workspaceId?: string;
 }) {
   const [state, dispatch] = useReducer(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused action param
     (s: AppState, _a: Action): AppState => s,
     {
       ...initialState,

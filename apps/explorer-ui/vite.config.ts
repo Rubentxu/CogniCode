@@ -8,7 +8,6 @@ import path from "path";
 // Add to package.json devDependencies: "vite-plugin-wasm": "^3.3.0"
 // Then run: wasm-pack build crates/cognicode-graph-wasm \
 //             --target web --out-dir ../../apps/explorer-ui/src/wasm
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import wasm from "vite-plugin-wasm";
 
 // https://vite.dev/config/
@@ -29,7 +28,7 @@ export default defineConfig({
    * binary (see `crates/cognicode-runtime/src/bin/api.rs`). The default
    * listen port for that binary is `127.0.0.1:8010`; override with the
    * `EXPLORER_API_TARGET` env var when running the backend on a
-   * different host/port (e.g. behind docker-compose or in CI).
+   * different host/port (e.g. inside a container or in CI).
    *
    * See: crates/cognicode-explorer (Rust) — 11 REST endpoints under /api/*.
    */

@@ -25,6 +25,8 @@ import {
   type AppState,
 } from "../state/context";
 import { Spotter } from "./Spotter";
+import { chipsFromResult } from "./Spotter/IntentFooter";
+import type { SpotterSearchResult } from "../api/schemas";
 import { inspectableObjectFixture } from "../mocks/fixtures";
 
 /**
@@ -381,7 +383,14 @@ describe("Spotter (open)", () => {
     ).toBeInTheDocument();
   });
 
-  it("IntentFooter shows 'Pick a result' when no result is highlighted", async () => {
+  it("IntentFooter asks to pick a result while nothing is loaded", async () => {
+    render(<Harness initial={{ spotterOpen: true }} />);
+    const footer = await screen.findByTestId("spotter-intent-footer");
+    expect(footer).toHaveTextContent(/pick a result/i);
+    expect(screen.queryByTestId("spotter-intent-overview")).toBeNull();
+  });
+
+  it("IntentFooter shows the view chips of the highlighted hit", async () => {
     server.use(
       http.get("/api/workspaces/:workspace_id/spotter", async () => {
         await delay(20);
@@ -399,27 +408,116 @@ describe("Spotter (open)", () => {
     );
     const user = userEvent.setup();
     render(<Harness initial={{ spotterOpen: true }} />);
-    const input = screen.getByTestId("spotter-input");
-    await user.type(input, "build");
-    await screen.findByTestId(
-      `spotter-item-${inspectableObjectFixture.id}`,
+    await user.type(screen.getByTestId("spotter-input"), "build");
+    await screen.findByTestId(`spotter-item-${inspectableObjectFixture.id}`);
+
+    // cmdk highlights the first item on its own and reports it through the
+    // root `onValueChange`; the footer must follow that signal.
+    const chip = await screen.findByTestId("spotter-intent-overview");
+    expect(chip).toBeEnabled();
+    expect(screen.getByTestId("spotter-intent-footer")).not.toHaveTextContent(
+      /pick a result/i,
     );
-    const footer = await screen.findByTestId("spotter-intent-footer");
-    expect(footer).toHaveTextContent(/pick a result/i);
   });
 
-  it("IntentFooter shows chips when result is keyboard-highlighted", async () => {
-    // This test verifies the IntentFooter integration: when Command.List fires
-    // onChange with a highlighted item, the footer renders chips.
-    // We test the footer directly with a non-null result to avoid cmdk
-    // keyboard-nav complexity in jsdom.
-    const { rerender } = render(
-      <Harness initial={{ spotterOpen: true }} />,
-    );
-    // IntentFooter is rendered inside Spotter; we verify it's present when
-    // the spotter is open (shows "Pick a result" when nothing is highlighted).
-    const footer = await screen.findByTestId("spotter-intent-footer");
-    expect(footer).toBeInTheDocument();
+  describe("Cmd+N chip shortcut", () => {
+    /** Loads one symbol hit, types into the palette and returns the live state. */
+    async function openWithOneHit() {
+      server.use(
+        http.get("/api/workspaces/:workspace_id/spotter", async () => {
+          await delay(20);
+          return HttpResponse.json([
+            {
+              kind: "symbol",
+              result: {
+                object: inspectableObjectFixture,
+                score: 0.9,
+                match_type: "name_exact",
+              },
+            },
+          ]);
+        }),
+      );
+      const user = userEvent.setup();
+      const captured: { current: AppState | null } = { current: null };
+      render(
+        <Harness
+          initial={{ spotterOpen: true }}
+          onState={(s) => {
+            captured.current = s;
+          }}
+        />,
+      );
+      await user.type(screen.getByTestId("spotter-input"), "build");
+      await screen.findByTestId("spotter-intent-overview");
+      return { user, captured };
+    }
+
+    // The fixture lists overview, call-graph, source, ...: the symbol default
+    // is call-graph (2nd chip), so Cmd+3 (source) is distinguishable from it.
+    it("Cmd+3 then Enter opens the third chip's view instead of the kind default", async () => {
+      const { user, captured } = await openWithOneHit();
+      await user.keyboard("{Meta>}3{/Meta}");
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("source");
+      });
+      expect(captured.current?.activeObjectId).toBe(inspectableObjectFixture.id);
+      expect(captured.current?.spotterOpen).toBe(false);
+    });
+
+    it("Enter without Cmd+N opens the kind default view", async () => {
+      const { user, captured } = await openWithOneHit();
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("call-graph");
+      });
+    });
+
+    it("Cmd+N on a disabled chip is ignored and Enter keeps the default view", async () => {
+      // Two real views leave the first disabled placeholder chip at
+      // position 3, inside the Cmd+1..9 range.
+      const twoViews = {
+        ...inspectableObjectFixture,
+        available_views: inspectableObjectFixture.available_views.slice(0, 2),
+      };
+      server.use(
+        http.get("/api/workspaces/:workspace_id/spotter", async () => {
+          await delay(20);
+          return HttpResponse.json([
+            {
+              kind: "symbol",
+              result: { object: twoViews, score: 0.9, match_type: "name_exact" },
+            },
+          ]);
+        }),
+      );
+      const user = userEvent.setup();
+      const captured: { current: AppState | null } = { current: null };
+      render(
+        <Harness
+          initial={{ spotterOpen: true }}
+          onState={(s) => {
+            captured.current = s;
+          }}
+        />,
+      );
+      // A query no other test uses: SWR's module-level cache is keyed on it and
+      // would otherwise answer with the full-view object cached by a sibling.
+      await user.type(screen.getByTestId("spotter-input"), "two views");
+      await screen.findByTestId("spotter-intent-overview");
+      const chips = chipsFromResult({
+        kind: "symbol",
+        result: { object: twoViews, score: 0.9, match_type: "name_exact" },
+      } as SpotterSearchResult);
+      expect(chips[2]?.disabled).toBe(true);
+
+      await user.keyboard("{Meta>}3{/Meta}");
+      await user.keyboard("{Enter}");
+      await waitFor(() => {
+        expect(captured.current?.activeViewId).toBe("call-graph");
+      });
+    });
   });
 
   it("Cmd+1 with no highlighted result does not crash", async () => {

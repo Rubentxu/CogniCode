@@ -108,7 +108,7 @@ start: stop
     fi
     ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
 
-# Run in dev mode — one command to start everything: PG + API + Frontend
+# Run in dev mode — one command to start everything: API + Frontend
 dev:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -138,7 +138,6 @@ dev:
     echo "═══════════════════════════════════════════════════════"
     echo "  Frontend:  http://localhost:$UI_PORT"
     echo "  API:       http://localhost:$API_PORT"
-    echo "  PG:        localhost:5432/cognicode"
     echo ""
     echo "  Press Ctrl+C to stop everything"
     echo "═══════════════════════════════════════════════════════"
@@ -374,7 +373,7 @@ setup: install build
 # Explorer UI (React + TypeScript)
 # ============================================================================
 
-# One command to rule them all: PG + API + Frontend
+# One command to rule them all: API + Frontend
 # Alias for `just dev` — kept for backwards compatibility.
 explorer-local:
     @just dev
@@ -408,12 +407,12 @@ explorer-full:
     @echo "  Frontend: http://127.0.0.1:{{ EXPLORER_PORT }}"
     @echo "  API:      http://127.0.0.1:{{ EXPLORER_API_PORT }}"
 
-# Build the current repo into PostgreSQL via the real MCP server.
-# Safe for git: ingest persists in local PostgreSQL only; tracked-file dirtiness is checked before/after.
+# Open and scan the current repo through the real Explorer API.
+# Safe for git: tracked-file dirtiness is checked before/after.
 explorer-real-ingest workspace="":
     bash scripts/explorer/real_ingest.sh "{{ workspace }}"
 
-# Start the real Explorer API against PostgreSQL in the background.
+# Start the real Explorer API in the background.
 # Logs/PID live under .tmp-explorer-real/ (gitignored).
 explorer-real-api-up:
     bash scripts/explorer/real_api_up.sh "{{ EXPLORER_REAL_API_PORT }}"
@@ -544,25 +543,20 @@ lsi-providers:
 sandbox-iac:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running IaC sandbox tests ==="
-    echo "DATABASE_URL=$DATABASE_URL"
     cargo run -p cognicode-sandbox -- run sandbox/manifests/iac/
 
-# Run full sandbox baseline (all manifests — requires PG)
+# Run full sandbox baseline (all manifests)
 sandbox-all:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running full sandbox baseline ==="
-    echo "DATABASE_URL=$DATABASE_URL"
     cargo run -p cognicode-sandbox -- run sandbox/manifests/
 
 # Run sandbox with specific manifest path
 sandbox-run manifests:
     #!/usr/bin/env bash
     set -e
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Running sandbox: {{ manifests }} ==="
     cargo run -p cognicode-sandbox -- run {{ manifests }}
 
@@ -605,7 +599,6 @@ sandbox-stability manifests repeat="3":
 # Run sandbox in dry-run mode (list scenarios without executing)
 sandbox-plan manifests:
     #!/usr/bin/env bash
-    export DATABASE_URL="postgres://cognicode:cognicode@localhost:5432/cognicode"
     echo "=== Sandbox plan: {{ manifests }} ==="
     cargo run -p cognicode-sandbox -- run {{ manifests }} --dry-run 2>&1 | head -50
 

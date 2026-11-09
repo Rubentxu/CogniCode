@@ -761,10 +761,7 @@ fn large_response_uses_pagination() {
 /// fact about the walk, not about the build.
 fn master_catalogue() -> (BTreeSet<String>, BTreeSet<String>) {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("cognicode-core")
-        .join("product")
-        .join("tools.json");
+        .join("../cognicode-core/product/tools.json");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let v: Value = serde_json::from_slice(&bytes).expect("parse tools.json");
     let tools = v["tools"].as_array().expect("tools[]");
@@ -1339,10 +1336,7 @@ fn wire_tools_list_matches_hand_authored_catalog() {
     // never regenerate it`). The wire surface must match it
     // field-for-field on the name set.
     let catalog_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("cognicode-core")
-        .join("product")
-        .join("tools.json");
+        .join("../cognicode-core/product/tools.json");
     let bytes = std::fs::read(&catalog_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
     let v: Value = serde_json::from_slice(&bytes).expect("parse tools.json");

@@ -364,111 +364,62 @@ impl GraphServiceImpl {
         let mut package_name_to_container_id: HashMap<String, String> = HashMap::new();
 
         // Parse workspace Cargo.toml to find members
-        if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml) {
-            if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
-                // Get workspace members (array of paths)
-                if let Some(members) = toml_value
-                    .get("workspace")
-                    .and_then(|w| w.get("members"))
-                    .and_then(|m| m.as_array())
-                {
-                    for member_value in members {
-                        if let Some(member_path) = member_value.as_str() {
-                            let member_dir = root.join(member_path);
-                            let member_toml_path = member_dir.join("Cargo.toml");
+        if let Ok(toml_content) = std::fs::read_to_string(&workspace_toml)
+            && let Ok(toml_value) = toml_content.parse::<toml::Value>()
+        {
+            // Get workspace members (array of paths)
+            if let Some(members) = toml_value
+                .get("workspace")
+                .and_then(|w| w.get("members"))
+                .and_then(|m| m.as_array())
+            {
+                for member_value in members {
+                    if let Some(member_path) = member_value.as_str() {
+                        let member_dir = root.join(member_path);
+                        let member_toml_path = member_dir.join("Cargo.toml");
 
-                            if member_toml_path.exists() {
-                                if let Ok(member_toml_content) =
-                                    std::fs::read_to_string(&member_toml_path)
-                                {
-                                    if let Ok(member_toml) =
-                                        member_toml_content.parse::<toml::Value>()
-                                    {
-                                        // Determine sub_kind: library if [lib] present, binary if [[bin]] present
-                                        let has_lib = member_toml.get("lib").is_some();
-                                        let has_bin = member_toml
-                                            .get("bin")
-                                            .map(|b| {
-                                                b.as_array()
-                                                    .map(|arr| !arr.is_empty())
-                                                    .unwrap_or(false)
-                                            })
-                                            .unwrap_or(false);
+                        if member_toml_path.exists()
+                            && let Ok(member_toml_content) =
+                                std::fs::read_to_string(&member_toml_path)
+                            && let Ok(member_toml) = member_toml_content.parse::<toml::Value>()
+                        {
+                            // Determine sub_kind: library if [lib] present, binary if [[bin]] present
+                            let has_lib = member_toml.get("lib").is_some();
+                            let has_bin = member_toml
+                                .get("bin")
+                                .map(|b| b.as_array().map(|arr| !arr.is_empty()).unwrap_or(false))
+                                .unwrap_or(false);
 
-                                        let _sub_kind = if has_lib {
-                                            "library"
-                                        } else if has_bin {
-                                            "binary"
-                                        } else {
-                                            "library"
-                                        };
-                                        let container_id = format!("container:{}", member_path);
-                                        container_ids.insert(container_id.clone());
-                                        container_toml_paths
-                                            .insert(container_id.clone(), member_toml_path.clone());
-
-                                        // Extract package name and map to container_id
-                                        if let Some(package_name) = member_toml
-                                            .get("package")
-                                            .and_then(|p| p.get("name"))
-                                            .and_then(|n| n.as_str())
-                                        {
-                                            package_name_to_container_id.insert(
-                                                package_name.to_string(),
-                                                container_id.clone(),
-                                            );
-                                        }
-
-                                        nodes.push(GraphNode {
-                                            id: container_id.clone(),
-                                            label: Path::new(member_path)
-                                                .file_name()
-                                                .map(|n| n.to_string_lossy().to_string())
-                                                .unwrap_or_else(|| member_path.to_string()),
-                                            kind: NodeKind::Container.as_str().to_string(),
-                                            file: Some(member_toml_path.display().to_string()),
-                                            line: None,
-                                            style_class: "node-container".to_string(),
-                                        });
-
-                                        // Edge from container to system
-                                        edges.push(GraphEdge {
-                                            source: container_id,
-                                            target: system_id.to_string(),
-                                            relation: EdgeKind::PartOf.as_str().to_string(),
-                                            style_class: "edge-part-of".to_string(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Parse apps/* directories for node-app containers
-        let apps_dir = root.join("apps");
-        if apps_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&apps_dir) {
-                for entry in entries.flatten() {
-                    let app_path = entry.path();
-                    if app_path.is_dir() {
-                        let package_json = app_path.join("package.json");
-                        if package_json.exists() {
-                            let app_name = app_path
-                                .file_name()
-                                .map(|n| n.to_string_lossy().to_string())
-                                .unwrap_or_default();
-
-                            let container_id = format!("container:apps/{}", app_name);
+                            let _sub_kind = if has_lib {
+                                "library"
+                            } else if has_bin {
+                                "binary"
+                            } else {
+                                "library"
+                            };
+                            let container_id = format!("container:{}", member_path);
                             container_ids.insert(container_id.clone());
+                            container_toml_paths
+                                .insert(container_id.clone(), member_toml_path.clone());
+
+                            // Extract package name and map to container_id
+                            if let Some(package_name) = member_toml
+                                .get("package")
+                                .and_then(|p| p.get("name"))
+                                .and_then(|n| n.as_str())
+                            {
+                                package_name_to_container_id
+                                    .insert(package_name.to_string(), container_id.clone());
+                            }
 
                             nodes.push(GraphNode {
                                 id: container_id.clone(),
-                                label: app_name,
+                                label: Path::new(member_path)
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| member_path.to_string()),
                                 kind: NodeKind::Container.as_str().to_string(),
-                                file: Some(package_json.display().to_string()),
+                                file: Some(member_toml_path.display().to_string()),
                                 line: None,
                                 style_class: "node-container".to_string(),
                             });
@@ -486,29 +437,63 @@ impl GraphServiceImpl {
             }
         }
 
+        // Parse apps/* directories for node-app containers
+        let apps_dir = root.join("apps");
+        if apps_dir.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&apps_dir)
+        {
+            for entry in entries.flatten() {
+                let app_path = entry.path();
+                if app_path.is_dir() {
+                    let package_json = app_path.join("package.json");
+                    if package_json.exists() {
+                        let app_name = app_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+
+                        let container_id = format!("container:apps/{}", app_name);
+                        container_ids.insert(container_id.clone());
+
+                        nodes.push(GraphNode {
+                            id: container_id.clone(),
+                            label: app_name,
+                            kind: NodeKind::Container.as_str().to_string(),
+                            file: Some(package_json.display().to_string()),
+                            line: None,
+                            style_class: "node-container".to_string(),
+                        });
+
+                        // Edge from container to system
+                        edges.push(GraphEdge {
+                            source: container_id,
+                            target: system_id.to_string(),
+                            relation: EdgeKind::PartOf.as_str().to_string(),
+                            style_class: "edge-part-of".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
         // =========================================================================
         // Dependency Inference — emit depends_on edges from Cargo.toml [dependencies]
         // =========================================================================
         for (container_id, toml_path) in &container_toml_paths {
-            if let Ok(toml_content) = std::fs::read_to_string(toml_path) {
-                if let Ok(toml_value) = toml_content.parse::<toml::Value>() {
-                    if let Some(dependencies) = toml_value.get("dependencies") {
-                        if let Some(deps) = dependencies.as_table() {
-                            for (dep_name, _dep_value) in deps {
-                                // Look up the package name to find the target container_id
-                                if let Some(target_container_id) =
-                                    package_name_to_container_id.get(dep_name)
-                                {
-                                    edges.push(GraphEdge {
-                                        source: container_id.clone(),
-                                        target: target_container_id.clone(),
-                                        relation: EdgeKind::DependsOn.as_str().to_string(),
-                                        style_class: crate::api::edge_style_class_for("depends_on")
-                                            .to_string(),
-                                    });
-                                }
-                            }
-                        }
+            if let Ok(toml_content) = std::fs::read_to_string(toml_path)
+                && let Ok(toml_value) = toml_content.parse::<toml::Value>()
+                && let Some(dependencies) = toml_value.get("dependencies")
+                && let Some(deps) = dependencies.as_table()
+            {
+                for (dep_name, _dep_value) in deps {
+                    // Look up the package name to find the target container_id
+                    if let Some(target_container_id) = package_name_to_container_id.get(dep_name) {
+                        edges.push(GraphEdge {
+                            source: container_id.clone(),
+                            target: target_container_id.clone(),
+                            relation: EdgeKind::DependsOn.as_str().to_string(),
+                            style_class: crate::api::edge_style_class_for("depends_on").to_string(),
+                        });
                     }
                 }
             }
@@ -709,20 +694,20 @@ impl GraphServiceImpl {
 
         // Wrong sub_kind: name matches but sub_kind differs
         for expected in &expected_arch.containers {
-            if let Some(actual_sub_kind) = inferred_containers.get(&expected.name) {
-                if actual_sub_kind != &expected.sub_kind {
-                    findings.push(DriftFinding {
-                        kind: DriftKind::WrongSubKind,
-                        expected: format!("{} ({})", expected.name, expected.sub_kind),
-                        actual: format!("{} ({})", expected.name, actual_sub_kind),
-                        severity: "info".to_string(),
-                        detail: format!(
-                            "Container '{}' has sub_kind '{}' in expected but '{}' in inferred",
-                            expected.name, expected.sub_kind, actual_sub_kind
-                        ),
-                        rule_id: None,
-                    });
-                }
+            if let Some(actual_sub_kind) = inferred_containers.get(&expected.name)
+                && actual_sub_kind != &expected.sub_kind
+            {
+                findings.push(DriftFinding {
+                    kind: DriftKind::WrongSubKind,
+                    expected: format!("{} ({})", expected.name, expected.sub_kind),
+                    actual: format!("{} ({})", expected.name, actual_sub_kind),
+                    severity: "info".to_string(),
+                    detail: format!(
+                        "Container '{}' has sub_kind '{}' in expected but '{}' in inferred",
+                        expected.name, expected.sub_kind, actual_sub_kind
+                    ),
+                    rule_id: None,
+                });
             }
         }
 
@@ -755,7 +740,7 @@ impl GraphServiceImpl {
 
             // Check each depends_on edge against the rule patterns
             for (from, to) in &depends_on_edges {
-                if from_pattern.matches(*from) && to_pattern.matches(*to) {
+                if from_pattern.matches(from) && to_pattern.matches(to) {
                     // Rule pattern matched this dependency - emit a violation
                     let severity_str = match rule.severity {
                         crate::dto::Severity::Error => "error".to_string(),
@@ -1081,7 +1066,7 @@ version = "0.1.0"
 
         // Create a crate with src directory
         let crate_dir = tmp.path().join("crates/test-crate");
-        std::fs::create_dir_all(&crate_dir.join("src")).unwrap();
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
         std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
 
         // Create 250 symbols in the module
@@ -1123,7 +1108,7 @@ members = ["crates/test-crate"]
         .unwrap();
 
         let crate_dir = tmp.path().join("crates/test-crate");
-        std::fs::create_dir_all(&crate_dir.join("src")).unwrap();
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
         std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
 
         let symbols = vec![sym("my_func", "crates/test-crate/src/lib.rs", 10)];
@@ -1194,7 +1179,7 @@ members = ["crates/test-crate"]
 
         // Create a crate whose src/ directory maps to a C4 component
         let crate_dir = tmp.path().join("crates/my-crate");
-        std::fs::create_dir_all(&crate_dir.join("src")).unwrap();
+        std::fs::create_dir_all(crate_dir.join("src")).unwrap();
         std::fs::write(crate_dir.join("Cargo.toml"), "[lib]").unwrap();
 
         // One function symbol — its kind is Function but inside a C4 component

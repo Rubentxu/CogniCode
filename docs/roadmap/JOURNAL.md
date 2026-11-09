@@ -38999,3 +38999,123 @@ lote.
 **Resultado observado.** Con una muestra: `full rebuild` en frío, 36.981 ms; `warm reuse` sin cambios, 33.788 ms; y `full rebuild` tras una edición de igual tamaño y mtime, 35.971 ms. El scanner procesó 2 ficheros en la primera pasada, 0 en la segunda, 1 ante la edición de igual tamaño, y clasificó 1 añadido y 1 eliminado. La igualdad semántica del grafo permanece respaldada por la caracterización focal de TASK-172: el CLI no emite el grafo JSON por stdout para calcular un digest en este instrumento.
 
 **Cierre.** La ruta real sigue publicando `warm reuse` o `full rebuild`; no se publica `incremental delta` mientras `IncrementalScanner` siga desconectado. PR #752 integrado con merge `0781e987b5cf5444eb77054e60bbf5e5cacb6c56`. Validación focal: `cargo check -p cognicode-core --example measure_incremental_scanner`, `rustfmt` focal, `py_compile` y `git diff --check`, `PASS`. Gate global `NOT_RUN` por política de lote.
+
+## 2026-11-08 — TASK-186: CURRENT.md regenerado sobre aebb183c
+
+**Causa.** `test_roadmap_coherence` tenía dos rojos (`test_current_sha_matches_head`, `test_control_all_green`): el snapshot declaraba `5c813212`, a 12 commits de la base con `main` (`aebb183c`), y la ventana es 5.
+
+**Cambio.** Cabecera (fecha y SHA completo `aebb183c94233b650c785952d197dcddf0b52ced`, que vive en `main`), una cláusula de prosa (TASK-165, TASK-158) y la tabla «Qué cambió» con una fila por unidad; el recuento de 12 commits está medido con `git rev-list --count`.
+
+**Segundo hallazgo.** `bash scripts/ci/run-all-contracts.sh` salía rc=1 por `test_pr_merge_guard.py` y `test_sdk_surfaces.py` (TASK-183/178): son clases `unittest` y el runner solo lee funciones `test_*` de módulo, así que ejecutaban 0 casos («exposes no test_* function»). Se añadió un puente por fichero que carga la clase, exige `testsRun > 0` y falla con la causa de cada caso rojo.
+
+**Verificación.** `scripts/run_contract_tests.py scripts/ci/test_roadmap_coherence.py` 29/29 (antes 2 rojos); los dos contratos puenteados 1/1 cada uno, y por su ruta directa 11 y 34 casos OK. Gate NOT_RUN (política de lotes).
+
+## 2026-11-08 — TASK-185/187/188: auditoría de superficies que el gate no mira
+
+**Causa raíz común.** `scripts/test-gate.sh` mide lib y tests por radio con las features por defecto; no ejecuta `--all-targets`, `--all-features`, `cargo fmt` ni `cargo clippy`. Tres ciclos seguidos encontraron un rojo escondido ahí: E0063 solo con `--all-targets --all-features` (TASK-185), dos contratos `unittest` con 0 casos (TASK-186) y formato (TASK-187).
+
+**Medición (target aislado `/tmp/t184/target`, en serie).** `cargo check --workspace --all-targets --all-features --keep-going`: rc=0. `cargo fmt --all --check`: 2 ficheros de test fuera de formato → `cargo fmt --all` (un `rustfmt --edition 2021` suelto ordena los imports distinto del edition del manifiesto). `cargo clippy --workspace --all-targets -- -D warnings`: rc=101 por 2 `needless_update`, ambos provocados por el arreglo de TASK-185 (`..Default::default()` en literales que sin `multimodal` ya listan todos los campos); ahora los literales nombran solo los puertos que el test ejercita y el comando documentado sale rc=0.
+
+**Resultado.** TASK-185, 187 y 188 cerradas; commits locales `ea9ee626`, `2bc4bd64`, `54fc7483`. Con `--all-features`, clippy sigue rojo: 74 hallazgos (72 en `cognicode-explorer`), registrados como TASK-189 sin tocar. No se añadió carril de CI ni paso nuevo al gate; si se quiere vigilar fmt/clippy/all-targets es una decisión de política del operador. Gate NOT_RUN (política de lotes). Sin push.
+
+## 2026-11-08 — TASK-189: clippy `--all-features --all-targets` en verde
+
+**Medición inicial (target aislado, en serie).** `cargo clippy --workspace --all-targets --all-features --keep-going -- -D warnings`: 74 hallazgos, 72 en `cognicode-explorer`, 1 en `cognicode-cli` y 1 en `cognicode-core`.
+
+**Causa raíz del bloque grande.** En `cognicode-explorer/src/lib.rs`, `api_rationale_tests` y `api_support_pack_tests` solo estaban condicionados por `feature = "multimodal"`, no por `test`: dos módulos de test se compilaban dentro de la librería de producción y generaban el grueso de los avisos (`dead_code`, imports sin uso). Ahora van bajo `all(test, feature = "multimodal")`. El resto de avisos del explorer son mecánicos: imports sin uso, `collapsible_if` (let-chains, edición 2024), borrows innecesarios, `filter_map` en lugar de `map().flatten()`, helpers de test muertos y un literal `BatchStats` con asignación de campos.
+
+**Cambios.** Tres commits locales, uno por crate: `72d1b8b4` (core: `#[allow(clippy::match_like_matches_macro)]` con motivo en la tabla `cfg_match`, porque `cfg!` se expande a un literal bool con todas las features), `e0b273ce` (cli: `#[allow(clippy::vec_init_then_push)]` en `features()`, cuyos `push` están bajo `#[cfg]`) y `09c862a4` (explorer). `cargo clippy --fix` no se aplicó a ciegas: su diff rompió `decision_support_pack` (retiró `EdgeKind` que `mod tests` usa vía `use super::*`) y se corrigió a mano; el mock de `execute_query_with_target` lleva `#[allow(deprecated)]` con motivo porque la firma del trait es la API real.
+
+**Verificación.** `cargo clippy --workspace --all-targets --all-features -- -D warnings` rc=0; el mismo comando con features por defecto rc=0; `cargo fmt --all --check` rc=0; `git diff --check` rc=0. Explorer con `cargo nextest run --profile gate -p cognicode-explorer --lib --tests`: 1096 passed (por defecto) y 1173 passed (`--features multimodal`); son pruebas del radio tocado, no certificación. Incidente de entorno: el primer intento de tests falló con `Disk quota exceeded` en `/tmp`; se borró solo el target propio (`/tmp/t184/target`) y se repitió. Gate completo NOT_RUN (política de lotes). Sin push.
+
+## 2026-11-08 — TASK-190: doc-tests y rustdoc medidos y en verde
+
+**Medición inicial (target aislado `/tmp/t184/target`, en serie).** `cargo test --workspace --doc`: rc=0, 9 passed, 0 failed, 12 ignored; no había nada que corregir. `cargo doc --workspace --no-deps` (el comando de `just docs-check`): rc=0 pero 2 avisos de rustdoc.
+
+**Avisos y quién tenía razón.** (1) `rustdoc::redundant_explicit_links` en `findings_handlers.rs:13`: `Finding` ya está importado sin condición en el fichero, así que el destino explícito sobraba; la doc era la equivocada y se quitó el destino. (2) `output filename collision` en `target/doc/cognicode/index.html`: el binario `cognicode` de `cognicode-cli` y la librería `cognicode` comparten nombre (bug conocido de cargo, rust-lang/cargo#6313). Renombrar uno rompería contratos publicados, así que el binario lleva `doc = false` con el motivo en el `Cargo.toml`; la librería conserva su documentación.
+
+**Cambios.** Un commit local `3ad2af5c`. **Verificación.** `cargo doc --workspace --no-deps` tras tocar `core/src/lib.rs` (para no cachear): rc=0, 0 avisos. `cargo test --workspace --doc` rc=0 de nuevo. `cargo nextest run --profile gate -p cognicode-cli -p cognicode-core --lib --tests`: 4370/4370 passed (con los binarios release de `/tmp/t184/target`). `git diff --check` rc=0. Gate completo NOT_RUN (política de lotes). Sin push.
+
+## 2026-11-08 — TASK-191: matriz de features de `cargo check --all-targets` en verde
+
+**Medición inicial (target aislado `/tmp/t184/target`, en serie).** `cargo check -p <crate> --all-targets` con `--no-default-features` y con cada feature individual (`--no-default-features --features X`), según `cargo metadata`: 31 combinaciones sobre 9 crates; 19 con rc=0 y 12 con rc=101. Los fallos eran todos de targets, nunca de la librería. `cognicode-core` (8 de 9 rojas; solo `only-persistence` pasaba): `error[E0432]: unresolved import cognicode_core::incremental::content_hash` (bench `b6_w2_reproducible_perf` y módulos de `tests/it`) y `error[E0432]: unresolved import cognicode_core::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit` (bench `reparse_benchmarks` y `tests/it`). `cognicode-runtime` (4 de 5 rojas; solo `only-ladybug` pasaba): `error[E0425]: cannot find function bootstrap_ladybug` / `bootstrap_ladybug_default in crate cognicode_runtime` en los bins `explorer-mcp` (`src/bin/mcp.rs`) y `explorer-api` (`src/bin/api.rs`).
+
+**Causa (verificada en el código).** `incremental::content_hash` y `handle_reparse_on_edit` están tras `#[cfg(feature = "persistence")]`; `bootstrap_ladybug*` tras `#[cfg(feature = "ladybug")]`. Quien estaba mal eran los consumidores, que los usaban sin declarar la feature; las librerías no cambian.
+
+**Cambios.** `cognicode-core`: `required-features = ["persistence"]` en los dos benches; `#[cfg(feature = "persistence")]` sobre los tres módulos de `tests/it/main.rs` que importan esos símbolos (`a_symbol_count_is_published_only_when_it_was_measured`, `b3_w4_incremental_analysis`, `the_reparse_says_what_it_cost`; el resto de la suite sigue corriendo sin la feature); y, al quedar compilable sin `persistence`, tres `unused import` de la librería gateados con la misma feature (`workspace_session.rs`: `measured_seconds`, `symbol_delta`/`SymbolCount`; `handlers/mod.rs`: `ReparseOnEditInput/Output`, en un `use` aparte porque un atributo no cabe dentro de un árbol `use`). `cognicode-runtime`: `required-features = ["ladybug"]` en los bins `explorer-api` y `explorer-mcp`.
+
+**Verificación.** Matriz relanzada completa: 31/31 con rc=0 (antes 19/12), sin avisos en las combinaciones de core. `cargo nextest run --profile gate -p cognicode-core --lib --tests` (sin filtro, en serie, binarios release en `/tmp/t184/target/release`): 3605 passed, 0 skipped, rc=0. Mismo comando con `-p cognicode-runtime`: 18 passed, 0 skipped, rc=0. `git diff --check` rc=0. Logs en `/tmp/t184/matrix/`, tabla previa en `/tmp/t184/summary-before.txt`.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commits locales en `task-191-feature-matrix`.
+
+## 2026-11-08 — TASK-192: benches, examples y `#[ignore]` ejecutados de verdad
+
+**Medición inicial.** `cargo test --workspace --benches --examples --no-fail-fast -j1` (destino aislado `/tmp/t184/target`): rc=0. Se ejecutaron una vez los 5 benches (`b6_w2_reproducible_perf`, `fact_bridge_benchmarks`, `graph_benchmarks`, `reparse_benchmarks` en core; `explorerql_benchmarks` en explorer) y el example `page_rank` de graph-algos; ninguno hizo panic. `crates/spike-ladybug` está excluido del workspace (sus 12 examples son experimentos y `s5_query_pg` exige Postgres): NOT_RUN. Inventario de `#[ignore]`: 0 atributos vivos; las 15 apariciones eran comentarios.
+
+**Causa.** Un único comentario seguía describiendo un test `#[ignore]` ya inexistente (`cmd_update_zero_component_profile_does_not_pin_tracker`, bug anterior al arreglo e86.1) y mandaba a correrlo con `--ignored`.
+
+**Cambios.** `crates/cognicode-cli/src/cmd/layout.rs`: se elimina ese bloque de 44 líneas; el comentario vigente de e86.1 se conserva. Sin cambio de comportamiento.
+
+**Verificación.** `cargo nextest run --profile gate -p cognicode-cli --lib --tests` (sin filtro, en serie, binarios release): 765 passed, 0 skipped, rc=0. `git diff --check` rc=0. Logs: `/tmp/t184/benches-examples.log`, `/tmp/t184/nextest-cli.log`.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commits locales en `task-192-bench-example-ignore-audit`.
+
+## 2026-11-08 — TASK-193: la suite del explorer-ui medida
+
+**Medición inicial.** `npm test --prefix apps/explorer-ui` (vitest + MSW, sin filtro, node v25.9.0, `node_modules` ya presente): rc=0, 86 ficheros y 944 tests pasados, 0 fallos, 11,60 s. Las líneas `Failed ...` del log (`C4Toolbar`: `Network error`, `URL.createObjectURL is not a function`) las escriben casos negativos que esperan ese error y pasan.
+
+**Causa.** No hay defecto: la suite que AGENTS.md exige antes de pedir review no figuraba en ninguna auditoría y estaba verde.
+
+**Cambios.** Ninguno de código.
+
+**Verificación.** Log en `/tmp/t184/explorer-ui.log`. `git diff --check` rc=0.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Commit local en `task-193-explorer-ui-suite`.
+
+## 2026-11-08 — TASK-194: lint y type-check del explorer-ui
+
+**Medición inicial.** Ni el gate ni las auditorías previas ejecutaban `eslint` ni `tsc`, y `vitest` transpila sin comprobar tipos. `npm run lint`: 37 problemas. `tsc -p tsconfig.app.json --noEmit`: 63 errores. `tsconfig.node.json`: limpio. Logs en `/tmp/t184/ui-lint.log`, `/tmp/t184/ui-tsc-app.log`.
+
+**Causa.** Una suite verde ocultaba tres defectos de comportamiento: (1) `updateInvestigation`/`deleteInvestigation` llamaban a `apiPut`/`apiDelete` sin schema y `handleResponse` fallaba con `TypeError … reading 'parse'`; (2) `PinEvidenceModal` enviaba `view_id: undefined` donde el schema exige `null`; (3) `Spotter` registraba un `onChange` en `Command.List` que cmdk no invoca (derivado a TASK-195). Además, imports rotos (`RequestOpts`, `/src/api/client`, `../../api/schemas`), `saved_exploration` ausente en `kindDefaultView`, un tipo de `multimodal.ts` que no reflejaba la tabla en runtime, d3 sin tipos por la entrada `d3-*` y código sin uso.
+
+**Cambios.** Tests RED→GREEN para (1) y (2) (`useInvestigations.test.ts`, `PinEvidenceModal.test.tsx`) y arreglo mínimo. Tipos y símbolos sin uso corregidos en producción y tests. `eslint.config.js`: patrón `^_` para variables sin uso, y `react-refresh/only-export-components` pasa a `warn` (es una comodidad del servidor de desarrollo, no de corrección; quedan 9 avisos visibles, 5 de ellos de esa regla).
+
+**Verificación.** `npm run lint` rc=0 (0 errores, 9 avisos). `tsc` app y node: 0 errores. `npm test` sin filtro: rc=0, 88 ficheros y 947 tests (antes 86 y 944), log `/tmp/t184/ui-vitest-194.log`. `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Ramas `task-194-explorer-ui-lint-types`. Pendiente: TASK-195 (resaltado de Spotter). Lint y tsc del explorer-ui pasan a ser pre-review checks con medición registrada.
+
+## 2026-11-08 — TASK-195: el resaltado del Spotter vuelve a llegar al pie de intención
+
+**Medición inicial.** Tras TASK-194 nada llamaba a `setHighlightedResult`, así que `IntentFooter` mostraba siempre «Pick a result to see views». Los dos tests del pie eran vacuos: ninguno cargaba un hit. Test nuevo con MSW (un hit `symbol` con `inspectableObjectFixture`): RED con `Unable to find an element by: [data-testid="spotter-intent-overview"]`.
+
+**Causa.** cmdk 1.1.1 solo avisa de su selección mediante `onValueChange`. Con un `onValueChange` en el `Command` sin `value` controlado, el primer ítem queda `aria-selected="true"` pero el callback no se dispara (medido: item seleccionado, pie intacto). Con `value` controlado sí.
+
+**Cambios.** `Spotter.tsx`: el `Command` raíz es controlado (`value={highlightedId}`, `onValueChange={setHighlightedId}`) y `highlightedResult` se deriva con `useMemo` de `filteredResults` y el id; al reabrir se limpia el id. `Spotter.test.tsx`: los dos tests vacuos se sustituyen por «asks to pick a result while nothing is loaded» y «shows the view chips of the highlighted hit».
+
+**Verificación.** `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 947 tests. `tsc -p tsconfig.app.json --noEmit`: 0 errores. `npm run lint`: rc=0 (0 errores, 9 avisos ya registrados). `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-195-spotter-highlight`, commit `673d7d1b`.
+
+## 2026-11-08 — TASK-196: el atajo Cmd+N del Spotter tiene test propio
+
+**Medición inicial.** TASK-195 cableó el resaltado, pero `pendingViewId` (Cmd+N y Enter) no tenía ningún test: nada fallaba si el atajo dejaba de hacer algo.
+
+**Causa.** No hay defecto de producto. Dos hallazgos del test: (1) con el fixture completo el primer chip deshabilitado es el 11.º, fuera del rango Cmd+1..9, así que el caso «chip deshabilitado» necesita un objeto con dos vistas (placeholder en 3.ª posición); (2) la caché de SWR es de módulo y la clave es la consulta, así que dos tests con la misma consulta y distinto cuerpo MSW reciben el cuerpo del primero.
+
+**Cambios.** `Spotter.test.tsx`: tres tests en «Cmd+N chip shortcut» (Cmd+3 + Enter abre `source` en vez de `call-graph`; Enter solo abre el defecto; Cmd+3 sobre chip deshabilitado se ignora). Sin cambios de producción.
+
+**Verificación.** RED medido anulando `setPendingViewId(chip.viewId)` en `Spotter.tsx` (copia en /tmp, restaurado): falla `expected 'call-graph' to be 'source'`. `npm test --prefix apps/explorer-ui` sin filtro: rc=0, 88 ficheros y 950 tests (antes 947). tsc 0 errores, lint rc=0 (9 avisos ya registrados), `git diff --check` limpio.
+
+**Estado.** Gate global NOT_RUN (política de lotes). Sin push, sin PR. Rama local `task-196-spotter-cmd-n`, commit `d0c777fd`.
+
+## 2026-11-08 — TASK-197: product contracts and explorer-ui build
+
+**Medición inicial.** `npm run build` del explorer-ui (`tsc -b && vite build`): rc=0 en 12 s, con avisos (chunk > 500 kB, 2 INEFFECTIVE_DYNAMIC_IMPORT, SOURCEMAP_BROKEN de tailwind), ninguno es fallo. `bash scripts/ci/run-all-contracts.sh`: rc=1, un único rojo, `test_the_touched_files_do_not_carry_more_debt_than_they_inherited` (`Spotter.test.tsx: 0 -> 1`).
+
+**Causa.** Un comentario añadido por TASK-196 citaba «C4», que el escáner de comentarios (`comment_scan.py`) lee como identificador de tarea. Defecto del test, no de producción.
+
+**Cambios.** Comentario reescrito sin la cita (`f3582cd8`).
+
+**Verificación.** `run-all-contracts.sh` sin filtro: rc=0. `Spotter.test.tsx`: 24 passed. Gate global: NOT_RUN (política de lotes). Sin push.
+
+**Estado.** PASS para contratos y build; los avisos del build quedan como observación.

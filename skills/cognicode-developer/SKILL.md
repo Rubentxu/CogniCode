@@ -69,13 +69,12 @@ just build-wasm                     # explorer frontend
 just gate                           # bash scripts/test-gate.sh
 
 # Test
-just test-unit                      # 178+ unit tests, no Postgres
-just test-pg                        # Postgres-backed integration tests
+just test-unit                      # unit tests, no external services
 just mutants                        # mutation testing, scope in .cargo/mutants.toml
 just lint                           # clippy as errors
 
 # Lifecycle
-just dev                            # full dev mode (Postgres + API + UI)
+just dev                            # full dev mode (API + UI)
 just run                            # run the explorer API
 just start                          # run without rebuilding
 

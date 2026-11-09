@@ -1,37 +1,25 @@
 #!/bin/bash
 # CogniCode MCP — Docker entrypoint
-# Starts PostgreSQL, runs migrations, then launches cognicode-mcp
+# Launches cognicode-mcp-server (and, with --multi, the Explorer API).
 
 set -e
 
-echo "🐘 Starting PostgreSQL..."
-su - postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start" || {
-    # First run: initialize the database
-    su - postgres -c "pg_ctl -D $PGDATA initdb"
-    su - postgres -c "pg_ctl -D $PGDATA -l /var/log/postgresql.log start"
-}
-
-# Wait for PG to be ready
-until su - postgres -c "pg_isready" > /dev/null 2>&1; do
-    echo "⏳ Waiting for PostgreSQL..."
-    sleep 1
-done
-
-# Create database and user if needed
-su - postgres -c "psql -tc \"SELECT 1 FROM pg_roles WHERE rolname='cognicode'\"" | grep -q 1 || {
-    su - postgres -c "psql -c \"CREATE USER cognicode WITH PASSWORD 'cognicode';\""
-    su - postgres -c "psql -c \"CREATE DATABASE cognicode OWNER cognicode;\""
-    su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cognicode TO cognicode;\""
-}
-echo "✅ PostgreSQL ready"
+# The server binds a non-loopback address inside the container, and it
+# refuses to serve one without a credential: fail here with the reason
+# instead of a container that exits on startup.
+if [ -z "${COGNICODE_MCP_AUTH_TOKEN:-}" ]; then
+    echo "ERROR: COGNICODE_MCP_AUTH_TOKEN is not set." >&2
+    echo "The server listens on 0.0.0.0:9847 and refuses to serve without a token." >&2
+    echo "Run with: -e COGNICODE_MCP_AUTH_TOKEN=<secret>" >&2
+    exit 64
+fi
 
 # If --multi flag, start Explorer API (multi-project mode)
 if [ "$1" = "--multi" ]; then
-    echo "🚀 Starting Explorer API (multi-project) on :8010"
-    exec /usr/local/bin/explorer-api --listen 0.0.0.0:8010 --cwd /workspaces &
+    echo "Starting Explorer API (multi-project) on :8010"
+    /usr/local/bin/explorer-api --listen 0.0.0.0:8010 --cwd /workspaces &
 fi
 
-# Start cognicode-mcp-server (HTTP/SSE mode on port 9847)
 PROJECT_DIR="${COGNICODE_PROJECT:-/workspace}"
-echo "🚀 Starting CogniCode MCP HTTP/SSE Server on :9847 for $PROJECT_DIR"
-exec /usr/local/bin/cognicode-mcp-server --cwd "$PROJECT_DIR" --listen 0.0.0.0:9847 --postgres "$DATABASE_URL"
+echo "Starting CogniCode MCP HTTP/SSE Server on :9847 for $PROJECT_DIR"
+exec /usr/local/bin/cognicode-mcp-server --cwd "$PROJECT_DIR" --listen 0.0.0.0:9847

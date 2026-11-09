@@ -9,7 +9,7 @@ export interface ToastProps {
   onDismiss?: () => void;
 }
 
-export function Toast({ message, onDismiss }: ToastProps) {
+export function Toast({ message }: ToastProps) {
   return (
     <div
       role="alert"

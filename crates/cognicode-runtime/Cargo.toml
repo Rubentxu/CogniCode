@@ -9,10 +9,12 @@ publish = false
 [[bin]]
 name = "explorer-api"
 path = "src/bin/api.rs"
+required-features = ["ladybug"]
 
 [[bin]]
 name = "explorer-mcp"
 path = "src/bin/mcp.rs"
+required-features = ["ladybug"]
 
 [dependencies]
 cognicode-core = { path = "../cognicode-core", features = ["evidence-kernel"] }

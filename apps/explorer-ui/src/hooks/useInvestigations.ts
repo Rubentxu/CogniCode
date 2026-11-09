@@ -99,6 +99,9 @@ export async function createInvestigation(
   return result;
 }
 
+/** Both PUT and DELETE answer `{ "ok": true }` (explorer `api.rs`). */
+const okResponseSchema = z.object({ ok: z.boolean() });
+
 /**
  * Update an existing investigation.
  */
@@ -109,6 +112,7 @@ export async function updateInvestigation(
   await apiPut(
     `/investigations/${encodeURIComponent(parsed.id)}`,
     parsed,
+    okResponseSchema,
   );
   // Invalidate both the list cache and the single-item cache.
   await mutate(
@@ -124,7 +128,10 @@ export async function updateInvestigation(
  * Delete an investigation by ID.
  */
 export async function deleteInvestigation(investigationId: string): Promise<void> {
-  await apiDelete(`/investigations/${encodeURIComponent(investigationId)}`);
+  await apiDelete(
+    `/investigations/${encodeURIComponent(investigationId)}`,
+    okResponseSchema,
+  );
   // Invalidate both the list cache and the single-item cache.
   await mutate(
     (key: string) =>

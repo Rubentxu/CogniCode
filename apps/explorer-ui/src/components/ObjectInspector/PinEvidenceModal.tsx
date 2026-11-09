@@ -38,8 +38,9 @@ export function PinEvidenceModal({
     investigations?.filter((inv) => inv.status === "active" || inv.status === "draft") ?? [];
 
   // Pre-select first investigation if available (only once on mount)
-  if (activeInvestigations.length > 0 && !selectedInvestigationId) {
-    setSelectedInvestigationId(activeInvestigations[0].id);
+  const firstInvestigation = activeInvestigations[0];
+  if (firstInvestigation && !selectedInvestigationId) {
+    setSelectedInvestigationId(firstInvestigation.id);
   }
 
   async function handlePin() {
@@ -49,7 +50,7 @@ export function PinEvidenceModal({
     try {
       await pinEvidence(selectedInvestigationId, {
         object_id: objectId,
-        view_id: viewId ?? undefined,
+        view_id: viewId,
         note: note.trim(),
       });
       setSuccess(true);

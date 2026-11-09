@@ -119,7 +119,6 @@ vi.mock("cytoscape", () => {
         if (tgt) (tgt as unknown as { edgeListeners: Set<CyEdge> }).edgeListeners.add(e);
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     on(
       _evt: string,
       selector: string | ((e: unknown) => void),
@@ -139,17 +138,14 @@ vi.mock("cytoscape", () => {
       const all = [...this.nodeList, ...this.edgeList];
       return new CyCollection(all.filter((i) => i.idValue === String(id)));
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     edges(_?: string): CyCollection {
       return new CyCollection(this.edgeList);
     }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     nodes(_?: string): CyCollection {
       return new CyCollection(this.nodeList);
     }
     batch(fn: () => void) { fn(); }
     destroy() {}
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     layout(_?: { name: string; rows?: number }) {
       return { run: () => {} };
     }

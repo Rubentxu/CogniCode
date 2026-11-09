@@ -109,7 +109,6 @@ vi.mock("cytoscape", () => {
       return new CyCollection(all.filter((i) => i.id === String(id)));
     }
     destroy() { /* no-op */ }
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional unused param
     edges(_?: string) {
       return new CyCollection(this._edgeElements);
     }

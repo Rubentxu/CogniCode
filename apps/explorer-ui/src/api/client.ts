@@ -79,7 +79,7 @@ async function extractErrorBody(response: Response): Promise<string | undefined>
 
 type Method = "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
 
-type RequestOpts = {
+export type RequestOpts = {
   /** Path relative to the API base (e.g. `/workspaces/:id/spotter`). */
   path: string;
   /** Query string params, encoded into the URL. */

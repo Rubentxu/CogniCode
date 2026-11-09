@@ -56,7 +56,7 @@ function serverRoutes(): Set<string> {
   const source = readFileSync(apiRs, "utf8");
   const routes = new Set<string>();
   for (const m of source.matchAll(/\.route\(\s*"([^"]+)"/g)) {
-    routes.add(normalize(m[1]));
+    routes.add(normalize(m[1] ?? ""));
   }
   return routes;
 }
@@ -68,7 +68,7 @@ function uiRequests(): Map<string, string> {
     if (!/\.tsx?$/.test(file) || /\.(test|spec)\./.test(file)) continue;
     const source = readFileSync(path.join(hooksDir, file), "utf8");
     for (const m of source.matchAll(/`(\/[a-z][a-z-]*\/[^`]*)`/g)) {
-      const url = normalize(m[1]);
+      const url = normalize(m[1] ?? "");
       // Some hooks spell the `/api` prefix, others leave it to the client.
       found.set(url.startsWith("/api/") ? url : `/api${url}`, file);
     }

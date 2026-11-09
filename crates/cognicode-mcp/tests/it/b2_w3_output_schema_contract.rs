@@ -518,12 +518,12 @@ fn catalog_tools_with_output_schema() -> std::collections::BTreeSet<String> {
 fn catalog_path() -> std::path::PathBuf {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for ancestor in manifest.ancestors() {
-        let candidate = ancestor.join("crates").join("cognicode-core").join("product").join("tools.json");
+        let candidate = ancestor.join("crates/cognicode-core/product/tools.json");
         if candidate.is_file() {
             return candidate;
         }
     }
-    panic!("could not locate product/tools.json above {:?}", manifest);
+    panic!("could not locate crates/cognicode-core/product/tools.json above {:?}", manifest);
 }
 
 /// The tool's own shape, which the envelope publishes under `result`.

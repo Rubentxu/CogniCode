@@ -14,10 +14,14 @@
  */
 import { useEffect, useMemo, useRef } from "react";
 
-import { hierarchy, partition, type HierarchyRectangularNode } from "d3-hierarchy";
-import { arc as d3Arc } from "d3-shape";
-import { scaleOrdinal } from "d3-scale";
-import { select } from "d3-selection";
+import {
+  arc as d3Arc,
+  hierarchy,
+  partition,
+  scaleOrdinal,
+  select,
+  type HierarchyRectangularNode,
+} from "d3";
 import "d3-transition";
 
 import type { SunburstData, SunburstLeaf } from "./types";
