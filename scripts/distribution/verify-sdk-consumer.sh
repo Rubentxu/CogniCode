@@ -22,7 +22,7 @@ cd "$work"
 cargo new --bin consumer --quiet
 cd consumer
 for crate in cognicode-graph-algos cognicode-macros cognicode-core cognicode-graph-wasm; do
-  cargo add "$crate" --version "=$version" --quiet
+  cargo add "$crate@=$version" --quiet
 done
 cp "$root/crates/cognicode-graph-algos/examples/page_rank.rs" src/main.rs
 
