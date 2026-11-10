@@ -531,18 +531,25 @@ fn cert_covers_all_three_topics() {
 }
 
 // ============================================================================
-// Test 8 — CP5 cert's recorded workspace version matches reality.
+// Test 8 — CP5 cert's recorded workspace version matches the tree it recorded.
 // ============================================================================
 
-/// The cert is honest about which SHA and which workspace version it
-/// was generated against. If the cert's `cp5_workspace_version`
-/// (free-form field at the top level) drifts away from what the
-/// workspace Cargo.toml actually says, the cert is stale — and a
-/// reviewer reading it months later would be told the workspace is at
-/// a version it is not.
+/// The cert is a historical record of what was true at the SHA it
+/// names: its `cp5_workspace_version` has to be the version of the
+/// tree `head_sha` points at, and nothing else. The version of the
+/// CURRENT tree is not the question — a record that chases HEAD would
+/// have to be re-issued on every bump to stay green, and while it was
+/// not re-issued, a hand-edited field passed this check while the
+/// recorded evidence said otherwise: the cert that recorded the
+/// v0.101.31 tree came to claim 0.102.1 because a release commit
+/// edited the field without regenerating anything.
 ///
-/// This test reads both and compares, so the only way for the cert
-/// to claim a version is for the workspace to actually be at it.
+/// This test reads the claim and the Cargo.toml of the recorded tree
+/// and compares them, so the only way for the cert to claim a version
+/// is for the tree it recorded to actually have been at it. For a cert
+/// without a `head_sha` there is no recorded tree to check against,
+/// and the check falls back to the current tree — the weakest
+/// coherence still available.
 #[test]
 fn cp5_workspace_version_consistent() {
     let cert = parse_cert();
@@ -554,17 +561,38 @@ fn cp5_workspace_version_consistent() {
         )
     });
 
-    let cargo_toml_path = repo_root().join("Cargo.toml");
-    let cargo_toml = std::fs::read_to_string(&cargo_toml_path)
-        .unwrap_or_else(|e| panic!("cannot read {cargo_toml_path:?}: {e}"));
-    let workspace_version: String = parse_workspace_version(&cargo_toml, &cargo_toml_path);
+    let expected: String = match cert["head_sha"].as_str() {
+        Some(stored_sha) => {
+            let out = Command::new("git")
+                .arg("show")
+                .arg(format!("{stored_sha}:Cargo.toml"))
+                .current_dir(repo_root())
+                .output()
+                .unwrap_or_else(|e| panic!("failed to spawn git show: {e}"));
+            assert!(
+                out.status.success(),
+                "the recorded tree {stored_sha}:Cargo.toml could not be read; \
+                 the cert records a state this repo cannot show"
+            );
+            let manifest = String::from_utf8(out.stdout)
+                .unwrap_or_else(|e| panic!("recorded Cargo.toml is not UTF-8: {e}"));
+            let path = format!("<recorded tree {stored_sha}>/Cargo.toml");
+            parse_workspace_version(&manifest, Path::new(&path))
+        }
+        None => {
+            let cargo_toml_path = repo_root().join("Cargo.toml");
+            let cargo_toml = std::fs::read_to_string(&cargo_toml_path)
+                .unwrap_or_else(|e| panic!("cannot read {cargo_toml_path:?}: {e}"));
+            parse_workspace_version(&cargo_toml, &cargo_toml_path)
+        }
+    };
 
     assert_eq!(
-        recorded, workspace_version,
-        "cert claims cp5_workspace_version={recorded:?} but Cargo.toml says \
-         [workspace.package].version={workspace_version:?}. The cert must be \
-         regenerated in the same commit as any version bump, otherwise the \
-         recorded evidence is stale and a reviewer cannot trust it."
+        recorded, expected,
+        "cert claims cp5_workspace_version={recorded:?} but the tree it \
+         recorded says {expected:?}. The version the cert claims must be \
+         the version of the tree it recorded; a claim the recorded \
+         evidence does not support is not evidence."
     );
 
     // Bonus: the cert's recorded head_sha (if present) must be a
@@ -591,8 +619,4 @@ fn cp5_workspace_version_consistent() {
              generated against an unrecorded state and cannot be reviewed"
         );
     }
-
-    // Suppress the unused import when Path is not directly referenced
-    // in this test; the path import is shared across the suite.
-    let _ = Path::new(&cargo_toml_path);
 }
