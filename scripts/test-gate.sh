@@ -51,12 +51,13 @@
 # `cognicode-core` therefore rebuilds `cognicode-core` from scratch:
 #
 #   cognicode-core        217k lines — mutating it does not finish in a
-#   cognicode-explorer     65k lines — lifetime, and a gate nobody ever sees
+#                                     lifetime, and a gate nobody ever sees
 #                                     the end of is a gate that watches
 #                                     nothing.
-#   cognicode-runtime      1.1k lines — measured on 2026-11-04: 40 mutants
-#   cognicode-mcp           874 lines — at ~140 s of rebuild and ~80 s of
-#                                     test each, because both sit on top of
+#   cognicode-mcp           874 lines — measured on 2026-11-04 (together with
+#                                     the since-retired runtime crate): ~140 s
+#                                     of rebuild and ~80 s of
+#                                     test per mutant, because both sat on top of
 #                                     `cognicode-core`. That is hours, and
 #                                     the step has to be one a person runs
 #                                     before a merge. Its known hole (the
@@ -378,10 +379,9 @@ if $RUN_MUTANTS; then
     #
     # The copy also honours the OPERATOR'S global gitignore, where a bare
     # `bin/` sits next to the Go artefacts. That is why the repository
-    # declares `!crates/cognicode-runtime/src/bin/`: without the
-    # exemption the copy is missing the `explorer-api` and `explorer-mcp`
-    # sources, and the copy fails to build with "can't find bin" — the
-    # same failure the cli and explorer exemptions were written for.
+    # declares exemptions for the `src/bin/` directories of its crates:
+    # without them the copy is missing binary sources, and the copy fails
+    # to build with "can't find bin".
     #
     # The test binaries run under `scripts/mem-capped-runner.sh`: a mutant
     # that loops while it allocates (a BFS cursor that never advances) must

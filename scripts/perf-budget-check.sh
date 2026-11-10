@@ -89,7 +89,6 @@ echo "=== Running benchmarks (this may take a few minutes) ==="
 # `perf_budget_checker_contract` exige que cada entrada exista de verdad.
 BENCH_SPECS=(
     "cognicode-core graph_benchmarks"
-    "cognicode-explorer explorerql_benchmarks"
 )
 
 : > "${BENCH_OUTPUT}"

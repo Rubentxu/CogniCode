@@ -1344,7 +1344,9 @@ class ReadmeContract(unittest.TestCase):
         # A binary nobody documents is a binary nobody can tell is shipped or
         # build-only; each README must say which it is for every `bin` target.
         binaries = workspace_binaries(workspace_metadata())
-        self.assertGreaterEqual(len(binaries), 10, "cargo metadata reported too few binaries")
+        # Non-vacuity floor: 7 `bin` targets remain since the explorer and
+        # runtime crates (3 binaries) left the workspace (TASK-177).
+        self.assertGreaterEqual(len(binaries), 7, "cargo metadata reported too few binaries")
         for path in (EN, ES):
             gaps = undocumented_binaries(path.read_text(encoding="utf-8"), binaries)
             self.assertEqual([], gaps, f"{path.name} does not name: {gaps}")

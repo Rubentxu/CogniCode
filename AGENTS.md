@@ -116,8 +116,8 @@ ejecutar dentro de un volumen normal. El script lo pide explícitamente
 (`--gitignore true`) y el contrato comprueba que siga pidiéndolo.
 
 **Lo que es asequible de mutar está declarado en `scripts/test-gate.sh`, y lo que
-queda fuera, también.** El coste es real: mutar `cognicode-core` (217k líneas) o
-`cognicode-explorer` (65k) no termina en una vida. El único crate asequible hoy es
+queda fuera, también.** El coste es real: mutar `cognicode-core` (217k líneas) no termina
+en una vida. El único crate asequible hoy es
 `cognicode-graph-algos`: los algoritmos de grafo sobre los que está construido el
 análisis —no tiene dependencias, así que un mutante es una recompilación de dos
 segundos y una corrida de tests—. Los crates fuera del alcance están nombrados en el

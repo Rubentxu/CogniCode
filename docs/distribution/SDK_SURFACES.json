@@ -59,17 +59,9 @@
       "class": "application",
       "summary": "The `cognicode-mcp` server, distributed as a release binary."
     },
-    "cognicode-explorer": {
-      "class": "application",
-      "summary": "Explorer backend; its extraction to a separate repository is tracked by the Explorer decommission task."
-    },
     "cognicode-sandbox": {
       "class": "application",
       "summary": "Validation sandbox binary used by the project's own acceptance runs."
-    },
-    "cognicode-runtime": {
-      "class": "internal",
-      "summary": "Runtime support shared by the binaries; no stable API."
     },
     "cognicode-ladybug": {
       "class": "internal",
