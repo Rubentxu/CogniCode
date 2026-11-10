@@ -128,6 +128,30 @@ mod tests {
         );
     }
 
+    /// The property that makes the key canonical, and the reason there is
+    /// one derivation and not two: the same repository reached by two
+    /// different routes is one repository, and its snapshot is one
+    /// snapshot. The second derivation the ingest module used to carry
+    /// (`workspace_id_for_path`, the hash of the path *as written*) died
+    /// with the explorer facade that was its only consumer; this is the
+    /// property the surviving owner has to keep.
+    #[cfg(unix)]
+    #[test]
+    fn the_same_workspace_reached_by_two_routes_finds_its_own_entry() {
+        let root = tempfile::tempdir().expect("a temporary root");
+        let cache = root.path().join("cache");
+        let one = workspace(root.path(), "one");
+        let link = root.path().join("one-link");
+        std::os::unix::fs::symlink(&one, &link).expect("the link is created");
+
+        assert_eq!(
+            snapshot_path(&cache, &one),
+            snapshot_path(&cache, &link),
+            "the same repository reached by two different routes is one \
+             repository, and its snapshot is one snapshot"
+        );
+    }
+
     #[test]
     fn the_snapshot_is_the_file_the_key_names_in_the_cache() {
         let root = tempfile::tempdir().expect("a temporary root");
