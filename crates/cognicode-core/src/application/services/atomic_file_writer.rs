@@ -13,6 +13,20 @@
 //!   cambio de nombre, porque la limpieza está en `Drop`.
 //! - El contenido está **durable** antes de que exista el destino: se
 //!   sincroniza el fichero y, después, el directorio.
+//!
+//! Y el límite que este tipo NO cruza, porque son dos garantías
+//! distintas: lo que aquí se garantiza es **publicación atómica** — el
+//! destino cambia de golpe, nunca se le observa a medias, ni siquiera
+//! con dos escritores publicando a la vez (medido en
+//! `two_concurrent_writers_publish_whole_files.rs`). Lo que aquí no se
+//! garantiza es la **actualización condicional**: que no se pise una
+//! versión que otro escritor cambió. El cambio de nombre es el último
+//! en llegar, y entre el juicio de versión que hace el llamante y este
+//! renombrado hay una ventana que ningún cerrojo de este tipo cierra.
+//! Quien necesite «no sobrescribir una versión cambiada» lo decide y lo
+//! comprueba aguas arriba (doble juicio en `file_operations`), sabiendo
+//! que ahí la garantía es best-effort; meter un lock aquí sería prometer
+//! lo que el cambio de nombre solo, sin un dueño de la versión, no da.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
