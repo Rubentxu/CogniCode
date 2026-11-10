@@ -165,6 +165,7 @@ mod the_same_project_gives_the_same_edges;
 mod the_same_project_gives_the_same_hot_paths;
 mod the_same_project_gives_the_same_module_dependencies;
 mod the_same_project_gives_the_same_symbol_surfaces;
+mod the_scan_does_not_delete_what_it_cannot_walk;
 mod the_scan_does_not_erase_what_it_cannot_date;
 mod the_scan_does_not_erase_what_it_cannot_read;
 mod the_snapshot_carries_what_the_reader_read;
