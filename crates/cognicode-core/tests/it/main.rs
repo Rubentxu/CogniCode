@@ -172,6 +172,7 @@ mod the_snapshot_carries_what_the_reader_read;
 mod the_specialized_reader_says_what_happened;
 mod the_workspace_has_one_name;
 mod the_write_refuses_a_file_that_changed;
+mod two_concurrent_writers_publish_whole_files;
 mod w0_post_pruning_orthodoxy;
 mod walk_errors_are_errors;
 mod workspace_isolation;
