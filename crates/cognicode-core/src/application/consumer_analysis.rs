@@ -5,8 +5,9 @@
 //! ejecución SIEMPRE en el puerto `Analyze` (B2.W1). La facade:
 //!
 //! 1. **Resolución pura**: `CapabilityRequest` → `CapabilityPlan` sin
-//!    I/O. Un workspace sin fuentes Rust resuelve `Partial` con gaps,
-//!    jamás `Complete` con grafo vacío (SPEC-CU-001.5).
+//!    I/O. Un workspace sin material para el grafo resuelve
+//!    `Unsupported` (o `Partial` con gaps) que dice qué faltó, jamás
+//!    `Complete` con grafo vacío (SPEC-CU-001.5).
 //! 2. **Delegación**: la ejecución pasa por el `&dyn Analyze` inyectado.
 //!    La facade nunca llama `AnalysisService` directamente (hexagonal).
 //! 3. **Sin segundo ADT**: el resultado es el `AnalysisOutcome<T>`
@@ -15,18 +16,22 @@
 //!    versión de `cognicode-core` desde su build real, no la del
 //!    consumidor (SPEC-CU-001.6).
 //!
-//! Diseño de la resolución: la detección de fuentes Rust es deliberada-
-//! mente barata (extensión `.rs` en el primer nivel del workspace, sin
-//! recursión total). Es la misma señal que usa el CLI para decidir si
-//! un análisis tiene material. Un `Partial` aquí no impide ejecutar:
-//! significa "ejecuta sabiendo que el backend de grafo puede no tener
-//! material"; el outcome real lo decide el puerto.
+//! Diseño de la resolución: la detección de material es deliberada-
+//! mente barata — la misma clasificación que usa el scan
+//! (`classify_file`: es material el fichero que un lenguaje del
+//! registro reclama) sobre el recorrido con la política del grafo,
+//! detenido en la primera fuente. Es la misma señal que decide qué
+//! ficheros lee el producto; una lista propia de extensiones sería una
+//! segunda respuesta a la misma pregunta. Un `Partial` aquí no impide
+//! ejecutar: significa "ejecuta sabiendo que el backend de grafo puede
+//! no tener material"; el outcome real lo decide el puerto.
 
 use std::path::{Path, PathBuf};
 
 use crate::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze,
 };
+use crate::application::ingest::{FileType, classify_file};
 
 // El adaptador de producción vive en `services::analyze` (donde B2.W1
 // dijo que viviría). Se reexporta aquí para que el consumidor importe
@@ -144,27 +149,31 @@ impl<'a> ConsumerAnalysisFacade<'a> {
     /// backend de grafo en el workspace raíz?).
     pub fn resolve(request: &CapabilityRequest) -> CapabilityPlan {
         let root = request.basis().workspace_root();
-        let has_rust_material = workspace_has_rust_material(root);
+        let missing = match workspace_graph_material(root) {
+            GraphMaterial::Present => None,
+            GraphMaterial::NoReadableSources => Some(format!(
+                "the files under {} are in no language the product reads; \
+                 graph-based capabilities are unavailable",
+                root.display()
+            )),
+            GraphMaterial::NoFiles => Some(format!(
+                "no files found under {}; graph-based capabilities are unavailable",
+                root.display()
+            )),
+        };
 
         let mut available: Vec<Capability> = Vec::new();
         let mut gaps: Vec<String> = Vec::new();
         for capability in request.capabilities() {
-            if has_rust_material {
-                available.push(*capability);
-            } else {
-                gaps.push(format!(
-                    "graph backend has no Rust sources under {}",
-                    root.display()
-                ));
+            match &missing {
+                None => available.push(*capability),
+                Some(reason) => gaps.push(reason.clone()),
             }
         }
 
         if available.is_empty() {
             return CapabilityPlan::Unsupported {
-                reason: format!(
-                    "no Rust sources found under {}; graph-based capabilities are unavailable",
-                    root.display()
-                ),
+                reason: missing.unwrap_or_else(|| "no capabilities were requested".to_string()),
             };
         }
         if gaps.is_empty() {
@@ -201,26 +210,58 @@ impl<'a> ConsumerAnalysisFacade<'a> {
     }
 }
 
-/// Señal estructural: ¿hay material Rust en el workspace?
+/// La señal estructural del material del backend de grafo.
 ///
-/// El grafo del proyecto recorre el árbol entero, así que la señal tiene que
-/// mirar donde el grafo mira. Un proyecto cuyas fuentes viven en un
+/// No es un booleano porque «no hay material» tiene dos causas que el
+/// plan no puede mezclar: un árbol sin ficheros no es un árbol cuyos
+/// ficheros están en un lenguaje que el producto no lee. El motivo del
+/// plan dice cuál de las dos pasó.
+enum GraphMaterial {
+    /// Hay fuentes en lenguajes que el producto lee.
+    Present,
+    /// Hay ficheros, pero ninguno es código en un lenguaje del registro.
+    NoReadableSources,
+    /// El recorrido no vio ningún fichero: workspace vacío o inexistente.
+    NoFiles,
+}
+
+/// Señal estructural: ¿hay material para el backend de grafo?
+///
+/// El grafo del proyecto recorre el árbol entero, así que la señal tiene
+/// que mirar donde el grafo mira. Un proyecto cuyas fuentes viven en un
 /// subdirectorio tiene material aunque en la raíz no haya nada, y un
-/// manifiesto sin fuentes no tiene ninguno: prometer un grafo que va a salir
-/// vacío es prometer un grafo que no existe.
+/// manifiesto sin fuentes no tiene ninguno: prometer un grafo que va a
+/// salir vacío es prometer un grafo que no existe.
 ///
-/// El recorrido es el mismo que usa el grafo —los ficheros ocultos y los
-/// ignorados quedan fuera, los enlaces simbólicos no se siguen— y se detiene
-/// en la primera fuente que encuentra.
-fn workspace_has_rust_material(root: &Path) -> bool {
-    crate::infrastructure::walk_policy::contained_ignore_walk(root)
+/// Qué ficheros cuentan es la MISMA decisión que toma el scan: un
+/// fichero es material cuando `classify_file` lo clasifica como código,
+/// es decir, cuando un lenguaje del registro lo reclama. Una segunda
+/// lista de extensiones sería una segunda respuesta a esa pregunta, y
+/// las dos se separarían sin que nadie lo notara. El recorrido es el
+/// mismo que usa el grafo —los ficheros ocultos y los ignorados quedan
+/// fuera, los enlaces simbólicos no se siguen— y se detiene en la
+/// primera fuente que encuentra.
+fn workspace_graph_material(root: &Path) -> GraphMaterial {
+    let mut saw_any_file = false;
+    let has_material = crate::infrastructure::walk_policy::contained_ignore_walk(root)
         .hidden(true)
         .git_ignore(true)
         .git_exclude(true)
         .build()
         .filter_map(|entry| entry.ok())
         .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-        .any(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("rs"))
+        .any(|entry| {
+            saw_any_file = true;
+            let (file_type, _) = classify_file(entry.path());
+            file_type == FileType::Code
+        });
+    if has_material {
+        GraphMaterial::Present
+    } else if saw_any_file {
+        GraphMaterial::NoReadableSources
+    } else {
+        GraphMaterial::NoFiles
+    }
 }
 
 #[cfg(test)]
@@ -295,17 +336,86 @@ mod tests {
         );
     }
 
-    /// Un workspace sin material Rust no puede servir el backend de grafo.
+    /// Un proyecto Kotlin tiene material: el producto lo lee — el registro
+    /// de lenguajes es la única lista que lo dice — y el grafo lo consume.
+    /// La presencia de `.rs` no puede ser el indicador de disponibilidad:
+    /// la señal es la misma que decide qué ficheros son código, no un tipo
+    /// de fichero concreto.
     #[test]
-    fn a_workspace_without_rust_sources_is_unsupported() {
+    fn a_kotlin_project_has_material() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("main.kt"), "fun main() {}\n").expect("write the source");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            matches!(plan, CapabilityPlan::Complete { .. }),
+            "un proyecto Kotlin tiene material y el grafo lo lee: el plan no \
+             puede negarle la capacidad por no haber `.rs`. Plan: {plan:?}"
+        );
+    }
+
+    /// Un segundo lenguaje fuera de Rust: la señal es el registro, no un
+    /// conjunto de extensiones escrito a mano que un mutante podría
+    /// recortar a uno.
+    #[test]
+    fn a_python_project_has_material() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("app.py"), "def main():\n    pass\n")
+            .expect("write the source");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            matches!(plan, CapabilityPlan::Complete { .. }),
+            "un proyecto Python tiene material: Plan: {plan:?}"
+        );
+    }
+
+    /// Un workspace sin fuentes Rust no puede servir el backend de grafo.
+    #[test]
+    fn a_workspace_without_sources_the_product_reads_is_unsupported() {
         let temp = tempfile::TempDir::new().expect("temporary directory");
         std::fs::write(temp.path().join("README.md"), "# nothing\n").expect("write a file");
 
         let plan = plan_for(temp.path());
         assert!(
             matches!(plan, CapabilityPlan::Unsupported { .. }),
-            "sin material Rust el backend de grafo no se puede ofrecer"
+            "sin material para el grafo el backend no se puede ofrecer"
         );
+    }
+
+    /// El motivo dice QUÉ faltó: los ficheros que hay no se leen en
+    /// ningún lenguaje del producto. «No Rust sources» era una respuesta
+    /// sobre un lenguaje, no sobre el material.
+    #[test]
+    fn the_reason_says_what_was_missing_not_just_that_something_was() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("README.md"), "# nothing\n").expect("write a file");
+
+        let plan = plan_for(temp.path());
+        match plan {
+            CapabilityPlan::Unsupported { reason } => assert!(
+                reason.contains("no language the product reads"),
+                "el motivo nombra el material que faltó, no un lenguaje: {reason}"
+            ),
+            other => panic!("esperaba Unsupported, obtuve {other:?}"),
+        }
+    }
+
+    /// Y cuando el recorrido no vio ningún fichero, el motivo también lo
+    /// distingue: no es lo mismo un árbol sin ficheros que un árbol con
+    /// ficheros ilegibles.
+    #[test]
+    fn a_workspace_with_no_files_at_all_says_so() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+
+        let plan = plan_for(temp.path());
+        match plan {
+            CapabilityPlan::Unsupported { reason } => assert!(
+                reason.contains("no files found"),
+                "un árbol sin ficheros declara que no había ficheros: {reason}"
+            ),
+            other => panic!("esperaba Unsupported, obtuve {other:?}"),
+        }
     }
 }
 
