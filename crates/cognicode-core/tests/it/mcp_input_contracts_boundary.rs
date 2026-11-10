@@ -7,8 +7,8 @@ use std::path::Path;
 fn input_contracts_are_owned_by_cognicode_mcp() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let core_mcp = manifest.join("src/interface/mcp");
-    let declarations = fs::read_to_string(core_mcp.join("mod.rs"))
-        .expect("read core MCP module declarations");
+    let declarations =
+        fs::read_to_string(core_mcp.join("mod.rs")).expect("read core MCP module declarations");
 
     assert!(
         !core_mcp.join("input_contracts.rs").exists(),

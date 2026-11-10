@@ -75,8 +75,6 @@ use crate::infrastructure::graph::{
     TraversalDirection,
 };
 use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
-#[cfg(feature = "persistence")]
-use crate::interface::mcp::schemas::{ReparseOnEditInput, ReparseOnEditOutput};
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
     // Existing schemas
@@ -213,6 +211,8 @@ use crate::interface::mcp::schemas::{
     ValidateSyntaxOutput,
     ValidationResult,
 };
+#[cfg(feature = "persistence")]
+use crate::interface::mcp::schemas::{ReparseOnEditInput, ReparseOnEditOutput};
 use crate::interface::mcp::security::{InputValidator, RateLimiter};
 use crate::interface::symbol_identity::{default_provider_for_tool, precision_floor_for_tool};
 use schemars::JsonSchema;
@@ -450,9 +450,7 @@ impl HandlerContext {
     /// The flag is handed back separately because whoever registers the
     /// request has to be able to mark it without knowing what is inside
     /// the context.
-    pub fn scoped_for_request(
-        &self,
-    ) -> (Self, crate::application::cancellation::CancellationFlag) {
+    pub fn scoped_for_request(&self) -> (Self, crate::application::cancellation::CancellationFlag) {
         let flag = Arc::new(AtomicBool::new(false));
         let mut scoped = self.clone();
         scoped.cancellation_token = flag.clone();

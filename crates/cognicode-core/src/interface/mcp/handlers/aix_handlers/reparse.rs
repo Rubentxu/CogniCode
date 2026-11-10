@@ -22,10 +22,10 @@ use std::time::Instant;
 
 use super::*;
 use crate::application::graph_snapshot::content_matches_manifest;
-use crate::application::reparse_cost::{rebuild_kind_of, PhaseCost, ReparseCost, ReparsePhase};
+use crate::application::reparse_cost::{PhaseCost, ReparseCost, ReparsePhase, rebuild_kind_of};
 use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::file_time::observed_mtime;
-use crate::domain::value_objects::symbol_delta::{symbol_delta, SymbolCount};
+use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 use crate::infrastructure::process_memory::read_peak_memory_bytes;
 use crate::infrastructure::telemetry::get_global_metrics;
 use crate::interface::mcp::schemas::ReparseOnEditInput;

@@ -13,7 +13,7 @@ use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
 use cognicode_core::domain::execution::AnalysisScope;
 use cognicode_core::domain::kernel_ids::SnapshotId;
 use cognicode_core::domain::value_objects::{
-    AnalyzerBuild, SnapshotKey, WorkspaceId, SNAPSHOT_SCHEMA,
+    AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey, WorkspaceId,
 };
 use tempfile::TempDir;
 
