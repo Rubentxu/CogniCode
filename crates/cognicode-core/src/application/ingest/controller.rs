@@ -4,9 +4,18 @@
 //! `PostgresRepository`) was removed with the full postgres removal
 //! (e29-7). What remains is the PG-free workspace resolver used by the
 //! explorer's `WorkspaceService` and the runtime's ingest wiring.
+//!
+//! This module does not derive workspace identities any more. It used to
+//! carry a second derivation — `workspace_id_for_path`, the `DefaultHasher`
+//! of the path *as written* — next to `graph_cache::workspace_key`, the
+//! hash of the *canonical* path: two criteria for one question, and the
+//! same project opened through a symlink got two identities here and one
+//! there. The only consumer was the explorer facade retired with TASK-177,
+//! so the second derivation went with it. `workspace_key` is the one owner
+//! of the workspace's name.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 /// Resolves a workspace_id to its root path on disk.
@@ -35,16 +44,6 @@ impl StaticWorkspaceResolver {
     pub fn register(&self, id: impl Into<String>, path: PathBuf) {
         self.paths.lock().unwrap().insert(id.into(), path);
     }
-}
-
-/// Derive a stable workspace id from its root path.
-pub fn workspace_id_for_path(root_path: &Path) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut h = DefaultHasher::new();
-    root_path.display().to_string().hash(&mut h);
-    format!("workspace:{:x}", h.finish())
 }
 
 impl WorkspaceResolver for StaticWorkspaceResolver {

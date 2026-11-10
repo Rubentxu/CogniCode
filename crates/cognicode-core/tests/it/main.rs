@@ -170,6 +170,7 @@ mod the_scan_does_not_erase_what_it_cannot_date;
 mod the_scan_does_not_erase_what_it_cannot_read;
 mod the_snapshot_carries_what_the_reader_read;
 mod the_specialized_reader_says_what_happened;
+mod the_workspace_has_one_name;
 mod the_write_refuses_a_file_that_changed;
 mod w0_post_pruning_orthodoxy;
 mod walk_errors_are_errors;
