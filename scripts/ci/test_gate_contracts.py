@@ -257,6 +257,55 @@ def test_the_radius_is_the_inverse_closure_of_what_the_batch_touched() -> None:
         )
 
 
+def test_a_change_in_the_dependent_does_not_pull_its_dependency_in() -> None:
+    """The batch touches `beta`, the crate that DEPENDS on `alpha`. The radius
+    is `beta` and nothing else: a change in a dependent cannot break its
+    dependency, and `gamma` is outside the closure for the same reason the
+    other probe proves it. This is the direction a selector that guesses by
+    path or by name gets wrong — it would pull `alpha` in because the file
+    sits next to the change — and it is what makes this validation a probe
+    with a KNOWN expected scope, not a restatement of the implementation."""
+    with tempfile.TemporaryDirectory(prefix="gate-scope-") as tmp:
+        root = Path(tmp)
+        base, _ = _fixture(root)
+        # Discard the fixture's batch (it touches `alpha`): this probe's batch
+        # must touch the dependent and only the dependent.
+        _git(root, "reset", "-q", "--hard", base)
+        _write(
+            root / "beta" / "src" / "lib.rs",
+            "pub fn doubled() -> u32 {\n    4\n}\n",
+        )
+        _commit(root, "chore: touch the dependent")
+        answer, rc = _radius(
+            root,
+            "--base",
+            base,
+            "--affordable",
+            "alpha",
+            "--calendar-crate",
+            "alpha",
+            "--calendar-every",
+            "50",
+            "--calendar-marker",
+            base,
+        )
+        check(rc == 0, f"el selector no pudo decidir el radio: {answer.get('reason')}")
+        check(
+            answer.get("touched") == "beta",
+            f"el lote toco `beta` y el selector dijo {answer.get('touched')!r}",
+        )
+        check(
+            answer.get("test-scope") == "beta",
+            "el radio de test arrastro a la dependencia: un cambio en el "
+            f"dependiente no puede romper a `alpha`, y el radio dijo "
+            f"{answer.get('test-scope')!r}",
+        )
+        check(
+            answer.get("test-scope-full") == "false",
+            "el radio de test se declaro completo cuando no lo es",
+        )
+
+
 def test_an_undetermined_radius_is_the_whole_gate() -> None:
     """A base that cannot be resolved is not an empty radius: it is every
     package. An empty radius would mean "nothing to check", and a gate that

@@ -266,6 +266,24 @@ printf 'calendario:  %s (%s fusiones desde el marcador %s, cada %s)\n' \
   "${R_CALENDAR}" "$(radius_field calendar-count)" "${MUTANT_CALENDAR_MARKER:0:12}" \
   "${MUTANT_CALENDAR_EVERY_N}"
 
+# The compilation context of this run, in the log: numbers measured on a
+# warm target are not numbers measured cold, and a receipt that does not
+# say which one it was cannot be compared with any other. Logging it costs
+# two queries and compiles nothing — the four-moment instrument is
+# scripts/build-time.sh, asked for on purpose, never inside the gate.
+printf '\n=== contexto de compilación ===\n'
+GATE_TARGET_DIR="${CARGO_TARGET_DIR:-${REPO_ROOT}/target}"
+if [ -d "${GATE_TARGET_DIR}" ] && [ -n "$(ls -A "${GATE_TARGET_DIR}" 2>/dev/null)" ]; then
+  printf 'target:      caliente (%s)\n' "${GATE_TARGET_DIR}"
+else
+  printf 'target:      frío (%s)\n' "${GATE_TARGET_DIR}"
+fi
+if command -v sccache >/dev/null 2>&1; then
+  sccache --show-stats 2>/dev/null | sed 's/^/sccache:     /' || printf 'sccache:     no respondió\n'
+else
+  printf 'sccache:     no está en el PATH\n'
+fi
+
 # 1. Unit tests. `--lib` compiles and runs the `#[cfg(test)]` modules inside
 #    the sources: one unit, in isolation, no process and no network.
 if $RUN_UNIT; then
