@@ -33,8 +33,9 @@ pub use extractor::extract_file;
 pub use observation::Observation;
 pub use refresh::{RefreshStats, refresh_from_pg};
 pub use scan::{
-    ScanEntry, classify_file, hash_file, noise_directories, observed_extensions, scan_for_changes,
-    walk_files,
+    FileInventory, ScanEntry, WalkOmission, classify_file, hash_file, noise_directories,
+    observed_extensions, scan_for_changes, scan_for_changes_with_coverage, walk_files,
+    walk_inventory,
 };
 pub use types::{
     ChangeDecision, ChangeKind, ExtractionEdge, ExtractionResult, FailedFile, FileChange, FileType,

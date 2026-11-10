@@ -10,6 +10,12 @@
 //! A file whose content nobody could read is published with the failure
 //! declared. The silence of the scan means "nothing changed", so a file
 //! that could not be read cannot be one of the silent ones.
+//!
+//! The same is true of the walk itself: a place the walk could not
+//! observe comes out as an omission, declared next to the changes, and
+//! nothing behind it is published as deleted. An unreadable directory
+//! used to erase its contents from the index without anybody touching
+//! the disk; the omissions are what keeps that from happening.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 
 use std::path::{Path, PathBuf};
@@ -25,18 +31,91 @@ use crate::application::ingest::types::{
 use crate::domain::value_objects::Language;
 use crate::domain::value_objects::file_time::measured_millis;
 
+/// One place the walk could not observe.
+///
+/// The inventory does not swallow the errors of the walk: a directory
+/// the process cannot read is not an empty directory, and pretending
+/// it is one is how the scan used to publish deletions nobody made.
+/// The path is what the scan uses to keep the index from dying over a
+/// subtree nobody could see; the reason is what the log says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalkOmission {
+    /// The path the walk could not observe, as the walk reported it.
+    pub path: PathBuf,
+    /// Why the walk could not observe it: the error the walk reported.
+    pub reason: String,
+}
+
+/// The inventory a walk produced: the files it saw, and the places it
+/// could not.
+///
+/// The omissions are part of the inventory, not a side channel: a walk
+/// that could not see a whole subtree saw an incomplete tree, and the
+/// consumer needs to know that before it decides anything about what
+/// the index says.
+#[derive(Debug, Clone, Default)]
+pub struct FileInventory {
+    /// Every file the walk observed, sorted.
+    pub files: Vec<PathBuf>,
+    /// Every place the walk could not observe, sorted by path.
+    pub omissions: Vec<WalkOmission>,
+}
+
+/// Walk a directory and return the full inventory: files and omissions.
+///
+/// A walk error is not a filter: a directory whose contents the process
+/// cannot read comes out as an omission with its path and its reason,
+/// and the walk carries on with the rest of the tree. The omissions are
+/// what the deletion decision needs — a file behind an omission is a
+/// file nobody observed, and what nobody observed is not what anybody
+/// deleted.
+pub fn walk_inventory(root: &Path) -> FileInventory {
+    let mut inventory = FileInventory::default();
+    for entry in workspace_rules(root).build() {
+        match entry {
+            Ok(entry) => {
+                if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                    inventory.files.push(entry.into_path());
+                }
+            }
+            Err(error) => {
+                // The `ignore` walker does not expose the path of a
+                // failure, so the path is read off the error itself —
+                // the same pairing `per_file_graph::ignore_walk_error`
+                // uses, kept local to avoid a cross-module dependency.
+                let path = match &error {
+                    ignore::Error::WithPath { path, .. } => path.as_path().to_path_buf(),
+                    _ => {
+                        tracing::warn!(error = %error, "walk produced an error without a path");
+                        continue;
+                    }
+                };
+                tracing::warn!(
+                    path = %path.display(),
+                    reason = %error,
+                    "the walk could not observe this path"
+                );
+                inventory.omissions.push(WalkOmission {
+                    path,
+                    reason: error.to_string(),
+                });
+            }
+        }
+    }
+    inventory.files.sort();
+    inventory.omissions.sort_by(|a, b| a.path.cmp(&b.path));
+    inventory
+}
+
 /// Walk a directory, returning all source files (code, documents, config).
 /// Uses `ignore` crate for `.gitignore` awareness, with a WalkFilter-like
 /// approach to skip noise directories.
+///
+/// The files are the part of [`walk_inventory`] most consumers want.
+/// The consumer that decides anything about what the index says —
+/// deletions, coverage, completeness — needs the omissions too.
 pub fn walk_files(root: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = workspace_rules(root)
-        .build()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
-        .map(|e| e.into_path())
-        .collect();
-    files.sort();
-    files
+    walk_inventory(root).files
 }
 
 /// The rules that decide where the product looks inside a workspace.
@@ -150,7 +229,23 @@ pub fn scan_for_changes(
     root: &Path,
     previous: &std::collections::HashMap<String, ScanEntry>,
 ) -> Vec<FileChange> {
-    let files = walk_files(root);
+    scan_for_changes_with_coverage(root, previous).0
+}
+
+/// Scan a directory and return the changes together with the coverage the
+/// walk declared.
+///
+/// The omissions are the second half of the answer: a scan over a tree the
+/// walk could not read whole is a partial scan, and the consumer decides
+/// what that does to its outcome. Keeping the omissions here, next to the
+/// changes, is what keeps a partial scan from being published as if it
+/// were a complete one.
+pub fn scan_for_changes_with_coverage(
+    root: &Path,
+    previous: &std::collections::HashMap<String, ScanEntry>,
+) -> (Vec<FileChange>, Vec<WalkOmission>) {
+    let inventory = walk_inventory(root);
+    let files = &inventory.files;
 
     // 1. Measure the date of every file the walk found (fast — just stat).
     //
@@ -219,21 +314,46 @@ pub fn scan_for_changes(
     }
 
     // 3. Detect deleted files
+    //
+    // A deletion is published only when the walk could see the place the
+    // file lived in. A path the walk could not observe — behind an
+    // omission, or the omission itself — is a path nobody inspected, and
+    // what nobody inspected is not what anybody deleted: publishing a
+    // `Deleted` there is how an unreadable directory used to erase its
+    // contents from the index without anybody touching the disk.
+    let omission_rels: Vec<String> = inventory
+        .omissions
+        .iter()
+        .map(|omission| relative_to(root, &omission.path))
+        .collect();
     for (rel, prev) in previous {
-        if !current_paths.contains(rel) {
-            changes.push(FileChange {
-                path: root.join(rel),
-                kind: ChangeKind::Deleted,
-                content_hash: None,
-                read_error: None,
-                mtime_millis: prev.mtime_millis,
-                file_type: FileType::Other, // unknown
-                language: None,
-            });
+        if current_paths.contains(rel) || is_unobservable(rel, &omission_rels) {
+            continue;
         }
+        changes.push(FileChange {
+            path: root.join(rel),
+            kind: ChangeKind::Deleted,
+            content_hash: None,
+            read_error: None,
+            mtime_millis: prev.mtime_millis,
+            file_type: FileType::Other, // unknown
+            language: None,
+        });
     }
 
-    changes
+    (changes, inventory.omissions)
+}
+
+/// Whether the walk's omissions cover a relative path.
+///
+/// The comparison is component-wise, not by string prefix:
+/// `locked/inside.rs` is covered by the omission of `locked`, and
+/// `locker/inside.rs` is not. A covered path is a path the scan could
+/// not observe, and what nobody observed is not what anybody deleted.
+fn is_unobservable(rel: &str, omission_rels: &[String]) -> bool {
+    omission_rels
+        .iter()
+        .any(|omission| Path::new(rel).starts_with(Path::new(omission)))
 }
 
 /// What the date says about a file, compared with the date the index has.
@@ -519,5 +639,23 @@ mod tests {
         let changes = scan_for_changes(dir.path(), &previous);
         let deleted = changes.iter().find(|c| c.kind == ChangeKind::Deleted);
         assert!(deleted.is_some(), "Should detect deleted file");
+    }
+
+    #[test]
+    fn la_omision_cubre_por_componentes_no_por_prefijo_de_texto() {
+        // `locked/inside.rs` queda cubierto por la omisión de `locked`;
+        // `locker/inside.rs` no: el prefijo de texto miente y el de
+        // componentes no.
+        let omissions = vec!["locked".to_string()];
+        assert!(is_unobservable("locked/inside.rs", &omissions));
+        assert!(is_unobservable("locked", &omissions));
+        assert!(!is_unobservable("locker/inside.rs", &omissions));
+        assert!(!is_unobservable("src/main.rs", &omissions));
+        assert!(!is_unobservable("main.rs", &omissions));
+    }
+
+    #[test]
+    fn un_inventario_sin_omisiones_no_cubre_nada() {
+        assert!(!is_unobservable("locked/inside.rs", &[]));
     }
 }
