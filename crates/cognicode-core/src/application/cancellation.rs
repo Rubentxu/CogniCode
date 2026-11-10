@@ -1,7 +1,7 @@
 //! Request cancellation state shared by the core handler context.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// The cancellation flag attached to one in-flight request.
 ///

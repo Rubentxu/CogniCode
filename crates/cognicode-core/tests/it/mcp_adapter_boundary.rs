@@ -27,18 +27,22 @@ fn core_does_not_expose_the_rmcp_adapter() {
         .join("../cognicode-mcp/src/rmcp_adapter.rs")
         .canonicalize()
         .expect("the RMCP adapter must live in cognicode-mcp");
-    assert!(mcp_adapter.is_file(), "RMCP adapter is not in cognicode-mcp");
+    assert!(
+        mcp_adapter.is_file(),
+        "RMCP adapter is not in cognicode-mcp"
+    );
 }
 
 #[test]
 fn core_manifest_has_no_transport_only_dependencies() {
-    let manifest = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"),
-    )
-    .expect("read core Cargo manifest");
+    let manifest =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+            .expect("read core Cargo manifest");
 
     assert!(
-        !manifest.lines().any(|line| line.trim() == "rmcp.workspace = true"),
+        !manifest
+            .lines()
+            .any(|line| line.trim() == "rmcp.workspace = true"),
         "cognicode-core still declares the RMCP transport dependency"
     );
     assert!(

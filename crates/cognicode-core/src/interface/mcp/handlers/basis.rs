@@ -21,7 +21,7 @@ use schemars::JsonSchema;
 use crate::application::analysis_basis::GraphSource;
 use crate::application::graph_snapshot::{build_manifest, hex_digest, source_digest};
 use crate::domain::value_objects::file_manifest::FileManifest;
-use crate::domain::value_objects::{AnalyzerBuild, SnapshotKey, SNAPSHOT_SCHEMA};
+use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
 
 use super::HandlerContext;
 
