@@ -88,7 +88,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "codebase_map",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::consolidated_handlers::CodebaseMapInput,
+        >(),
     );
     m.insert(
         "detect_drift",
@@ -114,7 +116,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "export_callflow",
-        schema_of::<cognicode_core::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::graph_query_handlers::ExportCallflowInput,
+        >(),
     );
     m.insert(
         "export_mermaid",
@@ -171,7 +175,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "get_implementors",
-        schema_of::<cognicode_core::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::graph_query_handlers::GetImplementorsInput,
+        >(),
     );
     m.insert(
         "get_leaf_functions",
@@ -203,7 +209,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "graph_checkpoint",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::GraphCheckpointInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::consolidated_handlers::GraphCheckpointInput,
+        >(),
     );
     m.insert(
         "graph_communities",
@@ -219,7 +227,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "graph_explain",
-        schema_of::<cognicode_core::interface::mcp::handlers::graph_query_handlers::GraphExplainInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::graph_query_handlers::GraphExplainInput,
+        >(),
     );
     m.insert(
         "graph_feedback_arcs",
@@ -243,8 +253,9 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "graph_query_filtered",
-        schema_of::<cognicode_core::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput>(
-        ),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::graph_query_handlers::GraphQueryFilteredInput,
+        >(),
     );
     m.insert(
         "graph_reduced",
@@ -268,7 +279,8 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "iac_query",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::IacQueryInput>(),
+        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::IacQueryInput>(
+        ),
     );
     m.insert(
         "interproc_summary",
@@ -294,11 +306,15 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "project_insights",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::consolidated_handlers::ProjectInsightsInput,
+        >(),
     );
     m.insert(
         "project_overview",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::consolidated_handlers::ProjectOverviewInput,
+        >(),
     );
     m.insert(
         "query_symbol_index",
@@ -326,7 +342,8 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     );
     m.insert(
         "review_pr",
-        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::ReviewPrInput>(),
+        schema_of::<cognicode_core::interface::mcp::handlers::consolidated_handlers::ReviewPrInput>(
+        ),
     );
     m.insert(
         "safe_refactor",

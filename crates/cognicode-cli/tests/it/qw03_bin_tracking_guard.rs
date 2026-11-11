@@ -95,11 +95,7 @@ where
     }
 
     let real = repo_root();
-    let crate_names = [
-        "cognicode-cli",
-        "cognicode-mcp",
-        "cognicode-sandbox",
-    ];
+    let crate_names = ["cognicode-cli", "cognicode-mcp", "cognicode-sandbox"];
     for cname in crate_names {
         let real_crate = real.join("crates").join(cname);
         let tmp_crate = tmp.join("crates").join(cname);

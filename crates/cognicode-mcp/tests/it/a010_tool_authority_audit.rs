@@ -21,8 +21,8 @@
 //! RED→GREEN: before this change nothing compared the catalogue against the
 //! runtime, so any divergence between the two was invisible.
 
-use cognicode_mcp::rmcp_adapter::tool_authority_map;
 use cognicode_core::product::ProfilePosture;
+use cognicode_mcp::rmcp_adapter::tool_authority_map;
 
 use serde_json::Value;
 use std::path::PathBuf;

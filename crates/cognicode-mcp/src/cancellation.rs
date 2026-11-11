@@ -15,8 +15,8 @@
 //! hubiera cancelado.
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::sync::{Mutex, MutexGuard};
 
 use cognicode_core::application::cancellation::CancellationFlag;

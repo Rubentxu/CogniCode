@@ -116,7 +116,9 @@ fn build_tool_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     #[cfg(feature = "evidence-kernel")]
     m.insert(
         "explain_finding",
-        schema_of::<cognicode_core::interface::mcp::handlers::findings_handlers::ExplainFindingOutput>(),
+        schema_of::<
+            cognicode_core::interface::mcp::handlers::findings_handlers::ExplainFindingOutput,
+        >(),
     );
     m
 }

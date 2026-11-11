@@ -300,9 +300,7 @@ fn the_published_schema_documents_the_line_base() {
     }
 
     // The outputs: derived from the type that produces the answer.
-    for (tool, schema) in
-        cognicode_mcp::output_contracts::published_output_schemas()
-    {
+    for (tool, schema) in cognicode_mcp::output_contracts::published_output_schemas() {
         collect_output_lines(
             &mut offenders,
             tool,

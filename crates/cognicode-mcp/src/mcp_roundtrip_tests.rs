@@ -1426,8 +1426,8 @@ fn simple_function() {
     // ==========================================================================
     mod published_tools_are_executable {
         use super::*;
-        use cognicode_core::interface::mcp::error::InterfaceError;
         use crate::rmcp_adapter::{build_all_tools, call_tool_handler};
+        use cognicode_core::interface::mcp::error::InterfaceError;
         use rmcp::model::CallToolRequestParams;
 
         /// A minimal argument object that satisfies the required fields of a
@@ -1481,8 +1481,7 @@ fn simple_function() {
                 let outcome = call(&ctx, &descriptor.name, args).await;
                 if let Err(InterfaceError::Internal(msg)) = &outcome
                     && msg.contains("requires a persistence layer")
-                    && crate::status::classify_status(&descriptor.name, &outcome)
-                        != "gated"
+                    && crate::status::classify_status(&descriptor.name, &outcome) != "gated"
                 {
                     unavailable.push(descriptor.name.clone());
                 }
@@ -1549,13 +1548,13 @@ fn simple_function() {
     // ==========================================================================
     mod m5_program_analysis_roundtrip {
         use super::*;
+        use crate::rmcp_adapter::build_all_tools;
         use cognicode_core::application::program_analysis::conformance::canonical_corpus;
         #[cfg(feature = "program-analysis-server")]
         use cognicode_core::interface::mcp::handlers::program_analysis_handlers::handle_interproc_summary;
         use cognicode_core::interface::mcp::handlers::program_analysis_handlers::{
             ProgramAnalysisToolInput, handle_cfg, handle_slice_forward, handle_taint_flow,
         };
-        use crate::rmcp_adapter::build_all_tools;
 
         fn input_for(label: &str) -> ProgramAnalysisToolInput {
             let fx = canonical_corpus()
