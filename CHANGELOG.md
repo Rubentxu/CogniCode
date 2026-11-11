@@ -10,6 +10,33 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.103.1] — 2026-11-11
+
+**Patch: fixes de la auditoría del 2026-11-10 y descomisión del Explorer
+completada; los cuatro crates del SDK se publican en crates.io.**
+
+**Superficie (cambios visibles para un consumidor).**
+- `cognicode-core`: el escaneo incremental deja de publicar borrados
+  fantasma de directorios que no puede recorrer (TASK-206); una sola
+  identidad de workspace (TASK-208); el resolutor de capacidades decide por
+  material legible, no por presencia de `.rs` (TASK-210); la versión que
+  declara una certificación es la del árbol que registró (TASK-213).
+- El escritor atómico documenta sus dos garantías medidas: la publicación
+  es atómica, la actualización condicional es best-effort (TASK-209).
+- El contrato del gate gana una sonda que discrimina el radio por cierre
+  inverso de dependencias, y el log nombra el contexto de compilación
+  (TASK-211).
+
+**Distribución.** Los cuatro crates del SDK se publican en crates.io en
+`0.103.1` y se verifican desde un consumidor limpio. Los crates retirados
+del árbol (`cognicode-explorer`, `cognicode-runtime`) ya no forman parte de
+ningún paquete: viven en Rubentxu/cognicode-explorer (frontera `v0.102.1`).
+Los assets binarios (`cogh`, `cognicode`, `cognicode-mcp`, bundles de
+skills, manifest, inventory y `SHA256SUMS`) se generan con la release
+factory (`cognicode-release generate`) desde el mismo árbol del tag y se
+suben al release de GitHub.
+Sin atestación de procedencia (misma decisión abierta de custodia de clave).
+
 ## [v0.103.0] — 2026-11-09
 
 **Minor: el SDK se publica en crates.io, los adaptadores de MCP y del sandbox

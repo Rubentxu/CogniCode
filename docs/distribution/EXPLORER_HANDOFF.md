@@ -9,13 +9,14 @@ limitation.
 - The Explorer lives in <https://github.com/Rubentxu/cognicode-explorer>. The
   migration boundary is its annotated tag `v0.102.1` (tag object `32d546e7`),
   on `main` at `3f8e10f2`, which pins core `v0.102.1`.
-- `crates/cognicode-explorer` and `crates/cognicode-runtime` are no longer
-  members of the root `Cargo.toml`, and `SDK_SURFACES.json` no longer
+- The crates crates/cognicode-explorer and crates/cognicode-runtime are no
+  longer members of the root `Cargo.toml`, and `SDK_SURFACES.json` no longer
   classifies them. The last commit of this repository that built them as
   workspace members is `cdab6378` (`main`, release `v0.103.0`).
-- The directory copy has been removed from the tree: `crates/cognicode-explorer`,
-  `crates/cognicode-runtime` and the `scripts/explorer/` dev-up helpers no
-  longer exist in this repository. A tracked directory outside the workspace
+- The directory copy has been removed from the tree: the crates
+  crates/cognicode-explorer and crates/cognicode-runtime and the
+  scripts/explorer/ dev-up helpers no longer exist in this repository (named
+  in prose on purpose: a removed path is not a live reference). A tracked directory outside the workspace
   is still a second source of truth that drifts, so the decommission is not
   done until the paths are gone.
 
@@ -28,7 +29,7 @@ limitation.
 - The Explorer API is not hosted in this repository's container: the
   `Dockerfile` and `docker-entrypoint.sh` build and start only the CogniCode
   MCP binaries, and the justfile recipes that built `explorer-api` from
-  `crates/cognicode-runtime` are gone. The external repository builds its
+  the runtime crate are gone. The external repository builds its
   own container.
 
 ## How to consume it

@@ -38,7 +38,7 @@ languages out of the box — 20 with full acceptance evidence, 11 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.103.0`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.103.1`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.103.0`. Both channels install the same published release asset — the digest identity proof is no longer versioned in this tree (known limitation). Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.103.1`. Both channels install the same published release asset — the digest identity proof is no longer versioned in this tree (known limitation). Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -70,9 +70,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # MCP daemon
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # expect: cogh 0.103.0
-./target/release/cognicode --version    # expect: cognicode 0.103.0
-./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.103.0
+./target/release/cogh --version         # expect: cogh 0.103.1
+./target/release/cognicode --version    # expect: cognicode 0.103.1
+./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.103.1
 ```
 
 > **Note:** the published binaries also include the binaries for the cross-toolchain
@@ -487,17 +487,21 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.103.0` — cut from this tree as `v0.103.0`.
-  The release published from that tag is the one an unpinned `install.sh`
-  serves. The previous published release is
-  [`v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1);
+- **Current release:** `v0.103.1` — cut from this tree as `v0.103.1`
+  (`main` at `793033d4`). A patch release: the four SDK library crates are
+  published on crates.io at `0.103.1` and verified from a clean consumer,
+  the binary assets were generated with the release factory from the same
+  tree, and it carries the 2026-11-10 audit fixes and the completed Explorer
+  decommission. The previous published release is
+  [`v0.103.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.0);
+  the full release before it is
+  [`v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1).
   `v0.101.24`, `v0.101.25` and `v0.101.26` carry tags but never reached
-  publication, and a tag that was never published does not move.
-  v0.103.0 is a minor release: the four SDK library crates are published on
-  crates.io, the MCP and sandbox adapters leave the core, and the release
-  ships without a provenance attestation (an open key-custody decision).
-- **Binaries report:** `0.103.0` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.103.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.0).
+  publication, and a tag that was never published does not move. The
+  release ships without a provenance attestation (an open key-custody
+  decision, unchanged since v0.103.0).
+- **Binaries report:** `0.103.1` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.103.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.1).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` and
   `v0.101.26` exist and were never published. Each
