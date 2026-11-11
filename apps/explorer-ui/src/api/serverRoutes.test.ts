@@ -5,9 +5,14 @@
  * handlers mirror the UI instead of the server, so a UI that asks for a route
  * the axum router lacks stays green until it meets the real backend.
  *
- * This is a cheap static check: it reads the route table from `api.rs` and the
- * URL templates the hooks build, and fails naming each URL with no route.
- * It starts no browser and no server.
+ * This is a cheap static check: it reads the route table from
+ * `server-routes.snapshot.txt` — the recorded routes of the external
+ * Explorer server at the migration-boundary tag `v0.102.1`; the server left
+ * this repository with the decommission (see
+ * docs/distribution/EXPLORER_HANDOFF.md) — and the URL templates the hooks
+ * build, and fails naming each URL with no route. It starts no browser and
+ * no server. Regenerate the snapshot deliberately when the external
+ * `api.rs` changes; the snapshot's header names the exact command.
  *
  * The check is a ratchet. `KNOWN_UNSERVED` lists URLs that were already
  * unserved when the check was introduced and that belong to other work; a
@@ -21,14 +26,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const apiRs = path.resolve(
-  here,
-  "../../../../crates/cognicode-explorer/src/api.rs",
-);
+const apiRs = path.resolve(here, "server-routes.snapshot.txt");
 const hooksDir = path.resolve(here, "../hooks");
 
 /**
- * No `.route(...)` in `crates/` serves any of these.
+ * No route in the snapshot serves any of these.
  * `ScanBar` needs `/scan`, `/jobs/:p` and `/graph/stats` together, so serving
  * one of them alone would not make it work; whether to implement the three or
  * retire the component is a separate decision.

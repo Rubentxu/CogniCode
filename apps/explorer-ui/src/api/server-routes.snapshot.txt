@@ -1,0 +1,312 @@
+# Route-table snapshot of the Explorer server's axum router.
+#
+# Source: Rubentxu/cognicode-explorer, crates/cognicode-explorer/src/api.rs
+# at main `9a9cdd6` (the external repository's live main; the migration
+# boundary recorded in the receipt is the tag `v0.102.1`, and this main
+# carries the served surface the UI runs against today). The server lives
+# in that repository since the decommission (TASK-177) - see
+# docs/distribution/EXPLORER_HANDOFF.md in the CogniCode repository.
+#
+# This snapshot holds every `.route(...)` statement of that router, verbatim
+# and multi-line. It is what src/api/serverRoutes.test.ts checks the UI's
+# URLs against, so the UI-server contract stays verifiable from this repo
+# without depending on a sibling clone. Regenerate it deliberately when the
+# external api.rs changes (then update the source commit named above).
+.route("/health", get(health))
+
+.route("/api/health", get(health))
+
+.route("/control-plane/probe", get(control_plane_probe))
+
+.route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture),
+        )
+
+.route("/api/workspaces/open", post(open_workspace))
+
+.route("/api/workspaces/:workspace_id/spotter", get(spotter))
+
+.route(
+            "/api/workspaces/:workspace_id/landing",
+            get(landing_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/architecture",
+            get(architecture_handler),
+        )
+
+.route("/api/workspaces/:workspace_id/drift", get(drift_handler))
+
+.route("/api/objects/:object_id", get(inspect_object))
+
+.route(
+            "/api/affordances/:object_type",
+            get(affordances_by_type_handler),
+        )
+
+.route("/api/objects/:object_id/views", get(available_views))
+
+.route(
+            "/api/objects/:object_id/views/:view_id",
+            get(contextual_view),
+        )
+
+.route(
+            "/api/objects/:object_id/related-knowledge",
+            get(related_knowledge),
+        )
+
+.route("/api/objects/:object_id/lenses", get(available_lenses))
+
+.route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
+
+.route("/api/exploration-sessions", post(save_exploration_session))
+
+.route(
+            "/api/exploration-sessions/:session_id",
+            get(get_exploration_session),
+        )
+
+.route(
+            "/api/exploration-sessions/:session_id/artifacts",
+            post(generate_artifact),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/explorations",
+            get(list_explorations),
+        )
+
+.route("/api/graph/:id/subgraph", get(subgraph_handler))
+
+.route("/api/graph/:id/contextual", get(contextual_handler))
+
+.route("/api/graph/:id/rationale", get(rationale_handler))
+
+.route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/architecture/mermaid",
+            get(mermaid_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/mermaid/trace",
+            get(trace_mermaid_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/snapshot",
+            get(snapshot_handler),
+        )
+
+.route("/api/investigations", post(create_investigation))
+
+.route("/api/investigations", get(list_investigations))
+
+.route("/api/investigations/:id", get(get_investigation))
+
+.route("/api/investigations/:id", put(update_investigation))
+
+.route("/api/investigations/:id", delete(delete_investigation))
+
+.route("/api/investigations/:id/evidence", post(pin_evidence))
+
+.route(
+            "/api/investigations/:id/artifacts",
+            post(add_investigation_artifact),
+        )
+
+.route(
+            "/api/investigations/:id/evidence-pack",
+            get(get_investigation_evidence_pack),
+        )
+
+.route(
+            "/api/investigations/:id/composed-narrative",
+            get(get_investigation_composed_narrative),
+        )
+
+.route(
+            "/api/investigations/:id/artifacts/:aid/regenerate",
+            post(regenerate_artifact),
+        )
+
+.route(
+            "/api/objects/:object_id/affordances",
+            get(affordances_handler),
+        )
+
+.route("/api/moldql/pattern", post(moldql_pattern_handler))
+
+.route(
+            "/api/moldql/pattern/capabilities",
+            get(moldql_pattern_capabilities_handler),
+        )
+
+.route("/api/analytics/run", post(analytics_run_handler))
+
+.route("/api/analytics/catalog", get(analytics_catalog_handler))
+
+.route(
+            "/api/analytics/lineage",
+            get(analytics_lineage_list_handler),
+        )
+
+.route(
+            "/api/analytics/lineage/:run_id",
+            get(analytics_lineage_get_handler),
+        )
+
+.route("/health", get(health))
+
+.route("/api/health", get(health))
+
+.route("/control-plane/probe", get(control_plane_probe))
+
+.route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture),
+        )
+
+.route("/api/workspaces/open", post(open_workspace))
+
+.route("/api/workspaces/:workspace_id/spotter", get(spotter))
+
+.route(
+            "/api/workspaces/:workspace_id/landing",
+            get(landing_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/architecture",
+            get(architecture_handler),
+        )
+
+.route("/api/workspaces/:workspace_id/drift", get(drift_handler))
+
+.route("/api/objects/:object_id", get(inspect_object))
+
+.route(
+            "/api/affordances/:object_type",
+            get(affordances_by_type_handler),
+        )
+
+.route("/api/objects/:object_id/views", get(available_views))
+
+.route(
+            "/api/objects/:object_id/views/:view_id",
+            get(contextual_view),
+        )
+
+.route(
+            "/api/objects/:object_id/related-knowledge",
+            get(related_knowledge),
+        )
+
+.route("/api/objects/:object_id/lenses", get(available_lenses))
+
+.route("/api/objects/:object_id/lenses/:lens_id", get(apply_lens))
+
+.route("/api/exploration-sessions", post(save_exploration_session))
+
+.route(
+            "/api/exploration-sessions/:session_id",
+            get(get_exploration_session),
+        )
+
+.route(
+            "/api/exploration-sessions/:session_id/artifacts",
+            post(generate_artifact),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/explorations",
+            get(list_explorations),
+        )
+
+.route("/api/graph/:id/subgraph", get(subgraph_handler))
+
+.route("/api/graph/:id/contextual", get(contextual_handler))
+
+.route(
+            "/api/graph/:id/rationale",
+            #[cfg(feature = "multimodal")]
+            get(rationale_handler),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
+
+.route(
+            "/api/decisions/:id/support-pack",
+            #[cfg(feature = "multimodal")]
+            get(get_decision_support_pack),
+            #[cfg(not(feature = "multimodal"))]
+            get(not_found_stub),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/architecture/mermaid",
+            get(mermaid_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/mermaid/trace",
+            get(trace_mermaid_handler),
+        )
+
+.route(
+            "/api/workspaces/:workspace_id/snapshot",
+            get(snapshot_handler),
+        )
+
+.route("/api/investigations", post(create_investigation))
+
+.route("/api/investigations", get(list_investigations))
+
+.route("/api/investigations/:id", get(get_investigation))
+
+.route("/api/investigations/:id", put(update_investigation))
+
+.route("/api/investigations/:id", delete(delete_investigation))
+
+.route(
+            "/api/objects/:object_id/affordances",
+            get(affordances_handler),
+        )
+
+.route("/api/moldql/pattern", post(moldql_pattern_handler))
+
+.route(
+            "/api/moldql/pattern/capabilities",
+            get(moldql_pattern_capabilities_handler),
+        )
+
+.route("/api/analytics/run", post(analytics_run_handler))
+
+.route("/api/analytics/catalog", get(analytics_catalog_handler))
+
+.route(
+            "/api/analytics/lineage",
+            get(analytics_lineage_list_handler),
+        )
+
+.route(
+            "/api/analytics/lineage/:run_id",
+            get(analytics_lineage_get_handler),
+        )
+
+.route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture_minimal),
+        )
+
+.route("/health", get(health))

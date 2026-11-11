@@ -107,10 +107,11 @@ ignore = [
 #
 # Status after this commit (2026-09-26):
 #   - All third-party dependencies PASS the allow-list.
-#   - Two workspace crates are flagged as unlicensed and need
-#     operator decision: cognicode-runtime and cognicode-sandbox.
-#     The 7 other workspace crates (cognicode, cognicode-core,
-#     cognicode-cli, cognicode-mcp, cognicode-explorer,
+#   - cognicode-sandbox is flagged as unlicensed and needs an
+#     operator decision. cognicode-runtime left the workspace with
+#     the Explorer decommission (TASK-177); it now lives in
+#     Rubentxu/cognicode-explorer. The other workspace crates
+#     (cognicode, cognicode-core, cognicode-cli, cognicode-mcp,
 #     cognicode-ladybug, cognicode-macros)
 #     also lack a license field but cargo-deny does not flag them
 #     because they are not encountered in the runtime dependency
@@ -119,7 +120,6 @@ ignore = [
 #     question, not a license-compliance issue.
 #   - Recommended operator action: pick a license (MIT, Apache-2.0,
 #     MIT OR Apache-2.0, etc.) and add `license = "..."` to
-#     cognicode-runtime/Cargo.toml and
 #     cognicode-sandbox/Cargo.toml. Then re-run
 #     `cargo deny check licenses` to confirm clean.
 # ----------------------------------------------------------------------------

@@ -4,8 +4,8 @@
 #
 # Uso:
 #   just                  → Muestra todos los comandos disponibles
-#   just build            → Build completo (server + WASM)
-#   just run              → Build y arranca el dashboard
+#   just build            → Build completo del workspace
+#   just build-wasm       → Build del frontend del Explorer
 #   just test             → Ejecuta todos los tests
 #   just doc              → Abre la documentación
 #   just fmt-check        → Formato: cargo fmt --all --check (M0.7)
@@ -19,12 +19,7 @@ set dotenv-load
 set positional-arguments := false
 
 EXPLORER_UI_DIR := "apps/explorer-ui"
-EXPLORER_API_BIN := "target/debug/cognicode-explorer-api"
 EXPLORER_PORT := env_var_or_default("EXPLORER_PORT", "5180")
-EXPLORER_API_PORT := env_var_or_default("EXPLORER_API_PORT", "3456")
-EXPLORER_API_RELEASE := "target/release/explorer-api"
-EXPLORER_REAL_API_PORT := env_var_or_default("EXPLORER_REAL_API_PORT", "8010")
-PORT := EXPLORER_API_PORT
 PROJECT_PATH := env_var_or_default("COGNICODE_PROJECT_PATH", "")
 version := env_var_or_default("COGNICODE_VERSION", `sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1`)
 
@@ -35,13 +30,11 @@ default:
 
 # ─── Build ────────────────────────────────────────────────────────────────────
 
-# Build everything: Explorer API + frontend
-build: build-server
-
-# Build only the Explorer API binary
-build-server:
-    @echo "🔨 Building Explorer API..."
-    cargo build -p cognicode-runtime --bin explorer-api --release
+# Build the whole workspace. The Explorer API is not built here: it lives
+# in Rubentxu/cognicode-explorer (see docs/distribution/EXPLORER_HANDOFF.md).
+build:
+    @echo "🔨 Building the workspace..."
+    cargo build --workspace
 
 # Build only the Explorer frontend
 build-wasm:
@@ -54,10 +47,10 @@ build-musl:
     set -euo pipefail
     VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
     rustup target add x86_64-unknown-linux-musl --toolchain stable
-    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp -p cognicode-runtime --bin explorer-api
+    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
     mkdir -p dist
     tar -czf dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
-        -C target/x86_64-unknown-linux-musl/release/ explorer-api cognicode-mcp cognicode-runtime
+        -C target/x86_64-unknown-linux-musl/release/ cognicode-mcp cognicode-mcp-server
     echo "✅ Built dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
 
 # Build skill bundle tar.gz artifacts
@@ -81,7 +74,9 @@ bundle-skills:
     echo "Skill bundles built in dist/"
 
 # Build in release mode
-build-release: build-server
+build-release:
+    @echo "🔨 Building the workspace (release)..."
+    cargo build --workspace --release
 
 # Clean build artifacts
 clean:
@@ -90,85 +85,17 @@ clean:
     rm -rf {{ EXPLORER_UI_DIR }}/dist
     echo "Cleaned"
 
-# ─── Run ──────────────────────────────────────────────────────────────────────
-
-# Build and start the Explorer API server
-run: stop build-release
-    @echo "🚀 Starting Explorer API on http://localhost:{{ PORT }}"
-    @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
-        echo "❌ Port {{ PORT }} still in use. Try: just stop && just run"; exit 1; \
-    fi
-    ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
-
-# Start server (without rebuilding)
-start: stop
-    @echo "🚀 Starting Explorer API (no rebuild)..."
-    @if curl -s --max-time 1 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
-        echo "❌ Port {{ PORT }} still in use. Try: just stop"; exit 1; \
-    fi
-    ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }}
-
-# Run in dev mode — one command to start everything: API + Frontend
-dev:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ROOT="$(cd "$(dirname "{{ justfile() }}")" && pwd)"
-    API_BIN="$ROOT/{{ EXPLORER_API_RELEASE }}"
-    UI_DIR="$ROOT/{{ EXPLORER_UI_DIR }}"
-    API_PORT="{{ EXPLORER_API_PORT }}"
-    UI_PORT="{{ EXPLORER_PORT }}"
-
-    echo "═══════════════════════════════════════════════════════"
-    echo "  CogniCode — Dev Mode"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-
-    # 1. Build API binary
-    echo "🔨 [1/3] Building Explorer API..."
-    cargo build -p cognicode-runtime --bin explorer-api --release
-    echo "   ✅ API binary ready"
-
-    # 2. Install frontend deps
-    echo "📦 [2/3] Installing frontend deps..."
-    (cd "$UI_DIR" && npm ci --prefer-offline 2>/dev/null || npm install)
-    echo "   ✅ Frontend deps ready"
-
-    # 4. Start both servers
-    echo ""
-    echo "═══════════════════════════════════════════════════════"
-    echo "  Frontend:  http://localhost:$UI_PORT"
-    echo "  API:       http://localhost:$API_PORT"
-    echo ""
-    echo "  Press Ctrl+C to stop everything"
-    echo "═══════════════════════════════════════════════════════"
-    echo ""
-
-    # Start API in background
-    "$API_BIN" --listen "127.0.0.1:$API_PORT" &
-    API_PID=$!
-
-    # Start frontend dev server in foreground (so Ctrl+C works naturally)
-    cleanup() {
-        echo ""
-        echo "🛑 Stopping..."
-        kill $API_PID 2>/dev/null || true
-        wait $API_PID 2>/dev/null || true
-        echo "✅ Done"
-    }
-    trap cleanup EXIT INT TERM
-    (cd "$UI_DIR" && npx vite --host 127.0.0.1 --port "$UI_PORT")
-
 # ─── Check ────────────────────────────────────────────────────────────────────
 
 # Check compilation (fast, no binary output)
 check:
     @echo "✅ Checking compilation..."
-    cargo check -p cognicode-runtime --bin explorer-api
+    cargo check --workspace
 
 # Run clippy lints
 lint:
     @echo "🔍 Running clippy..."
-    cargo clippy -p cognicode-runtime --bin explorer-api -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Format code
 fmt:
@@ -252,52 +179,6 @@ test-lifecycle:
     @echo "🧪 Running lifecycle tests..."
     cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1
 
-start-server:
-    @if curl -s --max-time 2 http://localhost:{{ PORT }}/health > /dev/null 2>&1; then \
-        echo "🔄 Server already running"; \
-    else \
-        echo "🔄 Starting server..."; \
-        nohup ./{{ EXPLORER_API_RELEASE }} --listen 127.0.0.1:{{ PORT }} > /tmp/cognicode-server.log 2>&1 & \
-        sleep 2; \
-        echo "Server started"; \
-    fi
-
-# ─── API ───────────────────────────────────────────────────────────────────────
-
-# Test API health endpoint
-api-health:
-    @curl -s --connect-timeout 5 --max-time 300 http://localhost:{{ PORT }}/health
-
-# Register a project via API
-api-register project_path project_name="":
-    @echo "📋 Registering project..."
-    @test -n "{{ project_name }}" && NAME="{{ project_name }}" || NAME="$$(basename {{ project_path }})"
-    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/projects/register \
-        -H "Content-Type: application/json" \
-        -d "{\"name\": \"$$NAME\", \"path\": \"{{ project_path }}\"}" | python3 -m json.tool
-
-# List projects via API
-api-projects:
-    @curl -s --connect-timeout 5 --max-time 300 http://localhost:{{ PORT }}/api/projects | python3 -m json.tool
-
-# Run analysis via API
-api-analyze project_path:
-    @echo "🔍 Running analysis..."
-    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/analysis \
-        -H "Content-Type: application/json" \
-        -d "{\"project_path\": \"{{ project_path }}\", \"quick\": true, \"changed_only\": true}" | python3 -m json.tool
-
-# Validate project path
-api-validate project_path:
-    curl -s --connect-timeout 5 --max-time 300 -X POST http://localhost:{{ PORT }}/api/validate-path \
-        -H "Content-Type: application/json" \
-        -d "{\"project_path\": \"{{ project_path }}\"}" | python3 -m json.tool
-
-# Get project history
-api-history project_path:
-    @ENCODED=$$(echo -n "{{ project_path }}" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=''))") && \
-     curl -s --connect-timeout 5 --max-time 300 "http://localhost:{{ PORT }}/api/projects/$$ENCODED/history" | python3 -m json.tool
-
 # ─── Docs ──────────────────────────────────────────────────────────────────────
 
 # Open documentation
@@ -313,15 +194,16 @@ docs-screenshots:
 
 # ─── Docker ────────────────────────────────────────────────────────────────────
 
-# Build Docker image
+# Build Docker image (MCP stdio + HTTP/SSE; the Explorer API lives in the
+# external repository, which builds its own container)
 docker-build:
     @echo "🐳 Building Docker image..."
-    docker build -t cognicode-explorer .
+    docker build -t cognicode .
 
-# Run Docker container
+# Run Docker container (the HTTP/SSE server refuses to start without a token)
 docker-run:
     @echo "🐳 Running Docker container..."
-    docker run -p {{ PORT }}:{{ PORT }} cognicode-explorer
+    docker run -p 9847:9847 -e COGNICODE_MCP_AUTH_TOKEN="$${COGNICODE_MCP_AUTH_TOKEN:?set COGNICODE_MCP_AUTH_TOKEN}" cognicode
 
 # ─── Git ───────────────────────────────────────────────────────────────────────
 
@@ -342,18 +224,9 @@ push:
 status:
     @echo "📊 Project Status"
     @echo "================"
-    @echo "Explorer:   http://localhost:{{ EXPLORER_PORT }}"
-    @echo "API:        http://localhost:{{ PORT }}"
-    @echo "Health:     http://localhost:{{ PORT }}/health"
-    @echo "Server PID: $$(pgrep -f explorer-api | head -1 || echo 'not running')"
+    @echo "Explorer UI (mocks): just explorer-dev → http://localhost:{{ EXPLORER_PORT }}"
+    @echo "Explorer API:        construida y servida desde Rubentxu/cognicode-explorer"
     @echo ""
-
-# Stop the server
-stop:
-    @echo "🛑 Stopping server..."
-    @fuser -k {{ PORT }}/tcp 2>/dev/null || true
-    @sleep 1
-    @echo "✅ Port {{ PORT }} freed"
 
 # Install dependencies
 install:
@@ -361,11 +234,6 @@ install:
     npm install 2>/dev/null || true
     npx playwright install chromium 2>/dev/null || true
     @echo "Dependencies installed"
-
-# Watch for changes and rebuild server
-watch-server:
-    @echo "👀 Watching for changes..."
-    cargo watch -x "build -p cognicode-runtime --bin explorer-api"
 
 # Open dashboard in browser
 open:
@@ -377,76 +245,28 @@ open:
 # Full setup from scratch
 setup: install build
     @echo "✅ Setup complete!"
-    @echo "Run 'just run' to start the Explorer API."
-    @echo "Then visit http://localhost:{{ EXPLORER_PORT }}"
+    @echo "UI con mocks: just explorer-dev → http://localhost:{{ EXPLORER_PORT }}"
+    @echo "Explorer API: se construye y sirve desde Rubentxu/cognicode-explorer"
 
 # ============================================================================
 # Explorer UI (React + TypeScript)
 # ============================================================================
-
-# One command to rule them all: API + Frontend
-# Alias for `just dev` — kept for backwards compatibility.
-explorer-local:
-    @just dev
 
 # Quick start with mock data (no PG, no API needed)
 explorer-mock:
     @echo "🚀 Starting Explorer UI with mock data (no backend)..."
     cd {{ EXPLORER_UI_DIR }} && npm run dev:mock
 
-# Stop all Explorer processes
+# Stop the Explorer UI dev server
 explorer-stop:
-    @echo "🛑 Stopping Explorer..."
-    @fuser -k {{ EXPLORER_API_PORT }}/tcp 2>/dev/null || true
+    @echo "🛑 Stopping Explorer UI..."
     @fuser -k {{ EXPLORER_PORT }}/tcp 2>/dev/null || true
-    @echo "✅ Explorer stopped"
+    @echo "✅ Explorer UI stopped"
 
 # Dev mode: frontend with MSW mocks (no backend needed)
 explorer-dev:
     @echo "🚀 Starting Explorer UI with mock data..."
     cd {{ EXPLORER_UI_DIR }} && npm run dev:mock
-
-# Dev mode: frontend + API server (requires built binary)
-explorer-full:
-    @echo "🚀 Starting Explorer full stack..."
-    @echo "  Terminal 1 (API server):"
-    @echo "    just explorer-api"
-    @echo ""
-    @echo "  Terminal 2 (Frontend with live API):"
-    @echo "    cd {{ EXPLORER_UI_DIR }} && npm run dev -- --host 127.0.0.1 --port {{ EXPLORER_PORT }}"
-    @echo ""
-    @echo "  Frontend: http://127.0.0.1:{{ EXPLORER_PORT }}"
-    @echo "  API:      http://127.0.0.1:{{ EXPLORER_API_PORT }}"
-
-# Open and scan the current repo through the real Explorer API.
-# Safe for git: tracked-file dirtiness is checked before/after.
-explorer-real-ingest workspace="":
-    bash scripts/explorer/real_ingest.sh "{{ workspace }}"
-
-# Start the real Explorer API in the background.
-# Logs/PID live under .tmp-explorer-real/ (gitignored).
-explorer-real-api-up:
-    bash scripts/explorer/real_api_up.sh "{{ EXPLORER_REAL_API_PORT }}"
-
-# Stop the real Explorer API started by explorer-real-api-up.
-explorer-real-api-stop:
-    bash scripts/explorer/real_api_stop.sh "{{ EXPLORER_REAL_API_PORT }}"
-
-# Smoke-check the real stack against this repo: ingest -> API health -> workspace open -> landing.
-explorer-real-smoke workspace="": explorer-real-ingest explorer-real-api-up
-    bash scripts/explorer/real_smoke.sh "{{ workspace }}" "{{ EXPLORER_REAL_API_PORT }}"
-
-# Start the real Explorer UI (Vite) against the real API after a smoke bootstrap.
-explorer-real-ui: explorer-real-smoke
-    @echo "🚀 Starting Explorer UI against real API..."
-    cd {{ EXPLORER_UI_DIR }} && EXPLORER_API_TARGET=http://127.0.0.1:{{ EXPLORER_REAL_API_PORT }} VITE_USE_MOCKS=false npm run dev:real
-
-# Build and start the Explorer API server
-explorer-api:
-    @echo "🔨 Building Explorer API..."
-    cargo build -p cognicode-runtime --bin explorer-api --release
-    @echo "🚀 Starting Explorer API on http://127.0.0.1:{{ EXPLORER_API_PORT }}..."
-    cargo run -p cognicode-runtime --bin explorer-api --release -- --listen 127.0.0.1:{{ EXPLORER_API_PORT }}
 
 # Build Explorer frontend for production
 explorer-build:
