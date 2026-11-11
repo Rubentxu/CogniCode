@@ -70,16 +70,16 @@ export default defineConfig({
   envPrefix: "VITE_",
 
   /**
-   * Alias for scaffold registry assets — points to the Rust crate's
-   * assets directory so the same YAML file is consumed by both Rust
-   * (include_str!) and TypeScript (import).
+   * Alias for scaffold registry assets. The UI keeps its own copy of
+   * `moldql-scaffolds.yaml`: the Rust crate whose assets directory this
+   * used to point at left the repository with the Explorer decommission
+   * (see docs/distribution/EXPLORER_HANDOFF.md). The live source of truth
+   * is the external repository's asset; regenerate this copy deliberately
+   * when that registry changes.
    */
   resolve: {
     alias: {
-      "@scaffold-assets": path.resolve(
-        __dirname,
-        "../../crates/cognicode-explorer/assets",
-      ),
+      "@scaffold-assets": path.resolve(__dirname, "./scaffold-assets"),
     },
   },
 });

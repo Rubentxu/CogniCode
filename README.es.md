@@ -360,8 +360,7 @@ Solo `cogh`, `cognicode` y `cognicode-mcp` se publican como assets de release. C
 | `cognicode-mcp-server` | `cognicode-mcp` | no (`src/server.rs`) |
 | `mcp-client` | `cognicode-mcp` | no (cliente de test) |
 | `sandbox-orchestrator` | `cognicode-sandbox` | no (ejecutor de escenarios) |
-| `cognicode-control-plane` | `cognicode-explorer` | no (Explorer, ver [traspaso](docs/distribution/EXPLORER_HANDOFF.md)) |
-| `explorer-api`, `explorer-mcp` | `cognicode-runtime` | no (requieren la feature `ladybug`) |
+| `cognicode-control-plane`, `explorer-api`, `explorer-mcp` | [Rubentxu/cognicode-explorer](https://github.com/Rubentxu/cognicode-explorer) | no (Explorer, ver [traspaso](docs/distribution/EXPLORER_HANDOFF.md)) |
 
 ## Configuración
 

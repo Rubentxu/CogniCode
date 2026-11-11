@@ -37,8 +37,8 @@
 //! where a format that does not exist is refused.
 
 use cognicode_core::domain::value_objects::MermaidFormat;
-use cognicode_mcp::input_contracts::input_schema_for;
 use cognicode_core::interface::mcp::schemas::ExportMermaidInput;
+use cognicode_mcp::input_contracts::input_schema_for;
 use serde_json::json;
 
 /// The names an enumeration of a published shape names.
@@ -77,7 +77,8 @@ fn arguments(format: &str) -> Result<ExportMermaidInput, String> {
 
 /// The master, read straight from disk.
 fn master() -> serde_json::Value {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../cognicode-core/product/tools.json");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cognicode-core/product/tools.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
     serde_json::from_str(&text).expect("the master is a JSON document")

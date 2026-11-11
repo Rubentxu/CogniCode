@@ -37,8 +37,8 @@
 
 use cognicode_core::infrastructure::graph::GraphStrategyFactory;
 use cognicode_core::interface::mcp::handlers::{HandlerContext, handle_build_lightweight_index};
-use cognicode_mcp::input_contracts::input_schema_for;
 use cognicode_core::interface::mcp::schemas::{BuildIndexInput, BuildIndexOutput};
+use cognicode_mcp::input_contracts::input_schema_for;
 use serde_json::json;
 
 /// A project that declares exactly one symbol.

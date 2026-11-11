@@ -42,11 +42,38 @@ class ExplorerHandoff(unittest.TestCase):
         self.assertIn("`3f8e10f2`", text)
         self.assertTrue(claims_removed("The crate has been removed from the workspace."))
 
-    def test_receipt_declares_the_paths_still_on_disk(self):
-        text = DOC.read_text()
+    def test_the_orphaned_crate_directories_are_gone(self):
+        # The decommission is complete only when no tracked copy of the
+        # extracted crates is left on disk: a directory outside the
+        # workspace is still a second source of truth that drifts.
         for name in ("cognicode-explorer", "cognicode-runtime"):
-            if (ROOT / "crates" / name).exists():
-                self.assertIn(f"crates/{name}", text.split("## Limitations")[1])
+            self.assertFalse(
+                (ROOT / "crates" / name).exists(),
+                f"crates/{name} still exists on disk",
+            )
+        text = DOC.read_text()
+        self.assertTrue(
+            claims_removed("The directory copy has been removed from the tree."),
+            "the receipt must state the removal",
+        )
+        self.assertIn("The directory copy has been removed from the tree", text)
+
+    def test_no_in_tree_surface_still_builds_the_explorer(self):
+        # Dockerfile, entrypoint and justfile used to build/launch
+        # explorer-api from crates/cognicode-runtime. The container and
+        # dev-up story for the Explorer lives in the external repository.
+        for path in (ROOT / "Dockerfile", ROOT / "docker-entrypoint.sh", ROOT / "justfile"):
+            text = path.read_text()
+            self.assertNotIn(
+                "explorer-api",
+                text,
+                f"{path.name} still names explorer-api",
+            )
+            self.assertNotIn(
+                "cognicode-runtime",
+                text,
+                f"{path.name} still names cognicode-runtime",
+            )
 
     def test_removal_detector_discriminates(self):
         self.assertTrue(claims_removed("The in-tree copy has been removed."))

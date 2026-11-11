@@ -38,9 +38,9 @@ use cognicode_core::interface::goals;
 use cognicode_core::interface::hateoas::HandleContext;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::goal::handle_goal;
+use cognicode_core::interface::surface::SurfaceProfile;
 use cognicode_mcp::rmcp_adapter::{tools_for_profile, visible_tools};
 use cognicode_mcp::tool_response::success_result;
-use cognicode_core::interface::surface::SurfaceProfile;
 
 /// El presupuesto de la lista por defecto: 6 KB.
 const DEFAULT_LIST_BUDGET: usize = 6 * 1024;

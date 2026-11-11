@@ -61,9 +61,9 @@ through a work unit.
 
 ```bash
 # Build
-just build                          # explorer API server (default)
-just build-server                   # cogh + cognicode + cognicode-mcp only
-just build-wasm                     # explorer frontend
+just build                          # the whole workspace (the Explorer API
+                                    # lives in Rubentxu/cognicode-explorer)
+just build-wasm                     # explorer frontend (apps/explorer-ui)
 
 # The gate: unit tests + integration tests + mutants. All three, or it is red.
 just gate                           # bash scripts/test-gate.sh
@@ -74,12 +74,10 @@ just mutants                        # mutation testing, scope in .cargo/mutants.
 just lint                           # clippy as errors
 
 # Lifecycle
-just dev                            # full dev mode (API + UI)
-just run                            # run the explorer API
-just start                          # run without rebuilding
+just check                          # cargo check --workspace
 
 # Distribution
-just build-release                  # release-mode binaries
+just build-release                  # release-mode workspace build
 ```
 
 ## Repository conventions

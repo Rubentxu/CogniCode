@@ -93,40 +93,28 @@ def test_sandbox_recipes_do_not_export_a_variable_nobody_reads() -> None:
 
 EXPLORER_SCRIPTS = REPO_ROOT / "scripts/explorer"
 VITE_CONFIG = REPO_ROOT / "apps/explorer-ui/vite.config.ts"
-STALE_DB_WORDS = re.compile(r"postgres|ensure_pg|DATABASE_URL|DB_URL|pg_isready|dev-pg", re.I)
 
 
-def test_explorer_real_stack_scripts_do_not_start_or_wait_for_postgresql() -> None:
-    scripts = sorted(EXPLORER_SCRIPTS.glob("*.sh"))
-    assert scripts, "no scripts found under scripts/explorer"
+def test_the_real_stack_scripts_left_with_the_in_tree_explorer() -> None:
+    # The scripts/explorer/ helpers built `-p cognicode-runtime --bin
+    # explorer-api`, which left the workspace with the decommission. The
+    # dev-up story for the real API lives in the external repository now;
+    # a half-present scripts directory would be a path that names a crate
+    # this tree no longer has.
+    assert not EXPLORER_SCRIPTS.exists(), (
+        "scripts/explorer still exists: its recipes build a crate that is "
+        "no longer a workspace member"
+    )
+
+
+def test_justfile_no_longer_builds_the_in_tree_explorer() -> None:
+    text = _read(JUSTFILE)
     offenders = [
-        f"{path.name}:{number}"
-        for path in scripts
-        for number, line in enumerate(_read(path).splitlines(), 1)
-        if STALE_DB_WORDS.search(line)
+        line.strip()
+        for line in text.splitlines()
+        if re.search(r"cognicode-runtime|explorer-api", line)
     ]
-    assert not offenders, f"PostgreSQL leftovers: {offenders}"
-
-
-def _comment_above(recipe: str) -> str:
-    lines = _read(JUSTFILE).splitlines()
-    index = next(i for i, ln in enumerate(lines) if ln.startswith(f"{recipe}"))
-    block = []
-    for line in reversed(lines[:index]):
-        if not line.startswith("#"):
-            break
-        block.append(line)
-    assert block, f"recipe {recipe} has no comment above it"
-    return "\n".join(block)
-
-
-def test_justfile_explorer_real_comments_do_not_name_postgresql() -> None:
-    offenders = [
-        r
-        for r in ("explorer-real-ingest", "explorer-real-api-up")
-        if re.search("postgres", _comment_above(r), re.I)
-    ]
-    assert not offenders, f"comments still name PostgreSQL: {offenders}"
+    assert not offenders, f"justfile still names the decommissioned crates: {offenders}"
 
 
 def test_vite_config_does_not_cite_a_compose_file_that_no_longer_exists() -> None:
@@ -151,10 +139,9 @@ def test_dockerfile_builder_matches_the_pinned_toolchain() -> None:
 
 
 SKILL = REPO_ROOT / "skills" / "cognicode-developer" / "SKILL.md"
-MCP_TOOLS = REPO_ROOT / "crates" / "cognicode-explorer" / "MCP-TOOLS.md"
 
 
-def test_developer_docs_and_dev_recipe_do_not_describe_a_removed_postgresql_backend() -> None:
+def test_developer_docs_do_not_name_recipes_or_backends_that_are_gone() -> None:
     recipes = set(re.findall(r"^@?([A-Za-z][\w-]*)\b[^\n=:]*:(?!=)", _read(JUSTFILE), re.M))
     skill = _read(SKILL)
     offenders = []
@@ -163,12 +150,4 @@ def test_developer_docs_and_dev_recipe_do_not_describe_a_removed_postgresql_back
             offenders.append(f"SKILL.md names `just {name}`, which is not a recipe")
     if re.search(r"Postgres", skill, re.I):
         offenders.append("SKILL.md still names Postgres")
-    for recipe in ("dev",):
-        if re.search(r"\bPG\b", _comment_above(recipe)) or re.search(r"PG:\s", _recipe_body(recipe)):
-            offenders.append(f"justfile recipe {recipe} still names PG")
-    if re.search(r"One command to rule them all: PG", _read(JUSTFILE)):
-        offenders.append("justfile explorer-local comment still names PG")
-    tools = _read(MCP_TOOLS)
-    if re.search(r"stored in PostgreSQL|enables `postgres`", tools):
-        offenders.append("MCP-TOOLS.md still describes a PostgreSQL store/feature")
-    assert not offenders, f"stale PostgreSQL statements: {offenders}"
+    assert not offenders, f"stale statements in SKILL.md: {offenders}"

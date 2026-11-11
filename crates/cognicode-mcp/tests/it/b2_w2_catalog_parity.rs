@@ -262,7 +262,10 @@ fn catalog_path() -> std::path::PathBuf {
             return candidate;
         }
     }
-    panic!("could not locate crates/cognicode-core/product/tools.json above {:?}", manifest);
+    panic!(
+        "could not locate crates/cognicode-core/product/tools.json above {:?}",
+        manifest
+    );
 }
 
 #[allow(dead_code)]

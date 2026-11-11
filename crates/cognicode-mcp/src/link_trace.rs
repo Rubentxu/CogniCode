@@ -78,8 +78,8 @@ pub fn record(tool_name: &str, arguments: &Map<String, Value>, result: &CallTool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cognicode_core::interface::hateoas::HandleContext;
     use crate::tool_response::success_result;
+    use cognicode_core::interface::hateoas::HandleContext;
 
     fn context() -> HandleContext {
         HandleContext {

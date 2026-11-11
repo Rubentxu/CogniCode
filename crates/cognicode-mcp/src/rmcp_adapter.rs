@@ -5,13 +5,13 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::collapsible_if, clippy::manual_async_fn)]
 
+use crate::cancellation::CancellationRegistry;
 use cognicode_core::application::freshness::FreshnessOracle;
 use cognicode_core::application::graph_cache::default_cache_root;
 use cognicode_core::application::services::file_operations::FileOperationsService;
 use cognicode_core::infrastructure::telemetry::get_global_metrics;
 use cognicode_core::infrastructure::verification::RustVerifier;
 use cognicode_core::interface::daemon::DaemonOracle;
-use crate::cancellation::CancellationRegistry;
 use cognicode_core::interface::mcp::error::{InterfaceError, InterfaceResult};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::surface::SurfaceProfile;
@@ -690,9 +690,7 @@ fn descriptor_to_tool(d: cognicode_core::interface::catalog::ToolDescriptor) -> 
         // word reaches a client that never read the catalogue. They are
         // derived from the same authority the mutating check uses, so the
         // two cannot disagree about the same tool.
-        .with_annotations(crate::tool_response::annotations_for(
-            d.authority.as_str(),
-        ));
+        .with_annotations(crate::tool_response::annotations_for(d.authority.as_str()));
 
     // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission
     // explicitly so clients can distinguish mutating tools without
@@ -955,8 +953,7 @@ pub async fn call_tool_handler(
     // callers that pre-date the v1.0.0 convention continue to work.
     // Each substitution emits a structured `warn` so dashboards can
     // drive migration without this layer silently propping them up.
-    let substitutions =
-        crate::parameter_aliases::apply_aliases(tool_name, &mut arguments);
+    let substitutions = crate::parameter_aliases::apply_aliases(tool_name, &mut arguments);
     if !substitutions.is_empty() {
         let renames = substitutions
             .iter()
@@ -1041,9 +1038,12 @@ pub async fn call_tool_handler(
         // antes del `match` porque su nombre no es un caso del `match`: lo
         // construye el registro.
         if let Some(goal) = cognicode_core::interface::goals::find(tool_name) {
-            let output =
-                cognicode_core::interface::mcp::handlers::goal::handle_goal(ctx, goal, arguments.into())
-                    .await?;
+            let output = cognicode_core::interface::mcp::handlers::goal::handle_goal(
+                ctx,
+                goal,
+                arguments.into(),
+            )
+            .await?;
             return Ok(serde_json::to_string(&output)?);
         }
         match tool_name {
@@ -1051,21 +1051,24 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::GetFileSymbolsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_file_symbols(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_file_symbols(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "build_graph" => {
                 let input: cognicode_core::interface::mcp::handlers::BuildGraphInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_build_graph(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_build_graph(ctx, input)
+                        .await?;
 
                 // M2.1: Record graph statistics after successful build
                 if output.success {
                     let graph = ctx.analysis_service().get_project_graph();
                     let symbols = graph.symbol_count() as u64;
                     let edges = graph.edge_count() as u64;
-                    let projection = cognicode_core::infrastructure::graph::project_call_graph(&graph);
+                    let projection =
+                        cognicode_core::infrastructure::graph::project_call_graph(&graph);
                     let health_score =
                     cognicode_core::application::services::graph_insights::GraphInsightsService::analyze(
                         &graph,
@@ -1085,14 +1088,16 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::GetCallHierarchyInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_call_hierarchy(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_call_hierarchy(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "analyze_impact" => {
                 let input: cognicode_core::interface::mcp::schemas::AnalyzeImpactInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_analyze_impact(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_analyze_impact(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
 
@@ -1131,7 +1136,8 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::FindUsagesInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_find_usages(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_find_usages(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // E1.W3 — EvidenceStore MCP tools. Mirror `cognicode evidence
@@ -1215,63 +1221,73 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::GetComplexityInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_complexity(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_complexity(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_entry_points" => {
                 let input: cognicode_core::interface::mcp::schemas::GetEntryPointsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_entry_points(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_entry_points(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_leaf_functions" => {
                 let input: cognicode_core::interface::mcp::schemas::GetLeafFunctionsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_leaf_functions(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_leaf_functions(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "trace_path" => {
                 let input: cognicode_core::interface::mcp::schemas::TracePathInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::handle_trace_path(ctx, input).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_trace_path(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "export_mermaid" => {
                 let input: cognicode_core::interface::mcp::schemas::ExportMermaidInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_export_mermaid(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_export_mermaid(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_hot_paths" => {
                 let input: cognicode_core::interface::mcp::schemas::GetHotPathsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_hot_paths(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_hot_paths(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_all_symbols" => {
                 let input: cognicode_core::interface::mcp::schemas::GetAllSymbolsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_all_symbols(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_all_symbols(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "find_dead_code" => {
                 let input: cognicode_core::interface::mcp::schemas::FindDeadCodeInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_find_dead_code(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_find_dead_code(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_module_dependencies" => {
                 let input: cognicode_core::interface::mcp::schemas::GetModuleDependenciesInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_module_dependencies(ctx, input)
-                        .await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_module_dependencies(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
 
@@ -1279,21 +1295,25 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::QuerySymbolInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_query_symbol_index(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_query_symbol_index(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "build_call_subgraph" => {
                 let input: cognicode_core::interface::mcp::schemas::BuildSubgraphInput =
                     serde_json::from_value(arguments.into())?;
-                let output =
-                    cognicode_core::interface::mcp::handlers::handle_build_call_subgraph(ctx, input).await?;
+                let output = cognicode_core::interface::mcp::handlers::handle_build_call_subgraph(
+                    ctx, input,
+                )
+                .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "get_per_file_graph" => {
                 let input: cognicode_core::interface::mcp::schemas::GetPerFileGraphInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_get_per_file_graph(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_get_per_file_graph(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
 
@@ -1323,64 +1343,75 @@ pub async fn call_tool_handler(
             "hover" => {
                 let input: cognicode_core::interface::mcp::schemas::HoverInput =
                     serde_json::from_value(arguments.into())?;
-                let output =
-                    cognicode_core::interface::mcp::handlers::lsp_handlers::handle_hover(ctx, input).await?;
+                let output = cognicode_core::interface::mcp::handlers::lsp_handlers::handle_hover(
+                    ctx, input,
+                )
+                .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "find_references" => {
                 let input: cognicode_core::interface::mcp::schemas::FindReferencesInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::lsp_handlers::handle_find_references(
-                    ctx, input,
-                )
-                .await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::lsp_handlers::handle_find_references(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "rename_preview" => {
                 let input: cognicode_core::interface::mcp::schemas::RenamePreviewInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::lsp_handlers::handle_rename_preview(
-                    ctx, input,
-                )
-                .await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::lsp_handlers::handle_rename_preview(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "read_file" => {
                 let input: cognicode_core::interface::mcp::schemas::ReadFileInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::handle_read_file(ctx, input).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_read_file(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "write_file" => {
                 let input: cognicode_core::interface::mcp::schemas::WriteFileInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::handle_write_file(ctx, input).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_write_file(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "edit_file" => {
                 let input: cognicode_core::interface::mcp::schemas::EditFileInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::handle_edit_file(ctx, input).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_edit_file(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "search_content" => {
                 let input: cognicode_core::interface::mcp::schemas::SearchContentInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_search_content(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_search_content(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "list_files" => {
                 let input: cognicode_core::interface::mcp::schemas::ListFilesInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::handle_list_files(ctx, input).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_list_files(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "retrieve_and_verify" => {
                 let input: cognicode_core::interface::mcp::schemas::RetrieveAndVerifyInput =
                     serde_json::from_value(arguments.into())?;
-                let output =
-                    cognicode_core::interface::mcp::handlers::handle_retrieve_and_verify(ctx, input).await?;
+                let output = cognicode_core::interface::mcp::handlers::handle_retrieve_and_verify(
+                    ctx, input,
+                )
+                .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // AIX-1: Smart Overview & Ranked Symbols
@@ -1392,17 +1423,20 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::NlToSymbolInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(ctx, input)
-                        .await?;
+                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_nl_to_symbol(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "ask_about_code" => {
                 let input: cognicode_core::interface::mcp::schemas::AskAboutCodeInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::aix_handlers::handle_ask_about_code(
-                    ctx, input,
-                )
-                .await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_ask_about_code(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "find_pattern_by_intent" => {
@@ -1470,8 +1504,10 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::DetectDriftInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_detect_drift(ctx, input)
-                        .await?;
+                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_detect_drift(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // Batch D: Agent Task Tools (bidirectional interaction)
@@ -1520,10 +1556,11 @@ pub async fn call_tool_handler(
             "graph_reduced" => {
                 let input: cognicode_core::interface::mcp::schemas::GraphReducedInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::graph_handlers::handle_graph_reduced(
-                    ctx, input,
-                )
-                .await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::graph_handlers::handle_graph_reduced(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "graph_feedback_arcs" => {
@@ -1696,8 +1733,10 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::handlers::retired::GraphAnalyzeInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::retired::handle_graph_analyze(ctx, input)
-                        .await?;
+                    cognicode_core::interface::mcp::handlers::retired::handle_graph_analyze(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             "project_overview" => {
@@ -1750,7 +1789,8 @@ pub async fn call_tool_handler(
             }
             // SOLID Audit tool
             "solid_audit" => {
-                let output = cognicode_core::interface::mcp::handlers::handle_solid_audit(ctx).await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::handle_solid_audit(ctx).await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // Architecture check
@@ -1758,7 +1798,8 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::CheckArchitectureInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_check_architecture(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_check_architecture(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // Graph checkpoint management
@@ -1776,7 +1817,8 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::MergeGraphsInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_merge_graphs(ctx, input).await?;
+                    cognicode_core::interface::mcp::handlers::handle_merge_graphs(ctx, input)
+                        .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // Build lightweight symbol index
@@ -1784,8 +1826,10 @@ pub async fn call_tool_handler(
                 let input: cognicode_core::interface::mcp::schemas::BuildIndexInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    cognicode_core::interface::mcp::handlers::handle_build_lightweight_index(ctx, input)
-                        .await?;
+                    cognicode_core::interface::mcp::handlers::handle_build_lightweight_index(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             // Incremental reindex after edits (requires persistence feature)
@@ -1793,10 +1837,11 @@ pub async fn call_tool_handler(
             "reparse_on_edit" => {
                 let input: cognicode_core::interface::mcp::schemas::ReparseOnEditInput =
                     serde_json::from_value(arguments.into())?;
-                let output = cognicode_core::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(
-                    ctx, input,
-                )
-                .await?;
+                let output =
+                    cognicode_core::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit(
+                        ctx, input,
+                    )
+                    .await?;
                 Ok(serde_json::to_string(&output)?)
             }
             #[cfg(not(feature = "persistence"))]
@@ -1833,8 +1878,10 @@ pub async fn call_tool_handler(
             "cfg_per_function" => {
                 let input: cognicode_core::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =
                     serde_json::from_value(arguments.into())?;
-                cognicode_core::interface::mcp::handlers::program_analysis_handlers::handle_cfg(input)
-                    .map_err(InterfaceError::Internal)
+                cognicode_core::interface::mcp::handlers::program_analysis_handlers::handle_cfg(
+                    input,
+                )
+                .map_err(InterfaceError::Internal)
             }
             "dominators_cfg" => {
                 let input: cognicode_core::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput =

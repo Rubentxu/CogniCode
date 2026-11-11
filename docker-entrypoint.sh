@@ -1,6 +1,7 @@
 #!/bin/bash
 # CogniCode MCP — Docker entrypoint
-# Launches cognicode-mcp-server (and, with --multi, the Explorer API).
+# Launches the cognicode-mcp-server. The Explorer API is not hosted here:
+# Rubentxu/cognicode-explorer builds its own container.
 
 set -e
 
@@ -12,12 +13,6 @@ if [ -z "${COGNICODE_MCP_AUTH_TOKEN:-}" ]; then
     echo "The server listens on 0.0.0.0:9847 and refuses to serve without a token." >&2
     echo "Run with: -e COGNICODE_MCP_AUTH_TOKEN=<secret>" >&2
     exit 64
-fi
-
-# If --multi flag, start Explorer API (multi-project mode)
-if [ "$1" = "--multi" ]; then
-    echo "Starting Explorer API (multi-project) on :8010"
-    /usr/local/bin/explorer-api --listen 0.0.0.0:8010 --cwd /workspaces &
 fi
 
 PROJECT_DIR="${COGNICODE_PROJECT:-/workspace}"

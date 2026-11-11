@@ -108,7 +108,9 @@ raíces distintas produce la misma identidad; un test que compruebe que
 cambiar un fichero cambia la identidad y que repetir la lectura no; un
 test que compruebe que un árbol vacío publica el estado sin resumen; un
 test que compare la identidad que publican las dos rutas sobre el mismo
-árbol. Referencias:
+árbol. Referencias (rutas de la verificación original; la implementación del
+explorer vive hoy en Rubentxu/cognicode-explorer tras la descomisión
+TASK-177):
 `crates/cognicode-core/src/application/architecture/control_query.rs`,
 `crates/cognicode-explorer/src/api.rs`,
 `crates/cognicode-explorer/tests/cp1_control_plane_endpoint.rs`.

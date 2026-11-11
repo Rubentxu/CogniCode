@@ -18,14 +18,14 @@ pub mod cancellation;
 pub mod capabilities;
 pub mod exposure;
 pub mod input_contracts;
-pub mod output_contracts;
 pub mod link_trace;
+pub mod output_contracts;
 pub mod parameter_aliases;
 pub mod presenter_bridge;
 pub mod rmcp_adapter;
 pub mod robustness;
-pub mod surface_tools;
 pub mod status;
+pub mod surface_tools;
 pub mod tool_response;
 
 #[cfg(test)]

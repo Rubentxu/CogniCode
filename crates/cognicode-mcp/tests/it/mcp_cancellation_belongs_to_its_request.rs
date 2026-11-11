@@ -19,10 +19,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use cognicode_mcp::cancellation::CancellationRegistry;
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };
+use cognicode_mcp::cancellation::CancellationRegistry;
 use rmcp::model::RequestId;
 
 fn request_id(n: i64) -> RequestId {

@@ -36,13 +36,16 @@ use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::retired::{
     GraphAnalyzeInput, handle_composite_impact_query, handle_graph_analyze,
 };
-use cognicode_mcp::rmcp_adapter::build_all_tools;
 use cognicode_core::interface::mcp::schemas::CompositeImpactQueryInput;
+use cognicode_mcp::rmcp_adapter::build_all_tools;
 
 use crate::fixtures;
 
 /// The catalogue the operator maintains by hand.
-const CATALOG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../cognicode-core/product/tools.json");
+const CATALOG: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../cognicode-core/product/tools.json"
+);
 
 /// The capture of what the server ships.
 const RUNTIME: &str = concat!(
