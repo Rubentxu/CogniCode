@@ -38,7 +38,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.103.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). Fija una versión con `COGNICODE_VERSION=v0.103.1`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@v0.103.0`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.103.1`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 ### Binario precompilado publicado (recuperación independiente)
 
@@ -491,17 +491,20 @@ trazado de rutas de ejecución** y mucho más.
 
 ## Versionado
 
-- **Release vigente:** `v0.103.0`, cortada desde este árbol con ese tag. La
-  release publicada desde él es la que sirve un `install.sh` sin versión
-  fijada. La anterior publicada es
-  [`v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1);
+- **Release vigente:** `v0.103.1`, cortada desde este árbol con ese tag
+  (`main` en `793033d4`). Un patch: los cuatro crates de librería del SDK se
+  publican en crates.io en `0.103.1` y se verifican desde un consumidor
+  limpio, los assets binarios se generaron con la release factory desde el
+  mismo árbol, y lleva los fixes de la auditoría del 2026-11-10 y la
+  descomisión del Explorer completada. La release publicada anterior es
+  [`v0.103.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.0);
+  la completa anterior a ella es
+  [`v0.102.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.102.1).
   `v0.101.24`, `v0.101.25` y `v0.101.26` tienen tag pero nunca se publicaron,
-  y un tag que no se publicó no se mueve. v0.103.0 es una versión menor: los
-  cuatro crates de librería del SDK se publican en crates.io, los adaptadores
-  de MCP y del sandbox salen del core, y la release sale sin atestación de
-  procedencia (decisión abierta sobre la custodia de la clave).
-- **Los binarios informan:** `0.103.0` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.103.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.0).
+  y un tag que no se publicó no se mueve. La release sale sin atestación de
+  procedencia (misma decisión abierta de custodia de la clave desde v0.103.0).
+- **Los binarios informan:** `0.103.1` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.103.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.1).
 - **Tags sin release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` y
   `v0.101.26` existen y nunca se publicaron; cada uno tiene una entrada en el

@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-09, sobre `a7036ba06ee70b388fde184dbec3887297c8116a` (la
+> **Snapshot**: 2026-11-11, sobre `793033d40687781c68ab70613bc6210e9a6f54ac` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -330,15 +330,20 @@
 > publica con un solo comando, `release-sdk.sh`, que prepara el bump y el PR y,
 > tras la fusión, publica y etiqueta; no hay temporizador (TASK-178); y la
 > `v0.103.0` del SDK está publicada en crates.io y en GitHub Releases, y las
-> referencias de versión vigentes ya la citan (TASK-180).
-> Versión del workspace: `0.103.0`. Última release publicada: `v0.103.0`
-> (2026-11-09, 8 assets).
+> referencias de versión vigentes ya la citan (TASK-180); y los nueve hallazgos
+> de la auditoría del 2026-11-10 están cerrados (TASK-206..214), el Explorer y
+> el runtime en árbol están dados de baja con su copia viva en el repositorio
+> externo y su tag de frontera `v0.102.1` (TASK-177), y la `v0.103.1` del SDK
+> está publicada en crates.io y en GitHub Releases, verificada desde consumidor
+> limpio, con las referencias de versión ya volteadas (TASK-180).
+> Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
+> (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`be7ae08ffc1ed5cbe590bb63848bf7eabb621d8c` → `a7036ba06ee70b388fde184dbec3887297c8116a`)
+## Qué cambió desde el snapshot anterior (`a7036ba06ee70b388fde184dbec3887297c8116a` → `793033d40687781c68ab70613bc6210e9a6f54ac`)
 
-Entre una punta y otra entraron **6 commits** (`git rev-list --count be7ae08ffc1ed5cbe590bb63848bf7eabb621d8c..a7036ba06ee70b388fde184dbec3887297c8116a`).
+Entre una punta y otra entraron **15 commits** (`git rev-list --count a7036ba06ee70b388fde184dbec3887297c8116a..793033d40687781c68ab70613bc6210e9a6f54ac`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
 
@@ -364,8 +369,19 @@ en qué commits está; la medición de cada unidad está en su recibo del `JOURN
 | Evidencia medida de los assets de `v0.102.1` y ADR: sin atestación de procedencia | `875039fd`, `d4020b38` (TASK-180) | Documental. |
 | Bump del SDK a `0.103.0` y recibo de su publicación | `97d63cc5`, `6560597c` (TASK-180) | Publicada en crates.io y GitHub Releases. |
 | Referencias de versión vigentes apuntan a `0.103.0` | `a7036ba0` (TASK-180) | `run-all-contracts` rc=0. |
+| Rutas mise y asdf para `cogh` en las guías, plugin asdf publicado | `e7befbe6`, `ab272291`, `12538b81`, `ce9c4227`, `cdab6378` (TASK-180, PRs #780..#784) | `asdf plugin add` + `asdf install cogh 0.103.0`: «La suma coincide»; comportamiento fijado por test. |
+| El escaneo no borra lo que no puede recorrer | `1e138a13` (TASK-206) | RED real: un `Deleted` publicado por un directorio chmod 000; ahora `files`+`omissions` con cobertura por componente. |
+| Un solo dueño para el nombre del workspace | `d8a206cc` (TASK-208) | `workspace_id_for_path` eliminado con su re-export; `workspace_key` único dueño. |
+| El resolutor decide por el material que lee, no por la presencia de `.rs` | `979668dd` (TASK-210) | `GraphMaterial::{Present,NoReadableSources,NoFiles}`; el motivo declara la causa. |
+| La versión que un cert reclama es la del árbol que registró | `9592b436` (TASK-213) | `git show sha:Cargo.toml` en el `head_sha` del cert; el campo vuelve a `0.101.31`. |
+| Escritores concurrentes publican ficheros enteros | `705f2441` (TASK-209) | Test con barrera, sin sleeps, plazo de 10 s; la ventana del update condicional documentada en el módulo. |
+| El gate mide el radio con una sonda discriminante y dice su contexto de compilación | `83e9bc84` (TASK-211) | El lote que toca al dependiente beta no arrastra al alpha; el log dice warm/cold + sccache. |
+| Los 12 ficheros que `cargo fmt` rechaza quedan formateados | `f532846e` (TASK-214) | rustfmt puro (35+/35−); suite del crate 3429/3429. |
+| El Explorer y el runtime en árbol se dan de baja | `97b3f811`, `ef07632b` (TASK-177, PRs #785/#793) | La copia viva es el repo externo con su tag de frontera `v0.102.1`; recibo en `EXPLORER_HANDOFF.md`. |
+| Bump del SDK a `0.103.1` | `793033d4` (TASK-180, PR #794) | `release-sdk.sh 0.103.1`; ensayo de publicación en verde. |
+| `v0.103.1` publicada en crates.io y GitHub Releases (8 assets), tag sobre `793033d4` | tag `v0.103.1` (TASK-180) | Verificada desde consumidor limpio; los 8 assets verificados desde lo publicado; recibo en el `JOURNAL`. |
 
-## Release: la última publicada es la v0.103.0
+## Release: la última publicada es la v0.103.1
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -379,7 +395,8 @@ en qué commits está; la medición de cada unidad está en su recibo del `JOURN
 | `v0.101.30` | publicada (2026-10-23, 8 assets) | lleva la ontología: el campo que el consumidor lee |
 | `v0.102.0` | tag, sin release | su suite de candidato encontró dos defectos reales (un cert y un test de snapshot) |
 | `v0.102.1` | publicada (2026-11-07, 8 assets) | lleva los dos arreglos; instalada en local |
-| `v0.103.0` | **publicada** (2026-11-09, 8 assets) | SDK en crates.io y GitHub Releases |
+| `v0.103.0` | publicada (2026-11-09, 8 assets) | la anterior |
+| `v0.103.1` | **publicada** (2026-11-11, 8 assets) | SDK en crates.io y GitHub Releases; lleva la baja del Explorer en árbol y los nueve arreglos de la auditoría |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
@@ -387,7 +404,7 @@ y la lane de publicación, que tuvo que arreglar tres checks que no podían
 pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
 corte que lleva el filtro de recorrido arreglado.
 
-**`v0.101.30` es la vigente**, y no movió `v0.101.29`: un tag publicado no
+**`v0.101.30` era la vigente en su momento**, y no movió `v0.101.29`: un tag publicado no
 se mueve. Lleva la última de la ontología: un recurso de Terraform y un
 play de Ansible dejan de publicarse como una función y como un módulo, y el
 campo que el consumidor lee dice qué son. La prueba no se hizo sobre el

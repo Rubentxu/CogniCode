@@ -39352,3 +39352,32 @@ verificó siempre desde el repositorio remoto, no desde la copia local.
 **NOT_RUN.** Clave cosign (custodia en KeePass, la genera la persona):
 TASK-180 AC3/AC6 siguen abiertos; `release.sh --publish` del externo,
 `deps` y `docker build`. Sin tocar TASK-177.
+
+## TASK-180 — release v0.103.1 publicada (2026-11-11)
+
+Base `793033d4` (#794). Autorización explícita del operador para publicar.
+
+**Cambio.** `release-sdk.sh --publish` (rc=0) publicó `cognicode-graph-algos`,
+`cognicode-macros`, `cognicode-core` y `cognicode-graph-wasm` 0.103.1 en
+crates.io, verificó desde consumidor limpio (`verify-sdk-consumer.sh
+--confirm-published`: «consumer verification passed for version 0.103.1») y
+empujó el tag anotado `v0.103.1` sobre `793033d4`. La release de GitHub lleva
+los 8 assets de la release factory (3 tarballs de binarios, 2 bundles de
+skills, bundle yaml, inventario json, `SHA256SUMS`); cada asset se bajó de
+nuevo desde lo publicado y se verificó contra las sumas, y los binarios
+informan 0.103.1. Referencias de versión volteadas a 0.103.1 en README.md,
+README.es.md, INSTALL.md, CHANGELOG.md, SECURITY.md, manifest de producto
+regenerado y snapshot CURRENT regenerado sobre `793033d4`.
+
+**Medido.** Contratos de producto (`run-all-contracts.sh`) en verde tras el
+volteo, incluido el contrato de README (47/47) y la coherencia de roadmap.
+Publicación verificada desde los artefactos publicados, no del árbol.
+
+**Operador.** Crates 0.103.1 en crates.io; tag `v0.103.1`; release de GitHub
+con 8 assets. Sin clave cosign la release sigue saliendo sin atestación de
+procedencia (AC6, igual que 0.103.0).
+
+**NOT_RUN.** El instalador remoto `install.sh` de la release no se probó para
+0.103.1 (sí se verificó para 0.103.0 el 2026-11-09); la verificación de
+procedencia cosig sigue sin ser aplicable sin clave. Este recibo y el volteo
+de docs entran por PR en la rama `docs/release-v0.103.1`.
