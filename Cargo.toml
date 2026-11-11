@@ -19,7 +19,7 @@ members = [
 exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
-version = "0.103.0"
+version = "0.103.1"
 edition = "2024"
 authors = ["CogniCode Team"]
 # ADR-011 (CP1.1): license of record, formalising the deferral M0.9 left open.
@@ -39,11 +39,11 @@ rust-version = "1.96.0"
 # medicion, y la que se desincroniza sin que nada falle.
 criterion = "0.5"
 # Internal
-cognicode-core = { path = "crates/cognicode-core", version = "0.103.0" }
+cognicode-core = { path = "crates/cognicode-core", version = "0.103.1" }
 cognicode-mcp = { path = "crates/cognicode-mcp" }
-cognicode-graph-algos = { path = "crates/cognicode-graph-algos", version = "0.103.0" }
+cognicode-graph-algos = { path = "crates/cognicode-graph-algos", version = "0.103.1" }
 # cognicode-axiom = { path = "crates/cognicode-axiom" }  # PARKED
-cognicode-macros = { path = "crates/cognicode-macros", version = "0.103.0" }
+cognicode-macros = { path = "crates/cognicode-macros", version = "0.103.1" }
 
 # Distribution (E32-B)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
