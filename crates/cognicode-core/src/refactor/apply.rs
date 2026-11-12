@@ -37,6 +37,7 @@
 //! read-only (`SafeRefactorInput` lleva `deny_unknown_fields`).
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -136,8 +137,10 @@ fn splice_replacement(bytes: &[u8], edit: &PlannedEdit) -> Vec<u8> {
 
 /// Token de autorización de write. **Opaque** para el apply path: se
 /// recibe por canal separado (no del plan JSON) y NO se deriva del
-/// contenido del plan (AAT-B5-03).
-#[derive(Debug, Clone)]
+/// contenido del plan (AAT-B5-03). Se serializa solo dentro de la
+/// proposal (TASK-220), que es quien lo acuña y lo persiste con su
+/// momento de emisión.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuthorizationToken {
     pub value: String,
     pub created_at: DateTime<Utc>,
@@ -154,10 +157,20 @@ pub struct AuthorizationToken {
 /// y caduca por tiempo. Un token "envejecido" no es consentimiento
 /// reciente.
 pub fn validate_authorization_token(token: &AuthorizationToken) -> Result<(), ApplyError> {
+    validate_authorization_token_at(token, Utc::now())
+}
+
+/// La misma validación con el reloj inyectado: la ventana de una hora
+/// se juzga contra `now`, no contra el reloj de pared, y un test puede
+/// demostrar que un token caducado se rechaza (TASK-220 AC #3).
+pub fn validate_authorization_token_at(
+    token: &AuthorizationToken,
+    now: DateTime<Utc>,
+) -> Result<(), ApplyError> {
     if token.value.trim().is_empty() {
         return Err(ApplyError::AuthorizationMissing);
     }
-    let age = Utc::now().signed_duration_since(token.created_at);
+    let age = now.signed_duration_since(token.created_at);
     let max = chrono::Duration::hours(TOKEN_MAX_AGE_HOURS);
     if age > max || age < -max {
         return Err(ApplyError::AuthorizationInvalid);
@@ -593,6 +606,34 @@ mod tests {
             created_at: Utc::now(),
         };
         assert!(validate_authorization_token(&fresh).is_ok());
+    }
+
+    /// TASK-220 AC #3 — la ventana se juzga contra el reloj inyectado:
+    /// un token emitido «ahora» está vivo, caduca cuando `now` lo
+    /// alcanza, y el límite exacto de la ventana sigue siendo válido.
+    #[test]
+    fn unit_validate_authorization_token_at_judges_with_the_injected_clock() {
+        let issued_at = Utc::now();
+        let token = AuthorizationToken {
+            value: "tk".into(),
+            created_at: issued_at,
+        };
+
+        // Vivo mientras la ventana no se agote, incluso si el token se
+        // emite «en el futuro» del reloj de pared.
+        assert!(validate_authorization_token_at(&token, issued_at).is_ok());
+        assert!(
+            validate_authorization_token_at(&token, issued_at + chrono::Duration::hours(1)).is_ok(),
+            "the exact window boundary is still inside"
+        );
+        assert!(matches!(
+            validate_authorization_token_at(&token, issued_at + chrono::Duration::hours(2)),
+            Err(ApplyError::AuthorizationInvalid)
+        ));
+        assert!(matches!(
+            validate_authorization_token_at(&token, issued_at - chrono::Duration::hours(2)),
+            Err(ApplyError::AuthorizationInvalid)
+        ));
     }
 
     #[test]

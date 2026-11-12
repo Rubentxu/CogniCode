@@ -97,11 +97,42 @@ fn workspace_with_a_plan(label: &str) -> (PathBuf, PathBuf) {
     (root, plan_path)
 }
 
+/// TASK-220 — the preview runs first and issues the proposal; the
+/// token the apply consumes is the one that proposal persisted. The
+/// apply refuses a plan that was never previewed, so the published
+/// flow is preview → apply with the issued token.
+fn preview_and_issued_token(binary: &std::path::Path, plan_path: &std::path::Path) -> String {
+    let preview = Command::new(binary)
+        .args([
+            "refactor",
+            "a",
+            "--plan-file",
+            plan_path.to_str().expect("the plan path is text"),
+        ])
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));
+    assert!(
+        preview.status.success(),
+        "the preview runs first and persists its proposal: {}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let proposal_path = plan_path.with_extension("proposal.json");
+    let raw = std::fs::read_to_string(&proposal_path)
+        .expect("the preview persisted its proposal next to the plan");
+    let doc: Value = serde_json::from_str(&raw).expect("the proposal parses");
+    doc["token"]["value"]
+        .as_str()
+        .expect("the proposal carries the token value")
+        .to_string()
+}
+
 /// The apply publishes the revalidation, and the revalidation says that
 /// nobody checked anything.
 #[test]
 fn the_apply_publishes_a_revalidation_that_says_nothing_was_checked() {
     let (root, plan_path) = workspace_with_a_plan("json");
+    let binary = common::binary_path("cognicode");
+    let token = preview_and_issued_token(&binary, &plan_path);
 
     let answer = run_cli_json(&[
         "refactor",
@@ -110,7 +141,7 @@ fn the_apply_publishes_a_revalidation_that_says_nothing_was_checked() {
         "--plan-file",
         plan_path.to_str().expect("the plan path is text"),
         "--authorization-token",
-        "token-received-out-of-band",
+        &token,
         "--format",
         "json",
     ]);
@@ -172,6 +203,7 @@ fn the_text_output_says_that_no_check_ran() {
     let (_root, plan_path) = workspace_with_a_plan("text");
 
     let binary = common::binary_path("cognicode");
+    let token = preview_and_issued_token(&binary, &plan_path);
     let output = Command::new(&binary)
         .args([
             "refactor",
@@ -180,7 +212,7 @@ fn the_text_output_says_that_no_check_ran() {
             "--plan-file",
             plan_path.to_str().expect("the plan path is text"),
             "--authorization-token",
-            "token-received-out-of-band",
+            &token,
         ])
         .output()
         .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));

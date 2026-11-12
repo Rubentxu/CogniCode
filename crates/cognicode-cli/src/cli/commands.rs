@@ -748,6 +748,35 @@ impl CommandExecutor {
                         plan.risks.len(),
                         plan.digest
                     );
+                    // TASK-220 — el preview emite y persiste su
+                    // proposal: el estado que vio y el token acuñado
+                    // AQUI. El apply los lee de este fichero; no
+                    // recalcula ninguno en el momento del apply, o la
+                    // guarda «el workspace cambió desde el preview»
+                    // sería tautológica.
+                    let proposal =
+                        cognicode_core::refactor::proposal::RefactorProposal::issue(&plan);
+                    let proposal_path =
+                        cognicode_core::refactor::proposal::proposal_path_for(plan_path);
+                    cognicode_core::refactor::proposal::save_proposal_to_file(
+                        &proposal,
+                        &proposal_path,
+                    )
+                    .map_err(|e| -> Box<dyn std::error::Error> {
+                        format!(
+                            "failed to write the preview proposal {}: {}",
+                            proposal_path.display(),
+                            e
+                        )
+                        .into()
+                    })?;
+                    eprintln!(
+                        "B5.W3 proposal: {} (token {} issued {}; pass the \
+                         token via --authorization-token)",
+                        proposal_path.display(),
+                        proposal.token.value,
+                        proposal.token.created_at
+                    );
                     return Ok(CommandOutput::Other);
                 }
                 Ok(Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?)
@@ -2496,10 +2525,7 @@ impl CommandExecutor {
         authorization_token: &str,
         format: &str,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        use chrono::Utc;
-        use cognicode_core::refactor::apply::{
-            AuthorizationToken, apply, compute_workspace_state_digest,
-        };
+        use cognicode_core::refactor::apply::apply;
 
         // Carga el plan desde disco (B5.W1).
         let plan = cognicode_core::refactor::plan::load_plan_from_file(plan_file).map_err(|e| {
@@ -2521,22 +2547,46 @@ impl CommandExecutor {
             .into());
         }
 
-        // Recomputa el digest del estado actual del workspace. El
-        // preview (B5.W2) habría emitido este mismo digest en
-        // `plan.workspace_state_digest`-equivalent; apply verifica
-        // que coincida (AAT-B5-W3-04 / UAT-B5-03).
-        let actual_digest = compute_workspace_state_digest(&plan);
+        // TASK-220 — el digest y el token que comprueba apply son los
+        // que emitió el preview, persistidos con el plan. Recalcular
+        // el digest aquí — lo que hacía este comando — era comparar el
+        // estado consigo mismo: la guarda nunca saltaba (H6). Y acuñar
+        // el token con Utc::now() aquí hacía imposible que caducara.
+        let proposal_path = cognicode_core::refactor::proposal::proposal_path_for(plan_file);
+        let proposal = cognicode_core::refactor::proposal::load_proposal_from_file(&proposal_path)
+            .map_err(|e| {
+                format!(
+                    "B5.W3: no preview proposal for this plan at {} — run the \
+                     preview first (cognicode refactor --plan-file {}) and apply \
+                     the token it issued: {}",
+                    proposal_path.display(),
+                    plan_file.display(),
+                    e
+                )
+            })?;
+        if !proposal.matches_plan(&plan) {
+            return Err(format!(
+                "B5.W3: the proposal at {} does not belong to this plan \
+                 (different id or digest) — regenerate it with a preview",
+                proposal_path.display()
+            )
+            .into());
+        }
+        let token = proposal
+            .authorization_token(authorization_token)
+            .map_err(|e| {
+                format!(
+                    "B5.W3: {e} — the --authorization-token must be the one the \
+                     preview proposal issued"
+                )
+            })?;
 
-        // Construye el token a partir del flag separado. NOTA: el
-        // apply internamente exige created_at dentro de la ventana
-        // de 1h. Para el caso CLI, el token se acaba de generar —
-        // usamos Utc::now() para que sea válido.
-        let token = AuthorizationToken {
-            value: authorization_token.to_string(),
-            created_at: Utc::now(),
-        };
-
-        match apply(&plan, &actual_digest, &token, &workspace_root) {
+        match apply(
+            &plan,
+            &proposal.workspace_state_digest,
+            &token,
+            &workspace_root,
+        ) {
             Ok(outcome) => {
                 // La revalidacion dice que se verifico y que no: un apply
                 // que no dice nada sobre la verificacion se lee como si la

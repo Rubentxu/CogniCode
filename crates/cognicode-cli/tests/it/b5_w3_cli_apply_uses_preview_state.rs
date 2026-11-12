@@ -16,7 +16,7 @@ use chrono::Utc;
 use clap::Parser;
 
 use cognicode_cli::cli::Cli;
-use cognicode_cli::cli::commands::{CliCommand, CommandExecutor};
+use cognicode_cli::cli::commands::CommandExecutor;
 use cognicode_core::application::analysis_basis::AnalysisBasis;
 use cognicode_core::refactor::apply::compute_workspace_state_digest;
 use cognicode_core::refactor::plan::{
@@ -56,7 +56,7 @@ fn workspace_with_plan() -> (TempDir, PathBuf, PathBuf) {
     (tmp, plan_path, target)
 }
 
-fn refactor_cli(plan_path: &PathBuf, apply: bool, token: Option<&str>) -> Cli {
+fn refactor_cli(plan_path: &std::path::Path, apply: bool, token: Option<&str>) -> Cli {
     let mut args = vec!["cognicode".to_string(), "refactor".to_string()];
     if apply {
         args.push("--apply".to_string());
