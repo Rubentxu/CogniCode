@@ -466,12 +466,14 @@ fn resolve_and_stage_manifest(
 
     // Download the manifest to ~/.cognicode/bundle.yaml.
     let bundle_yaml_path = home.bundle_yaml_path();
-    let manifest_yaml = download_to_string(&resolved.manifest_url).map_err(|e| {
-        anyhow!(
-            "download bundle manifest from {}: {e}",
-            resolved.manifest_url
-        )
-    })?;
+    let bearer = crate::lifecycle_resolver::bearer_from_env();
+    let manifest_yaml =
+        download_to_string(&resolved.manifest_url, bearer.as_deref()).map_err(|e| {
+            anyhow!(
+                "download bundle manifest from {}: {e}",
+                resolved.manifest_url
+            )
+        })?;
     if let Some(parent) = bundle_yaml_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create bundle dir {}", parent.display()))?;
@@ -1299,21 +1301,17 @@ pub(crate) mod test_support {
 }
 
 /// Download a manifest URL to a string. Used by `cmd_update` after the
-/// resolver has resolved a `ResolvedRelease`. Uses `reqwest::blocking` with a
-/// 60s timeout, matching the resolver's policy (e86 D2).
-fn download_to_string(url: &str) -> std::result::Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .user_agent(concat!("cogh/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| format!("build http client: {e}"))?;
-    let mut req = client.get(url);
-    if let Ok(token) = std::env::var("COGNICODE_GITHUB_TOKEN")
-        && !token.is_empty()
-    {
-        req = req.bearer_auth(token);
-    }
-    let resp = req.send().map_err(|e| format!("GET {url}: {e}"))?;
+/// resolver has resolved a `ResolvedRelease`.
+///
+/// It goes through [`crate::download::get`] under the release policy, like
+/// the components: the token goes only to GitHub's own hosts, so a mirror the
+/// operator configured serves the manifest without receiving it.
+fn download_to_string(url: &str, bearer: Option<&str>) -> std::result::Result<String, String> {
+    use crate::download::{self, DownloadPolicy};
+
+    let client = download::client(std::time::Duration::from_secs(60)).map_err(|e| e.to_string())?;
+    let resp =
+        download::get(&client, url, bearer, &DownloadPolicy::GITHUB).map_err(|e| e.to_string())?;
     let status = resp.status();
     let body = resp.text().map_err(|e| format!("read body: {e}"))?;
     if !status.is_success() {
@@ -1340,6 +1338,30 @@ mod tests {
     use crate::lifecycle_resolver::Channel;
     use crate::release_contract::bundle_manifest_filename;
     use serial_test::serial;
+
+    /// A mirror the operator configured is not GitHub: the manifest comes
+    /// from it, and the GitHub token stays with GitHub.
+    #[test]
+    fn the_manifest_download_does_not_hand_the_github_token_to_a_mirror() {
+        let (port, rx) =
+            crate::download::loopback::serve(vec![crate::download::loopback::ok_with(
+                "schema_version: 1\n",
+            )]);
+
+        let body = download_to_string(
+            &format!("http://127.0.0.1:{port}/v0.103.1/bundle.yaml"),
+            Some("ghp-secret"),
+        )
+        .expect("the mirror serves the manifest");
+
+        assert_eq!(body, "schema_version: 1\n");
+        let request = rx.try_recv().expect("the mirror was asked");
+        assert_eq!(
+            crate::download::loopback::authorization(&request),
+            None,
+            "the GitHub token went to a host that is not GitHub: {request}"
+        );
+    }
 
     // ===== e87.1 — install/resolver bridge =====
     //
