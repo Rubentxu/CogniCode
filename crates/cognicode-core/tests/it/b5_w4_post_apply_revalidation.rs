@@ -332,3 +332,31 @@ fn revalidation_report_findings_block_keeps_its_published_shape() {
         })
     );
 }
+
+/// El `plan_digest` del informe sale del proceso, asi que es una funcion
+/// del plan y de nada mas: los 8 primeros bytes del SHA-256 del id del
+/// plan y de cada ruta cambiada, cada pieza cerrada por un NUL. El vector
+/// esta fijado: un hasher que dependa de la version del compilador lo
+/// rompe.
+#[test]
+fn plan_digest_is_a_fixed_vector() {
+    let plan_id = Uuid::nil();
+    let plan = RefactorPlan {
+        id: plan_id,
+        workspace_identity: "/tmp/ws".to_string(),
+        basis: AnalysisBasis::for_workspace(PathBuf::from("/tmp/ws")),
+        affected_files: Vec::new(),
+        edits: Vec::new(),
+        preconditions: Vec::new(),
+        risks: Vec::new(),
+        created_at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        digest: "stable".to_string(),
+    };
+    let outcome = stub_outcome(plan_id, vec![PathBuf::from("a.rs")]);
+    let rp = build_revalidation_plan(&plan, &outcome);
+    let report = run_revalidation(&rp, PathBuf::from("/tmp/ws").as_path());
+    assert_eq!(
+        report.plan_digest, "2f2c3ff48568732e",
+        "sha256(uuid-nil || NUL || \"a.rs\" || NUL)[..8]"
+    );
+}

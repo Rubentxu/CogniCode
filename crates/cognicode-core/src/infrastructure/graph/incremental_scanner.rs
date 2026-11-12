@@ -1,6 +1,6 @@
 //! Incremental graph scanner — only re-parses changed files.
 //!
-//! Uses [`FileManifest`] to track file state (mtime + blake3 content hash)
+//! Uses [`FileManifest`] to track file state (mtime + SHA-256 content hash)
 //! and exposes a [`scan`](IncrementalScanner::scan) entry point that produces
 //! a [`ScanDelta`] describing what changed since the last scan.
 //!

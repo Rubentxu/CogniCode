@@ -25,8 +25,6 @@
 //! Reuse by type (R-B4-W5): `IncrementalAnalysis` wraps the B4.W1 /
 //! B4.W2 / B4.W3 types without inventing a parallel shape.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +32,7 @@ use uuid::Uuid;
 
 use crate::architecture::diagnostic::ArchitectureDiagnostic;
 use crate::domain::findings::Finding;
+use crate::domain::findings::digest::DigestStream;
 
 use super::apply::ApplyOutcome;
 use super::plan::RefactorPlan;
@@ -269,12 +268,15 @@ pub fn build_revalidation_plan(plan: &RefactorPlan, outcome: &ApplyOutcome) -> R
 /// API, does NOT execute arbitrary commands. A finding or comment
 /// from the repo is data.
 pub fn run_revalidation(rp: &RevalidationPlan, workspace_root: &Path) -> RevalidationReport {
-    let mut hasher = DefaultHasher::new();
-    rp.plan_id.hash(&mut hasher);
+    // The digest travels in the report, so it is a function of the plan
+    // and of nothing else: the plan id, then each changed path, every
+    // piece closed by a NUL so two lists cannot concatenate into one.
+    let mut stream = DigestStream::new();
+    stream.update(rp.plan_id.as_bytes()).update(b"\0");
     for p in &rp.what_changed {
-        p.hash(&mut hasher);
+        stream.update(p.to_string_lossy().as_bytes()).update(b"\0");
     }
-    let plan_digest = format!("{:016x}", hasher.finish());
+    let plan_digest = stream.finish_short();
 
     // El extractor sobre `what_changed` no esta cableado todavia: el
     // parametro se reserva para el, y el informe lo dice en vez de

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Ratchets over the production sources: file size, public-type homonyms and the
-CR-06 allowlist.
+"""Ratchets over the production sources: file size, public-type homonyms, the
+CR-06 allowlist and the one content digest.
 
-This file holds two families of ratchet that share one way of working: each
+This file holds three families of ratchet that share one way of working: each
 compares HEAD with the PR's base commit, so there is no number in this file to
 raise, and each fails closed when the base cannot be resolved. They share
 `git`, `check`, `failures` and `resolve_base`; each family keeps its own
-measurement (`SIZE` and `CR06`) and its own `setup_*` function, and `setup()`
-runs both.
+measurement (`SIZE`, `CR06` and `DIGEST`) and its own `setup_*` function, and
+`setup()` runs all of them.
 
 # Part I -- file size and public-type homonyms
 
@@ -96,6 +96,27 @@ empty today, so every pull request that grows the production allowlist is
 expected to fail. The list is named rather than counted on purpose: a count
 is a ceiling that any later pull request can spend without saying what it
 spent it on, and a pair only authorises the debt it names.
+
+# Part III -- one content digest
+
+`domain::findings::digest` owns the digest of content: SHA-256, one function
+and one stream type. A second hasher in production is a second source of
+truth, and the two meet the first time a digest leaves the process (a cursor,
+a plan, a token) or is compared with another one: `DefaultHasher` is not
+stable between Rust releases, and a manifest written with BLAKE3 was never
+fresh for a check that read SHA-256.
+
+A production file may not use `DefaultHasher`, `RandomState` or `blake3` more times than it
+did at the base commit, and the owner itself is the only place a hasher is
+chosen. Comments are blanked before counting, so a line that explains why a
+hasher was retired is not a use of it; code after the first column-0
+`#[cfg(test)]` is not production. A hash that never leaves the process and is
+not a digest of content (the FNV-1a of the per-file graph cache) is not
+covered; neither are the hand-rolled FNV-1a digests of the evidence
+subsystems (`portable_execution::paths::content_digest`, the self-hosting
+baseline), which are stable and deterministic and carry their `fnv64:` prefix;
+and neither is `Sha256` itself: the owner decides the algorithm, the
+ratchet only stops a second one from coming back.
 
 ## Resolution of the base commit
 
@@ -389,7 +410,6 @@ APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
     ("application/services/analysis_service.rs", "infrastructure::walk_policy::"),
     ("application/services/analyze.rs", "infrastructure::graph::per_file_graph::"),
     ("application/services/refactor_service.rs", "infrastructure::walk_policy::"),
-    ("application/workspace_session.rs", "infrastructure::walk_policy::"),
 }
 
 # An inventory entry is a call to the local `ex(...)` helper that opens on its
@@ -965,6 +985,109 @@ def setup_cr06() -> None:
     """
     CR06.resolve()
 
+# --- Part III: one content digest ------------------------------------------------
+
+DIGEST_OWNER = f"{CORE_SRC}/domain/findings/digest.rs"
+COMPETING_HASHER = re.compile(r"\bDefaultHasher\b|\bRandomState\b|\bblake3\b")
+
+
+def competing_hasher_uses(text: str) -> int:
+    """Uses of a hasher other than the owner's in the production half of `text`.
+
+    Production is what precedes the first column-0 `#[cfg(test)]`. Comments are
+    blanked first (with the one scanner of the repo), so documentation that
+    names a retired hasher is not a use of it.
+    """
+    lines = text.split("\n")
+    production = "\n".join(lines[: production_lines(text)])
+    return len(COMPETING_HASHER.findall(comment_scan.strip_rust_comments(production)))
+
+
+class DigestMeasure:
+    base: str | None = None
+    head: dict[str, int] = {}
+    base_counts: dict[str, int] = {}
+    files: int = 0
+
+    def resolve(self) -> None:
+        self.base = resolve_base()
+        for rel in measured_files():
+            path = REPO_ROOT / rel
+            if rel == DIGEST_OWNER or not path.is_file():
+                continue
+            self.files += 1
+            count = competing_hasher_uses(path.read_text(encoding="utf-8", errors="replace"))
+            if count:
+                self.head[rel] = count
+        if self.base:
+            moved = parse_renames(
+                git("diff", "-M", "--name-status", self.base, "--", "crates") or ""
+            )
+            for rel in self.head:
+                old = read_at(self.base, moved.get(rel, rel))
+                self.base_counts[rel] = 0 if old is None else competing_hasher_uses(old)
+
+
+DIGEST = DigestMeasure()
+
+
+def setup_digest() -> None:
+    """Resolve the base and count the competing hashers before any check reads them."""
+    DIGEST.resolve()
+
+
+def test_a_competing_hasher_is_counted_in_production_only() -> None:
+    owned = "use std::hash::DefaultHasher;\nfn f() { let _ = DefaultHasher::new(); }\n"
+    check(competing_hasher_uses(owned) == 2, "counts the import and the use")
+    check(competing_hasher_uses("fn f() { blake3::hash(b\"x\"); }\n") == 1, "counts blake3::")
+    check(competing_hasher_uses("use blake3::{Hasher, hash};\n") == 1, "counts a braced blake3 import")
+    check(competing_hasher_uses("use std::hash::RandomState;\n") == 1, "counts RandomState")
+    check(
+        competing_hasher_uses("/// DefaultHasher was retired\n// blake3::hash too\nfn f() {}\n") == 0,
+        "a comment that names a retired hasher is not a use",
+    )
+    check(
+        competing_hasher_uses("fn f() {}\n#[cfg(test)]\nmod t { use std::hash::DefaultHasher; }\n") == 0,
+        "test code is not production",
+    )
+    check(
+        competing_hasher_uses("fn f() {}\n    #[cfg(test)]\nuse std::hash::DefaultHasher;\n") == 1,
+        "an indented cfg(test) is not a module boundary",
+    )
+    check(competing_hasher_uses("fn f() { Sha256::new(); }\n") == 0, "Sha256 is not a second hasher")
+
+
+def test_the_digest_owner_is_where_the_ratchet_expects_it() -> None:
+    owner = REPO_ROOT / DIGEST_OWNER
+    check(owner.is_file(), f"{DIGEST_OWNER} does not exist: the ratchet would exempt nothing and name no owner")
+    if owner.is_file():
+        text = owner.read_text(encoding="utf-8", errors="replace")
+        check("pub fn sha256_hex" in text and "pub struct DigestStream" in text,
+              f"{DIGEST_OWNER} no longer exports the digest function and stream")
+
+
+def test_digest_scan_found_sources() -> None:
+    check(DIGEST.files > 100, f"only {DIGEST.files} sources scanned; the glob is vacuous")
+
+
+def test_no_file_gained_a_second_hasher() -> None:
+    check(
+        DIGEST.base is not None,
+        "cannot resolve a base commit to compare against. Set GITHUB_BASE_SHA, or "
+        "fetch origin/main. This fails instead of passing vacuously.",
+    )
+    if not DIGEST.base:
+        return
+    for rel, count in sorted(DIGEST.head.items()):
+        before = DIGEST.base_counts.get(rel, 0)
+        check(
+            count <= before,
+            f"{rel}: {count} production use(s) of DefaultHasher/blake3:: "
+            f"({before} at the base {DIGEST.base[:12]}). A content digest is "
+            f"`{DIGEST_OWNER}`: use `sha256_hex`, `sha256_short` or `DigestStream`.",
+        )
+
+
 def _selftest() -> int:
     """strip_rust_comments must not treat comment syntax inside a literal.
 
@@ -997,14 +1120,15 @@ def _selftest() -> int:
 
 
 def setup() -> None:
-    """Take both measurements before any check reads them.
+    """Take every measurement before any check reads them.
 
     The contract runner imports this module and calls each `test_` function
-    directly, calling `setup()` first when the module defines it, so both
+    directly, calling `setup()` first when the module defines it, so all
     families are resolved here rather than in `main()`.
     """
     setup_size_and_homonyms()
     setup_cr06()
+    setup_digest()
 
 
 def main() -> int:
@@ -1020,6 +1144,11 @@ def main() -> int:
     base = (SIZE.base or "?")[:12]
     print(f"file-size ratchet: {len(SIZE.oversize)} of {len(SIZE.head)} sources over {LIMIT} production lines (base {base})")
     print(f"homonym ratchet: {homonyms} public names declared more than once (base {base})")
+    print(
+        f"digest ratchet: {sum(DIGEST.head.values())} production use(s) of a hasher other than "
+        f"the owner's in {len(DIGEST.head)} file(s) (base {base}, "
+        f"{sum(DIGEST.base_counts.values())} in the same files)"
+    )
     if CR06.head_entries:
         print(
             f"CR-06 production debt: {len(CR06.base_production)} @ "
@@ -1046,6 +1175,7 @@ def main() -> int:
               "the smaller number with nothing to edit here.")
 
     print("PASS — no production file crossed the limit or grew past its base size, and no public type name became more ambiguous")
+    print("PASS — no production file gained a second content hasher next to the digest owner")
     print(
         "PASS — the CR-06 production allowlist did not grow against the base "
         "commit, the cfg(test) guards were not counted as debt, and this "

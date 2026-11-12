@@ -33,25 +33,23 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::hash::{DefaultHasher, Hash, Hasher};
+
+use crate::domain::findings::digest::sha256_short;
 
 const CURSOR_VERSION: u32 = 1;
 
-/// Hash a string to a 16-hex-char short form. Deterministic
-/// (SipHash-1-3 via `DefaultHasher`), no allocation, no external
-/// dependency. Collisions are not a security property here —
-/// the cursor is integrity-tag, not identifier. A collision
-/// would be caught as a same-context match, which is the right
-/// answer (the cursor is honestly compatible).
+/// Hash a string to a 16-hex-char short form: the first 8 bytes of its
+/// SHA-256.
+///
+/// The cursor leaves the process and comes back in a later request, from
+/// a later build of the server, so the tag must be a function of the
+/// bytes and of nothing else. The standard library's hasher promises no
+/// such thing across releases; the digest owner does. Collisions are not
+/// a security property here — the cursor is integrity-tag, not
+/// identifier. A collision would be caught as a same-context match,
+/// which is the right answer (the cursor is honestly compatible).
 pub(crate) fn short_hash(s: &str) -> String {
-    let mut h = DefaultHasher::new();
-    s.hash(&mut h);
-    let bytes = h.finish().to_le_bytes();
-    let mut out = String::with_capacity(16);
-    for b in &bytes[..8] {
-        out.push_str(&format!("{b:02x}"));
-    }
-    out
+    sha256_short(s.as_bytes())
 }
 
 /// The context the cursor is anchored to. Both fields are
@@ -281,6 +279,16 @@ fn payload_tag(tag: &str, payload: &Value) -> String {
 
 #[cfg(test)]
 mod unit_tests {
+    /// The tag a cursor carries is the first 8 bytes of the SHA-256 of the
+    /// text, as hex. A cursor handed out by one build is read by the next:
+    /// the vector is the promise, and a hasher that is not a function of
+    /// the bytes alone breaks it.
+    #[test]
+    fn the_context_tag_is_a_fixed_vector() {
+        assert_eq!(short_hash("abc"), "ba7816bf8f01cfea");
+        assert_eq!(short_hash(""), "e3b0c44298fc1c14");
+    }
+
     use super::*;
 
     #[test]

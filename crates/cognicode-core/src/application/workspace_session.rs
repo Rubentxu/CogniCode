@@ -38,8 +38,6 @@ use crate::domain::value_objects::MermaidFormat;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 #[cfg(feature = "persistence")]
-use crate::domain::value_objects::file_time::measured_seconds;
-#[cfg(feature = "persistence")]
 use crate::domain::value_objects::symbol_delta::{SymbolCount, symbol_delta};
 use crate::domain::value_objects::{published_column, published_line};
 
@@ -364,9 +362,6 @@ impl WorkspaceSession {
     /// Save current graph to persistence store.
     #[cfg(feature = "persistence")]
     pub async fn save_to_store(&self) -> WorkspaceResult<()> {
-        use crate::domain::value_objects::Language;
-        use crate::domain::value_objects::file_manifest::FileManifest;
-
         let graph = self
             .held_graph()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("No graph to save".to_string()))?;
@@ -381,46 +376,17 @@ impl WorkspaceSession {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to save graph: {}", e))
         })?;
 
-        // Build and save a manifest for the current state
-        let walk_filter = crate::domain::value_objects::WalkFilter::default();
-
-        let files: Vec<_> =
-            crate::infrastructure::walk_policy::contained_ignore_walk(&self.workspace_root)
-                .hidden(true)
-                .git_ignore(true)
-                .git_exclude(true)
-                .build()
-                .filter_map(|e| e.ok())
-                .filter(|e| !walk_filter.matches_any_component(e.path(), &self.workspace_root))
-                .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-                .filter_map(|e| {
-                    let path = e.path();
-                    let language = Language::from_extension(path.extension());
-                    language?;
-                    let content = std::fs::read_to_string(path).ok()?;
-                    let content_hash = blake3::hash(content.as_bytes()).to_string();
-                    // La fecha que el sistema de ficheros publica, o ninguna
-                    // si no la publica. Un `None` no es la epoca: es la
-                    // ausencia de una medida.
-                    let mtime = measured_seconds(
-                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok()),
-                    );
-                    let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
-                    // Count symbols in this file from the current graph
-                    let symbol_count = graph
-                        .symbols()
-                        .filter(|s| {
-                            s.location()
-                                .file()
-                                .ends_with(relative_path.to_string_lossy().as_ref())
-                        })
-                        .count();
-                    Some((relative_path, content_hash, mtime, symbol_count))
-                })
-                .collect();
-
-        let mut manifest = FileManifest::new(self.workspace_root.clone());
-        manifest.update_entries(&files);
+        // The manifest of the tree as the graph builder walks it, with the
+        // digest and the clock the snapshot check reads. Two writers that
+        // walk, hash or date a file differently write manifests the other
+        // one declares stale.
+        let tree = self.analysis.tree_state(&self.workspace_root);
+        let mut manifest =
+            crate::application::graph_snapshot::build_manifest(&self.workspace_root, &tree.files);
+        let counts = graph.file_symbol_counts();
+        for (relative_path, entry) in manifest.entries.iter_mut() {
+            entry.symbol_count = counts.for_file(relative_path);
+        }
 
         store.save_manifest(&manifest).map_err(|e| {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e))
@@ -433,7 +399,6 @@ impl WorkspaceSession {
     /// and re-parses only those files, updating the graph incrementally.
     #[cfg(feature = "persistence")]
     pub async fn incremental_reindex(&self) -> WorkspaceResult<IncrementalResult> {
-        use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
         use std::collections::HashSet;
 
@@ -453,42 +418,23 @@ impl WorkspaceSession {
             })?
             .unwrap_or_else(|| FileManifest::new(self.workspace_root.clone()));
 
-        // Scan current files and compute hashes
-        let walk_filter = crate::domain::value_objects::WalkFilter::default();
-
-        let current_files: Vec<_> =
-            crate::infrastructure::walk_policy::contained_ignore_walk(&self.workspace_root)
-                .hidden(true)
-                .git_ignore(true)
-                .git_exclude(true)
-                .build()
-                .filter_map(|e| e.ok())
-                .filter(|e| !walk_filter.matches_any_component(e.path(), &self.workspace_root))
-                .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-                .filter_map(|e| {
-                    let path = e.path();
-                    let language = Language::from_extension(path.extension());
-                    language?;
-                    let content = std::fs::read_to_string(path).ok()?;
-                    let content_hash = blake3::hash(content.as_bytes()).to_string();
-                    // La fecha que el sistema de ficheros publica, o ninguna
-                    // si no la publica. Un `None` no es la epoca: es la
-                    // ausencia de una medida.
-                    let mtime = measured_seconds(
-                        std::fs::metadata(path).ok().and_then(|m| m.modified().ok()),
-                    );
-                    let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
-                    Some((relative_path, content_hash, mtime, content))
-                })
-                .collect();
+        // The tree as the graph builder walks it, hashed and dated the way
+        // the snapshot check reads it.
+        let tree = self.analysis.tree_state(&self.workspace_root);
+        let current =
+            crate::application::graph_snapshot::build_manifest(&self.workspace_root, &tree.files);
+        let mut current_files: Vec<(PathBuf, String, Option<i64>)> = current
+            .entries
+            .iter()
+            .map(|(path, entry)| (path.clone(), entry.content_hash.clone(), entry.mtime))
+            .collect();
+        // The manifest is a map; what is done with its files below is done
+        // in the same order on every run.
+        current_files.sort();
 
         // Detect changes
-        let file_tuples: Vec<_> = current_files
-            .iter()
-            .map(|(p, h, t, _)| (p.clone(), h.clone(), *t))
-            .collect();
         let (new_files, modified_files, deleted_files) =
-            existing_manifest.detect_changes(&file_tuples);
+            existing_manifest.detect_changes(&current_files);
 
         // Build sets for quick lookup
         let new_set: HashSet<PathBuf> = new_files.iter().cloned().collect();
@@ -546,13 +492,13 @@ impl WorkspaceSession {
         result.graph_updated = true;
 
         // Update manifest with new/modified file info — use the NEW graph for symbol counts
+        let new_counts = new_graph.file_symbol_counts();
         let updated_entries: Vec<_> = current_files
             .iter()
-            .filter(|(p, _, _, _)| new_set.contains(p) || modified_set.contains(p))
-            .map(|(p, h, t, _)| {
+            .filter(|(p, _, _)| new_set.contains(p) || modified_set.contains(p))
+            .map(|(p, h, t)| {
                 // Count symbols in this file from the NEW (rebuilt) graph
-                let symbol_count = new_graph.symbols_for_file(p);
-                (p.clone(), h.clone(), *t, symbol_count)
+                (p.clone(), h.clone(), *t, new_counts.for_file(p))
             })
             .collect();
 
@@ -2865,6 +2811,50 @@ pub struct PublicStruct {}
         assert!(
             session.graph_store.read().await.is_some(),
             "a store set while the lock was contended must still be applied"
+        );
+    }
+
+    /// The manifest the session writes is read by the freshness check of the
+    /// snapshot. Two writers that disagree about the digest or about the unit
+    /// of the clock make every file look changed, and a snapshot nobody has
+    /// touched is thrown away.
+    #[cfg(feature = "persistence")]
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_manifest_saved_by_the_session_is_fresh_for_the_snapshot_check() {
+        use crate::application::graph_snapshot::{content_matches_manifest, is_manifest_stale};
+        use crate::infrastructure::persistence::InMemoryGraphStore;
+        use std::sync::Arc;
+
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("one.rs"), "pub fn one() {}\n").unwrap();
+        std::fs::write(temp_dir.path().join("two.rs"), "pub fn two() {}\n").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        session
+            .build_lightweight_index("lightweight")
+            .await
+            .unwrap();
+        let store = Arc::new(InMemoryGraphStore::new());
+        session.set_graph_store(store.clone()).await;
+        session.save_to_store().await.unwrap();
+
+        let manifest = store.load_manifest().unwrap().unwrap();
+        assert_eq!(manifest.entries.len(), 2, "both sources are recorded");
+
+        for rel in ["one.rs", "two.rs"] {
+            assert!(
+                content_matches_manifest(
+                    &manifest,
+                    std::path::Path::new(rel),
+                    &temp_dir.path().join(rel)
+                ),
+                "{rel}: the digest the session wrote must be the one the snapshot compares"
+            );
+        }
+        let tree = session.analysis.tree_state(temp_dir.path());
+        assert!(
+            !is_manifest_stale(&manifest, temp_dir.path(), &tree.files),
+            "nothing changed on disk, so the snapshot check must call the manifest fresh"
         );
     }
 

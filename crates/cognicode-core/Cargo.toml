@@ -29,7 +29,7 @@ exclude = [
 # persistence backend (e29-7 full postgres removal); the domain ports are
 # unconditionally available and adapters implement them against lbug.
 default = ["persistence"]
-persistence = ["dep:blake3"]
+persistence = []
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
 # and the docs-source adapter (`SourceExtractor`, `DocsExtractor`,
@@ -125,7 +125,6 @@ schemars.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
 bincode = { workspace = true, features = ["serde"] }
-blake3 = { workspace = true, optional = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 ciborium = { workspace = true }

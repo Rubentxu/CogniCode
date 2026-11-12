@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::symbol::Symbol;
 use crate::domain::events::GraphEvent;
@@ -63,6 +63,26 @@ impl MermaidOptions {
     /// know that a theme is what turns the source into a drawing.
     pub fn effective_format(&self) -> MermaidFormat {
         MermaidFormat::resolve(self.format, self.theme.is_some())
+    }
+}
+
+/// The symbol count of every file of a graph, measured once.
+///
+/// Built by [`CallGraph::file_symbol_counts`]. A file is looked up the way
+/// [`CallGraph::symbols_for_file`] matches it: by path suffix, component by
+/// component, so a path relative to the workspace root finds the symbols
+/// the graph stored under the absolute path.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileSymbolCounts {
+    by_suffix: HashMap<PathBuf, usize>,
+}
+
+impl FileSymbolCounts {
+    /// The number of symbols the graph holds for `file`; zero when none.
+    pub fn for_file(&self, file: &Path) -> usize {
+        // Normalise the way `Path::ends_with` does: by components.
+        let key: PathBuf = file.components().collect();
+        self.by_suffix.get(&key).copied().unwrap_or(0)
     }
 }
 
@@ -280,6 +300,32 @@ impl CallGraph {
         } else {
             SymbolCount::Measured(self.symbols_for_file(file))
         }
+    }
+
+    /// The symbol count of every file, in one pass over the symbols.
+    ///
+    /// Asking [`CallGraph::symbols_for_file`] once per file walks every
+    /// symbol once per file: files × symbols. A caller that needs the
+    /// count of many files asks here instead, and the answer to each file
+    /// is the same number `symbols_for_file` gives.
+    pub fn file_symbol_counts(&self) -> FileSymbolCounts {
+        let mut per_stored_file: HashMap<&str, usize> = HashMap::new();
+        for symbol in self.symbols() {
+            *per_stored_file.entry(symbol.location().file()).or_default() += 1;
+        }
+
+        // A path matches every stored path that ends with it, component by
+        // component. Every suffix of a stored path is therefore a key that
+        // counts that path's symbols, and the lookup is a single probe.
+        let mut by_suffix: HashMap<PathBuf, usize> = HashMap::new();
+        for (stored, count) in per_stored_file {
+            let components: Vec<_> = Path::new(stored).components().collect();
+            for start in 0..components.len() {
+                let suffix: PathBuf = components[start..].iter().collect();
+                *by_suffix.entry(suffix).or_default() += count;
+            }
+        }
+        FileSymbolCounts { by_suffix }
     }
 
     /// Returns the number of edges in the graph
@@ -1421,6 +1467,56 @@ fn mermaid_edge_label(dep_type: &DependencyType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The count of every file, measured in one pass, is the number the
+    /// per-file question gives — for a path relative to the root, for the
+    /// stored absolute path, for a name that is the tail of two files and
+    /// for a name that only ends with the same letters.
+    #[test]
+    fn the_counts_of_all_files_match_the_count_of_each_file() {
+        let mut graph = CallGraph::new();
+        let stored = [
+            ("/w/a/mod.rs", 3),
+            ("/w/b/mod.rs", 2),
+            ("/w/src/bar.rs", 4),
+            ("/w/src/r.rs", 1),
+        ];
+        for (file, count) in stored {
+            for i in 0..count {
+                graph.add_symbol(Symbol::new(
+                    format!("sym{i}"),
+                    SymbolKind::Function,
+                    Location::new(file, (i + 1) as u32, 1),
+                ));
+            }
+        }
+
+        let counts = graph.file_symbol_counts();
+        for query in [
+            "mod.rs",
+            "a/mod.rs",
+            "b/mod.rs",
+            "xa/mod.rs",
+            "src/bar.rs",
+            "bar.rs",
+            "r.rs",
+            "src/r.rs",
+            "/w/src/bar.rs",
+            "missing.rs",
+        ] {
+            assert_eq!(
+                counts.for_file(Path::new(query)),
+                graph.symbols_for_file(Path::new(query)),
+                "the count of {query} must not depend on how it is asked"
+            );
+        }
+        assert_eq!(counts.for_file(Path::new("mod.rs")), 5);
+        assert_eq!(
+            counts.for_file(Path::new("r.rs")),
+            1,
+            "`r.rs` is a file name, not the tail of `bar.rs`"
+        );
+    }
 
     /// UAT-U10 finding (JOURNAL §88): roots()/leaves() iterated a HashMap,
     /// so CLI `graph entry-points` / `graph leaf-functions` printed the

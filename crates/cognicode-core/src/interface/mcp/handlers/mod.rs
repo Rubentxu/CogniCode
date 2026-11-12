@@ -3582,10 +3582,11 @@ pub mod findings_handlers;
 mod tests {
     use super::*;
     use crate::application::graph_snapshot::{
-        hex_digest, is_manifest_stale, load_durable_snapshot, load_durable_snapshot_capped,
+        is_manifest_stale, load_durable_snapshot, load_durable_snapshot_capped,
         save_durable_snapshot, tmp_path_for,
     };
     use crate::application::services::analysis_service::TreeFile;
+    use crate::domain::findings::digest::sha256_hex;
     use crate::domain::value_objects::{MermaidFormat, SNAPSHOT_SCHEMA, SnapshotKey};
 
     /// Los ficheros del árbol TAL COMO ESTÁ AHORA.
@@ -4159,7 +4160,7 @@ mod tests {
         let mut manifest = FileManifest::new(dir.path().to_path_buf());
         for i in 0..N {
             let rel = PathBuf::from(format!("src/module_{i:05}/file.rs"));
-            // 64-char hex hash (32 bytes hex-encoded, Blake3 output style).
+            // 64-char hex hash (32 bytes hex-encoded, SHA-256 output style).
             let hash = format!("{:064x}", i as u64);
             manifest.entries.insert(
                 rel,
@@ -7657,7 +7658,6 @@ mod tests {
         #[tokio::test]
         async fn state07_modified_bytes_with_preserved_mtime_invalidates_snapshot() {
             use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-            use sha2::{Digest, Sha256};
             use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
             let dir = tempfile::tempdir().unwrap();
@@ -7682,7 +7682,7 @@ mod tests {
             // content_hash matching the ORIGINAL bytes.
             let mut manifest = FileManifest::new(project.to_path_buf());
             let rel = std::path::PathBuf::from("src/sample.rs");
-            let original_hash = hex_digest(&Sha256::digest(b"fn alpha() {}\n"));
+            let original_hash = sha256_hex(b"fn alpha() {}\n");
             manifest.entries.insert(
                 rel.clone(),
                 FileEntry {
@@ -7733,7 +7733,6 @@ mod tests {
         #[tokio::test]
         async fn state08_unreadable_source_file_invalidates_snapshot() {
             use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-            use sha2::{Digest, Sha256};
 
             let dir = tempfile::tempdir().unwrap();
             let project = dir.path();
@@ -7744,7 +7743,7 @@ mod tests {
             // Build a manifest matching the file as it stands.
             let mut manifest = FileManifest::new(project.to_path_buf());
             let rel = std::path::PathBuf::from("src/locked.rs");
-            let hash = hex_digest(&Sha256::digest(b"fn locked() {}\n"));
+            let hash = sha256_hex(b"fn locked() {}\n");
             let mtime = std::fs::metadata(&file)
                 .unwrap()
                 .modified()
@@ -7794,7 +7793,6 @@ mod tests {
         #[tokio::test]
         async fn state09_new_file_added_to_project_invalidates_snapshot() {
             use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-            use sha2::{Digest, Sha256};
 
             let dir = tempfile::tempdir().unwrap();
             let project = dir.path();
@@ -7803,7 +7801,7 @@ mod tests {
 
             let mut manifest = FileManifest::new(project.to_path_buf());
             let rel_a = std::path::PathBuf::from("src/a.rs");
-            let hash_a = hex_digest(&Sha256::digest(b"fn a() {}\n"));
+            let hash_a = sha256_hex(b"fn a() {}\n");
             let mtime_a = std::fs::metadata(project.join("src").join("a.rs"))
                 .unwrap()
                 .modified()
@@ -7835,7 +7833,6 @@ mod tests {
         #[tokio::test]
         async fn state10_renamed_file_invalidates_snapshot() {
             use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-            use sha2::{Digest, Sha256};
 
             let dir = tempfile::tempdir().unwrap();
             let project = dir.path();
@@ -7845,7 +7842,7 @@ mod tests {
 
             let mut manifest = FileManifest::new(project.to_path_buf());
             let rel = std::path::PathBuf::from("src/a.rs");
-            let hash = hex_digest(&Sha256::digest(b"fn a() {}\n"));
+            let hash = sha256_hex(b"fn a() {}\n");
             let mtime = std::fs::metadata(&original)
                 .unwrap()
                 .modified()

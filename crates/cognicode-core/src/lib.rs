@@ -2,7 +2,7 @@
 
 // B4.W2 — architecture as diagnostic (read-only surface, no gate authority).
 pub mod architecture;
-// B3.W4 — análisis incremental fiable (BLAKE3 + CacheStore por sesión).
+// B3.W4 — análisis incremental fiable (SHA-256 + CacheStore por sesión).
 pub mod application;
 pub mod assurance_export;
 pub mod domain;
