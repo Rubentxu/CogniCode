@@ -11,6 +11,11 @@ pub mod impact;
 pub mod incremental;
 pub mod infrastructure;
 pub mod interface;
+// TASK-61/62 — las reglas de path del workspace: la única
+// implementación de la frontera, debajo de la capa de interfaz para
+// que el MCP y el pipeline de refactor pidan el mismo juicio
+// (TASK-219).
+pub(crate) mod paths;
 pub mod product;
 // B5 — Safe refactoring & authorized changes (v0.101.15).
 //   B5.W1: `refactor::plan` (id, workspace_identity, basis,

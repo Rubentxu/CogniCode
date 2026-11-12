@@ -39,8 +39,11 @@
 use chrono::{DateTime, Utc};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+use crate::application::ports::PathPolicyError;
+use crate::paths::PathRules;
 
 use super::plan::{PlannedEdit, RefactorPlan};
 
@@ -360,6 +363,31 @@ fn restore_prior_state(rec: &AppliedFile) {
     }
 }
 
+/// El rechazo de las reglas del workspace, en las palabras del apply.
+/// La hoja symlink no se escribe a traves (AAT-B5-02); el escape del
+/// workspace y el traversal son `TraversalEscape`, la misma respuesta
+/// que daban las guardas textuales que sustituye esto; lo que no se
+/// pudo ni inspeccionar es un error de I/O honesto.
+fn apply_policy_error(path: &Path, error: PathPolicyError) -> ApplyError {
+    match error {
+        PathPolicyError::SymlinkDetected { .. } => ApplyError::SymlinkEscape {
+            path: path.to_path_buf(),
+        },
+        PathPolicyError::PathOutsideWorkspace
+        | PathPolicyError::PathTraversalAttempt { .. }
+        | PathPolicyError::PathTooDeep { .. }
+        | PathPolicyError::InvalidPathCharacters { .. } => ApplyError::TraversalEscape {
+            path: path.to_path_buf(),
+        },
+        PathPolicyError::PathNotAccessible { .. } => ApplyError::IoError {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(
+                "path not accessible (rejected by the workspace path rules)",
+            ),
+        },
+    }
+}
+
 /// Apply una edición de un solo archivo con staging+fsync+rename.
 ///
 /// Devuelve el path renombrado junto con los bytes que tenía ANTES
@@ -378,32 +406,15 @@ fn apply_one(
         });
     }
 
-    // (b) El path debe vivir dentro del workspace_root.
-    if !edit.file.starts_with(workspace_root) {
-        return Err(ApplyError::TraversalEscape {
-            path: edit.file.clone(),
-        });
-    }
-
-    // (c) El path NO debe contener segmentos `..` (defensa adicional).
-    if edit
-        .file
-        .components()
-        .any(|c| matches!(c, Component::ParentDir))
-    {
-        return Err(ApplyError::TraversalEscape {
-            path: edit.file.clone(),
-        });
-    }
-
-    // (d) Symlink directo al archivo destino (AAT-B5-02).
-    if let Ok(meta) = fs::symlink_metadata(&edit.file)
-        && meta.file_type().is_symlink()
-    {
-        return Err(ApplyError::SymlinkEscape {
-            path: edit.file.clone(),
-        });
-    }
+    // (b) Un solo juicio sobre el path: las reglas del workspace
+    //     (TASK-61/62) — traversal, hoja symlink y frontera canonica.
+    //     El `starts_with` textual que habia aqui dejaba colar un
+    //     directorio intermedio que fuera symlink y escapara del
+    //     workspace (TASK-219); canonicalizar es lo que lo ve.
+    PathRules::new()
+        .with_workspace(vec![workspace_root.to_path_buf()])
+        .validate_path(&edit.file)
+        .map_err(|e| apply_policy_error(&edit.file, e))?;
 
     // (e) Leer bytes actuales.
     let current_bytes = fs::read(&edit.file).map_err(|e| ApplyError::IoError {

@@ -442,3 +442,97 @@ fn apply_public_api_is_constructible() {
     assert_eq!(outcome.applied_files.len(), 0);
     assert!(!outcome.committed);
 }
+
+// ---------------------------------------------------------------------------
+// TASK-219 — la guarda del apply mira el último componente y compara con
+// `starts_with` sin canonicalizar: un directorio intermedio que es symlink
+// y escapa se cuela, y el apply escribe fuera del workspace.
+// ---------------------------------------------------------------------------
+
+/// AC #2 — un directorio intermedio symlink que escapa se rechaza.
+/// El workspace es `tmp/ws` y el objetivo vive en `tmp/outside`, FUERA
+/// de esa raíz: el escape es contra la frontera del workspace, no
+/// contra el tempdir del test.
+#[cfg(unix)]
+#[test]
+fn apply_refuses_an_intermediate_directory_that_is_a_symlink_out_of_the_workspace() {
+    let tmp = TempDir::new().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("evil.rs"), "hello evil\n").unwrap();
+
+    let escdir = ws.join("escdir");
+    std::os::unix::fs::symlink("../outside", &escdir).unwrap();
+
+    // Ruta absoluta, sin `..`, hoja regular: las guardas textuales de
+    // apply_one la dejan pasar hoy; la frontera canónica la ve.
+    let target = escdir.join("evil.rs");
+    let plan = RefactorPlan {
+        id: Uuid::new_v4(),
+        workspace_identity: ws.to_string_lossy().to_string(),
+        basis: AnalysisBasis::for_workspace(ws.clone()),
+        affected_files: vec![target.clone()],
+        edits: vec![PlannedEdit {
+            file: target.clone(),
+            byte_range: 6..10,
+            replacement: "safe".to_string(),
+            deterministic: true,
+        }],
+        preconditions: vec![],
+        risks: vec![],
+        created_at: Utc::now(),
+        digest: String::new(),
+    };
+    let expected_digest = compute_workspace_state_digest(&plan);
+    let token = fresh_token();
+
+    let res = apply(&plan, &expected_digest, &token, &ws);
+    assert!(
+        res.is_err(),
+        "an intermediate symlink that escapes must be refused, got {res:?}"
+    );
+    // Y nada se escribió a través del enlace.
+    assert_eq!(
+        fs::read_to_string(outside.join("evil.rs")).unwrap(),
+        "hello evil\n",
+        "the apply must not write through the escaping symlink"
+    );
+}
+
+/// AC #4 — el apply trata los symlinks igual que path_authorisation:
+/// toda hoja symlink se rechaza, también la que apunta adentro.
+#[cfg(unix)]
+#[test]
+fn apply_refuses_every_symlink_leaf_even_one_that_stays_inside() {
+    let tmp = TempDir::new().unwrap();
+    fs::write(tmp.path().join("real.rs"), "hello safe\n").unwrap();
+    let link = tmp.path().join("link.rs");
+    std::os::unix::fs::symlink("real.rs", &link).unwrap();
+
+    let plan = RefactorPlan {
+        id: Uuid::new_v4(),
+        workspace_identity: tmp.path().to_string_lossy().to_string(),
+        basis: AnalysisBasis::for_workspace(tmp.path().to_path_buf()),
+        affected_files: vec![link.clone()],
+        edits: vec![PlannedEdit {
+            file: link.clone(),
+            byte_range: 6..10,
+            replacement: "safe".to_string(),
+            deterministic: true,
+        }],
+        preconditions: vec![],
+        risks: vec![],
+        created_at: Utc::now(),
+        digest: String::new(),
+    };
+    let expected_digest = compute_workspace_state_digest(&plan);
+    let token = fresh_token();
+
+    let res = apply(&plan, &expected_digest, &token, tmp.path());
+    assert!(
+        matches!(res, Err(ApplyError::SymlinkEscape { .. })),
+        "a symlink leaf is refused even when its target stays inside, got {res:?}"
+    );
+}

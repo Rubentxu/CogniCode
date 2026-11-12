@@ -15,6 +15,7 @@
 // NOTE: This file should NOT be auto-formatted as it contains security-critical code.
 
 use crate::application::ports::{PathPolicy, PathPolicyError};
+use crate::paths::PathRules;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::fmt;
@@ -23,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::warn;
 
 /// Default maximum file size: 10MB
 const DEFAULT_MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
@@ -33,9 +34,6 @@ const DEFAULT_MAX_QUERY_LENGTH: usize = 1000;
 
 /// Default maximum results per query: 10000
 const DEFAULT_MAX_RESULTS: usize = 10000;
-
-/// Maximum path components to prevent deep nesting attacks
-const MAX_PATH_COMPONENTS: usize = 100;
 
 /// Security errors for input validation failures
 #[derive(Debug, Error, PartialEq)]
@@ -90,7 +88,7 @@ pub struct InputValidator {
     max_file_size: usize,
     max_results: usize,
     max_query_length: usize,
-    allowed_paths: Vec<PathBuf>,
+    rules: PathRules,
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -100,7 +98,7 @@ impl fmt::Debug for InputValidator {
             .field("max_file_size", &self.max_file_size)
             .field("max_results", &self.max_results)
             .field("max_query_length", &self.max_query_length)
-            .field("allowed_paths", &self.allowed_paths)
+            .field("allowed_paths", &self.rules.allowed_roots())
             .finish()
     }
 }
@@ -112,7 +110,7 @@ impl InputValidator {
             max_file_size: DEFAULT_MAX_FILE_SIZE,
             max_results: DEFAULT_MAX_RESULTS,
             max_query_length: DEFAULT_MAX_QUERY_LENGTH,
-            allowed_paths: Vec::new(),
+            rules: PathRules::new(),
             rate_limiter: Arc::new(RateLimiter::new(100, 60)),
         }
     }
@@ -123,24 +121,20 @@ impl InputValidator {
             max_file_size,
             max_results,
             max_query_length,
-            allowed_paths: Vec::new(),
+            rules: PathRules::new(),
             rate_limiter: Arc::new(RateLimiter::new(100, 60)),
         }
     }
 
     /// Sets the allowed workspace paths (canonicalizes each path for reliable comparison)
     pub fn with_workspace(mut self, paths: Vec<PathBuf>) -> Self {
-        self.allowed_paths = paths
-            .into_iter()
-            .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
-            .collect();
+        self.rules = PathRules::new().with_workspace(paths);
         self
     }
 
     /// Adds an allowed workspace path (canonicalized)
     pub fn add_allowed_path(&mut self, path: PathBuf) {
-        let canonical = std::fs::canonicalize(&path).unwrap_or(path);
-        self.allowed_paths.push(canonical);
+        self.rules.add_allowed_path(path);
     }
 
     /// M3.3: Replace the rate limiter with a stricter one (smaller
@@ -173,142 +167,16 @@ impl InputValidator {
     /// For true TOCTOU protection, the caller must perform the actual file operation
     /// atomically or use advisory locking.
 
-    /// Canonicalize a path that may not exist by walking up to the nearest existing ancestor.
-    /// Returns the canonical path by appending non-existent components to the canonicalized ancestor.
-    fn canonicalize_with_fallback(path: &std::path::Path) -> std::path::PathBuf {
-        let mut current = path.to_path_buf();
-        while let Some(parent) = current.parent() {
-            if parent.as_os_str().is_empty() {
-                break;
-            }
-            if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
-                // Found existing directory - append remaining path components
-                let remaining = path
-                    .strip_prefix(parent)
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| path.to_path_buf());
-                return canonical_parent.join(remaining);
-            }
-            current = parent.to_path_buf();
-        }
-        // No existing ancestor found - fallback to current directory
-        std::path::PathBuf::from(".")
-            .canonicalize()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-    }
-
     pub fn validate_file_path(&self, path: &str) -> Result<PathBuf, SecurityError> {
-        // Check for path traversal patterns (including bypass attempts)
-        if self.contains_path_traversal(path) {
-            warn!("Path traversal attempt detected: {}", path);
-            return Err(SecurityError::PathTraversalAttempt {
-                path: path.to_string(),
-            });
-        }
-
-        // Check for null bytes and other invalid control characters
-        // Control chars are ASCII 0-31, except tab (9), newline (10), CR (13)
-        for c in path.chars() {
-            if c == '\0' || (c.is_ascii_control() && c != '\t' && c != '\n' && c != '\r') {
-                return Err(SecurityError::InvalidPathCharacters {
-                    path: path.to_string(),
-                });
-            }
-        }
-
-        // Parse the path and resolve relative paths against workspace.
-        // If the path is relative and we have allowed_paths (workspace dirs),
-        // try joining with each workspace to find the file.
-        let path_buf = PathBuf::from(path);
-        let resolved = if path_buf.is_absolute() {
-            path_buf.clone()
-        } else if !self.allowed_paths.is_empty() {
-            // ALWAYS resolve relative paths against workspace dirs first
-            let mut resolved = path_buf.clone();
-            let mut found = false;
-            for ws in &self.allowed_paths {
-                let candidate = ws.join(&path_buf);
-                if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
-                    resolved = candidate;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                // Fallback: join with first workspace (file may not exist yet for write operations)
-                if let Some(first_ws) = self.allowed_paths.first() {
-                    resolved = first_ws.join(&path_buf);
-                }
-            }
-            resolved
-        } else {
-            path_buf.clone()
-        };
-
-        // Check path depth
-        let component_count = resolved.components().count();
-        if component_count > MAX_PATH_COMPONENTS {
-            return Err(SecurityError::PathTooDeep {
-                depth: component_count,
-                max: MAX_PATH_COMPONENTS,
-            });
-        }
-
-        // CRITICAL: Check for symlinks BEFORE canonicalization using symlink_metadata()
-        // (std::fs::metadata follows symlinks, so it CANNOT detect symlinks — must use symlink_metadata)
-        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
-            && metadata.file_type().is_symlink()
-        {
-            warn!("Symlink detected in path: {}", path);
-            return Err(SecurityError::SymlinkDetected {
-                path: path.to_string(),
-            });
-        }
-
-        // NOTE: We deliberately do NOT walk every parent component of `resolved`
-        // looking for symlinks. That walk is redundant with the canonical-form
-        // workspace boundary check below: any attacker-controlled parent symlink
-        // that escapes the workspace would cause the canonicalized target to
-        // fall outside `allowed_paths`, which the workspace boundary check
-        // already rejects. The parent-walk only added false positives for
-        // system-managed symlinks like `/home -> /var/home` (Fedora Silverblue),
-        // `/var -> /private/var` (macOS), `/tmp -> /private/tmp` (macOS) — none
-        // of which are attacker-controlled. See e93 / DEBT-SDDK-007.
-
-        // Try to canonicalize to resolve any symlinks and get absolute path
-        let canonical = match std::fs::canonicalize(&resolved) {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist yet - that's OK for some operations
-                // Walk up the directory tree until we find an existing directory
-                Self::canonicalize_with_fallback(&resolved)
-            }
-            Err(_) => {
-                return Err(SecurityError::PathNotAccessible {
-                    path: path.to_string(),
-                });
-            }
-        };
-
-        // If workspace paths are configured, verify the path is within workspace
-        if !self.allowed_paths.is_empty() {
-            let is_allowed = self
-                .allowed_paths
-                .iter()
-                .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
-
-            if !is_allowed {
-                debug!(
-                    "Path {} is not within allowed workspace: {:?}",
-                    canonical.display(),
-                    self.allowed_paths
-                );
-                return Err(SecurityError::PathOutsideWorkspace);
-            }
-        }
-
-        Ok(canonical)
+        // TASK-219 — the rules live in one implementation
+        // (`crate::paths`); this door only translates the refusal into
+        // this layer's error.
+        self.rules
+            .validate_file_path(path)
+            .map_err(security_error_from_policy)
     }
+
+    /// Validates a path for path traversal and workspace boundaries.
 
     /// Validates a path for path traversal and workspace boundaries.
     ///
@@ -324,118 +192,11 @@ impl InputValidator {
     /// # Arguments
     /// * `path` - The path to validate (can be relative or absolute)
     pub fn validate_path(&self, path: &Path) -> Result<(), SecurityError> {
-        let path_str = path.to_string_lossy();
-
-        // Check for path traversal patterns
-        if self.contains_path_traversal(&path_str) {
-            warn!("Path traversal attempt detected: {}", path_str);
-            return Err(SecurityError::PathTraversalAttempt {
-                path: path_str.to_string(),
-            });
-        }
-
-        // Check for null bytes
-        if path_str.contains('\0') {
-            return Err(SecurityError::InvalidPathCharacters {
-                path: path_str.to_string(),
-            });
-        }
-
-        // Parse the path and resolve relative paths against workspace.
-        let resolved = self.resolve_against_allowed(path);
-
-        // Check path depth
-        let component_count = resolved.components().count();
-        if component_count > MAX_PATH_COMPONENTS {
-            return Err(SecurityError::PathTooDeep {
-                depth: component_count,
-                max: MAX_PATH_COMPONENTS,
-            });
-        }
-
-        // CRITICAL: Check for symlinks BEFORE canonicalization using symlink_metadata()
-        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
-            && metadata.file_type().is_symlink()
-        {
-            warn!("Symlink detected in path: {}", path_str);
-            return Err(SecurityError::SymlinkDetected {
-                path: path_str.to_string(),
-            });
-        }
-
-        // NOTE: We deliberately do NOT walk every parent component of `resolved`
-        // looking for symlinks. See the matching comment in `validate_file_path`
-        // for the rationale (DEBT-SDDK-007 / e93). The canonical-form workspace
-        // boundary check below is the single authority on whether a path is safe.
-
-        // Canonicalize and verify workspace boundary
-        let canonical = match std::fs::canonicalize(&resolved) {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist - canonicalize the parent directory so the
-                // workspace boundary check below still applies. No need for a
-                // separate symlink check here: the canonicalize(parent) call
-                // already resolves any symlinks, and the workspace boundary
-                // check rejects any canonical target that escapes `allowed_paths`.
-                if let Some(parent) = resolved.parent() {
-                    match std::fs::canonicalize(parent) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            return Err(SecurityError::PathNotAccessible {
-                                path: path_str.to_string(),
-                            });
-                        }
-                    }
-                } else {
-                    return Err(SecurityError::PathNotAccessible {
-                        path: path_str.to_string(),
-                    });
-                }
-            }
-            Err(_) => {
-                return Err(SecurityError::PathNotAccessible {
-                    path: path_str.to_string(),
-                });
-            }
-        };
-
-        // Verify path is within workspace
-        if !self.allowed_paths.is_empty() {
-            let is_allowed = self
-                .allowed_paths
-                .iter()
-                .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
-
-            if !is_allowed {
-                debug!(
-                    "Path {} is not within allowed workspace: {:?}",
-                    canonical.display(),
-                    self.allowed_paths
-                );
-                return Err(SecurityError::PathOutsideWorkspace);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Resolves a path against the workspace roots.
-    ///
-    /// One resolution, shared by both phases of the judgment. A path that is
-    /// absolute is taken as it is; a relative one is taken against the first
-    /// workspace whose candidate already exists, and against the first
-    /// workspace when none of them does.
-    fn resolve_against_allowed(&self, path: &Path) -> PathBuf {
-        if path.is_absolute() || self.allowed_paths.is_empty() {
-            return path.to_path_buf();
-        }
-        for ws in &self.allowed_paths {
-            let candidate = ws.join(path);
-            if candidate.exists() || candidate.parent().is_some_and(|p| p.exists()) {
-                return candidate;
-            }
-        }
-        self.allowed_paths[0].join(path)
+        // TASK-219 — same rules, one implementation (`crate::paths`);
+        // this door only translates the refusal into this layer's error.
+        self.rules
+            .validate_path(path)
+            .map_err(security_error_from_policy)
     }
 
     /// Resolves the path against the workspace and says whether it stays
@@ -452,63 +213,11 @@ impl InputValidator {
     /// is not a second answer to the same question: it is the path this
     /// judgment was made about.
     pub fn resolve_for_creation(&self, path: &Path) -> Result<PathBuf, SecurityError> {
-        let path_str = path.to_string_lossy();
-
-        // The same lexical rules, in the same order as `validate_path`.
-        if self.contains_path_traversal(&path_str) {
-            warn!("Path traversal attempt detected: {}", path_str);
-            return Err(SecurityError::PathTraversalAttempt {
-                path: path_str.to_string(),
-            });
-        }
-        if path_str.contains('\0') {
-            return Err(SecurityError::InvalidPathCharacters {
-                path: path_str.to_string(),
-            });
-        }
-
-        let resolved = self.resolve_against_allowed(path);
-
-        let component_count = resolved.components().count();
-        if component_count > MAX_PATH_COMPONENTS {
-            return Err(SecurityError::PathTooDeep {
-                depth: component_count,
-                max: MAX_PATH_COMPONENTS,
-            });
-        }
-
-        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
-            && metadata.file_type().is_symlink()
-        {
-            warn!("Symlink detected in path: {}", path_str);
-            return Err(SecurityError::SymlinkDetected {
-                path: path_str.to_string(),
-            });
-        }
-
-        if !self.allowed_paths.is_empty() {
-            let existing = deepest_existing_ancestor(&resolved);
-            // A symlink is an ancestor too: `canonicalize` resolves it, so
-            // the boundary is judged on where it really points.
-            let canonical =
-                std::fs::canonicalize(&existing).map_err(|_| SecurityError::PathNotAccessible {
-                    path: path_str.to_string(),
-                })?;
-            let is_allowed = self
-                .allowed_paths
-                .iter()
-                .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
-            if !is_allowed {
-                debug!(
-                    "Path {} is not within allowed workspace: {:?}",
-                    canonical.display(),
-                    self.allowed_paths
-                );
-                return Err(SecurityError::PathOutsideWorkspace);
-            }
-        }
-
-        Ok(resolved)
+        // TASK-219 — same rules, one implementation (`crate::paths`);
+        // this door only translates the refusal into this layer's error.
+        self.rules
+            .resolve_for_creation(path)
+            .map_err(security_error_from_policy)
     }
 
     /// Validates file content size
@@ -627,118 +336,6 @@ impl InputValidator {
         client_ip_str.parse::<IpAddr>().ok()?;
 
         Some(client_ip_str.to_string())
-    }
-
-    /// Decode URL-encoded characters in a path string, recursively until no more encodings.
-    /// %2e -> . (dot), %2f -> / (slash), %252e -> %2e -> . (double decode)
-    fn decode_url_encoded(s: &str) -> String {
-        // Single decode pass
-        let decoded = Self::decode_url_encoded_once(s);
-        // If unchanged, no more encoding to decode
-        if decoded == s {
-            decoded
-        } else {
-            // Recursively decode until no more changes
-            Self::decode_url_encoded(&decoded)
-        }
-    }
-
-    /// Single-pass URL-decode of a path string.
-    fn decode_url_encoded_once(s: &str) -> String {
-        let mut result = String::with_capacity(s.len());
-        let mut chars = s.chars().peekable();
-
-        while let Some(c) = chars.next() {
-            if c == '%' {
-                let hex = chars.by_ref().take(2).collect::<String>();
-                if hex.len() == 2
-                    && let Ok(byte) = u8::from_str_radix(&hex, 16)
-                {
-                    result.push(byte as char);
-                    continue;
-                }
-                // Not a valid percent-encoded sequence, keep as-is
-                result.push('%');
-                result.push_str(&hex);
-            } else {
-                result.push(c);
-            }
-        }
-        result
-    }
-
-    /// Checks for path traversal patterns including bypass attempts
-    ///
-    /// Detects:
-    /// - Standard `..` patterns
-    /// - Backslash variants `..\` (Windows-style traversal)
-    /// - URL-encoded variants `%2e%2e`, `%2E%2E`
-    fn contains_path_traversal(&self, path: &str) -> bool {
-        // Normalize and check for common traversal patterns
-        let path_lower = path.to_lowercase();
-
-        // Check for standard traversal patterns
-        if path.contains("..") {
-            return true;
-        }
-
-        // Check for backslash traversal patterns (Windows-style bypass)
-        if path.contains("..\\") {
-            return true;
-        }
-
-        // Decode URL-encoded dots and check for traversal patterns.
-        // This catches patterns like .%2e/%2e. which decodes to ../..
-        // We decode all %XX sequences to check the actual path.
-        let decoded = Self::decode_url_encoded(path);
-        if decoded.contains("..") {
-            return true;
-        }
-
-        // Check for URL-encoded traversal patterns
-        // %2e%2e = .. (URL-encoded)
-        // %2E%2E = .. (mixed case URL-encoded)
-        if path_lower.contains("%2e%2e")
-            || path_lower.contains("%2e%2e%2f")
-            || path_lower.contains("%2e%2e%5c")
-            || path_lower.contains("%2e%2e/")
-            || path_lower.contains("%2e%2e\\")
-        {
-            return true;
-        }
-
-        // Check for mixed literal + URL-encoded dot patterns that form ..
-        // .%2e = literal dot + %2e (encoded dot) = ..
-        // %2e. = %2e (encoded dot) + literal dot = ..
-        if path_lower.contains(".%2e")
-            || path_lower.contains("%2e.")
-            || path_lower.contains(".%2e%2e")
-            || path_lower.contains("%2e%2e.")
-            || path_lower.contains(".%2e%2e%2f")
-            || path_lower.contains("%2e%2e%2f.")
-        {
-            return true;
-        }
-
-        // Check for tilde expansion attempts
-        if path.contains("~/") || path.contains("~\\") {
-            return true;
-        }
-
-        // Check for environment variable injection
-        if path.contains('$') || path.contains("${") {
-            return true;
-        }
-
-        // Check for double slash patterns that might bypass path normalization
-        if path.contains("//") && !path.starts_with("./") && !path.starts_with("../") {
-            // Allow relative paths starting with // but block absolute paths
-            if path.starts_with('/') {
-                return true;
-            }
-        }
-
-        false
     }
 }
 
@@ -1074,74 +671,44 @@ impl RateLimiter {
 // build, not a style nit.
 // ---------------------------------------------------------------------------
 
-/// The deepest ancestor of `path` that is already there.
-///
-/// The components above it are names that do not exist yet. They cannot
-/// hide an escape — a name stays in the directory it is written in — so the
-/// ancestor is the whole answer to "where would this land".
-///
-/// A symlink counts as being there, even a broken one: resolving it is how
-/// the boundary check finds out where it points, and a broken one cannot be
-/// resolved, which refuses the path instead of guessing.
-fn deepest_existing_ancestor(path: &Path) -> PathBuf {
-    let mut current = path.to_path_buf();
-    while std::fs::symlink_metadata(&current).is_err() && current.pop() {}
-    current
-}
-
-/// The path policy's error, with the error type changed owner.
-fn path_policy_error(error: SecurityError) -> PathPolicyError {
+/// The path rules' refusal in this layer's words. The judgment is
+/// `crate::paths`'s (TASK-219: one implementation, several doors); this
+/// door only renames the error, variant by variant, without changing
+/// what it says.
+fn security_error_from_policy(error: PathPolicyError) -> SecurityError {
     match error {
-        SecurityError::PathTraversalAttempt { path } => {
-            PathPolicyError::PathTraversalAttempt { path }
+        PathPolicyError::PathTraversalAttempt { path } => {
+            SecurityError::PathTraversalAttempt { path }
         }
-        SecurityError::PathNotAccessible { path } => PathPolicyError::PathNotAccessible { path },
-        SecurityError::PathOutsideWorkspace => PathPolicyError::PathOutsideWorkspace,
-        SecurityError::PathTooDeep { depth, max } => PathPolicyError::PathTooDeep { depth, max },
-        SecurityError::InvalidPathCharacters { path } => {
-            PathPolicyError::InvalidPathCharacters { path }
+        PathPolicyError::PathNotAccessible { path } => SecurityError::PathNotAccessible { path },
+        PathPolicyError::PathOutsideWorkspace => SecurityError::PathOutsideWorkspace,
+        PathPolicyError::PathTooDeep { depth, max } => SecurityError::PathTooDeep { depth, max },
+        PathPolicyError::InvalidPathCharacters { path } => {
+            SecurityError::InvalidPathCharacters { path }
         }
-        SecurityError::SymlinkDetected { path } => PathPolicyError::SymlinkDetected { path },
-        // Non-path policies (size/query/rate) are other validators'
-        // concerns; the path policy port never produces them.
-        SecurityError::FileTooLarge { size, max } => PathPolicyError::InvalidPathCharacters {
-            path: format!("rejected by policy: file too large ({size} > {max})"),
-        },
-        SecurityError::QueryTooLong { length, max } => PathPolicyError::InvalidPathCharacters {
-            path: format!("rejected by policy: query too long ({length} > {max})"),
-        },
-        SecurityError::TooManyResults { count, max } => PathPolicyError::InvalidPathCharacters {
-            path: format!("rejected by policy: too many results ({count} > {max})"),
-        },
-        SecurityError::RateLimitExceeded => PathPolicyError::InvalidPathCharacters {
-            path: "rejected by policy: rate limit exceeded".to_string(),
-        },
-        SecurityError::InvalidClientId => PathPolicyError::InvalidPathCharacters {
-            path: "rejected by policy: invalid client identification".to_string(),
-        },
-        SecurityError::InvalidInput { reason } => PathPolicyError::InvalidPathCharacters {
-            path: format!("rejected by policy: {reason}"),
-        },
+        PathPolicyError::SymlinkDetected { path } => SecurityError::SymlinkDetected { path },
     }
 }
 
 impl PathPolicy for InputValidator {
     fn validate_path(&self, path: &Path) -> Result<(), PathPolicyError> {
-        // Same rules, same order — only the error type changes owner.
-        InputValidator::validate_path(self, path).map_err(path_policy_error)
+        // Same rules, same order — the judgment is `crate::paths`'s, and
+        // the port error is already its own.
+        self.rules.validate_path(path)
     }
 
     fn resolve_for_creation(&self, path: &Path) -> Result<PathBuf, PathPolicyError> {
         // Same rules, same order — and the boundary judged on the ancestor
         // that is already there, because the directories that are missing
         // cannot be created until this question is answered.
-        InputValidator::resolve_for_creation(self, path).map_err(path_policy_error)
+        self.rules.resolve_for_creation(path)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::MAX_PATH_COMPONENTS;
     use tempfile::TempDir;
 
     fn create_test_validator() -> InputValidator {
@@ -1346,7 +913,8 @@ mod tests {
 
     #[test]
     fn test_backslash_path_traversal_detection() {
-        let validator = InputValidator::new();
+        // TASK-219 — the traversal patterns live in `crate::paths` now.
+        let validator = PathRules::new();
 
         // Backslash variants should be detected
         assert!(
@@ -1365,7 +933,8 @@ mod tests {
 
     #[test]
     fn test_url_encoded_path_traversal_detection() {
-        let validator = InputValidator::new();
+        // TASK-219 — the traversal patterns live in `crate::paths` now.
+        let validator = PathRules::new();
 
         // URL-encoded .. should be detected (various cases)
         assert!(
