@@ -51,6 +51,9 @@ use cognicode_mcp::request_limits::{RequestLimits, enforce};
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
+    /// The address to listen on. Port `0` asks for any free port; the
+    /// address actually bound is written to stderr as
+    /// `listening on <address>` once the socket is open.
     #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
     /// Run in read-only mode. The tools that mutate the workspace
@@ -491,6 +494,10 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
+    // Written whatever the log filter, and only once the socket is bound:
+    // whoever started the server with port 0 learns the port from this
+    // line, and a server that failed to bind never writes it.
+    eprintln!("listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
     Ok(())
 }

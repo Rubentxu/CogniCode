@@ -791,10 +791,14 @@ pub struct HttpServer {
     pub addr: std::net::SocketAddr,
     stderr: std::sync::Arc<std::sync::Mutex<String>>,
     drain: Option<std::thread::JoinHandle<()>>,
+    /// The cache directory of this server alone. Without it the server
+    /// writes its snapshot and its socket into the cache of whoever runs
+    /// the tests, and two servers over the same workspace share them.
+    _cache: tempfile::TempDir,
 }
 
 impl HttpServer {
-    /// How long the server is given to start answering.
+    /// How long the server is given to bind its socket.
     const STARTUP_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 
     /// Start the server on a free loopback port over `workspace`.
@@ -802,8 +806,8 @@ impl HttpServer {
     /// `token` is the credential it is started with; `None` starts it with
     /// none, whatever the environment of the test runner holds. `extra` is
     /// passed on the command line after `--cwd` and `--listen`. Returns once
-    /// `/health` answers, and fails with the server's stderr if it ends
-    /// before that.
+    /// the server has announced the address it bound, and fails with the
+    /// server's stderr if it ends before that.
     pub fn start(workspace: &Path, token: Option<&str>, extra: &[&str]) -> Self {
         Self::start_on(
             std::net::Ipv4Addr::LOCALHOST.into(),
@@ -813,26 +817,28 @@ impl HttpServer {
         )
     }
 
-    /// Start the server listening on `ip`, on a free port.
+    /// Start the server listening on `ip`, on a port the system picks.
     ///
-    /// The check reaches it through loopback, which every address the
-    /// server can bind on this machine answers on.
+    /// The server is asked for port `0` and announces the address it bound,
+    /// so the port is never chosen by one process and taken by another, and
+    /// the address the check talks to is the one this server holds. The
+    /// check reaches it through loopback, which every address the server
+    /// can bind on this machine answers on.
     pub fn start_on(
         ip: std::net::IpAddr,
         workspace: &Path,
         token: Option<&str>,
         extra: &[&str],
     ) -> Self {
-        let port = free_port();
-        let listen = std::net::SocketAddr::new(ip, port);
-        let addr = std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), port);
+        let cache = tempfile::tempdir().expect("a cache directory for the server");
         let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_cognicode-mcp-server"));
         command
             .arg("--cwd")
             .arg(workspace)
             .arg("--listen")
-            .arg(listen.to_string())
+            .arg(std::net::SocketAddr::new(ip, 0).to_string())
             .args(extra)
+            .env("XDG_CACHE_HOME", cache.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
@@ -859,11 +865,13 @@ impl HttpServer {
 
         let mut server = Self {
             child,
-            addr,
+            addr: std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), 0),
             stderr,
             drain: Some(drain),
+            _cache: cache,
         };
-        server.wait_until_listening();
+        let bound = server.wait_until_bound();
+        server.addr.set_port(bound.port());
         server
     }
 
@@ -885,12 +893,16 @@ impl HttpServer {
         })
     }
 
-    /// Wait for the first answer of any status on `/health`, which needs no
-    /// credential. Nothing is retried once a status line arrives.
-    fn wait_until_listening(&mut self) {
+    /// Wait for the server to announce the address it bound.
+    ///
+    /// The line is written once the socket is open and never by a server
+    /// that failed to bind, so it is this process that holds the port.
+    fn wait_until_bound(&mut self) -> std::net::SocketAddr {
         let deadline = std::time::Instant::now() + Self::STARTUP_WINDOW;
-        let mut last_error = String::new();
         while std::time::Instant::now() < deadline {
+            if let Some(bound) = announced_address(&self.stderr()) {
+                return bound;
+            }
             if let Ok(Some(status)) = self.child.try_wait() {
                 // The process is gone, so its end of the pipe is closed and
                 // the drain thread finishes: join it to read the whole reason.
@@ -902,18 +914,22 @@ impl HttpServer {
                     self.stderr()
                 );
             }
-            match http_get(self.addr, "/health", None) {
-                Ok(_) => return,
-                Err(error) => last_error = error,
-            }
-            std::thread::sleep(std::time::Duration::from_millis(250));
+            std::thread::sleep(std::time::Duration::from_millis(20));
         }
         panic!(
-            "cognicode-mcp-server never answered on {}: {last_error}\nstderr:\n{}",
-            self.addr,
+            "cognicode-mcp-server never announced the address it bound\nstderr:\n{}",
             self.stderr()
         );
     }
+}
+
+/// The address in the `listening on <address>` line the server writes once
+/// it has bound its socket.
+fn announced_address(stderr: &str) -> Option<std::net::SocketAddr> {
+    stderr
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("listening on "))
+        .and_then(|address| address.trim().parse().ok())
 }
 
 impl Drop for HttpServer {
@@ -921,18 +937,4 @@ impl Drop for HttpServer {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
-}
-
-/// A port the operating system says is free.
-///
-/// Binding it and releasing it before the server starts is not atomic, but
-/// the server is started right after and this is the only way to keep a
-/// check parallel-safe without pinning a port a concurrent runner would
-/// collide with.
-pub fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("bind ephemeral port")
-        .local_addr()
-        .expect("local addr")
-        .port()
 }

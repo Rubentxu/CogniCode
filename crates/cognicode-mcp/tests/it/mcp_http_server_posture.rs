@@ -133,6 +133,28 @@ fn a_body_declared_larger_than_the_ceiling_is_refused_without_being_read() {
 }
 
 #[test]
+fn a_server_with_a_credential_refuses_a_stranger_before_weighing_the_body() {
+    let workspace = tempfile::tempdir().expect("an empty workspace");
+    let server = HttpServer::start(workspace.path(), Some("posture-secret"), &[]);
+
+    // Without a credential the size of the body is none of the caller's
+    // business: the answer is "who are you", whatever the body would be.
+    let response = http_send(
+        server.addr,
+        b"POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
+          Accept: application/json, text/event-stream\r\nContent-Length: 5242880\r\n\r\n",
+    )
+    .unwrap_or_else(|error| {
+        panic!(
+            "the server did not refuse an anonymous request: {error}\nstderr:\n{}",
+            server.stderr()
+        )
+    });
+
+    assert_eq!(response.status(), 401, "{}", response.status_line.trim());
+}
+
+#[test]
 fn a_loopback_server_does_not_answer_to_the_unspecified_address() {
     let workspace = tempfile::tempdir().expect("an empty workspace");
     let server = HttpServer::start(workspace.path(), None, &[]);

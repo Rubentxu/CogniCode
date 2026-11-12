@@ -83,7 +83,8 @@ mod harness {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let binary_time =
             modified(&path).unwrap_or_else(|| panic!("cannot stat the resolved binary: {path:?}"));
-        let Some((newest, newest_time)) = newest_source_under(&manifest_dir) else {
+        let Some((newest, newest_time)) = newest_source_under(&manifest_dir, "cognicode-mcp")
+        else {
             // No sources to compare against: nothing to assert.
             return;
         };
@@ -95,13 +96,18 @@ mod harness {
         );
     }
 
-    /// The most recently modified compilable source under `root`, with mtime.
+    /// The most recently modified source under `root` that `binary` is built
+    /// from, with its mtime.
     ///
     /// `tests/` is excluded on purpose: an integration test never links into
     /// the server binary, so a test edited seconds ago must not make a
-    /// perfectly current binary look stale. Only files the binary is actually
-    /// built from are a valid oracle.
-    fn newest_source_under(root: &Path) -> Option<(PathBuf, std::time::SystemTime)> {
+    /// perfectly current binary look stale. So are the entry points of the
+    /// crate's other binaries: `src/server.rs` is the HTTP server, not part
+    /// of `cognicode-mcp`, and cargo does not relink `cognicode-mcp` when
+    /// only that file changes. Only files the binary is actually built from
+    /// are a valid oracle.
+    fn newest_source_under(root: &Path, binary: &str) -> Option<(PathBuf, std::time::SystemTime)> {
+        let other_entry_points = other_binary_entry_points(root, binary);
         let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
         // `target` holds build output, not sources; skipping it keeps the walk
         // bounded and stops a stale artifact from counting as input.
@@ -119,6 +125,7 @@ mod harness {
                     }
                     stack.push(path);
                 } else if path.extension().is_some_and(|e| e == "rs")
+                    && !other_entry_points.contains(&path)
                     && let Some(time) = modified(&path)
                     && newest.as_ref().is_none_or(|(_, best)| time > *best)
                 {
@@ -127,6 +134,47 @@ mod harness {
             }
         }
         newest
+    }
+
+    /// The `path` of every `[[bin]]` in the crate's manifest other than
+    /// `binary`, resolved against `root`.
+    ///
+    /// Read from the manifest as text: the entries are `name = "…"` and
+    /// `path = "…"` lines, and a manifest without `[[bin]]` tables has no
+    /// other binary to exclude.
+    fn other_binary_entry_points(root: &Path, binary: &str) -> Vec<PathBuf> {
+        let Ok(manifest) = std::fs::read_to_string(root.join("Cargo.toml")) else {
+            return Vec::new();
+        };
+        let value = |line: &str, key: &str| -> Option<String> {
+            let (found, rest) = line.split_once('=')?;
+            (found.trim() == key).then(|| rest.trim().trim_matches('"').to_string())
+        };
+        let mut entry_points = Vec::new();
+        let mut in_bin = false;
+        let (mut name, mut path) = (None, None);
+        let mut close = |name: &mut Option<String>, path: &mut Option<String>| {
+            if let (Some(found), Some(entry)) = (name.take(), path.take())
+                && found != binary
+            {
+                entry_points.push(root.join(entry));
+            }
+        };
+        for line in manifest.lines().map(str::trim) {
+            if line.starts_with('[') {
+                if in_bin {
+                    close(&mut name, &mut path);
+                }
+                in_bin = line == "[[bin]]";
+            } else if in_bin {
+                name = value(line, "name").or(name);
+                path = value(line, "path").or(path);
+            }
+        }
+        if in_bin {
+            close(&mut name, &mut path);
+        }
+        entry_points
     }
 
     fn modified(path: &Path) -> Option<std::time::SystemTime> {
@@ -177,7 +225,7 @@ mod harness {
 
         let root = tmp.join("crate_a");
         let (found_path, found_time) =
-            newest_source_under(&root).expect("walk must find at least one source");
+            newest_source_under(&root, "crate_a").expect("walk must find at least one source");
 
         assert!(
             found_path.starts_with(&in_scope),
@@ -189,5 +237,48 @@ mod harness {
         );
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// The entry point of another binary of the same crate is not an input
+    /// of the binary under test: cargo does not relink this binary when only
+    /// that file changes, so the guard must not call it stale for it.
+    #[test]
+    fn newest_source_under_does_not_see_the_entry_points_of_other_binaries() {
+        let crate_root = tempfile::tempdir().expect("a crate directory");
+        let src = crate_root.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            crate_root.path().join("Cargo.toml"),
+            "[package]\nname = \"fake\"\n\n[[bin]]\nname = \"tested\"\npath = \"src/main.rs\"\n\n\
+             [[bin]]\nname = \"other\"\npath = \"src/other.rs\"\n\n[dependencies]\n",
+        )
+        .unwrap();
+        let tested_entry = src.join("main.rs");
+        let shared_module = src.join("lib.rs");
+        let other_entry = src.join("other.rs");
+        for (path, age) in [
+            (&tested_entry, 120),
+            (&shared_module, 60),
+            (&other_entry, 0),
+        ] {
+            std::fs::write(path, b"// source\n").unwrap();
+            let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+            file.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(age))
+                .unwrap();
+        }
+
+        let (found, _) = newest_source_under(crate_root.path(), "tested")
+            .expect("the crate has sources of the tested binary");
+
+        assert_eq!(
+            found, shared_module,
+            "the newest input of `tested` is its own module, not another binary's entry point"
+        );
+        let (found, _) = newest_source_under(crate_root.path(), "other")
+            .expect("the crate has sources of the other binary");
+        assert_eq!(
+            found, other_entry,
+            "the other binary does see its own entry point"
+        );
     }
 }
