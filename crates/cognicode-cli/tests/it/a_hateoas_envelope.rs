@@ -577,3 +577,18 @@ fn the_cli_reads_the_direction_the_link_names() {
         "a direction the terminal does not know is not printed"
     );
 }
+
+/// TASK-222 AC #2 — una respuesta sin palabra de estado y sin agujeros
+/// no sale etiquetada «complete»: nadie la midió, y el sobre no pone
+/// una palabra que nadie dijo. La palabra honesta para «no dice nada»
+/// es «unknown».
+#[test]
+fn a_wordless_answer_is_not_published_as_complete() {
+    let result = json!({"summary": "s"});
+    let state = envelope_for("build_graph", &Map::new(), &result, &context()).state;
+    assert_eq!(
+        state, "unknown",
+        "an answer that declares no verdict and names no holes is \
+         unmeasured, not complete"
+    );
+}
