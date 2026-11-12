@@ -988,25 +988,6 @@ impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
 /// Result type for handler operations
 pub type HandlerResult<T> = Result<T, HandlerError>;
 
-/// Resolves a directory input relative to a working directory.
-///
-/// - If `input` is `None`, returns `working_dir` unchanged.
-/// - If `input` is an absolute path, returns it unchanged.
-/// - If `input` is a relative path (including "."), joins it to `working_dir`.
-pub(crate) fn resolve_directory(input: Option<String>, working_dir: &Path) -> PathBuf {
-    match input {
-        None => working_dir.to_path_buf(),
-        Some(s) => {
-            let p = PathBuf::from(&s);
-            if p.is_absolute() {
-                p
-            } else {
-                working_dir.join(p)
-            }
-        }
-    }
-}
-
 /// The published shape of one hole in the coverage.
 ///
 /// One mapping for both routes that publish holes: the one that built
@@ -1151,15 +1132,11 @@ pub async fn handle_build_graph(
 
     let start = Instant::now();
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
-
-    // The build directory is a path surface. Enforce the
-    // workspace allowlist (traversal, absolute escapes, symlinked
-    // components, canonical boundary) through the same InputValidator
-    // every other path-bearing handler uses.
-    ctx.validator
-        .validate_path(&directory)
-        .map_err(|e| HandlerError::InvalidInput(format!("Path rejected: {}", e)))?;
+    // The build directory is a path surface: the resolver validates it
+    // with the same InputValidator every path-bearing handler and goal
+    // asks — traversal, absolute escapes and symlinked components are
+    // refused before any disk is touched.
+    let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
 
     // Validate directory
     if !directory.exists() {
@@ -2651,7 +2628,7 @@ pub async fn handle_build_lightweight_index(
 
     let start = Instant::now();
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
+    let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
 
     if !directory.exists() {
         return Err(HandlerError::InvalidInput(format!(
@@ -2757,7 +2734,7 @@ pub async fn handle_query_symbol_index(
         ctx.analysis_service.find_symbol(&input.symbol_name)
     } else {
         // Cache miss: build the index and store it for next time
-        let directory = resolve_directory(input.directory, &ctx.working_dir);
+        let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
         let index = tokio::task::spawn_blocking({
             let dir = directory.clone();
             move || {
@@ -2814,7 +2791,7 @@ pub async fn handle_build_call_subgraph(
         return Err(HandlerError::Internal("Cancelled".into()));
     }
 
-    let directory = resolve_directory(input.directory, &ctx.working_dir);
+    let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
 
     // Create on-demand strategy
     let mut strategy = OnDemandStrategy::new();
@@ -2997,29 +2974,14 @@ pub async fn handle_merge_graphs(
     }
 
     // Every requested path crosses the same read boundary as every other
-    // graph tool: anchor it on the session first, then let the validator
-    // judge the anchored string.
-    //
-    // The order matters and is not interchangeable. `validate_file_path`
-    // canonicalises what it is given and compares against the workspace
-    // root, so a bare relative path is judged against the *process* CWD —
-    // which is how a relative `../../etc/passwd` would sail through. The
-    // join happens first, so the validator sees an absolute path anchored
-    // on the session, and a surviving `..` is still caught: `Path::join`
-    // preserves it and the traversal check sees it. Validating and then
-    // anchoring would leave the read using an unresolved relative path.
+    // graph tool: `authorise_file_path` anchors it on the session first
+    // and then lets the validator judge the anchored string. The order
+    // matters and is not interchangeable — anchoring first is what keeps
+    // a bare relative `../../etc/passwd` from being judged against the
+    // process CWD — and it lives in the one authority, not here.
     let mut file_paths: Vec<PathBuf> = Vec::with_capacity(input.file_paths.len());
     for p in &input.file_paths {
-        let raw = Path::new(p);
-        let anchored = if raw.is_absolute() {
-            raw.to_path_buf()
-        } else {
-            ctx.working_dir.join(raw)
-        };
-        file_paths.push(
-            ctx.validator
-                .validate_file_path(&anchored.to_string_lossy())?,
-        );
+        file_paths.push(authorise_file_path(ctx, p)?);
     }
     let requested_file_count = file_paths.len();
 
@@ -3630,12 +3592,16 @@ pub mod graph_handlers;
 pub mod graph_query_handlers;
 pub mod program_analysis_handlers;
 
-// Path authorisation — the rules that decide which file a handler may read.
-// One module, so no handler answers "is this path safe?" on its own.
-mod path_authorisation;
+// Path authorisation — the rules that decide which file a handler may read
+// live at the interface level (`crate::interface::path_authorisation`), the
+// neutral place where the handlers and the goals ask the same authority.
+// One module, so no handler and no goal answers "is this path safe?" on
+// its own.
 pub mod retired;
 
-use self::path_authorisation::{anchor_and_validate, authorise_file_path, resolve_file_path};
+use crate::interface::path_authorisation::{
+    anchor_and_validate, authorise_directory, authorise_file_path, resolve_file_path,
+};
 
 // Findings handlers — the answer to «¿por qué se reporta este hallazgo?».
 // Gated with the canonical evidence kernel, which is the only thing that
@@ -4386,6 +4352,226 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    // TASK-218 — the directory the client names is confined to the
+    // workspace. Three index handlers resolved it without the validator,
+    // so `../`, an absolute path outside and a symlinked escape all
+    // reached the disk. One test per entry, three shapes each: the same
+    // three escapes, rejected through the same authority `build_graph`
+    // already asks.
+
+    /// The workspace the escape tests talk about: `work` is the session
+    /// directory, `outside` its sibling, `work/link` a symlink to it.
+    struct EscapeScene {
+        _parent: tempfile::TempDir,
+        work: PathBuf,
+        outside: PathBuf,
+    }
+
+    fn escape_scene() -> EscapeScene {
+        let parent = tempfile::tempdir().unwrap();
+        let work = parent.path().join("work");
+        let outside = parent.path().join("outside");
+        std::fs::create_dir(&work).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret.rs"), "pub fn secret() {}\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("../outside", work.join("link")).unwrap();
+        EscapeScene {
+            _parent: parent,
+            work,
+            outside,
+        }
+    }
+
+    fn escape_shapes(scene: &EscapeScene) -> Vec<(&'static str, String)> {
+        vec![
+            ("relative escape", "../outside".to_string()),
+            (
+                "absolute escape",
+                scene.outside.to_string_lossy().to_string(),
+            ),
+            ("symlinked escape", "link".to_string()),
+        ]
+    }
+
+    #[tokio::test]
+    async fn the_lightweight_index_rejects_directories_outside_the_workspace() {
+        let scene = escape_scene();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        for (shape, raw) in escape_shapes(&scene) {
+            let input = BuildIndexInput {
+                directory: Some(raw.clone()),
+                strategy: IndexStrategy::Lightweight,
+            };
+            let error = handle_build_lightweight_index(&ctx, input)
+                .await
+                .expect_err(&format!("{shape} must not be indexed: {raw}"));
+            let message = error.to_string();
+            assert!(
+                message.contains("Invalid input"),
+                "{shape}: the refusal is an input rejection, not a crash: {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_symbol_index_query_rejects_directories_outside_the_workspace() {
+        let scene = escape_scene();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        for (shape, raw) in escape_shapes(&scene) {
+            let input = QuerySymbolInput {
+                symbol_name: "secret".to_string(),
+                directory: Some(raw.clone()),
+            };
+            let error = handle_query_symbol_index(&ctx, input)
+                .await
+                .expect_err(&format!("{shape} must not be searched: {raw}"));
+            let message = error.to_string();
+            assert!(
+                message.contains("Invalid input"),
+                "{shape}: the refusal is an input rejection, not a crash: {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_call_subgraph_rejects_directories_outside_the_workspace() {
+        let scene = escape_scene();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        for (shape, raw) in escape_shapes(&scene) {
+            let input = BuildSubgraphInput {
+                symbol_name: "secret".to_string(),
+                depth: 3,
+                direction: SubgraphDirection::Both,
+                directory: Some(raw.clone()),
+            };
+            let error = handle_build_call_subgraph(&ctx, input)
+                .await
+                .expect_err(&format!("{shape} must not be traversed: {raw}"));
+            let message = error.to_string();
+            assert!(
+                message.contains("Invalid input"),
+                "{shape}: the refusal is an input rejection, not a crash: {message}"
+            );
+        }
+    }
+
+    // The refusal says which world the caller left: a path that escapes
+    // the workspace is a rejection, a path that is not there is I/O. Two
+    // different failures, two different words (TASK-218 AC #3).
+    #[tokio::test]
+    async fn the_lightweight_index_refusal_names_outside_workspace_distinctly_from_io() {
+        let scene = escape_scene();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        let outside = handle_build_lightweight_index(
+            &ctx,
+            BuildIndexInput {
+                directory: Some(scene.outside.to_string_lossy().to_string()),
+                strategy: IndexStrategy::Lightweight,
+            },
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            outside.contains("outside the workspace"),
+            "an escape is a workspace rejection: {outside}"
+        );
+
+        let missing = handle_build_lightweight_index(
+            &ctx,
+            BuildIndexInput {
+                directory: Some("no-such-dir".to_string()),
+                strategy: IndexStrategy::Lightweight,
+            },
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            missing.contains("does not exist"),
+            "a missing directory is I/O, not a rejection: {missing}"
+        );
+    }
+
+    // AC #4 — the legitimate routes keep working: a relative subdirectory,
+    // and the explicit second workspace `build_graph` already allowlists.
+    #[tokio::test]
+    async fn the_lightweight_index_still_indexes_inside_the_workspace() {
+        let scene = escape_scene();
+        std::fs::create_dir(scene.work.join("src")).unwrap();
+        std::fs::write(scene.work.join("src/main.rs"), "pub fn local() {}\n").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        let subdir = handle_build_lightweight_index(
+            &ctx,
+            BuildIndexInput {
+                directory: Some("src".to_string()),
+                strategy: IndexStrategy::Lightweight,
+            },
+        )
+        .await
+        .expect("a directory inside the workspace is indexed");
+        assert!(subdir.success);
+        assert!(subdir.symbols_indexed >= 1);
+    }
+
+    #[tokio::test]
+    async fn the_symbol_index_query_still_answers_inside_the_workspace() {
+        let scene = escape_scene();
+        std::fs::write(scene.work.join("main.rs"), "pub fn helper() {}\n").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        let answer = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "helper".to_string(),
+                directory: None,
+            },
+        )
+        .await
+        .expect("a symbol inside the workspace is found");
+        assert!(answer.total >= 1, "the helper is found: {answer:?}");
+    }
+
+    #[tokio::test]
+    async fn the_call_subgraph_still_builds_inside_the_workspace() {
+        let scene = escape_scene();
+        std::fs::write(scene.work.join("main.rs"), "pub fn helper() {}\n").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(scene.work.clone())
+            .build();
+
+        let answer = handle_build_call_subgraph(
+            &ctx,
+            BuildSubgraphInput {
+                symbol_name: "helper".to_string(),
+                depth: 3,
+                direction: SubgraphDirection::Both,
+                directory: None,
+            },
+        )
+        .await
+        .expect("a subgraph inside the workspace is built");
+        assert_eq!(answer.root.name, "helper");
+    }
+
     #[tokio::test]
     async fn test_handle_get_per_file_graph_nonexistent_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -4680,8 +4866,9 @@ mod tests {
     //
     // This test pins that contract from the handler side: `directory="."`
     // must produce a successful build equivalent to `directory=None`,
-    // because `resolve_directory()` joins a relative path (including ".")
-    // onto the working directory.
+    // because the directory resolver (`authorise_directory`) joins a
+    // relative path (including ".") onto the working directory and
+    // validates the joined result.
     #[tokio::test]
     async fn test_handle_build_graph_directory_dot_resolves_to_working_dir() {
         let tempdir = tempfile::tempdir().unwrap();

@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use crate::application::commands::RenameSymbolCommand;
 use crate::application::services::refactor_service::RefactorService;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::path_authorisation::authorise_workspace_file;
 use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -61,29 +62,20 @@ pub struct GoalChange {
 
 /// El fichero donde el símbolo está declarado.
 ///
-/// Si el llamante no lo dice, lo dice el índice: el símbolo vive en un
-/// fichero, y el índice es el que lo sabe.
+/// Si el llamante lo dice, el fichero se autoriza antes de tocarlo: la
+/// misma autoridad que confina a los handlers del MCP confina aquí, y un
+/// fichero fuera del workspace es un rechazo que nombra el límite. Si el
+/// llamante no lo dice, lo dice el índice: el símbolo vive en un fichero,
+/// y el índice es el que lo sabe.
 fn file_of(workspace: &Path, symbol: &str, given: Option<&str>) -> Result<PathBuf, String> {
     if let Some(file) = given {
-        let path = Path::new(file);
-        return Ok(if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            workspace.join(path)
-        });
+        return authorise_workspace_file(workspace, file);
     }
 
     let (service, _built) = service_with_graph(workspace)?;
     let locations = service.find_symbol(symbol);
     match locations.first() {
-        Some(location) => {
-            let path = Path::new(&location.file);
-            Ok(if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                workspace.join(path)
-            })
-        }
+        Some(location) => authorise_workspace_file(workspace, &location.file),
         None => Err(format!(
             "`{symbol}` is not declared anywhere, so there is nothing to rename."
         )),
@@ -167,6 +159,58 @@ mod tests {
         assert!(
             answer.is_err(),
             "a symbol that is not there is not an empty change: {answer:?}"
+        );
+    }
+
+    // TASK-218 AC #4 — the legitimate route keeps working: a file inside
+    // the workspace, named by the caller, is still renamed.
+    #[test]
+    fn a_file_inside_the_workspace_is_still_changed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn helper() {}").expect("write");
+
+        let answer = change(dir.path(), "helper", "renamed", Some("main.rs"))
+            .expect("a file inside the workspace is renamed");
+
+        assert_eq!(answer.file, dir.path().join("main.rs").to_string_lossy());
+        assert_eq!(answer.change_count, 1);
+    }
+
+    // TASK-218 — the file the caller names is confined to the workspace:
+    // `../` and an absolute path outside are refused before the refactor
+    // service reads a byte, and the refusal names the workspace boundary.
+    #[test]
+    fn a_file_outside_the_workspace_cannot_be_changed() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let work = parent.path().join("work");
+        let outside = parent.path().join("outside");
+        std::fs::create_dir(&work).expect("work dir");
+        std::fs::create_dir(&outside).expect("outside dir");
+        std::fs::write(work.join("main.rs"), "fn helper() {}").expect("write");
+        std::fs::write(outside.join("helper.rs"), "fn helper() {}").expect("write");
+
+        let relative = change(&work, "helper", "renamed", Some("../outside/helper.rs"));
+        let absolute = change(
+            &work,
+            "helper",
+            "renamed",
+            Some(&outside.join("helper.rs").to_string_lossy()),
+        );
+
+        assert!(
+            relative.is_err(),
+            "a relative escape cannot be renamed: {relative:?}"
+        );
+        assert!(
+            absolute.is_err(),
+            "an absolute path outside cannot be renamed: {absolute:?}"
+        );
+        // La absoluta es el caso de frontera pura: el rechazo dice qué
+        // mundo se dejó, y no es un accidente de I/O.
+        let message = absolute.expect_err("already asserted");
+        assert!(
+            message.contains("outside the workspace"),
+            "the refusal names the workspace boundary: {message}"
         );
     }
 }

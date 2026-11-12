@@ -11,11 +11,12 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::application::dto::SymbolDto;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::path_authorisation::authorise_workspace_file;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 /// Input for the `inspect` goal
@@ -42,22 +43,13 @@ pub struct GoalInspect {
     pub symbols: Vec<SymbolDto>,
 }
 
-/// El fichero que se nombra, resuelto contra el workspace.
-///
-/// Un camino relativo se resuelve contra el workspace: el goal habla del
-/// workspace del llamante, no del directorio desde el que se teclea.
-fn resolve(workspace: &Path, file: &str) -> PathBuf {
-    let path = Path::new(file);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        workspace.join(path)
-    }
-}
-
 /// La respuesta del goal `inspect` para ese fichero.
 pub fn inspect(workspace: &Path, file: &str) -> Result<GoalInspect, String> {
-    let path = resolve(workspace, file);
+    // El fichero se autoriza antes de leerlo: el goal habla del workspace
+    // del llamante, y la misma autoridad que confina a los handlers del
+    // MCP confina aquí — `../`, absolutas fuera y symlinks que escapan
+    // son un rechazo que nombra el límite, no un accidente de I/O.
+    let path = authorise_workspace_file(workspace, file)?;
     let service = AnalysisService::new();
     let symbols = service.get_file_symbols(&path).map_err(|error| {
         format!(
@@ -136,5 +128,48 @@ mod tests {
             answer.is_err(),
             "a file that is not there is not an empty answer: {answer:?}"
         );
+    }
+
+    // TASK-218 — the file the caller names is confined to the workspace:
+    // `../`, an absolute path outside and a symlinked escape are all
+    // refused, and the refusal says the path left the workspace (not an
+    // I/O accident).
+    #[test]
+    fn a_file_outside_the_workspace_is_not_inspected() {
+        let parent = tempfile::tempdir().expect("tempdir");
+        let work = parent.path().join("work");
+        let outside = parent.path().join("outside");
+        std::fs::create_dir(&work).expect("work dir");
+        std::fs::create_dir(&outside).expect("outside dir");
+        std::fs::write(outside.join("secret.rs"), "fn secret() {}").expect("write");
+
+        let relative = inspect(&work, "../outside/secret.rs");
+        let absolute = inspect(&work, &outside.join("secret.rs").to_string_lossy());
+
+        assert!(
+            relative.is_err(),
+            "a relative escape is not inspected: {relative:?}"
+        );
+        assert!(
+            absolute.is_err(),
+            "an absolute path outside is not inspected: {absolute:?}"
+        );
+        // La absoluta es el caso de frontera pura: el rechazo dice qué
+        // mundo se dejó, y no es un accidente de I/O.
+        let message = absolute.expect_err("already asserted");
+        assert!(
+            message.contains("outside the workspace"),
+            "the refusal names the workspace boundary: {message}"
+        );
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("../outside", work.join("link")).expect("symlink");
+            let via_link = inspect(&work, "link/secret.rs");
+            assert!(
+                via_link.is_err(),
+                "a symlink that escapes is not inspected: {via_link:?}"
+            );
+        }
     }
 }
