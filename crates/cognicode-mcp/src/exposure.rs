@@ -56,6 +56,27 @@ pub fn configured_token() -> Option<String> {
     }
 }
 
+/// The `Host` header values the HTTP transport answers to.
+///
+/// The transport refuses a request whose `Host` is not on this list, which
+/// is what stops a page in a browser on this machine from reaching the
+/// server through a name it controls (DNS rebinding). The loopback names
+/// are always on it. The address the server was told to listen on is
+/// added only when it is not loopback, so `0.0.0.0` is accepted only by a
+/// server that was asked to bind `0.0.0.0` — and that server needed a
+/// credential to start.
+pub fn allowed_hosts_for(listen: &SocketAddr) -> Vec<String> {
+    let mut hosts: Vec<String> = ["localhost", "127.0.0.1", "::1"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let bound = listen.ip().to_string();
+    if !hosts.contains(&bound) {
+        hosts.push(bound);
+    }
+    hosts
+}
+
 /// Whether the server may start with this address and this credential.
 ///
 /// Fails closed: an address other machines can reach without a credential
@@ -117,6 +138,39 @@ mod tests {
     fn a_wider_address_with_a_credential_is_allowed() {
         assert!(ensure_safe_exposure(&addr("0.0.0.0:9847"), Some("secret")).is_ok());
         assert!(ensure_safe_exposure(&addr("192.168.1.10:9847"), Some("secret")).is_ok());
+    }
+
+    #[test]
+    fn the_default_address_answers_only_to_the_loopback_names() {
+        assert_eq!(
+            allowed_hosts_for(&addr(DEFAULT_LISTEN)),
+            vec!["localhost", "127.0.0.1", "::1"],
+            "a server on loopback has no business answering to 0.0.0.0"
+        );
+        assert_eq!(
+            allowed_hosts_for(&addr("[::1]:9847")),
+            vec!["localhost", "127.0.0.1", "::1"]
+        );
+    }
+
+    #[test]
+    fn the_unspecified_address_is_accepted_only_when_it_was_asked_for() {
+        let hosts = allowed_hosts_for(&addr("0.0.0.0:9847"));
+        assert!(
+            hosts.iter().any(|host| host == "0.0.0.0"),
+            "an operator who binds 0.0.0.0 can be reached through it: {hosts:?}"
+        );
+        assert!(
+            hosts.iter().any(|host| host == "localhost"),
+            "the loopback names stay: {hosts:?}"
+        );
+    }
+
+    #[test]
+    fn a_specific_address_is_accepted_under_its_own_name() {
+        let hosts = allowed_hosts_for(&addr("192.168.1.5:9847"));
+        assert!(hosts.iter().any(|host| host == "192.168.1.5"), "{hosts:?}");
+        assert!(!hosts.iter().any(|host| host == "0.0.0.0"), "{hosts:?}");
     }
 
     #[test]

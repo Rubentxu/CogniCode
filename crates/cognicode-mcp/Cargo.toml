@@ -72,6 +72,7 @@ clap.workspace = true
 rayon.workspace = true
 axum = { workspace = true }
 http = "1"
+http-body-util = "0.1"
 # M3.5: constant-time comparison for Bearer-token auth middleware.
 subtle.workspace = true
 

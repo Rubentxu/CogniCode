@@ -624,6 +624,23 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// The numeric code of a status line such as `HTTP/1.1 200 OK`.
+pub fn status_code(status_line: &str) -> u16 {
+    status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_else(|| panic!("unreadable status line `{}`", status_line.trim()))
+}
+
+/// The value of a header, looked up by its lowercase name.
+fn find_header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+
 /// A response read off the wire.
 pub struct HttpResponse {
     /// The status line, as the server wrote it.
@@ -637,44 +654,63 @@ pub struct HttpResponse {
 impl HttpResponse {
     /// The value of a header, looked up by its lowercase name.
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.as_str())
+        find_header(&self.headers, name)
+    }
+
+    /// The numeric status code.
+    pub fn status(&self) -> u16 {
+        status_code(&self.status_line)
     }
 }
 
-/// One GET against a local server, with the credential it asks for.
+/// A response whose status line and headers have been read, with the body
+/// still on the socket.
 ///
-/// The crate has no HTTP client in `[dev-dependencies]`, and a one-shot GET
-/// against a local socket is not worth one. Reading the status line and the
-/// headers off the socket is what lets a check assert what the server
-/// actually said, instead of what the source says it says.
+/// The body is left there because some answers are streams (the MCP
+/// transport answers a request with server-sent events) and some checks are
+/// about the socket itself: whether the server closed it.
+pub struct OpenResponse {
+    /// The status line, as the server wrote it.
+    pub status_line: String,
+    /// The headers, with their names in lowercase.
+    pub headers: Vec<(String, String)>,
+    /// The rest of the connection: the body, and whatever follows it.
+    pub body: std::io::BufReader<std::net::TcpStream>,
+}
+
+impl OpenResponse {
+    /// The value of a header, looked up by its lowercase name.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        find_header(&self.headers, name)
+    }
+
+    /// The numeric status code.
+    pub fn status(&self) -> u16 {
+        status_code(&self.status_line)
+    }
+}
+
+/// How long a read from a test server may block before the check fails.
 ///
-/// One attempt per connection on purpose: the probe for readiness is the
-/// request itself. A connection opened to find out whether the server is
-/// there and then dropped crosses with the real request, and the read of
-/// the status line fails with a reset that has nothing to do with the
-/// server.
-pub fn http_get(
-    address: std::net::SocketAddr,
-    path: &str,
-    token: Option<&str>,
-) -> Result<HttpResponse, String> {
-    let mut stream = std::net::TcpStream::connect(address)
-        .map_err(|error| format!("connect to {path}: {error}"))?;
+/// The healthy path answers in milliseconds; this is the deadline that turns
+/// a server that never answers into a failure instead of a hung suite.
+const HTTP_READ_DEADLINE: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Send raw bytes to a local server and read the status line and headers.
+///
+/// The crate has no HTTP client in `[dev-dependencies]`, and a request
+/// written by hand is what lets a check send what a well-behaved client
+/// never would: a body that is announced and not sent, a `Host` the server
+/// should refuse.
+pub fn http_send(address: std::net::SocketAddr, request: &[u8]) -> Result<OpenResponse, String> {
+    let mut stream =
+        std::net::TcpStream::connect(address).map_err(|error| format!("connect: {error}"))?;
     stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(15)))
+        .set_read_timeout(Some(HTTP_READ_DEADLINE))
         .map_err(|error| format!("read timeout: {error}"))?;
-    let credential = match token {
-        Some(token) => format!("Authorization: Bearer {token}\r\n"),
-        None => String::new(),
-    };
-    let request =
-        format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n{credential}Connection: close\r\n\r\n");
     stream
-        .write_all(request.as_bytes())
-        .map_err(|error| format!("send GET: {error}"))?;
+        .write_all(request)
+        .map_err(|error| format!("send the request: {error}"))?;
 
     let mut reader = std::io::BufReader::new(stream);
     let mut status_line = String::new();
@@ -702,28 +738,203 @@ pub fn http_get(
         }
     }
 
+    Ok(OpenResponse {
+        status_line,
+        headers,
+        body: reader,
+    })
+}
+
+/// One GET against a local server, with the credential it asks for.
+///
+/// One attempt per connection on purpose: the probe for readiness is the
+/// request itself. A connection opened to find out whether the server is
+/// there and then dropped crosses with the real request, and the read of
+/// the status line fails with a reset that has nothing to do with the
+/// server.
+pub fn http_get(
+    address: std::net::SocketAddr,
+    path: &str,
+    token: Option<&str>,
+) -> Result<HttpResponse, String> {
+    let credential = match token {
+        Some(token) => format!("Authorization: Bearer {token}\r\n"),
+        None => String::new(),
+    };
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n{credential}Connection: close\r\n\r\n");
+    let mut response =
+        http_send(address, request.as_bytes()).map_err(|error| format!("GET {path}: {error}"))?;
+
     let mut body = String::new();
-    reader
+    response
+        .body
         .read_to_string(&mut body)
         .map_err(|error| format!("read body: {error}"))?;
 
     Ok(HttpResponse {
-        status_line,
-        headers,
+        status_line: response.status_line,
+        headers: response.headers,
         body,
     })
 }
 
-/// A port the operating system says is free.
+/// A `cognicode-mcp-server` started for one test, killed when the test ends.
 ///
-/// Binding it and releasing it before the server starts is not atomic, but
-/// the server is started right after and this is the only way to keep a
-/// check parallel-safe without pinning a port a concurrent runner would
-/// collide with.
-pub fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("bind ephemeral port")
-        .local_addr()
-        .expect("local addr")
-        .port()
+/// Killed on drop, so a check that panics halfway does not leave a server
+/// behind. Its stderr is drained by a thread while it runs: a pipe nobody
+/// reads fills up, and a server blocked writing a log line stops answering
+/// for a reason that has nothing to do with the check.
+pub struct HttpServer {
+    child: std::process::Child,
+    /// The loopback address a check reaches the server through.
+    pub addr: std::net::SocketAddr,
+    stderr: std::sync::Arc<std::sync::Mutex<String>>,
+    drain: Option<std::thread::JoinHandle<()>>,
+    /// The cache directory of this server alone. Without it the server
+    /// writes its snapshot and its socket into the cache of whoever runs
+    /// the tests, and two servers over the same workspace share them.
+    _cache: tempfile::TempDir,
+}
+
+impl HttpServer {
+    /// How long the server is given to bind its socket.
+    const STARTUP_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+
+    /// Start the server on a free loopback port over `workspace`.
+    ///
+    /// `token` is the credential it is started with; `None` starts it with
+    /// none, whatever the environment of the test runner holds. `extra` is
+    /// passed on the command line after `--cwd` and `--listen`. Returns once
+    /// the server has announced the address it bound, and fails with the
+    /// server's stderr if it ends before that.
+    pub fn start(workspace: &Path, token: Option<&str>, extra: &[&str]) -> Self {
+        Self::start_on(
+            std::net::Ipv4Addr::LOCALHOST.into(),
+            workspace,
+            token,
+            extra,
+        )
+    }
+
+    /// Start the server listening on `ip`, on a port the system picks.
+    ///
+    /// The server is asked for port `0` and announces the address it bound,
+    /// so the port is never chosen by one process and taken by another, and
+    /// the address the check talks to is the one this server holds. The
+    /// check reaches it through loopback, which every address the server
+    /// can bind on this machine answers on.
+    pub fn start_on(
+        ip: std::net::IpAddr,
+        workspace: &Path,
+        token: Option<&str>,
+        extra: &[&str],
+    ) -> Self {
+        let cache = tempfile::tempdir().expect("a cache directory for the server");
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_cognicode-mcp-server"));
+        command
+            .arg("--cwd")
+            .arg(workspace)
+            .arg("--listen")
+            .arg(std::net::SocketAddr::new(ip, 0).to_string())
+            .args(extra)
+            .env("XDG_CACHE_HOME", cache.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        match token {
+            Some(token) => command.env("COGNICODE_MCP_AUTH_TOKEN", token),
+            None => command.env_remove("COGNICODE_MCP_AUTH_TOKEN"),
+        };
+        let mut child = command.spawn().expect("spawn cognicode-mcp-server");
+
+        let stderr = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let mut pipe = child.stderr.take().expect("stderr is piped");
+        let sink = std::sync::Arc::clone(&stderr);
+        let drain = std::thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            while let Ok(read) = pipe.read(&mut buffer) {
+                if read == 0 {
+                    break;
+                }
+                if let Ok(mut text) = sink.lock() {
+                    text.push_str(&String::from_utf8_lossy(&buffer[..read]));
+                }
+            }
+        });
+
+        let mut server = Self {
+            child,
+            addr: std::net::SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), 0),
+            stderr,
+            drain: Some(drain),
+            _cache: cache,
+        };
+        let bound = server.wait_until_bound();
+        server.addr.set_port(bound.port());
+        server
+    }
+
+    /// What the server has written to stderr so far.
+    pub fn stderr(&self) -> String {
+        self.stderr
+            .lock()
+            .map(|text| text.clone())
+            .unwrap_or_default()
+    }
+
+    /// GET `path`, failing the check if the server does not answer.
+    pub fn get(&self, path: &str, token: Option<&str>) -> HttpResponse {
+        http_get(self.addr, path, token).unwrap_or_else(|error| {
+            panic!(
+                "GET {path} (token: {token:?}): {error}\nstderr:\n{}",
+                self.stderr()
+            )
+        })
+    }
+
+    /// Wait for the server to announce the address it bound.
+    ///
+    /// The line is written once the socket is open and never by a server
+    /// that failed to bind, so it is this process that holds the port.
+    fn wait_until_bound(&mut self) -> std::net::SocketAddr {
+        let deadline = std::time::Instant::now() + Self::STARTUP_WINDOW;
+        while std::time::Instant::now() < deadline {
+            if let Some(bound) = announced_address(&self.stderr()) {
+                return bound;
+            }
+            if let Ok(Some(status)) = self.child.try_wait() {
+                // The process is gone, so its end of the pipe is closed and
+                // the drain thread finishes: join it to read the whole reason.
+                if let Some(drain) = self.drain.take() {
+                    let _ = drain.join();
+                }
+                panic!(
+                    "cognicode-mcp-server exited early with {status}\nstderr:\n{}",
+                    self.stderr()
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!(
+            "cognicode-mcp-server never announced the address it bound\nstderr:\n{}",
+            self.stderr()
+        );
+    }
+}
+
+/// The address in the `listening on <address>` line the server writes once
+/// it has bound its socket.
+fn announced_address(stderr: &str) -> Option<std::net::SocketAddr> {
+    stderr
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("listening on "))
+        .and_then(|address| address.trim().parse().ok())
+}
+
+impl Drop for HttpServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }

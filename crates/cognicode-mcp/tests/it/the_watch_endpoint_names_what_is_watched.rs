@@ -11,79 +11,28 @@
 
 use crate::common;
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
 use cognicode_core::application::ingest::{noise_directories, observed_extensions};
 use serde_json::Value;
 
-use common::{free_port, http_get};
+use common::HttpServer;
 
 /// The credential the server is started with.
 const TOKEN: &str = "a-credential-for-the-watch-endpoint";
-
-/// How long the server is given to start answering.
-const STARTUP_WINDOW: Duration = Duration::from_secs(60);
-
-/// The server binary under test.
-fn server_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_cognicode-mcp-server"))
-}
 
 /// The workspace the server is pointed at.
 fn workspace() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws")
 }
 
-/// Starts the server and waits until it answers on `/watch`.
-fn start_server() -> (SocketAddr, Child) {
-    let port = free_port();
-    let address: SocketAddr = format!("127.0.0.1:{port}")
-        .parse()
-        .expect("the address is valid");
-
-    let mut child = Command::new(server_binary())
-        .arg("--cwd")
-        .arg(workspace())
-        .arg("--listen")
-        .arg(address.to_string())
-        .env("COGNICODE_MCP_AUTH_TOKEN", TOKEN)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("the server starts");
-
-    let deadline = Instant::now() + STARTUP_WINDOW;
-    while Instant::now() < deadline {
-        if let Ok(Some(status)) = child.try_wait() {
-            let _ = child.wait();
-            let mut stderr = String::new();
-            if let Some(stream) = child.stderr.as_mut() {
-                use std::io::Read;
-                let _ = stream.read_to_string(&mut stderr);
-            }
-            panic!("the server ended with {status} before answering:\n{stderr}");
-        }
-        if let Ok(response) = http_get(address, "/watch", Some(TOKEN))
-            && response.status_line.contains("200")
-        {
-            return (address, child);
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-    panic!("the server never answered on `/watch`");
-}
-
-/// The announced body, read as JSON.
-fn announced(address: SocketAddr) -> Value {
-    let response = http_get(address, "/watch", Some(TOKEN)).expect("the endpoint answers");
-    assert!(
-        response.status_line.contains("200"),
+/// The announced body, read as JSON from a server started for the check.
+fn announced() -> Value {
+    let server = HttpServer::start(&workspace(), Some(TOKEN), &[]);
+    let response = server.get("/watch", Some(TOKEN));
+    assert_eq!(
+        response.status(),
+        200,
         "the endpoint must answer 200, got `{}`",
         response.status_line.trim()
     );
@@ -93,10 +42,7 @@ fn announced(address: SocketAddr) -> Value {
 /// The endpoint names the files the product observes.
 #[test]
 fn the_endpoint_names_the_files_the_product_observes() {
-    let (address, mut child) = start_server();
-    let body = announced(address);
-    let _ = child.kill();
-    let _ = child.wait();
+    let body = announced();
 
     let announced: Vec<String> = body["watched_extensions"]
         .as_array()
@@ -118,10 +64,7 @@ fn the_endpoint_names_the_files_the_product_observes() {
 /// The endpoint names the extensions of the languages the registry reads.
 #[test]
 fn the_endpoint_names_every_language_the_registry_reads() {
-    let (address, mut child) = start_server();
-    let body = announced(address);
-    let _ = child.kill();
-    let _ = child.wait();
+    let body = announced();
 
     let announced: Vec<String> = body["watched_extensions"]
         .as_array()
@@ -150,10 +93,7 @@ fn the_endpoint_names_every_language_the_registry_reads() {
 /// The endpoint names the places the watcher does not look.
 #[test]
 fn the_endpoint_names_the_places_the_watcher_does_not_look() {
-    let (address, mut child) = start_server();
-    let body = announced(address);
-    let _ = child.kill();
-    let _ = child.wait();
+    let body = announced();
 
     let announced: Vec<String> = body["ignored_directories"]
         .as_array()

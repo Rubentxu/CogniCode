@@ -40,81 +40,24 @@
 
 use crate::common;
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
 
-use common::{HttpResponse, free_port, http_get};
-
-/// The server binary under test.
-fn server_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_cognicode-mcp-server"))
-}
+use common::{HttpResponse, HttpServer};
 
 fn fixture_ws() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws")
 }
 
-/// Wait until `/metrics` answers, or fail with the server's stderr — which is
-/// where a panicking `server_main` puts the reason.
-///
-/// The probe IS the scrape: one attempt per connection, never a connection
-/// of trial plus a scrape apart. The read of the status line fails with a
-/// reset when the server is loaded and the two connections cross, and the
-/// symptom is an intermittent failure that only appears under the whole
-/// suite and never in isolation: the shape of a defect owned by the test.
-fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> HttpResponse {
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut last_err = String::new();
-    while Instant::now() < deadline {
-        if let Ok(Some(status)) = child.try_wait() {
-            let mut err = String::new();
-            if let Some(stderr) = child.stderr.as_mut() {
-                let _ = stderr.read_to_string(&mut err);
-            }
-            panic!("cognicode-mcp-server exited early with {status}\nstderr:\n{err}");
-        }
-        match http_get(addr, "/metrics", None) {
-            Ok(response) => return response,
-            // Failures of transport while the server starts are the normal
-            // case. Once a status line arrives, the response is returned and
-            // the assertions decide: nothing is retried here.
-            Err(e) => last_err = e,
-        }
-        std::thread::sleep(Duration::from_millis(250));
-    }
-    let mut err = String::new();
-    if let Some(stderr) = child.stderr.as_mut() {
-        let _ = stderr.read_to_string(&mut err);
-    }
-    panic!("/metrics never became reachable: {last_err}\nstderr:\n{err}");
-}
-
-/// The response, with the server that answered it.
-fn fetch() -> (HttpResponse, Child) {
-    let port = free_port();
-    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
-
-    let mut child = Command::new(server_binary())
-        .arg("--cwd")
-        .arg(fixture_ws())
-        .arg("--listen")
-        .arg(addr.to_string())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn cognicode-mcp-server");
-
-    (wait_for_scrape(addr, &mut child), child)
+/// One scrape of `/metrics` from a server started for the check, with no
+/// credential: the scrape route must not need one.
+fn fetch() -> HttpResponse {
+    let server = HttpServer::start(&fixture_ws(), None, &[]);
+    server.get("/metrics", None)
 }
 
 #[test]
 fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
-    let (response, mut child) = fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    let response = fetch();
 
     assert!(
         response.status_line.contains("200"),
@@ -149,9 +92,7 @@ fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
 
 #[test]
 fn the_exporter_is_actually_registered_and_rendering() {
-    let (response, mut child) = fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    let response = fetch();
 
     // `target_info` is emitted by the OTel SDK's own Prometheus exporter.
     // Its presence is what distinguishes "exporter registered and rendering"
@@ -172,9 +113,7 @@ fn the_exporter_is_actually_registered_and_rendering() {
 
 #[test]
 fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
-    let (response, mut child) = fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    let response = fetch();
 
     let version = response
         .body
