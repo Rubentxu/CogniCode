@@ -378,6 +378,10 @@ fn sample_query_symbol_output() -> QuerySymbolOutput {
         total: 1,
         precision: precision_floor_for_tool("query_symbol_index"),
         provider: default_provider_for_tool("query_symbol_index").to_string(),
+        basis: cognicode_core::interface::mcp::schemas::SymbolIndexBasis {
+            graph_revision: 1,
+            directory: "/ws".to_string(),
+        },
     }
 }
 

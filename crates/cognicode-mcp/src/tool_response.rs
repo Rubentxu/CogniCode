@@ -186,7 +186,10 @@ mod tests {
 
         let envelope = result.structured_content.expect("the envelope");
         assert_eq!(envelope["schema_version"], json!(1));
-        assert_eq!(envelope["state"], json!("complete"));
+        // TASK-222 — una respuesta que no dice su estado no se publica
+        // como «complete»: la palabra la tiene el dueño del veredicto,
+        // y quien no la recibió dice «unknown» (H8).
+        assert_eq!(envelope["state"], json!("unknown"));
         assert_eq!(
             envelope["result"],
             json!({"summary": "42 symbols", "symbols": 42}),

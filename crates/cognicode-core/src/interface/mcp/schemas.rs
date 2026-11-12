@@ -821,6 +821,22 @@ pub struct QuerySymbolOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// TASK-221 — la base temporal del índice que respondió: la
+    /// revisión del grafo que lo alimentó (0 cuando no hubo cabeza de
+    /// grafo) y el directorio canónico que acota la respuesta. Sin
+    /// esto, la respuesta se lee como «la verdad ahora», cuando
+    /// describe el árbol tal como una revisión concreta lo vio.
+    pub basis: SymbolIndexBasis,
+}
+
+/// La base temporal de una respuesta del índice de símbolos.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SymbolIndexBasis {
+    /// La revisión del grafo que alimentó el índice. 0 = el servicio
+    /// no publicó cabeza de grafo para esta respuesta.
+    pub graph_revision: u64,
+    /// El directorio canónico que acota lo que esta respuesta ve.
+    pub directory: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -984,6 +1000,32 @@ pub struct SkippedFileInfo {
     pub detail: String,
 }
 
+impl SkippedFileInfo {
+    /// La ficha de un fichero que la construcción no pudo incluir: el
+    /// motivo y el detalle son los del propio recorrido. Un solo
+    /// mapeo, aquí, para que dos handlers no lo escriban dos veces y
+    /// el segundo se quede viejo.
+    pub fn from_skipped(s: crate::infrastructure::graph::per_file_graph::SkippedFile) -> Self {
+        use crate::infrastructure::graph::per_file_graph::SkipReason as R;
+        let (reason, detail) = match s.reason {
+            R::Read(d) => (SkippedReasonKind::Read, d),
+            R::Parse(d) => (SkippedReasonKind::Parse, d),
+            R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
+            R::Symlink { target } => (
+                SkippedReasonKind::Symlink,
+                format!("symlink to {target}, not followed"),
+            ),
+            R::Walk(d) => (SkippedReasonKind::Walk, d),
+            R::Other(d) => (SkippedReasonKind::Other, d),
+        };
+        Self {
+            path: s.path,
+            reason,
+            detail,
+        }
+    }
+}
+
 /// A reference the graph could not tie to a declaration.
 ///
 /// A file can be read and still state a relation the project cannot prove:
@@ -999,14 +1041,17 @@ pub use crate::interface::coverage::{PendingReason, PendingReferenceInfo, Reject
 /// How much of what was asked for is actually in the answer.
 ///
 /// This is an ADT on purpose: `Complete` carries no list, so "complete but
-/// here are four gaps" is unrepresentable, and `Partial` is only ever
-/// constructed through [`MergeCoverage::from`], which yields `Complete`
-/// when every list is empty. `file_count`-style counts cannot express
-/// that, which is how a partial merge used to read as a clean one.
+/// here are four gaps" is unrepresentable. The word is not chosen by the
+/// publisher: `Complete` and `NoMaterial` are only ever produced by
+/// [`MergeCoverage::from_verdict`], which translates the verdict the
+/// coverage owner made — a handler that names the variant by hand is a
+/// defect the `only_the_verdict_owner_publishes_complete` contract
+/// catches (TASK-222).
 ///
 /// The three lists are the three coverages: the files that could not be
 /// read, the references that could not be tied to a declaration, and the
-/// relations the repository refused.
+/// relations the repository refused. `NoMaterial` says the request (or
+/// the tree) held nothing to cover at all.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum MergeCoverage {
@@ -1016,24 +1061,95 @@ pub enum MergeCoverage {
         pending_references: Vec<PendingReferenceInfo>,
         rejected_relations: Vec<RejectedRelationInfo>,
     },
+    /// TASK-222 — la petición no trajo material que cubrir (o el árbol
+    /// no contenía nada legible): la palabra es «sin material», no
+    /// «complete». Un Complete que nadie midió es la palabra
+    /// equivocada (H8).
+    NoMaterial {
+        skipped_files: Vec<SkippedFileInfo>,
+        pending_references: Vec<PendingReferenceInfo>,
+        rejected_relations: Vec<RejectedRelationInfo>,
+    },
 }
 
 impl MergeCoverage {
-    /// The only constructor, and the only place the empty-vs-non-empty
-    /// decision is made.
-    pub fn from(
-        skipped: Vec<SkippedFileInfo>,
-        pending: Vec<PendingReferenceInfo>,
-        rejected: Vec<RejectedRelationInfo>,
-    ) -> Self {
-        if skipped.is_empty() && pending.is_empty() && rejected.is_empty() {
-            MergeCoverage::Complete
-        } else {
-            MergeCoverage::Partial {
-                skipped_files: skipped,
-                pending_references: pending,
-                rejected_relations: rejected,
+    /// La única puerta a `Complete` y a `NoMaterial`: el veredicto del
+    /// dueño ([`coverage_verdict`]). El que publica una cobertura no
+    /// fabrica la palabra — la pide, y los agujeros que lista son los
+    /// que el veredicto midió (TASK-222).
+    pub fn from_verdict(verdict: crate::application::services::analyze::Coverage) -> Self {
+        use crate::application::services::analyze::Coverage;
+        // La palabra se decide antes de consumir las facts: dentro del
+        // brazo `verdict` ya está parcialmente movido.
+        let no_material = matches!(verdict, Coverage::NoMaterial(_));
+        match verdict {
+            Coverage::Complete => Self::Complete,
+            Coverage::Partial(facts) | Coverage::NoMaterial(facts) => {
+                let skipped_files = facts
+                    .skipped
+                    .into_iter()
+                    .map(SkippedFileInfo::from_skipped)
+                    .collect();
+                let pending_references = facts
+                    .pending
+                    .iter()
+                    .map(PendingReferenceInfo::from_reference)
+                    .collect();
+                let rejected_relations = facts
+                    .rejected
+                    .iter()
+                    .map(RejectedRelationInfo::from_rejection)
+                    .collect();
+                if no_material {
+                    Self::NoMaterial {
+                        skipped_files,
+                        pending_references,
+                        rejected_relations,
+                    }
+                } else {
+                    Self::Partial {
+                        skipped_files,
+                        pending_references,
+                        rejected_relations,
+                    }
+                }
             }
+            // La ruta de merge siempre publica Built con reporte: el
+            // dueño no puede responder «nadie midió» aquí. Si algún día
+            // llegara, los agujeros que nombró son ninguno — porque
+            // nadie midió — y este esquema aún no tiene palabra
+            // propia para eso.
+            Coverage::Unmeasured => Self::Partial {
+                skipped_files: Vec::new(),
+                pending_references: Vec::new(),
+                rejected_relations: Vec::new(),
+            },
+        }
+    }
+
+    /// La palabra para lo que una construcción de grafo midió: el
+    /// veredicto del dueño sobre el reporte, no el del traductor.
+    pub fn from_build_report(
+        source: crate::application::analysis_basis::GraphSource,
+        report: &crate::infrastructure::graph::per_file_graph::BuildReport,
+        holds_material: bool,
+    ) -> Self {
+        Self::from_verdict(crate::application::services::analyze::coverage_verdict(
+            source,
+            Some(report),
+            &[],
+            holds_material,
+        ))
+    }
+
+    /// La palabra para «no hay nada que cubrir»: la decisión es la de
+    /// [`crate::application::services::analyze::no_material_outcome`];
+    /// esta puerta publica esa palabra en este esquema.
+    pub fn no_material() -> Self {
+        Self::NoMaterial {
+            skipped_files: Vec::new(),
+            pending_references: Vec::new(),
+            rejected_relations: Vec::new(),
         }
     }
 }
