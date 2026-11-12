@@ -651,6 +651,37 @@ pub fn build_manifest(
 mod tests {
     use super::*;
 
+    /// Two files inserted out of order on purpose: the digests sort by path.
+    fn two_file_manifest() -> FileManifest {
+        let mut manifest = FileManifest::new(PathBuf::from("/ws"));
+        manifest.update_entries(&[
+            (PathBuf::from("b.rs"), "h2".to_string(), Some(7), 1),
+            (PathBuf::from("a.rs"), "h1".to_string(), Some(5), 1),
+        ]);
+        manifest
+    }
+
+    /// The expected values are the SHA-256 of the documented byte layout,
+    /// computed outside the code under test with
+    /// `printf 'a.rs\x00h1\x005\nb.rs\x00h2\x007\n' | sha256sum`.
+    #[test]
+    fn the_manifest_digest_is_a_fixed_vector() {
+        assert_eq!(
+            manifest_digest(&two_file_manifest()),
+            "986359449951ab17fba8f0576820f10047ecf9a710492cde697f9643b6b9022d"
+        );
+    }
+
+    /// `printf 'a.rs\x00h1\nb.rs\x00h2\n' | sha256sum`: the times are not part
+    /// of the identity of the sources.
+    #[test]
+    fn the_source_digest_is_a_fixed_vector() {
+        assert_eq!(
+            source_digest(&two_file_manifest()),
+            "7bff9cb310eaa6cf7994710b5062f6b1ae4857e298c811c2e620c0b3fd8febff"
+        );
+    }
+
     /// A workspace with one caller and one callee, and the temporary root
     /// that holds it and its cache.
     fn workspace_with_root() -> (tempfile::TempDir, PathBuf, PathBuf) {

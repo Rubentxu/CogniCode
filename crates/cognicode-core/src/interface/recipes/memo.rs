@@ -200,6 +200,19 @@ mod tests {
             .collect()
     }
 
+    /// `printf 'goal\x00{"k":1}\x00tree' | sha256sum`, computed outside the
+    /// code under test.
+    #[test]
+    fn the_memo_key_is_a_fixed_vector() {
+        let mut arguments = Map::new();
+        arguments.insert("k".to_string(), Value::from(1));
+
+        assert_eq!(
+            memo_key("goal", &arguments, "tree"),
+            "8357ec7e1c6dd2ef42488728268c785b638b997583b2cf71672742af47870cb0"
+        );
+    }
+
     #[test]
     fn the_same_goal_the_same_args_and_the_same_tree_are_the_same_key() {
         let one = memo_key("find", &args(&[("symbol", "helper")]), "tree");

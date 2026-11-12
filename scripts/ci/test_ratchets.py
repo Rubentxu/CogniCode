@@ -106,13 +106,16 @@ a plan, a token) or is compared with another one: `DefaultHasher` is not
 stable between Rust releases, and a manifest written with BLAKE3 was never
 fresh for a check that read SHA-256.
 
-A production file may not use `DefaultHasher` or `blake3::` more times than it
+A production file may not use `DefaultHasher`, `RandomState` or `blake3` more times than it
 did at the base commit, and the owner itself is the only place a hasher is
 chosen. Comments are blanked before counting, so a line that explains why a
 hasher was retired is not a use of it; code after the first column-0
 `#[cfg(test)]` is not production. A hash that never leaves the process and is
 not a digest of content (the FNV-1a of the per-file graph cache) is not
-covered, and neither is `Sha256` itself: the owner decides the algorithm, the
+covered; neither are the hand-rolled FNV-1a digests of the evidence
+subsystems (`portable_execution::paths::content_digest`, the self-hosting
+baseline), which are stable and deterministic and carry their `fnv64:` prefix;
+and neither is `Sha256` itself: the owner decides the algorithm, the
 ratchet only stops a second one from coming back.
 
 ## Resolution of the base commit
@@ -407,7 +410,6 @@ APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
     ("application/services/analysis_service.rs", "infrastructure::walk_policy::"),
     ("application/services/analyze.rs", "infrastructure::graph::per_file_graph::"),
     ("application/services/refactor_service.rs", "infrastructure::walk_policy::"),
-    ("application/workspace_session.rs", "infrastructure::walk_policy::"),
 }
 
 # An inventory entry is a call to the local `ex(...)` helper that opens on its
@@ -986,7 +988,7 @@ def setup_cr06() -> None:
 # --- Part III: one content digest ------------------------------------------------
 
 DIGEST_OWNER = f"{CORE_SRC}/domain/findings/digest.rs"
-COMPETING_HASHER = re.compile(r"\bDefaultHasher\b|\bblake3::")
+COMPETING_HASHER = re.compile(r"\bDefaultHasher\b|\bRandomState\b|\bblake3\b")
 
 
 def competing_hasher_uses(text: str) -> int:
@@ -1038,6 +1040,8 @@ def test_a_competing_hasher_is_counted_in_production_only() -> None:
     owned = "use std::hash::DefaultHasher;\nfn f() { let _ = DefaultHasher::new(); }\n"
     check(competing_hasher_uses(owned) == 2, "counts the import and the use")
     check(competing_hasher_uses("fn f() { blake3::hash(b\"x\"); }\n") == 1, "counts blake3::")
+    check(competing_hasher_uses("use blake3::{Hasher, hash};\n") == 1, "counts a braced blake3 import")
+    check(competing_hasher_uses("use std::hash::RandomState;\n") == 1, "counts RandomState")
     check(
         competing_hasher_uses("/// DefaultHasher was retired\n// blake3::hash too\nfn f() {}\n") == 0,
         "a comment that names a retired hasher is not a use",

@@ -41,19 +41,19 @@ pub struct BaselineFile {
 
 /// The deterministic baseline digest over the whole project.
 ///
-/// Combines per-file SHA-256 digests into a single baseline digest
+/// Combines per-file content digests (FNV-1a 64-bit, `fnv64:`) into a single baseline digest
 /// using FNV-1a 64-bit accumulation in canonical path order. The
 /// accumulation is content-only (path strings do not feed the
 /// accumulation), so re-locating a file does not change the baseline
 /// — only the bytes do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BaselineDigest {
-    /// FNV-1a 64-bit hash of the concatenation of per-file SHA-256
+    /// FNV-1a 64-bit hash of the concatenation of per-file
     /// digests, in canonical path order. Hex-encoded lowercase.
     pub composite: String,
     /// Number of files that contributed.
     pub file_count: usize,
-    /// SHA-256 digests per file (in canonical path order). Useful
+    /// Content digests per file (in canonical path order). Useful
     /// for diffing: when the baseline shifts, the file-level diff
     /// shows which files moved.
     pub per_file: Vec<(String, String)>,
@@ -79,9 +79,9 @@ pub enum BaselineError {
 ///    meaningful reference).
 /// 2. Sort by canonical path (lexicographic, byte-wise).
 /// 3. For each file in order:
-///    a. SHA-256 digest the bytes via `content_digest`.
-///    b. Record `(path, sha256)`.
-///    c. Accumulate into a running FNV-1a 64-bit hash over the SHA-256 hex string.
+///    a. Digest the bytes via `content_digest`.
+///    b. Record `(path, digest)`.
+///    c. Accumulate into a running FNV-1a 64-bit hash over the digest string.
 /// 4. Hex-encode the final FNV-1a state as `composite`.
 pub fn compute_baseline(files: &[BaselineFile]) -> Result<BaselineDigest, BaselineError> {
     if files.is_empty() {
