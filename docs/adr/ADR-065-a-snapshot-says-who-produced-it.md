@@ -107,9 +107,19 @@ verdad.
 El `commit` es `null` cuando el binario se construyó fuera de un checkout. Es
 un hecho sobre el binario, no un hueco que se rellene con un valor inventado.
 
-El catálogo publicado (`product/tools.json`) declara los mismos cuatro
-campos, y un contrato de CI lo comprueba: un documento que describe una forma
-que el producto ya no tiene es una promesa que el producto no cumple.
+**Revisión (esquema v6).** El commit no identifica al analizador: dos builds
+de código distinto pueden salir del mismo commit (un árbol con cambios sin
+commitear), y vigilar las refs de git recompilaba el core en cada commit de
+cada worktree. La clave y la base ganan un quinto componente,
+`analyzer_source_digest`: el sha256 de las fuentes del analizador, calculado
+por el script de build con el mismo módulo (`analyzer_source.rs`) que lee el
+test que lo comprueba. El `commit` queda como procedencia de un artefacto
+publicado: se graba solo en el perfil `release`, y es `null` también en un
+build de desarrollo.
+
+El catálogo publicado (`product/tools.json`) declara los mismos campos, y un
+contrato de CI lo comprueba: un documento que describe una forma que el
+producto ya no tiene es una promesa que el producto no cumple.
 
 ### Lo que la clave NO lleva, y por qué
 

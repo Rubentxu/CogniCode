@@ -12,8 +12,9 @@
 //!   - `cognicode identity` emite el envelope:
 //!     `cognicode-cli {version} sha={sha} features={f1,f2,...}`
 //!     `source: {git_remote_url}`
-//!     La SHA viene de `build.rs` que corre `git rev-parse --short HEAD`
-//!     al compilar y emite `cargo:rustc-env=GIT_SHA=...`.
+//!     La SHA es la del analizador (`ANALYZER_COMMIT` de
+//!     `cognicode-core`), grabada solo en el perfil `release`; un build
+//!     de desarrollo declara `unknown`.
 //!   - `--version` se preserva byte-a-byte (snapshot T1-5.1).
 //!
 //! Tests que pinean:

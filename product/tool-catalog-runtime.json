@@ -223,7 +223,7 @@
           "description": "Provenance basis for a build_graph result.",
           "properties": {
             "analyzer_commit": {
-              "description": "The commit the analyzer was built from, when it could be known.\n\n`null` when the binary was built outside a checkout. That is a\nfact about the binary, not a value invented to fill the field.",
+              "description": "The commit the analyzer was built from, when it could be known.\n\n`null` for a development build, and for a release build made\noutside a checkout. That is a fact about the binary, not a value\ninvented to fill the field.",
               "type": [
                 "string",
                 "null"
@@ -235,6 +235,10 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "analyzer_source_digest": {
+              "description": "The sha256 of the sources the analyzer was built from.\n\nTwo builds of different code differ here even on the same commit,\nso it is what tells the consumer that two answers came from the\nsame analyzer.",
+              "type": "string"
             },
             "analyzer_version": {
               "description": "The version of the analyzer that produced this analysis.\n\nThe provider's version, not the consumer's: it says which build\ncalculated the answer, which is what a cached answer has to be\nchecked against before it can be served again.",
@@ -271,6 +275,7 @@
             "source_manifest_digest",
             "analyzer_version",
             "analyzer_features",
+            "analyzer_source_digest",
             "snapshot_schema",
             "graph_source",
             "complete"

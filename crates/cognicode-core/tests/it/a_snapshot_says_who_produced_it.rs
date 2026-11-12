@@ -136,8 +136,16 @@ async fn the_basis_declares_the_analyzer_that_produced_the_analysis() {
     );
 
     assert_eq!(
+        basis["analyzer_source_digest"].as_str(),
+        Some(cognicode_core::domain::value_objects::ANALYZER_SOURCE_DIGEST),
+        "la base declara el digest de las fuentes del analizador: es lo que \
+         distingue dos builds de código distinto en el mismo commit. Base \
+         publicada: {basis}"
+    );
+
+    assert_eq!(
         basis["snapshot_schema"].as_str(),
-        Some("cognicode.graph.cache/v5"),
+        Some("cognicode.graph.cache/v6"),
         "la base declara el esquema con el que se escribió el snapshot"
     );
 }

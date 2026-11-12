@@ -45,11 +45,18 @@ pub struct BasisDto {
     pub analyzer_version: String,
     /// The commit the analyzer was built from, when it could be known.
     ///
-    /// `null` when the binary was built outside a checkout. That is a
-    /// fact about the binary, not a value invented to fill the field.
+    /// `null` for a development build, and for a release build made
+    /// outside a checkout. That is a fact about the binary, not a value
+    /// invented to fill the field.
     pub analyzer_commit: Option<String>,
     /// The capabilities the analyzer was built with, in a stable order.
     pub analyzer_features: Vec<String>,
+    /// The sha256 of the sources the analyzer was built from.
+    ///
+    /// Two builds of different code differ here even on the same commit,
+    /// so it is what tells the consumer that two answers came from the
+    /// same analyzer.
+    pub analyzer_source_digest: String,
     /// The shape the snapshot was written in.
     pub snapshot_schema: String,
     /// Where the graph came from: `built`, `cache` or `daemon`.
@@ -121,6 +128,7 @@ pub(super) fn compute_basis(
         analyzer_version: key.analyzer.version,
         analyzer_commit: key.analyzer.commit,
         analyzer_features: key.analyzer.features,
+        analyzer_source_digest: key.analyzer.source_digest,
         snapshot_schema: key.schema,
         graph_source: source.published_label().to_string(),
         complete: workspace_ok,
@@ -174,6 +182,10 @@ mod tests {
         assert_eq!(info_basis.analyzer_version, debug_basis.analyzer_version);
         assert_eq!(info_basis.analyzer_commit, debug_basis.analyzer_commit);
         assert_eq!(info_basis.analyzer_features, debug_basis.analyzer_features);
+        assert_eq!(
+            info_basis.analyzer_source_digest,
+            debug_basis.analyzer_source_digest
+        );
         assert_eq!(info_basis.snapshot_schema, debug_basis.snapshot_schema);
     }
 }

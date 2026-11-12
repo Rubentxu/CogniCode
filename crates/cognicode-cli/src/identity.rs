@@ -12,9 +12,11 @@
 //!     que su build no tenia.
 //!
 //! B1.W2 aporta:
-//!   - `build.rs` (en este crate) corre `git rev-parse --short HEAD`
-//!     al compilar y emite `cargo:rustc-env=GIT_SHA=...`. La SHA queda
-//!     baked-in como string literal.
+//!   - La SHA es la del analizador (`ANALYZER_COMMIT` de
+//!     `cognicode-core`): el script de build del core la graba solo en
+//!     el perfil `release`, que es el que produce un artefacto
+//!     publicado. Un build de desarrollo no pregunta a git, porque
+//!     vigilar las refs recompilaba el binario en cada commit.
 //!   - Este modulo expone `source_sha()`, `version()`, `features()`,
 //!     y `print(w)` que escribe un envelope textual con los tres.
 //!   - `CliCommand::Identity` (commands.rs) + dispatcher en main.rs
@@ -24,11 +26,11 @@
 //!     desde un checkout git.
 //!
 //! Politica B1.W2:
-//!   - `source_sha()` devuelve `"unknown"` cuando el binario se
-//!     construyo fuera de un checkout (tarball sin GIT_SHA). Eso es
-//!     un signal valido: un release tarball DEBE llevar la SHA baked
-//!     al archivarse, no un placeholder. El caso "unknown" sale por
-//!     el envelope con etiqueta explicita, no como un empty.
+//!   - `source_sha()` devuelve `"unknown"` en un build de desarrollo
+//!     y en un build de release hecho fuera de un checkout (tarball).
+//!     Eso es un signal valido: un release tarball DEBE llevar la SHA
+//!     baked al archivarse, no un placeholder. El caso "unknown" sale
+//!     por el envelope con etiqueta explicita, no como un empty.
 //!   - `features()` lista solo las que fueron ON al compilar. No
 //!     incluye features que el workspace declara pero este crate no
 //!     usa (e.g. `multimodal` declarada pero no enlazada aqui).
@@ -37,11 +39,7 @@
 
 use std::io::{self, Write};
 
-/// Source SHA baked-in por `build.rs`. Vacio cuando no es un repo git.
-pub const GIT_SHA: &str = match option_env!("GIT_SHA") {
-    Some(s) if !s.is_empty() => s,
-    _ => "\0",
-};
+use cognicode_core::domain::value_objects::ANALYZER_COMMIT;
 
 /// Versión del workspace al momento de compilar.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -60,18 +58,11 @@ pub fn features() -> Vec<&'static str> {
     out
 }
 
-/// Source SHA real (no el sentinel "unknown"). El binario reportara
-/// "unknown" si fue construido fuera de un checkout git (tarball
-/// sin GIT_SHA baked). En checkout normal, devuelve los 7 chars
-/// cortos del HEAD al momento de compilar.
+/// La SHA corta del commit del que sale un build de release, o
+/// `"unknown"` cuando el build no la lleva (desarrollo, o release
+/// fuera de un checkout git).
 pub fn source_sha() -> &'static str {
-    if GIT_SHA == "\0" {
-        "unknown"
-    } else {
-        // Strip the trailing NUL that the const trick uses to keep
-        // the const literal non-empty under `option_env!`.
-        GIT_SHA.trim_end_matches('\0')
-    }
+    ANALYZER_COMMIT.unwrap_or("unknown")
 }
 
 /// Escribe el envelope de identidad a `w`. Formato:

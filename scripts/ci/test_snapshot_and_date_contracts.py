@@ -582,11 +582,12 @@ CORE_MANIFEST = "crates/cognicode-core/Cargo.toml"
 CATALOG = "crates/cognicode-core/product/tools.json"
 
 KEY_COMPONENTS = ("workspace", "analyzer", "schema")
-BUILD_COMPONENTS = ("version", "commit", "features")
+BUILD_COMPONENTS = ("version", "commit", "features", "source_digest")
 PUBLISHED_COMPONENTS = (
     "analyzer_version",
     "analyzer_commit",
     "analyzer_features",
+    "analyzer_source_digest",
     "snapshot_schema",
 )
 
@@ -679,8 +680,10 @@ def the_analyzer_declares_a_real_identity(text: str) -> list[str]:
     """El analizador dice quien es, con hechos y no con constantes inventadas.
 
     La version tiene que ser la del crate que calcula --el proveedor--, no la
-    del consumidor que pregunta. El commit, cuando se puede saber, y ausente
-    cuando no: un valor inventado seria una mentira.
+    del consumidor que pregunta. El digest de las fuentes, siempre: dos builds
+    de codigo distinto en el mismo commit son dos analizadores. El commit,
+    cuando se puede saber, y ausente cuando no: un valor inventado seria una
+    mentira.
     """
     findings: list[str] = []
     if 'env!("CARGO_PKG_VERSION")' not in text:
@@ -688,24 +691,30 @@ def the_analyzer_declares_a_real_identity(text: str) -> list[str]:
             f"{KEY_OWNER}: el analizador no declara la version del crate que "
             "calcula"
         )
-    if "GIT_SHA" not in text:
-        findings.append(
-            f"{KEY_OWNER}: el analizador no declara el commit del que se "
-            "construyo"
-        )
+    baked = {
+        "COGNICODE_ANALYZER_SOURCE_DIGEST": "el digest de las fuentes",
+        "COGNICODE_ANALYZER_COMMIT": "el commit",
+    }
+    for variable, what in baked.items():
+        if variable not in text:
+            findings.append(
+                f"{KEY_OWNER}: el analizador no declara {what} del que se "
+                "construyo"
+            )
     build_script = REPO_ROOT / "crates/cognicode-core/build.rs"
     if not build_script.is_file():
         findings.append(
-            "crates/cognicode-core/build.rs no existe: sin el, el commit nunca "
-            "se conoce"
+            "crates/cognicode-core/build.rs no existe: sin el, el analizador "
+            "no sabe de que fuentes se construyo"
         )
     else:
         script = build_script.read_text(encoding="utf-8")
-        if "GIT_SHA" not in script:
-            findings.append(
-                "crates/cognicode-core/build.rs no hornea el commit del que se "
-                "construyo el analizador"
-            )
+        for variable, what in baked.items():
+            if variable not in script:
+                findings.append(
+                    f"crates/cognicode-core/build.rs no hornea {what} del que "
+                    "se construyo el analizador"
+                )
     return findings
 
 

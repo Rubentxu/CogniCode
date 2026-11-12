@@ -59,7 +59,9 @@ pub use pending_reference::{PendingClass, PendingReference};
 pub use provenance::Provenance;
 pub use rejected_relation::RejectedRelation;
 pub use revision_id::{ParseRevisionIdError, RevisionId};
-pub use snapshot_key::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
+pub use snapshot_key::{
+    ANALYZER_COMMIT, ANALYZER_SOURCE_DIGEST, AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey,
+};
 pub use source_range::SourceRange;
 pub use symbol_delta::{SymbolCount, SymbolDelta, symbol_delta};
 pub use symbol_kind::SymbolKind;

@@ -5,8 +5,9 @@ Dos contratos con el mismo defecto de fondo —una ruta que no está— sobre
 sujetos distintos, reunidos en un solo fichero. No comparten un sujeto único:
 cada sección vigila el suyo.
 
-  I.  Los `build.rs` de `cognicode-core` y `cognicode-cli`: no vigilan rutas
-      de git que un worktree no tiene.
+  I.  El `build.rs` de `cognicode-core`: no vigila rutas de git que un
+      worktree no tiene, y toda entrada que hashea como fuente del analizador
+      existe.
   II. Las configuraciones ejecutables (`playwright.config.ts`, `scripts/*.sh`,
       `*.pipeline.kts`...): no citan documentos de `docs/` que no existen.
 
@@ -22,6 +23,12 @@ recompilacion de mas.
 
 La ruta correcta la dice git (`git rev-parse --git-path HEAD` y
 `--git-common-dir`), y solo se vigila si existe.
+
+El script vigila ademas las entradas que hashea como fuente del analizador
+(`INPUTS` en `crates/cognicode-core/analyzer_source.rs`). Una entrada que no
+existe no se vigila —el script la registra como ausente—, asi que una errata
+en la lista no recompilaria nada de mas: dejaria esa fuente fuera de la
+identidad sin decirlo. Por eso cada entrada tiene que existir en el checkout.
 
 ## II. Una configuración ejecutable no puede apuntar a un documento que no existe
 
@@ -105,7 +112,9 @@ def check(condition: bool, message: str) -> None:
 # I. Un build.rs no vigila rutas de git que un worktree no tiene
 # ---------------------------------------------------------------------------
 
-BUILD_SCRIPTS = ("crates/cognicode-core/build.rs", "crates/cognicode-cli/build.rs")
+BUILD_SCRIPTS = ("crates/cognicode-core/build.rs",)
+CORE_PACKAGE = "crates/cognicode-core"
+ANALYZER_SOURCE = f"{CORE_PACKAGE}/analyzer_source.rs"
 
 
 def watched_literals(text: str) -> list[str]:
@@ -123,6 +132,29 @@ def test_no_script_hardcodes_a_dot_git_directory() -> None:
 def test_the_detector_sees_a_planted_hardcoded_path() -> None:
     planted = 'println!("cargo:rerun-if-changed=../../.git/HEAD");'
     check(watched_literals(planted) == ["../../.git/HEAD"], "el detector no ve una ruta fija plantada")
+
+
+def analyzer_inputs(text: str) -> list[str]:
+    block = re.search(r"pub const INPUTS: &\[&str\] = &\[(.*?)\];", text, re.S)
+    return re.findall(r'"([^"]+)"', block.group(1)) if block else []
+
+
+def absent_inputs(inputs: list[str], package_dir: Path) -> list[str]:
+    return [entry for entry in inputs if not (package_dir / entry).exists()]
+
+
+def test_every_analyzer_input_exists() -> None:
+    inputs = analyzer_inputs((REPO_ROOT / ANALYZER_SOURCE).read_text(encoding="utf-8"))
+    check(bool(inputs), f"{ANALYZER_SOURCE}: no se encuentra la lista `INPUTS`")
+    missing = absent_inputs(inputs, REPO_ROOT / CORE_PACKAGE)
+    check(not missing, f"{ANALYZER_SOURCE} hashea {missing}, que no existen: esas fuentes quedan fuera de la identidad del analizador")
+
+
+def test_the_detector_sees_a_planted_absent_input() -> None:
+    planted = 'pub const INPUTS: &[&str] = &[\n    "src",\n    "../no-such-crate/src",\n];'
+    inputs = analyzer_inputs(planted)
+    check(inputs == ["src", "../no-such-crate/src"], f"el extractor no lee la lista plantada: {inputs}")
+    check(absent_inputs(inputs, REPO_ROOT / CORE_PACKAGE) == ["../no-such-crate/src"], "el detector no ve una entrada ausente plantada")
 
 
 # ---------------------------------------------------------------------------
