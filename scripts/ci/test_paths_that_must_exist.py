@@ -112,7 +112,9 @@ def check(condition: bool, message: str) -> None:
 # I. Un build.rs no vigila rutas de git que un worktree no tiene
 # ---------------------------------------------------------------------------
 
-BUILD_SCRIPTS = ("crates/cognicode-core/build.rs",)
+# Descubiertos, no listados: un build.rs nuevo entra en el contrato sin que
+# nadie se acuerde de añadirlo.
+BUILD_SCRIPTS = tuple(sorted(str(p.relative_to(REPO_ROOT)) for p in REPO_ROOT.glob("crates/*/build.rs")))
 CORE_PACKAGE = "crates/cognicode-core"
 ANALYZER_SOURCE = f"{CORE_PACKAGE}/analyzer_source.rs"
 
@@ -122,11 +124,31 @@ def watched_literals(text: str) -> list[str]:
     return re.findall(r'cargo:rerun-if-changed=([^"{}]+)"', live)
 
 
+def test_the_build_scripts_are_discovered() -> None:
+    check(f"{CORE_PACKAGE}/build.rs" in BUILD_SCRIPTS, f"el descubrimiento no encuentra {CORE_PACKAGE}/build.rs: {BUILD_SCRIPTS}")
+
+
 def test_no_script_hardcodes_a_dot_git_directory() -> None:
     for rel in BUILD_SCRIPTS:
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         bad = [p for p in watched_literals(text) if ".git" in p]
         check(not bad, f"{rel} vigila {bad}: en un worktree esa ruta no existe y Cargo recompila siempre")
+
+
+def missing_literals(text: str, package_dir: Path) -> list[str]:
+    return [p for p in watched_literals(text) if not (package_dir / p).exists()]
+
+
+def test_no_script_watches_a_literal_path_that_does_not_exist() -> None:
+    for rel in BUILD_SCRIPTS:
+        script = REPO_ROOT / rel
+        missing = missing_literals(script.read_text(encoding="utf-8"), script.parent)
+        check(not missing, f"{rel} vigila {missing}, que no existen: Cargo vuelve a ejecutar el script en cada build")
+
+
+def test_the_detector_sees_a_planted_missing_literal() -> None:
+    planted = 'println!("cargo:rerun-if-changed=no-such-file.txt");'
+    check(missing_literals(planted, REPO_ROOT / CORE_PACKAGE) == ["no-such-file.txt"], "el detector no ve un literal ausente plantado")
 
 
 def test_the_detector_sees_a_planted_hardcoded_path() -> None:

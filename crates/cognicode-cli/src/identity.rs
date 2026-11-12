@@ -18,7 +18,9 @@
 //!     publicado. Un build de desarrollo no pregunta a git, porque
 //!     vigilar las refs recompilaba el binario en cada commit.
 //!   - Este modulo expone `source_sha()`, `version()`, `features()`,
-//!     y `print(w)` que escribe un envelope textual con los tres.
+//!     y `print(w)` que escribe un envelope textual con los tres, mas
+//!     el digest de las fuentes del analizador (`ANALYZER_SOURCE_DIGEST`),
+//!     que es lo que distingue dos builds de codigo distinto.
 //!   - `CliCommand::Identity` (commands.rs) + dispatcher en main.rs
 //!     invocan `print()` para responder al usuario.
 //!   - Contratos: tests que invocan el binario verifican que las
@@ -39,7 +41,7 @@
 
 use std::io::{self, Write};
 
-use cognicode_core::domain::value_objects::ANALYZER_COMMIT;
+use cognicode_core::domain::value_objects::{ANALYZER_COMMIT, ANALYZER_SOURCE_DIGEST};
 
 /// Versión del workspace al momento de compilar.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -66,9 +68,13 @@ pub fn source_sha() -> &'static str {
 }
 
 /// Escribe el envelope de identidad a `w`. Formato:
-///   `cognicode-cli {version} sha={source_sha} features=[f1,f2,...]\n`
+///   `cognicode-cli {version} sha={source_sha} source_digest={sha256} features=[f1,f2,...]\n`
 ///   followed by a `source: {git_url_or_unknown}` line for full
 ///   provenance.
+///
+/// `source_digest` es el sha256 de las fuentes del analizador: dos
+/// builds de código distinto sobre el mismo commit comparten `sha=`,
+/// y un build de desarrollo declara `unknown`, pero difieren aquí.
 pub fn print(w: &mut dyn Write) -> io::Result<()> {
     let feats = features();
     let feats_str = if feats.is_empty() {
@@ -78,9 +84,10 @@ pub fn print(w: &mut dyn Write) -> io::Result<()> {
     };
     writeln!(
         w,
-        "cognicode-cli {} sha={} features={}",
+        "cognicode-cli {} sha={} source_digest={} features={}",
         VERSION,
         source_sha(),
+        ANALYZER_SOURCE_DIGEST,
         feats_str
     )?;
     // El source URL es lo que el contrato B1.W2 espera como segunda

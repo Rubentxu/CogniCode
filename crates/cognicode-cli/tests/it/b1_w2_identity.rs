@@ -10,7 +10,7 @@
 //!
 //! B1.W2 aporta:
 //!   - `cognicode identity` emite el envelope:
-//!     `cognicode-cli {version} sha={sha} features={f1,f2,...}`
+//!     `cognicode-cli {version} sha={sha} source_digest={sha256} features={f1,f2,...}`
 //!     `source: {git_remote_url}`
 //!     La SHA es la del analizador (`ANALYZER_COMMIT` de
 //!     `cognicode-core`), grabada solo en el perfil `release`; un build
@@ -23,6 +23,8 @@
 //!   - Segunda linea empieza con `source: ` + URL o `unknown`.
 //!   - El campo `sha=` es 7+ hex chars (real) o literal `unknown`
 //!     (binario construido fuera de un checkout git).
+//!   - El campo `source_digest=` es el digest de las fuentes del
+//!     analizador con el que se construyo el binario.
 //!   - `--version` sigue emitiendo `cognicode {version}` (no cambia).
 
 use std::process::Command;
@@ -96,6 +98,32 @@ fn identity_sha_is_real_or_unknown() {
         sha == "unknown"
             || (sha.len() >= 7 && sha.len() <= 12 && sha.chars().all(|c| c.is_ascii_hexdigit())),
         "sha must be 'unknown' or 7-12 hex chars; got {sha:?}"
+    );
+}
+
+/// Two builds of different code on the same commit print the same `sha=`
+/// (and a development build always prints `unknown`), so the line also
+/// carries the digest of the analyzer's source: that is what tells the
+/// two binaries apart.
+#[test]
+fn identity_declares_the_digest_of_the_analyzer_source() {
+    let output = cognicode()
+        .arg("identity")
+        .output()
+        .expect("cognicode identity must run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let first = stdout
+        .lines()
+        .next()
+        .expect("identity must emit at least one line");
+    let digest = first
+        .split_whitespace()
+        .find_map(|tok| tok.strip_prefix("source_digest="))
+        .unwrap_or_else(|| panic!("identity line should carry source_digest=<hex>; got {first:?}"));
+    assert_eq!(
+        digest,
+        cognicode_core::domain::value_objects::ANALYZER_SOURCE_DIGEST,
+        "the binary declares the digest of the source it was built from"
     );
 }
 

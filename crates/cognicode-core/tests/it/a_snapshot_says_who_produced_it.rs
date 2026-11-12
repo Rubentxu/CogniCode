@@ -129,10 +129,14 @@ async fn the_basis_declares_the_analyzer_that_produced_the_analysis() {
          producir la misma identidad en cualquier orden"
     );
 
-    assert!(
-        basis["analyzer_commit"].is_string() || basis["analyzer_commit"].is_null(),
-        "el commit del analizador es texto cuando se sabe, y ausente cuando \
-         no: nunca un valor inventado. Base publicada: {basis}"
+    assert_eq!(
+        basis.get("analyzer_commit"),
+        Some(&serde_json::json!(
+            cognicode_core::domain::value_objects::ANALYZER_COMMIT
+        )),
+        "el commit del analizador es el que el build grabó, y `null` cuando \
+         no grabó ninguno: el campo se publica siempre y nunca con un valor \
+         inventado. Base publicada: {basis}"
     );
 
     assert_eq!(

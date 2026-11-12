@@ -106,6 +106,35 @@ fn two_builds_of_different_code_on_the_same_commit_are_two_producers() {
     );
 }
 
+/// The build script and this test share `collect`, so the comparison below
+/// cannot see a `collect` that reads the wrong tree. This one can: the tree
+/// that is hashed holds the analyzer and the path crates it is built with.
+#[test]
+fn the_hashed_tree_holds_the_analyzer_and_its_path_dependencies() {
+    let tree = collect(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+        .expect("the analyzer's inputs can be read");
+
+    for expected in [
+        "src/lib.rs",
+        "product/tools.json",
+        "../../Cargo.lock",
+        "../cognicode-graph-algos/src/lib.rs",
+        "../cognicode-macros/src/lib.rs",
+    ] {
+        assert!(
+            tree.iter()
+                .any(|entry| entry.path == expected && entry.bytes.is_some()),
+            "{expected} is part of what the analyzer is built from, so it is \
+             part of the digest"
+        );
+    }
+    assert!(
+        tree.iter().all(|entry| entry.bytes.is_some()),
+        "in the workspace every input exists; an absent one leaves its source \
+         out of the identity"
+    );
+}
+
 #[test]
 fn the_running_analyzer_declares_the_digest_of_its_own_source() {
     let tree = collect(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
