@@ -77,6 +77,17 @@ pub struct RefactorPreviewDto {
     pub change_count: usize,
     /// Risk assessment
     pub risk_assessment: String,
+    /// TASK-223 — la palabra del dueño de la cobertura sobre el grafo
+    /// con el que se midió el impacto (`complete`, `partial`,
+    /// `unknown`, `unsupported`). El impacto se responde sobre una
+    /// base, y la base se declara.
+    #[serde(default)]
+    pub coverage_state: String,
+    /// TASK-223 — los ficheros que el árbol tiene y el grafo no leyó:
+    /// un fichero ilegible es un hueco que el preview nombra, no un
+    /// silencio.
+    #[serde(default)]
+    pub unreadable_files: Vec<String>,
 }
 
 impl RefactorPreviewDto {
@@ -88,6 +99,8 @@ impl RefactorPreviewDto {
             symbols_affected: Vec::new(),
             change_count: 0,
             risk_assessment: "unknown".to_string(),
+            coverage_state: "unknown".to_string(),
+            unreadable_files: Vec::new(),
         }
     }
 
