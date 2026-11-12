@@ -323,3 +323,81 @@ fn preview_rejects_overlapping_edits() {
         err
     );
 }
+
+// ----------------------------------------------------------------------------
+// TASK-219 — la guarda de symlinks del preview rechaza los escapes del
+// workspace. Hoy `reject_symlink_escape` toma como raíz el ancestro sin
+// padre (`/`), así que ningún destino queda fuera y la guarda nunca
+// rechaza: el preview lee a través del enlace.
+// ----------------------------------------------------------------------------
+
+/// Plan de una sola edición sobre `file`, sin escribir el fichero: el
+/// escenario de symlinks lo monta el test.
+fn plan_for(
+    root: &std::path::Path,
+    file: &std::path::Path,
+    byte_range: std::ops::Range<usize>,
+) -> RefactorPlan {
+    let basis = AnalysisBasis::for_workspace(root.to_path_buf());
+    build_plan(
+        root.to_path_buf(),
+        basis,
+        vec![file.to_path_buf()],
+        vec![PlannedEdit {
+            file: file.to_path_buf(),
+            byte_range,
+            replacement: "safe".to_string(),
+            deterministic: true,
+        }],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("build_plan")
+}
+
+/// AC #1 — un preview cuyo fichero objetivo es un symlink a fuera del
+/// workspace se rechaza (hoy pasa: la guarda mira `/`).
+#[cfg(unix)]
+#[test]
+fn preview_refuses_a_target_that_is_a_symlink_out_of_the_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let outside = dir.path().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("evil.rs"), b"hello evil\n").unwrap();
+
+    let link = root.join("link.rs");
+    std::os::unix::fs::symlink("../outside/evil.rs", &link).unwrap();
+
+    use cognicode_core::refactor::preview::PreviewError;
+
+    let plan = plan_for(&root, &link, 6..10);
+    let err = cognicode_core::refactor::preview::render_preview(&plan, &root).unwrap_err();
+    assert!(
+        matches!(err, PreviewError::SymlinkEscape { .. }),
+        "a symlink out of the workspace is refused before it is read, got {err:?}"
+    );
+}
+
+/// AC #4 — los symlinks que apuntan DENTRO del workspace se tratan igual
+/// que en path_authorisation: `validate_file_path` rechaza toda hoja que
+/// sea symlink, apunte adentro o afuera. El preview es simétrico.
+#[cfg(unix)]
+#[test]
+fn preview_refuses_every_symlink_leaf_even_one_that_stays_inside() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::write(root.join("real.rs"), b"hello safe\n").unwrap();
+
+    let link = root.join("link.rs");
+    std::os::unix::fs::symlink("real.rs", &link).unwrap();
+
+    use cognicode_core::refactor::preview::PreviewError;
+
+    let plan = plan_for(&root, &link, 6..10);
+    let err = cognicode_core::refactor::preview::render_preview(&plan, &root).unwrap_err();
+    assert!(
+        matches!(err, PreviewError::SymlinkEscape { .. }),
+        "a symlink leaf is refused even when its target stays inside, got {err:?}"
+    );
+}

@@ -56,7 +56,8 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domain::value_objects::lexical_path::normalize_path;
+use crate::application::ports::PathPolicyError;
+use crate::paths::PathRules;
 
 use super::apply::compute_workspace_state_digest;
 use super::plan::{PlannedEdit, Precondition, RefactorPlan, Risk};
@@ -230,13 +231,17 @@ pub fn render_preview(
         ));
     }
 
-    // 1) Resolver paths absolutos de B5.W1 contra workspace_root y
-    //    validar que caen dentro (anti-traversal AAT-B5-02).
-    //    Ademas: rechazar symlinks (simetria con apply).
+    // 1) Resolver paths de B5.W1 contra workspace_root y validarlos con
+    //    las reglas del workspace (TASK-61/62): traversal, hoja symlink
+    //    y frontera canonica en UN solo juicio — el mismo que piden el
+    //    MCP y el apply (TASK-219). La hoja symlink se rechaza antes de
+    //    leer, apunte adentro o afuera; el symlink no se sigue.
+    let rules = PathRules::new().with_workspace(vec![workspace_root.to_path_buf()]);
     let mut file_inputs: Vec<(PathBuf /*rel*/, PathBuf /*abs*/, Vec<PlannedEdit>)> = Vec::new();
     for edit in &plan.edits {
-        let abs = resolve_within_root(workspace_root, &edit.file)?;
-        reject_symlink_escape(&abs)?;
+        let abs = rules
+            .validate_file_path(&edit.file.to_string_lossy())
+            .map_err(|e| preview_policy_error(&edit.file, e))?;
         let rel = rel_from_abs(workspace_root, &abs);
         let entry = file_inputs.iter_mut().find(|(r, _, _)| r == &rel);
         match entry {
@@ -344,9 +349,12 @@ pub fn snapshot_workspace_mtimes(
     plan: &RefactorPlan,
     workspace_root: &Path,
 ) -> Result<MtimeSnapshot, PreviewError> {
+    let rules = PathRules::new().with_workspace(vec![workspace_root.to_path_buf()]);
     let mut seen: Vec<PathBuf> = Vec::new();
     for edit in &plan.edits {
-        let abs = resolve_within_root(workspace_root, &edit.file)?;
+        let abs = rules
+            .validate_file_path(&edit.file.to_string_lossy())
+            .map_err(|e| preview_policy_error(&edit.file, e))?;
         if !seen.contains(&abs) {
             seen.push(abs);
         }
@@ -394,52 +402,40 @@ pub fn verify_preview_no_mutation(plan: &RefactorPlan, workspace_root: &Path) ->
 // Internals — paths, aplicacion, unified diff.
 // ============================================================================
 
-/// Resuelve un path (absoluto o relativo) contra `root`, y rechaza
-/// cualquier resultado que ESCAPE del root (anti-traversal AAT-B5-02).
-fn resolve_within_root(root: &Path, p: &Path) -> Result<PathBuf, PreviewError> {
-    let abs = if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        root.join(p)
-    };
-    let normalized = normalize_path(&abs);
-    let root_norm = normalize_path(root);
-    if !normalized.starts_with(&root_norm) {
-        return Err(PreviewError::PathEscapesWorkspace(p.to_path_buf()));
+/// El rechazo de las reglas del workspace, en las palabras del preview.
+/// La hoja symlink no se sigue (simetria con apply, AAT-B5-02); lo que
+/// no puede entrar al preview es un escape del workspace; lo que no se
+/// pudo ni inspeccionar es un error de I/O honesto.
+fn preview_policy_error(raw: &Path, error: PathPolicyError) -> PreviewError {
+    match error {
+        PathPolicyError::SymlinkDetected { .. } => PreviewError::SymlinkEscape(raw.to_path_buf()),
+        PathPolicyError::PathOutsideWorkspace
+        | PathPolicyError::PathTraversalAttempt { .. }
+        | PathPolicyError::PathTooDeep { .. }
+        | PathPolicyError::InvalidPathCharacters { .. } => {
+            PreviewError::PathEscapesWorkspace(raw.to_path_buf())
+        }
+        PathPolicyError::PathNotAccessible { path } => {
+            PreviewError::IoError(format!("read {path}: path not accessible"))
+        }
     }
-    Ok(normalized)
 }
 
 /// Devuelve el path relativo a `root` (best-effort). Si `abs` no
-/// cae dentro de `root`, devuelve `abs` tal cual.
+/// cae dentro de `root`, devuelve `abs` tal cual. `abs` llega
+/// canonica (la devuelven las reglas del workspace), asi que la
+/// comparacion es tambien contra `root` canonico: el mismo sitio con
+/// otro nombre — un `/home` que es symlink a `/var/home`, por ejemplo —
+/// no convierte el relativo en absoluto.
 fn rel_from_abs(root: &Path, abs: &Path) -> PathBuf {
-    match abs.strip_prefix(root) {
+    let root_canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    match abs
+        .strip_prefix(&root_canonical)
+        .or_else(|_| abs.strip_prefix(root))
+    {
         Ok(r) => r.to_path_buf(),
         Err(_) => abs.to_path_buf(),
     }
-}
-
-/// Si `abs` es un symlink, devuelve `SymlinkEscape`. Simetria con
-/// `apply` (AAT-B5-02). Best-effort: si el symlink no se puede
-/// inspeccionar, se permite y lo bloquea el apply real.
-fn reject_symlink_escape(abs: &Path) -> Result<(), PreviewError> {
-    let meta = match fs::symlink_metadata(abs) {
-        Ok(m) => m,
-        Err(_) => return Ok(()),
-    };
-    if !meta.file_type().is_symlink() {
-        return Ok(());
-    }
-    // Es symlink: comprobamos que su destino (tras canonicalize)
-    // cae dentro del root. Si canonicalize falla, conservamos el
-    // symlink (lo detectara el apply real).
-    if let Ok(canonical) = abs.canonicalize()
-        && let Some(root_norm) = abs.ancestors().find(|a| a.parent().is_none())
-        && !canonical.starts_with(root_norm)
-    {
-        return Err(PreviewError::SymlinkEscape(abs.to_path_buf()));
-    }
-    Ok(())
 }
 
 /// Aplica una lista de ediciones YA ORDENADAS y NO SOLAPADAS sobre

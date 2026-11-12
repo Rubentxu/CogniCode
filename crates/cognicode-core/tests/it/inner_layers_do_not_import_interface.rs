@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const INNER_LAYERS: [&str; 8] = [
+const INNER_LAYERS: [&str; 9] = [
     "domain",
     "application",
     "infrastructure",
@@ -18,6 +18,7 @@ const INNER_LAYERS: [&str; 8] = [
     "refactor",
     "schemas",
     "incremental",
+    "paths",
 ];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
