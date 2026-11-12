@@ -28,7 +28,7 @@ exclude = [
 # the workspace default build is rusqlite-free. LadybugDB is the canonical
 # persistence backend (e29-7 full postgres removal); the domain ports are
 # unconditionally available and adapters implement them against lbug.
-default = ["persistence"]
+default = ["persistence", "evidence-kernel"]
 persistence = []
 # `multimodal` is an opt-in feature that enables the Generic Graph
 # Layer (`NodeKind`, `EdgeKind`, `NodeId`, `GraphNode`, `GraphEdge`)
