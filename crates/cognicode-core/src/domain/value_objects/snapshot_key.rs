@@ -15,8 +15,8 @@
 //! La clave es la pregunta "¿esto sigue valiendo?" hecha comparable:
 //!
 //! - **qué se miró**: el workspace canónico;
-//! - **quién lo miró**: el analizador —su versión, su commit y sus
-//!   capacidades—;
+//! - **quién lo miró**: el analizador —su versión, el digest de sus
+//!   fuentes, su commit cuando es un build de release y sus capacidades—;
 //! - **con qué forma se escribió**: el esquema del snapshot.
 //!
 //! ## Qué NO es la clave, y por qué
@@ -45,11 +45,34 @@ use serde::{Deserialize, Serialize};
 /// más es una forma distinta de fichero, y un snapshot escrito con la forma
 /// anterior no dice nada sobre el árbol que describe. Se reconstruye, que es
 /// lo que hace un snapshot de otra versión.
-pub const SNAPSHOT_SCHEMA: &str = "cognicode.graph.cache/v5";
+///
+/// La v6 llega porque el analizador ahora se identifica por el digest de
+/// sus fuentes ([`AnalyzerBuild::source_digest`]): la clave tiene un campo
+/// más, y un snapshot de la v5 no dice qué fuentes lo calcularon.
+pub const SNAPSHOT_SCHEMA: &str = "cognicode.graph.cache/v6";
+
+/// El digest sha256 de las fuentes con las que se construyó el analizador.
+///
+/// Lo calcula el build script sobre los ficheros que deciden lo que el
+/// analizador calcula —su código, sus manifiestos, sus catálogos y los de
+/// los crates con los que se compila—. Dos builds de código distinto no lo
+/// comparten aunque estén en el mismo commit.
+pub const ANALYZER_SOURCE_DIGEST: &str = env!("COGNICODE_ANALYZER_SOURCE_DIGEST");
+
+/// El commit del que se construyó el analizador, cuando es un build de
+/// release hecho desde un checkout.
+///
+/// Un build de desarrollo no lo incrusta: el commit no cambia ningún byte
+/// del analizador —eso lo dice [`ANALYZER_SOURCE_DIGEST`]—, y vigilar los
+/// refs de git recompilaba el core en cada commit.
+pub const ANALYZER_COMMIT: Option<&str> = match option_env!("COGNICODE_ANALYZER_COMMIT") {
+    Some(sha) if !sha.is_empty() => Some(sha),
+    _ => None,
+};
 
 /// El analizador que produce un análisis.
 ///
-/// Es la identidad del **proveedor**: el crate que calculates el grafo. No
+/// Es la identidad del **proveedor**: el crate que calcula el grafo. No
 /// es la del consumidor que pregunta, que no dice nada sobre cómo se
 /// calculó la respuesta.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,9 +81,10 @@ pub struct AnalyzerBuild {
     pub version: String,
     /// El commit exacto del que se construyó, cuando se pudo saber.
     ///
-    /// `None` cuando el binario se construyó fuera de un checkout —un
-    /// tarball de release, por ejemplo—. Es un hecho, no un hueco: el
-    /// binario no tiene de dónde saberlo.
+    /// `None` en un build de desarrollo, y en uno de release hecho fuera de
+    /// un checkout —un tarball, por ejemplo—. Es un hecho, no un hueco: el
+    /// binario no tiene de dónde saberlo, y lo que distingue a dos builds
+    /// es [`AnalyzerBuild::source_digest`].
     pub commit: Option<String>,
     /// Las capacidades con las que se construyó, ordenadas.
     ///
@@ -68,6 +92,12 @@ pub struct AnalyzerBuild {
     /// analizador puede ver: un binario con la capa multimodal y otro sin
     /// ella no calculan lo mismo sobre los mismos bytes.
     pub features: Vec<String>,
+    /// El digest de las fuentes con las que se construyó
+    /// ([`ANALYZER_SOURCE_DIGEST`]).
+    ///
+    /// Es lo que distingue dos builds del mismo commit con código distinto:
+    /// un árbol con cambios sin commit es otro analizador.
+    pub source_digest: String,
 }
 
 impl AnalyzerBuild {
@@ -75,11 +105,9 @@ impl AnalyzerBuild {
     pub fn current() -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("GIT_SHA")
-                .map(str::trim)
-                .filter(|sha| !sha.is_empty())
-                .map(str::to_string),
+            commit: ANALYZER_COMMIT.map(str::to_string),
             features: enabled_features(),
+            source_digest: ANALYZER_SOURCE_DIGEST.to_string(),
         }
     }
 }
@@ -186,6 +214,7 @@ mod tests {
             version: version.to_string(),
             commit: Some("abc1234".to_string()),
             features: vec!["persistence".to_string()],
+            source_digest: "0".repeat(64),
         }
     }
 
@@ -212,6 +241,18 @@ mod tests {
         let a = SnapshotKey::new("/ws", analyzer("1.0.0"), "schema");
         let b = SnapshotKey::new("/ws", other, "schema");
         assert!(!a.same_producer_as(&b));
+    }
+
+    #[test]
+    fn another_source_is_another_key() {
+        let mut other = analyzer("1.0.0");
+        other.source_digest = "1".repeat(64);
+        let a = SnapshotKey::new("/ws", analyzer("1.0.0"), "schema");
+        let b = SnapshotKey::new("/ws", other, "schema");
+        assert!(
+            !a.same_producer_as(&b),
+            "el mismo commit con otro código es otro analizador"
+        );
     }
 
     #[test]
@@ -253,5 +294,15 @@ mod tests {
     fn the_analyzer_names_its_own_version() {
         let current = AnalyzerBuild::current();
         assert_eq!(current.version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn the_analyzer_declares_a_digest_of_its_source() {
+        let digest = AnalyzerBuild::current().source_digest;
+        assert_eq!(digest.len(), 64, "un sha256 en hex: {digest}");
+        assert!(
+            digest.bytes().all(|b| b.is_ascii_hexdigit()),
+            "un sha256 en hex: {digest}"
+        );
     }
 }

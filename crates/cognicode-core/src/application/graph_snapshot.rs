@@ -160,7 +160,7 @@ pub fn load_or_build_graph(
             // The first question is about the producer, and it costs
             // nothing: it is answered without reading the tree. A
             // snapshot written by another analyzer —another version,
-            // another commit, another capability set— describes a graph
+            // another source, another capability set— describes a graph
             // this analyzer did not calculate, so it is not evidence of
             // anything here.
             let current_key = SnapshotKey::new(
@@ -191,9 +191,13 @@ pub fn load_or_build_graph(
             } else {
                 tracing::warn!(
                     "the durable snapshot was produced by another analyzer \
-                     (version {}, commit {:?}); it is rebuilt",
+                     (version {}, source {}, commit {:?}); this one is \
+                     version {}, source {}; it is rebuilt",
                     key.analyzer.version,
-                    key.analyzer.commit
+                    key.analyzer.source_digest,
+                    key.analyzer.commit,
+                    current_key.analyzer.version,
+                    current_key.analyzer.source_digest
                 );
             }
         }

@@ -192,6 +192,10 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 
 # Rig-core (optional)
 
+[build-dependencies]
+# The build script hashes the analyzer's own source (`analyzer_source.rs`).
+sha2 = { workspace = true }
+
 [dev-dependencies]
 tokio-test.workspace = true
 serial_test.workspace = true
