@@ -4,8 +4,9 @@
 //! The concrete adapters live outside `application/`:
 //!
 //! * [`PathPolicy`] — implemented by `interface::mcp::security`'s
-//!   `InputValidator` (the MCP layer keeps owning the security rules; the
-//!   application only owns the contract and its error).
+//!   `InputValidator`, whose judgment is `crate::paths`'s (one
+//!   implementation of the workspace boundary: TASK-61/62 and TASK-219;
+//!   the application only owns the contract and its error).
 //! * [`SyntaxAnalysis`] — implemented by `infrastructure::parser`'s
 //!   `TreeSitterSyntaxAnalysis` (tree-sitter specifics, including the
 //!   `Language` enum, stay in infrastructure).

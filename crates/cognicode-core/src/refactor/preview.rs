@@ -35,9 +35,10 @@
 //! Politica B5.W2 (NO se rompe bajo ninguna circunstancia):
 //!   - NUNCA se invoca `OpenOptions::write`, `create`, `set_modified`
 //!     ni `remove_file` dentro de este modulo.
-//!   - El unico `fs::*` permitido es `read` (y `metadata`/
-//!     `symlink_metadata` para el sanity-check de mtime y para
-//!     rechazar symlinks AAT-B5-02).
+//!   - El unico `fs::*` permitido es `read`, `canonicalize` (la
+//!     frontera canonica que piden las reglas del workspace, TASK-219)
+//!     y `metadata` para el sanity-check de mtime. Los symlinks los
+//!     rechaza `paths::PathRules` antes de leer (AAT-B5-02).
 //!   - El orden de los `file_diffs` es SIEMPRE por `path` ascendente
 //!     (estabilidad byte-equal entre runs).
 //!   - El `workspace_state_digest` se DELEGA a
@@ -132,8 +133,9 @@ pub struct RefactorPreview {
 pub enum PreviewError {
     /// El `workspace_root` no existe o no es un directorio.
     InvalidWorkspaceRoot(PathBuf),
-    /// El `file` de un `PlannedEdit` (B5.W1) no esta dentro de
-    /// `workspace_root` (posible traversal).
+    /// El `file` de un `PlannedEdit` (B5.W1) no puede entrar al
+    /// workspace: fuera de la frontera canónica, traversal textual,
+    /// demasiado profundo o con caracteres inválidos.
     PathEscapesWorkspace(PathBuf),
     /// El archivo afectado no existe en el workspace.
     AffectedFileMissing(PathBuf),
@@ -232,15 +234,18 @@ pub fn render_preview(
     }
 
     // 1) Resolver paths de B5.W1 contra workspace_root y validarlos con
-    //    las reglas del workspace (TASK-61/62): traversal, hoja symlink
+    //    las reglas del workspace (TASK-61/62): hoja symlink, profundidad
     //    y frontera canonica en UN solo juicio — el mismo que piden el
-    //    MCP y el apply (TASK-219). La hoja symlink se rechaza antes de
-    //    leer, apunte adentro o afuera; el symlink no se sigue.
+    //    MCP y el apply (TASK-219). La puerta es la de paths INTERNOS:
+    //    el plan nombra ubicaciones resueltas, no texto de cliente, y
+    //    un nombre de fichero puede contener `..`, `$` o `~` con toda
+    //    legitimidad. La hoja symlink se rechaza antes de leer, apunte
+    //    adentro o afuera; el symlink no se sigue.
     let rules = PathRules::new().with_workspace(vec![workspace_root.to_path_buf()]);
     let mut file_inputs: Vec<(PathBuf /*rel*/, PathBuf /*abs*/, Vec<PlannedEdit>)> = Vec::new();
     for edit in &plan.edits {
         let abs = rules
-            .validate_file_path(&edit.file.to_string_lossy())
+            .validate_internal_path(&edit.file)
             .map_err(|e| preview_policy_error(&edit.file, e))?;
         let rel = rel_from_abs(workspace_root, &abs);
         let entry = file_inputs.iter_mut().find(|(r, _, _)| r == &rel);
@@ -353,7 +358,7 @@ pub fn snapshot_workspace_mtimes(
     let mut seen: Vec<PathBuf> = Vec::new();
     for edit in &plan.edits {
         let abs = rules
-            .validate_file_path(&edit.file.to_string_lossy())
+            .validate_internal_path(&edit.file)
             .map_err(|e| preview_policy_error(&edit.file, e))?;
         if !seen.contains(&abs) {
             seen.push(abs);
@@ -415,9 +420,9 @@ fn preview_policy_error(raw: &Path, error: PathPolicyError) -> PreviewError {
         | PathPolicyError::InvalidPathCharacters { .. } => {
             PreviewError::PathEscapesWorkspace(raw.to_path_buf())
         }
-        PathPolicyError::PathNotAccessible { path } => {
-            PreviewError::IoError(format!("read {path}: path not accessible"))
-        }
+        PathPolicyError::PathNotAccessible { path } => PreviewError::IoError(format!(
+            "path not accessible (rejected by the workspace path rules): {path}"
+        )),
     }
 }
 

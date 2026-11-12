@@ -37,6 +37,7 @@
 //! read-only (`SafeRefactorInput` lleva `deny_unknown_fields`).
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -136,8 +137,10 @@ fn splice_replacement(bytes: &[u8], edit: &PlannedEdit) -> Vec<u8> {
 
 /// Token de autorización de write. **Opaque** para el apply path: se
 /// recibe por canal separado (no del plan JSON) y NO se deriva del
-/// contenido del plan (AAT-B5-03).
-#[derive(Debug, Clone)]
+/// contenido del plan (AAT-B5-03). Se serializa solo dentro de la
+/// proposal (TASK-220), que es quien lo acuña y lo persiste con su
+/// momento de emisión.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuthorizationToken {
     pub value: String,
     pub created_at: DateTime<Utc>,
@@ -154,10 +157,20 @@ pub struct AuthorizationToken {
 /// y caduca por tiempo. Un token "envejecido" no es consentimiento
 /// reciente.
 pub fn validate_authorization_token(token: &AuthorizationToken) -> Result<(), ApplyError> {
+    validate_authorization_token_at(token, Utc::now())
+}
+
+/// La misma validación con el reloj inyectado: la ventana de una hora
+/// se juzga contra `now`, no contra el reloj de pared, y un test puede
+/// demostrar que un token caducado se rechaza (TASK-220 AC #3).
+pub fn validate_authorization_token_at(
+    token: &AuthorizationToken,
+    now: DateTime<Utc>,
+) -> Result<(), ApplyError> {
     if token.value.trim().is_empty() {
         return Err(ApplyError::AuthorizationMissing);
     }
-    let age = Utc::now().signed_duration_since(token.created_at);
+    let age = now.signed_duration_since(token.created_at);
     let max = chrono::Duration::hours(TOKEN_MAX_AGE_HOURS);
     if age > max || age < -max {
         return Err(ApplyError::AuthorizationInvalid);
@@ -193,9 +206,13 @@ pub enum ApplyError {
     AuthorizationInvalid,
     /// El workspace cambió desde el preview (digest mismatch).
     WorkspaceStateMismatch { expected: String, actual: String },
-    /// El path es un symlink que apunta fuera del workspace.
+    /// El path es un symlink: no se escribe a través de él, apunte
+    /// adentro o afuera (AAT-B5-02; el preview es simétrico).
     SymlinkEscape { path: PathBuf },
-    /// El path contiene `..` (traversal).
+    /// El path no puede entrar al workspace: traversal textual, fuera
+    /// de la frontera canónica, demasiado profundo o con caracteres
+    /// inválidos (la misma familia de rechazo que producían las
+    /// guardas textuales que sustituyó la delegación de TASK-219).
     TraversalEscape { path: PathBuf },
     /// El archivo del plan ya no tiene el `byte_range` esperado
     /// (cambió de tamaño o de contenido entre preview y apply).
@@ -204,7 +221,8 @@ pub enum ApplyError {
         expected_size: usize,
         actual_size: usize,
     },
-    /// Error de I/O durante staging/rename/delete.
+    /// Error de I/O durante staging/rename/delete, o el path que no
+    /// se pudo inspeccionar (rechazado por las reglas del workspace).
     IoError {
         path: PathBuf,
         source: std::io::Error,
@@ -231,12 +249,12 @@ impl std::fmt::Display for ApplyError {
             ),
             ApplyError::SymlinkEscape { path } => write!(
                 f,
-                "refusing to write through symlink: {} (would escape workspace)",
+                "refusing to write through symlink: {} (symlinked paths are not followed)",
                 path.display()
             ),
             ApplyError::TraversalEscape { path } => write!(
                 f,
-                "refusing path with traversal segment: {}",
+                "refusing path outside the workspace boundary: {}",
                 path.display()
             ),
             ApplyError::ConcurrentModification {
@@ -281,7 +299,25 @@ pub fn apply(
     // (1) Token válido.
     validate_authorization_token(token)?;
 
-    // (2) Workspace state digest coincide.
+    // (2) Todos los paths del plan pasan por las reglas del workspace
+    //     ANTES de leer un byte: el digest se calcula sobre lo que las
+    //     reglas ya dejaron entrar. Leer a través de un symlink que
+    //     escapa para calcular el digest era tocar fuera del workspace
+    //     (goldfish TASK-219). La puerta es la de paths internos: el
+    //     plan nombra ubicaciones resueltas, no texto de cliente.
+    let rules = PathRules::new().with_workspace(vec![workspace_root.to_path_buf()]);
+    for edit in &plan.edits {
+        if !edit.file.is_absolute() {
+            return Err(ApplyError::TraversalEscape {
+                path: edit.file.clone(),
+            });
+        }
+        rules
+            .validate_internal_path(&edit.file)
+            .map_err(|e| apply_policy_error(&edit.file, e))?;
+    }
+
+    // (3) Workspace state digest coincide.
     let actual_digest = compute_workspace_state_digest(plan);
     if actual_digest != workspace_state_digest {
         return Err(ApplyError::WorkspaceStateMismatch {
@@ -407,13 +443,17 @@ fn apply_one(
     }
 
     // (b) Un solo juicio sobre el path: las reglas del workspace
-    //     (TASK-61/62) — traversal, hoja symlink y frontera canonica.
-    //     El `starts_with` textual que habia aqui dejaba colar un
-    //     directorio intermedio que fuera symlink y escapara del
-    //     workspace (TASK-219); canonicalizar es lo que lo ve.
+    //     (TASK-61/62) — hoja symlink, profundidad y frontera canonica,
+    //     por la puerta de paths internos (el plan nombra ubicaciones
+    //     resueltas, no texto de cliente). El `starts_with` textual que
+    //     habia aqui dejaba colar un directorio intermedio que fuera
+    //     symlink y escapara del workspace (TASK-219); canonicalizar es
+    //     lo que lo ve. `apply` ya valido este plan; se vuelve a pedir
+    //     el mismo juicio a la misma autoridad porque apply_one es la
+    //     unidad que se prueba sola.
     PathRules::new()
         .with_workspace(vec![workspace_root.to_path_buf()])
-        .validate_path(&edit.file)
+        .validate_internal_path(&edit.file)
         .map_err(|e| apply_policy_error(&edit.file, e))?;
 
     // (e) Leer bytes actuales.
@@ -435,9 +475,24 @@ fn apply_one(
     // (g) Compute los nuevos bytes.
     let new_bytes = splice_replacement(&current_bytes, edit);
 
-    // (h) Stage preservando estructura de sub-directorios relativa
-    //     al workspace_root.
-    let rel = edit.file.strip_prefix(workspace_root).unwrap_or(&edit.file);
+    // (h) Stage preservando la estructura de sub-directorios relativa
+    //     al workspace. La comparación es canónica por los dos lados:
+    //     si la raíz llega con otro nombre (un symlink de por medio),
+    //     un `strip_prefix` textual falla y el stage degenera en
+    //     escribir EN SITIO sobre el original, sin copia previa ni
+    //     rename atómico (goldfish TASK-219, AAT-B5-01).
+    let file_canonical = std::fs::canonicalize(&edit.file).map_err(|e| ApplyError::IoError {
+        path: edit.file.clone(),
+        source: e,
+    })?;
+    let root_canonical =
+        std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let rel =
+        file_canonical
+            .strip_prefix(&root_canonical)
+            .map_err(|_| ApplyError::TraversalEscape {
+                path: edit.file.clone(),
+            })?;
     let stage_abs = staging_dir.join(rel);
     if let Some(parent) = stage_abs.parent() {
         fs::create_dir_all(parent).map_err(|e| ApplyError::IoError {
@@ -553,6 +608,34 @@ mod tests {
         assert!(validate_authorization_token(&fresh).is_ok());
     }
 
+    /// TASK-220 AC #3 — la ventana se juzga contra el reloj inyectado:
+    /// un token emitido «ahora» está vivo, caduca cuando `now` lo
+    /// alcanza, y el límite exacto de la ventana sigue siendo válido.
+    #[test]
+    fn unit_validate_authorization_token_at_judges_with_the_injected_clock() {
+        let issued_at = Utc::now();
+        let token = AuthorizationToken {
+            value: "tk".into(),
+            created_at: issued_at,
+        };
+
+        // Vivo mientras la ventana no se agote, incluso si el token se
+        // emite «en el futuro» del reloj de pared.
+        assert!(validate_authorization_token_at(&token, issued_at).is_ok());
+        assert!(
+            validate_authorization_token_at(&token, issued_at + chrono::Duration::hours(1)).is_ok(),
+            "the exact window boundary is still inside"
+        );
+        assert!(matches!(
+            validate_authorization_token_at(&token, issued_at + chrono::Duration::hours(2)),
+            Err(ApplyError::AuthorizationInvalid)
+        ));
+        assert!(matches!(
+            validate_authorization_token_at(&token, issued_at - chrono::Duration::hours(2)),
+            Err(ApplyError::AuthorizationInvalid)
+        ));
+    }
+
     #[test]
     fn unit_apply_rejects_traversal_at_apply_one_level() {
         let tmp = TempDir::new().unwrap();
@@ -579,6 +662,49 @@ mod tests {
         };
         let res = apply_one(&edit, tmp.path(), &tmp.path().join("stage"));
         assert!(matches!(res, Err(ApplyError::SymlinkEscape { .. })));
+    }
+
+    /// AAT-B5-01 — la escritura pasa por el staging aunque la raíz
+    /// llegue con otro nombre (un symlink de por medio): el fichero del
+    /// plan está escrito canónicamente y la raíz que el caller pasa no
+    /// lo contiene textualmente. Antes del fix, el `strip_prefix`
+    /// fallaba y el stage degeneraba en escribir EN SITIO sobre el
+    /// original, sin copia previa ni rename atómico. El observable: el
+    /// staging no puede existir (es un fichero), así que un stage real
+    /// falla y el original queda intacto; la escritura en sitio del
+    /// defecto prosperaría y lo reemplazaría.
+    #[cfg(unix)]
+    #[test]
+    fn unit_apply_one_writes_through_the_staging_even_when_the_root_arrives_under_another_name() {
+        let tmp = TempDir::new().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink("real", &link).unwrap();
+        let file = real.join("a.rs");
+        std::fs::write(&file, "hello world\n").unwrap();
+
+        let staging = tmp.path().join("stage");
+        std::fs::write(&staging, b"not a directory").unwrap();
+
+        let edit = PlannedEdit {
+            file: file.clone(),
+            byte_range: 6..11,
+            replacement: "safe".to_string(),
+            deterministic: true,
+        };
+        let res = apply_one(&edit, &link, &staging).map(|rec| rec.path);
+        assert!(
+            matches!(res, Err(ApplyError::IoError { .. })),
+            "a real staging write must fail when the staging dir cannot \
+             exist, got {res:?}"
+        );
+        // Sin staging no hay edición: el original queda intacto.
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "hello world\n",
+            "the original must not be written in place"
+        );
     }
 
     #[test]

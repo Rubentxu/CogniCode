@@ -22,6 +22,10 @@
 pub mod apply;
 pub mod plan;
 pub mod preview;
+// TASK-220 — lo que el preview emite y persiste: el estado que vio y
+// el token que acuñó. El apply del CLI los lee de aquí; no los
+// recalcula en el momento del apply.
+pub mod proposal;
 // B5.W4 — post-apply revalidation, evidence not verdict (AAT-B5-04).
 // Spine: composite queries return evidence, not verdicts; investigate
 // each piece. See `revalidate::RevalidationVerdict::VerdictRefused`.

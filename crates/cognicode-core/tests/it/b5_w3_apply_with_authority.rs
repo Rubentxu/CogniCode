@@ -490,8 +490,9 @@ fn apply_refuses_an_intermediate_directory_that_is_a_symlink_out_of_the_workspac
 
     let res = apply(&plan, &expected_digest, &token, &ws);
     assert!(
-        res.is_err(),
-        "an intermediate symlink that escapes must be refused, got {res:?}"
+        matches!(res, Err(ApplyError::TraversalEscape { .. })),
+        "an intermediate symlink that escapes must be refused by the \
+         canonical boundary, got {res:?}"
     );
     // Y nada se escribió a través del enlace.
     assert_eq!(
@@ -535,4 +536,40 @@ fn apply_refuses_every_symlink_leaf_even_one_that_stays_inside() {
         matches!(res, Err(ApplyError::SymlinkEscape { .. })),
         "a symlink leaf is refused even when its target stays inside, got {res:?}"
     );
+}
+
+/// Mismo juicio para el apply: un nombre con `..`, `$` o `~` como
+/// caracteres es un fichero legítimo; las heurísticas de texto no se
+/// aplican a los paths que el plan nombra (goldfish TASK-219).
+#[cfg(unix)]
+#[test]
+fn apply_accepts_legitimate_filenames_that_look_like_traversal_text() {
+    for name in ["a..b.rs", "user$.ts"] {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join(name), "hello evil\n").unwrap();
+        let target = tmp.path().join(name);
+        let plan = RefactorPlan {
+            id: Uuid::new_v4(),
+            workspace_identity: tmp.path().to_string_lossy().to_string(),
+            basis: AnalysisBasis::for_workspace(tmp.path().to_path_buf()),
+            affected_files: vec![target.clone()],
+            edits: vec![PlannedEdit {
+                file: target.clone(),
+                byte_range: 6..10,
+                replacement: "safe".to_string(),
+                deterministic: true,
+            }],
+            preconditions: vec![],
+            risks: vec![],
+            created_at: Utc::now(),
+            digest: String::new(),
+        };
+        let expected_digest = compute_workspace_state_digest(&plan);
+        let res = apply(&plan, &expected_digest, &fresh_token(), tmp.path());
+        assert!(
+            res.is_ok(),
+            "a legitimate filename like {name} must apply, got {res:?}"
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "hello safe\n");
+    }
 }

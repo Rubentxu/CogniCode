@@ -401,3 +401,37 @@ fn preview_refuses_every_symlink_leaf_even_one_that_stays_inside() {
         "a symlink leaf is refused even when its target stays inside, got {err:?}"
     );
 }
+
+/// Un nombre con `..`, `$` o `~` como CARACTERES es un fichero
+/// legítimo del workspace. Las heurísticas de texto (traversal, `$`,
+/// `~/`) son para la entrada del cliente (TASK-61/62); los paths que
+/// el plan nombra se juzgan en el sistema de ficheros: frontera
+/// canónica, hoja symlink y profundidad (goldfish TASK-219: delegar
+/// también las heurísticas de texto rechazaba workspaces legítimos).
+#[cfg(unix)]
+#[test]
+fn preview_accepts_legitimate_filenames_that_look_like_traversal_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::write(root.join("a..b.rs"), b"hello safe\n").unwrap();
+    fs::write(root.join("user$.ts"), b"hello safe\n").unwrap();
+    std::fs::create_dir(root.join("~")).unwrap();
+    fs::write(root.join("~").join("inside.rs"), b"hello safe\n").unwrap();
+
+    for file in ["a..b.rs", "user$.ts"] {
+        let plan = plan_for(&root, &root.join(file), 6..10);
+        let preview = cognicode_core::refactor::preview::render_preview(&plan, &root);
+        assert!(
+            preview.is_ok(),
+            "a legitimate filename like {file} must preview, got {:?}",
+            preview.err()
+        );
+    }
+    let plan = plan_for(&root, &root.join("~").join("inside.rs"), 6..10);
+    let preview = cognicode_core::refactor::preview::render_preview(&plan, &root);
+    assert!(
+        preview.is_ok(),
+        "a file under a directory named `~` must preview, got {:?}",
+        preview.err()
+    );
+}
