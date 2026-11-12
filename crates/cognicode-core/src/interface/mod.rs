@@ -16,7 +16,12 @@ pub mod cursor;
 pub mod hateoas;
 pub use crate::domain::intent;
 pub mod lsp;
+// TASK-218 — la autoridad de los caminos: qué fichero y qué directorio
+// puede tocar una entrada. Vive aquí, en sitio neutral, para que los
+// handlers del MCP y los goals pregunten lo mismo sin que los goals
+// nombren al adaptador.
 pub mod mcp;
+pub(crate) mod path_authorisation;
 pub mod project_graph;
 // TASK-85 — las recetas: preguntas compuestas, con su memo y su presupuesto.
 pub mod recipes;
