@@ -177,10 +177,10 @@ impl InputValidator {
     }
 
     /// Validates a path for path traversal and workspace boundaries.
-
-    /// Validates a path for path traversal and workspace boundaries.
     ///
-    /// This is the single authority for path validation. It performs:
+    /// One door to the same rules every other door asks
+    /// (`crate::paths`, TASK-219): this layer translates the refusal
+    /// into its own error. The judgment performed, in order:
     /// - Path traversal pattern detection (including URL-encoded and backslash variants)
     /// - Null byte detection
     /// - Path depth validation

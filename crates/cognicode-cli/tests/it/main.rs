@@ -18,6 +18,7 @@ mod advisory_ignore_backing_contract;
 mod analysis_result_is_honest;
 mod b1_w2_identity;
 mod b5_w1_plan_contract;
+mod b5_w3_cli_apply_uses_preview_state;
 mod b6_w3_cogh_lifecycle;
 mod b6_w4_skills_autodiscovery;
 mod backtick_provenance_contract;

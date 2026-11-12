@@ -36,9 +36,12 @@ pub(crate) struct PathRules {
 }
 
 impl PathRules {
-    /// Rules with no allowed root: nothing is inside the workspace, so
-    /// every relative path is refused and every absolute one too. A
-    /// boundary that allows nothing by default cannot leak by omission.
+    /// Rules with no allowed root. There is no boundary to judge
+    /// against, so the rules apply only their lexical checks and pass
+    /// an existing path wherever it lives — the caller anchors first
+    /// if it means to confine. Every production door sets a workspace;
+    /// the empty rules exist for tests and for callers that judge
+    /// anchoring themselves.
     pub(crate) fn new() -> Self {
         Self {
             allowed_paths: Vec::new(),
@@ -234,43 +237,85 @@ impl PathRules {
         // boundary check below is the single authority on whether a path is safe.
 
         // Canonicalize and verify workspace boundary
-        let canonical = match std::fs::canonicalize(&resolved) {
+        self.canonical_target_within(&resolved, &path_str)?;
+        Ok(())
+    }
+
+    /// Judges a path the pipeline itself produced — a plan edit, a
+    /// graph result. The path is a resolved location, not client text:
+    /// the judgment is the filesystem one (depth, symlink leaf, the
+    /// canonical boundary) WITHOUT the text heuristics, because `..`,
+    /// `$` or `~` are legitimate characters in a filename (goldfish
+    /// TASK-219: the heuristics guard client TEXT at the MCP door; a
+    /// resolved path is data).
+    ///
+    /// Returns the canonical path, so the caller reads the very file
+    /// the judgment was made about.
+    pub(crate) fn validate_internal_path(&self, path: &Path) -> Result<PathBuf, PathPolicyError> {
+        let resolved = self.resolve_against_allowed(path);
+
+        let component_count = resolved.components().count();
+        if component_count > MAX_PATH_COMPONENTS {
+            return Err(PathPolicyError::PathTooDeep {
+                depth: component_count,
+                max: MAX_PATH_COMPONENTS,
+            });
+        }
+
+        // CRITICAL: symlink leaf before canonicalization — a symlinked
+        // leaf is refused rather than followed, inside or outside.
+        if let Ok(metadata) = std::fs::symlink_metadata(&resolved)
+            && metadata.file_type().is_symlink()
+        {
+            warn_path("Symlink detected in path", &path.to_string_lossy());
+            return Err(PathPolicyError::SymlinkDetected {
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+
+        self.canonical_target_within(&resolved, &path.to_string_lossy())
+    }
+
+    /// The canonical form of `resolved` and the boundary judgment: the
+    /// one authority on whether a path stays inside the workspace. The
+    /// tail shared by `validate_path` and `validate_internal_path`.
+    fn canonical_target_within(
+        &self,
+        resolved: &Path,
+        original: &str,
+    ) -> Result<PathBuf, PathPolicyError> {
+        let canonical = match std::fs::canonicalize(resolved) {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File doesn't exist - canonicalize the parent directory so the
-                // workspace boundary check below still applies. No need for a
-                // separate symlink check here: the canonicalize(parent) call
-                // already resolves any symlinks, and the workspace boundary
-                // check rejects any canonical target that escapes `allowed_paths`.
+                // The path doesn't exist (yet) - canonicalize the parent
+                // directory so the boundary check below still applies. The
+                // canonicalize(parent) call already resolves any symlinks,
+                // and the boundary rejects any canonical target that
+                // escapes `allowed_paths`.
                 if let Some(parent) = resolved.parent() {
-                    match std::fs::canonicalize(parent) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            return Err(PathPolicyError::PathNotAccessible {
-                                path: path_str.to_string(),
-                            });
+                    std::fs::canonicalize(parent).map_err(|_| {
+                        PathPolicyError::PathNotAccessible {
+                            path: original.to_string(),
                         }
-                    }
+                    })?
                 } else {
                     return Err(PathPolicyError::PathNotAccessible {
-                        path: path_str.to_string(),
+                        path: original.to_string(),
                     });
                 }
             }
             Err(_) => {
                 return Err(PathPolicyError::PathNotAccessible {
-                    path: path_str.to_string(),
+                    path: original.to_string(),
                 });
             }
         };
 
-        // Verify path is within workspace
         if !self.allowed_paths.is_empty() {
             let is_allowed = self
                 .allowed_paths
                 .iter()
                 .any(|allowed| canonical.starts_with(allowed) || canonical == *allowed);
-
             if !is_allowed {
                 debug!(
                     "Path {} is not within allowed workspace: {:?}",
@@ -280,8 +325,7 @@ impl PathRules {
                 return Err(PathPolicyError::PathOutsideWorkspace);
             }
         }
-
-        Ok(())
+        Ok(canonical)
     }
 
     /// Resolves the path against the workspace and says whether it stays
@@ -589,5 +633,53 @@ mod tests {
             .validate_path(&dir.path().join("escdir").join("evil.rs"))
             .expect_err("the canonical target is outside");
         assert_eq!(error, PathPolicyError::PathOutsideWorkspace);
+    }
+
+    // ── the internal-path door (TASK-219 goldfish) ──────────────────────
+
+    #[cfg(unix)]
+    #[test]
+    fn the_internal_door_accepts_names_that_look_like_traversal_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a..b.rs"), "x").expect("write");
+        std::fs::write(dir.path().join("user$.ts"), "x").expect("write");
+        std::fs::create_dir(dir.path().join("~")).expect("mkdir");
+        std::fs::write(dir.path().join("~").join("inside.rs"), "x").expect("write");
+
+        let rules = PathRules::new().with_workspace(vec![dir.path().to_path_buf()]);
+        for name in ["a..b.rs", "user$.ts"] {
+            let canonical = rules
+                .validate_internal_path(&dir.path().join(name))
+                .unwrap_or_else(|e| panic!("{name} is a legitimate filename, got {e:?}"));
+            assert!(canonical.starts_with(dir.path()));
+        }
+        let nested = rules.validate_internal_path(&dir.path().join("~").join("inside.rs"));
+        assert!(
+            nested.is_ok(),
+            "a file under a directory named `~` is legitimate, got {:?}",
+            nested.err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_internal_door_still_refuses_a_symlink_leaf_and_an_escape() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("evil.rs"), "x").expect("write");
+        std::fs::write(dir.path().join("real.rs"), "x").expect("write");
+        std::os::unix::fs::symlink("real.rs", dir.path().join("link.rs")).expect("symlink");
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("escdir")).expect("symlink");
+
+        let rules = PathRules::new().with_workspace(vec![dir.path().to_path_buf()]);
+        let leaf = rules.validate_internal_path(&dir.path().join("link.rs"));
+        assert_eq!(
+            leaf.unwrap_err(),
+            PathPolicyError::SymlinkDetected {
+                path: dir.path().join("link.rs").to_string_lossy().to_string()
+            }
+        );
+        let escape = rules.validate_internal_path(&dir.path().join("escdir").join("evil.rs"));
+        assert_eq!(escape.unwrap_err(), PathPolicyError::PathOutsideWorkspace);
     }
 }
