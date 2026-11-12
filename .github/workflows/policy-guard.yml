@@ -1,0 +1,33 @@
+name: policy-guard
+
+# The server-side projection of the git-control policy (see
+# .github/scripts/policy-guard.sh for what it mirrors and why).
+#
+# `edited` matters as much as `opened`: the squash-merge commit message is
+# built from the PR title and body at MERGE time, so a body edited after a
+# green check must re-run this guard and re-block the merge.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the guard
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - name: Validate the squash message and every commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          bash .github/scripts/policy-guard.sh "${{ github.event.pull_request.number }}"
