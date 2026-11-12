@@ -5,6 +5,31 @@ use super::*;
     description = "Perform safe refactoring with validation and preview.",
     input_schema = SafeRefactorInput
 )]
+/// La base del refactor: el grafo del dueño del análisis, servido del
+/// snapshot cuando puede responder por el árbol y calculado cuando no.
+///
+/// Una decisión, la misma que toman las demás tools de grafo
+/// (TASK-223): lo que una calcula, la otra lo sirve.
+fn refactor_basis(
+    ctx: &HandlerContext,
+) -> HandlerResult<crate::application::services::refactor_service::RefactorBasis> {
+    use crate::application::services::refactor_service::RefactorBasis;
+    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
+    let loaded = crate::application::graph_snapshot::load_or_build_graph(
+        ctx.analysis_service(),
+        ctx.working_dir(),
+        ctx.cache_root(),
+        session_manifest.as_ref(),
+        false,
+    )
+    .map_err(HandlerError::App)?;
+    Ok(RefactorBasis {
+        graph: loaded.graph,
+        coverage: loaded.coverage,
+        workspace_root: ctx.working_dir().to_path_buf(),
+    })
+}
+
 pub async fn handle_safe_refactor(
     ctx: &HandlerContext,
     input: SafeRefactorInput,
@@ -46,7 +71,8 @@ pub async fn handle_safe_refactor(
             let command = RenameSymbolCommand::new(&input.target, &new_name, &file_path_str);
 
             // Execute rename via RefactorService
-            match ctx.refactor_service.rename_symbol(command) {
+            let basis = refactor_basis(ctx)?;
+            match ctx.refactor_service.rename_symbol(command, &basis) {
                 Ok(preview) => {
                     // Generate the actual edits for the preview
                     let edits = ctx
@@ -254,7 +280,8 @@ pub async fn handle_safe_refactor(
             let command = MoveSymbolCommand::new(&input.target, &source_path, &target_path);
 
             // Execute move via RefactorService
-            match ctx.refactor_service.move_symbol(command) {
+            let basis = refactor_basis(ctx)?;
+            match ctx.refactor_service.move_symbol(command, &basis) {
                 Ok(preview) => Ok(SafeRefactorOutput {
                     action: input.action,
                     success: true,
@@ -324,7 +351,8 @@ pub async fn handle_safe_refactor(
             };
 
             // Execute change_signature via RefactorService
-            match ctx.refactor_service.change_signature(command) {
+            let basis = refactor_basis(ctx)?;
+            match ctx.refactor_service.change_signature(command, &basis) {
                 Ok(preview) => Ok(SafeRefactorOutput {
                     action: input.action,
                     success: true,

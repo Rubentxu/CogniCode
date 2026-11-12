@@ -127,6 +127,7 @@ mod only_the_verdict_owner_publishes_complete;
 mod project_overview_publishes_the_level_it_delivers;
 mod provider_conformance;
 mod read_set_e2e;
+mod refactor_impact_uses_the_analysis_graph;
 mod refactor_integration_tests;
 mod roadmap_claims_contract;
 mod safety_gate_tests;

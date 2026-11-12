@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::application::commands::RenameSymbolCommand;
 use crate::application::services::refactor_service::RefactorService;
@@ -60,28 +60,6 @@ pub struct GoalChange {
     pub risk: String,
 }
 
-/// El fichero donde el símbolo está declarado.
-///
-/// Si el llamante lo dice, el fichero se autoriza antes de tocarlo: la
-/// misma autoridad que confina a los handlers del MCP confina aquí, y un
-/// fichero fuera del workspace es un rechazo que nombra el límite. Si el
-/// llamante no lo dice, lo dice el índice: el símbolo vive en un fichero,
-/// y el índice es el que lo sabe.
-fn file_of(workspace: &Path, symbol: &str, given: Option<&str>) -> Result<PathBuf, String> {
-    if let Some(file) = given {
-        return authorise_workspace_file(workspace, file);
-    }
-
-    let (service, _built) = service_with_graph(workspace)?;
-    let locations = service.find_symbol(symbol, workspace).locations;
-    match locations.first() {
-        Some(location) => authorise_workspace_file(workspace, &location.file),
-        None => Err(format!(
-            "`{symbol}` is not declared anywhere, so there is nothing to rename."
-        )),
-    }
-}
-
 /// La respuesta del goal `change` para ese símbolo.
 pub fn change(
     workspace: &Path,
@@ -89,11 +67,33 @@ pub fn change(
     new_name: &str,
     file: Option<&str>,
 ) -> Result<GoalChange, String> {
-    let path = file_of(workspace, symbol, file)?;
-    let service = RefactorService::new();
+    // Un solo grafo para todo el goal: el que el índice consulta para
+    // saber dónde vive el símbolo es el que mide el impacto del rename
+    // (TASK-223).
+    let (service, built) = service_with_graph(workspace)?;
+    let path = match file {
+        Some(given) => authorise_workspace_file(workspace, given)?,
+        None => {
+            let locations = service.find_symbol(symbol, workspace).locations;
+            match locations.first() {
+                Some(location) => authorise_workspace_file(workspace, &location.file)?,
+                None => {
+                    return Err(format!(
+                        "`{symbol}` is not declared anywhere, so there is nothing to rename."
+                    ));
+                }
+            }
+        }
+    };
+    let basis = crate::application::services::refactor_service::RefactorBasis {
+        graph: built.graph,
+        coverage: built.coverage,
+        workspace_root: workspace.to_path_buf(),
+    };
+    let refactor = RefactorService::new();
     let command = RenameSymbolCommand::new(symbol, new_name, path.to_string_lossy().to_string());
-    let preview = service
-        .rename_symbol(command)
+    let preview = refactor
+        .rename_symbol(command, &basis)
         .map_err(|error| format!("`{symbol}` could not be renamed: {error}"))?;
 
     let summary = format!(
