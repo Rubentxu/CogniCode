@@ -26,6 +26,7 @@ use crate::application::error::AppResult;
 use crate::application::graph_cache;
 use crate::application::services::analysis_service::{AnalysisService, TreeFile, TreeState};
 use crate::domain::aggregates::call_graph::CallGraph;
+use crate::domain::findings::digest::{DigestStream, sha256_hex};
 use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
 use std::path::{Path, PathBuf};
@@ -310,24 +311,23 @@ fn vouched_for(
 /// says "my index is fresh" says it about a digest, and a client can
 /// tell whether that digest is the one of the manifest it holds.
 pub fn manifest_digest(manifest: &FileManifest) -> String {
-    use sha2::{Digest, Sha256};
-
     let mut entries: Vec<(
         &PathBuf,
         &crate::domain::value_objects::file_manifest::FileEntry,
     )> = manifest.entries.iter().collect();
     entries.sort_by(|left, right| left.0.cmp(right.0));
 
-    let mut hasher = Sha256::new();
+    let mut stream = DigestStream::new();
     for (relative, entry) in entries {
-        hasher.update(relative.to_string_lossy().as_bytes());
-        hasher.update(b"\0");
-        hasher.update(entry.content_hash.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(entry.mtime.unwrap_or_default().to_string().as_bytes());
-        hasher.update(b"\n");
+        stream
+            .update(relative.to_string_lossy().as_bytes())
+            .update(b"\0")
+            .update(entry.content_hash.as_bytes())
+            .update(b"\0")
+            .update(entry.mtime.unwrap_or_default().to_string().as_bytes())
+            .update(b"\n");
     }
-    hex_digest(&hasher.finalize())
+    stream.finish_hex()
 }
 
 /// The digest of the sources a manifest describes.
@@ -343,22 +343,21 @@ pub fn manifest_digest(manifest: &FileManifest) -> String {
 /// [`manifest_mtimes_agree`]. A digest that mixed the two would say that
 /// a file nobody touched was read again.
 pub fn source_digest(manifest: &FileManifest) -> String {
-    use sha2::{Digest, Sha256};
-
     let mut entries: Vec<(
         &PathBuf,
         &crate::domain::value_objects::file_manifest::FileEntry,
     )> = manifest.entries.iter().collect();
     entries.sort_by(|left, right| left.0.cmp(right.0));
 
-    let mut hasher = Sha256::new();
+    let mut stream = DigestStream::new();
     for (relative, entry) in entries {
-        hasher.update(relative.to_string_lossy().as_bytes());
-        hasher.update(b"\0");
-        hasher.update(entry.content_hash.as_bytes());
-        hasher.update(b"\n");
+        stream
+            .update(relative.to_string_lossy().as_bytes())
+            .update(b"\0")
+            .update(entry.content_hash.as_bytes())
+            .update(b"\n");
     }
-    hex_digest(&hasher.finalize())
+    stream.finish_hex()
 }
 
 /// Atomically persist the graph + manifest snapshot to
@@ -591,15 +590,13 @@ pub fn content_matches_manifest(
     rel_path: &Path,
     path: &Path,
 ) -> bool {
-    use sha2::{Digest, Sha256};
-
     let Some(entry) = manifest.entries.get(rel_path) else {
         return false;
     };
     let Ok(bytes) = std::fs::read(path) else {
         return false;
     };
-    hex_digest(&Sha256::digest(&bytes)) == entry.content_hash
+    sha256_hex(&bytes) == entry.content_hash
 }
 
 /// Builds a FileManifest for the given project directory.
@@ -618,7 +615,6 @@ pub fn build_manifest(
     files: &[TreeFile],
 ) -> crate::domain::value_objects::file_manifest::FileManifest {
     use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
-    use sha2::{Digest, Sha256};
 
     let mut manifest = FileManifest::new(project_dir.to_path_buf());
 
@@ -637,7 +633,7 @@ pub fn build_manifest(
         // can collide with; the freshness of the snapshot is decided by
         // the real hash, when the file can be read.
         let content_hash = std::fs::read(&file.path)
-            .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
+            .map(|bytes| sha256_hex(&bytes))
             .unwrap_or_else(|_| UNREADABLE_CONTENT.to_string());
         let _ = manifest.entries.insert(
             rel,
@@ -649,11 +645,6 @@ pub fn build_manifest(
         );
     }
     manifest
-}
-
-/// The digest of some bytes, as the hex text both sides compare.
-pub fn hex_digest(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]

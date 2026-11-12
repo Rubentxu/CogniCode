@@ -8,7 +8,7 @@
 //!     para que `WorkspaceSession` consuma.
 //!
 //! Lo que cierra este test (AAT-B3-02 / AAT-B3-03 / AAT-B3-04 parcial):
-//!   - `ContentHash` se computa con BLAKE3 sobre los BYTES del archivo
+//!   - `ContentHash` se computa con SHA-256 sobre los BYTES del archivo
 //!     y detecta una edición aunque mtime y size no cambien.
 //!   - `CacheStore` (BTreeMap<PathBuf, ContentHash>) marca un archivo
 //!     como stale al re-leer del disco y comparar el hash cacheado.
@@ -17,7 +17,8 @@
 //!
 //! Política B3.W4:
 //!   - El módulo es público: `cognicode_core::incremental::content_hash`.
-//!   - BLAKE3, no SHA-256. blake3 ya es workspace dep.
+//!   - SHA-256, el digest del dueño (`domain::findings::digest`): un solo
+//!     algoritmo para todo digest de contenido.
 //!   - `Display` produce hex en minúsculas.
 //!   - No se introduce estado global: cada `CacheStore` es propio.
 
@@ -279,8 +280,12 @@ fn unicode_path_with_spaces_does_not_break_content_hash() {
 
     let h1 = content_hash(&path).expect("unicode hash");
     let h2 = content_hash(&path).expect("unicode hash repeat");
-    assert_eq!(h1, h2, "blake3 must be deterministic across calls");
-    assert_eq!(h1.to_string().len(), 64, "blake3 hex is 64 lowercase chars");
+    assert_eq!(h1, h2, "the hash must be deterministic across calls");
+    assert_eq!(
+        h1.to_string().len(),
+        64,
+        "SHA-256 hex is 64 lowercase chars"
+    );
     assert!(
         h1.to_string()
             .chars()
@@ -291,10 +296,10 @@ fn unicode_path_with_spaces_does_not_break_content_hash() {
 }
 
 // ---------------------------------------------------------------------------
-// Empty file — blake3 has a well-defined empty digest (af1349b9...).
+// Empty file — SHA-256 has a well-defined empty digest (e3b0c442...).
 // ---------------------------------------------------------------------------
 #[test]
-fn empty_file_produces_blake3_empty_digest() {
+fn empty_file_produces_the_sha256_empty_digest() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let path = tmp.path().join("empty.txt");
     fs::write(&path, b"").expect("write empty");
@@ -303,8 +308,8 @@ fn empty_file_produces_blake3_empty_digest() {
     let hex = h.to_string();
     assert_eq!(hex.len(), 64);
     assert!(
-        hex.starts_with("af1349b9"),
-        "empty file must hash to the standard blake3 empty digest, got {hex}"
+        hex.starts_with("e3b0c442"),
+        "empty file must hash to the standard SHA-256 empty digest, got {hex}"
     );
 }
 

@@ -425,6 +425,9 @@ fn hash_bytes_is_deterministic_and_distinguishes() {
     assert_eq!(hash_bytes(b"hello"), hash_bytes(b"hello"));
     assert_ne!(hash_bytes(b"hello"), hash_bytes(b"hello!"));
     assert_eq!(hash_bytes(b"").len(), 16);
+    // El vector: 8 primeros bytes del SHA-256, en hex. El digest viaja en
+    // el token y vuelve en otra peticion.
+    assert_eq!(hash_bytes(b"abc"), "ba7816bf8f01cfea");
 }
 
 /// 11. ApplyOutcome y AuthorizationToken son construibles y
@@ -572,4 +575,35 @@ fn apply_accepts_legitimate_filenames_that_look_like_traversal_text() {
         );
         assert_eq!(fs::read_to_string(&target).unwrap(), "hello safe\n");
     }
+}
+
+/// El `workspace_state_digest` es el SHA-256 de `ruta || NUL || bytes
+/// posteriores a la edicion || NUL` por cada edicion ordenada, recortado a
+/// 8 bytes. El orden de las piezas esta fijado por este test, calculado
+/// por concatenacion y no por el mismo flujo que la implementacion.
+#[test]
+fn workspace_state_digest_is_the_sha256_of_path_and_post_edit_bytes() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("a.rs");
+    fs::write(&file, "old_a").unwrap();
+    let plan = build_plan(
+        tmp.path().to_path_buf(),
+        AnalysisBasis::for_workspace(tmp.path().to_path_buf()),
+        vec![file.clone()],
+        vec![PlannedEdit {
+            file: file.clone(),
+            byte_range: 0..5,
+            replacement: "new_a".to_string(),
+            deterministic: true,
+        }],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+
+    let mut layout = file.to_string_lossy().as_bytes().to_vec();
+    layout.push(0);
+    layout.extend_from_slice(b"new_a");
+    layout.push(0);
+    assert_eq!(compute_workspace_state_digest(&plan), hash_bytes(&layout));
 }

@@ -87,7 +87,7 @@ fn read_corpus(corpus: &TempDir) -> Vec<(String, String)> {
     sources
 }
 
-/// Hash every file in the corpus (B3.W4 BLAKE3 over bytes).
+/// Hash every file in the corpus (B3.W4 SHA-256 over bytes).
 fn hash_corpus(corpus: &TempDir) -> Vec<(PathBuf, [u8; 32])> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(corpus.path()).expect("read corpus dir") {

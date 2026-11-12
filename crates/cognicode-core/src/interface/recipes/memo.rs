@@ -33,7 +33,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::application::graph_cache;
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
@@ -136,13 +135,14 @@ impl MemoStore {
 /// eso la entrada guarda las tres partes y al leer se comprueban. Un nombre
 /// que no encaja es un fallo, no un acierto.
 pub fn memo_key(goal: &str, args: &Map<String, Value>, tree: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(goal.as_bytes());
-    hasher.update(b"\0");
-    hasher.update(canonical_args(args).as_bytes());
-    hasher.update(b"\0");
-    hasher.update(tree.as_bytes());
-    crate::application::graph_snapshot::hex_digest(&hasher.finalize())
+    let mut stream = crate::domain::findings::digest::DigestStream::new();
+    stream
+        .update(goal.as_bytes())
+        .update(b"\0")
+        .update(canonical_args(args).as_bytes())
+        .update(b"\0")
+        .update(tree.as_bytes());
+    stream.finish_hex()
 }
 
 /// Los argumentos de un paso, en una forma que no depende del orden.

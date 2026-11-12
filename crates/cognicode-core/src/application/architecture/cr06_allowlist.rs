@@ -399,13 +399,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-02",
             "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
         ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::walk_policy::",
-            "team:st-02",
-            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
-        ),
         // application_no_interface — 1 entry here, re-measured 2026-10-01.
         //
         // These drifts existed all along: `LayerId` did not model
@@ -701,10 +694,16 @@ mod tests {
         // are written inline where they are used. The other three are the
         // test-only imports that the unit tests of the analytics services
         // carry, now that those tests compose the real projection.
+        //
+        // 41 -> 40. `workspace_session.rs` named `infrastructure::walk_policy::`
+        // inline because the session walked the tree with its own copy of the
+        // policy. It now asks `AnalysisService::tree_state` for the files, the
+        // same walk the snapshot freshness check uses, and the file names no
+        // `infrastructure` path any more: the entry covered nothing.
         assert_eq!(
             list.len(),
-            41,
-            "expected exactly 41 entries; if you removed/added a drift \
+            40,
+            "expected exactly 40 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

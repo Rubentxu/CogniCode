@@ -21,6 +21,7 @@ use crate::application::error::{AppError, AppResult};
 use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::findings::digest::sha256_raw;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{
@@ -31,7 +32,6 @@ use crate::infrastructure::graph::per_file_graph::{
 };
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
@@ -1888,15 +1888,10 @@ fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
 /// changed (e.g. editor rewrites without re-save metadata updates).
 ///
 /// Returns a 32-byte digest; collision-resistance is the only property we
-/// need (cache lookup, not security). Switching to BLAKE3 or xxhash is a
-/// one-line change here and at the type signature in `AnalysisService`.
+/// need (cache lookup, not security). The algorithm is the one of the digest
+/// owner, so every content digest in the crate changes together.
 fn compute_content_hash(source: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(source.as_bytes());
-    let out = hasher.finalize();
-    let mut hash = [0u8; 32];
-    hash.copy_from_slice(&out);
-    hash
+    sha256_raw(source.as_bytes())
 }
 
 /// What one file declares, read the way the product reads it.

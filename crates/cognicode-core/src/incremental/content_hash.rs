@@ -1,11 +1,11 @@
-//! BLAKE3-based content hashing for cache invalidation (B3.W4).
+//! SHA-256-based content hashing for cache invalidation (B3.W4).
 //!
-//! BLAKE3 se computa sobre los bytes crudos del archivo (no sobre
+//! SHA-256 se computa sobre los bytes crudos del archivo (no sobre
 //! `mtime` ni `size`). Esto cierra AAT-B3-02: una edición con bytes
 //! distintos pero `mtime` y `size` preservados produce un hash
 //! diferente y por tanto invalida la entrada cacheada.
 //!
-//! BLAKE3 is computed over the raw file bytes (not mtime or size). This
+//! SHA-256 is computed over the raw file bytes (not mtime or size). This
 //! closes AAT-B3-02 — an edit with identical mtime/size produces a
 //! different digest, so the cached entry is invalidated.
 
@@ -17,13 +17,15 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// Hash de contenido de 256 bits (BLAKE3 sobre los bytes del archivo).
+use crate::domain::findings::digest::sha256_raw;
+
+/// Hash de contenido de 256 bits (SHA-256 sobre los bytes del archivo).
 ///
 /// Es `Copy + Eq + Hash` para poder vivir en `BTreeMap`/`HashMap` y
 /// además serializarse como hex ASCII estable. La serialización es la
 /// forma contractualmente intercambiable entre procesos (CLI ↔ MCP).
 ///
-/// 256-bit content hash (BLAKE3 over the file bytes).
+/// 256-bit content hash (SHA-256 over the file bytes).
 ///
 /// `Copy + Eq + Hash` so it can live in `BTreeMap`/`HashMap`. Serialized
 /// as stable lowercase hex so the CLI/MCP boundary can exchange it.
@@ -38,9 +40,9 @@ impl ContentHash {
         Self(bytes)
     }
 
-    /// Returns the raw 32-byte digest (little-endian bytes of BLAKE3).
+    /// Returns the raw 32-byte digest (bytes of the SHA-256).
     ///
-    /// Devuelve el digest crudo de 32B (bytes little-endian de BLAKE3).
+    /// Devuelve el digest crudo de 32B (bytes del SHA-256).
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -64,22 +66,18 @@ impl fmt::Debug for ContentHash {
     }
 }
 
-/// Compute the BLAKE3 hash of the bytes at `path`.
+/// Compute the SHA-256 hash of the bytes at `path`.
 ///
 /// I/O errors propagate as `io::Error` — el caller decide si el
 /// archivo faltante es bloqueante o solo un skip silencioso del
 /// invalidator. La cache no devuelve nunca un digest cero inventado.
 ///
-/// BLAKE3 of the bytes at `path`. I/O errors propagate; the caller
+/// SHA-256 of the bytes at `path`. I/O errors propagate; the caller
 /// decides whether a missing file blocks or is silently skipped. The
 /// cache NEVER returns a fabricated zero digest.
 pub fn content_hash(path: &Path) -> io::Result<ContentHash> {
     let bytes = fs::read(path)?;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&bytes);
-    let digest = hasher.finalize();
-    let raw: [u8; 32] = digest.into();
-    Ok(ContentHash(raw))
+    Ok(ContentHash(sha256_raw(&bytes)))
 }
 
 /// Per-workspace storage of `PathBuf -> ContentHash`.
@@ -195,7 +193,7 @@ mod tests {
         assert_eq!(
             content_hash(&a).unwrap(),
             content_hash(&b).unwrap(),
-            "same bytes must produce the same BLAKE3 digest regardless of mtime"
+            "same bytes must produce the same SHA-256 digest regardless of mtime"
         );
     }
 
@@ -221,17 +219,17 @@ mod tests {
     }
 
     #[test]
-    fn empty_file_produces_blake3_empty_digest() {
-        // blake3("") = af1349b9f5f9a1a2a3a4a5a6a7a8a9aa…
+    fn empty_file_produces_the_sha256_empty_digest() {
+        // sha256("") = e3b0c44298fc1c14…
         let tmp = tempfile::tempdir().expect("tempdir");
         let p = tmp.path().join("zero.bin");
         std::fs::write(&p, b"").expect("write empty");
         let h = content_hash(&p).expect("hash empty");
         let hex = h.to_string();
-        assert_eq!(hex.len(), 64, "BLAKE3 hex is 64 lowercase chars");
+        assert_eq!(hex.len(), 64, "SHA-256 hex is 64 lowercase chars");
         assert!(
-            hex.starts_with("af1349b9"),
-            "empty file must hash to the standard blake3 empty digest, \
+            hex.starts_with("e3b0c442"),
+            "empty file must hash to the standard SHA-256 empty digest, \
              got {hex}"
         );
     }
