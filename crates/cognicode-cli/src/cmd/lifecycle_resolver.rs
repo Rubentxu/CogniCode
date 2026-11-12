@@ -368,39 +368,11 @@ fn load_release_from_staging(dir: &Path) -> Result<GhRelease, InstallerError> {
         })
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Trust set and auth helpers (used by installer_transaction.rs for the
-// manual redirect loop fix in E86.2.1)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The set of hosts that GitHub release redirects are allowed to land on.
-///
-/// This is the allow-list enforced by `installer_transaction.rs::download_with_bearer`
-/// at each redirect hop. Hosts outside this set cause the download to fail with
-/// `Network("download", "DisallowedRedirectHost <host>")` rather than blindly
-/// following the redirect.
-pub fn gh_trust_set() -> &'static [&'static str] {
-    &[
-        "github.com",
-        "api.github.com",
-        "objects.githubusercontent.com",
-        "raw.githubusercontent.com",
-        "*.githubusercontent.com",
-        "*.github.io",
-        // Loopback aliases for the unit tests' mini TCP servers.
-        // Documented in installer_transaction::tests where the loopback
-        // hosts are introduced via 127.0.0.1:<random_port>; the suffixes
-        // are exact (not wildcards) and do not weaken the trust boundary.
-        "127.0.0.1",
-        "localhost",
-    ]
-}
-
 /// Read `COGNICODE_GITHUB_TOKEN` from the environment, if set and non-empty.
 ///
 /// Returns `None` when the variable is unset or empty, indicating an anonymous
-/// (public) request. Used by `installer_transaction.rs::download_with_bearer`
-/// to re-attach the bearer on each redirect hop.
+/// (public) request. [`crate::download::get`] decides, hop by hop, which
+/// hosts receive it.
 pub fn bearer_from_env() -> Option<String> {
     std::env::var("COGNICODE_GITHUB_TOKEN")
         .ok()
@@ -746,25 +718,13 @@ mod tests {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // E86.2.1 — Bearer-on-redirect contract (RED-first, see proposal.md).
+    // The default reqwest client and the bearer on a redirect
     //
-    // Discovery (2026-09-18): reqwest 0.12.28's `redirect::Policy::custom`
-    // DOES NOT preserve the Authorization header across cross-origin
-    // redirects even when the closure returns `Follow`. This is verified
-    // empirically by `sc_fix_01_red`. The fix in E86.2.1 must therefore
-    // not rely on Policy::custom alone; it must implement the redirect
-    // loop manually in the installer (see design.md of E86.2.1).
-    //
-    // Until the manual-redirect fix lands, these tests pass with:
-    //   sc_fix_01_red:       DEMONSTRATES the defect (default policy
-    //                        strips Authorization on cross-port redirect).
-    //   sc_fix_02_untrusted: BLOCKS accidentally following an untrusted
-    //                        redirect (defensive).
-    //
-    // Future: when the manual-redirect fix lands, sc_fix_01_green will
-    // pass against the production installer downloader path (not the
-    // reqwest policy). The GREEN test is left in place as a placeholder
-    // and currently FAILS — see note in the apply receipt.
+    // `http_get` here sends the token with a default reqwest client and lets
+    // reqwest follow redirects. It relies on reqwest dropping `Authorization`
+    // when a redirect leaves the origin; the test below fails if a reqwest
+    // upgrade stops doing that. Downloads do not rely on it: `download::get`
+    // decides every hop itself.
     // ─────────────────────────────────────────────────────────────────────
 
     use std::io::{Read, Write};
@@ -825,69 +785,17 @@ mod tests {
         })
     }
 
-    /// The defect: reqwest 0.12.28 strips the `Authorization` header on a
-    /// cross-origin (different port, same host) redirect even when the
-    /// closure returns `Follow`. The custom-policy GREEN test that
-    /// verified this path is omitted from the suite because the fix
-    /// must live in `installer_transaction.rs::Downloading` (manual
-    /// redirect loop) rather than in the reqwest policy. Until that
-    /// fix lands, the production installer would fail on the real
-    /// github.com → *.githubusercontent.com redirect chain — confirmed
-    /// by the 2026-09-18 E86.2 disposable UAT (uat-receipt.md).
-    /// REQ-FIX-01 of E86.2.1 therefore has GREEN coverage in the
-    /// installer downloader test, not here.
-    ///
-    /// Helper retained for `sc_fix_02` and any future test that DOES
-    /// want a stop-at-untrusted-host policy (which is the one capability
-    /// reqwest 0.12.28's policy makes easy).
-    fn _build_gh_client_placeholder(extra_hosts: &[&str]) -> reqwest::blocking::Client {
-        let extras: Vec<String> = extra_hosts.iter().map(|s| s.to_string()).collect();
-        reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                let host = attempt.url().host_str().unwrap_or("");
-                if host == "127.0.0.1" || host == "localhost" {
-                    if extras.iter().any(|e| e == host) {
-                        attempt.follow()
-                    } else {
-                        attempt.stop()
-                    }
-                } else {
-                    attempt.stop()
-                }
-            }))
-            .build()
-            .expect("build stop-on-untrusted test client")
-    }
-
-    // DEFECT-DOC — empirical proof that reqwest 0.12.28's redirect policy
-    // strips Authorization on cross-origin redirects (github.com →
-    // objects.githubusercontent.com). The fix lives in
-    // `installer_transaction.rs::download_with_bearer()` (manual redirect loop).
-    // Tests sc_fix_01 and sc_fix_02 are retained so any future reqwest upgrade
-    // that flips this behaviour will fail loudly, providing immediate signal.
-    //
-    // Evidence chain (2026-09-18):
-    // - E86.2 disposable UAT: `cogh install --version 0.95.0` with
-    //   COGNICODE_GITHUB_TOKEN set → HTTP 403 (asset download fails)
-    // - curl -L -H "Authorization: Bearer $(gh auth token)" <asset-url> → HTTP 200
-    // - curl --no-bearer -L <asset-url> (public asset) → HTTP 200
-    // - The same stripping confirmed by sc_fix_01 below.
-
-    /// REQ-FIX-01 Test A — RED before fix.
-    /// Cross-origin (port-to-port on 127.0.0.1) redirect of the production
-    /// default reqwest client **strips** the Authorization header. Today's
-    /// behaviour: the asset download fails because the signed-S3 chain
-    /// arrives unauthenticated.
+    /// A default reqwest client drops the bearer when a redirect leaves the
+    /// origin (another port is another origin), so a token sent to the API
+    /// base does not follow a redirect to a host it was not meant for.
     #[test]
-    fn sc_fix_01_default_policy_strips_authorization_on_cross_host_redirect() {
+    fn a_default_client_drops_the_bearer_on_a_redirect_out_of_the_origin() {
         // Server A: 302 → server B (different port)
         let (pb, rx_b) = bind_one_shot_ok();
         let location = format!("http://127.0.0.1:{pb}/asset");
         let (pa, rx_a) = bind_one_shot_302(&location);
 
-        // Default reqwest policy — what the production
-        // `installer_transaction.rs:135` uses today.
+        // The client `http_get` builds.
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
             .build()
@@ -898,12 +806,10 @@ mod tests {
             .bearer_auth("test-token-abc")
             .send()
             .expect("send");
-        // Default policy strips auth on cross-host redirects: server B will
-        // see no Authorization header.
         assert_eq!(resp.status().as_u16(), 200, "server B should reply 200");
 
         // First request was A — it has the Bearer (always, before the redirect).
-        let req_a = rx_a.recv().expect("recv A");
+        let req_a = rx_a.try_recv().expect("A was asked");
         let bearer_a = header_value(&req_a, "authorization");
         assert_eq!(
             bearer_a.as_deref(),
@@ -911,46 +817,11 @@ mod tests {
             "first request carries the bearer (this asserts the test setup is sound)"
         );
 
-        // The defect: second request reaches server B WITHOUT the bearer.
-        // Until reqwest adds opt-in Authorization preservation for
-        // same-trust-set redirects, this IS the production behaviour.
-        let req_b = rx_b.recv().expect("recv B");
+        let req_b = rx_b.try_recv().expect("B was asked");
         let bearer_b = header_value(&req_b, "authorization");
-        assert!(
-            bearer_b.is_none() || bearer_b.as_deref() == Some(""),
-            "RED proof: default policy strips Authorization on cross-host \
-             redirect (the production defect); observed: {bearer_b:?}"
-        );
-    }
-
-    /// REQ-FIX-01 Test B — redirect to a host NOT in `gh_trust_set()` must
-    /// STOP (no second outbound request).
-    #[test]
-    fn sc_fix_02_untrusted_redirect_target_is_not_followed() {
-        // Server A: 302 → http://attacker.example.com/asset (not a GH host)
-        let (pa, rx_a) = bind_one_shot_302("http://attacker.example.com/asset");
-
-        let client = _build_gh_client_placeholder(&[]); // empty extras
-        let url = format!("http://127.0.0.1:{pa}/some/path");
-        let resp = client
-            .get(&url)
-            .bearer_auth("test-token-abc")
-            .send()
-            .expect("send must succeed (policy stops, reqwest returns 302)");
-        // reqwest's custom policy: stop returns the 302 response directly.
         assert_eq!(
-            resp.status().as_u16(),
-            302,
-            "expected 302 (not followed): policy stopped at the redirect boundary"
-        );
-
-        // First request still went out — and it carries the bearer.
-        let req_a = rx_a.recv().expect("recv A");
-        let bearer_a = header_value(&req_a, "authorization");
-        assert_eq!(
-            bearer_a.as_deref(),
-            Some("Bearer test-token-abc"),
-            "first request always carries the bearer regardless of policy"
+            bearer_b, None,
+            "a redirect out of the origin does not carry the token: {req_b}"
         );
     }
 

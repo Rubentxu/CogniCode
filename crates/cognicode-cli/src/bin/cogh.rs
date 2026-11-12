@@ -32,6 +32,8 @@ mod bundled;
 mod cache;
 #[path = "../cmd/doctor.rs"]
 mod doctor;
+#[path = "../cmd/download.rs"]
+mod download;
 #[path = "../cmd/error.rs"]
 mod error;
 #[path = "../cmd/ide.rs"]
