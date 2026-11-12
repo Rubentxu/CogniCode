@@ -73,7 +73,7 @@ fn file_of(workspace: &Path, symbol: &str, given: Option<&str>) -> Result<PathBu
     }
 
     let (service, _built) = service_with_graph(workspace)?;
-    let locations = service.find_symbol(symbol);
+    let locations = service.find_symbol(symbol, workspace).locations;
     match locations.first() {
         Some(location) => authorise_workspace_file(workspace, &location.file),
         None => Err(format!(

@@ -58,7 +58,8 @@ pub struct FoundSymbol {
 pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
     let (service, _built) = service_with_graph(workspace)?;
     let locations: Vec<FoundSymbol> = service
-        .find_symbol(symbol)
+        .find_symbol(symbol, workspace)
+        .locations
         .into_iter()
         .map(|location| FoundSymbol {
             name: symbol.to_string(),

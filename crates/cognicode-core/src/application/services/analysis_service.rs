@@ -83,12 +83,36 @@ fn default_repository_factory() -> RepositoryFactory {
     Arc::new(|| Box::new(PetGraphStore::new()) as Box<dyn DependencyRepository>)
 }
 
+/// La respuesta de una consulta al índice de símbolos, con la base
+/// temporal que la produce (TASK-221: una respuesta de análisis
+/// identifica su cobertura y base temporal). `graph_revision` es la
+/// revisión del grafo que alimentó el índice — 0 cuando el servicio no
+/// tiene cabeza todavía — y `directory` el directorio canónico que
+/// acota lo que esta respuesta puede ver.
+#[derive(Debug, Clone)]
+pub struct SymbolIndexAnswer {
+    pub locations: Vec<crate::infrastructure::graph::SymbolLocation>,
+    pub graph_revision: u64,
+    pub directory: PathBuf,
+}
+
 /// Service for analyzing code structure and complexity
 pub struct AnalysisService {
     complexity_calculator: ComplexityCalculator,
     cycle_detector: CycleDetector,
     graph_cache: Arc<dyn SharedGraph>,
-    symbol_index: Mutex<Option<LightweightIndex>>,
+    /// TASK-221 — índices de símbolos por (directorio canónico,
+    /// revisión del grafo que los produjo). El contenido viene SIEMPRE
+    /// de la cabeza del grafo; la revisión lo invalida (un rebuild
+    /// publica una cabeza nueva y las entradas de la anterior se
+    /// caen); el directorio acota lo que una consulta puede ver; y el
+    /// `Arc` comparte el índice sin clonarlo consulta a consulta.
+    symbol_index: Mutex<
+        std::collections::HashMap<
+            (PathBuf, Option<crate::domain::value_objects::CheckpointId>),
+            std::sync::Arc<LightweightIndex>,
+        >,
+    >,
     /// File cache: maps file path to (mtime, size, content_hash,
     /// facts). The mtime is absent when the filesystem did not report a
     /// time; an absent time is not the epoch, and it does not invalidate
@@ -223,7 +247,7 @@ impl AnalysisService {
             complexity_calculator: ComplexityCalculator::new(),
             cycle_detector: CycleDetector::new(),
             graph_cache: Arc::new(GraphCache::new()),
-            symbol_index: Mutex::new(None),
+            symbol_index: Mutex::new(std::collections::HashMap::new()),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
@@ -337,35 +361,6 @@ impl AnalysisService {
         )
     }
 
-    /// Replaces the symbol index with a pre-built one (e.g. from spawn_blocking).
-    pub fn set_symbol_index(&self, index: LightweightIndex) {
-        *self.symbol_index.lock().unwrap() = Some(index);
-    }
-
-    /// Checks whether a symbol index has been built.
-    pub fn has_symbol_index(&self) -> bool {
-        self.symbol_index.lock().unwrap().is_some()
-    }
-
-    /// Returns a snapshot of the symbol index for fast symbol lookups.
-    ///
-    /// Builds the index on first call (lazy init, protected by Mutex).
-    /// Returns a cloned `LightweightIndex` so callers don't need to hold the lock.
-    fn ensure_symbol_index(&self) -> LightweightIndex {
-        let mut guard = self.symbol_index.lock().unwrap();
-        if guard.is_none() {
-            let graph = self.get_project_graph();
-            let mut index = LightweightIndex::new();
-            for symbol in graph.symbols() {
-                let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
-                let name_lower = symbol.name().to_lowercase();
-                index.insert(name_lower, location);
-            }
-            *guard = Some(index);
-        }
-        guard.as_ref().unwrap().clone()
-    }
-
     /// Builds the full project graph explicitly.
     ///
     /// This method constructs the complete call graph for the project,
@@ -375,14 +370,66 @@ impl AnalysisService {
         self.build_project_graph(project_dir)
     }
 
-    /// Finds symbols by name using the lightweight index.
+    /// Finds symbols by name using the lightweight index, scoped to the
+    /// directory the caller names (TASK-221).
     ///
-    /// Returns all locations where the symbol is defined.
-    pub fn find_symbol(
-        &self,
-        symbol_name: &str,
-    ) -> Vec<crate::infrastructure::graph::SymbolLocation> {
-        self.ensure_symbol_index().find_symbol(symbol_name).to_vec()
+    /// The index follows the graph and the directory: its content comes
+    /// from the current graph head and nothing else — one filling path,
+    /// so the answer cannot depend on who filled it first — the graph
+    /// revision it was built from invalidates it (a rebuild publishes a
+    /// new head and the entries of the old one are dropped), the
+    /// canonical directory bounds what a query can see, and the `Arc`
+    /// is shared instead of cloned per query.
+    ///
+    /// The answer carries its temporal basis: the revision of the graph
+    /// that fed the index (0 when the service holds no head yet) and
+    /// the canonical directory this answer is bounded by.
+    pub fn find_symbol(&self, symbol_name: &str, directory: &Path) -> SymbolIndexAnswer {
+        let dir = std::fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf());
+        let revision = self.graph_cache.current_id();
+        let index = self.ensure_symbol_index_for(directory);
+        SymbolIndexAnswer {
+            locations: index.find_symbol(symbol_name).to_vec(),
+            graph_revision: revision.map(|c| c.0).unwrap_or(0),
+            directory: dir,
+        }
+    }
+
+    /// The shared index for a directory at the current graph revision:
+    /// the same `Arc` every query on that directory uses until the head
+    /// changes. A revision that is not the current one is not the index
+    /// — the stale entries are dropped — and a miss builds the index
+    /// from the graph head, filtered by the canonical directory.
+    pub fn shared_symbol_index(&self, directory: &Path) -> std::sync::Arc<LightweightIndex> {
+        let dir = std::fs::canonicalize(directory).unwrap_or_else(|_| directory.to_path_buf());
+        let revision = self.graph_cache.current_id();
+        let mut guard = self.symbol_index.lock().unwrap();
+
+        // Una entrada de otra revisión describe un árbol que ya no es
+        // el que la cabeza publica: se cae, sea cual sea su directorio.
+        guard.retain(|(_, r), _| *r == revision);
+
+        if let Some(index) = guard.get(&(dir.clone(), revision)) {
+            return index.clone();
+        }
+        let graph = self.graph_cache.get();
+        let mut index = LightweightIndex::new();
+        for symbol in graph.symbols() {
+            let file = symbol.location().file();
+            if !Path::new(file).starts_with(&dir) {
+                continue;
+            }
+            let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
+            let name_lower = symbol.name().to_lowercase();
+            index.insert(name_lower, location);
+        }
+        let arc = std::sync::Arc::new(index);
+        guard.insert((dir, revision), arc.clone());
+        arc
+    }
+
+    fn ensure_symbol_index_for(&self, directory: &Path) -> std::sync::Arc<LightweightIndex> {
+        self.shared_symbol_index(directory)
     }
 
     /// Builds a call graph by scanning all source files in a directory
@@ -1422,6 +1469,13 @@ impl AnalysisService {
     /// Returns the project graph from cache
     pub fn get_project_graph(&self) -> Arc<CallGraph> {
         self.graph_cache.get()
+    }
+
+    /// La revisión de la cabeza del grafo que el servicio publica (0
+    /// cuando no hay cabeza): la base temporal que las respuestas del
+    /// índice de símbolos declaran (TASK-221).
+    pub fn current_graph_revision(&self) -> u64 {
+        self.graph_cache.current_id().map(|c| c.0).unwrap_or(0)
     }
 
     /// Returns statistics about the call graph, including coverage metrics

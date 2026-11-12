@@ -821,6 +821,22 @@ pub struct QuerySymbolOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// TASK-221 — la base temporal del índice que respondió: la
+    /// revisión del grafo que lo alimentó (0 cuando no hubo cabeza de
+    /// grafo) y el directorio canónico que acota la respuesta. Sin
+    /// esto, la respuesta se lee como «la verdad ahora», cuando
+    /// describe el árbol tal como una revisión concreta lo vio.
+    pub basis: SymbolIndexBasis,
+}
+
+/// La base temporal de una respuesta del índice de símbolos.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SymbolIndexBasis {
+    /// La revisión del grafo que alimentó el índice. 0 = el servicio
+    /// no publicó cabeza de grafo para esta respuesta.
+    pub graph_revision: u64,
+    /// El directorio canónico que acota lo que esta respuesta ve.
+    pub directory: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
