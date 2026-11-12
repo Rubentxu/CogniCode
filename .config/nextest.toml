@@ -1,7 +1,9 @@
 # cargo-nextest — the runner behind the first two steps of the gate.
 #
 # `scripts/test-gate.sh` runs `cargo nextest run --profile gate` once per step
-# (unit: `--lib`, integration: `--tests`). There is ONE profile because there is
+# over ONE selection, `--tests`, split by the kind of the target (unit:
+# `-E 'not kind(test)'`, integration: `-E 'kind(test)'`), so each test runs
+# once. There is ONE profile because there is
 # one lane: the pr/merge/nightly lanes were retired on 2026-11-04, and a
 # profile nobody selects is a configuration that rots.
 #

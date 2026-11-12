@@ -72,7 +72,10 @@ Run:
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -894,6 +897,282 @@ def test_no_document_recommends_a_mutation_run_without_a_ceiling() -> None:
         "el techo, el directorio de destino propio y el presupuesto",
     )
 
+
+# --- Parte 3: los dos pasos de test reparten UNA selección ---------------------
+
+
+def _gate_step_selection(label: str) -> list[str] | None:
+    """The arguments the gate gives nextest in the step called `label`, after
+    the packages of the radius.
+
+    The contract reads the command line the gate runs, not a copy of it: a
+    copy would be a second promise about the same step.
+    """
+    for line in GATE.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(f'run_test_half "{label}"'):
+            continue
+        tokens = shlex.split(stripped)
+        packages = "${TEST_PKG_ARGS[@]}"
+        if packages not in tokens:
+            return None
+        return tokens[tokens.index(packages) + 1 :]
+    return None
+
+
+def _partition_fixture(root: Path) -> None:
+    """A workspace with a test in each kind of target the gate can meet.
+
+    `full` has a library, a binary and an integration test, one test each.
+    `onlybin` is a package with a binary and no library, the shape of
+    `cognicode-sandbox`: a radius made of it alone is a radius the gate has
+    to be able to run. `notests` is a library without a single test: a radius
+    made of it alone is a gate that would check nothing.
+
+    The fixture declares the `gate` profile, empty, so the contract can run
+    the step lines of the gate as they are written.
+    """
+    _write(
+        root / "Cargo.toml",
+        '[workspace]\nmembers = ["full", "onlybin", "notests"]\nresolver = "2"\n',
+    )
+    _write(root / ".config" / "nextest.toml", "[profile.gate]\n")
+    _write(
+        root / "notests" / "Cargo.toml",
+        '[package]\nname = "notests"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    _write(root / "notests" / "src" / "lib.rs", "pub fn nothing() {}\n")
+    _write(
+        root / "full" / "Cargo.toml",
+        '[package]\nname = "full"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    _write(
+        root / "full" / "src" / "lib.rs",
+        "pub fn one() -> u32 {\n    1\n}\n\n"
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn in_lib() {\n"
+        "        assert_eq!(super::one(), 1);\n    }\n}\n",
+    )
+    _write(
+        root / "full" / "src" / "main.rs",
+        "fn main() {\n    println!(\"{}\", full::one());\n}\n\n"
+        "#[cfg(test)]\nmod tests {\n    #[test]\n    fn in_bin() {}\n}\n",
+    )
+    _write(
+        root / "full" / "tests" / "together.rs",
+        "#[test]\nfn in_tests() {\n    assert_eq!(full::one(), 1);\n}\n",
+    )
+    _write(
+        root / "onlybin" / "Cargo.toml",
+        '[package]\nname = "onlybin"\nversion = "0.1.0"\nedition = "2021"\n',
+    )
+    _write(
+        root / "onlybin" / "src" / "main.rs",
+        "fn main() {}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n"
+        "    fn in_only_bin() {}\n}\n",
+    )
+
+
+# Options of `nextest run` that decide what a step does with what it selected,
+# not what it selects: `nextest list` does not take them. The profile is
+# dropped too, because the fixture is not the repository and has no profile
+# of its own; what is under test is the selection.
+_RUN_ONLY_PREFIXES = ("--no-tests",)
+
+
+def _as_list_args(selection: list[str]) -> list[str]:
+    return [token for token in selection if not token.startswith(_RUN_ONLY_PREFIXES)]
+
+
+def _nextest(root: Path, verb: str, *args: str) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    env["CARGO_TARGET_DIR"] = str(root / "target")
+    for key in [k for k in env if k.startswith("NEXTEST_")]:
+        del env[key]
+    return subprocess.run(
+        ["cargo", "nextest", verb, *args],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+
+
+def _listed(root: Path, *args: str) -> set[str] | None:
+    proc = _nextest(root, "list", *args, "--message-format", "json")
+    if proc.returncode != 0:
+        return None
+    suites = json.loads(proc.stdout)["rust-suites"]
+    return {
+        f"{binary_id} {name}"
+        for binary_id, suite in suites.items()
+        for name in suite["testcases"]
+    }
+
+
+def _names(tests: set[str]) -> set[str]:
+    return {test.rsplit(" ", 1)[-1].rsplit("::", 1)[-1] for test in tests}
+
+
+def test_the_two_test_steps_split_one_selection() -> None:
+    """Each test of the radius runs once, and in the step its kind belongs to.
+
+    The unit step is the tests inside the sources (libraries AND binaries);
+    the integration step is the targets under `tests/`. Measured on
+    2026-11-12 over the workspace: `--lib` then `--tests` ran 9,254 tests for
+    5,667 distinct ones, because `--tests` takes the library and the binaries
+    too, and the 566 tests of the binaries never ran in the unit step.
+    """
+    unit = _gate_step_selection("unit tests")
+    integration = _gate_step_selection("integration tests")
+    check(
+        unit is not None and integration is not None,
+        "scripts/test-gate.sh no tiene las dos lineas `run_test_half \"unit tests\"` "
+        "y `run_test_half \"integration tests\"` con los paquetes del radio: el "
+        "contrato no puede leer lo que el gate corre",
+    )
+    if unit is None or integration is None:
+        return
+
+    with tempfile.TemporaryDirectory(prefix="gate-steps-") as tmp:
+        root = Path(tmp)
+        _partition_fixture(root)
+
+        everything = _listed(root, "--workspace", "--tests")
+        in_unit = _listed(root, "--workspace", *_as_list_args(unit))
+        in_integration = _listed(root, "--workspace", *_as_list_args(integration))
+        check(
+            None not in (everything, in_unit, in_integration),
+            "`cargo nextest list` no responde en la fixture con la seleccion "
+            f"del gate (unitario: {unit}, integracion: {integration})",
+        )
+        if everything is None or in_unit is None or in_integration is None:
+            return
+
+        twice = in_unit & in_integration
+        check(
+            not twice,
+            f"los dos pasos corren los mismos tests: {sorted(_names(twice))}; "
+            "el paso de integracion selecciona objetivos lib o bin",
+        )
+        missing = everything - (in_unit | in_integration)
+        check(
+            not missing,
+            f"ningun paso corre {sorted(_names(missing))}: la particion deja "
+            "tests fuera del gate",
+        )
+        check(
+            {"in_lib", "in_bin", "in_only_bin"} <= _names(in_unit),
+            "el paso unitario no corre los tests de la lib y de los binarios "
+            f"(corre {sorted(_names(in_unit))})",
+        )
+        check(
+            _names(in_integration) == {"in_tests"},
+            "el paso de integracion corre algo distinto de los objetivos de "
+            f"`tests/` (corre {sorted(_names(in_integration))})",
+        )
+
+
+
+def _gate_function(name: str) -> str | None:
+    """The source of the shell function `name` of the gate, as it is written."""
+    found = re.search(
+        rf"^{re.escape(name)}\(\) \{{\n.*?^\}}\n",
+        GATE.read_text(encoding="utf-8"),
+        re.M | re.S,
+    )
+    return found.group(0) if found else None
+
+
+def _gate_test_steps() -> str | None:
+    """The gate's own test steps, from step 1 to step 3, as they are written.
+
+    The block is taken whole — the two halves, the release check between
+    them, and the call that judges the whole selection — so the order the
+    contract runs is the order the gate runs: a guard the gate stops calling,
+    or calls before the second half, is a guard the contract sees missing.
+    """
+    lines = GATE.read_text(encoding="utf-8").splitlines(keepends=True)
+    start = next((i for i, l in enumerate(lines) if l.startswith("# 1. Unit tests")), None)
+    end = next((i for i, l in enumerate(lines) if l.startswith("# 3. Mutants")), None)
+    if start is None or end is None or end <= start:
+        return None
+    return "".join(lines[start:end])
+
+
+def test_an_empty_half_passes_and_a_radius_without_tests_fails() -> None:
+    """A half of the selection can be empty; the whole selection cannot.
+
+    `cognicode-sandbox` has no integration target and `cognicode-graph-wasm`
+    has no unit test: a radius made of one of them leaves a half with nothing
+    to run, and that half is not a failure. A radius with no test at all is
+    a gate that checks nothing, and a gate that checks nothing and says green
+    is worse than a slow gate.
+
+    The contract runs the gate's own functions and its own block of test
+    steps, in the fixture, with the real nextest: the exit code a half is
+    judged by is the one nextest gives, and the order of the calls is the
+    gate's, not one the contract writes.
+    """
+    parts = {
+        "run_test_half": _gate_function("run_test_half"),
+        "require_a_test_in_the_radius": _gate_function("require_a_test_in_the_radius"),
+        "the test steps": _gate_test_steps(),
+    }
+    absent = [name for name, source in parts.items() if source is None]
+    check(
+        not absent,
+        f"scripts/test-gate.sh no tiene {absent}: el contrato no puede correr "
+        "los pasos de test del gate",
+    )
+    if absent:
+        return
+
+    with tempfile.TemporaryDirectory(prefix="gate-halves-") as tmp:
+        root = Path(tmp)
+        _partition_fixture(root)
+        env = dict(os.environ)
+        env["CARGO_TARGET_DIR"] = str(root / "target")
+        for key in [k for k in env if k.startswith("NEXTEST_")]:
+            del env[key]
+
+        for package, expected_rc in (("full", 0), ("onlybin", 0), ("notests", 1)):
+            driver = "\n".join(
+                [
+                    "set -uo pipefail",
+                    "overall_rc=0",
+                    "EMPTY_HALVES=0",
+                    "RUN_UNIT=true",
+                    "RUN_INTEGRATION=true",
+                    f"TEST_PKG_ARGS=(-p {package})",
+                    parts["run_test_half"],
+                    parts["require_a_test_in_the_radius"],
+                    parts["the test steps"],
+                    'exit "$overall_rc"',
+                ]
+            )
+            proc = subprocess.run(
+                ["bash", "-c", driver],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            check(
+                proc.returncode == expected_rc,
+                f"los pasos de test del gate con el radio «{package}» salen "
+                f"rc={proc.returncode}, se esperaba {expected_rc}: "
+                f"{proc.stdout.strip().splitlines()[-2:]}",
+            )
+            if package == "notests":
+                # rc=1 alone is what any failing step gives: the red has to be
+                # the one that says the radius has no test.
+                check(
+                    "no tiene ningun test" in proc.stdout,
+                    "el radio sin tests sale en rojo, pero no por la guarda "
+                    f"del radio: {proc.stdout.strip().splitlines()[-3:]}",
+                )
 
 def main() -> int:
     for name, fn in sorted(globals().items()):

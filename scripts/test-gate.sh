@@ -182,6 +182,7 @@ fi
 
 printf '=== test-gate @ %s ===\n' "$(git rev-parse --short HEAD)"
 overall_rc=0
+EMPTY_HALVES=0
 
 run_step() {
   local label="$1"; shift
@@ -284,10 +285,53 @@ else
   printf 'sccache:     no está en el PATH\n'
 fi
 
-# 1. Unit tests. `--lib` compiles and runs the `#[cfg(test)]` modules inside
-#    the sources: one unit, in isolation, no process and no network.
+# The two test steps split ONE selection of targets, `--tests` (every target
+# cargo tests by default: libraries, binaries and the files under `tests/`),
+# by the kind of the target: the unit step takes what is not an integration
+# target, the integration step takes what is. Two complementary filters over
+# the same selection cannot run a test twice or leave one out. Measured on
+# 2026-11-12 over the workspace: `--lib` then `--tests` ran 9,254 tests for
+# 5,667 distinct ones, and the tests of the binaries only ran in step 2.
+#
+# A half can be empty for a real radius: `cognicode-sandbox` has no
+# integration target and `cognicode-graph-wasm` has no unit test. That half
+# says so in the log and does not fail, because the other half of the same
+# selection holds the tests. Both halves empty is a radius without a test,
+# and that fails.
+
+# A half runs like any step, with one more answer: exit 4 is nextest's
+# NO_TESTS_RUN (asked for with `--no-tests=fail`), and for a half it is not a
+# failure — it is counted. The whole selection being empty is decided after
+# both halves ran, by `require_a_test_in_the_radius`.
+run_test_half() {
+  local label="$1"; shift
+  printf '\n--- %s ---\n' "$label"
+  local half_rc=0
+  "$@" || half_rc=$?
+  case "$half_rc" in
+    0) printf 'OK: %s\n' "$label" ;;
+    4) printf 'OK: %s — esta mitad del radio no tiene tests\n' "$label"
+       EMPTY_HALVES=$((EMPTY_HALVES + 1)) ;;
+    *) printf 'FAIL (rc=%d): %s\n' "$half_rc" "$label"
+       overall_rc=1 ;;
+  esac
+}
+
+# Both halves empty is a radius without a single test: a gate that checks
+# nothing and says green is worse than a slow gate.
+require_a_test_in_the_radius() {
+  if [ "$EMPTY_HALVES" -ge 2 ]; then
+    printf 'FAIL: el radio (%s) no tiene ningun test: un gate que no comprueba nada no esta en verde\n' "${TEST_PKG_ARGS[*]:-workspace}"
+    printf '      Sal de aqui con un test que ejercite el crate tocado, o mide una base mas amplia: GATE_BASE=<commit> bash scripts/test-gate.sh\n'
+    overall_rc=1
+  fi
+}
+
+# 1. Unit tests: the `#[cfg(test)]` modules inside the sources of the
+#    libraries and the binaries — one unit, in isolation, no process and no
+#    network.
 if $RUN_UNIT; then
-  run_step "unit tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --lib
+  run_test_half "unit tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --tests -E 'not kind(test)' --no-tests=fail
 fi
 
 # The release-flow suites execute release-profile bytes on purpose: a debug
@@ -311,10 +355,13 @@ if $RUN_INTEGRATION; then
   fi
 fi
 
-# 2. Integration tests. `--tests` compiles and runs every target under
-#    `tests/`: several real pieces working together, with the edges mocked.
+# 2. Integration tests: every target under `tests/` — several real pieces
+#    working together, with the edges mocked.
 if $RUN_INTEGRATION; then
-  run_step "integration tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --tests
+  run_test_half "integration tests" cargo nextest run --profile gate "${TEST_PKG_ARGS[@]}" --tests -E 'kind(test)' --no-tests=fail
+fi
+if $RUN_UNIT && $RUN_INTEGRATION; then
+  require_a_test_in_the_radius
 fi
 
 # 3. Mutants. A mutant is a deliberate defect injected into the source; a

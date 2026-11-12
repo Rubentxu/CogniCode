@@ -91,12 +91,15 @@ El gate son **tres cosas, y solo tres**:
 
 | # | Qué | Comando |
 |---|---|---|
-| 1 | **Tests unitarios** | `cargo nextest run --profile gate <radio> --lib` |
-| 2 | **Tests de integración** (con mocks) | `cargo nextest run --profile gate <radio> --tests` |
+| 1 | **Tests unitarios** | `cargo nextest run --profile gate <radio> --tests -E 'not kind(test)' --no-tests=fail` |
+| 2 | **Tests de integración** (con mocks) | `cargo nextest run --profile gate <radio> --tests -E 'kind(test)' --no-tests=fail` |
 | 3 | **Mutantes** | `cargo mutants` |
 
 El gate entero es `bash scripts/test-gate.sh`. **Los tres tienen que estar verdes**: un
-gate con uno de los tres en rojo es un gate rojo. No hay lane de CI detrás — la
+gate con uno de los tres en rojo es un gate rojo. Los dos primeros reparten **una sola
+selección** (`--tests`) por el tipo de objetivo: cada test corre una vez, los tests de
+los binarios caen en el paso unitario, y una mitad vacía no falla, pero un radio sin ningún
+test sí. No hay lane de CI detrás — la
 autoridad es la suite en verde más una persona que lee el diff. `<radio>` es el
 alcance que se mide (ver «El gate mide un radio» más abajo); cuando el radio no se
 puede determinar, el radio es el workspace entero.
