@@ -592,6 +592,7 @@ dependencies = [
  "cognicode-core",
  "futures-util",
  "http",
+ "http-body-util",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-prometheus",

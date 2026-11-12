@@ -12,6 +12,8 @@
 //! - [`auth`] — M3.5 Bearer-token comparison (`check_bearer_token`).
 //! - [`exposure`] — the rules that decide whether the HTTP transport may
 //!   start, and on which address.
+//! - [`request_limits`] — the ceiling and the deadline the HTTP transport
+//!   reads a request body under.
 
 pub mod auth;
 pub mod cancellation;
@@ -22,6 +24,7 @@ pub mod link_trace;
 pub mod output_contracts;
 pub mod parameter_aliases;
 pub mod presenter_bridge;
+pub mod request_limits;
 pub mod rmcp_adapter;
 pub mod robustness;
 pub mod status;

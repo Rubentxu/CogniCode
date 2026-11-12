@@ -14,12 +14,18 @@
 //! rules read like a guarantee.
 //!
 //! The check runs the real binary with a configuration that must be
-//! refused, and with one that must be let through. Both are decided
-//! before anything is bound, so neither waits for the graph.
+//! refused, and with one that must be let through. The refusal is decided
+//! before anything is bound, so it does not wait for the graph.
 
-use std::path::PathBuf;
+use crate::common;
+use crate::mcp_http_server_posture::{initialize, post};
+
+use std::net::Ipv4Addr;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+
+use common::HttpServer;
 
 /// The address the server would listen on if it started. In the refused
 /// case it is never reached: the point is that the process ends before
@@ -44,17 +50,8 @@ fn server_binary() -> &'static str {
     env!("CARGO_BIN_EXE_cognicode-mcp-server")
 }
 
-/// An empty directory, so the server has nothing to build a graph from
-/// and the decision about exposure is the only thing it has to make.
-fn empty_workspace(tag: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("cognicode-exposure-{tag}"));
-    let _ = std::fs::remove_dir_all(&path);
-    std::fs::create_dir_all(&path).expect("the empty workspace is creatable");
-    path
-}
-
 /// Runs the server and reports how it ended.
-fn run_server(workspace: &PathBuf, token: Option<&str>) -> Outcome {
+fn run_server(workspace: &Path, token: Option<&str>) -> Outcome {
     let mut command = Command::new(server_binary());
     command
         .arg("--listen")
@@ -105,9 +102,10 @@ fn run_server(workspace: &PathBuf, token: Option<&str>) -> Outcome {
 
 #[test]
 fn a_server_exposed_without_a_credential_refuses_to_start() {
-    let workspace = empty_workspace("refused");
-    let outcome = run_server(&workspace, None);
-    let _ = std::fs::remove_dir_all(&workspace);
+    // An empty directory, so the server has nothing to build a graph from
+    // and the decision about exposure is the only thing it has to make.
+    let workspace = tempfile::tempdir().expect("an empty workspace");
+    let outcome = run_server(workspace.path(), None);
 
     assert!(
         !outcome.running,
@@ -128,15 +126,32 @@ fn a_server_exposed_without_a_credential_refuses_to_start() {
     );
 }
 
+/// The other half: with a credential, the wide address is served, and it is
+/// served under the name it was bound to, `0.0.0.0` included.
 #[test]
-fn a_server_exposed_with_a_credential_gets_past_the_exposure_check() {
-    let workspace = empty_workspace("allowed");
-    let outcome = run_server(&workspace, Some("a-secret-value"));
-    let _ = std::fs::remove_dir_all(&workspace);
+fn a_server_exposed_with_a_credential_is_served_under_the_address_it_was_given() {
+    let token = "a-secret-value";
+    let workspace = tempfile::tempdir().expect("an empty workspace");
+    let server = HttpServer::start_on(
+        Ipv4Addr::UNSPECIFIED.into(),
+        workspace.path(),
+        Some(token),
+        &[],
+    );
+    let port = server.addr.port();
 
-    assert!(
-        !outcome.said.contains("refusing to serve"),
-        "a server with a credential was refused for its exposure:\n{}",
-        outcome.said
+    let answered = post(
+        &server,
+        &format!("0.0.0.0:{port}"),
+        Some(token),
+        None,
+        &initialize(),
+    );
+    assert_eq!(
+        answered.status(),
+        200,
+        "an operator who bound 0.0.0.0 reaches the server through it: {}\nstderr:\n{}",
+        answered.status_line.trim(),
+        server.stderr()
     );
 }

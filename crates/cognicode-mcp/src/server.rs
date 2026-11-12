@@ -41,7 +41,10 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry};
 
 use cognicode_mcp::auth::check_bearer_token;
-use cognicode_mcp::exposure::{DEFAULT_LISTEN, configured_token, ensure_safe_exposure};
+use cognicode_mcp::exposure::{
+    DEFAULT_LISTEN, allowed_hosts_for, configured_token, ensure_safe_exposure,
+};
+use cognicode_mcp::request_limits::{RequestLimits, enforce};
 
 #[derive(Debug, Parser)]
 #[command(name = "cognicode-mcp-server", version)]
@@ -50,6 +53,11 @@ struct Args {
     cwd: PathBuf,
     #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
+    /// Run in read-only mode. The tools that mutate the workspace
+    /// (write_file, edit_file, reparse_on_edit) are hidden from `tools/list`
+    /// and rejected when called, the same as `cognicode-mcp --read-only`.
+    #[arg(long, default_value_t = false)]
+    read_only: bool,
     /// TASK-84: the surface this server publishes in `tools/list`.
     ///
     /// `default` publishes the goals that answer before the analysis,
@@ -150,7 +158,7 @@ async fn ready_handler(
 ///
 /// Behaviour:
 /// - The server was started without a token → the address it listens on
-///   is loopback, so pass through. Nothing else can reach it.
+///   is loopback, so pass through. No other machine can reach it.
 /// - The server was started with a token → require a matching
 ///   `Authorization: Bearer <token>` header; otherwise 401.
 /// - Comparison uses `subtle::ConstantTimeEq` to avoid leaking length
@@ -160,6 +168,13 @@ async fn ready_handler(
 /// rule that depends on it decides whether the server may be exposed at
 /// all, and a credential that appears halfway through the life of a
 /// server is a credential that was absent while it was exposed.
+///
+/// What loopback without a token does not protect against: any process
+/// on this machine, under any user, can open the port and call every tool
+/// with the authority of the user who started the server. A machine shared
+/// with other users or with untrusted processes should set the token on
+/// loopback too, and a server that only needs to read should run with
+/// `--read-only`, which refuses the tools that write whoever calls them.
 async fn auth_middleware(
     State(_ctx): State<Arc<HandlerContext>>,
     request: Request,
@@ -226,6 +241,9 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Mode C: auth DISABLED (loopback address only)");
         }
     }
+    if args.read_only {
+        tracing::info!("read-only: the tools that mutate the workspace are refused");
+    }
 
     let cwd = args.cwd.clone();
 
@@ -251,12 +269,7 @@ async fn main() -> anyhow::Result<()> {
     config.json_response = false;
     config.sse_keep_alive = Some(Duration::from_secs(30));
     config.sse_retry = Some(Duration::from_secs(3));
-    config.allowed_hosts = vec![
-        "localhost".into(),
-        "127.0.0.1".into(),
-        "::1".into(),
-        "0.0.0.0".into(),
-    ];
+    config.allowed_hosts = allowed_hosts_for(&args.listen);
 
     // M3.1: Build the HandlerContext once and share it between the
     // MCP dispatch (per session) and the /ready HTTP handler. The
@@ -270,7 +283,8 @@ async fn main() -> anyhow::Result<()> {
     let cache_root = cognicode_core::application::graph_cache::default_cache_root();
     let mut ctx_builder = HandlerContext::builder()
         .with_working_dir(cwd.clone())
-        .with_cache_root(cache_root.clone());
+        .with_cache_root(cache_root.clone())
+        .with_read_only(args.read_only);
     // This server is the daemon: it is the one that watches the tree, and
     // its word is about the index it keeps. Asking it is not a second
     // opinion —it is the only watcher there is— and the answer says who
@@ -450,9 +464,16 @@ async fn main() -> anyhow::Result<()> {
     // rest: it reports the workspace path and the watcher state, and a
     // diagnostic that names the directory the server works on is not
     // something to hand to whoever can reach the port.
+    //
+    // The request limits sit inside the auth layer: a client without the
+    // credential is refused before the server reads a byte of its body.
     let protected_routes = Router::new()
         .nest_service("/mcp", service)
         .route("/watch", get(watch_handler))
+        .layer(middleware::from_fn_with_state(
+            RequestLimits::default(),
+            enforce,
+        ))
         .layer(middleware::from_fn_with_state(
             shared_ctx.clone(),
             auth_middleware,
