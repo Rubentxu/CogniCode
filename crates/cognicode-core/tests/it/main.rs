@@ -137,6 +137,7 @@ mod sandbox_resource_usage_ownership_boundary;
 mod security_validation_tests;
 mod semantic_reader_owns_its_language;
 mod source_scan;
+mod symbol_index_follows_the_graph_and_directory;
 mod t1_1b_symbolkind_wire_format;
 mod t1_1c_ground_truth_orphan_mapping;
 mod the_analysed_tree_keeps_no_state;

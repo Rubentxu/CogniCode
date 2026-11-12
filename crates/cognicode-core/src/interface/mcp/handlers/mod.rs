@@ -199,6 +199,7 @@ use crate::interface::mcp::schemas::{
     SuggestRefactorPlanInput,
     SymbolCodeInput,
     SymbolCodeOutput,
+    SymbolIndexBasis,
     SymbolInfo,
     SymbolKind as McpSymbolKind,
     SymbolLocationEntry,
@@ -2679,16 +2680,17 @@ pub async fn handle_build_lightweight_index(
     .await
     .map_err(|e| HandlerError::Internal(format!("spawn_blocking panicked: {e}")))?;
 
-    let (build_result, symbols, strategy_name, opt_index, _directory) = result;
+    let (build_result, symbols, strategy_name, _opt_index, _directory) = result;
 
     match build_result {
         Ok(()) => {
             let elapsed = start.elapsed().as_millis() as u64;
 
-            // Cache the lightweight index in AnalysisService (no rebuild needed)
-            if let Some(index) = opt_index {
-                ctx.analysis_service.set_symbol_index(index);
-            }
+            // TASK-221 — el índice del servicio ya no se alimenta aquí:
+            // su única fuente de contenido es el grafo. Esta tool sigue
+            // construyendo el suyo y reportando lo que midió, pero no
+            // siembra la cache del servicio: el contenido del índice no
+            // puede depender de quién llegara primero.
 
             Ok(BuildIndexOutput {
                 success: true,
@@ -2718,6 +2720,10 @@ pub async fn handle_query_symbol_index(
     // Validate input
     ctx.validator.validate_query(&input.symbol_name)?;
 
+    // TASK-221 — el directorio se autoriza siempre: es lo que acota la
+    // respuesta y lo que su base temporal declara.
+    let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
+
     // Empty symbol name returns empty results
     if input.symbol_name.is_empty() {
         return Ok(QuerySymbolOutput {
@@ -2726,30 +2732,43 @@ pub async fn handle_query_symbol_index(
             total: 0,
             precision: precision_floor_for_tool("query_symbol_index"),
             provider: default_provider_for_tool("query_symbol_index").to_string(),
+            basis: SymbolIndexBasis {
+                graph_revision: ctx.analysis_service.current_graph_revision(),
+                directory: directory.to_string_lossy().to_string(),
+            },
         });
     }
 
-    // Use the cached index in AnalysisService if available
-    let locations = if ctx.analysis_service.has_symbol_index() {
-        ctx.analysis_service.find_symbol(&input.symbol_name)
-    } else {
-        // Cache miss: build the index and store it for next time
-        let directory = authorise_directory(ctx, input.directory.as_deref())?.into_inner();
-        let index = tokio::task::spawn_blocking({
-            let dir = directory.clone();
-            move || {
-                let mut s = LightweightStrategy::new();
-                s.build_index(&dir).ok();
-                s.into_index()
-            }
-        })
-        .await
-        .map_err(|e| HandlerError::Internal(e.to_string()))?;
-        ctx.analysis_service.set_symbol_index(index);
-        ctx.analysis_service.find_symbol(&input.symbol_name)
-    };
+    // TASK-221 — el índice sigue al grafo y al directorio consultado:
+    // una sola fuente de contenido (la cabeza del grafo), la revisión
+    // la invalida, el directorio la acota. Si el servicio no tiene
+    // cabeza todavía, se carga o construye para el workspace — la
+    // misma decisión que toman las demás tools de grafo. El llenado
+    // por filesystem que había aquí era una segunda fuente de verdad:
+    // su contenido dependía de quién llegara primero.
+    let service = ctx.analysis_service.clone();
+    let symbol_name = input.symbol_name.clone();
+    let workspace = ctx.working_dir.clone();
+    let cache_root = ctx.cache_root().map(|p| p.to_path_buf());
+    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
+    let answer = tokio::task::spawn_blocking(move || {
+        if service.current_graph_revision() == 0 {
+            crate::application::graph_snapshot::load_or_build_graph(
+                &service,
+                &workspace,
+                cache_root.as_deref(),
+                session_manifest.as_ref(),
+                false,
+            )
+            .map_err(HandlerError::App)?;
+        }
+        Ok::<_, HandlerError>(service.find_symbol(&symbol_name, &directory))
+    })
+    .await
+    .map_err(|e| HandlerError::Internal(format!("spawn_blocking panicked: {e}")))??;
 
-    let location_entries: Vec<SymbolLocationEntry> = locations
+    let location_entries: Vec<SymbolLocationEntry> = answer
+        .locations
         .iter()
         .map(|loc| SymbolLocationEntry {
             file: loc.file.clone(),
@@ -2767,6 +2786,10 @@ pub async fn handle_query_symbol_index(
         total,
         precision: precision_floor_for_tool("query_symbol_index"),
         provider: default_provider_for_tool("query_symbol_index").to_string(),
+        basis: SymbolIndexBasis {
+            graph_revision: answer.graph_revision,
+            directory: answer.directory.to_string_lossy().to_string(),
+        },
     })
 }
 
@@ -4332,6 +4355,67 @@ mod tests {
         assert!(result.is_ok());
         let output = result.unwrap();
         assert_eq!(output.total, 0);
+    }
+
+    /// TASK-221 AC #2 — una consulta sobre el directorio B no responde
+    /// con símbolos de A, aunque el índice ya se haya llenado con A.
+    /// Hoy la guarda `has_symbol_index()` ignora el directorio pedido:
+    /// el primer llenado manda y B hereda los símbolos de A.
+    #[tokio::test]
+    async fn query_symbol_index_answers_with_the_directory_it_was_asked_about() {
+        let ws = tempfile::tempdir().unwrap();
+        let a = ws.path().join("a");
+        let b = ws.path().join("b");
+        std::fs::create_dir(&a).unwrap();
+        std::fs::create_dir(&b).unwrap();
+        std::fs::write(a.join("has_alpha.rs"), "fn alpha() {}\n").unwrap();
+        std::fs::write(b.join("has_beta.rs"), "fn beta() {}\n").unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(ws.path().to_path_buf())
+            .build();
+
+        // Primero A: llena el índice del servicio.
+        let out_a = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "alpha".to_string(),
+                directory: Some(a.to_string_lossy().to_string()),
+            },
+        )
+        .await
+        .expect("query on A succeeds");
+        assert!(!out_a.locations.is_empty(), "alpha lives in A: {out_a:?}");
+
+        // Luego B: la respuesta no puede traer símbolos de A.
+        let out_b = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "alpha".to_string(),
+                directory: Some(b.to_string_lossy().to_string()),
+            },
+        )
+        .await
+        .expect("query on B succeeds");
+        assert!(
+            out_b.locations.is_empty(),
+            "a query scoped to B must not answer with A's symbols, got {:?}",
+            out_b.locations
+        );
+        // Y beta, que vive en B, sí se encuentra preguntando por B.
+        let out_b_beta = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "beta".to_string(),
+                directory: Some(b.to_string_lossy().to_string()),
+            },
+        )
+        .await
+        .expect("query for beta on B succeeds");
+        assert!(
+            !out_b_beta.locations.is_empty(),
+            "beta lives in B: the scoped query must find it"
+        );
     }
 
     #[tokio::test]
