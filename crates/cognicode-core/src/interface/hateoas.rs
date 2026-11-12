@@ -224,8 +224,10 @@ pub fn envelope_for(
 ///
 /// Lo primero es la palabra que la respuesta trae (`status`, `outcome`,
 /// `state`): si está, esa es. Si no, la respuesta que deja agujeros es
-/// `partial` —el agujero **es** el veredicto— y la que no dice nada es
-/// `complete`: no afirma nada que la contradiga.
+/// `partial` —el agujero **es** el veredicto—. La que no dice nada NO
+/// es `complete`: nadie la midió, y el sobre no pone una palabra que
+/// nadie dijo (TASK-222). La palabra honesta para lo sin medir es
+/// `unknown`.
 fn state_of(result: &Value) -> String {
     // El veredicto puede venir en la respuesta o en su bloque de
     // cobertura: depende de qué forma declare la respuesta.
@@ -245,7 +247,9 @@ fn state_of(result: &Value) -> String {
     }
     match holes_of(result) {
         Some(holes) if holes.total() > 0 => "partial".to_string(),
-        _ => "complete".to_string(),
+        // TASK-222 — «no dice nada» no es «complete» (H8): la palabra
+        // la declara quien la midió, y aquí nadie midió.
+        _ => "unknown".to_string(),
     }
 }
 

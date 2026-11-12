@@ -179,8 +179,6 @@ use crate::interface::mcp::schemas::{
     SearchResultDto,
     SemanticSearchInput,
     SemanticSearchOutput,
-    SkippedFileInfo,
-    SkippedReasonKind,
     SmartOverviewInput,
     SolidPrinciple,
     // SOLID Audit schemas
@@ -2890,52 +2888,26 @@ pub async fn handle_get_per_file_graph(
     // same coverage facts as merge_graphs and the project routes.
     let strategy = PerFileStrategy::new();
     let report = strategy.merge_files_with_report(&[file_path.as_path()]);
-    let graph = report.graph;
-    let (coverage, pending_references) = match report.status {
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-            (MergeCoverage::Complete, Vec::new())
-        }
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-            skipped,
-            pending,
-            rejected,
-        } => {
-            use crate::infrastructure::graph::per_file_graph::SkipReason as R;
-            let skipped_info: Vec<SkippedFileInfo> = skipped
-                .into_iter()
-                .map(|s| {
-                    let (reason, detail) = match s.reason {
-                        R::Read(d) => (SkippedReasonKind::Read, d),
-                        R::Parse(d) => (SkippedReasonKind::Parse, d),
-                        R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
-                        R::Symlink { target } => (
-                            SkippedReasonKind::Symlink,
-                            format!("symlink to {target}, not followed"),
-                        ),
-                        R::Walk(d) => (SkippedReasonKind::Walk, d),
-                        R::Other(d) => (SkippedReasonKind::Other, d),
-                    };
-                    SkippedFileInfo {
-                        path: s.path,
-                        reason,
-                        detail,
-                    }
-                })
-                .collect();
-            let pending_info: Vec<PendingReferenceInfo> = pending
+
+    // TASK-222 — la palabra la publica el dueño del veredicto
+    // (`coverage_verdict`), no el traductor del BuildStatus: un
+    // `Complete` que nadie midió es la palabra equivocada (H8).
+    let holds_material = report.graph.symbol_count() > 0;
+    let coverage = MergeCoverage::from_build_report(
+        crate::application::analysis_basis::GraphSource::Built,
+        &report,
+        holds_material,
+    );
+    let pending_references: Vec<PendingReferenceInfo> = match &report.status {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => Vec::new(),
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { pending, .. } => {
+            pending
                 .iter()
                 .map(PendingReferenceInfo::from_reference)
-                .collect();
-            let rejected_info: Vec<RejectedRelationInfo> = rejected
-                .iter()
-                .map(RejectedRelationInfo::from_rejection)
-                .collect();
-            (
-                MergeCoverage::from(skipped_info, pending_info.clone(), rejected_info),
-                pending_info,
-            )
+                .collect()
         }
     };
+    let graph = report.graph;
 
     let symbols: Vec<SymbolLocationEntry> = graph
         .symbols()
@@ -2985,12 +2957,14 @@ pub async fn handle_merge_graphs(
 ) -> HandlerResult<MergeGraphsOutput> {
     // Handle empty file paths case
     if input.file_paths.is_empty() {
+        // TASK-222 AC #1 — sin petición no hay material que cubrir: la
+        // palabra es «sin material» (no_material_outcome), no Complete.
         return Ok(MergeGraphsOutput {
             requested_file_count: 0,
             merged_file_count: 0,
             merged_symbol_count: 0,
             merged_dependency_count: 0,
-            coverage: MergeCoverage::Complete,
+            coverage: MergeCoverage::no_material(),
             symbols: Vec::new(),
             dependencies: Vec::new(),
         });
@@ -3016,51 +2990,22 @@ pub async fn handle_merge_graphs(
     // reported as a clean merge.
     let report = PerFileStrategy::new()
         .merge_files_with_report(&file_paths.iter().map(PathBuf::as_path).collect::<Vec<_>>());
-    let merged = report.graph;
 
-    let (coverage, skipped_count) = match report.status {
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-            (MergeCoverage::Complete, 0)
-        }
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-            skipped,
-            pending,
-            rejected,
-        } => {
-            let skipped: Vec<SkippedFileInfo> = skipped
-                .into_iter()
-                .map(|s| {
-                    use crate::infrastructure::graph::per_file_graph::SkipReason as R;
-                    let (reason, detail) = match s.reason {
-                        R::Read(d) => (SkippedReasonKind::Read, d),
-                        R::Parse(d) => (SkippedReasonKind::Parse, d),
-                        R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
-                        R::Symlink { target } => (
-                            SkippedReasonKind::Symlink,
-                            format!("symlink to {target}, not followed"),
-                        ),
-                        R::Walk(d) => (SkippedReasonKind::Walk, d),
-                        R::Other(d) => (SkippedReasonKind::Other, d),
-                    };
-                    SkippedFileInfo {
-                        path: s.path,
-                        reason,
-                        detail,
-                    }
-                })
-                .collect();
-            let pending: Vec<PendingReferenceInfo> = pending
-                .iter()
-                .map(PendingReferenceInfo::from_reference)
-                .collect();
-            let rejected: Vec<RejectedRelationInfo> = rejected
-                .iter()
-                .map(RejectedRelationInfo::from_rejection)
-                .collect();
-            let n = skipped.len();
-            (MergeCoverage::from(skipped, pending, rejected), n)
+    // TASK-222 — la palabra la publica el dueño del veredicto, no el
+    // traductor del BuildStatus (H8).
+    let holds_material = report.graph.symbol_count() > 0;
+    let coverage = MergeCoverage::from_build_report(
+        crate::application::analysis_basis::GraphSource::Built,
+        &report,
+        holds_material,
+    );
+    let skipped_count = match &report.status {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => 0,
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, .. } => {
+            skipped.len()
         }
     };
+    let merged = report.graph;
 
     let symbols: Vec<SymbolLocationEntry> = merged
         .symbols()
@@ -4684,7 +4629,18 @@ mod tests {
         assert_eq!(output.requested_file_count, 0);
         assert_eq!(output.merged_file_count, 0);
         assert_eq!(output.merged_symbol_count, 0);
-        assert_eq!(output.coverage, MergeCoverage::Complete);
+        // TASK-222 AC #1 — sin petición no hay material que cubrir: la
+        // palabra es «sin material», no «complete». Un Complete que
+        // nadie midió es la palabra equivocada (H8).
+        assert_eq!(
+            output.coverage,
+            MergeCoverage::NoMaterial {
+                skipped_files: Vec::new(),
+                pending_references: Vec::new(),
+                rejected_relations: Vec::new(),
+            },
+            "an empty request publishes the word of the owner for no material"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -4763,6 +4719,9 @@ mod tests {
             }
             MergeCoverage::Complete => {
                 panic!("a file that was never read cannot be Complete coverage")
+            }
+            MergeCoverage::NoMaterial { .. } => {
+                panic!("a vanished file is a skipped file, not the absence of material")
             }
         }
     }
