@@ -1363,6 +1363,37 @@ impl WorkspaceSession {
     // Refactor Operations
     // =========================================================================
 
+    /// The basis the refactor operations answer from: the graph of the
+    /// owner — the same `load_or_build_graph` decision every interface
+    /// takes, which serves the snapshot when it can answer for the tree
+    /// and reads the tree again when it cannot (TASK-223).
+    async fn refactor_basis(
+        &self,
+    ) -> WorkspaceResult<crate::application::services::refactor_service::RefactorBasis> {
+        use crate::application::services::refactor_service::RefactorBasis;
+        let analysis = Arc::clone(&self.analysis);
+        let workspace_root = self.workspace_root.clone();
+        tokio::task::spawn_blocking(move || {
+            let loaded = crate::application::graph_snapshot::load_or_build_graph(
+                &analysis,
+                &workspace_root,
+                None,
+                None,
+                false,
+            )?;
+            Ok(RefactorBasis {
+                graph: loaded.graph,
+                coverage: loaded.coverage,
+                workspace_root,
+            })
+        })
+        .await
+        .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Task join error: {}", e)))?
+        .map_err(|e: crate::application::error::AppError| {
+            WorkspaceError::AnalysisFailed(e.to_string())
+        })
+    }
+
     /// Rename a symbol across the codebase
     pub async fn rename_symbol(
         &self,
@@ -1375,8 +1406,9 @@ impl WorkspaceSession {
         let path = self.resolve_path(file)?;
         let path_str = path.to_string_lossy().into_owned();
         let command = RenameSymbolCommand::new(symbol, new_name, &path_str);
+        let basis = self.refactor_basis().await?;
 
-        match self.refactor.rename_symbol(command) {
+        match self.refactor.rename_symbol(command, &basis) {
             Ok(preview) => {
                 let edits = self
                     .refactor
@@ -1473,8 +1505,9 @@ impl WorkspaceSession {
         let source = self.resolve_path(source_path)?;
         let source_str = source.to_string_lossy().into_owned();
         let command = MoveSymbolCommand::new(symbol, &source_str, target_path);
+        let basis = self.refactor_basis().await?;
 
-        match self.refactor.move_symbol(command) {
+        match self.refactor.move_symbol(command, &basis) {
             Ok(preview) => Ok(RefactorResult {
                 action: crate::application::dto::RefactorAction::Move,
                 success: true,

@@ -3,21 +3,92 @@
 use crate::application::commands::RenameSymbolCommand;
 use crate::application::dto::RefactorPreviewDto;
 use crate::application::error::{AppError, AppResult};
+use crate::application::services::analyze::Coverage;
 use crate::domain::aggregates::Symbol;
+use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters, TextEdit};
-use crate::domain::traits::{DependencyRepository, TextEdit as VfsTextEdit};
+use crate::domain::traits::TextEdit as VfsTextEdit;
 use crate::domain::value_objects::{Location, SourceRange};
-use crate::infrastructure::graph::PetGraphStore;
 use crate::infrastructure::parser::{IdentifierOccurrence, Language, TreeSitterParser};
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use crate::infrastructure::vfs::VirtualFileSystem;
 use lsp_types::Url;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Service for refactoring operations
 pub struct RefactorService {
     safety_gate: SafetyGate,
+}
+
+/// El grafo con el que el refactor mide su impacto, y la base que el
+/// preview declara (TASK-223).
+///
+/// El impacto de un rename no se calcula sobre un grafo construido
+/// adrede: se calcula sobre el grafo que el análisis sostiene — el
+/// mismo inventario de ficheros, los mismos ids, los mismos huecos que
+/// las demás preguntas del workspace. La cobertura es el veredicto que
+/// el dueño de esa decisión hizo sobre ese grafo, y viaja al preview
+/// para que la respuesta diga de dónde salió.
+pub struct RefactorBasis {
+    /// El grafo del dueño del análisis.
+    pub graph: Arc<CallGraph>,
+    /// El veredicto del dueño de la cobertura sobre ese grafo: qué
+    /// cubre y qué ficheros quedaron fuera.
+    pub coverage: Coverage,
+    /// La raíz del workspace sobre la que se construyó el grafo: la
+    /// búsqueda de usos fuera del fichero recorre el mismo inventario
+    /// de ficheros que construyó el grafo.
+    pub workspace_root: PathBuf,
+}
+
+impl RefactorBasis {
+    /// La palabra de la cobertura, en el vocabulario del dueño.
+    fn coverage_state(&self) -> String {
+        self.coverage
+            .published_state()
+            .published_label()
+            .to_string()
+    }
+
+    /// Los ficheros que el árbol tiene y el grafo no leyó.
+    fn unreadable_files(&self) -> Vec<String> {
+        self.coverage
+            .facts()
+            .skipped
+            .iter()
+            .map(|s| s.path.clone())
+            .collect()
+    }
+}
+
+/// Los dependientes transitivos de un símbolo por aristas exactas.
+///
+/// El recorrido es exacto a propósito: el `find_all_dependents` del
+/// grafo cae a un índice por nombre cuando el id exacto no produce
+/// aristas — el paliativo que el grafo falso de `nombre:0:0` exigía, y
+/// que funde a los homónimos. El grafo del análisis no tiene nodos
+/// falsos: cada llamada que sí se resolvió es una arista entre ids
+/// reales, y una llamada que el proyecto no sabe atribuir no es
+/// arista de nadie (es una referencia pendiente, y así la publica la
+/// cobertura). El símbolo mismo no cuenta: el impacto de un cambio es
+/// lo que queda fuera de él.
+fn transitive_dependents(graph: &CallGraph, id: &SymbolId) -> Vec<SymbolId> {
+    let mut result: Vec<SymbolId> = Vec::new();
+    let mut to_visit: Vec<SymbolId> = vec![id.clone()];
+    while let Some(current) = to_visit.pop() {
+        for dependent in graph.dependents(&current) {
+            if dependent == id {
+                continue;
+            }
+            if !result.contains(dependent) {
+                result.push(dependent.clone());
+                to_visit.push(dependent.clone());
+            }
+        }
+    }
+    result
 }
 
 impl RefactorService {
@@ -40,24 +111,27 @@ impl RefactorService {
     /// 2. Finds all occurrences of the symbol
     /// 3. Calculates the impact on the codebase
     /// 4. Returns a preview of the changes
-    pub fn rename_symbol(&self, command: RenameSymbolCommand) -> AppResult<RefactorPreviewDto> {
+    pub fn rename_symbol(
+        &self,
+        command: RenameSymbolCommand,
+        basis: &RefactorBasis,
+    ) -> AppResult<RefactorPreviewDto> {
         // First, find the symbol in the project graph
         let symbol = self.find_symbol(&command.old_name, &command.file_path)?;
 
-        // Get the project directory for building the graph
-        let project_dir = Path::new(&command.file_path)
-            .parent()
-            .ok_or_else(|| AppError::InvalidParameter("Invalid file path".to_string()))?;
-
-        // Build a graph of the project
-        let mut store = PetGraphStore::new();
-        self.build_minimal_graph(&mut store, project_dir, &command.old_name)?;
-
-        let call_graph = store.to_call_graph();
-
-        // Calculate impact
+        // The impact is measured on the graph the analysis holds — the
+        // same one every other question of this workspace is answered
+        // with (TASK-223). A symbol the graph does not name has no
+        // impact answer: an empty one would pass "the graph is stale"
+        // off as "nothing depends on it".
         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-        let impacted_symbols = call_graph.find_all_dependents(&symbol_id);
+        if basis.graph.get_symbol(&symbol_id).is_none() {
+            return Err(AppError::SymbolNotFound(format!(
+                "the analysis graph does not hold '{}': rebuild the graph                  of the workspace before refactoring it",
+                symbol.fully_qualified_name()
+            )));
+        }
+        let impacted_symbols = transitive_dependents(&basis.graph, &symbol_id);
         let impacted_count = impacted_symbols.len();
 
         // Create the refactor
@@ -88,9 +162,11 @@ impl RefactorService {
             ));
         }
 
-        // A rename edits one file: a use elsewhere would be left behind
+        // A rename edits one file: a use elsewhere would be left behind.
+        // The search walks the same inventory the graph was built from:
+        // what `target/` or `.gitignore` decline is not a use (TASK-223).
         if let Some(other) =
-            self.first_use_outside(project_dir, &command.file_path, &command.old_name)
+            self.first_use_outside(&basis.workspace_root, &command.file_path, &command.old_name)
         {
             return Err(AppError::InvalidParameter(format!(
                 "rename of '{}' refused: it is also used in {}, and rename only edits one file",
@@ -122,6 +198,8 @@ impl RefactorService {
 
         preview.change_count = occurrences.len();
         preview.symbols_affected = vec![command.old_name.clone()];
+        preview.coverage_state = basis.coverage_state();
+        preview.unreadable_files = basis.unreadable_files();
 
         Ok(preview)
     }
@@ -136,26 +214,23 @@ impl RefactorService {
     pub fn change_signature(
         &self,
         command: crate::application::commands::ChangeSignatureCommand,
+        basis: &RefactorBasis,
     ) -> AppResult<RefactorPreviewDto> {
         use crate::domain::aggregates::symbol::{FunctionSignature, Parameter};
 
         // First, find the symbol in the project graph
         let symbol = self.find_symbol(&command.function_name, &command.file_path)?;
 
-        // Get the project directory for building the graph
-        let project_dir = Path::new(&command.file_path)
-            .parent()
-            .ok_or_else(|| AppError::InvalidParameter("Invalid file path".to_string()))?;
-
-        // Build a graph of the project
-        let mut store = PetGraphStore::new();
-        self.build_minimal_graph(&mut store, project_dir, &command.function_name)?;
-
-        let call_graph = store.to_call_graph();
-
-        // Calculate impact
+        // The impact is measured on the graph the analysis holds, on
+        // exact edges (TASK-223). See rename_symbol.
         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-        let impacted_symbols = call_graph.find_all_dependents(&symbol_id);
+        if basis.graph.get_symbol(&symbol_id).is_none() {
+            return Err(AppError::SymbolNotFound(format!(
+                "the analysis graph does not hold '{}': rebuild the graph                  of the workspace before refactoring it",
+                symbol.fully_qualified_name()
+            )));
+        }
+        let impacted_symbols = transitive_dependents(&basis.graph, &symbol_id);
         let impacted_count = impacted_symbols.len();
 
         // Build the new signature from the command
@@ -221,6 +296,8 @@ impl RefactorService {
 
         preview.change_count = occurrences.len();
         preview.symbols_affected = vec![command.function_name.clone()];
+        preview.coverage_state = basis.coverage_state();
+        preview.unreadable_files = basis.unreadable_files();
 
         Ok(preview)
     }
@@ -235,26 +312,23 @@ impl RefactorService {
     pub fn move_symbol(
         &self,
         command: crate::application::commands::MoveSymbolCommand,
+        basis: &RefactorBasis,
     ) -> AppResult<RefactorPreviewDto> {
         use crate::domain::aggregates::RefactorKind;
 
         // First, find the symbol in the project graph
         let symbol = self.find_symbol(&command.symbol_name, &command.source_path)?;
 
-        // Get the project directory for building the graph
-        let project_dir = Path::new(&command.source_path)
-            .parent()
-            .ok_or_else(|| AppError::InvalidParameter("Invalid file path".to_string()))?;
-
-        // Build a graph of the project
-        let mut store = PetGraphStore::new();
-        self.build_minimal_graph(&mut store, project_dir, &command.symbol_name)?;
-
-        let call_graph = store.to_call_graph();
-
-        // Calculate impact
+        // The impact is measured on the graph the analysis holds, on
+        // exact edges (TASK-223). See rename_symbol.
         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-        let impacted_symbols = call_graph.find_all_dependents(&symbol_id);
+        if basis.graph.get_symbol(&symbol_id).is_none() {
+            return Err(AppError::SymbolNotFound(format!(
+                "the analysis graph does not hold '{}': rebuild the graph                  of the workspace before refactoring it",
+                symbol.fully_qualified_name()
+            )));
+        }
+        let impacted_symbols = transitive_dependents(&basis.graph, &symbol_id);
         let impacted_count = impacted_symbols.len();
 
         // Create the refactor
@@ -319,6 +393,8 @@ impl RefactorService {
 
         preview.change_count = occurrences.len();
         preview.symbols_affected = vec![command.symbol_name.clone()];
+        preview.coverage_state = basis.coverage_state();
+        preview.unreadable_files = basis.unreadable_files();
 
         Ok(preview)
     }
@@ -639,21 +715,33 @@ impl RefactorService {
         Ok(occurrences)
     }
 
-    /// The first file under `project_dir`, other than `file_path`, that uses `name`.
-    fn first_use_outside(&self, project_dir: &Path, file_path: &str, name: &str) -> Option<String> {
-        let own = Path::new(file_path);
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) || path == own {
+    /// The first file of the workspace's source inventory, other than
+    /// `file_path`, that uses `name`.
+    ///
+    /// The inventory —not a raw walk— decides what a use is: the same
+    /// file set the graph was built from, so what `target/`, the hidden
+    /// entries and the `.gitignore` decline cannot refuse a rename
+    /// (TASK-223). The paths are compared canonically: the caller's
+    /// `file_path` and the walk's arrive in whatever form each of them
+    /// was given, and the same file under two names is still the same
+    /// file.
+    fn first_use_outside(
+        &self,
+        workspace_root: &Path,
+        file_path: &str,
+        name: &str,
+    ) -> Option<String> {
+        let own_canonical = std::fs::canonicalize(file_path).ok();
+        let inventory = crate::infrastructure::graph::source_files::inventory(workspace_root);
+        for file in inventory.source_files() {
+            let candidate = std::fs::canonicalize(&file.path).ok();
+            if candidate.as_deref() == own_canonical.as_deref() {
                 continue;
             }
-            let Some(language) = Language::from_extension(path.extension()) else {
+            let Some(language) = file.language else {
                 continue;
             };
-            let Ok(source) = std::fs::read_to_string(path) else {
+            let Ok(source) = std::fs::read_to_string(&file.path) else {
                 continue;
             };
             let Ok(parser) = TreeSitterParser::new(language) else {
@@ -663,81 +751,10 @@ impl RefactorService {
                 .find_all_occurrences_of_identifier(&source, name)
                 .is_ok_and(|found| !found.is_empty())
             {
-                return Some(path.to_string_lossy().to_string());
+                return Some(file.path.to_string_lossy().to_string());
             }
         }
         None
-    }
-
-    /// Builds a minimal graph focused on a specific symbol
-    fn build_minimal_graph(
-        &self,
-        store: &mut PetGraphStore,
-        project_dir: &Path,
-        _symbol_name: &str,
-    ) -> AppResult<()> {
-        // Walk the directory and process source files
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                continue;
-            }
-
-            let language = match Language::from_extension(path.extension()) {
-                Some(lang) => lang,
-                None => continue,
-            };
-
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let file_path_str = path.to_string_lossy().to_string();
-
-            let parser = match TreeSitterParser::new(language) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-
-            // Find symbols
-            let symbols = match parser.find_all_symbols_with_path(&source, &file_path_str) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            // Find call relationships
-            let relationships = match parser.find_call_relationships(&source, &file_path_str) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-
-            // Add symbols to graph
-            for symbol in &symbols {
-                let symbol_id = SymbolId::new(symbol.fully_qualified_name());
-                let _ = store.add_dependency(
-                    &symbol_id,
-                    &symbol_id,
-                    crate::domain::value_objects::DependencyType::Defines,
-                );
-            }
-
-            // Add call relationships
-            for (caller, callee_name) in relationships {
-                let caller_id = SymbolId::new(caller.fully_qualified_name());
-                let callee_id = SymbolId::new(format!("{}:0:0", callee_name));
-                let _ = store.add_dependency(
-                    &caller_id,
-                    &callee_id,
-                    crate::domain::value_objects::DependencyType::Calls,
-                );
-            }
-        }
-
-        Ok(())
     }
 
     /// Generates the actual text edits for a rename operation
@@ -891,6 +908,24 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
+    /// La base de los tests: el grafo del dueño sobre el fixture.
+    fn test_basis(dir: &TempDir) -> RefactorBasis {
+        let service = crate::application::services::analysis_service::AnalysisService::new();
+        let loaded = crate::application::graph_snapshot::load_or_build_graph(
+            &service,
+            dir.path(),
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        RefactorBasis {
+            graph: loaded.graph,
+            coverage: loaded.coverage,
+            workspace_root: dir.path().to_path_buf(),
+        }
+    }
+
     /// P0-B regression guard: rename_symbol infers project_dir from
     /// `Path::new(&file_path).parent()`, and `build_minimal_graph` walks
     /// that directory recursively via `walkdir`. If a test puts the source
@@ -914,8 +949,8 @@ mod tests {
         let service = RefactorService::new();
         let command = RenameSymbolCommand::new("foo", "baz", file_path.to_str().unwrap());
 
-        let result = service.rename_symbol(command);
-        assert!(result.is_ok(), "Rename should succeed");
+        let result = service.rename_symbol(command, &test_basis(&dir));
+        assert!(result.is_ok(), "Rename should succeed: {:?}", result.err());
 
         let preview = result.unwrap();
         assert_eq!(
@@ -971,7 +1006,7 @@ mod tests {
         let service = RefactorService::new();
         let command = RenameSymbolCommand::new("nonexistent", "bar", file_path.to_str().unwrap());
 
-        let result = service.rename_symbol(command);
+        let result = service.rename_symbol(command, &test_basis(&dir));
         assert!(
             result.is_err(),
             "Rename should fail for non-existent symbol"
@@ -986,11 +1021,10 @@ mod tests {
         std::fs::write(dir.path().join("other.py"), "foo()\n").unwrap();
 
         let err = RefactorService::new()
-            .rename_symbol(RenameSymbolCommand::new(
-                "foo",
-                "baz",
-                file_path.to_str().unwrap(),
-            ))
+            .rename_symbol(
+                RenameSymbolCommand::new("foo", "baz", file_path.to_str().unwrap()),
+                &test_basis(&dir),
+            )
             .unwrap_err();
         assert!(err.to_string().contains("other.py"), "{err}");
     }
@@ -1002,11 +1036,10 @@ mod tests {
         std::fs::write(&file_path, "fun foo() {}\nfun main() { foo() }\n").unwrap();
 
         let preview = RefactorService::new()
-            .rename_symbol(RenameSymbolCommand::new(
-                "foo",
-                "baz",
-                file_path.to_str().unwrap(),
-            ))
+            .rename_symbol(
+                RenameSymbolCommand::new("foo", "baz", file_path.to_str().unwrap()),
+                &test_basis(&dir),
+            )
             .unwrap();
         assert_eq!(preview.change_count, 2);
     }
