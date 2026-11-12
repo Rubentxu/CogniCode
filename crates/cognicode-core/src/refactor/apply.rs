@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use crate::application::ports::PathPolicyError;
+use crate::domain::findings::digest::{DigestStream, sha256_short};
 use crate::paths::PathRules;
 
 use super::plan::{PlannedEdit, RefactorPlan};
@@ -71,11 +72,7 @@ const TOKEN_MAX_AGE_HOURS: i64 = 1;
 /// Lo usamos para computar `workspace_state_digest` sobre los bytes
 /// actuales del workspace. Mismo input => mismo hash.
 pub fn hash_bytes(bytes: &[u8]) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::Hasher;
-    let mut h = DefaultHasher::new();
-    h.write(bytes);
-    format!("{:016x}", h.finish())
+    sha256_short(bytes)
 }
 
 /// Compute el `workspace_state_digest` para un plan.
@@ -88,18 +85,16 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 /// bytes vacíos — esto significa que un archivo borrado entre
 /// preview y apply cambia el digest y dispara `WorkspaceStateMismatch`.
 pub fn compute_workspace_state_digest(plan: &RefactorPlan) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::Hasher;
-    let mut h = DefaultHasher::new();
+    let mut stream = DigestStream::new();
     for edit in sorted_edits(plan) {
-        h.write(edit.file.to_string_lossy().as_bytes());
-        h.write(b"\0");
+        stream
+            .update(edit.file.to_string_lossy().as_bytes())
+            .update(b"\0");
         let current_bytes = std::fs::read(&edit.file).unwrap_or_default();
         let new_bytes = splice_replacement(&current_bytes, edit);
-        h.write(&new_bytes);
-        h.write(b"\0");
+        stream.update(&new_bytes).update(b"\0");
     }
-    format!("{:016x}", h.finish())
+    stream.finish_short()
 }
 
 fn sorted_edits(plan: &RefactorPlan) -> Vec<&PlannedEdit> {

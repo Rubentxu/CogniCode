@@ -33,7 +33,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::application::graph_cache;
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
@@ -136,13 +135,14 @@ impl MemoStore {
 /// eso la entrada guarda las tres partes y al leer se comprueban. Un nombre
 /// que no encaja es un fallo, no un acierto.
 pub fn memo_key(goal: &str, args: &Map<String, Value>, tree: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(goal.as_bytes());
-    hasher.update(b"\0");
-    hasher.update(canonical_args(args).as_bytes());
-    hasher.update(b"\0");
-    hasher.update(tree.as_bytes());
-    crate::application::graph_snapshot::hex_digest(&hasher.finalize())
+    let mut stream = crate::domain::findings::digest::DigestStream::new();
+    stream
+        .update(goal.as_bytes())
+        .update(b"\0")
+        .update(canonical_args(args).as_bytes())
+        .update(b"\0")
+        .update(tree.as_bytes());
+    stream.finish_hex()
 }
 
 /// Los argumentos de un paso, en una forma que no depende del orden.
@@ -198,6 +198,19 @@ mod tests {
             .iter()
             .map(|(name, value)| (name.to_string(), Value::String(value.to_string())))
             .collect()
+    }
+
+    /// `printf 'goal\x00{"k":1}\x00tree' | sha256sum`, computed outside the
+    /// code under test.
+    #[test]
+    fn the_memo_key_is_a_fixed_vector() {
+        let mut arguments = Map::new();
+        arguments.insert("k".to_string(), Value::from(1));
+
+        assert_eq!(
+            memo_key("goal", &arguments, "tree"),
+            "8357ec7e1c6dd2ef42488728268c785b638b997583b2cf71672742af47870cb0"
+        );
     }
 
     #[test]

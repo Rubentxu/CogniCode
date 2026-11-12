@@ -1,15 +1,16 @@
 //! File manifest for incremental graph scanning.
 //!
 //! Tracks file state (mtime, content hash) to detect changes between scans.
-//! Uses blake3 for fast content hashing with mtime fastpath: if the size and
+//! Uses SHA-256 (the digest owner) for content hashing with mtime fastpath: if the size and
 //! modification time are unchanged, the content hash is assumed to match and
 //! the file is skipped without being re-read. Only when mtime or size changes
-//! is the blake3 hash recomputed to confirm the change.
+//! is the content hash recomputed to confirm the change.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::domain::findings::digest::sha256_hex;
 use crate::domain::value_objects::file_time::measured_nanos;
 
 /// Record for a single file in the manifest.
@@ -26,7 +27,7 @@ pub struct FileRecord {
     /// read. The fastpath below compares the two, so a file without a
     /// date does not invalidate the manifest by itself.
     pub mtime_ns: Option<i64>,
-    /// Blake3 content hash (hex-encoded).
+    /// SHA-256 content hash (hex-encoded).
     pub content_hash: String,
     /// When this record was last scanned (epoch nanoseconds).
     pub scanned_at_ns: u64,
@@ -93,7 +94,7 @@ impl FileManifest {
     /// Compute delta between current filesystem state and manifest.
     ///
     /// Uses mtime fastpath: if size + mtime haven't changed, skip the hash.
-    /// Only computes blake3 hash when mtime or size changed.
+    /// Only computes the content hash when mtime or size changed.
     pub fn compute_delta(&self, project_dir: &Path, current_files: &[PathBuf]) -> ScanDelta {
         let mut changed = Vec::new();
         let mut deleted = Vec::new();
@@ -233,10 +234,10 @@ impl FileManifest {
         }
     }
 
-    /// Hash a file using blake3.
+    /// Hash a file with the digest owner's SHA-256.
     fn hash_file(path: &Path) -> std::io::Result<String> {
         let bytes = std::fs::read(path)?;
-        Ok(blake3::hash(&bytes).to_hex().to_string())
+        Ok(sha256_hex(&bytes))
     }
 
     /// Serialize manifest to JSON bytes.
@@ -449,9 +450,9 @@ mod tests {
         manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs")]);
 
         let record = manifest.get(Path::new("a.rs")).unwrap();
-        // blake3 of "fn main() {}" is deterministic; just check non-empty hex
+        // the hash of "fn main() {}" is deterministic; just check non-empty hex
         assert!(!record.content_hash.is_empty());
-        // 64 hex chars (256 bits) for blake3
+        // 64 hex chars (256 bits) for SHA-256
         assert_eq!(record.content_hash.len(), 64);
     }
 
@@ -511,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn test_blake3_hash_deterministic_and_unique() {
+    fn test_content_hash_deterministic_and_unique() {
         // Same content must hash to the same value across calls; different
         // content must hash to different values. This is the core invariant
         // the mtime fastpath relies on after the fallback to content hash.
@@ -528,14 +529,14 @@ mod tests {
         assert_eq!(h1, h2);
         // Different content → different hash
         assert_ne!(h1, h3);
-        // blake3 hex output is 64 chars (256 bits)
+        // SHA-256 hex output is 64 chars (256 bits)
         assert_eq!(h1.len(), 64);
         // Hash should only contain hex characters
         assert!(h1.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
-    fn test_blake3_changes_when_content_changes() {
+    fn test_content_hash_changes_when_content_changes() {
         // End-to-end: re-write a file with different content and confirm the
         // manifest detects the change. This is the property the scanner needs
         // to be correct about.

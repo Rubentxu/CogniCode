@@ -13,7 +13,7 @@
 //!   what a file declares, shared by every path that builds a graph.
 //! - `GraphStrategy`: Unified interface for different strategies
 //! - `FileManifest` / `IncrementalScanner` (gated behind `persistence`):
-//!   mtime + blake3 content-hash tracking for incremental graph rescans.
+//!   mtime + SHA-256 content-hash tracking for incremental graph rescans.
 //! - `SnapshotProvider`: Domain port for versioned graph snapshots (ADR-035).
 
 pub mod analytics;

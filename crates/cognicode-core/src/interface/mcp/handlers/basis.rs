@@ -19,7 +19,8 @@ use std::path::Path;
 use schemars::JsonSchema;
 
 use crate::application::analysis_basis::GraphSource;
-use crate::application::graph_snapshot::{build_manifest, hex_digest, source_digest};
+use crate::application::graph_snapshot::{build_manifest, source_digest};
+use crate::domain::findings::digest::sha256_hex;
 use crate::domain::value_objects::file_manifest::FileManifest;
 use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
 
@@ -90,8 +91,6 @@ pub(super) fn compute_basis(
     manifest: Option<&FileManifest>,
     source: GraphSource,
 ) -> BasisDto {
-    use sha2::{Digest, Sha256};
-
     let (workspace, workspace_ok) = match project_dir.canonicalize() {
         Ok(p) => (p.to_string_lossy().to_string(), true),
         Err(_) => (project_dir.to_string_lossy().to_string(), false),
@@ -105,7 +104,7 @@ pub(super) fn compute_basis(
             .map(|l| l.to_string())
             .unwrap_or_else(|_| "unreadable".into())
     );
-    let config_digest = hex_digest(&Sha256::digest(config_key.as_bytes()));
+    let config_digest = sha256_hex(config_key.as_bytes());
 
     // The sources: the manifest the answer carries, or —when it carries
     // none— the one the tree says now.

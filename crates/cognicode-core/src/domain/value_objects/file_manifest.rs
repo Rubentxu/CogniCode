@@ -19,7 +19,7 @@ pub struct FileManifest {
 /// Entry for a single file in the manifest
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
-    /// Blake3 hash of file content
+    /// SHA-256 (hex) of the file content
     pub content_hash: String,
     /// Last modified time in milliseconds since the epoch, signed.
     ///

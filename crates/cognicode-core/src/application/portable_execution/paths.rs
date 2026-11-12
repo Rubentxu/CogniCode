@@ -23,9 +23,10 @@
 //!   collapsed `.`/`..` segments without touching the FS).
 //! - Provide `host_path_for_spawn(canonical) -> PathBuf` — convert
 //!   a canonical path back to the host's preferred representation.
-//! - Provide `content_digest(bytes) -> ContentDigest` — a SHA-256
-//!   digest of bytes after CRLF → LF normalization, suitable for
-//!   content-hash use in evidence.
+//! - Provide `content_digest(bytes) -> ContentDigest` — an FNV-1a
+//!   64-bit digest (`fnv64:` prefix) of bytes after CRLF → LF
+//!   normalization, suitable for evidence identity (not for
+//!   cryptographic use).
 //!
 //! ## What this module does NOT do
 //!

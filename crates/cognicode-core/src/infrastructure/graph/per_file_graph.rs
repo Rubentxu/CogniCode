@@ -1033,14 +1033,13 @@ struct FileFingerprint {
 /// and re-check, or the file is unreadable). In that case the caller
 /// should treat the cache as stale and rebuild.
 ///
-/// The content hash uses Rust's stdlib `DefaultHasher` — a non-cryptographic
-/// 64-bit hash seeded per-process for DoS resistance. The seed is fine
-/// for in-process cache invalidation: the cache is in-process, and a
-/// different process is a different cache. Cryptographic collision
-/// resistance is not required: a collision would only cause a cache
-/// miss (the wrong graph would have to be parseable as the right one
-/// to be observable, and a 64-bit space makes that overwhelmingly
-/// unlikely). The cost is one `read()` per fingerprint, which is the
+/// The content hash is a 64-bit FNV-1a (`content_hash_64`): deterministic,
+/// non-cryptographic and meant for this in-process cache only. It never
+/// leaves the process, so it is not a content digest in the sense of
+/// `domain::findings::digest`. Cryptographic collision resistance is not
+/// required: a collision would only cause a cache miss (the wrong graph
+/// would have to be parseable as the right one to be observable, and a
+/// 64-bit space makes that overwhelmingly unlikely). The cost is one `read()` per fingerprint, which is the
 /// cost of the H0.1 / H0.5 content-identity contract.
 fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let meta = std::fs::metadata(path).ok()?;
