@@ -114,6 +114,31 @@ pub struct EditValidation {
     pub syntax_issues: Vec<SyntaxIssue>,
 }
 
+/// What an operation that reads the tree could not do with an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnreadKind {
+    /// The walk listed the entry and the operation could not open or
+    /// measure it (permissions, a link to nothing, a race with a delete).
+    Read,
+    /// The walk itself failed on the entry: a directory it could not list.
+    Walk,
+}
+
+/// An entry of the tree an operation could not read, and why.
+///
+/// It is the fact the operation keeps instead of a bare `continue`. The
+/// interface turns it into the coverage every other answer publishes; the
+/// application only records it, so it names no adapter type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnreadEntry {
+    /// The path the failure is about, or `<walk>` when the walker named none.
+    pub path: String,
+    pub kind: UnreadKind,
+    /// The cause, as the system reported it.
+    pub detail: String,
+}
+
 /// Result of listing files.
 /// Used by both MCP protocol and internal DTOs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +148,11 @@ pub struct ListFilesResult {
     pub total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depth_traversed: Option<usize>,
+    /// The entries the listing could not read. Empty when it read them all,
+    /// and then absent from the serialized result, so a tree read whole
+    /// serializes as it always did.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unread: Vec<UnreadEntry>,
 }
 
 // ============================================================================

@@ -225,6 +225,13 @@ pub struct SearchContentResult {
     pub matches: Vec<ContentMatch>,
     pub total: usize,
     pub files_scanned: usize,
+    /// The entries the search could not read: a file it could not open and
+    /// a directory it could not list. A file that opens and is not text is
+    /// not here: like one with a binary extension, it has nothing to search.
+    /// Empty when the search read everything it reached, and then absent
+    /// from the serialized result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unread: Vec<super::UnreadEntry>,
 }
 
 // ============================================================================

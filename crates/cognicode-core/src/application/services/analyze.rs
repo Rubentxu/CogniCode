@@ -227,6 +227,30 @@ pub fn scan_coverage(
     settle(facts)
 }
 
+/// The coverage of a file operation that reads the tree itself: the content
+/// search and the directory listing.
+///
+/// What it could not read is what it kept in `unread`, projected into the
+/// vocabulary of every other hole and settled by the same rule. A tree it
+/// read whole is `Complete`, including one with nothing in it: these routes
+/// answer a question about the path the caller named, and an empty path that
+/// was read is an answer.
+pub fn read_coverage(unread: &[crate::application::dto::UnreadEntry]) -> Coverage {
+    use crate::application::dto::UnreadKind;
+    use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+    let holes = unread
+        .iter()
+        .map(|entry| SkippedFile {
+            path: entry.path.clone(),
+            reason: match entry.kind {
+                UnreadKind::Read => SkipReason::Read(entry.detail.clone()),
+                UnreadKind::Walk => SkipReason::Walk(entry.detail.clone()),
+            },
+        })
+        .collect();
+    scan_coverage(holes, true)
+}
+
 /// The one rule that turns the holes of a measured answer into its
 /// verdict: a coverage with none is complete, and one with any is partial.
 fn settle(facts: CoverageFacts) -> Coverage {

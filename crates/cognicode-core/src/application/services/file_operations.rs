@@ -22,11 +22,13 @@ use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, EditVerification, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
     RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
-    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
+    UnreadEntry, UnreadKind, VerificationStatus, VerifiedMatchDto, WriteFileRequest,
+    WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
+use crate::application::services::content_search::find_matches_in_content;
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
@@ -39,6 +41,38 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+
+/// The walk failed on an entry: a directory it could not list.
+///
+/// The path is the one the walker names, wherever it sits in the error.
+fn walk_failure(error: &ignore::Error) -> UnreadEntry {
+    fn path_of(error: &ignore::Error) -> Option<&Path> {
+        match error {
+            ignore::Error::WithPath { path, .. } => Some(path.as_path()),
+            ignore::Error::Loop { child, .. } => Some(child.as_path()),
+            ignore::Error::WithDepth { err, .. } | ignore::Error::WithLineNumber { err, .. } => {
+                path_of(err)
+            }
+            _ => None,
+        }
+    }
+    UnreadEntry {
+        path: path_of(error)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<walk>".to_string()),
+        kind: UnreadKind::Walk,
+        detail: error.to_string(),
+    }
+}
+
+/// The walk listed an entry and the operation could not open or measure it.
+fn read_failure(path: &Path, error: &std::io::Error) -> UnreadEntry {
+    UnreadEntry {
+        path: path.to_string_lossy().into_owned(),
+        kind: UnreadKind::Read,
+        detail: error.to_string(),
+    }
+}
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1571,6 +1605,7 @@ impl FileOperationsService {
 
         let mut matches = Vec::new();
         let mut files_scanned = 0;
+        let mut unread = Vec::new();
 
         for result in walker.build() {
             if matches.len() >= max_results {
@@ -1579,7 +1614,10 @@ impl FileOperationsService {
 
             let entry = match result {
                 Ok(e) => e,
-                Err(_) => continue,
+                Err(error) => {
+                    unread.push(walk_failure(&error));
+                    continue;
+                }
             };
 
             let path = entry.path();
@@ -1603,11 +1641,18 @@ impl FileOperationsService {
 
             let content = match fs::read_to_string(path) {
                 Ok(c) => c,
-                Err(_) => continue,
+                // A file that opens and is not text is the binary the
+                // extension list did not know: it has nothing to search, and
+                // it is not a hole. One that does not open is a hole.
+                Err(error) if error.kind() == std::io::ErrorKind::InvalidData => continue,
+                Err(error) => {
+                    unread.push(read_failure(path, &error));
+                    continue;
+                }
             };
 
             // Search for pattern
-            let search_matches = Self::find_matches_in_content(
+            let search_matches = find_matches_in_content(
                 &content,
                 &input.pattern,
                 is_regex,
@@ -1635,107 +1680,8 @@ impl FileOperationsService {
             matches,
             total,
             files_scanned,
+            unread,
         })
-    }
-
-    /// Finds matches in content using literal or regex search
-    fn find_matches_in_content(
-        content: &str,
-        pattern: &str,
-        is_regex: bool,
-        case_insensitive: bool,
-        context_lines: usize,
-    ) -> Vec<(u32, u32, String, Vec<String>)> {
-        // Vec of (line_number, col, matched_text, context)
-        let mut results = Vec::new();
-        let lines: Vec<&str> = content.lines().collect();
-
-        if is_regex {
-            // Use the real regex crate
-            let pattern_with_flags = if case_insensitive {
-                format!("(?i){}", pattern)
-            } else {
-                pattern.to_string()
-            };
-
-            let re = match Regex::new(&pattern_with_flags) {
-                Ok(re) => re,
-                Err(_) => return results, // Invalid regex, return empty
-            };
-
-            for (idx, line_content) in lines.iter().enumerate() {
-                for m in re.find_iter(line_content) {
-                    let context_before: Vec<String> = lines[..idx]
-                        .iter()
-                        .rev()
-                        .take(context_lines)
-                        .map(|s| s.to_string())
-                        .collect();
-                    let context_after: Vec<String> = lines[idx + 1..]
-                        .iter()
-                        .take(context_lines)
-                        .map(|s| s.to_string())
-                        .collect();
-
-                    results.push((
-                        (idx + 1) as u32,
-                        (m.start() + 1) as u32, // 1-indexed column
-                        m.as_str().to_string(),
-                        context_before
-                            .into_iter()
-                            .rev()
-                            .chain(context_after)
-                            .collect(),
-                    ));
-                }
-            }
-        } else {
-            // Literal search
-            for (idx, line_content) in lines.iter().enumerate() {
-                let search_text = if case_insensitive {
-                    line_content.to_lowercase()
-                } else {
-                    line_content.to_string()
-                };
-                let search_pattern = if case_insensitive {
-                    pattern.to_lowercase()
-                } else {
-                    pattern.to_string()
-                };
-
-                let mut start = 0;
-                while let Some(pos) = search_text[start..].find(&search_pattern) {
-                    let abs_pos = start + pos;
-                    let matched_text = &line_content[abs_pos..abs_pos + search_pattern.len()];
-
-                    let context_before: Vec<String> = lines[..idx]
-                        .iter()
-                        .rev()
-                        .take(context_lines)
-                        .map(|s| s.to_string())
-                        .collect();
-                    let context_after: Vec<String> = lines[idx + 1..]
-                        .iter()
-                        .take(context_lines)
-                        .map(|s| s.to_string())
-                        .collect();
-
-                    results.push((
-                        (idx + 1) as u32,
-                        (abs_pos + 1) as u32, // 1-indexed column
-                        matched_text.to_string(),
-                        context_before
-                            .into_iter()
-                            .rev()
-                            .chain(context_after)
-                            .collect(),
-                    ));
-                    start += pos + 1;
-                }
-            }
-        }
-
-        results
     }
 
     /// Validates a regex pattern before processing
@@ -1877,6 +1823,7 @@ impl FileOperationsService {
 
         let mut entries = Vec::new();
         let mut max_depth_reached: usize = 0;
+        let mut unread = Vec::new();
 
         // Build walker with gitignore awareness
         let mut walker = WalkBuilder::new(&search_path);
@@ -1900,7 +1847,10 @@ impl FileOperationsService {
         for result in walker.build() {
             let entry = match result {
                 Ok(e) => e,
-                Err(_) => continue,
+                Err(error) => {
+                    unread.push(walk_failure(&error));
+                    continue;
+                }
             };
 
             let path = entry.path();
@@ -1919,7 +1869,10 @@ impl FileOperationsService {
 
             let metadata = match fs::metadata(path) {
                 Ok(m) => m,
-                Err(_) => continue,
+                Err(error) => {
+                    unread.push(read_failure(path, &error));
+                    continue;
+                }
             };
 
             // La fecha que el sistema de ficheros publica, o ninguna si no
@@ -1947,6 +1900,7 @@ impl FileOperationsService {
             files,
             total,
             depth_traversed: Some(max_depth_reached),
+            unread,
         })
     }
 
