@@ -1,8 +1,9 @@
 ---
 title: "ADR — Release provenance without GitHub Actions"
 slug: "ADR-RELEASE-PROVENANCE-PIPELINEK"
-status: proposed
+status: accepted
 date: 2026-10-03
+accepted: 2026-11-13
 deciders: Maintainer
 related:
   - "[[ADR-CI-ORCHESTRATOR-CUTOVER]]"
@@ -15,12 +16,16 @@ context:
 
 # ADR — Release provenance without GitHub Actions
 
-## Status: proposed, not accepted
+## Status: accepted (2026-11-13)
 
-This ADR records a **measured** conclusion and one decision that is still open.
-It is written as `proposed` because the part that matters operationally — where
-the signing key lives — is a custody decision with consequences that outlive any
-release, and it is not mine to take.
+This ADR was written as `proposed` on 2026-10-03: it recorded a **measured**
+conclusion and one decision it could not take, because where the signing key
+lives is a custody decision with consequences that outlive any release.
+
+The maintainer took that decision on 2026-11-13 and delegated the choice of
+custody model to the author of this record; it is written down in "Custody
+decision" below. The sections before it keep the reasoning as it stood while
+the decision was open; the sections after it describe the current state.
 
 ## The gap, stated exactly
 
@@ -142,7 +147,7 @@ Provenance belongs to the **release infrastructure boundary**: the lanes and
 `scripts/`. It does not enter `cognicode-core`, and nothing about it should be
 reachable from the MCP tool surface.
 
-## Open decision, and it is the whole decision
+## Custody decision (formerly "Open decision, and it is the whole decision")
 
 **Where does the private key live, and who can use it?**
 
@@ -154,10 +159,76 @@ The candidates, with what each one costs:
 | CI secret on a runner | Works unattended | The key is readable by whatever can run the lane; runner compromise becomes signing compromise |
 | Offline signer, invoked deliberately | The strongest separation | Manual step before each release, which is a step people skip |
 
-This ADR does not pick one. What it does fix is the requirement: the key must
-not live in this repository, and the public half must be part of the release.
+The requirement never changed: the key must not live in this repository, and
+the public half must be part of the release.
 
-## Consequences if accepted
+### Decision, 2026-11-13
+
+**The maintainer's workstation, passphrase-protected, used deliberately at
+release time.** That is the first row's infrastructure with the third row's
+discipline: no new service, and nothing signs unless a person runs the command.
+The CI-secret row is rejected: with no unattended signing there is no secret on a
+runner for a runner compromise to reach.
+
+How it is held:
+
+- **Private key** `cognicode-release.key`: outside any repository, under the
+  maintainer's `~/.config/cognicode/provenance/`, mode 600, protected by a
+  passphrase that is never written to the repository, to a lane's configuration
+  or to a lane's environment.
+- **Backup**: an encrypted copy elsewhere is the maintainer's responsibility.
+  Nothing in this repository can verify that it exists. Losing the key costs the
+  ability to sign future releases with it; bundles already published stay
+  verifiable against the public key that was published with them.
+- **Creation**: the maintainer generated the pair in their own terminal with the
+  pinned cosign (3.1.3). `attest-provenance.sh` still contains no
+  `generate-key-pair` call, and a contract still fails if one appears.
+- **Public key**: published with every release as the asset
+  `cognicode-release.pub`. Its sha256 for the first key is
+  `3937ad77ef19712a05e3a5f467aaafefa9dec9b3713b20239f38ccf3d48b08a8`, recorded
+  here so a consumer can compare the release asset against a second place.
+- **Signing**: from a checkout whose `HEAD` is the release commit (the statement
+  records `git rev-parse HEAD` of the current directory),
+  `scripts/ci/attest-provenance.sh --key <key> --out-dir <dir> <artifact>...`
+  with the pinned cosign; the `<artifact>.bundle.json` files and the public key
+  are uploaded as additional release assets.
+- **Verification by a consumer**:
+  `cosign verify-blob --key cognicode-release.pub --bundle <artifact>.bundle.json <artifact>`,
+  which prints `Verified OK` on stderr. It refuses a file whose bytes differ
+  (`provided artifact digests do not match digests in statement`).
+
+### What this decision does not change
+
+- `RELEASE_REQUIRE_PROVENANCE` stays `0`. `verify-provenance.sh` verifies with
+  `gh attestation verify`, which does not recognise a key-pair signature, so
+  setting it to `1` would make every release refuse. Flipping it needs the
+  script to verify key-signed bundles with the published key, which changes the
+  behaviour of the release lane and is a separate unit of work.
+- A signing key held by a lane stays rejected. If it is ever wanted, it is a new
+  custody decision, not a configuration change.
+
+### First use: v0.103.1, signed retroactively
+
+On 2026-11-13 the seven artifacts listed in `SHA256SUMS` of the already published
+v0.103.1 were signed, and the bundles plus the public key were added to that
+release as new assets; none of the original eight assets was replaced. Measured
+from a clean download of the published release: `sha256sum -c SHA256SUMS`
+passes, `cosign verify-blob` prints `Verified OK` for 7 of 7, each statement's
+subject digest equals the file's sha256, and each statement names commit
+`793033d40687781c68ab70613bc6210e9a6f54ac`, the commit the tag points to.
+
+What that proves, and what it does not:
+
+- It proves the bytes, the commit the tag names, and that the holder of this key
+  signed them on 2026-11-13.
+- It does **not** prove how or where the artifacts were built. The statement
+  carries the builder id `https://cognicode.dev/pipelinek/release-candidate`,
+  but that is a label written at signing time, not evidence of the build
+  environment.
+- `gh attestation verify` still fails for v0.103.1 (HTTP 404), because no GitHub
+  attestation exists. v0.102.1 and earlier carry no provenance at all.
+
+## Consequences
 
 - `release-candidate` gains a provenance stage that signs `SHA256SUMS` and the
   per-platform archives, and writes the bundle plus the public key into the
@@ -172,11 +243,17 @@ not live in this repository, and the public half must be part of the release.
   download proves the *consumer's* path works, and only the second one is the
   property users depend on.
 
+With the custody decided above, the first bullet is carried out by the
+maintainer at release time, with the same script, rather than by an unattended
+stage: the stage described below only runs where a key is present
+(`RELEASE_PROVENANCE_KEY`), and the key stays on the maintainer's workstation.
+
 ## What has been built since this ADR was written
 
-B7 (2026-10-04) built the generation half and **left the decision open**. The
-`proposed` status is unchanged and is still correct: what is missing is the
-custody, not the mechanism.
+B7 (2026-10-04) built the generation half and **left the decision open**; the
+custody decision followed on 2026-11-13 (see "Custody decision"). The
+mechanism and the custody were separate gaps, and both are now closed for the
+signing half. The consumer half in the release lane is not (see the table).
 
 | Piece | Where | State |
 |---|---|---|
@@ -186,9 +263,10 @@ custody, not the mechanism.
 | First of the three digests checked | in the script, on every run | works, measured |
 | Version del firmante | `scripts/ci/cosign-tool.sh` | **fijada**, con su suma declarada |
 | Third digest, consumer download | where publishing happens | still the release lane's `gh attestation verify` |
-| Custody | — | **open, unchanged** |
-| `RELEASE_REQUIRE_PROVENANCE` default | `verify-provenance.sh` | still `0`, deliberately |
-| Latest published release | `v0.102.1` | **no attestation**: `gh attestation verify` on the `cogh` archive returns HTTP 404 (measured 2026-11-09); checksums match, so integrity holds and provenance does not |
+| Custody | — | **decided 2026-11-13**: maintainer workstation, passphrase-protected, deliberate signing |
+| `RELEASE_REQUIRE_PROVENANCE` default | `verify-provenance.sh` | still `0`, deliberately: the script cannot verify a key-pair bundle yet |
+| Latest published release | `v0.103.1` | key-signed on 2026-11-13, retroactively; `cosign verify-blob` passes for 7 of 7 artifacts, `gh attestation verify` still returns HTTP 404 |
+| Earlier releases (`v0.102.1` and before) | — | no provenance; checksums match, so integrity holds and provenance does not (`v0.102.1` measured 2026-11-09) |
 
 The generation stage lives in `release-candidate.pipeline.kts`, not in
 `release.pipeline.kts`, so the attestation covers the candidate that was
@@ -220,12 +298,15 @@ The third-digest claim is unchanged and re-confirmed: the bundle's
 
 - The release lane still verifies with `gh attestation verify`, which cannot
   verify a cosign bundle. Migrating it changes the behaviour of a published
-  release and belongs behind the same custody decision.
-- `RELEASE_REQUIRE_PROVENANCE` is still `0`. Generation existing is not the
-  condition the ADR sets for flipping it; a key existing is.
-- No key was generated for production, and none will be improvised to close
-  this milestone. `attest-provenance.sh` contains no `cosign
-  generate-key-pair` call, and a contract fails if one appears.
+  release; the custody decision it waited on is taken, so what remains is the
+  work itself.
+- `RELEASE_REQUIRE_PROVENANCE` is still `0`. A key now exists, which was the
+  condition this ADR set, but flipping the default before the lane can verify a
+  key-signed bundle would make every release refuse; the order is the one the
+  Recommendation already gives.
+- The agent that maintains this repository creates no keys.
+  `attest-provenance.sh` contains no `cosign generate-key-pair` call, and a
+  contract fails if one appears; the first key was generated by the maintainer.
 
 ## What is deliberately not decided here
 
@@ -236,7 +317,9 @@ The third-digest claim is unchanged and re-confirmed: the bundle's
   measured path did not use it; a log entry would add a third party to the
   release's trust story and that is a separate decision.
 - Retroactive provenance for v0.98.1 and earlier. It cannot be manufactured, and
-  a release that predates the tooling must be described as predating it.
+  a release that predates the tooling must be described as predating it. The
+  v0.103.1 signature is a bounded exception, not a precedent: it signs bytes
+  that were already published and says so (see "First use").
 
 ## La version del firmante: decision tomada, con lo que cuesta
 
@@ -291,15 +374,15 @@ El generador y el contrato ya no preguntan al PATH: piden el binario fijado
 por su ruta. Un `cosign` suelto en el PATH es lo que rompio el lane, asi que
 volver a el seria volver al defecto.
 
-### Lo que sigue abierto, y por que el estado no cambia
+### Lo que sigue abierto
 
-- **La custodia de la clave.** Sin cambios: donde vive la clave privada y quien
-  puede usarla sigue sin decidirse. Es lo que mantiene este ADR en `proposed`,
-  y el pin del firmante no lo cambia.
+- **La custodia de la clave.** Decidida el 2026-11-13 (ver «Custody decision»).
+  Cuando se escribio este apartado era lo que mantenia el ADR en `proposed`; el
+  pin del firmante no la cambiaba.
 - **El anclaje al registro de transparencia.** Fijar la version conserva el
   comportamiento medido —sin anclaje—, no lo decide. Publicar en Rekor sigue
   disponible y sigue sin estar decidido.
 - **El camino del consumidor.** La lane de publicacion sigue verificando con
   `gh attestation verify`, que no verifica un bundle de cosign. Migrarlo cambia
-  el comportamiento de una release ya publicada, y pertenece detras de la
-  decision de custodia.
+  el comportamiento de una release ya publicada; la decision de custodia de la
+  que dependia esta tomada, y falta el trabajo.
