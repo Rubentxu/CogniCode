@@ -10,23 +10,26 @@
 //!
 //! ## What this file pins
 //!
-//! The same fixture on the three routes that publish a channel for it: the
-//! light index (`holes`), the semantic index
-//! (`populate_from_directory_with_holes`) and the per-file graph (the
-//! `Partial` status). The premise is observed before the claim: the file
-//! really is unreadable, and a tree without such a file reports no hole, so
-//! the channel is not simply always full.
+//! The same fixture on the routes that publish a channel for it: the light
+//! index (`holes`), the semantic index (`populate_from_directory_with_holes`),
+//! the per-file graph (the `Partial` status) and the usage search (the
+//! coverage of `find_usages_with_coverage`, and the `coverage` the MCP
+//! handler publishes with it). The premise is observed before the claim: the
+//! file really is unreadable, and a tree without such a file reports no hole,
+//! so the channel is not simply always full.
 //!
 //! The permission is restored when the test ends, so the temporary directory
 //! can be removed.
 
 #![cfg(unix)]
 
-use cognicode_core::application::services::analysis_service::AnalysisService;
+use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use cognicode_core::domain::value_objects::SymbolSearchQuery;
 use cognicode_core::infrastructure::graph::LightweightIndex;
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason, SkippedFile};
 use cognicode_core::infrastructure::semantic::semantic_search::SemanticSearchService;
+use cognicode_core::interface::mcp::handlers::{HandlerContext, handle_find_usages};
+use cognicode_core::interface::mcp::schemas::FindUsagesInput;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -177,4 +180,173 @@ fn the_per_file_graph_is_partial_over_the_file_it_could_not_read() {
             panic!("a file could not be read and the build says it is complete")
         }
     }
+}
+
+fn usage_search_of(root: &Path, symbol: &str) -> UsageSearchParams {
+    UsageSearchParams {
+        project_dir: root.to_path_buf(),
+        symbol_name: symbol.to_string(),
+        include_declaration: true,
+        context_lines: None,
+        first_only_definition: true,
+    }
+}
+
+#[test]
+fn the_usage_search_is_partial_over_the_file_it_could_not_read() {
+    let (_tmp, root, _unlock) = a_tree_with_one_unreadable_file();
+    let search = AnalysisService::new()
+        .find_symbol_usages_with_coverage(usage_search_of(&root, READABLE))
+        .expect("the usage search runs");
+
+    assert!(
+        search
+            .usages
+            .iter()
+            .any(|usage| usage.file.ends_with("src/lib.rs")),
+        "the readable file still answers: {:?}",
+        search.usages
+    );
+    assert_eq!(
+        search.coverage.published_state().published_label(),
+        "partial",
+        "a file could not be read and the search says it covered the tree"
+    );
+    let facts = search.coverage.facts();
+    assert_eq!(
+        read_failures_of_the_locked_file(&facts.skipped).len(),
+        1,
+        "the file could not be read and the search does not name it: {:?}",
+        facts.skipped
+    );
+}
+
+#[test]
+fn the_usage_search_of_a_readable_tree_is_complete() {
+    let (_tmp, root) = a_readable_tree();
+    let search = AnalysisService::new()
+        .find_symbol_usages_with_coverage(usage_search_of(&root, READABLE))
+        .expect("the usage search runs");
+
+    assert_eq!(
+        search.coverage.published_state().published_label(),
+        "complete",
+        "nothing was left out and the search reports a hole: {:?}",
+        search.coverage.facts().skipped
+    );
+    assert!(
+        search.coverage.facts().skipped.is_empty(),
+        "a complete coverage names no file"
+    );
+}
+
+#[test]
+fn the_usage_search_of_a_tree_with_nothing_to_read_is_not_complete() {
+    let tmp = tempfile::tempdir().expect("a temporary directory");
+    let search = AnalysisService::new()
+        .find_symbol_usages_with_coverage(usage_search_of(tmp.path(), READABLE))
+        .expect("the usage search runs");
+
+    assert!(search.usages.is_empty());
+    assert_eq!(
+        search.coverage.published_state().published_label(),
+        "unsupported",
+        "no usages in a tree with nothing this product can read is not `no usages`"
+    );
+}
+
+#[tokio::test]
+async fn find_usages_publishes_the_file_it_could_not_read() {
+    let (_tmp, root, _unlock) = a_tree_with_one_unreadable_file();
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+
+    let out = handle_find_usages(
+        &ctx,
+        FindUsagesInput {
+            symbol_name: READABLE.to_string(),
+            include_declaration: true,
+            context_lines: None,
+        },
+    )
+    .await
+    .expect("the handler runs");
+
+    assert_eq!(
+        out.coverage.status, "partial",
+        "a file could not be read and the answer says it covered the tree"
+    );
+    let locked: Vec<_> = out
+        .coverage
+        .skipped_files
+        .iter()
+        .filter(|file| file.path.ends_with("src/locked.rs"))
+        .collect();
+    assert_eq!(
+        locked.len(),
+        1,
+        "the file could not be read and the answer does not name it: {:?}",
+        out.coverage.skipped_files
+    );
+    assert!(
+        locked[0].reason.starts_with("read error"),
+        "the hole carries its cause: {}",
+        locked[0].reason
+    );
+    assert!(out.total >= 1, "the readable file still answers");
+}
+
+#[tokio::test]
+async fn find_usages_of_a_readable_tree_publishes_a_complete_coverage() {
+    let (_tmp, root) = a_readable_tree();
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+
+    let out = handle_find_usages(
+        &ctx,
+        FindUsagesInput {
+            symbol_name: READABLE.to_string(),
+            include_declaration: true,
+            context_lines: None,
+        },
+    )
+    .await
+    .expect("the handler runs");
+
+    assert_eq!(out.coverage.status, "complete");
+    assert!(out.coverage.skipped_files.is_empty());
+}
+
+/// An answer written before the coverage existed carries no `coverage`. The
+/// consumer that reads it must get the word "unknown": a missing field is not
+/// a claim that the tree was covered.
+#[tokio::test]
+async fn an_answer_written_before_the_coverage_existed_reads_as_unknown() {
+    let (_tmp, root) = a_readable_tree();
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+    let out = handle_find_usages(
+        &ctx,
+        FindUsagesInput {
+            symbol_name: READABLE.to_string(),
+            include_declaration: true,
+            context_lines: None,
+        },
+    )
+    .await
+    .expect("the handler runs");
+
+    let mut old_payload = serde_json::to_value(&out).expect("the answer serializes");
+    let removed = old_payload
+        .as_object_mut()
+        .expect("the answer is an object")
+        .remove("coverage");
+    assert!(
+        removed.is_some(),
+        "the premise: the answer carries a coverage"
+    );
+
+    let read: cognicode_core::interface::mcp::schemas::FindUsagesOutput =
+        serde_json::from_value(old_payload).expect("an old payload still deserializes");
+
+    assert_eq!(read.coverage.status, "unknown");
+    assert!(read.coverage.skipped_files.is_empty());
+    assert_eq!(read.total, out.total, "the rest of the answer is untouched");
 }
