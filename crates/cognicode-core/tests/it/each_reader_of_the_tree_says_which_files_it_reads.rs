@@ -49,13 +49,17 @@
 //!   from every export that has them, and changes the digest of each one: a
 //!   published change that belongs to the maintainer, with the old consumer
 //!   in view. It stays; the pin below is what changes with the decision.
-//! * `control_query` has no consumer at all in this repository (no route, no
-//!   CLI, no handler calls it). Its walk reads `build/`, `vendor/` and hidden
-//!   directories and follows symlinks, and it dropped an unreadable file
-//!   without a word. The silence is fixed here (the last tests); moving the
-//!   walk to the inventory would make `application` import `infrastructure`
-//!   from a new file, and the CR-06 allowlist only shrinks without a named
-//!   approval.
+//! * `control_query` has no consumer in THIS repository (no route, no CLI, no
+//!   handler calls it), but it does have one outside it: the `cognicode-explorer`
+//!   repository calls `read_from_source_root` from its control-plane endpoint
+//!   (pinned to the `v0.102.1` tag). Removing it is a breaking change for that
+//!   consumer (TASK-248 measured this and kept it), and the permanent test of
+//!   its identity (`SPEC-CU-010`) lives with it. Its walk reads `build/`,
+//!   `vendor/` and hidden directories and follows symlinks, and it dropped an
+//!   unreadable file without a word. The silence is fixed here (the last
+//!   tests); moving the walk to the inventory would make `application` import
+//!   `infrastructure` from a new file, and the CR-06 allowlist only shrinks
+//!   without a named approval.
 //!
 //! The permission is restored when the test ends, so the temporary directory
 //! can be removed.
