@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-13, sobre `a6fd6b181283e2d0bc01737da369c24f5c130779` (la
+> **Snapshot**: 2026-11-13, sobre `5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -360,46 +360,49 @@
 > ya no recompila el core (`7b7b8180`) y ningún test lanza cargo
 > (`f9e55dbc`). El hosting también guarda la política del mensaje de squash
 > (`f0066655`).
+> Los recorridos del árbol pasan por un solo dueño del conjunto de ficheros
+> (`781362b7`) y el índice de búsqueda lee un fichero como lo lee el grafo,
+> también en Terraform y Ansible (`524b5c09`); los lectores que conservan
+> recorrido propio dicen qué ficheros leen y la muestra de complejidad del
+> CLI es determinista (`d35642b0`), y la poda de `WalkFilter` por nombre de
+> directorio está fijada con tests y decidida: se mantiene (`49d69c0e`).
+> `find_usages` publica los ficheros que no pudo leer en vez de volverlos un
+> cero (`a0af5a30`, `21ec37c5`). `sandbox_core` sale del core a
+> `cognicode-sandbox` y un validador de entrada que perdía sus reglas al
+> moverse ya no falla abierto (`ab3bab63`). Ningún test escribe en el árbol
+> y un chivato lo vigila (`8ea4f46b`); el paso de mutantes compila de forma
+> incremental y el lote mide sólo su diff (`48276ae0`); y el trabajo va en
+> bloques de diez tareas, con prueba focal por tarea y verificación completa
+> por bloque (`ba0ccad2`, `f62dd0aa`). El primer bloque cerró su gate en
+> verde y dejó dos desfases de documentación que los contratos vieron y se
+> corrigieron hacia delante (`5d2dd880`, este snapshot).
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`793033d40687781c68ab70613bc6210e9a6f54ac` → `a6fd6b181283e2d0bc01737da369c24f5c130779`)
+## Qué cambió desde el snapshot anterior (`a6fd6b181283e2d0bc01737da369c24f5c130779` → `5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a`)
 
-Entre una punta y otra entraron **26 commits** (`git rev-list --count 793033d40687781c68ab70613bc6210e9a6f54ac..a6fd6b181283e2d0bc01737da369c24f5c130779`).
+Entre una punta y otra entraron **13 commits** (`git rev-list --count a6fd6b181283e2d0bc01737da369c24f5c130779..5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
 cuando la hay, en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| Las referencias de versión vigentes apuntan a `v0.103.1` | `cf70f1dd` (TASK-180) | 4 crates verificados desde un consumidor limpio y 8 assets verificados desde lo publicado. |
-| El gate corre cada test una vez, repartido por tipo de objetivo | `d9ce82f8` (TASK-215, #796) | 9.254 ejecuciones para 5.667 tests → 4.153 + 1.514 = 5.667; tiempo caliente de los dos pasos 38,3 s → 31,5 s; un radio sin ningún test falla. |
-| El analizador se identifica por el digest de sus fuentes, no por HEAD | `7b7b8180` (TASK-217, #797) | Tras un commit vacío core y mcp recompilaban en 70,79 s; ahora `Fresh` en 0,40 s. `SNAPSHOT_SCHEMA` v5→v6. |
-| Las tools de índice y los goals `inspect`/`change` confinan la ruta | `ebb1e503` (TASK-218, #798) | RED: tres formas de escape por cada una de las cinco entradas; `AuthorisedPath` obliga a pasar por el resolutor y se eliminó un segundo resolutor (`merge_graphs`). |
-| La guarda de symlinks de preview y apply usa `PathRules` | `01af0750` (TASK-219) | RED sobre `main`: el apply escribía a través de un directorio intermedio symlink (`committed: true`); core 3458/3458. |
-| La descarga de releases decide cada redirección | `1c27db8a` (TASK-230, #800) | El token sólo va a GitHub sobre https; cinco redirecciones y la sexta se detiene; el error no muestra query ni userinfo. |
-| El apply del CLI compara el plan con el estado que vio el preview | `7eefae5c` (TASK-220) | RED: el apply prosperaba con token caducado y sin proposal; ahora el preview persiste `plan.proposal.json`. core 3468/3468, cli 770/770. |
-| El cuerpo HTTP tiene techo y plazo, y el servidor tiene `--read-only` | `9ce1a294` (TASK-229, #802) | 4 MiB y 30 s (413 y 408, la conexión se cierra); `Host: 0.0.0.0` sólo lo acepta un servidor enlazado a esa dirección. |
-| El índice de símbolos sigue al grafo y al directorio consultado | `ca1b339e` (TASK-221) | 180× (66 ms frente a 11,8 s por 1000 consultas sobre 20k símbolos); dos RED: un símbolo borrado sobrevivía al rebuild y la consulta sobre B devolvía los de A. |
-| Sólo el veredicto de cobertura publica `Complete` | `5fa63f24` (TASK-222, #804) | Tres sitios fabricaban la palabra; `NoMaterial` es variante nueva y un sobre sin palabra se publica `unknown`. core 3475/3475. |
-| Un solo digest de contenido, SHA-256 | `7dfa7371` (TASK-226, #805) | Usos de producción de `DefaultHasher`/`blake3`: 12 en 6 ficheros → 0; cursores, planes y tokens emitidos antes dejan de validar. |
-| El refactor mide el impacto sobre el grafo del análisis | `8013f430` (TASK-223, #806) | RED: el rename se negaba por `target/gen.rs` y dos llamadores contaban 1; fixture mediano ~689 ms → ~150 ms; un fichero ilegible se nombra como hueco. |
-| El core se compila en una sola variante de features | `3b7b561b` (TASK-216, #807) | 0 recompilaciones del core en core→mcp→core (antes ~68 s); 3.490 → 4.094 tests del core que el bucle no veía. |
-| La política del mensaje de squash también se guarda en el hosting | `f0066655` (#808) | La guardia valida título+cuerpo y cada commit; cinco casos con `gh` simulado. |
-| La allowlist de CR-06 nombra módulos exactos, no subárboles | `08c6e289` (TASK-231, #810) | 29 rutas concretas → 13 módulos; al enumerar, los pares de producción pasan de 26 a 37 (la allowlist, de 40 a 52); RED `cr06_a_new_module_under_an_allowlisted_subtree_is_still_drift`. |
-| `impact` rechaza un nombre que varios símbolos llevan | `a6148e5b` (TASK-235.5, #811) | RED con el id `helper:0:0`; sin el respaldo por nombre pasan 3.104 unitarios del core, 48 de integración, 110 del CLI y 8 del MCP. |
-| Un solo dueño del SCC, iterativo | `e9b442a8` (TASK-235.6, #812) | `cycle_detector` se reescribe sobre `condensation`; `CallGraphProjection::detect_cycles` devolvía `false` para A↔B y se corrige. |
-| Los fallos se clasifican por tipo y la ambigüedad es un dato | `ad279860` (TASK-235.1, #813) | `InterfaceError::kind()` total; el contrato `-32006` + `data.candidates` sólo se cumplía en la ruta de handlers y ahora también en la del cliente; `content[0]` byte a byte. |
-| La terminal y el cable nombran el mismo siguiente paso | `66b3dd89` (TASK-235.4, #814) | El éxito del MCP tiene una sola construcción (`envelope_for`); `content[0]` sigue byte a byte. |
-| La guarda de capacidades lee el catálogo | `3871eff4` (TASK-235.2, #815) | Cada sitio que nombra una tool tiene un guardián que falla si falta; el dueño es `product/tools.json` (88 tools). Decisión del mantenedor pendiente: `capabilities.rs` no tiene consumidor de producción. |
-| Una sola definición de tasa de paso | `31768362` (TASK-235.3, #816) | Cinco sitios contaban «pasado» de forma distinta (sólo `pass`; `pass`+`expected_fail`; con y sin `preexisting_fail`). |
-| Las construcciones del grafo se coalescen y salen del runtime | `d9425391` (TASK-227, #817) | RED: 4 llamadores → 4 construcciones; ahora 4 → 1, el mismo `Arc`; una petición ligera ya no muere de hambre en un runtime de un hilo. core 4130, mcp 328, cli 789. |
-| Un fichero editado se lee una vez y el índice oye esa lectura | `7e8b65ec` (TASK-228, #818) | Reparse de un fichero: 12 ficheros 1,18 → 0,95 ms; 120, 5,79 → 3,86 ms; 1200, 57,6 → 42,9 ms; el coste sigue lineal en el árbol (lo domina el rebuild). CR-06 37 → 36. |
-| vitest resuelve `@scaffold-assets` como vite | `e0f8e32b` (#819) | Corrección de la configuración de la UI; el recibo no lleva medición propia. |
-| Ningún test lanza cargo ni usa el binario de otro árbol | `f9e55dbc` (TASK-224, #820) | Contrato nuevo de 5 casos: RED con 4 infractores, VERDE después; 1.548 tests antes y después; binarios de test 7 → 4. |
-| El índice de búsqueda sigue a los ficheros | `a6fd6b18` (TASK-237, #821) | RED: 8 de 16 pruebas de comportamiento fallaban; lo renombrado deja de buscarse, dos ficheros con el mismo nombre en el mismo sitio son dos resultados y un fichero borrado se olvida. core 3.140 unitarios + 1.005 de integración. |
+| El snapshot se regenera y la arquitectura del SDK declara `request_limits` | `afb92a26` (TASK-238, #822) | Los dos contratos que estaban rojos en `main` vuelven a verde sin relajar ninguno; el recibo no lleva medición de producto. |
+| Los recorridos del árbol pasan por el dueño del conjunto de ficheros | `781362b7` (TASK-225, #823) | Ratchet nuevo: 24 recorridos en 15 ficheros y 3 listas de exclusión en línea, que sólo pueden bajar; 11 tests nuevos (índice ligero frente a `build_graph`, y el fichero ilegible como hueco); allowlist de CR-06 52 → 51. |
+| El flujo de trabajo es por bloques de diez tareas | `ba0ccad2` (TASK-241, #824) | Documental: el contador se deriva de `git` y no hay fichero de estado; desde `e0f8e32b` contaba 4 (224, 225, 237, 238). |
+| El paso de mutantes compila de forma incremental y el lote mide su diff | `48276ae0` (TASK-232, #825) | `cognicode-graph-algos`, 627 mutantes en serie: 59 min 49 s → 39 min; la fase Build baja de 3,63 a 1,48 s por mutante; los 627 veredictos coinciden (618 atrapados, 9 inviables, 0 supervivientes). Modo diff: un lote de una línea mide 7 mutantes en 31 s. |
+| El índice de búsqueda lee un fichero como lo lee el grafo | `524b5c09` (TASK-239, #826) | RED: el camino genérico declaraba 0 símbolos para `terraform-iac/main.tf` y para `ansible-playbook/site.yml`; el lector del grafo, 19 y 5. Ahora hay un solo dueño (`semantic_facts_of`). |
+| El contador del bloque no cuenta las tareas sólo documentales | `f62dd0aa` (TASK-242, #827) | Desde `e0f8e32b` devolvía 7 con 5 tareas de código; con `grep -v '^docs'` devuelve 5. |
+| Ningún test ni contrato escribe en el árbol de trabajo | `8ea4f46b` (TASK-234, #828) | Chivato `scripts/ci/tree_witness.py` con 11 comprobaciones de contrato; el contrato SBOM trabaja sobre una copia; sale el grupo `sbom-workspace` de nextest; 15 artefactos antiguos ignorados se movieron fuera del árbol (no se borraron). |
+| `sandbox_core` sale del core y se retira código muerto verificado | `ab3bab63` (TASK-233, #829) | 7 módulos y 7 tests de integración pasan a `cognicode-sandbox`; el validador de entrada aceptaba `../etc/passwd` tras moverse o clonarse (2 tests en rojo antes, verdes después); `touch-core` 90,3 → 83,5 s, y el `cold` empeora de 180,5 a 211,4 s sin atribuirse. El instrumento `build-time.sh` estaba roto en `main` y se arregla. |
+| `find_usages` publica los ficheros que no pudo leer | `a0af5a30` (TASK-240, #830) | Un fichero ilegible dejaba «no usages found» como un árbol limpio; ahora `coverage: partial` y `not searched: <ruta> (<motivo>)`, en el MCP y en el CLI; el campo es aditivo (un payload anterior se lee `unknown`); `analysis_service.rs` 2029 → 1902 líneas de producción. |
+| La poda de `WalkFilter` por nombre de directorio está decidida y fijada | `49d69c0e` (TASK-244, #831) | Se mantiene: 5 tests de integración; en `sandbox/repos`, `clap_complete/src/env` (2 de 330 ficheros `.rs`) y `chalk/source/vendor` (6 ficheros) quedan fuera del grafo con cobertura `complete`; dos mutaciones sobre `matches_any_component`, atrapadas. |
+| Cada lector del árbol dice qué ficheros lee | `d35642b0` (TASK-243, #832) | 7 tests de integración sobre un solo árbol fijan el conjunto de los cuatro lectores; la muestra de complejidad del CLI pasa de «los 5 primeros en el orden del SO» a «los 5 primeros por nombre»; `control_query` publica sus ficheros ilegibles. |
+| La búsqueda de usos pide el árbol al servicio | `21ec37c5` (TASK-246, #833) | RED: 3 fallos de autoalojamiento y 4 violaciones de CR-06 provocados por TASK-240; 13/13 después; la allowlist de CR-06 queda en 34 → 34 y `analysis_service.rs` en 1.950 líneas de producción. |
+| La arquitectura del SDK nombra los módulos raíz de `cognicode-sandbox` | `5d2dd880` (TASK-249, #834) | Documental: `test_sdk_architecture.py` 29/29; el documento decía que `cognicode-sandbox` no tiene `src/lib.rs` desde que `sandbox_core` vive allí. |
 
 ## Release: la última publicada es la v0.103.1
 
@@ -1237,6 +1240,13 @@ describen el gate: desde TASK-215 (`d9ce82f8`) los dos pasos de test reparten
 una sola selección por tipo de objetivo y cada test corre una vez —medido
 entonces: 4.153 unitarios + 1.514 de integración = 5.667 tests distintos, donde
 antes se ejecutaban 9.254—.
+
+El primer bloque de diez (base `e0f8e32b`, árbol `21ec37c5`) se midió en
+serie: gate rc=0 con 3.971 unitarios y 1.596 de integración (2 omitidos) y
+mutantes `SKIP`, porque el radio de mutación estaba vacío y al crate del
+calendario no le tocaba el turno; `npm test` y `cargo fmt` + `clippy` rc=0; contratos
+rc=1 por dos desfases de documentación —la arquitectura del SDK y este
+snapshot—, corregidos hacia delante en TASK-249 y TASK-250.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
