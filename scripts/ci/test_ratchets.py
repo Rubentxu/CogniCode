@@ -88,6 +88,15 @@ that composes the real tree-sitter adapter is not architectural debt, and three
 such guards exist today (all `team:st-01`). Counting them would make the only
 honest response to "add a regression guard" be to let the ceiling drift.
 
+## What an entry matches
+
+An entry's `dependency_path` is **exact** (`infrastructure::parser::Language`
+is that path and no other) or, with a trailing `::`, **a module and
+everything below it**. Before TASK-231 every entry matched by prefix, so
+`infrastructure::graph` silently allowed every module added under it. The
+side effect for this contract is that naming exact paths takes more pairs
+than naming a prefix, and growth has to be approved below.
+
 ## Approving growth deliberately
 
 Add the `(file_path, dependency_path)` pair to `APPROVED_PRODUCTION_ENTRIES`
@@ -410,6 +419,37 @@ APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
     ("application/services/analysis_service.rs", "infrastructure::walk_policy::"),
     ("application/services/analyze.rs", "infrastructure::graph::per_file_graph::"),
     ("application/services/refactor_service.rs", "infrastructure::walk_policy::"),
+    # TASK-231: the allowlist matches a path exactly, or a module's subtree
+    # when it ends in `::`. Two entries on analysis_service.rs used to
+    # prefix-match (`infrastructure::graph`, `infrastructure::parser`) and so
+    # allowed every module that would ever be added under either. They are now
+    # the modules and items the file names today; a new module is a new
+    # violation. Enumerating cannot keep the pair count flat: the same coupling
+    # goes from 2 pairs to 12, and one pair on lsp_proxy_service.rs splits in
+    # two for the same reason (a leaf import and a group import). Nothing in
+    # this list is a new dependency, and the 4 `Language` imports went away
+    # with the import, not with an entry.
+    #
+    # NOT approved by a named maintainer: decided by the agent that did the
+    # unit under the operator's standing /goal authorisation of 2026-11-13,
+    # in the pull request for TASK-231. The review of that pull request is
+    # where this approval is given or refused; refusing it means keeping the
+    # two broad entries, which is the hole the task closes.
+    ("application/services/analysis_service.rs", "infrastructure::graph::per_file_graph"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::per_file_graph::"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::reuse::"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::source_files::"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::pending::"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::semantic_layer::"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::SymbolLocation"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::LightweightIndex"),
+    ("application/services/analysis_service.rs", "infrastructure::graph::PerFileGraphCache"),
+    ("application/services/analysis_service.rs", "infrastructure::parser::TreeSitterParser"),
+    ("application/services/analysis_service.rs", "infrastructure::parser::language_config::"),
+    (
+        "application/services/lsp_proxy_service.rs",
+        "infrastructure::lsp::providers::composite::CompositeProvider",
+    ),
 }
 
 # An inventory entry is a call to the local `ex(...)` helper that opens on its
@@ -540,8 +580,8 @@ def cfg_test_line_spans(text: str) -> set[int]:
 def dependency_leaves(path: str) -> list[str]:
     """Leaf names a dependency path covers.
 
-    Allowlist matching is by prefix, so `infrastructure::parser` covers
-    `infrastructure::parser::Language` and `::TreeSitterParser` from one entry.
+    An entry names an exact path, or a module's subtree when it ends in `::`;
+    the evaluator reports a group it cannot resolve as the bare module path.
     A bare module segment therefore has to match on its last component, or the
     entry would look unused and be misfiled as retired.
     """
@@ -595,6 +635,56 @@ def item_statements(text: str) -> list[tuple[int, str]]:
     return statements
 
 
+def _split_top_level(text: str) -> list[str]:
+    """Split on the commas that are not inside a nested `{ .. }` group."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for char in text:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
+def expand_use_tree(tree: str, prefix: str = "") -> list[str]:
+    """Every full path a `use` tree imports, with its groups flattened.
+
+    `crate::a::{b::{C, D}, E}` is `crate::a::b::C`, `crate::a::b::D` and
+    `crate::a::E`. `self` names the group's own path, and `as` renames only
+    what is bound, not what is imported.
+    """
+    tree = tree.strip()
+    brace = tree.find("{")
+    if brace == -1:
+        leaf = tree.split(" as ")[0].strip()
+        if leaf == "self":
+            return [prefix[:-2]] if prefix.endswith("::") else [prefix]
+        return [prefix + leaf]
+    head = "".join(tree[:brace].split())
+    inner = tree[brace + 1 : tree.rindex("}")] if "}" in tree else tree[brace + 1 :]
+    paths: list[str] = []
+    for part in _split_top_level(inner):
+        paths.extend(expand_use_tree(part, prefix + head))
+    return paths
+
+
+USE_TREE = re.compile(r"\buse\s+(.*?)\s*;", re.DOTALL)
+
+
+def imported_paths(statement: str) -> list[str]:
+    """The full paths one `use` statement imports; empty for any other item."""
+    match = USE_TREE.search(statement)
+    return expand_use_tree(match.group(1)) if match else []
+
+
 def imported_in_production(file_text: str, dependency_path: str) -> bool:
     """Does the named dependency appear in this file outside `#[cfg(test)]`?
 
@@ -611,6 +701,12 @@ def imported_in_production(file_text: str, dependency_path: str) -> bool:
     an import of `infrastructure::graph::`, because "graph" is a substring
     of "call_graph" — a production import that never happened.
 
+    A leaf inside an import group is a hit too. `use crate::a::{B, C};`
+    never contains the text `crate::a::C`, and an allowlist entry that names
+    exact leaves (`a::C`) would then be filed as test-only and left out of the
+    count: an under-count, the one error direction that makes a ratchet
+    useless. The group is flattened to the paths it imports before matching.
+
     Comment lines are not hits: a path written in prose is not a
     dependency.
     """
@@ -621,6 +717,8 @@ def imported_in_production(file_text: str, dependency_path: str) -> bool:
         if start in test_lines:
             continue
         if needle in statement:
+            return True
+        if any(needle in path for path in imported_paths(statement)):
             return True
 
     for index, raw in enumerate(file_text.splitlines(), start=1):
@@ -910,6 +1008,43 @@ def test_production_debt_did_not_grow() -> None:
         f"    ST-01..ST-05 retire these; they do not add them. If this growth "
         f"was decided, add the pair to APPROVED_PRODUCTION_ENTRIES in this file "
         f"with a comment naming who approved it and why.",
+    )
+
+
+def test_a_leaf_inside_an_import_group_is_a_production_import() -> None:
+    """An exact-leaf entry must not be filed as test-only because the import is grouped."""
+    grouped = (
+        "use crate::infrastructure::graph::{\n"
+        "    GraphCache,\n"
+        "    per_file_graph::{BuildReport, SkippedFile},\n"
+        "};\n"
+    )
+    check(
+        imported_in_production(grouped, "infrastructure::graph::per_file_graph::SkippedFile"),
+        "a leaf named inside a nested import group was classified as not imported",
+    )
+    check(
+        imported_in_production(grouped, "infrastructure::graph::GraphCache"),
+        "a leaf named in a one-level import group was classified as not imported",
+    )
+    check(
+        not imported_in_production(grouped, "infrastructure::graph::reuse::ReuseLedger"),
+        "a path the group does not import was classified as imported",
+    )
+    in_tests = (
+        "#[cfg(test)]\n"
+        "mod tests {\n"
+        "    use super::*;\n"
+        "    use crate::infrastructure::graph::{GraphCache};\n"
+        "}\n"
+    )
+    check(
+        not imported_in_production(in_tests, "infrastructure::graph::GraphCache"),
+        "an import inside a cfg(test) scope was classified as production",
+    )
+    check(
+        expand_use_tree("crate::a::{self, b::C as D}") == ["crate::a", "crate::a::b::C"],
+        "`self` and `as` are not expanded to the paths they import",
     )
 
 

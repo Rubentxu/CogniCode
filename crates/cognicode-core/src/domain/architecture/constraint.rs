@@ -385,8 +385,8 @@ pub struct TemporaryException {
     /// `ArchitectureViolation.file_path` byte-for-byte (relative to
     /// the crate root used by the evaluator).
     pub file_path: String,
-    /// Exact `dependency_path` of the drift. Must match
-    /// `ArchitectureViolation.dependency_path`.
+    /// `dependency_path` of the drift: an exact path, or a module with a
+    /// trailing `::` for its whole subtree. See [`TemporaryException::matches`].
     pub dependency_path: String,
     /// Who owns retiring this exception (e.g.
     /// `"human:cognicode-architecture-wg"`,
@@ -405,19 +405,24 @@ impl TemporaryException {
     /// Whether this exception applies to a specific violation.
     ///
     /// Match is exact on `constraint_id` and `file_path`. The
-    /// `dependency_path` field is matched by **prefix** because the
-    /// architecture evaluator reports the longest `use crate::...`
-    /// path it can parse, and a single source line may produce more
-    /// than one violation under the same prefix (e.g. a `use
-    /// crate::infrastructure::parser::{Language, TreeSitterParser};`
-    /// line emits two violations, one with path
-    /// `infrastructure::parser::Language` and another with
-    /// `infrastructure::parser::TreeSitterParser`). An allowlist entry
-    /// with `dependency_path = "infrastructure::parser::Language"`
-    /// will not match the second one; the allowlist entry should be
-    /// written as `infrastructure::parser::` (with trailing `::`) to
-    /// cover both. This is the only field that uses prefix match —
-    /// the others are exact to avoid accidental overlap.
+    /// `dependency_path` field has two forms, told apart by the
+    /// trailing `::`:
+    ///
+    /// - `infrastructure::parser::Language` names **that path and no
+    ///   other**. `infrastructure::parser::LanguageConfig` is a
+    ///   different item, and so is `infrastructure::parser::Language::new`.
+    /// - `infrastructure::parser::` names **one module and everything
+    ///   below it**. It does not cover the bare group path
+    ///   `infrastructure::parser` (list that one on its own), nor a
+    ///   sibling module that merely shares the spelling.
+    ///
+    /// The evaluator reports one violation per resolvable leaf of an
+    /// import group and the bare module path for a group it cannot
+    /// resolve, so a module that is imported in several spellings needs
+    /// an entry per spelling. That is deliberate: an entry that covers
+    /// "whatever is under `infrastructure::graph`" also covers every
+    /// module that will ever be added there, and the coupling then grows
+    /// without the inventory noticing.
     pub fn matches(&self, violation: &crate::domain::architecture::ArchitectureViolation) -> bool {
         if self.constraint_id != violation.constraint_id.as_str() {
             return false;
@@ -425,10 +430,11 @@ impl TemporaryException {
         if self.file_path != violation.file_path {
             return false;
         }
-        // Prefix match on dependency_path: the allowlist entry may
-        // cover a whole import group ("infrastructure::parser::")
-        // even though the evaluator reports each leaf separately.
-        violation.dependency_path.starts_with(&self.dependency_path)
+        if self.dependency_path.ends_with("::") {
+            violation.dependency_path.starts_with(&self.dependency_path)
+        } else {
+            violation.dependency_path == self.dependency_path
+        }
     }
 
     /// Whether this exception has expired.
@@ -511,10 +517,10 @@ mod temporary_exception_tests {
     }
 
     #[test]
-    fn exception_matches_prefix_on_dependency_path() {
-        // An allowlist entry with prefix `infrastructure::parser::`
+    fn exception_with_trailing_separator_matches_a_leaf_in_its_subtree() {
+        // An allowlist entry for the subtree `infrastructure::parser::`
         // must match a violation whose path is a deeper leaf under
-        // that prefix (e.g. `infrastructure::parser::Language`).
+        // that module (e.g. `infrastructure::parser::Language`).
         let ex = TemporaryException {
             constraint_id: "architecture.application_no_infrastructure".into(),
             file_path: "application/foo.rs".into(),
@@ -529,6 +535,60 @@ mod temporary_exception_tests {
             "infrastructure::parser::Language",
         );
         assert!(ex.matches(&v));
+    }
+
+    fn exception_for(dependency_path: &str) -> TemporaryException {
+        TemporaryException {
+            constraint_id: "architecture.application_no_infrastructure".into(),
+            file_path: "application/foo.rs".into(),
+            dependency_path: dependency_path.into(),
+            owner: "team:st-01".into(),
+            rationale: "ST-01".into(),
+            expiry: "2026-12-31".into(),
+        }
+    }
+
+    fn violation_at(dependency_path: &str) -> ArchitectureViolation {
+        sample_violation(
+            "architecture.application_no_infrastructure",
+            "application/foo.rs",
+            dependency_path,
+        )
+    }
+
+    #[test]
+    fn a_path_without_trailing_separator_names_exactly_that_path() {
+        // `Language` is a prefix of `LanguageConfig` as text, but it is a
+        // different item: an entry for one must not silence the other.
+        let ex = exception_for("infrastructure::parser::Language");
+        assert!(ex.matches(&violation_at("infrastructure::parser::Language")));
+        assert!(!ex.matches(&violation_at("infrastructure::parser::LanguageConfig")));
+        assert!(!ex.matches(&violation_at("infrastructure::parser::Language::new")));
+    }
+
+    #[test]
+    fn a_module_path_without_trailing_separator_does_not_cover_a_new_sibling_module() {
+        // The hole this closes: `infrastructure::graph` used to cover every
+        // module that would ever appear under it.
+        let ex = exception_for("infrastructure::graph");
+        assert!(ex.matches(&violation_at("infrastructure::graph")));
+        assert!(!ex.matches(&violation_at(
+            "infrastructure::graph::brand_new_module::Thing"
+        )));
+        assert!(!ex.matches(&violation_at("infrastructure::graph::PetGraphStore")));
+    }
+
+    #[test]
+    fn a_trailing_separator_covers_the_subtree_of_that_module_only() {
+        let ex = exception_for("infrastructure::parser::");
+        assert!(ex.matches(&violation_at("infrastructure::parser::Language")));
+        assert!(ex.matches(&violation_at(
+            "infrastructure::parser::language_config::LanguageConfig"
+        )));
+        // The bare group path and a module that merely shares the spelling
+        // are not under `infrastructure::parser::`.
+        assert!(!ex.matches(&violation_at("infrastructure::parser")));
+        assert!(!ex.matches(&violation_at("infrastructure::parser_extra::Thing")));
     }
 
     #[test]

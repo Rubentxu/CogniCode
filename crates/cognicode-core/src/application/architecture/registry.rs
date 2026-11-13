@@ -149,9 +149,8 @@ impl ArchitectureRegistry {
 
     /// Filter out violations that match a non-expired temporary
     /// exception. The match delegates to
-    /// [`TemporaryException::matches`], which prefixes
-    /// `dependency_path` so that one allowlist entry can cover all
-    /// leaf imports under an import group (see the type's doc).
+    /// [`TemporaryException::matches`]: an exact `dependency_path`, or
+    /// the subtree of a module named with a trailing `::`.
     /// Expired exceptions are silently ignored — a stale allowlist is
     /// louder than a passing build: the same violation that was
     /// suppressed yesterday will be emitted today if the exception's
