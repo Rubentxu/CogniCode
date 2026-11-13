@@ -70,9 +70,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # Daemon MCP
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # esperado: cogh 0.103.0
-./target/release/cognicode --version    # esperado: cognicode 0.103.0
-./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.103.0
+./target/release/cogh --version         # esperado: cogh 0.103.1
+./target/release/cognicode --version    # esperado: cognicode 0.103.1
+./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.103.1
 ```
 
 > **Nota:** los binarios publicados también incluyen los de la cadena de herramientas cruzada
