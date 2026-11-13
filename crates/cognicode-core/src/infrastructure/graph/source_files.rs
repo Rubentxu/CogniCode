@@ -29,6 +29,27 @@
 //! decline is reported, because a project that symlinks its sources in
 //! from elsewhere is not fully described by the graph it gets back.
 //!
+//! ## What the walk prunes by name
+//!
+//! `WalkFilter` compares the name of every component below the project
+//! root with a fixed list (`target`, `node_modules`, `build`, `dist`,
+//! `vendor`, `env`, `coverage`, `secrets`, ...) and does not read a
+//! directory that matches, at the root and at any depth. The comparison is
+//! by name, whole and case-sensitive, and it is blind to content: a source
+//! module called `env` is pruned like a virtual environment, and the
+//! inventory does not list it as declined.
+//!
+//! That is kept as it is, on purpose. Over the real repositories of the
+//! sandbox it costs a handful of files (`clap_complete/src/env`: 2 of 330
+//! Rust files; `chalk/source/vendor`: 6), while narrowing it to the root
+//! would put the build output of every nested package (`packages/x/dist`)
+//! back in the graph. Either way the set of files of the affected trees
+//! changes, and with it the manifest digest and the identity of their
+//! snapshots: a published change that is the maintainer's to make, with a
+//! consumer test, not a side effect of a fix. The behaviour is pinned by
+//! `the_walk_prunes_by_directory_name`; what is still open is whether the
+//! answer should say which directories it pruned.
+//!
 //! ## What the walk could not do
 //!
 //! A walk is not infallible: a directory the process cannot read, an
