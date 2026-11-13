@@ -41,6 +41,26 @@ impl TreesitterFallbackProvider {
         Self { index: Some(index) }
     }
 
+    /// The answer of a definition lookup that found nothing.
+    ///
+    /// A miss over everything that could be read is a plain `Ok(None)`. A miss
+    /// after some file or directory could not be read is not: the definition
+    /// may live in what was never looked at, so it is an error that names the
+    /// unread paths, and the composite provider propagates it instead of
+    /// reporting "no definition".
+    fn miss(
+        identifier: &str,
+        unread: Vec<String>,
+    ) -> Result<Option<Location>, CodeIntelligenceError> {
+        if unread.is_empty() {
+            return Ok(None);
+        }
+        Err(CodeIntelligenceError::Internal(format!(
+            "no definition of `{identifier}` found in what could be read; could not read: {}",
+            unread.join(", ")
+        )))
+    }
+
     fn detect_language(file_path: &Path) -> Option<Language> {
         Language::from_extension(file_path.extension())
     }
@@ -214,32 +234,36 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
                 SymbolKind::Interface,
             ];
 
+            let mut unread: Vec<String> = Vec::new();
             for candidate in candidates {
                 if !valid_kinds.contains(&candidate.symbol_kind) {
                     continue;
                 }
                 let candidate_path = Path::new(&candidate.file);
-                if let Ok(content) = std::fs::read_to_string(candidate_path) {
-                    let line_idx = candidate.line as usize;
-                    let lines: Vec<&str> = content.lines().collect();
-                    if line_idx < lines.len() {
-                        let line_str = lines[line_idx];
-                        let is_def = line_str.contains(&format!("fn {}(", &identifier))
-                            || line_str.contains(&format!("def {}(", &identifier))
-                            || line_str.contains(&format!("function {}(", &identifier))
-                            || line_str.contains(&format!("struct {}", &identifier))
-                            || line_str.contains(&format!("class {}", &identifier));
-                        if is_def {
-                            return Ok(Some(Location::new(
-                                candidate.file.clone(),
-                                candidate.line + 1,
-                                candidate.column + 1,
-                            )));
+                match std::fs::read_to_string(candidate_path) {
+                    Err(error) => unread.push(format!("{} ({error})", candidate.file)),
+                    Ok(content) => {
+                        let line_idx = candidate.line as usize;
+                        let lines: Vec<&str> = content.lines().collect();
+                        if line_idx < lines.len() {
+                            let line_str = lines[line_idx];
+                            let is_def = line_str.contains(&format!("fn {}(", &identifier))
+                                || line_str.contains(&format!("def {}(", &identifier))
+                                || line_str.contains(&format!("function {}(", &identifier))
+                                || line_str.contains(&format!("struct {}", &identifier))
+                                || line_str.contains(&format!("class {}", &identifier));
+                            if is_def {
+                                return Ok(Some(Location::new(
+                                    candidate.file.clone(),
+                                    candidate.line + 1,
+                                    candidate.column + 1,
+                                )));
+                            }
                         }
                     }
                 }
             }
-            return Ok(None);
+            return Self::miss(&identifier, unread);
         }
 
         let dir = file_path.parent().unwrap_or(Path::new("."));
@@ -247,33 +271,44 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
         // a definition lookup may open is what the graph may open, so it
         // does not read `target/`, a `.gitignore`d tree or a secrets
         // directory just because a file happens to live next to them.
-        for entry in crate::infrastructure::graph::source_files::walk(dir).filter_map(|e| e.ok()) {
+        let mut unread: Vec<String> = Vec::new();
+        for entry in crate::infrastructure::graph::source_files::walk(dir) {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    unread.push(error.to_string());
+                    continue;
+                }
+            };
             let path = entry.path();
             if !crate::infrastructure::walk_policy::ignore_is_real_file(&entry)
                 || Language::from_extension(path.extension()).is_none()
             {
                 continue;
             }
-            if let Ok(content) = std::fs::read_to_string(path) {
-                for (i, line_str) in content.lines().enumerate() {
-                    if let Some(c) = line_str.find(&identifier) {
-                        let is_def = line_str.contains(&format!("fn {}(", &identifier))
-                            || line_str.contains(&format!("def {}(", &identifier))
-                            || line_str.contains(&format!("function {}(", &identifier))
-                            || line_str.contains(&format!("struct {}", &identifier))
-                            || line_str.contains(&format!("class {}", &identifier));
-                        if is_def {
-                            return Ok(Some(Location::new(
-                                path.to_string_lossy().to_string(),
-                                (i + 1) as u32,
-                                (c + 1) as u32,
-                            )));
+            match std::fs::read_to_string(path) {
+                Err(error) => unread.push(format!("{} ({error})", path.display())),
+                Ok(content) => {
+                    for (i, line_str) in content.lines().enumerate() {
+                        if let Some(c) = line_str.find(&identifier) {
+                            let is_def = line_str.contains(&format!("fn {}(", &identifier))
+                                || line_str.contains(&format!("def {}(", &identifier))
+                                || line_str.contains(&format!("function {}(", &identifier))
+                                || line_str.contains(&format!("struct {}", &identifier))
+                                || line_str.contains(&format!("class {}", &identifier));
+                            if is_def {
+                                return Ok(Some(Location::new(
+                                    path.to_string_lossy().to_string(),
+                                    (i + 1) as u32,
+                                    (c + 1) as u32,
+                                )));
+                            }
                         }
                     }
                 }
             }
         }
-        Ok(None)
+        Self::miss(&identifier, unread)
     }
 
     async fn get_document_symbols(
@@ -432,5 +467,124 @@ mod tests {
         assert!(!symbols.is_empty());
         let names: Vec<&str> = symbols.iter().map(|s| s.name()).collect();
         assert!(names.contains(&"greet") || names.contains(&"Point"));
+    }
+
+    /// Gives a path its permissions back when the test ends, so the temporary
+    /// directory can be removed even if an assertion failed halfway.
+    struct Unlock(std::path::PathBuf, u32);
+
+    impl Drop for Unlock {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(self.1));
+        }
+    }
+
+    fn lock(path: &Path, restore: u32) -> Unlock {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000))
+            .expect("the fixture must be lockable");
+        Unlock(path.to_path_buf(), restore)
+    }
+
+    /// `m_caller.rs` calls `helper()` on line 1; the cursor sits on the call.
+    fn caller_location(dir: &Path) -> Location {
+        Location::new(dir.join("m_caller.rs").to_string_lossy().to_string(), 1, 18)
+    }
+
+    fn write_caller(dir: &Path) {
+        std::fs::write(dir.join("m_caller.rs"), "fn run() { helper(); }\n").unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_definition_that_may_live_in_an_unreadable_file_is_not_reported_as_absent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_caller(tmp.path());
+        let locked = tmp.path().join("z_locked.rs");
+        std::fs::write(&locked, "fn helper() {}\n").unwrap();
+        let _unlock = lock(&locked, 0o644);
+
+        let result = TreesitterFallbackProvider::new()
+            .get_definition(&caller_location(tmp.path()))
+            .await;
+
+        let error = result.expect_err("a miss after an unreadable file is not a clean miss");
+        let message = error.to_string();
+        assert!(
+            message.contains("z_locked.rs"),
+            "the error must name the file it could not read: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_definition_found_in_a_readable_file_survives_an_unreadable_one() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_caller(tmp.path());
+        let locked = tmp.path().join("a_locked.rs");
+        std::fs::write(&locked, "fn other() {}\n").unwrap();
+        std::fs::write(tmp.path().join("z_defs.rs"), "fn helper() {}\n").unwrap();
+        let _unlock = lock(&locked, 0o644);
+
+        let found = TreesitterFallbackProvider::new()
+            .get_definition(&caller_location(tmp.path()))
+            .await
+            .expect("a hit is a hit even when another file could not be read")
+            .expect("the definition lives in a readable file");
+
+        assert!(found.file().ends_with("z_defs.rs"), "{}", found.file());
+    }
+
+    #[tokio::test]
+    async fn a_directory_that_was_fully_read_still_answers_a_clean_miss() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_caller(tmp.path());
+
+        let result = TreesitterFallbackProvider::new()
+            .get_definition(&caller_location(tmp.path()))
+            .await
+            .expect("nothing was unreadable, so a miss is a plain miss");
+
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_directory_met_during_the_walk_is_not_a_clean_miss() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_caller(tmp.path());
+        let sealed = tmp.path().join("sealed");
+        std::fs::create_dir(&sealed).unwrap();
+        std::fs::write(sealed.join("defs.rs"), "fn helper() {}\n").unwrap();
+        let _unlock = lock(&sealed, 0o755);
+
+        let error = TreesitterFallbackProvider::new()
+            .get_definition(&caller_location(tmp.path()))
+            .await
+            .expect_err("a directory that could not be listed may hold the definition");
+
+        assert!(
+            error.to_string().contains("sealed"),
+            "the error must name the directory: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_indexed_candidate_that_cannot_be_read_is_not_a_clean_miss() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        write_caller(tmp.path());
+        let locked = tmp.path().join("z_locked.rs");
+        std::fs::write(&locked, "fn helper() {}\n").unwrap();
+        let mut index = LightweightIndex::new();
+        index.build_from_sources([(locked.to_str().unwrap(), "fn helper() {}\n")]);
+        let _unlock = lock(&locked, 0o644);
+
+        let error = TreesitterFallbackProvider::with_index(Arc::new(index))
+            .get_definition(&caller_location(tmp.path()))
+            .await
+            .expect_err("the indexed file exists but could not be read");
+
+        assert!(
+            error.to_string().contains("z_locked.rs"),
+            "the error must name the file: {error}"
+        );
     }
 }
