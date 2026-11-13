@@ -1,4 +1,5 @@
-//! The sandbox failure taxonomy has a neutral core owner until sandbox artifacts move.
+//! The sandbox failure taxonomy has a neutral owner in the analysis core, and the
+//! `sandbox_core` library in `cognicode-sandbox` does not carry a second one.
 
 use std::fs;
 use std::path::Path;
@@ -6,9 +7,8 @@ use std::path::Path;
 #[test]
 fn failure_class_is_owned_by_the_neutral_application_module() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let core_src = manifest.join("src");
-    let application = core_src.join("application");
-    let sandbox_core = core_src.join("sandbox_core");
+    let application = manifest.join("../cognicode-core/src/application");
+    let sandbox_core = manifest.join("src/sandbox_core");
     let application_mod = fs::read_to_string(application.join("mod.rs"))
         .expect("read application module declarations");
     let sandbox_mod =

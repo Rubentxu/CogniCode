@@ -8,7 +8,7 @@ Pins the G3 contract from
   sandbox_core::scoring) MUST be >= 85/100 for the candidate release.
 
 The contract source-of-truth is the Rust scoring engine in
-`crates/cognicode-core/src/sandbox_core/scoring.rs`:
+`crates/cognicode-sandbox/src/sandbox_core/scoring.rs`:
 
   HEALTH_WEIGHTS = (0.35, 0.20, 0.15, 0.15, 0.15)
   compute_health_score(scores) =
@@ -77,7 +77,7 @@ import release_scorecard as rs  # noqa: E402
 
 REPO = Path("/var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode")
 G3_THRESHOLD = 85.0
-# Mirror of crates/cognicode-core/src/sandbox_core/scoring.rs:1400
+# Mirror of crates/cognicode-sandbox/src/sandbox_core/scoring.rs:1400
 HEALTH_WEIGHTS = (0.35, 0.20, 0.15, 0.15, 0.15)
 DIM_NAMES = ("correctitud", "latencia", "escalabilidad", "consistencia", "robustez")
 

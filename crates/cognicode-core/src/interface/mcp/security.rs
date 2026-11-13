@@ -90,6 +90,8 @@ pub struct InputValidator {
     max_query_length: usize,
     rules: PathRules,
     rate_limiter: Arc<RateLimiter>,
+    /// Pluggable rules applied by `validate_input`. They are shared by clones.
+    input_rules: Vec<Arc<dyn ValidationRule>>,
 }
 
 impl fmt::Debug for InputValidator {
@@ -112,6 +114,7 @@ impl InputValidator {
             max_query_length: DEFAULT_MAX_QUERY_LENGTH,
             rules: PathRules::new(),
             rate_limiter: Arc::new(RateLimiter::new(100, 60)),
+            input_rules: Vec::new(),
         }
     }
 
@@ -123,6 +126,7 @@ impl InputValidator {
             max_query_length,
             rules: PathRules::new(),
             rate_limiter: Arc::new(RateLimiter::new(100, 60)),
+            input_rules: Vec::new(),
         }
     }
 
@@ -490,55 +494,21 @@ impl ValidationRule for SqlValidationRule {
     }
 }
 
-/// Extension of `InputValidator` to support pluggable validation rules.
-///
-/// Rules are stored separately and applied via `validate_input`.
-/// This allows composing validators without modifying the core `InputValidator`.
-#[derive(Default)]
-pub struct InputValidatorWithRules {
-    /// Validation rules - stored in thread-local, this field is for API completeness
-    #[allow(dead_code)]
-    rules: Vec<Box<dyn ValidationRule>>,
-}
-
 impl InputValidator {
     /// Adds a validation rule to this validator (Strategy pattern extension).
     ///
-    /// Note: Rules are stored on a thread-local list associated with this instance.
-    /// Use `validate_input` to apply them.
+    /// The rule belongs to the validator: it survives a move and a clone.
+    /// `validate_input` applies every rule in the order they were added.
     pub fn add_rule(&mut self, rule: Box<dyn ValidationRule>) {
-        // Store rules in a vec on the validator. Since InputValidator doesn't have a
-        // rules field yet (to avoid breaking existing code), we use a workaround:
-        // rules are stored in an optional Arc<Mutex<Vec>> via the allowed_paths field hack.
-        // For simplicity and to make tests pass, we track rules in a static thread-local.
-        THREAD_LOCAL_RULES.with(|cell| {
-            let mut rules = cell.borrow_mut();
-            // Use pointer address as a key to associate rules with validator instance
-            let key = self as *mut InputValidator as usize;
-            rules.entry(key).or_default().push(rule);
-        });
+        self.input_rules.push(Arc::from(rule));
     }
 
     /// Validates input against all added rules (Strategy pattern extension).
     pub fn validate_input(&self, _context: &str, input: &str) -> Result<(), SecurityError> {
-        THREAD_LOCAL_RULES.with(|cell| {
-            let rules = cell.borrow();
-            let key = self as *const InputValidator as usize;
-            if let Some(rule_list) = rules.get(&key) {
-                for rule in rule_list {
-                    rule.validate(input)?;
-                }
-            }
-            Ok(())
-        })
+        self.input_rules
+            .iter()
+            .try_for_each(|rule| rule.validate(input))
     }
-}
-
-use std::cell::RefCell;
-
-thread_local! {
-    static THREAD_LOCAL_RULES: RefCell<HashMap<usize, Vec<Box<dyn ValidationRule>>>> =
-        RefCell::new(HashMap::new());
 }
 
 /// Simple rate limiter using token bucket algorithm with per-key tracking

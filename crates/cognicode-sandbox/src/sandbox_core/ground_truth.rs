@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domain::value_objects::SymbolKind as CanonicalSymbolKind;
+use cognicode_core::domain::value_objects::SymbolKind as CanonicalSymbolKind;
 
 /// A symbol extracted from source code with its metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,7 +44,7 @@ pub enum SymbolKind {
 }
 
 /// Convert ground-truth symbol kinds into the canonical
-/// [`crate::domain::value_objects::SymbolKind`].
+/// [`cognicode_core::domain::value_objects::SymbolKind`].
 ///
 /// Most variants are direct renames (`Const` → `Constant`,
 /// `Variant` → `EnumVariant`); the four Rust-specific

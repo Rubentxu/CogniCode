@@ -6,6 +6,10 @@ edition.workspace = true
 authors.workspace = true
 license = "MIT OR Apache-2.0"
 
+[lib]
+name = "cognicode_sandbox"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sandbox-orchestrator"
 path = "src/main.rs"
@@ -15,6 +19,7 @@ cognicode-core.workspace = true
 cognicode-mcp.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_norway.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 walkdir.workspace = true

@@ -1,7 +1,8 @@
 //! Ownership boundary for the sandbox MCP process adapter.
 //!
-//! `McpServer` belongs to the sandbox orchestrator, not to the analysis core.
-//! This structural contract prevents duplicate owners during the extraction.
+//! `McpServer` belongs to the sandbox orchestrator binary, not to the analysis core
+//! and not to the shared `sandbox_core` library. This structural contract
+//! prevents duplicate owners.
 
 use std::path::PathBuf;
 
@@ -14,9 +15,9 @@ fn mcp_core_is_owned_by_cognicode_sandbox() {
     let root = workspace_root();
     assert!(
         !root
-            .join("crates/cognicode-core/src/sandbox_core/mcp_core.rs")
+            .join("crates/cognicode-sandbox/src/sandbox_core/mcp_core.rs")
             .exists(),
-        "mcp_core.rs must not remain in cognicode-core"
+        "mcp_core.rs must not move into the sandbox_core library"
     );
     assert!(
         root.join("crates/cognicode-sandbox/src/mcp_core.rs")

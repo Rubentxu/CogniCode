@@ -67,10 +67,12 @@ if [[ "${CACHE_MODE}" != "empty" && "${CACHE_MODE}" != "ambient" ]]; then
     exit 2
 fi
 
-TOUCH_TEST="$(ls crates/cognicode-core/tests/*.rs 2>/dev/null | sort | head -1 || true)"
+# The core's integration tests are ONE binary (`tests/it/main.rs` and its modules),
+# so touching any module recompiles that binary: the first module is the scenario.
+TOUCH_TEST="$(find crates/cognicode-core/tests/it -maxdepth 1 -name '*.rs' ! -name main.rs 2>/dev/null | sort | head -1 || true)"
 TOUCH_CORE="crates/cognicode-core/src/lib.rs"
 if [[ -z "${TOUCH_TEST}" ]]; then
-    echo "ERROR: no hay ningun test de integracion en crates/cognicode-core/tests/" >&2
+    echo "ERROR: no hay ningun test de integracion en crates/cognicode-core/tests/it/" >&2
     exit 2
 fi
 if [[ ! -f "${TOUCH_CORE}" ]]; then

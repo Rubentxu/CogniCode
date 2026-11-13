@@ -1073,8 +1073,9 @@ def _partition_fixture(root: Path) -> None:
     """A workspace with a test in each kind of target the gate can meet.
 
     `full` has a library, a binary and an integration test, one test each.
-    `onlybin` is a package with a binary and no library, the shape of
-    `cognicode-sandbox`: a radius made of it alone is a radius the gate has
+    `onlybin` is a package with a binary and no library, the shape of a
+    crate with unit tests and no integration target: a radius made of it
+    alone is a radius the gate has
     to be able to run. `notests` is a library without a single test: a radius
     made of it alone is a gate that would check nothing.
 
@@ -1252,7 +1253,7 @@ def _gate_test_steps() -> str | None:
 def test_an_empty_half_passes_and_a_radius_without_tests_fails() -> None:
     """A half of the selection can be empty; the whole selection cannot.
 
-    `cognicode-sandbox` has no integration target and `cognicode-graph-wasm`
+    `cognicode-ladybug` has no integration target and `cognicode-graph-wasm`
     has no unit test: a radius made of one of them leaves a half with nothing
     to run, and that half is not a failure. A radius with no test at all is
     a gate that checks nothing, and a gate that checks nothing and says green

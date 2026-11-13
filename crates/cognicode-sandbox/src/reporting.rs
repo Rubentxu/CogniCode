@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cognicode_core::application::sandbox_failure::FailureClass;
-use cognicode_core::sandbox_core::artifacts::{OutcomeKind, ScenarioResult, Summary, pass_rate};
+use cognicode_sandbox::sandbox_core::artifacts::{OutcomeKind, ScenarioResult, Summary, pass_rate};
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -351,7 +351,7 @@ mod tests {
 
     use super::*;
     use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
-    use cognicode_core::sandbox_core::artifacts::Timing;
+    use cognicode_sandbox::sandbox_core::artifacts::Timing;
 
     fn a_result(outcome: &str, language: &str, tool: &str) -> ScenarioResult {
         ScenarioResult {

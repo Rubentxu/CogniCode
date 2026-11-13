@@ -9,7 +9,6 @@ pub use cognicode_core::application;
 pub use cognicode_core::domain;
 pub use cognicode_core::infrastructure;
 pub use cognicode_core::interface;
-pub use cognicode_core::sandbox_core;
 
 // Re-export commonly used types
 pub use anyhow;

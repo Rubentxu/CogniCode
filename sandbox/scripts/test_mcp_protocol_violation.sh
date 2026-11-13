@@ -37,7 +37,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MCP_CORE="$REPO_ROOT/crates/cognicode-core/src/sandbox_core/mcp_core.rs"
+MCP_CORE="$REPO_ROOT/crates/cognicode-sandbox/src/mcp_core.rs"
 
 if [ ! -f "$MCP_CORE" ]; then
     echo "FAIL: $MCP_CORE not found"
