@@ -178,6 +178,14 @@ pub trait SymbolSearch: Send + Sync {
     /// Index (or re-index) one file.
     fn index_file(&self, path: &std::path::Path) -> AppResult<()>;
 
+    /// Forget every symbol the index holds for `path`.
+    ///
+    /// The counterpart of [`index_file`](Self::index_file) for a file that
+    /// is gone: an index that is told about new files and never about
+    /// deleted ones keeps answering for code that no longer exists. The path
+    /// is the one the file was indexed under.
+    fn forget_file(&self, path: &std::path::Path);
+
     /// Symbols matching `query`, best first.
     fn search(
         &self,

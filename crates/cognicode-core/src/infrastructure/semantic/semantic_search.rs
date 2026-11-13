@@ -6,6 +6,7 @@
 #![allow(clippy::len_zero)]
 
 use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
 use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
@@ -80,9 +81,10 @@ impl Ord for SearchResult {
 
 /// Global search index for fast lookups
 pub struct SearchIndex {
-    /// Map from file path to symbols in that file
-    symbols_by_file: DashMap<String, Vec<IndexedSymbol>>,
-    /// All symbols indexed
+    /// The entries each file contributed, by the file's name: what has to go
+    /// when the file is indexed again or forgotten.
+    entries_by_file: DashMap<String, Vec<String>>,
+    /// All symbols indexed, by the identity of the symbol.
     all_symbols: DashMap<String, IndexedSymbol>,
 }
 
@@ -94,53 +96,68 @@ struct IndexedSymbol {
     location: Location,
 }
 
+/// The identity an entry has in the index: `{file}:{name}:{line}`.
+///
+/// The grammar belongs to [`SymbolFqn`], the same one the graph writes for
+/// its symbols, so the index and the graph cannot disagree about which
+/// symbols are the same one. The file is the one the caller indexed the entry
+/// under, because that is the name the entry is forgotten by: a reader that
+/// stamped its symbols with a placeholder place must not make two files
+/// collide.
+fn entry_identity(file_path: &str, symbol: &Symbol) -> String {
+    SymbolFqn::from_legacy_side(file_path, symbol.name(), symbol.location().line()).assemble()
+}
+
 impl SearchIndex {
     /// Creates a new search index
     pub fn new() -> Self {
         Self {
-            symbols_by_file: DashMap::new(),
+            entries_by_file: DashMap::new(),
             all_symbols: DashMap::new(),
         }
     }
 
-    /// Indexes a file's symbols
+    /// Indexes a file's symbols, replacing whatever the index held for it.
+    ///
+    /// A file that is indexed again declares what it declares now: a symbol
+    /// it no longer declares (renamed, moved, deleted) must stop being
+    /// searchable, so the previous entries go first.
     pub fn index_file(&self, file_path: &str, symbols: Vec<Symbol>) {
-        let indexed: Vec<IndexedSymbol> = symbols
+        self.clear_file(file_path);
+
+        let identities: Vec<String> = symbols
             .into_iter()
             .map(|s| {
-                let key = format!(
-                    "{}:{}:{}",
-                    s.name(),
-                    s.location().line(),
-                    s.location().column()
+                let identity = entry_identity(file_path, &s);
+                self.all_symbols.insert(
+                    identity.clone(),
+                    IndexedSymbol {
+                        name: s.name().to_string(),
+                        name_lower: s.name().to_lowercase(),
+                        kind: *s.kind(),
+                        location: s.location().clone(),
+                    },
                 );
-                let indexed = IndexedSymbol {
-                    name: s.name().to_string(),
-                    name_lower: s.name().to_lowercase(),
-                    kind: *s.kind(),
-                    location: s.location().clone(),
-                };
-                self.all_symbols.insert(key, indexed.clone());
-                indexed
+                identity
             })
             .collect();
 
-        self.symbols_by_file.insert(file_path.to_string(), indexed);
+        self.entries_by_file
+            .insert(file_path.to_string(), identities);
     }
 
-    /// Clears the index for a file
+    /// Forgets every entry indexed under `file_path`.
     pub fn clear_file(&self, file_path: &str) {
-        if let Some(symbols) = self.symbols_by_file.remove(file_path) {
-            for s in symbols.1 {
-                let key = format!("{}:{}:{}", s.name, s.location.line(), s.location.column());
-                self.all_symbols.remove(&key);
+        if let Some((_, identities)) = self.entries_by_file.remove(file_path) {
+            for identity in identities {
+                self.all_symbols.remove(&identity);
             }
         }
     }
 
     /// Clears the entire index
     pub fn clear(&self) {
-        self.symbols_by_file.clear();
+        self.entries_by_file.clear();
         self.all_symbols.clear();
     }
 
@@ -324,6 +341,15 @@ impl SemanticSearchService {
         self.index.index_file(file_path, symbols);
     }
 
+    /// Forgets every symbol indexed for `file_path`.
+    ///
+    /// `file_path` is the name the file was indexed under: the same
+    /// `to_string_lossy` form [`index_file_from_path`](Self::index_file_from_path)
+    /// and the incremental routes use.
+    pub fn forget_file(&self, file_path: &Path) {
+        self.index.clear_file(&file_path.to_string_lossy());
+    }
+
     /// Indexes a single file from path
     pub fn index_file_from_path(&self, file_path: &Path) -> Result<(), String> {
         self.index_file_from_path_timed(file_path).map(|_| ())
@@ -415,6 +441,10 @@ impl crate::application::ports::SymbolSearch for SemanticSearchService {
     fn index_file(&self, path: &Path) -> crate::application::AppResult<()> {
         SemanticSearchService::index_file_from_path(self, path)
             .map_err(|e| crate::application::ports::parser_failure("indexing a file", e))
+    }
+
+    fn forget_file(&self, path: &Path) {
+        SemanticSearchService::forget_file(self, path);
     }
 
     fn search(&self, query: &SymbolSearchQuery) -> Vec<crate::domain::aggregates::symbol::Symbol> {
@@ -634,5 +664,152 @@ mod tests {
         // Exact should come first
         assert_eq!(sorted[0].symbol.name(), "b");
         assert_eq!(sorted[0].match_type, MatchType::Exact);
+    }
+
+    /// The names the index answers for `query`, as `(name, file)` pairs.
+    fn found(index: &SearchIndex, query: &str) -> Vec<(String, String)> {
+        let mut hits: Vec<(String, String)> = index
+            .search(&SymbolSearchQuery {
+                query: query.to_string(),
+                kinds: vec![],
+                max_results: 50,
+            })
+            .into_iter()
+            .map(|hit| {
+                (
+                    hit.symbol.name().to_string(),
+                    hit.symbol.location().file().to_string(),
+                )
+            })
+            .collect();
+        hits.sort();
+        hits
+    }
+
+    fn function(name: &str, file: &str, line: u32, column: u32) -> Symbol {
+        Symbol::new(
+            name,
+            SymbolKind::Function,
+            Location::new(file, line, column),
+        )
+    }
+
+    /// Indexing a file again replaces what the index knew of it. A symbol the
+    /// file no longer declares must not stay searchable: the index would keep
+    /// answering for code that is not there.
+    #[test]
+    fn a_renamed_symbol_is_not_searchable_after_the_file_is_indexed_again() {
+        let index = SearchIndex::new();
+        index.index_file("src/a.rs", vec![function("old_name", "src/a.rs", 3, 0)]);
+        assert_eq!(
+            found(&index, "old_name").len(),
+            1,
+            "the premise: it was indexed"
+        );
+
+        // The same declaration, renamed: the position does not change, the name does.
+        index.index_file("src/a.rs", vec![function("new_name", "src/a.rs", 3, 0)]);
+
+        assert!(
+            found(&index, "old_name").is_empty(),
+            "the file no longer declares `old_name`, and the index still finds it: {:?}",
+            found(&index, "old_name")
+        );
+        assert_eq!(found(&index, "new_name").len(), 1);
+        assert_eq!(
+            index.len(),
+            1,
+            "one symbol in the file, one entry in the index"
+        );
+    }
+
+    /// A symbol that moved to another line is the same case with the position
+    /// changed instead of the name.
+    #[test]
+    fn a_symbol_that_moved_is_found_once_after_the_file_is_indexed_again() {
+        let index = SearchIndex::new();
+        index.index_file("src/a.rs", vec![function("helper", "src/a.rs", 3, 0)]);
+        index.index_file("src/a.rs", vec![function("helper", "src/a.rs", 9, 0)]);
+
+        assert_eq!(
+            found(&index, "helper").len(),
+            1,
+            "`helper` is declared once and is listed {} times: {:?}",
+            found(&index, "helper").len(),
+            found(&index, "helper")
+        );
+        assert_eq!(index.len(), 1);
+    }
+
+    /// Two files that declare a symbol with the same name at the same line and
+    /// column are two symbols. The identity of a symbol includes its file.
+    #[test]
+    fn two_files_with_a_symbol_at_the_same_line_and_column_stay_two_results() {
+        let index = SearchIndex::new();
+        index.index_file("src/a.rs", vec![function("new", "src/a.rs", 5, 4)]);
+        index.index_file("src/b.rs", vec![function("new", "src/b.rs", 5, 4)]);
+
+        assert_eq!(
+            found(&index, "new"),
+            vec![
+                ("new".to_string(), "src/a.rs".to_string()),
+                ("new".to_string(), "src/b.rs".to_string()),
+            ],
+            "the second file overwrote the first one in the index"
+        );
+        assert_eq!(index.len(), 2);
+    }
+
+    /// Forgetting one file leaves the other one alone, even when their symbols
+    /// share a name, a line and a column.
+    #[test]
+    fn clearing_a_file_does_not_forget_the_symbols_of_another_file() {
+        let index = SearchIndex::new();
+        index.index_file("src/a.rs", vec![function("new", "src/a.rs", 5, 4)]);
+        index.index_file("src/b.rs", vec![function("new", "src/b.rs", 5, 4)]);
+
+        index.clear_file("src/a.rs");
+
+        assert_eq!(
+            found(&index, "new"),
+            vec![("new".to_string(), "src/b.rs".to_string())],
+            "clearing `src/a.rs` took the symbol of `src/b.rs` with it"
+        );
+    }
+
+    /// The file a caller names when it indexes is the file the entries belong
+    /// to, even if a reader stamped its symbols with another place: the entry
+    /// can be forgotten by the name it was indexed under.
+    #[test]
+    fn a_file_is_forgotten_by_the_name_it_was_indexed_under() {
+        let index = SearchIndex::new();
+        index.index_file("src/a.rs", vec![function("only_here", "source", 2, 0)]);
+        index.index_file("src/b.rs", vec![function("only_here", "source", 2, 0)]);
+        assert_eq!(index.len(), 2, "two files, two entries");
+
+        index.clear_file("src/a.rs");
+
+        assert_eq!(index.len(), 1);
+        index.clear_file("src/b.rs");
+        assert!(index.is_empty());
+    }
+
+    /// The service forgets a file as a whole, and says so through the port the
+    /// application depends on.
+    #[test]
+    fn the_service_forgets_a_deleted_file() {
+        use crate::application::ports::SymbolSearch;
+
+        let service = SemanticSearchService::new();
+        service.index_symbols(
+            "src/gone.rs",
+            vec![function("vanished", "src/gone.rs", 1, 0)],
+        );
+        service.index_symbols("src/kept.rs", vec![function("stays", "src/kept.rs", 1, 0)]);
+
+        SymbolSearch::forget_file(&service, Path::new("src/gone.rs"));
+
+        assert!(found(service.index(), "vanished").is_empty());
+        assert_eq!(found(service.index(), "stays").len(), 1);
     }
 }
