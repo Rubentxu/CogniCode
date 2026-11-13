@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-13, sobre `5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a` (la
+> **Snapshot**: 2026-11-13, sobre `5843fce6ce720e398b2f939608d202879fdc6c84` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -375,34 +375,31 @@
 > bloques de diez tareas, con prueba focal por tarea y verificación completa
 > por bloque (`ba0ccad2`, `f62dd0aa`). El primer bloque cerró su gate en
 > verde y dejó dos desfases de documentación que los contratos vieron y se
-> corrigieron hacia delante (`5d2dd880`, este snapshot).
+> corrigieron hacia delante (`5d2dd880`, `f74ff490`); su recibo está en el
+> Journal (`54b9787f`). El segundo bloque lleva dos tareas de código: la
+> búsqueda de contenido, el listado de directorio y `retrieve_and_verify`
+> publican los ficheros que no pudieron leer en vez de callarlos
+> (`94f21d0b`, `55aba4f5`), y la poda de directorios por nombre es una
+> limitación documentada en el README y no un silencio (`5843fce6`).
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`a6fd6b181283e2d0bc01737da369c24f5c130779` → `5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a`)
+## Qué cambió desde el snapshot anterior (`5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a` → `5843fce6ce720e398b2f939608d202879fdc6c84`)
 
-Entre una punta y otra entraron **13 commits** (`git rev-list --count a6fd6b181283e2d0bc01737da369c24f5c130779..5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a`).
+Entre una punta y otra entraron **5 commits** (`git rev-list --count 5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a..5843fce6ce720e398b2f939608d202879fdc6c84`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
 cuando la hay, en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera y la arquitectura del SDK declara `request_limits` | `afb92a26` (TASK-238, #822) | Los dos contratos que estaban rojos en `main` vuelven a verde sin relajar ninguno; el recibo no lleva medición de producto. |
-| Los recorridos del árbol pasan por el dueño del conjunto de ficheros | `781362b7` (TASK-225, #823) | Ratchet nuevo: 24 recorridos en 15 ficheros y 3 listas de exclusión en línea, que sólo pueden bajar; 11 tests nuevos (índice ligero frente a `build_graph`, y el fichero ilegible como hueco); allowlist de CR-06 52 → 51. |
-| El flujo de trabajo es por bloques de diez tareas | `ba0ccad2` (TASK-241, #824) | Documental: el contador se deriva de `git` y no hay fichero de estado; desde `e0f8e32b` contaba 4 (224, 225, 237, 238). |
-| El paso de mutantes compila de forma incremental y el lote mide su diff | `48276ae0` (TASK-232, #825) | `cognicode-graph-algos`, 627 mutantes en serie: 59 min 49 s → 39 min; la fase Build baja de 3,63 a 1,48 s por mutante; los 627 veredictos coinciden (618 atrapados, 9 inviables, 0 supervivientes). Modo diff: un lote de una línea mide 7 mutantes en 31 s. |
-| El índice de búsqueda lee un fichero como lo lee el grafo | `524b5c09` (TASK-239, #826) | RED: el camino genérico declaraba 0 símbolos para `terraform-iac/main.tf` y para `ansible-playbook/site.yml`; el lector del grafo, 19 y 5. Ahora hay un solo dueño (`semantic_facts_of`). |
-| El contador del bloque no cuenta las tareas sólo documentales | `f62dd0aa` (TASK-242, #827) | Desde `e0f8e32b` devolvía 7 con 5 tareas de código; con `grep -v '^docs'` devuelve 5. |
-| Ningún test ni contrato escribe en el árbol de trabajo | `8ea4f46b` (TASK-234, #828) | Chivato `scripts/ci/tree_witness.py` con 11 comprobaciones de contrato; el contrato SBOM trabaja sobre una copia; sale el grupo `sbom-workspace` de nextest; 15 artefactos antiguos ignorados se movieron fuera del árbol (no se borraron). |
-| `sandbox_core` sale del core y se retira código muerto verificado | `ab3bab63` (TASK-233, #829) | 7 módulos y 7 tests de integración pasan a `cognicode-sandbox`; el validador de entrada aceptaba `../etc/passwd` tras moverse o clonarse (2 tests en rojo antes, verdes después); `touch-core` 90,3 → 83,5 s, y el `cold` empeora de 180,5 a 211,4 s sin atribuirse. El instrumento `build-time.sh` estaba roto en `main` y se arregla. |
-| `find_usages` publica los ficheros que no pudo leer | `a0af5a30` (TASK-240, #830) | Un fichero ilegible dejaba «no usages found» como un árbol limpio; ahora `coverage: partial` y `not searched: <ruta> (<motivo>)`, en el MCP y en el CLI; el campo es aditivo (un payload anterior se lee `unknown`); `analysis_service.rs` 2029 → 1902 líneas de producción. |
-| La poda de `WalkFilter` por nombre de directorio está decidida y fijada | `49d69c0e` (TASK-244, #831) | Se mantiene: 5 tests de integración; en `sandbox/repos`, `clap_complete/src/env` (2 de 330 ficheros `.rs`) y `chalk/source/vendor` (6 ficheros) quedan fuera del grafo con cobertura `complete`; dos mutaciones sobre `matches_any_component`, atrapadas. |
-| Cada lector del árbol dice qué ficheros lee | `d35642b0` (TASK-243, #832) | 7 tests de integración sobre un solo árbol fijan el conjunto de los cuatro lectores; la muestra de complejidad del CLI pasa de «los 5 primeros en el orden del SO» a «los 5 primeros por nombre»; `control_query` publica sus ficheros ilegibles. |
-| La búsqueda de usos pide el árbol al servicio | `21ec37c5` (TASK-246, #833) | RED: 3 fallos de autoalojamiento y 4 violaciones de CR-06 provocados por TASK-240; 13/13 después; la allowlist de CR-06 queda en 34 → 34 y `analysis_service.rs` en 1.950 líneas de producción. |
-| La arquitectura del SDK nombra los módulos raíz de `cognicode-sandbox` | `5d2dd880` (TASK-249, #834) | Documental: `test_sdk_architecture.py` 29/29; el documento decía que `cognicode-sandbox` no tiene `src/lib.rs` desde que `sandbox_core` vive allí. |
+| El snapshot se regenera tras el primer bloque | `f74ff490` (TASK-250, #835) | Documental: el único fichero tocado es `docs/roadmap/CURRENT.md`; el ratchet del snapshot vuelve a verde. |
+| El recibo del primer bloque entra en el Journal | `54b9787f` (TASK-251, #836) | Documental: gate rc=0 con 3.971 unitarios y 1.596 de integración (2 omitidos); mutantes `SKIP` (radio vacío); contratos rc=1 por dos desfases de documentación, corregidos hacia delante. |
+| La búsqueda de contenido y el listado de directorio publican lo que no pudieron leer | `94f21d0b` (TASK-247, #837) | RED: 8 tests nuevos fallaban con `<no coverage in the answer>` (12 pasaban); 28/28 después, con los 7 de caracterización sin tocar sus expectativas. Un directorio o fichero ilegible da ahora `coverage: partial` con la causa; un fichero que no es UTF-8 válido no es un hueco (decisión fijada por test). `file_operations.rs` 2216 → 2170 líneas de producción; CR-06 34 → 34. |
+| `retrieve_and_verify` publica los ficheros que la búsqueda no pudo leer | `55aba4f5` (TASK-252, #838) | RED: 4 de 6 tests nuevos fallaban; 6/6 después y 37/37 en el módulo entero. El campo es aditivo (un payload anterior se lee `unknown`) y reutiliza `read_coverage`, sin segunda fuente de verdad; una mutación del eslabón servicio→DTO mata 2 tests. |
+| La poda por nombre de directorio es una limitación documentada | `5843fce6` (TASK-245, #839) | Documental: README y documentación de `source_files.rs`; 5 de los 25 repositorios de `sandbox/` tienen un directorio de nombre podado en la raíz, así que nombrar cada poda volvería `partial` una quinta parte del corpus; opción reversible, un test la fija. |
 
 ## Release: la última publicada es la v0.103.1
 
@@ -1247,6 +1244,10 @@ mutantes `SKIP`, porque el radio de mutación estaba vacío y al crate del
 calendario no le tocaba el turno; `npm test` y `cargo fmt` + `clippy` rc=0; contratos
 rc=1 por dos desfases de documentación —la arquitectura del SDK y este
 snapshot—, corregidos hacia delante en TASK-249 y TASK-250.
+
+El segundo bloque parte de `f74ff490` y cuenta 2 de 10 (TASK-247 y TASK-252);
+TASK-245 es documental y no cuenta. Entre cierres de bloque sólo se afirma que
+cada tarea cumple su criterio, no que `main` esté verde.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
