@@ -196,7 +196,43 @@ fn no_test_file_is_named_after_a_retired_class() {
     );
 }
 
-/// There is no GitHub Actions workflow in this repository.
+/// The one workflow the hosting runs: the server-side projection of the
+/// message policy.
+///
+/// The squash commit is composed by the hosting from the title and the body
+/// of the pull request, so no local hook ever sees the message that enters
+/// `main`. The guard judges that message there. It builds nothing and tests
+/// nothing, which is what keeps it from being an orchestrator.
+const POLICY_GUARD_WORKFLOW: &str = "policy-guard.yml";
+
+/// What the policy guard must not run: the work the gate owns.
+const GATE_WORK: &[&str] = &["cargo", "nextest", "test-gate", "npm ", "mutants"];
+
+/// What in `workflows` is a second orchestrator.
+///
+/// Anything but the policy guard is one, and so is a policy guard that runs
+/// the gate's work. A missing directory has nothing to report.
+fn second_orchestrators(workflows: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(workflows) else {
+        return Vec::new();
+    };
+    let mut offenders = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name != POLICY_GUARD_WORKFLOW {
+            offenders.push(format!("{name}: not the policy guard"));
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+        for work in GATE_WORK.iter().filter(|work| text.contains(**work)) {
+            offenders.push(format!("{name}: runs `{}`", work.trim()));
+        }
+    }
+    offenders.sort();
+    offenders
+}
+
+/// There is no GitHub Actions orchestrator in this repository.
 ///
 /// The repository had two orchestrators for a while — the GitHub Actions
 /// workflows and the PipelineK lanes — and the decision was to have none:
@@ -205,6 +241,10 @@ fn no_test_file_is_named_after_a_retired_class() {
 /// image's behaviour rather than the machine's, and it would run behind the
 /// authority of a change that the gate already has.
 ///
+/// The message-policy guard is the one declared exception
+/// ([`POLICY_GUARD_WORKFLOW`]): it checks what the hosting is about to write
+/// and runs none of the gate's work, so it is not a lane.
+///
 /// This guarantee used to live in `scripts/ci/test_no_actions_workflows.py`,
 /// a contract that watched a directory the CI apparatus used to fill. It
 /// went with the rest of that apparatus, and the guarantee did not go with
@@ -212,14 +252,59 @@ fn no_test_file_is_named_after_a_retired_class() {
 /// because a rule that only exists in the file it protects is a rule that
 /// stops being checked when the file is gone.
 #[test]
-fn there_are_no_github_actions_workflows() {
+fn the_only_github_workflow_is_the_message_policy_guard() {
     let workflows = repo_root().join(".github/workflows");
+    let offenders = second_orchestrators(&workflows);
     assert!(
-        !workflows.exists(),
-        "the GitHub Actions workflows are back at {}; this repository has one \
-         orchestrator and it is the person who runs `scripts/test-gate.sh`",
+        offenders.is_empty(),
+        "a second orchestrator is back at {}: {offenders:?}; this repository \
+         has one orchestrator and it is the person who runs \
+         `scripts/test-gate.sh`; the only workflow is `{POLICY_GUARD_WORKFLOW}`, \
+         which judges the message of the squash and runs none of the gate's work",
         workflows.display()
     );
+}
+
+#[test]
+fn a_workflow_besides_the_policy_guard_is_a_second_orchestrator() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(
+        dir.path().join(POLICY_GUARD_WORKFLOW),
+        "run: bash guard.sh\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("pr-ci.yml"), "run: bash guard.sh\n").unwrap();
+
+    assert_eq!(
+        second_orchestrators(dir.path()),
+        vec!["pr-ci.yml: not the policy guard".to_string()]
+    );
+}
+
+#[test]
+fn a_policy_guard_that_runs_the_gates_work_is_a_second_orchestrator() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    std::fs::write(
+        dir.path().join(POLICY_GUARD_WORKFLOW),
+        "run: cargo nextest run\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        second_orchestrators(dir.path()),
+        vec![
+            "policy-guard.yml: runs `cargo`".to_string(),
+            "policy-guard.yml: runs `nextest`".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn a_repository_without_workflows_has_no_second_orchestrator() {
+    let dir = tempfile::tempdir().expect("a temporary directory");
+
+    assert!(second_orchestrators(&dir.path().join("workflows")).is_empty());
+    assert!(second_orchestrators(dir.path()).is_empty());
 }
 
 // ===========================================================================

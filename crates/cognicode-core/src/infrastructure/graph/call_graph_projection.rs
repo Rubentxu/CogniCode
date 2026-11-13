@@ -56,7 +56,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use petgraph::Direction;
-use petgraph::algo::{astar, has_path_connecting, tarjan_scc, toposort};
+use petgraph::algo::{astar, has_path_connecting, is_cyclic_directed, tarjan_scc, toposort};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::unionfind::UnionFind;
@@ -312,13 +312,10 @@ impl CallGraphProjection {
     /// An empty graph returns `false`. A self-loop on a single node counts
     /// as a cycle.
     pub fn detect_cycles(&self) -> bool {
-        // A cycle exists if any SCC has more than one node, OR a singleton
-        // SCC corresponds to a node that has a self-loop edge.
-        self.graph.node_indices().any(|ni| {
-            self.graph
-                .edges_directed(ni, Direction::Outgoing)
-                .any(|edge| edge.target() == ni)
-        })
+        // `is_cyclic_directed` counts a self-loop as a cycle and finds the
+        // mutual recursion of two symbols, which a look at the self-loop
+        // edges alone does not.
+        is_cyclic_directed(&self.graph)
     }
 
     /// Partition the graph into connected components under the **undirected**
@@ -1328,6 +1325,40 @@ mod tests {
         assert_eq!(sccs.len(), 1);
         assert_eq!(sccs[0], vec![id("A")]);
         assert!(!projection.detect_cycles());
+    }
+
+    /// `detect_cycles` answers the question its name and its port document:
+    /// does the graph contain a directed cycle. Two functions that call each
+    /// other are the smallest one.
+    #[test]
+    fn detect_cycles_sees_two_symbols_that_call_each_other() {
+        let g = build_graph(|g| {
+            g.add_symbol(sym("A"));
+            g.add_symbol(sym("B"));
+            add_edge(g, "A", "B", DependencyType::Calls);
+            add_edge(g, "B", "A", DependencyType::Calls);
+        });
+        let projection = CallGraphProjection::from_call_graph(&g);
+
+        assert!(
+            projection.detect_cycles(),
+            "A -> B -> A is a cycle, whatever the topological sort says of it"
+        );
+        assert!(
+            projection.topological_sort().is_err(),
+            "the sort and the detector agree on the same graph"
+        );
+    }
+
+    #[test]
+    fn detect_cycles_sees_a_symbol_that_calls_itself() {
+        let g = build_graph(|g| {
+            g.add_symbol(sym("A"));
+            add_edge(g, "A", "A", DependencyType::Calls);
+        });
+        let projection = CallGraphProjection::from_call_graph(&g);
+
+        assert!(projection.detect_cycles());
     }
 
     // 3.7

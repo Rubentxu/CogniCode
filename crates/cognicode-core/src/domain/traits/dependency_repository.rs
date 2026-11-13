@@ -7,7 +7,6 @@
 use std::collections::HashSet;
 
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-use crate::domain::services::CycleDetectionResult;
 use crate::domain::value_objects::DependencyType;
 
 /// Repository for managing symbol dependencies
@@ -48,9 +47,6 @@ pub trait DependencyRepository: Send + Sync {
     /// Finds all symbols that this symbol depends on (directly or transitively)
     fn find_dependencies(&self, id: &SymbolId) -> HashSet<SymbolId>;
 
-    /// Detects cycles in the dependency graph
-    fn detect_cycles(&self) -> CycleDetectionResult;
-
     /// Checks if there's a path between two symbols
     fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool;
 
@@ -68,7 +64,6 @@ pub trait DependencyRepository: Send + Sync {
 mod tests {
     use super::*;
     use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
-    use crate::domain::services::CycleDetectionResult;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
     use std::collections::{HashMap, HashSet};
 
@@ -144,14 +139,6 @@ mod tests {
                 .get(id)
                 .map(|deps| deps.iter().map(|(id, _)| id.clone()).collect())
                 .unwrap_or_default()
-        }
-
-        fn detect_cycles(&self) -> CycleDetectionResult {
-            CycleDetectionResult {
-                has_cycles: false,
-                cycles: vec![],
-                total_sccs: 0,
-            }
         }
 
         fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool {
