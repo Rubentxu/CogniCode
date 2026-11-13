@@ -3541,7 +3541,7 @@ pub mod program_analysis_handlers;
 pub mod retired;
 
 use crate::interface::path_authorisation::{
-    anchor_and_validate, authorise_directory, authorise_file_path, resolve_file_path,
+    anchor_and_validate, authorise_directory, authorise_file_path,
 };
 
 // Findings handlers — the answer to «¿por qué se reporta este hallazgo?».
