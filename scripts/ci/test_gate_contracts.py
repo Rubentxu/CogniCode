@@ -569,6 +569,155 @@ def test_the_gate_does_not_hardcode_the_package_it_mutates() -> None:
         )
 
 
+def _mutant_mode(root: Path, base: str, every: str, marker: str, calendar: bool = True) -> str:
+    extra = ["--base", base, "--affordable", "alpha"]
+    if calendar:
+        extra += [
+            "--calendar-crate",
+            "alpha",
+            "--calendar-every",
+            every,
+            "--calendar-marker",
+            marker,
+        ]
+    answer, _ = _radius(root, *extra)
+    return answer.get("mutant-mode", "")
+
+
+def test_the_batch_measures_its_diff_and_the_calendar_measures_everything() -> None:
+    """A batch pays for the mutants of the lines it changed; the whole crate is
+    measured in the turn of the calendar, and every time the selector cannot
+    be sure the calendar is not due. The mode is the selector's answer, so the
+    gate has no branch of its own that can decide differently."""
+    with tempfile.TemporaryDirectory(prefix="gate-scope-") as tmp:
+        root = Path(tmp)
+        base, head = _fixture(root)
+        check(
+            _mutant_mode(root, base, "3", base) == "diff",
+            "un lote cuyo calendario espera deberia medir solo su diff",
+        )
+        check(
+            _mutant_mode(root, base, "2", base) == "full",
+            "el turno del calendario deberia medir el crate entero, no el diff",
+        )
+        check(
+            _mutant_mode(root, base, "50", head) == "full",
+            "un calendario que no se puede contar deberia medir el crate "
+            "entero: una duda no puede significar menos medicion",
+        )
+        check(
+            _mutant_mode(root, base, "50", base, calendar=False) == "full",
+            "sin calendario declarado nada vuelve a medir el crate entero, asi "
+            "que el diff no puede ser el unico modo",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="gate-scope-") as tmp:
+        root = Path(tmp)
+        _fixture(root)
+        answer, _ = _radius(
+            root,
+            "--base",
+            "no-existe-este-commit",
+            "--affordable",
+            "alpha",
+            "--calendar-crate",
+            "alpha",
+            "--calendar-every",
+            "50",
+            "--calendar-marker",
+            "no-existe-este-commit",
+        )
+        check(
+            answer.get("mutant-mode") == "full",
+            "un radio indeciso no tiene diff contra el que medir: el modo debe "
+            f"ser el crate entero y fue {answer.get('mutant-mode')!r}",
+        )
+
+
+def _gate_mutants_command() -> str:
+    """The `run_step "mutants" env ... cargo mutants -j ...` invocation that
+    MEASURES, with its continuations. It starts at `run_step` because the
+    environment the mutants run in is declared in front of `cargo`; the version
+    probe and the `--list` count are not it."""
+    lines = GATE.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if re.search(r'run_step\s+"mutants"\s+env\b', line) and not line.strip().startswith("#"):
+            command = [line]
+            while command[-1].rstrip().endswith("\\") and index + 1 < len(lines):
+                index += 1
+                command.append(lines[index])
+            return "\n".join(command)
+    return ""
+
+
+def test_the_gate_hands_the_diff_of_the_batch_to_the_mutants() -> None:
+    """The diff is built against the base of the batch, which the selector
+    resolved; a second resolution in the gate would be a second base."""
+    text = GATE.read_text(encoding="utf-8")
+    check(
+        "radius_field mutant-mode" in text,
+        "scripts/test-gate.sh no lee `mutant-mode` del selector: el modo de "
+        "los mutantes se decide en dos sitios",
+    )
+    check(
+        "--in-diff" in text,
+        "scripts/test-gate.sh no pasa `--in-diff` a cargo-mutants: cada lote "
+        "paga el crate entero",
+    )
+    check(
+        re.search(r"git diff[^\n]*\$\{R_BASE\}", text) is not None,
+        "el diff del lote no se calcula contra `R_BASE`, la base que resolvio "
+        "el selector",
+    )
+    # A mutant count that could not be taken is not a count of zero: only a
+    # zero that was SEEN may skip the measurement.
+    check(
+        'MUTANT_COUNT}" = "0"' in text and "MUTANT_LIST_RC" in text,
+        "scripts/test-gate.sh salta la medicion con un conteo de mutantes que "
+        "no se pudo tomar: solo un cero visto puede saltarla",
+    )
+
+
+def test_the_mutation_step_rebuilds_incrementally_without_touching_the_machine() -> None:
+    """Each mutant is one rebuild of the mutated library. The machine config
+    builds it from scratch and routes it through sccache, which refuses
+    incremental compilation; measured on `cognicode-graph-algos` that is
+    3.5-3.7 s against 0.9-1.1 s. The two settings are only legitimate where
+    they cannot reach another build: in the environment of the one command,
+    over its own target directory (AGENTS.md, rule 8). A profile in the
+    workspace or a change in `~/.cargo/config.toml` would invalidate the cache
+    every other project of the machine shares."""
+    command = _gate_mutants_command()
+    check(bool(command), "scripts/test-gate.sh no tiene una linea de `cargo mutants`")
+    check(
+        re.search(r"(^|\s)CARGO_INCREMENTAL=1(\s|$)", command) is not None,
+        "el paso de mutantes no pide compilacion incremental: cada mutante "
+        "reconstruye la biblioteca desde cero",
+    )
+    check(
+        re.search(r"(^|\s)RUSTC_WRAPPER=(\s|$)", command) is not None,
+        "el paso de mutantes deja el `rustc-wrapper` de la maquina (sccache), "
+        "que prohibe la compilacion incremental: el ajuste anterior no surte efecto",
+    )
+    check(
+        re.search(r'(^|\s)CARGO_TARGET_DIR="\$\{MUTANTS_TARGET_DIR\}"', command) is not None,
+        "el ajuste incremental solo es legitimo sobre el directorio de destino "
+        "propio del paso (regla 8): sin el, escribe en la cache compartida",
+    )
+
+    text = GATE.read_text(encoding="utf-8").replace(command, "")
+    outside = [
+        line
+        for line in text.splitlines()
+        if re.match(r"\s*(export\s+)?(CARGO_INCREMENTAL|RUSTC_WRAPPER)=", line)
+    ]
+    check(
+        not outside,
+        "`CARGO_INCREMENTAL` o `RUSTC_WRAPPER` se fijan fuera del comando de "
+        f"mutantes y alcanzan a los demas pasos del gate: {outside}",
+    )
+
+
 # --- Parte 2: el paso de mutantes ---------------------------------------------
 
 

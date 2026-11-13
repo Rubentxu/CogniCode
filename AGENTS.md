@@ -169,6 +169,26 @@ diez), **la edad de un hueco de mutación queda acotada**, y el gate lo dice en 
 cuando el paso no se midió: un paso que no se midió y no lo dice es un gate que calla,
 y un gate que calla es un gate en el que nadie puede confiar.
 
+**El modo de los mutantes.** Dentro de su radio, un lote que no es el turno del calendario
+mide **solo los mutantes de las líneas que cambió** (`--in-diff` contra la misma base que
+resolvió el selector; el modo lo decide `scripts/gate_scope.py`, no el gate). El crate
+entero se mide en su turno, y ante cualquier duda (base sin resolver, diff ilegible) el
+modo es el crate entero. Un diff sin líneas mutables selecciona cero mutantes y el gate lo
+dice: una medición de nada no es una medición que no encontró nada. Lo que cuesta un mutante
+es reconstruir la biblioteca que muta, y la configuración de la máquina la reconstruye desde
+cero (`incremental = false`, y sccache, que rechaza la compilación incremental, como
+wrapper): 3,5–3,7 s medidos en `cognicode-graph-algos` tras tocar `lib.rs`, frente a 0,9–1,1 s
+con `CARGO_INCREMENTAL=1` y el wrapper apagado. El paso de mutantes fija **esas dos cosas en
+su propio comando** y sobre su propio directorio de destino (regla 8): ningún otro build de la
+máquina lee lo que escribe, y `~/.cargo/config.toml` no se toca.
+`scripts/ci/test_gate_contracts.py` vigila que sigan ahí y que no se fijen fuera de ese
+comando. Medido el 2026-11-13 sobre el crate entero (627 mutantes, en serie): 59 min 49 s con
+la configuración de la máquina → 39 min con las dos cosas fijadas; la fase Build baja de 3,63 a
+1,48 s por mutante, la de Test se queda en ~2,1–2,3 s, y los 627 veredictos son los mismos
+(618 atrapados, 9 inviables, 0 supervivientes). Descartado con medida: pedir `--lib` y mover los tests dentro de la biblioteca ahorra
+≤0,4 s de 5,7 por mutante (los objetivos de test aparte cuestan poco), y no justifica una
+regla sobre dónde viven los tests.
+
 **Reglas duras**:
 
 1. **Un test es determinista o no es un test.** Sin red, sin `sleep` para sincronizar, sin
