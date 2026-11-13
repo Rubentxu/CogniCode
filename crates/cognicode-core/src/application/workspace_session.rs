@@ -517,6 +517,13 @@ impl WorkspaceSession {
         if let Err(e) = self.ensure_semantic_search().await {
             tracing::warn!("Failed to initialize semantic search for FTS5 sync: {}", e);
         } else {
+            // Forget the files that are gone: an index that hears about new
+            // files and never about deleted ones keeps answering for code
+            // that no longer exists.
+            for rel_path in &deleted_files {
+                self.symbol_search
+                    .forget_file(&self.workspace_root.join(rel_path));
+            }
             // Index new files
             for rel_path in &new_files {
                 let full_path = self.workspace_root.join(rel_path);

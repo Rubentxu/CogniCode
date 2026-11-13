@@ -182,6 +182,9 @@ pub(crate) async fn run(
                 if !delta.is_measured() {
                     symbols_unmeasured += 1;
                 }
+                // The graph forgets the file in the rebuild below; the index
+                // forgets it here, under the name it was indexed under.
+                ctx.semantic_search.forget_file(&full);
                 to_read_again.push(full.clone());
                 changed_abs_paths.push(full);
             }
@@ -225,6 +228,10 @@ pub(crate) async fn run(
                             Err(e) => {
                                 // Parse failure - log at WARN and count as skipped
                                 tracing::warn!("Failed to index modified file {:?}: {}", full, e);
+                                // No reader could read the file as it stands,
+                                // so the index must not keep answering with
+                                // what an older reading of it declared.
+                                ctx.semantic_search.forget_file(&full);
                                 files_skipped += 1;
                                 files_parsed -= 1; // Don't count this as parsed
                             }

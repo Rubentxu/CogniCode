@@ -177,6 +177,8 @@ mod the_same_project_gives_the_same_symbol_surfaces;
 mod the_scan_does_not_delete_what_it_cannot_walk;
 mod the_scan_does_not_erase_what_it_cannot_date;
 mod the_scan_does_not_erase_what_it_cannot_read;
+#[cfg(feature = "persistence")]
+mod the_search_index_follows_the_files;
 mod the_snapshot_carries_what_the_reader_read;
 mod the_specialized_reader_says_what_happened;
 mod the_whole_route_is_the_filtered_route_over_the_root;
