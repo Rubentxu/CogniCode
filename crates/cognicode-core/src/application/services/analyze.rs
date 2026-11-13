@@ -237,16 +237,29 @@ pub fn scan_coverage(
 /// was read is an answer.
 pub fn read_coverage(unread: &[crate::application::dto::UnreadEntry]) -> Coverage {
     use crate::application::dto::UnreadKind;
-    use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+    // Full paths, not a `use`: the architecture evaluator reports a grouped
+    // or aliased import as the bare module, and the allowlist names this
+    // file's coupling as the module's subtree (`per_file_graph::`), which is
+    // how the rest of the file spells it.
     let holes = unread
         .iter()
-        .map(|entry| SkippedFile {
-            path: entry.path.clone(),
-            reason: match entry.kind {
-                UnreadKind::Read => SkipReason::Read(entry.detail.clone()),
-                UnreadKind::Walk => SkipReason::Walk(entry.detail.clone()),
+        .map(
+            |entry| crate::infrastructure::graph::per_file_graph::SkippedFile {
+                path: entry.path.clone(),
+                reason: match entry.kind {
+                    UnreadKind::Read => {
+                        crate::infrastructure::graph::per_file_graph::SkipReason::Read(
+                            entry.detail.clone(),
+                        )
+                    }
+                    UnreadKind::Walk => {
+                        crate::infrastructure::graph::per_file_graph::SkipReason::Walk(
+                            entry.detail.clone(),
+                        )
+                    }
+                },
             },
-        })
+        )
         .collect();
     scan_coverage(holes, true)
 }
