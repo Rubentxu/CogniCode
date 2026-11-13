@@ -903,6 +903,12 @@ pub enum HandlerError {
         candidates: Vec<String>,
     },
 
+    /// The capability behind the tool is not configured in this build or
+    /// session. Published with the code of an internal error: the call was
+    /// well-formed and the product cannot serve it.
+    #[error("Internal error: {0}")]
+    NotConfigured(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -926,23 +932,6 @@ impl From<crate::domain::error::DomainError> for HandlerError {
     }
 }
 
-impl From<crate::interface::mcp::error::InterfaceError> for HandlerError {
-    fn from(err: crate::interface::mcp::error::InterfaceError) -> Self {
-        use crate::interface::mcp::error::InterfaceError;
-        match err {
-            InterfaceError::ToolNotFound(s) => {
-                HandlerError::Internal(format!("tool not found: {}", s))
-            }
-            InterfaceError::InvalidInput(s) => HandlerError::InvalidInput(s),
-            InterfaceError::Security(e) => HandlerError::Security(e),
-            InterfaceError::NotFound(s) => HandlerError::NotFound(s),
-            InterfaceError::Internal(s) => HandlerError::Internal(s),
-            InterfaceError::Domain(e) => HandlerError::Domain(e),
-            InterfaceError::Application(e) => HandlerError::App(e),
-        }
-    }
-}
-
 impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
     fn from(err: HandlerError) -> Self {
         match err {
@@ -961,7 +950,7 @@ impl From<HandlerError> for crate::interface::mcp::schemas::McpError {
             HandlerError::NotFound(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32004, e.to_string())
             }
-            HandlerError::Internal(e) => {
+            HandlerError::Internal(e) | HandlerError::NotConfigured(e) => {
                 crate::interface::mcp::schemas::McpError::new(-32005, e.to_string())
             }
             // The refusal of an ambiguous name carries its candidates as

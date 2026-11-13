@@ -45,6 +45,9 @@ use rmcp::model::{CallToolResult, Content, ToolAnnotations};
 use serde_json::{Map, Value};
 
 use cognicode_core::interface::hateoas::{HandleContext, envelope_for, follow_up_lines};
+use cognicode_core::interface::mcp::error::InterfaceError;
+use cognicode_core::interface::mcp::handlers::HandlerError;
+use cognicode_core::interface::mcp::schemas::McpError;
 
 /// The behaviour hints a tool publishes, derived from its declared authority.
 ///
@@ -105,6 +108,43 @@ pub fn success_result(
     let mut result = CallToolResult::success(content);
     result.structured_content = serde_json::to_value(&envelope).ok();
     result
+}
+
+/// The answer to a tool call that could not do its job, shaped for the wire.
+///
+/// The call itself was well-formed, so the failure travels inside a
+/// successful JSON-RPC answer, marked `isError`. The text block says what
+/// happened, as it always has.
+///
+/// A refusal that carries data (an ambiguous name carries the candidates the
+/// caller can choose from) also publishes it in `structuredContent`, under the
+/// same JSON-RPC error shape the handler layer already uses, so a client
+/// reads the code and the candidates as data instead of parsing the sentence.
+/// A failure without data adds nothing: the text block is all there is, as it
+/// always was.
+pub fn error_result(error: &InterfaceError) -> CallToolResult {
+    let mut result = CallToolResult::error(vec![Content::text(error.to_string())]);
+    result.structured_content = error_data(error);
+    result
+}
+
+/// The failure as data, only when it has data to give.
+///
+/// The code and the data come from the one conversion that owns the code
+/// table (`HandlerError` to `McpError`); this function adds no code of its
+/// own.
+fn error_data(error: &InterfaceError) -> Option<Value> {
+    let InterfaceError::Ambiguous { name, candidates } = error else {
+        return None;
+    };
+    let mcp_error = McpError::from(HandlerError::Ambiguous {
+        name: name.clone(),
+        candidates: candidates.clone(),
+    });
+    mcp_error.data.as_ref()?;
+    serde_json::to_value(&mcp_error)
+        .ok()
+        .map(|error| serde_json::json!({ "error": error }))
 }
 
 /// The payload's own one-line summary, when it carries one.

@@ -3,28 +3,20 @@
 //! Implements ADR-034 decision 3: status classification taxonomy.
 //! Status values: ok, stub, gated, error, missing, skip
 
-use cognicode_core::interface::mcp::error::{InterfaceError, InterfaceResult};
+use cognicode_core::interface::mcp::error::{ErrorKind, InterfaceError, InterfaceResult};
 
 /// Tools known to return STUB responses per ADR-034.
 /// These tools are not yet fully implemented and return placeholder data.
 /// M2 Sprint: all 6 tools now fully implemented (M2.9 complete).
 const STUB_TOOLS: &[&str] = &[];
 
-/// Tools that return gated errors when capability is not configured.
-/// The PG-backed tools (graph_diff, graph_timeline, compare_graph,
-/// ingest) were removed with the full postgres removal (e29-7).
-const GATED_TOOLS: &[&str] = &["generate_contract", "validate_contract"];
-
-/// Gated error message patterns indicating capability not configured.
-const GATED_PATTERNS: &[&str] = &[
-    "not configured",
-    "requires persistence",
-    "requires a persistence layer",
-];
-
 /// Classifies a tool call result into a status label.
 ///
 /// Returns one of: "ok", "stub", "gated", "error", "missing", "skip"
+///
+/// A failure is sorted by its [`ErrorKind`] and by nothing else: the words of
+/// its message never decide the label, so an error that happens to say
+/// "not configured" is not a gated capability.
 ///
 /// # Arguments
 /// * `tool_name` - Name of the tool being classified
@@ -38,22 +30,28 @@ pub fn classify_status(tool_name: &str, result: &InterfaceResult<String>) -> &'s
             }
             "ok"
         }
-        Err(e) => {
-            // missing takes priority - ToolNotFound is a distinct case
-            if matches!(e, InterfaceError::ToolNotFound(_)) {
-                return "missing";
-            }
+        Err(e) => match e.kind() {
+            // A tool the registry does not know is its own case.
+            ErrorKind::ToolNotFound => "missing",
+            // The call was well-formed; the capability behind it is not
+            // configured in this build or session.
+            ErrorKind::NotConfigured => "gated",
+            _ => "error",
+        },
+    }
+}
 
-            // gated: Internal error with configuration message for known gated tools
-            if let InterfaceError::Internal(msg) = e
-                && is_gated_error(tool_name, msg)
-            {
-                return "gated";
-            }
-
-            // All other errors
-            "error"
-        }
+/// The `error_type` label the error counter carries.
+///
+/// The same rule as [`classify_status`] — the kind decides, the message never
+/// does — so the metric and the status label cannot disagree about what a
+/// failure was.
+pub fn error_type(error: &InterfaceError) -> &'static str {
+    match error.kind() {
+        ErrorKind::ToolNotFound => "missing",
+        ErrorKind::Timeout => "timeout",
+        ErrorKind::RateLimited => "rate_limit_exceeded",
+        _ => "error",
     }
 }
 
@@ -88,15 +86,6 @@ fn is_stub_response(tool_name: &str, body: &str) -> bool {
     is_known_stub_tool(tool_name) && has_stub_body_pattern(body)
 }
 
-/// Checks if an error message indicates a gated (not configured) capability.
-/// Gated applies only to known GATED_TOOLS when message contains configuration patterns.
-fn is_gated_error(tool_name: &str, message: &str) -> bool {
-    GATED_TOOLS.contains(&tool_name)
-        && GATED_PATTERNS
-            .iter()
-            .any(|pattern| message.to_lowercase().contains(&pattern.to_lowercase()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,18 +105,76 @@ mod tests {
 
     #[test]
     fn test_gated_status() {
-        let result: InterfaceResult<String> = Err(InterfaceError::Internal(
-            "persistence adapter not configured for graph operations".to_string(),
+        let result: InterfaceResult<String> = Err(InterfaceError::NotConfigured(
+            "generate_contract requires a persistence layer".to_string(),
         ));
         assert_eq!(classify_status("generate_contract", &result), "gated");
     }
 
     #[test]
-    fn test_gated_status_requires_persistence() {
-        let result: InterfaceResult<String> = Err(InterfaceError::Internal(
-            "This operation requires persistence".to_string(),
-        ));
-        assert_eq!(classify_status("generate_contract", &result), "gated");
+    fn an_internal_error_that_says_not_configured_is_still_an_error() {
+        // The label comes from the type. A failure whose message happens to
+        // use the words of a missing capability is a failure, not a gate.
+        for message in [
+            "persistence adapter not configured for graph operations",
+            "This operation requires persistence",
+            "generate_contract requires a persistence layer",
+        ] {
+            let result: InterfaceResult<String> =
+                Err(InterfaceError::Internal(message.to_string()));
+            assert_eq!(
+                classify_status("generate_contract", &result),
+                "error",
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_capability_that_is_not_configured_is_gated_whatever_the_tool() {
+        let result: InterfaceResult<String> =
+            Err(InterfaceError::NotConfigured("no backend".to_string()));
+        assert_eq!(classify_status("get_file_symbols", &result), "gated");
+    }
+
+    #[test]
+    fn the_refusals_of_the_server_are_errors() {
+        for refusal in [
+            InterfaceError::Timeout,
+            InterfaceError::RateLimited,
+            InterfaceError::ReadOnly {
+                tool: "write_file".to_string(),
+            },
+            InterfaceError::Ambiguous {
+                name: "helper".to_string(),
+                candidates: vec!["a.rs:helper:1".to_string()],
+            },
+        ] {
+            let result: InterfaceResult<String> = Err(refusal);
+            assert_eq!(classify_status("get_file_symbols", &result), "error");
+        }
+    }
+
+    #[test]
+    fn the_error_type_is_the_kind_and_never_the_message() {
+        assert_eq!(error_type(&InterfaceError::Timeout), "timeout");
+        assert_eq!(
+            error_type(&InterfaceError::RateLimited),
+            "rate_limit_exceeded"
+        );
+        assert_eq!(
+            error_type(&InterfaceError::ToolNotFound("x".to_string())),
+            "missing"
+        );
+        // A message that spells a sentinel is still an ordinary failure.
+        assert_eq!(
+            error_type(&InterfaceError::Internal("timeout".to_string())),
+            "error"
+        );
+        assert_eq!(
+            error_type(&InterfaceError::Internal("rate_limit_exceeded".to_string())),
+            "error"
+        );
     }
 
     #[test]

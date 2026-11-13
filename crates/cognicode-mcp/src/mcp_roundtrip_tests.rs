@@ -1479,9 +1479,11 @@ fn simple_function() {
                 }
                 let args = sample_arguments(&descriptor.input_schema);
                 let outcome = call(&ctx, &descriptor.name, args).await;
+                // A capability that does not exist is `NotConfigured` (gated by
+                // its type). Saying it as `Internal` is an error that reads
+                // like a gate and is sorted as a failure.
                 if let Err(InterfaceError::Internal(msg)) = &outcome
                     && msg.contains("requires a persistence layer")
-                    && crate::status::classify_status(&descriptor.name, &outcome) != "gated"
                 {
                     unavailable.push(descriptor.name.clone());
                 }
