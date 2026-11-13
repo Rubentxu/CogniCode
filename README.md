@@ -400,6 +400,16 @@ complete one, and an analysis answer states its coverage. Report a
 vulnerability privately through GitHub Security Advisories, not in a public
 issue.
 
+The tree walk prunes directories by name, not by content. A directory called
+`target`, `node_modules`, `venv`, `env`, `dist`, `build`, `vendor`, `coverage`,
+`__pycache__`, `secrets` or `credentials` is not read, at the root of the
+project and at any depth below it, and the answer does not list it as left
+out. A source module that happens to carry one of those names (a Rust
+`src/env/`, a JavaScript `source/vendor/`) is therefore outside the graph, the
+index and the usage search while the coverage still reads `complete`. The
+comparison is on the whole name and is case-sensitive (`environment` and
+`Build` are read).
+
 ## Troubleshooting
 
 - **The MCP client reports a parse error or "invalid JSON" when it starts the

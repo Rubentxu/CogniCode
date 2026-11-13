@@ -163,7 +163,9 @@ fn a_project_that_lives_under_a_skipped_name_is_still_walked() {
 /// declined entry and no error, so a route that publishes coverage from the
 /// inventory publishes `complete` over a tree it did not read whole.
 ///
-/// This is the observed behaviour, not the wanted one. The day the walk says
+/// This is a documented limitation (see the README), kept on purpose: naming
+/// each pruned directory as declined would make the coverage `partial` for a
+/// fifth of the sandbox corpus on build output alone. If the walk ever says
 /// what it pruned, this test changes with it.
 #[test]
 fn a_source_module_called_like_build_output_is_dropped_without_a_word() {

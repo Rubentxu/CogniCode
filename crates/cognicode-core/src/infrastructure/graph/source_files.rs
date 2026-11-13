@@ -45,10 +45,17 @@
 //! would put the build output of every nested package (`packages/x/dist`)
 //! back in the graph. Either way the set of files of the affected trees
 //! changes, and with it the manifest digest and the identity of their
-//! snapshots: a published change that is the maintainer's to make, with a
-//! consumer test, not a side effect of a fix. The behaviour is pinned by
-//! `the_walk_prunes_by_directory_name`; what is still open is whether the
-//! answer should say which directories it pruned.
+//! snapshots: a published change, not a side effect of a fix. The behaviour
+//! is pinned by `the_walk_prunes_by_directory_name`.
+//!
+//! The answer does not say which directories it pruned, and that is a
+//! documented limitation, not an oversight. Publishing each one as a
+//! declined entry would turn the coverage of every tree that has such a
+//! directory into `partial`: 5 of the 25 repositories of the sandbox have
+//! one at their top level alone, and almost all of what the names hold is
+//! build output or vendored code. A verdict that is `partial` for that much
+//! of the corpus stops telling the consumer which answers to distrust. The
+//! README states the limitation where consumers read it.
 //!
 //! ## What the walk could not do
 //!
