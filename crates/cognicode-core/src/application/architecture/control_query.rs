@@ -365,6 +365,10 @@ pub struct SourceBasis {
 /// La identidad se calcula sobre el mismo conjunto que el evaluador va a
 /// examinar y sobre la ruta **relativa** de cada fichero, de modo que el
 /// mismo código tiene la misma identidad donde esté el árbol.
+///
+/// Es superficie publicada: el endpoint del plano de control del repositorio
+/// `cognicode-explorer` la llama, así que retirarla o cambiar su forma exige
+/// una deprecación explícita y la actualización de ese consumidor primero.
 pub fn read_from_source_root(root: &std::path::Path) -> SourceRead {
     let mut files: Vec<SourceFile> = Vec::new();
     // La identidad ordena por ruta relativa, así que se guarda en qué

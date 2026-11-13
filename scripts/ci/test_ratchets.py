@@ -1323,7 +1323,9 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
         "changing the file set changes a published identity. Measured against the "
         "inventory in `each_reader_of_the_tree_says_which_files_it_reads` (reads "
         "build, vendor and hidden directories and follows symlinks); moving it "
-        "would add a CR-06 pair, which needs a named approval",
+        "would add a CR-06 pair, which needs a named approval. It is not dead "
+        "code: the `cognicode-explorer` repository calls `read_from_source_root`, "
+        "so removing it is a breaking change for that consumer",
     "crates/cognicode-core/src/application/ingest/scan.rs":
         "the ingest scan: its rules (`workspace_rules`) are shared with the watcher "
         "so both agree on the same places, and its noise list is deliberately "
