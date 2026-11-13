@@ -23,6 +23,7 @@ pub use crate::application::graph_snapshot::TreeFile;
 use crate::application::ingest::types::FileFacts;
 use crate::application::ports::SharedGraph;
 use crate::application::services::file_facts_cache::FileFactsCache;
+use crate::application::services::usage_search::{FileOccurrences, Occurrence};
 use crate::application::single_flight::SingleFlight;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
@@ -347,13 +348,54 @@ impl AnalysisService {
         TreeState {
             files: inventory
                 .source_files()
-                .map(|file| TreeFile {
-                    path: file.path.clone(),
-                    mtime_millis: file.mtime_millis,
+                .filter_map(|file| {
+                    Some(TreeFile {
+                        path: file.path.clone(),
+                        language: file.language?,
+                        mtime_millis: file.mtime_millis,
+                    })
                 })
                 .collect(),
             holes: inventory.coverage_holes(),
         }
+    }
+
+    /// Where an identifier occurs in one file of the tree, with the source
+    /// it was read from, or the hole the file leaves when it cannot say.
+    ///
+    /// The file is opened and parsed here, where the application reaches the
+    /// infrastructure; what goes back is data. A file that cannot be opened
+    /// or parsed is not a file without occurrences: the cause travels with
+    /// it, in the same shape the walk uses for the holes it declares.
+    pub(crate) fn identifier_in_file(
+        &self,
+        path: &Path,
+        language: Language,
+        identifier: &str,
+    ) -> Result<FileOccurrences, crate::infrastructure::graph::per_file_graph::SkippedFile> {
+        use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+
+        let source = std::fs::read_to_string(path).map_err(|error| {
+            crate::infrastructure::graph::source_files::unreadable(path, &error)
+        })?;
+        let found = TreeSitterParser::new(language)
+            .and_then(|parser| parser.find_all_occurrences_of_identifier(&source, identifier))
+            .map_err(|error| SkippedFile {
+                path: path.to_string_lossy().into_owned(),
+                reason: SkipReason::Parse(error.to_string()),
+            })?;
+        let occurrences = found
+            .into_iter()
+            .map(|occurrence| Occurrence {
+                line: occurrence.line,
+                column: occurrence.column,
+                context: occurrence.context,
+            })
+            .collect();
+        Ok(FileOccurrences {
+            source,
+            occurrences,
+        })
     }
 
     /// Whether the last build covered the whole tree.

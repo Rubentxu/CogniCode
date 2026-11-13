@@ -10,7 +10,6 @@ use crate::application::error::AppResult;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::analyze::Coverage;
 use crate::domain::value_objects::{published_column, published_line};
-use crate::infrastructure::parser::TreeSitterParser;
 
 #[derive(Debug, Clone)]
 pub struct UsageSearchParams {
@@ -76,6 +75,26 @@ pub struct UsageSearch {
     pub coverage: Coverage,
 }
 
+/// One place where an identifier occurs in a file: what the reader of the
+/// file hands to the search, with positions as the reader counts them
+/// (0-based).
+pub(crate) struct Occurrence {
+    pub line: u32,
+    pub column: u32,
+    /// The line of code the identifier is on.
+    pub context: String,
+}
+
+/// What reading one file said about an identifier.
+///
+/// The source travels with the occurrences because the search cuts the
+/// lines around each one from it: the text the occurrences were found in
+/// is the text the context comes from.
+pub(crate) struct FileOccurrences {
+    pub source: String,
+    pub occurrences: Vec<Occurrence>,
+}
+
 impl AnalysisService {
     /// Finds all textual/AST occurrences of a symbol across the project
     /// source tree, skipping dependency/build/cache directories.
@@ -100,55 +119,25 @@ impl AnalysisService {
         &self,
         params: UsageSearchParams,
     ) -> AppResult<UsageSearch> {
-        use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
-
         let mut usages = Vec::new();
         let mut seen_first_definition = false;
-        // The files are the inventory's: the same ones the graph is built
-        // from, with the security blocklist and the performance skips
-        // applied by the one walk that owns them.
-        let inventory = crate::infrastructure::graph::source_files::inventory(&params.project_dir);
-        let mut holes = inventory.coverage_holes();
-        let mut searched_files = 0usize;
-        for file in inventory.source_files() {
+        // The files are the tree's: the same ones the graph is built from,
+        // with the security blocklist and the performance skips applied by
+        // the one walk that owns them.
+        let tree = self.tree_state(&params.project_dir);
+        let mut holes = tree.holes;
+        for file in &tree.files {
             let path = file.path.as_path();
-            let Some(language) = file.language else {
-                continue;
-            };
-            searched_files += 1;
-
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(error) => {
-                    holes.push(crate::infrastructure::graph::source_files::unreadable(
-                        path, &error,
-                    ));
+            let FileOccurrences {
+                source,
+                occurrences,
+            } = match self.identifier_in_file(path, file.language, &params.symbol_name) {
+                Ok(found) => found,
+                Err(hole) => {
+                    holes.push(hole);
                     continue;
                 }
             };
-
-            let parser = match TreeSitterParser::new(language) {
-                Ok(p) => p,
-                Err(error) => {
-                    holes.push(SkippedFile {
-                        path: path.to_string_lossy().into_owned(),
-                        reason: SkipReason::Parse(error.to_string()),
-                    });
-                    continue;
-                }
-            };
-
-            let occurrences =
-                match parser.find_all_occurrences_of_identifier(&source, &params.symbol_name) {
-                    Ok(occurrences) => occurrences,
-                    Err(error) => {
-                        holes.push(SkippedFile {
-                            path: path.to_string_lossy().into_owned(),
-                            reason: SkipReason::Parse(error.to_string()),
-                        });
-                        continue;
-                    }
-                };
 
             for occ in occurrences {
                 let has_def_keyword = occ.context.contains("def ")
@@ -191,7 +180,7 @@ impl AnalysisService {
         // The tree holds something to search when at least one file in a
         // language the product reads was in the walk.
         let coverage =
-            crate::application::services::analyze::scan_coverage(holes, searched_files > 0);
+            crate::application::services::analyze::scan_coverage(holes, !tree.files.is_empty());
         Ok(UsageSearch { usages, coverage })
     }
 }
