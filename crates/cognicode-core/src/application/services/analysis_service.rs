@@ -28,12 +28,8 @@ use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::{DependencyRepository, ParseError};
-use crate::domain::value_objects::{
-    Language, RejectedRelation, WalkFilter, published_column, published_line,
-};
-use crate::infrastructure::graph::per_file_graph::{
-    GlobalSymbolIndex, WalkClassification, classify_walk_path,
-};
+use crate::domain::value_objects::{Language, RejectedRelation, published_column, published_line};
+use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 use crate::infrastructure::graph::semantic_layer::compute_content_hash;
 use crate::infrastructure::graph::semantic_layer::read_file_facts;
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
@@ -333,6 +329,14 @@ impl AnalysisService {
         self.graph_cache.clone()
     }
 
+    /// The real files of a project tree, in the order the inventory walks
+    /// them, for a question that only needs to look at them and stops at
+    /// the first answer. Nothing is measured and no hole is reported; a
+    /// route that must publish coverage asks [`Self::tree_state`].
+    pub fn real_files(project_dir: &Path) -> impl Iterator<Item = PathBuf> {
+        crate::infrastructure::graph::source_files::real_files(project_dir)
+    }
+
     /// The tree as it is right now.
     ///
     /// The application layer does not walk the tree: the service is the
@@ -572,9 +576,9 @@ impl AnalysisService {
             .map(|_| ())
     }
 
-    /// Per-file strategy with the H1.1 typed report. Walks the tree
-    /// through [`WalkFilter::default`] (security blocklist + perf
-    /// skips), routes every file through `classify_walk_extension`,
+    /// Per-file strategy with the H1.1 typed report. Takes its files from
+    /// the `SourceInventory` — the same set `build_project_graph` reads,
+    /// with the security blocklist and the perf skips applied once —,
     /// feeds the `Analyze` set to `PerFileGraphCache::merge_with_report`,
     /// and records the K0 honest gap (`.kt`/`.kts`) as
     /// `SkipReason::UnsupportedExtension` so the consumer can see the
@@ -590,70 +594,34 @@ impl AnalysisService {
         use crate::infrastructure::graph::PerFileGraphCache;
         use crate::infrastructure::graph::per_file_graph::{
             BuildReport as PfgBuildReport, BuildStatus as PfgBuildStatus,
-            SkipReason as PfgSkipReason, SkippedFile as PfgSkippedFile,
+            SkippedFile as PfgSkippedFile,
         };
 
         let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
-        let walk = WalkFilter::default();
 
-        let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
-        let mut k0_skipped: Vec<PfgSkippedFile> = Vec::new();
-        let mut walk_skipped: Vec<PfgSkippedFile> = Vec::new();
-
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_entry(|e| !walk.matches_any_component(e.path(), project_dir))
-        {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(err) => {
-                    // An error of the walk is not a file it left out on
-                    // purpose: it is a hole in the coverage, and it
-                    // travels with the report like any other.
-                    walk_skipped.push(crate::infrastructure::graph::per_file_graph::walk_error(
-                        err.path(),
-                        &err,
-                    ));
-                    continue;
-                }
-            };
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                // This method exists so a caller can see what it did
-                // not cover. Dropping the symlink without recording it
-                // would return `Complete`, which is the same lie the
-                // walk was fixed to stop telling, one layer down.
-                if let Some(reason) =
-                    crate::infrastructure::graph::per_file_graph::classify_declined_entry(&entry)
-                {
-                    walk_skipped.push(PfgSkippedFile {
-                        path: path.to_string_lossy().into_owned(),
-                        reason,
-                    });
-                }
-                continue;
-            }
-            let ext = path.extension().and_then(|e| e.to_str());
-            match classify_walk_path(path) {
-                WalkClassification::Analyze => file_paths.push(path.to_path_buf()),
-                WalkClassification::KnownUnsupportedGap => {
-                    // K0 honest gap: the file is a real source in a
-                    // language we know about but have not yet wired
-                    // (Kotlin). The H1.1 envelope requires it to
-                    // surface in `skipped` so the consumer can see
-                    // the K0 bridge, not a silent "no findings".
-                    k0_skipped.push(PfgSkippedFile {
-                        path: path.to_string_lossy().into_owned(),
-                        reason: PfgSkipReason::UnsupportedExtension(ext.unwrap_or("").to_string()),
-                    });
-                }
-                WalkClassification::LegitExclusion => {
-                    // README, image, lockfile: outside the analysis
-                    // scope by policy. Not a gap, not a skip — just
-                    // not part of the answer.
-                }
-            }
-        }
+        // The files are the inventory's, the same ones `build_project_graph`
+        // is built from: two routes of one product that read different sets
+        // of files answer the same question differently and neither says so.
+        let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
+        let file_paths: Vec<std::path::PathBuf> = inventory
+            .source_files()
+            .map(|file| file.path.clone())
+            .collect();
+        // K0 honest gap: a real source in a language we know about but
+        // have not yet wired (Kotlin). The H1.1 envelope requires it to
+        // surface in `skipped` so the consumer can see the K0 bridge, not
+        // a silent "no findings".
+        let k0_skipped: Vec<PfgSkippedFile> = inventory.known_gaps();
+        // What the walk declined (a symlink) and what it could not do (a
+        // directory it could not read) is a hole in the coverage, not a
+        // file left out on purpose: dropping it would return `Complete`,
+        // the same lie the walk was fixed to stop telling.
+        let walk_skipped: Vec<PfgSkippedFile> = inventory
+            .declined
+            .iter()
+            .chain(inventory.errors.iter())
+            .cloned()
+            .collect();
 
         let file_path_refs: Vec<&Path> = file_paths.iter().map(|p| p.as_path()).collect();
         let cache_report = cache.merge_with_report(&file_path_refs);
@@ -1992,25 +1960,15 @@ impl AnalysisService {
     pub fn find_symbol_usages(&self, params: UsageSearchParams) -> AppResult<Vec<UsageResult>> {
         let mut usages = Vec::new();
         let mut seen_first_definition = false;
-        // H1.3: WalkFilter::default() is the canonical
-        // security-blocklist + performance-skip set. The previous
-        // local USAGE_SKIP_DIRS const duplicated only the perf
-        // skips and missed `.env` and friends.
-        let walk = WalkFilter::default();
-
-        for entry in crate::infrastructure::walk_policy::contained_walk(&params.project_dir)
-            .into_iter()
-            .filter_entry(|e| !walk.matches_any_component(e.path(), &params.project_dir))
-            .filter_map(|e| e.ok())
+        // The files are the inventory's: the same ones the graph is built
+        // from, with the security blocklist and the performance skips
+        // applied by the one walk that owns them.
+        for file in crate::infrastructure::graph::source_files::inventory(&params.project_dir)
+            .source_files()
         {
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
+            let path = file.path.as_path();
+            let Some(language) = file.language else {
                 continue;
-            }
-
-            let language = match Language::from_extension(path.extension()) {
-                Some(lang) => lang,
-                None => continue,
             };
 
             let source = match std::fs::read_to_string(path) {

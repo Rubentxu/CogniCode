@@ -5,6 +5,8 @@
 //! lookups like "find all definitions of symbol X" or "find all symbols in file Y".
 
 use crate::domain::value_objects::{Location, SymbolKind};
+use crate::infrastructure::graph::per_file_graph::SkippedFile;
+use crate::infrastructure::graph::source_files;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -75,6 +77,9 @@ pub struct LightweightIndex {
     index: HashMap<String, Vec<SymbolLocation>>,
     /// Map from file path to list of lowercase symbol names in that file
     file_index: HashMap<String, Vec<String>>,
+    /// What the last `build_index` could not see of its tree: the holes
+    /// of the coverage, with the reason each one carries.
+    holes: Vec<SkippedFile>,
 }
 
 impl LightweightIndex {
@@ -83,7 +88,21 @@ impl LightweightIndex {
         Self {
             index: HashMap::new(),
             file_index: HashMap::new(),
+            holes: Vec::new(),
         }
+    }
+
+    /// What the last [`build_index`](Self::build_index) did not cover.
+    ///
+    /// An index over a tree is only as complete as the tree it could read:
+    /// a symlink the walk declined, a directory it could not open, a file
+    /// it found and could not read, a source in a language that is not
+    /// supported yet. An empty list is the claim "nothing was left out";
+    /// an index built from sources in memory
+    /// ([`build_from_sources`](Self::build_from_sources)) never walked a
+    /// tree, so it has nothing to report.
+    pub fn holes(&self) -> &[SkippedFile] {
+        &self.holes
     }
 
     /// Builds an index by scanning all source files in a directory
@@ -94,33 +113,11 @@ impl LightweightIndex {
         let mut parser_cache: HashMap<Language, TreeSitterParser> = HashMap::new();
         let mut file_name_set: HashSet<String> = HashSet::new();
 
-        let walk_filter = crate::domain::value_objects::WalkFilter::default();
-
-        // Helper to check if a path should be skipped
-        // project_dir is the root being indexed - we never skip it even if hidden
-        let should_skip_path = |path: &std::path::Path, project_dir: &std::path::Path| -> bool {
-            // Never skip the project directory itself
-            if path == project_dir {
-                return false;
-            }
-            if walk_filter.matches_any_component(path, project_dir) {
-                return true;
-            }
-            // Skip hidden directories (except .git which is already handled)
-            if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                && name.starts_with('.')
-                && name != ".git"
-            {
-                return true;
-            }
-            false
-        };
-
         let project_dir = project_dir.as_ref();
 
-        // The root must exist before the walk is meaningful. `WalkDir`
-        // reports a missing root as its single `Err` entry, and the
-        // `.filter_map(|e| e.ok())` below discards exactly that entry —
+        // The root must exist before the walk is meaningful. The walk
+        // reports a missing root as its single `Err` entry, which the
+        // inventory records as a hole and then returns an empty tree —
         // so `index build /nonexistent` used to return `Ok(())` having
         // indexed nothing, and the CLI exited 0. Validating the root here
         // is what makes every strategy that walks a project agree on the
@@ -132,28 +129,27 @@ impl LightweightIndex {
             ));
         }
 
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_entry(|e| !should_skip_path(e.path(), project_dir))
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
+        // The set of files is the inventory's: the one the graph is built
+        // from. An index that walks on its own answers "which files?" with
+        // a different set and nothing says so.
+        let inventory = source_files::inventory(project_dir);
+        let mut holes = inventory.coverage_holes();
 
-            // Only real files: `path.is_dir()` follows symlinks, so a
-            // symlinked file elsewhere on the machine reported
-            // `is_dir() == false` and was read as if it were ours.
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
+        for file in inventory.source_files() {
+            let path = file.path.as_path();
+            let Some(language) = file.language else {
                 continue;
-            }
-
-            let language = match Language::from_extension(path.extension()) {
-                Some(lang) => lang,
-                None => continue,
             };
 
             let source = match std::fs::read_to_string(path) {
                 Ok(s) => s,
-                Err(_) => continue,
+                Err(err) => {
+                    // The walk yielded this file and it cannot be read:
+                    // what it declares is missing from the index, and the
+                    // index says so.
+                    holes.push(source_files::unreadable(path, &err));
+                    continue;
+                }
             };
 
             let file_path = path.to_string_lossy().to_string();
@@ -183,6 +179,7 @@ impl LightweightIndex {
             }
         }
 
+        self.holes = holes;
         self.sort_locations();
 
         Ok(())
@@ -324,6 +321,7 @@ impl LightweightIndex {
     pub fn clear(&mut self) {
         self.index.clear();
         self.file_index.clear();
+        self.holes.clear();
     }
 
     /// Inserts a symbol location into the index

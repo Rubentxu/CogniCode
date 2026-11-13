@@ -8,12 +8,20 @@
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
+use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+use crate::infrastructure::graph::source_files;
 use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::Arc;
+
+/// How the error of a file that could not be read begins.
+///
+/// One constant, because the code that writes the error and the code that
+/// tells a read failure from a parse failure have to agree on it.
+const READ_FAILURE: &str = "Failed to read file";
 
 /// A search result with relevance scoring
 #[derive(Debug, Clone)]
@@ -368,8 +376,8 @@ impl SemanticSearchService {
         let language = Language::from_extension(extension.as_ref().map(std::ffi::OsStr::new))
             .ok_or_else(|| "Unsupported file type".to_string())?;
 
-        let source = std::fs::read_to_string(file_path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+        let source =
+            std::fs::read_to_string(file_path).map_err(|e| format!("{READ_FAILURE}: {e}"))?;
 
         let parse_ms = read_start.elapsed().as_millis() as u64;
 
@@ -394,35 +402,48 @@ impl SemanticSearchService {
         self.index.clear();
     }
 
-    /// Populates the index by walking a directory and indexing all supported files.
-    /// Skips common dependency/build/cache directories.
-    /// Non-fatal: individual file failures are logged and skipped.
-    pub fn populate_from_directory(&self, dir: &Path) -> Result<(), String> {
+    /// Populates the index with the files of `dir` and reports what it
+    /// could not cover.
+    ///
+    /// The set of files is the inventory's — the one the graph is built
+    /// from — so the search index and the graph describe the same tree.
+    /// Non-fatal: a file that cannot be read or indexed does not stop the
+    /// others, and it is not forgotten either: it comes back as a hole.
+    ///
+    /// An empty list is the claim that nothing was left out.
+    pub fn populate_from_directory_with_holes(
+        &self,
+        dir: &Path,
+    ) -> Result<Vec<SkippedFile>, String> {
         if !dir.exists() {
             return Err(format!("Directory does not exist: {}", dir.display()));
         }
 
-        let walk_filter = crate::domain::value_objects::WalkFilter::default();
+        let inventory = source_files::inventory(dir);
+        let mut holes = inventory.coverage_holes();
 
-        for entry in crate::infrastructure::walk_policy::contained_walk(dir)
-            .into_iter()
-            .filter_entry(|e| !walk_filter.matches_any_component(e.path(), dir))
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                continue;
-            }
-            let extension = path.extension().and_then(|e| e.to_str());
-            if let Some(_lang) = crate::infrastructure::parser::Language::from_extension(
-                extension.as_ref().map(std::ffi::OsStr::new),
-            ) && let Err(_e) = self.index_file_from_path(path)
-            {
-                continue;
+        for file in inventory.source_files() {
+            if let Err(err) = self.index_file_from_path(&file.path) {
+                holes.push(SkippedFile {
+                    path: file.path.to_string_lossy().into_owned(),
+                    reason: if err.starts_with(READ_FAILURE) {
+                        SkipReason::Read(err)
+                    } else {
+                        SkipReason::Parse(err)
+                    },
+                });
             }
         }
 
-        Ok(())
+        Ok(holes)
+    }
+
+    /// Populates the index by walking a directory and indexing all supported files.
+    ///
+    /// The same walk as [`populate_from_directory_with_holes`](Self::populate_from_directory_with_holes),
+    /// for the caller that does not publish the holes.
+    pub fn populate_from_directory(&self, dir: &Path) -> Result<(), String> {
+        self.populate_from_directory_with_holes(dir).map(|_| ())
     }
 }
 

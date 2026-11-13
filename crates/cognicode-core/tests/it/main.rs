@@ -16,6 +16,7 @@ mod a_snapshot_says_who_produced_it;
 mod a_symbol_count_is_published_only_when_it_was_measured;
 #[cfg(feature = "persistence")]
 mod an_edited_file_is_read_once;
+mod an_unreadable_file_is_a_hole_on_every_route;
 mod analytics_bounded_paths;
 mod analytics_registry_admission;
 mod analytics_registry_cohort_1;
@@ -181,6 +182,7 @@ mod the_scan_does_not_erase_what_it_cannot_read;
 mod the_search_index_follows_the_files;
 mod the_snapshot_carries_what_the_reader_read;
 mod the_specialized_reader_says_what_happened;
+mod the_tree_has_one_file_set;
 mod the_whole_route_is_the_filtered_route_over_the_root;
 mod the_workspace_has_one_name;
 mod the_write_refuses_a_file_that_changed;

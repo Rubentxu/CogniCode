@@ -238,23 +238,20 @@ enum GraphMaterial {
 /// es decir, cuando un lenguaje del registro lo reclama. Una segunda
 /// lista de extensiones sería una segunda respuesta a esa pregunta, y
 /// las dos se separarían sin que nadie lo notara. El recorrido es el
-/// mismo que usa el grafo —los ficheros ocultos y los ignorados quedan
+/// mismo que usa el grafo —el de `AnalysisService::real_files`: los ficheros
+/// ocultos, los ignorados y los nombres que `WalkFilter` excluye quedan
 /// fuera, los enlaces simbólicos no se siguen— y se detiene en la
 /// primera fuente que encuentra.
 fn workspace_graph_material(root: &Path) -> GraphMaterial {
     let mut saw_any_file = false;
-    let has_material = crate::infrastructure::walk_policy::contained_ignore_walk(root)
-        .hidden(true)
-        .git_ignore(true)
-        .git_exclude(true)
-        .build()
-        .filter_map(|entry| entry.ok())
-        .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
-        .any(|entry| {
-            saw_any_file = true;
-            let (file_type, _) = classify_file(entry.path());
-            file_type == FileType::Code
-        });
+    let has_material = crate::application::services::analysis_service::AnalysisService::real_files(
+        root,
+    )
+    .any(|entry| {
+        saw_any_file = true;
+        let (file_type, _) = classify_file(entry.as_path());
+        file_type == FileType::Code
+    });
     if has_material {
         GraphMaterial::Present
     } else if saw_any_file {
