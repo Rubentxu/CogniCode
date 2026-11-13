@@ -36,6 +36,16 @@
 //! files each operation reads is the one it always read: the characterization
 //! in `each_reader_of_the_tree_says_which_files_it_reads` stays as it was.
 //!
+//! ## Retrieve and verify (TASK-252)
+//!
+//! `retrieve_and_verify` retrieves with `search_content`, so it reads the
+//! tree through the same walker and met the same unreadable entries, and it
+//! kept only the matches: the entries the search could not read went no
+//! further than the service. It publishes the `coverage` of that search, from
+//! the same `read_coverage` the search itself uses. The tests run it with the
+//! verification off, which keeps them independent of a toolchain: what they
+//! pin is the retrieval, and the verification does not touch it.
+//!
 //! The permission is restored when the test ends, so the temporary directory
 //! can be removed.
 
@@ -46,10 +56,13 @@ use cognicode_core::domain::value_objects::SymbolSearchQuery;
 use cognicode_core::infrastructure::graph::LightweightIndex;
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason, SkippedFile};
 use cognicode_core::infrastructure::semantic::semantic_search::SemanticSearchService;
-use cognicode_core::interface::mcp::file_ops_handlers::{handle_list_files, handle_search_content};
+use cognicode_core::interface::mcp::file_ops_handlers::{
+    handle_list_files, handle_retrieve_and_verify, handle_search_content,
+};
 use cognicode_core::interface::mcp::handlers::{HandlerContext, handle_find_usages};
 use cognicode_core::interface::mcp::schemas::{
-    FindUsagesInput, ListFilesInput, ListFilesOutput, SearchContentInput, SearchContentOutput,
+    FindUsagesInput, ListFilesInput, ListFilesOutput, RetrieveAndVerifyInput,
+    RetrieveAndVerifyOutput, SearchContentInput, SearchContentOutput,
 };
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -742,6 +755,174 @@ fn the_application_answers_carry_their_holes_only_when_they_have_some() {
     let listing: ListFilesResult =
         serde_json::from_str(listing_before).expect("an old listing result still deserializes");
     let json = serde_json::to_value(&listing).expect("it serializes");
+    assert!(
+        json.get("unread").is_none(),
+        "a result with nothing unread is the result it always was: {json}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Retrieve and verify
+// ---------------------------------------------------------------------------
+
+async fn retrieve_answer(root: &Path, query: &str) -> serde_json::Value {
+    let ctx = HandlerContext::builder()
+        .with_working_dir(root.to_path_buf())
+        .build();
+    let input = RetrieveAndVerifyInput {
+        query: query.to_string(),
+        language: "rust".to_string(),
+        max_results: 20,
+        verify: false,
+    };
+    let out = handle_retrieve_and_verify(&ctx, input)
+        .await
+        .expect("the retrieval runs");
+    serde_json::to_value(&out).expect("the answer serializes")
+}
+
+/// The files the retrieved matches are in.
+fn retrieved_files(answer: &serde_json::Value) -> Vec<String> {
+    answer["results"]
+        .as_array()
+        .expect("the answer carries its results")
+        .iter()
+        .map(|m| m["file"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn retrieve_and_verify_publishes_the_file_it_could_not_read() {
+    let (_tmp, root, _unlock) = a_tree_with_one_unreadable_file();
+    let answer = retrieve_answer(&root, "pub fn").await;
+
+    let files = retrieved_files(&answer);
+    assert!(
+        files.iter().any(|f| f.ends_with("src/lib.rs")),
+        "the readable file still answers: {files:?}"
+    );
+    assert_eq!(
+        status_of(&answer),
+        "partial",
+        "a file could not be opened and the retrieval says it covered the tree"
+    );
+    let holes = holes_of(&answer);
+    let locked = holes_ending_with(&holes, "src/locked.rs");
+    assert_eq!(
+        locked.len(),
+        1,
+        "the file could not be opened and the retrieval does not name it: {holes:?}"
+    );
+    assert!(
+        locked[0].1.starts_with("read error"),
+        "the hole carries its cause: {}",
+        locked[0].1
+    );
+}
+
+#[tokio::test]
+async fn retrieve_and_verify_publishes_the_directory_it_could_not_list() {
+    let (_tmp, root, _unlock) = a_tree_with_one_sealed_directory();
+    let answer = retrieve_answer(&root, "pub fn").await;
+
+    assert_eq!(
+        status_of(&answer),
+        "partial",
+        "a directory could not be listed and the retrieval says it covered the tree"
+    );
+    let holes = holes_of(&answer);
+    let sealed = holes_ending_with(&holes, "sealed");
+    assert_eq!(
+        sealed.len(),
+        1,
+        "the directory could not be listed and the retrieval does not name it: {holes:?}"
+    );
+    assert!(
+        sealed[0].1.starts_with("walk error"),
+        "the hole carries its cause: {}",
+        sealed[0].1
+    );
+}
+
+#[tokio::test]
+async fn retrieve_and_verify_of_a_tree_it_read_whole_is_complete() {
+    let (_tmp, root) = a_readable_tree();
+    let answer = retrieve_answer(&root, "pub fn").await;
+
+    assert_eq!(
+        status_of(&answer),
+        "complete",
+        "nothing was left out and the retrieval reports a hole: {:?}",
+        holes_of(&answer)
+    );
+    assert!(
+        holes_of(&answer).is_empty(),
+        "a complete answer names no file"
+    );
+    assert_eq!(answer["total"], 1);
+    assert_eq!(answer["skipped_count"], 1);
+
+    // The match is the one the search found, carried whole into the answer.
+    let found = &answer["results"][0];
+    assert!(
+        found["file"]
+            .as_str()
+            .is_some_and(|f| f.ends_with("src/lib.rs")),
+        "{found}"
+    );
+    assert_eq!(found["line"], 1);
+    assert_eq!(found["matched_text"], "pub fn");
+    assert_eq!(found["status"], "skipped");
+    assert_eq!(found["reason"], "verify-disabled");
+}
+
+/// The set of files the retrieval reads is the one it always read: the locked
+/// file has no match to show, so the matches are the ones of a tree without it.
+#[tokio::test]
+async fn retrieve_and_verify_matches_are_the_ones_it_always_found() {
+    let (_tmp, root, _unlock) = a_tree_with_one_unreadable_file();
+    let with_the_hole = retrieve_answer(&root, "pub fn").await;
+    let (_tmp_whole, whole) = a_readable_tree();
+    let without_it = retrieve_answer(&whole, "pub fn").await;
+
+    assert_eq!(with_the_hole["total"], without_it["total"]);
+    assert_eq!(
+        retrieved_files(&with_the_hole)
+            .iter()
+            .map(|f| f.rsplit('/').next().unwrap_or_default().to_string())
+            .collect::<Vec<_>>(),
+        retrieved_files(&without_it)
+            .iter()
+            .map(|f| f.rsplit('/').next().unwrap_or_default().to_string())
+            .collect::<Vec<_>>(),
+    );
+}
+
+/// An answer written before the coverage existed carries none, and the
+/// consumer that reads it gets "unknown", with the counts it always had.
+#[test]
+fn a_retrieval_written_before_the_coverage_reads_as_unknown() {
+    let before = serde_json::json!({
+        "results": [],
+        "total": 0,
+        "verified_count": 0,
+        "rejected_count": 0,
+        "skipped_count": 0,
+    });
+    let read: RetrieveAndVerifyOutput =
+        serde_json::from_value(before).expect("an old retrieval payload still deserializes");
+    let read = serde_json::to_value(&read).expect("it serializes");
+    assert_eq!(status_of(&read), "unknown");
+    assert!(holes_of(&read).is_empty());
+    assert_eq!(read["total"], 0);
+    assert_eq!(read["skipped_count"], 0);
+
+    use cognicode_core::application::dto::RetrieveAndVerifyResult;
+    let result: RetrieveAndVerifyResult = serde_json::from_str(
+        r#"{"results":[],"total":0,"verified_count":0,"rejected_count":0,"skipped_count":0}"#,
+    )
+    .expect("an old application result still deserializes");
+    let json = serde_json::to_value(&result).expect("it serializes");
     assert!(
         json.get("unread").is_none(),
         "a result with nothing unread is the result it always was: {json}"
