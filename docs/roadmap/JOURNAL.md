@@ -39402,3 +39402,52 @@ ficheros / 950 tests en verde. Desde `e0f8e32b` el contador da 4 al abrir esta e
 **NOT_RUN.** Los logs de esa pasada vivían en `/tmp` y no se archivaron: el `rc` y los recuentos
 citados arriba son los de la sesión que los lanzó, no un artefacto del repositorio. Este cambio
 es solo documental: no ejecuta el gate.
+
+## Recibo de bloque 1 — PASS, base `e0f8e32b` (2026-11-13)
+
+**Estado: PASS** sobre `f74ff490`, tras una corrección hacia delante. La primera corrida de los
+contratos salió `rc=1` por dos desfases de documentación; se corrigieron en TASK-249 y TASK-250 y
+la misma corrida volvió a salir verde. Hasta esa segunda corrida este recibo era `FAIL`.
+
+**Base y SHA verificados.** Base: `e0f8e32b` (#819). El gate, `npm test` y `fmt` + `clippy` se
+midieron sobre `21ec37c5` (#833). Los contratos se re-midieron sobre `f74ff490` (#835). Entre
+`21ec37c5` y `f74ff490` cambian dos ficheros y los dos son documentos (`docs/distribution/
+SDK_ARCHITECTURE.md` y `docs/roadmap/CURRENT.md`); fuera de `docs/` no cambia ninguno. Un test de
+integración de Rust lee `CURRENT.md` (`roadmap_claims_contract`) y se corrió aparte sobre
+`f74ff490`: 6 de 6. **La base del bloque 2 es `f74ff490`.**
+
+**Las tareas.** El contador de `AGENTS.md` da 11 sobre `e0f8e32b..f74ff490`: TASK-224 (#820),
+237 (#821), 225 (#823), 232 (#825), 239 (#826), 234 (#828), 233 (#829), 240 (#830), 244 (#831),
+243 (#832) y 246 (#833). La 246 es la corrección hacia delante de la 240 (la búsqueda de usos
+rompió tres tests de autoalojamiento y la allowlist de CR-06) y por eso el bloque tiene una más de
+diez. Quedan fuera del contador, por su prefijo `docs(...)`: TASK-238 (#822), 241 (#824), 242
+(#827), 249 (#834) y 250 (#835).
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1 | `GATE_BASE=e0f8e32b bash scripts/test-gate.sh` | `21ec37c5` | 0 | 116 s | 3.971 unitarios (13 binarios, 5 omitidos) y 1.596 de integración, 2 omitidos; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `21ec37c5` | 0 | 14 s | 88 ficheros, 950 tests |
+| 3a | `bash scripts/ci/run-all-contracts.sh` | `21ec37c5` | 1 | 76 s | fallaron la coherencia del roadmap (2 casos, `test_current_sha_matches_head` y `test_control_all_green`, por el SHA del snapshot) y la arquitectura del SDK (1 caso) |
+| 3b | `bash scripts/ci/run-all-contracts.sh` | `f74ff490` | 0 | 77 s | 39 suites, 475 casos, 0 fallos; testigo del árbol limpio |
+| 4 | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `21ec37c5` | 0 | 73 s | sin avisos |
+| 5 | `cargo nextest run --profile gate -p cognicode-core --test it -E 'test(/roadmap_claims_contract/)'` | `f74ff490` | 0 | 0,02 s | 6 de 6 |
+
+**Corrección hacia delante.** TASK-249 (#834, `5d2dd880`): la arquitectura del SDK no nombraba los
+módulos raíz de `cognicode-sandbox` desde que `sandbox_core` vive allí. TASK-250 (#835,
+`f74ff490`): el snapshot de `CURRENT.md` citaba un SHA fuera de la ventana de deriva; se
+regeneró con sus tres bloques (cabecera y prosa, tabla de «qué cambió» y `## Gates`).
+
+**NOT_RUN.**
+
+- **Mutantes (paso 3 del gate).** El lote tocó `cognicode`, `cognicode-cli`, `cognicode-core`,
+  `cognicode-mcp` y `cognicode-sandbox`, y ninguno es asequible de mutar; el crate del calendario
+  (`cognicode-graph-algos`) no estaba en su turno: 196 fusiones desde el marcador `fb526521db6e`,
+  periodo 50, y el siguiente turno llega a 4 fusiones. El gate lo dijo en su log: este lote no
+  midió mutación, y eso no es que la mutación se midiera y no encontrara nada.
+- **Gate, `npm test` y `fmt` + `clippy` sobre `f74ff490`.** No se repitieron: el único cambio desde
+  `21ec37c5` son los dos documentos de arriba, y lo que los lee (los contratos y
+  `roadmap_claims_contract`) sí se corrió sobre `f74ff490`.
+- **Los logs de la pasada vivían en `/tmp` y no se archivaron:** el `rc`, los tiempos y los
+  recuentos de esta entrada son los de la sesión que los lanzó, no un artefacto del repositorio.
