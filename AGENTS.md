@@ -323,9 +323,12 @@ paso del camino de una tarea no la acerca a estar fusionada y demostrada, no es 
 **Qué es un bloque.** Diez tareas del tablero de Backlog.md fusionadas en `main` que cambian
 código, scripts o tests; una tarea solo documental no cuenta ni dispara el gate. El contador **no
 vive en ningún fichero** (un fichero de estado sería una segunda fuente de verdad que discrepa de
-`git`): se cuenta con `git log --format=%s <base>..main | grep -o 'TASK-[0-9.]*' | sort -u | wc -l`,
-y por eso el título de cada PR lleva su `(TASK-N)`. La `<base>` es el SHA de `main` que verificó
-el último gate verde, escrito en el último «Recibo de bloque» del `JOURNAL`.
+`git`): se cuenta con
+`git log --format=%s <base>..main | grep -v '^docs' | grep -o 'TASK-[0-9.]*' | sort -u | wc -l`,
+y por eso el título de cada PR lleva su `(TASK-N)`. Lo que marca una tarea como solo documental es
+el prefijo `docs(...)` de ese título, y es lo que el `grep -v` descarta: una tarea que toca código
+no lleva ese prefijo. La `<base>` es el SHA de `main` que verificó el último gate verde, escrito en
+el último «Recibo de bloque» del `JOURNAL`.
 
 **Ciclo de una tarea** (es todo lo que se paga por tarea):
 
