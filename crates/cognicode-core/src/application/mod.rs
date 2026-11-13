@@ -91,6 +91,7 @@ pub mod program_analysis;
 pub mod sandbox_failure;
 pub mod sandbox_resource_usage;
 pub mod services;
+pub(crate) mod single_flight;
 // What an incremental reindex costs, and what kind of rebuild it was.
 // The vocabulary lives here because the words are the product's, not the
 // MCP's: the CLI, the MCP and the SDK publish the same facts about the

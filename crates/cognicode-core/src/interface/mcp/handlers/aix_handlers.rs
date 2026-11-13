@@ -45,7 +45,7 @@ pub async fn handle_smart_overview(
     ctx: &HandlerContext,
     input: SmartOverviewInput,
 ) -> HandlerResult<SmartOverviewDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -148,7 +148,7 @@ pub async fn handle_ranked_symbols(
     input: RankedSymbolsInput,
 ) -> HandlerResult<RankedSymbolsResult> {
     let _ensure_sem = ensure_semantic_indexed(ctx)?;
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
 
@@ -236,7 +236,7 @@ pub async fn handle_suggest_onboarding_plan(
     ctx: &HandlerContext,
     input: OnboardingPlanInput,
 ) -> HandlerResult<OnboardingPlanDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let goal = match input.goal {
         OnboardingGoalDetail::Understand => build_understand_plan(ctx)?,
@@ -273,7 +273,7 @@ pub async fn handle_auto_diagnose(
     ctx: &HandlerContext,
     _input: AutoDiagnoseInput,
 ) -> HandlerResult<DiagnoseReportDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -422,7 +422,7 @@ pub async fn handle_suggest_refactor_plan(
     ctx: &HandlerContext,
     input: SuggestRefactorPlanInput,
 ) -> HandlerResult<RefactorSuggestionDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let symbol_id = symbol_or_ambiguity(&graph, &input.symbol)?;
@@ -517,7 +517,7 @@ pub async fn handle_nl_to_symbol(
     input: NlToSymbolInput,
 ) -> HandlerResult<NlToSymbolResult> {
     let _ensure_sem = ensure_semantic_indexed(ctx)?;
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
 
@@ -606,7 +606,7 @@ pub async fn handle_ask_about_code(
     ctx: &HandlerContext,
     input: AskAboutCodeInput,
 ) -> HandlerResult<AskAboutCodeResult> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
 
@@ -815,7 +815,7 @@ pub async fn handle_compare_call_graphs(
     ctx: &HandlerContext,
     input: CompareCallGraphsInput,
 ) -> HandlerResult<GraphDiffDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
     let current_symbols: HashSet<String> = current_graph
@@ -927,7 +927,7 @@ pub async fn handle_detect_api_breaks(
     ctx: &HandlerContext,
     input: DetectApiBreaksInput,
 ) -> HandlerResult<ApiBreaksResult> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let current_graph = ctx.analysis_service.get_project_graph();
     let current_entries: HashSet<String> = current_graph
@@ -998,7 +998,7 @@ pub async fn handle_generate_system_prompt_context(
     ctx: &HandlerContext,
     input: SystemPromptContextInput,
 ) -> HandlerResult<SystemPromptContext> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let stats = ctx.analysis_service.get_graph_stats();
     let hot_paths = if input.include_hot_paths.unwrap_or(false) {
@@ -1106,7 +1106,7 @@ pub async fn handle_detect_god_functions(
     ctx: &HandlerContext,
     input: DetectGodFunctionsInput,
 ) -> HandlerResult<GodFunctionsResult> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let mut god_functions = Vec::new();
@@ -1185,7 +1185,7 @@ pub async fn handle_detect_long_parameter_lists(
     ctx: &HandlerContext,
     input: DetectLongParamsInput,
 ) -> HandlerResult<LongParamsResult> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
     let mut long_param_functions = Vec::new();
@@ -1241,7 +1241,7 @@ pub async fn handle_evaluate_refactor_quality(
     ctx: &HandlerContext,
     _input: EvaluateRefactorQualityInput,
 ) -> HandlerResult<RefactorEvalDto> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let _current_graph = ctx.analysis_service.get_project_graph();
     let stats = ctx.analysis_service.get_graph_stats();
@@ -1742,7 +1742,7 @@ pub async fn handle_suggest_context(
     let limit = input.limit.unwrap_or(10).min(MAX_LIMIT);
 
     // Ensure graph is built (auto-build if empty)
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
 
