@@ -10,6 +10,8 @@ pub mod atomic_file_writer;
 pub mod analytics_oracle_harness;
 pub mod analyze;
 pub mod context_compressor;
+// Lo que el servicio recuerda de cada fichero leido (TASK-228).
+pub(crate) mod file_facts_cache;
 pub mod file_operations;
 pub mod graph_analytics;
 // Las preguntas del grafo, contestadas una vez (TASK-78).

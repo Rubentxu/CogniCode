@@ -5,9 +5,11 @@
 //! What is measured: what `reparse_on_edit` costs over a workspace, in
 //! three shapes — nothing changed (a cache hit), one file changed (a
 //! partial rebuild) and a mass change (a quarter of the files read
-//! again). Each shape is measured over a small and a large synthetic
-//! workspace, so the reader can tell the cost of the work from the cost
-//! of the tree.
+//! again). Each shape is measured over three synthetic workspaces of
+//! twelve, one hundred and twenty and twelve hundred files, so the
+//! reader can tell the cost of the work from the cost of the tree: a
+//! reparse of one file whose cost grows with the tree is a rebuild of
+//! the tree.
 //!
 //! The corpus is generated, deterministic and never committed: the same
 //! files with the same content on every run, so two runs measure the
@@ -43,6 +45,9 @@ const SMALL: usize = 12;
 
 /// The large workspace: one hundred and twenty files.
 const LARGE: usize = 120;
+
+/// The extra-large workspace: twelve hundred files.
+const XLARGE: usize = 1200;
 
 /// How many samples each measurement takes.
 ///
@@ -290,9 +295,9 @@ fn measure_no_change(c: &mut Criterion, label: &str, files: usize) {
     group.finish();
 }
 
-/// The benchmarks: two workspace sizes and three shapes of change.
+/// The benchmarks: three workspace sizes and three shapes of change.
 fn bench_reparse_costs(c: &mut Criterion) {
-    for (label, files) in [("small", SMALL), ("large", LARGE)] {
+    for (label, files) in [("small", SMALL), ("large", LARGE), ("xlarge", XLARGE)] {
         measure_no_change(c, label, files);
         measure_shape(c, label, "one_file", "partial", files, vec![0]);
         measure_shape(c, label, "mass", "partial_many", files, mass_indexes(files));

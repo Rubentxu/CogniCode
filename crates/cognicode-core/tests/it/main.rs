@@ -14,6 +14,8 @@ mod a_rejection_arrives_as_a_rejection;
 mod a_snapshot_says_who_produced_it;
 #[cfg(feature = "persistence")]
 mod a_symbol_count_is_published_only_when_it_was_measured;
+#[cfg(feature = "persistence")]
+mod an_edited_file_is_read_once;
 mod analytics_bounded_paths;
 mod analytics_registry_admission;
 mod analytics_registry_cohort_1;
