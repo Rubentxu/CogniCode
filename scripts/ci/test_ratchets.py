@@ -461,11 +461,9 @@ APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
     # this list is a new dependency, and the 4 `Language` imports went away
     # with the import, not with an entry.
     #
-    # NOT approved by a named maintainer: decided by the agent that did the
-    # unit under the operator's standing /goal authorisation of 2026-11-13,
-    # in the pull request for TASK-231. The review of that pull request is
-    # where this approval is given or refused; refusing it means keeping the
-    # two broad entries, which is the hole the task closes.
+    # Approved by the maintainer (Rubentxu) on 2026-11-13, when asked to
+    # confirm or refuse these pairs. Refusing would have meant keeping the two
+    # broad entries, which is the hole the task closes.
     ("application/services/analysis_service.rs", "infrastructure::graph::per_file_graph"),
     ("application/services/analysis_service.rs", "infrastructure::graph::per_file_graph::"),
     ("application/services/analysis_service.rs", "infrastructure::graph::reuse::"),
