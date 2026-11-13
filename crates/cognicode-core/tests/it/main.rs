@@ -60,6 +60,7 @@ mod daemon_freshness;
 mod e2_w1_canonical_control_query;
 mod e2e;
 mod e91_w7_regression_budget;
+mod each_reader_of_the_tree_says_which_files_it_reads;
 mod equivalence_harness;
 mod file_ops_integration_tests;
 mod find_usages_cli_mcp_equivalence;
