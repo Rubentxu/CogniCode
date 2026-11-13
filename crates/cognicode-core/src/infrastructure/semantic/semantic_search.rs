@@ -5,12 +5,15 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::len_zero)]
 
+use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
 use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+use crate::infrastructure::graph::semantic_layer::semantic_facts_of;
 use crate::infrastructure::graph::source_files;
 use crate::infrastructure::parser::Language;
+use crate::infrastructure::parser::language_config::LanguageConfig;
 use dashmap::DashMap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -319,12 +322,28 @@ impl SemanticSearchService {
     }
 
     /// Indexes a file's symbols into the DashMap index
+    ///
+    /// A language with a reader of its own is read by that reader, the one
+    /// the graph is built from and `reparse_on_edit` hands to the index
+    /// ([`index_symbols`](Self::index_symbols)): a Terraform block or an
+    /// Ansible task is a symbol under the name the tools that ask about
+    /// them use. Every other file — and a file whose own reader fell over,
+    /// because the index is more tolerant than the graph — is read the
+    /// generic way, so that the same file does not declare one set of
+    /// symbols after an edit and another after a reindex.
     pub fn index_file(
         &self,
         file_path: &str,
         source: &str,
         language: Language,
     ) -> Result<(), String> {
+        let own_reader =
+            semantic_facts_of(LanguageConfig::for_language(language), source, file_path);
+        if let SemanticOutcome::Handled(facts) = own_reader {
+            self.index_symbols(file_path, facts.symbols);
+            return Ok(());
+        }
+
         let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
             .map_err(|e| e.to_string())?;
 
