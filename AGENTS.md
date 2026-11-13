@@ -373,6 +373,23 @@ siguiente tarea no espera por la suite si no necesita compilar). Con la corrida 
 cada comando con su `rc` y su recuento, y los `NOT_RUN` con su motivo. Esa entrada es la base del
 bloque siguiente. El primer bloque de este flujo (2026-11-13) parte de `e0f8e32b`.
 
+**El turno del calendario que no se repite.** Cuando el gate midió el crate del calendario
+**entero** y salió verde, el recibo lleva además **una línea** —una sola, con estos campos y en
+este orden— que es el ancla del salto:
+
+``Medición del calendario: crate=<paquete> sha=<SHA de 40 hex del árbol medido> cargo-mutants=<versión> rustc=<versión>/<hash> resultado=PASS|FAIL``
+
+`scripts/gate_scope.py` la lee en el turno siguiente: si ese crate (y los crates del workspace de
+los que depende), `.cargo/mutants.toml` y las dos versiones son los del recibo, el turno **no se
+paga** y el gate dice «turno omitido» con el SHA con el que comparó; ante cualquier duda (sin línea,
+`FAIL`, SHA que no es ancestro de `HEAD`, versión distinta o ilegible, cambios con o sin commit) el
+crate se mide entero, y el log dice por qué («turno medido»). No se escribe la línea cuando el
+turno se omitió: el ancla sigue siendo la medición real. Un `FAIL` posterior retira el ancla. La
+comparación no mira `Cargo.lock` (cambia en 13 de cada 120 fusiones y el salto casi nunca
+aplicaría): una actualización de una dependencia de terceros (`petgraph`, `serde`…) sin que el
+crate cambie **no** fuerza la medición. Es un límite conocido; un cambio del propio crate, de un
+crate del workspace del que depende o de la configuración de mutantes sí la fuerza.
+
 **Un bloque rojo** no frena el trabajo ni reabre tareas ya cerradas. Se localiza la tarea que lo
 causó (el rango `<base>..main`, el crate del test rojo y el título de cada PR), se corrige hacia
 delante en una rama propia con un test que falla ANTES y pasa DESPUÉS, y esa corrección es una tarea

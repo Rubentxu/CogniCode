@@ -72,10 +72,13 @@ Run:
 """
 from __future__ import annotations
 
+import contextlib
+import importlib.util
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -207,13 +210,16 @@ def _fixture(root: Path) -> tuple[str, str]:
     return base, _git(root, "rev-parse", "HEAD")
 
 
-def _radius(root: Path, *extra: str) -> tuple[dict[str, str], int]:
+def _radius(
+    root: Path, *extra: str, env: dict[str, str] | None = None
+) -> tuple[dict[str, str], int]:
     """Ask the selector about the fixture and read its answer."""
     proc = subprocess.run(
         [sys.executable, "-I", str(SELECTOR), "--repo-root", str(root), *extra],
         capture_output=True,
         text=True,
         timeout=120,
+        env=env,
     )
     answer: dict[str, str] = {}
     for line in proc.stdout.splitlines():
@@ -474,6 +480,443 @@ def test_an_uncertain_calendar_measures_the_crate_now() -> None:
         check(
             bool(answer.get("reason")),
             "un calendario indeciso no dice POR QUE es indeciso",
+        )
+
+
+# --- Parte 1b: el turno del calendario que no se repite -----------------------
+#
+# The crate of the calendar is measured whole in its turn (about 39 minutes). If
+# the crate, its mutation configuration and the tools are byte for byte those of
+# the last green whole-crate measurement, a second measurement repeats the same
+# verdicts, so the turn is skipped. The decision is the selector's, and it is
+# taken only on proof: every doubt measures the crate.
+
+JOURNAL_REL = Path("docs") / "roadmap" / "JOURNAL.md"
+GOOD_RUSTC = "1.96.0 (ac68faa20 2026-05-25)"
+
+
+def _tools(
+    where: Path,
+    *,
+    mutants: str | None = "27.1.0",
+    rustc: str | None = GOOD_RUSTC,
+    diff: bool = True,
+) -> dict[str, str]:
+    """An environment whose PATH starts with shims for what the skip reads.
+
+    A shim answers the one invocation the selector makes to read a version (or,
+    for git, to compare the crate with the anchor) and hands every other
+    invocation to the real tool, so cargo and git still read the fixture. `None`
+    (or `diff=False`) makes the tool fail exactly where the selector asks.
+    """
+    bodies = {
+        "cargo": 'if [ "$1" = mutants ]; then '
+        + (f'echo "cargo-mutants {mutants}"; exit 0; ' if mutants else "exit 101; ")
+        + "fi",
+        "rustc": 'if [ "$1" = --version ]; then '
+        + (f'echo "rustc {rustc}"; exit 0; ' if rustc else "exit 1; ")
+        + "fi",
+        "git": ""
+        if diff
+        else 'if [ "$1" = diff ]; then case " $* " in *" --quiet "*) exit 128;; esac; fi',
+    }
+    where.mkdir(parents=True, exist_ok=True)
+    for tool, body in bodies.items():
+        real = shutil.which(tool)
+        assert real, f"{tool} is not on the PATH of this machine"
+        shim = where / tool
+        shim.write_text(f'#!/bin/bash\n{body}\nexec "{real}" "$@"\n', encoding="utf-8")
+        shim.chmod(0o755)
+    env = dict(os.environ)
+    env["PATH"] = f"{where}{os.pathsep}{env['PATH']}"
+    return env
+
+
+def _receipt(
+    sha: str,
+    *,
+    crate: str = "gamma",
+    mutants: str = "27.1.0",
+    rustc: str = "1.96.0/ac68faa20",
+    result: str = "PASS",
+) -> str:
+    return (
+        f"Medición del calendario: crate={crate} sha={sha} "
+        f"cargo-mutants={mutants} rustc={rustc} resultado={result}\n"
+    )
+
+
+def _record(root: Path, *lines: str) -> None:
+    """Write the receipts of the journal and commit them, as a block close does."""
+    _write(root / JOURNAL_REL, "## Recibo de bloque 9\n\n" + "".join(lines))
+    _commit(root, "docs: a receipt")
+
+
+def _skip_fixture(root: Path) -> tuple[str, str]:
+    """The batch that could skip the turn of the calendar.
+
+    `gamma` is the crate of the calendar and the batch does not touch it; its
+    mutation configuration is committed at the anchor, and the journal holds the
+    receipt of a green whole-crate measurement made at that commit.
+    Returns (base of the batch, anchor).
+    """
+    base, _ = _fixture(root)
+    _write(root / ".cargo" / "mutants.toml", 'exclude_globs = ["**/tests/**"]\n')
+    _commit(root, "chore: mutation config")
+    anchor = _git(root, "rev-parse", "HEAD")
+    _record(root, _receipt(anchor))
+    return base, anchor
+
+
+@contextlib.contextmanager
+def _skip_world():
+    """A fixture workspace and, apart from it, the directory of the tool shims."""
+    with tempfile.TemporaryDirectory(prefix="gate-skip-") as tmp, tempfile.TemporaryDirectory(
+        prefix="gate-tools-"
+    ) as tools:
+        root = Path(tmp)
+        base, anchor = _skip_fixture(root)
+        yield root, base, anchor, Path(tools)
+
+
+def _ask_calendar(root: Path, base: str, tools: Path, *, marker: str | None = None, **tool_kwargs):
+    """The radius of the batch, with `gamma` as the crate of the calendar."""
+    return _radius(
+        root,
+        "--base",
+        base,
+        "--affordable",
+        "alpha,gamma",
+        "--calendar-crate",
+        "gamma",
+        "--calendar-every",
+        "2",
+        "--calendar-marker",
+        marker or base,
+        env=_tools(tools, **tool_kwargs),
+    )
+
+
+def test_a_calendar_crate_unchanged_since_its_last_green_measurement_skips_its_turn() -> None:
+    """The anchor is the commit of the last green whole-crate measurement. The
+    batch crosses a multiple of the period, so the turn is due; the crate, its
+    configuration and the tools are those of the anchor, so the turn is not
+    paid. The answer says which commit it compared with, and the batch still
+    measures the diff of what IT touched."""
+    with _skip_world() as (root, base, anchor, tools):
+        answer, rc = _ask_calendar(root, base, tools)
+        check(rc == 0, "el selector no pudo decidir: {}".format(answer.get("reason")))
+        check(
+            answer.get("calendar") == "skipped",
+            f"un crate sin cambios desde su ultima medicion no omite el turno: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+        check(
+            answer.get("calendar-anchor") == anchor,
+            f"el radio no dice con que SHA comparo: {answer.get('calendar-anchor')!r}",
+        )
+        check(
+            answer.get("mutant-scope") == "alpha",
+            "el turno omitido sigue midiendo el crate del calendario: "
+            f"{answer.get('mutant-scope')!r}",
+        )
+        check(
+            answer.get("mutant-mode") == "diff",
+            "sin turno que medir entero, el lote mide su diff: "
+            f"{answer.get('mutant-mode')!r}",
+        )
+        check(
+            answer.get("calendar-skip-refused") == "",
+            "un turno omitido no tiene motivo de rechazo: "
+            f"{answer.get('calendar-skip-refused')!r}",
+        )
+
+
+def test_the_last_measurement_of_the_crate_is_the_one_that_counts() -> None:
+    """A red measurement after a green one withdraws the anchor; a green one
+    after a red one restores it. The receipts of another crate say nothing."""
+    with _skip_world() as (root, base, anchor, tools):
+        _record(
+            root,
+            _receipt(anchor, result="FAIL"),
+            _receipt(anchor),
+            _receipt("0" * 40, crate="alpha", result="FAIL"),
+        )
+        answer, _ = _ask_calendar(root, base, tools)
+        check(
+            answer.get("calendar") == "skipped",
+            "una medicion roja ANTERIOR a la verde, o de otro crate, retiro el ancla: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+        _record(root, _receipt(anchor), _receipt(anchor, result="FAIL"))
+        answer, _ = _ask_calendar(root, base, tools)
+        check(
+            answer.get("calendar") == "fires",
+            "una medicion roja POSTERIOR a la verde no retiro el ancla: "
+            f"{answer.get('calendar')!r}",
+        )
+
+
+def _doubt_no_journal(root: Path, anchor: str) -> dict:
+    (root / JOURNAL_REL).unlink()
+    _commit(root, "docs: no journal")
+    return {}
+
+
+def _doubt_no_line_for_the_crate(root: Path, anchor: str) -> dict:
+    _record(root, _receipt(anchor, crate="alpha"))
+    return {}
+
+
+def _doubt_the_last_measurement_failed(root: Path, anchor: str) -> dict:
+    _record(root, _receipt(anchor), _receipt(anchor, result="FAIL"))
+    return {}
+
+
+def _doubt_the_sha_is_short(root: Path, anchor: str) -> dict:
+    _record(root, _receipt(anchor[:12]))
+    return {}
+
+
+def _doubt_the_sha_is_not_in_the_history(root: Path, anchor: str) -> dict:
+    _record(root, _receipt("0" * 40))
+    return {}
+
+
+def _doubt_the_sha_is_on_another_branch(root: Path, anchor: str) -> dict:
+    _git(root, "checkout", "-q", "-b", "side", anchor)
+    _write(root / "SIDE.md", "una rama lateral\n")
+    _commit(root, "chore: side")
+    side = _git(root, "rev-parse", "HEAD")
+    _git(root, "checkout", "-q", "main")
+    _record(root, _receipt(side))
+    return {}
+
+
+def _doubt_cargo_mutants_differs(root: Path, anchor: str) -> dict:
+    return {"mutants": "28.0.0"}
+
+
+def _doubt_cargo_mutants_cannot_be_read(root: Path, anchor: str) -> dict:
+    return {"mutants": None}
+
+
+def _doubt_rustc_differs(root: Path, anchor: str) -> dict:
+    return {"rustc": "1.97.0 (ac68faa20 2026-05-25)"}
+
+
+def _doubt_rustc_hash_differs(root: Path, anchor: str) -> dict:
+    return {"rustc": "1.96.0 (deadbeef0 2026-05-25)"}
+
+
+def _doubt_rustc_cannot_be_read(root: Path, anchor: str) -> dict:
+    return {"rustc": None}
+
+
+def _doubt_the_crate_changed(root: Path, anchor: str) -> dict:
+    _write(root / "gamma" / "src" / "lib.rs", "pub fn other() -> u32 {\n    8\n}\n")
+    _commit(root, "fix: the crate changed")
+    return {}
+
+
+def _doubt_the_mutants_config_changed(root: Path, anchor: str) -> dict:
+    _write(root / ".cargo" / "mutants.toml", 'exclude_globs = ["**/benches/**"]\n')
+    _commit(root, "chore: the config changed")
+    return {}
+
+
+def _doubt_the_crate_has_an_uncommitted_edit(root: Path, anchor: str) -> dict:
+    _write(root / "gamma" / "src" / "lib.rs", "pub fn other() -> u32 {\n    9\n}\n")
+    return {}
+
+
+def _doubt_the_crate_has_an_untracked_file(root: Path, anchor: str) -> dict:
+    _write(root / "gamma" / "src" / "extra.rs", "pub fn extra() {}\n")
+    return {}
+
+
+def _doubt_git_cannot_compare(root: Path, anchor: str) -> dict:
+    return {"diff": False}
+
+
+# (what is in doubt, how the world is changed, a fragment of the reason it gives)
+DOUBTS = [
+    ("the journal is missing", _doubt_no_journal, "JOURNAL"),
+    ("the journal has no line for the crate", _doubt_no_line_for_the_crate, "ninguna linea"),
+    ("the last measurement was not PASS", _doubt_the_last_measurement_failed, "no fue PASS"),
+    ("the sha of the receipt is short", _doubt_the_sha_is_short, "40 hex"),
+    ("the sha is not in the history", _doubt_the_sha_is_not_in_the_history, "ancestro"),
+    ("the sha is on another branch", _doubt_the_sha_is_on_another_branch, "ancestro"),
+    ("cargo-mutants has another version", _doubt_cargo_mutants_differs, "cargo-mutants"),
+    ("cargo-mutants cannot be read", _doubt_cargo_mutants_cannot_be_read, "cargo-mutants"),
+    ("rustc has another version", _doubt_rustc_differs, "rustc"),
+    ("rustc has another commit", _doubt_rustc_hash_differs, "rustc"),
+    ("rustc cannot be read", _doubt_rustc_cannot_be_read, "rustc"),
+    ("the crate changed", _doubt_the_crate_changed, "cambios desde"),
+    ("the mutation config changed", _doubt_the_mutants_config_changed, "cambios desde"),
+    ("git cannot compare", _doubt_git_cannot_compare, "git diff"),
+    ("the crate has an uncommitted edit", _doubt_the_crate_has_an_uncommitted_edit, "sin confirmar"),
+    ("the crate has an untracked file", _doubt_the_crate_has_an_untracked_file, "sin confirmar"),
+]
+
+
+def test_every_doubt_about_the_anchor_measures_the_whole_crate() -> None:
+    """Skipping is an act of trust, and the trust is earned on proof. Each doubt
+    is its own world: the turn is due, the crate is in the radius, there is no
+    anchor, and the answer says WHY it measures. An uncertain skip is less
+    measurement, so it never happens."""
+    for label, change, fragment in DOUBTS:
+        with _skip_world() as (root, base, anchor, tools):
+            tool_kwargs = change(root, anchor)
+            answer, rc = _ask_calendar(root, base, tools, **tool_kwargs)
+            check(rc == 0, f"[{label}] el selector no pudo decidir: {answer.get('reason')}")
+            check(
+                answer.get("calendar") == "fires",
+                f"[{label}] la duda no vuelve a medir el crate: {answer.get('calendar')!r}",
+            )
+            scope = answer.get("mutant-scope", "").split()
+            check(
+                "gamma" in scope,
+                f"[{label}] el crate del calendario no esta en el radio de mutantes: {scope!r}",
+            )
+            check(
+                answer.get("calendar-anchor") == "",
+                f"[{label}] una duda publica un ancla: {answer.get('calendar-anchor')!r}",
+            )
+            check(
+                fragment in answer.get("calendar-skip-refused", ""),
+                f"[{label}] el rechazo no dice el motivo ({fragment!r}): "
+                f"{answer.get('calendar-skip-refused')!r}",
+            )
+
+
+def test_a_change_in_what_the_calendar_crate_depends_on_measures_the_crate() -> None:
+    """`beta` is built from `alpha`: the verdicts of its mutants depend on what
+    `alpha` does, so a change in `alpha` since the anchor is a change in `beta`
+    even when no byte of `beta` moved. And the same world without that change
+    is the one that skips, so the refusal is the dependency and not the shape."""
+
+    def ask(root: Path, base: str, tools: Path) -> dict[str, str]:
+        answer, rc = _radius(
+            root,
+            "--base",
+            base,
+            "--affordable",
+            "alpha,beta",
+            "--calendar-crate",
+            "beta",
+            "--calendar-every",
+            "2",
+            "--calendar-marker",
+            base,
+            env=_tools(tools),
+        )
+        check(rc == 0, f"el selector no pudo decidir: {answer.get('reason')}")
+        return answer
+
+    with _skip_world() as (root, base, anchor, tools):
+        _record(root, _receipt(anchor, crate="beta"))
+        answer = ask(root, base, tools)
+        check(
+            answer.get("calendar") == "skipped",
+            "sin cambios en beta ni en alpha el turno no se omite: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+
+        _write(root / "alpha" / "src" / "lib.rs", "pub fn value() -> u32 {\n    3\n}\n")
+        _commit(root, "fix: the dependency changed")
+        answer = ask(root, base, tools)
+        check(
+            answer.get("calendar") == "fires",
+            "un cambio en alpha, del que beta depende, no vuelve a medir beta: "
+            f"{answer.get('calendar')!r}",
+        )
+        check(
+            "beta" in answer.get("mutant-scope", "").split(),
+            f"beta no esta en el radio de mutantes: {answer.get('mutant-scope')!r}",
+        )
+        check(
+            "cambios desde" in answer.get("calendar-skip-refused", "")
+            and "alpha" in answer.get("calendar-skip-refused", ""),
+            "el rechazo no nombra lo que cambio: "
+            f"{answer.get('calendar-skip-refused')!r}",
+        )
+
+
+def test_an_unresolved_base_or_calendar_is_never_skipped() -> None:
+    """The skip applies to a turn that is DUE. A calendar that cannot be counted
+    and a base that cannot be resolved are not a due turn: they are the cases in
+    which the crate is measured without asking anything else."""
+    with _skip_world() as (root, base, anchor, tools):
+        head = _git(root, "rev-parse", "HEAD")
+        answer, _ = _ask_calendar(root, base, tools, marker=head)
+        check(
+            answer.get("calendar") == "unknown",
+            f"un calendario que no se puede contar se omite: {answer.get('calendar')!r}",
+        )
+        check(
+            "gamma" in answer.get("mutant-scope", "").split(),
+            "un calendario indeciso dejo de medir el crate: "
+            f"{answer.get('mutant-scope')!r}",
+        )
+        check(
+            answer.get("calendar-anchor") == "",
+            f"un calendario indeciso publica un ancla: {answer.get('calendar-anchor')!r}",
+        )
+
+        answer, _ = _ask_calendar(root, "0" * 40, tools)
+        check(
+            answer.get("status") == "undetermined",
+            f"una base sin resolver no deja el radio indeciso: {answer.get('status')!r}",
+        )
+        check(
+            answer.get("calendar") != "skipped" and answer.get("calendar-anchor") == "",
+            "una base sin resolver omitio el turno: "
+            f"{answer.get('calendar')!r} / {answer.get('calendar-anchor')!r}",
+        )
+        check(
+            "gamma" in answer.get("mutant-scope", "").split(),
+            "una base sin resolver dejo de medir el crate: "
+            f"{answer.get('mutant-scope')!r}",
+        )
+
+
+def test_the_gate_logs_the_skip_and_does_not_decide_it() -> None:
+    """The decision lives in the selector, like the rest of the radius: a second
+    copy of it in the shell is a second truth that goes stale. The gate asks,
+    prints which commit the turn was compared with, and executes."""
+    text = GATE.read_text(encoding="utf-8")
+    for needed in ("calendar-anchor", "calendar-skip-refused", "turno omitido", "turno medido"):
+        check(needed in text, f"el gate no lee ni dice «{needed}»")
+    for decision in ("Medición del calendario", "--is-ancestor", "rustc --version", "--quiet"):
+        check(
+            decision not in text,
+            f"el gate decide por su cuenta el turno omitido («{decision}»): la decision "
+            "es de scripts/gate_scope.py",
+        )
+
+
+def test_the_receipt_template_names_the_fields_the_selector_reads() -> None:
+    """The template and the parser are one promise in two places. A block close
+    writes the line from AGENTS.md; if its fields drift from the ones the
+    selector reads, every anchor is unreadable and the crate is measured every
+    time, which is the safe failure and also the one nobody notices."""
+    spec = importlib.util.spec_from_file_location("gate_scope_for_contract", SELECTOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    agents = AGENTS_MD.read_text(encoding="utf-8")
+    check(
+        "Medición del calendario:" in agents,
+        "AGENTS.md no documenta la linea «Medición del calendario:» del recibo",
+    )
+    line = next((l for l in agents.splitlines() if "Medición del calendario:" in l and "crate=" in l), "")
+    keys = tuple(getattr(module, "RECEIPT_KEYS", ()))
+    check(bool(keys), "el selector no declara los campos del recibo que lee (RECEIPT_KEYS)")
+    for key in keys:
+        check(
+            f"{key}=" in line,
+            f"la plantilla del recibo de AGENTS.md no lleva el campo «{key}=» que el selector lee",
         )
 
 
