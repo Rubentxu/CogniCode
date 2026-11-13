@@ -18,6 +18,44 @@ async fn refactor_basis(
     })
 }
 
+/// The string a refactor param carries under `key`, if the caller sent one.
+fn param_str<'a>(params: Option<&'a serde_json::Value>, key: &str) -> Option<&'a str> {
+    params.and_then(|p| p.get(key)).and_then(|v| v.as_str())
+}
+
+/// The canonical file a refactor action works on: the param `key` when the
+/// caller names one, otherwise the `target`.
+///
+/// The refactor service opens whatever path it is handed, so the judgment
+/// happens here, once, for every action (TASK-257): the path is anchored on
+/// the session and authorised by its validator, the same door every other
+/// path-bearing handler uses. An absolute path or a `..` that leaves the
+/// workspace is refused with a security error before any file is read.
+fn refactor_file(
+    ctx: &HandlerContext,
+    params: Option<&serde_json::Value>,
+    key: &str,
+    target: &str,
+) -> HandlerResult<PathBuf> {
+    Ok(authorise_file_path(
+        ctx,
+        param_str(params, key).unwrap_or(target),
+    )?)
+}
+
+/// The string param `key` an action cannot run without. A missing one is a
+/// malformed request, and it is reported before any path is judged, so the
+/// answer to a malformed request does not depend on the paths it carries.
+fn required_param<'a>(
+    params: Option<&'a serde_json::Value>,
+    key: &str,
+    action: &str,
+) -> HandlerResult<&'a str> {
+    param_str(params, key).ok_or_else(|| {
+        HandlerError::InvalidInput(format!("Missing '{key}' parameter for {action}"))
+    })
+}
+
 #[cognicode_macros::aix_tool(
     name = "safe_refactor",
     description = "Perform safe refactoring with validation and preview.",
@@ -49,14 +87,7 @@ pub async fn handle_safe_refactor(
                 })?
                 .to_string();
 
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = refactor_file(ctx, input.params.as_ref(), "file_path", &input.target)?;
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -134,14 +165,7 @@ pub async fn handle_safe_refactor(
                 })?
                 .to_string();
 
-            // Get the file path from params or use working_dir/target, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = refactor_file(ctx, input.params.as_ref(), "file_path", &input.target)?;
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -186,14 +210,7 @@ pub async fn handle_safe_refactor(
             }
         }
         RefactorAction::Inline => {
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = refactor_file(ctx, input.params.as_ref(), "file_path", &input.target)?;
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -236,38 +253,14 @@ pub async fn handle_safe_refactor(
             }
         }
         RefactorAction::Move => {
-            // Extract source_path and target_path from params, resolving relative paths
-            let source_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("source_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    resolve_file_path(s, &ctx.working_dir)
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .ok_or_else(|| {
-                    HandlerError::InvalidInput(
-                        "Missing 'source_path' parameter for move".to_string(),
-                    )
-                })?;
-
-            let target_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("target_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| {
-                    resolve_file_path(s, &ctx.working_dir)
-                        .to_string_lossy()
-                        .to_string()
-                })
-                .ok_or_else(|| {
-                    HandlerError::InvalidInput(
-                        "Missing 'target_path' parameter for move".to_string(),
-                    )
-                })?;
+            let raw_source = required_param(input.params.as_ref(), "source_path", "move")?;
+            let raw_target = required_param(input.params.as_ref(), "target_path", "move")?;
+            let source_path = authorise_file_path(ctx, raw_source)?
+                .to_string_lossy()
+                .to_string();
+            let target_path = authorise_file_path(ctx, raw_target)?
+                .to_string_lossy()
+                .to_string();
 
             // Create move command
             let command = MoveSymbolCommand::new(&input.target, &source_path, &target_path);
@@ -325,14 +318,7 @@ pub async fn handle_safe_refactor(
                     HandlerError::InvalidInput(format!("Invalid new_parameters: {}", e))
                 })?;
 
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
-                .params
-                .as_ref()
-                .and_then(|p| p.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            let file_path = refactor_file(ctx, input.params.as_ref(), "file_path", &input.target)?;
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -985,6 +971,197 @@ fn process(x: i32, y: i32) -> i32 {
             !output.validation_result.is_valid,
             "validation_result must be invalid; got {:?}",
             output.validation_result
+        );
+    }
+
+    // =========================================================================
+    // Path confinement: every path a refactor names is judged by the session
+    // =========================================================================
+
+    /// One input per place where `safe_refactor` takes a path from the
+    /// caller: the `file_path` / `source_path` / `target_path` params, and
+    /// the `target` that stands in for the file when no param names one.
+    fn path_bearing_inputs(file: &str) -> Vec<(&'static str, SafeRefactorInput)> {
+        use serde_json::json;
+        let with_target = |action, target: &str, params| SafeRefactorInput {
+            action,
+            target: target.to_string(),
+            params: Some(params),
+        };
+        vec![
+            (
+                "rename.file_path",
+                with_target(
+                    RefactorAction::Rename,
+                    "foo",
+                    json!({"new_name": "bar", "file_path": file}),
+                ),
+            ),
+            (
+                "rename.target",
+                with_target(RefactorAction::Rename, file, json!({"new_name": "bar"})),
+            ),
+            (
+                "extract.file_path",
+                with_target(
+                    RefactorAction::Extract,
+                    "foo",
+                    json!({"new_name": "bar", "file_path": file}),
+                ),
+            ),
+            (
+                "extract.target",
+                with_target(RefactorAction::Extract, file, json!({"new_name": "bar"})),
+            ),
+            (
+                "inline.file_path",
+                with_target(RefactorAction::Inline, "foo", json!({"file_path": file})),
+            ),
+            (
+                "inline.target",
+                with_target(RefactorAction::Inline, file, json!({})),
+            ),
+            (
+                "move.source_path",
+                with_target(
+                    RefactorAction::Move,
+                    "foo",
+                    json!({"source_path": file, "target_path": "dst.rs"}),
+                ),
+            ),
+            (
+                "move.target_path",
+                with_target(
+                    RefactorAction::Move,
+                    "foo",
+                    json!({"source_path": "src.rs", "target_path": file}),
+                ),
+            ),
+            (
+                "change_signature.file_path",
+                with_target(
+                    RefactorAction::ChangeSignature,
+                    "foo",
+                    json!({"new_parameters": [], "file_path": file}),
+                ),
+            ),
+            (
+                "change_signature.target",
+                with_target(
+                    RefactorAction::ChangeSignature,
+                    file,
+                    json!({"new_parameters": []}),
+                ),
+            ),
+        ]
+    }
+
+    /// A refactor reads the file it is pointed at. A path outside the
+    /// workspace is not the session's to read, whichever param carries it:
+    /// every one is refused with a security error before any file is
+    /// opened. The service reads whatever it is handed, so this is the only
+    /// place the boundary can be held.
+    #[tokio::test]
+    async fn test_safe_refactor_refuses_absolute_paths_outside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.rs");
+        std::fs::write(&secret, "fn foo() {}\nfn main() { foo(); }").unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .build();
+
+        let mut leaked = Vec::new();
+        for (site, input) in path_bearing_inputs(secret.to_str().unwrap()) {
+            match handle_safe_refactor(&ctx, input).await {
+                Err(HandlerError::Security(_)) => {}
+                other => leaked.push(format!("{site}: {other:?}")),
+            }
+        }
+        assert!(
+            leaked.is_empty(),
+            "these sites accepted a path outside the workspace instead of \
+             refusing it with a security error:\n{}",
+            leaked.join("\n")
+        );
+    }
+
+    /// The same sites with a `..` escape: relative, so it is joined to the
+    /// workspace and must still be judged.
+    #[tokio::test]
+    async fn test_safe_refactor_refuses_parent_traversal() {
+        let workspace = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .build();
+
+        let mut leaked = Vec::new();
+        for (site, input) in path_bearing_inputs("../../../../etc/hostname") {
+            match handle_safe_refactor(&ctx, input).await {
+                Err(HandlerError::Security(_)) => {}
+                other => leaked.push(format!("{site}: {other:?}")),
+            }
+        }
+        assert!(
+            leaked.is_empty(),
+            "these sites accepted a `..` escape instead of refusing it:\n{}",
+            leaked.join("\n")
+        );
+    }
+
+    /// A link that lives inside the workspace but points outside it is the
+    /// way a plain relative name reaches a file the session does not own:
+    /// the sites must refuse it, not follow it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_safe_refactor_refuses_a_symlink_that_leaves_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret.rs");
+        std::fs::write(&secret, "fn foo() {}\nfn main() { foo(); }").unwrap();
+        std::os::unix::fs::symlink(&secret, workspace.path().join("link.rs")).unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .build();
+
+        let mut leaked = Vec::new();
+        for (site, input) in path_bearing_inputs("link.rs") {
+            match handle_safe_refactor(&ctx, input).await {
+                Err(HandlerError::Security(_)) => {}
+                other => leaked.push(format!("{site}: {other:?}")),
+            }
+        }
+        assert!(
+            leaked.is_empty(),
+            "these sites followed a symlink out of the workspace:\n{}",
+            leaked.join("\n")
+        );
+    }
+
+    /// The opposite sign: an absolute path that points INSIDE the workspace
+    /// is still the caller's to name. It must reach the service, which
+    /// answers about the file (success or a reasoned failure) and never
+    /// with a security refusal.
+    #[tokio::test]
+    async fn test_safe_refactor_accepts_absolute_paths_inside_the_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let inside = workspace.path().join("lib.rs");
+        std::fs::write(&inside, "fn foo() {}\nfn main() { foo(); }").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(workspace.path().to_path_buf())
+            .build();
+
+        let mut refused = Vec::new();
+        for (site, input) in path_bearing_inputs(inside.to_str().unwrap()) {
+            if let Err(HandlerError::Security(e)) = handle_safe_refactor(&ctx, input).await {
+                refused.push(format!("{site}: {e}"));
+            }
+        }
+        assert!(
+            refused.is_empty(),
+            "a path inside the workspace must not be refused:\n{}",
+            refused.join("\n")
         );
     }
 
