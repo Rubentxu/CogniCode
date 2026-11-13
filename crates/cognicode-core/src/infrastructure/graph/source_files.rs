@@ -278,6 +278,17 @@ fn measure(
     })
 }
 
+/// The measurement of one file, the way the walk measures the files it
+/// yields.
+///
+/// A caller that reads a file ahead of a build and wants the build to
+/// recognise it has to describe it the way the build will: the same
+/// clock, the same size. This is the walk's own measurement, so the two
+/// cannot drift.
+pub fn measured(path: &Path) -> Result<SourceFile, std::io::Error> {
+    measure(path, std::fs::metadata(path))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -165,6 +165,10 @@ pub(crate) async fn run(
     // graph. A file that was deleted is not here: it has no symbols left
     // to count, and its count is settled against the graph as it was.
     let mut changed_rel_paths: Vec<PathBuf> = Vec::new();
+    // The files the build has to read again. A changed file that was read
+    // here is not among them: the build takes what this call read, because
+    // reading the same bytes twice is the cost of editing one file.
+    let mut to_read_again: Vec<PathBuf> = Vec::new();
 
     for decision in decisions {
         match decision {
@@ -178,28 +182,53 @@ pub(crate) async fn run(
                 if !delta.is_measured() {
                     symbols_unmeasured += 1;
                 }
+                to_read_again.push(full.clone());
                 changed_abs_paths.push(full);
             }
             Decision::Unchanged => files_skipped += 1,
             Decision::Changed { full, rel } => {
                 files_parsed += 1;
-                match ctx.semantic_search.index_file_from_path_timed(&full) {
-                    Ok(timings) => {
-                        parse_ms += timings.parse_ms;
-                        index_ms += timings.index_ms;
+                // One reading feeds the index and the graph. The service
+                // keeps what it read for the build that follows, so the
+                // file is not interpreted a second time.
+                let read_start = Instant::now();
+                match ctx.analysis_service.read_changed_file(&full) {
+                    Ok(facts) => {
+                        parse_ms += read_start.elapsed().as_millis() as u64;
+                        let write_start = Instant::now();
+                        ctx.semantic_search
+                            .index_symbols(&full.to_string_lossy(), facts.symbols.clone());
+                        index_ms += write_start.elapsed().as_millis() as u64;
                         indexed_any = true;
-                        // Successfully indexed - symbols will be in
-                        // DashMap and FTS5. How many they are is not
-                        // published here: it is counted in the graph,
-                        // once it has been rebuilt.
+                        // How many symbols they are is not published
+                        // here: it is counted in the graph, once it has
+                        // been rebuilt.
                         changed_abs_paths.push(full);
                         changed_rel_paths.push(rel);
                     }
-                    Err(e) => {
-                        // Parse failure - log at WARN and count as skipped
-                        tracing::warn!("Failed to index modified file {:?}: {}", full, e);
-                        files_skipped += 1;
-                        files_parsed -= 1; // Don't count this as parsed
+                    Err(read_error) => {
+                        // The graph cannot take this file as it stands (a
+                        // syntax error, an unreadable file). The index is
+                        // more tolerant than the graph, so it still gets
+                        // what it can read, and the build looks at the file
+                        // again and decides for itself.
+                        tracing::debug!("{read_error}");
+                        match ctx.semantic_search.index_file_from_path_timed(&full) {
+                            Ok(timings) => {
+                                parse_ms += timings.parse_ms;
+                                index_ms += timings.index_ms;
+                                indexed_any = true;
+                                to_read_again.push(full.clone());
+                                changed_abs_paths.push(full);
+                                changed_rel_paths.push(rel);
+                            }
+                            Err(e) => {
+                                // Parse failure - log at WARN and count as skipped
+                                tracing::warn!("Failed to index modified file {:?}: {}", full, e);
+                                files_skipped += 1;
+                                files_parsed -= 1; // Don't count this as parsed
+                            }
+                        }
                     }
                 }
             }
@@ -220,9 +249,11 @@ pub(crate) async fn run(
             changed_abs_paths.len()
         );
 
-        // Invalidate file cache so changed files are re-parsed
+        // Forget what the service remembers of the files the build has to
+        // read again: the removed ones, and the ones this call could not
+        // read for the graph.
         ctx.analysis_service
-            .invalidate_file_cache_for(&changed_abs_paths);
+            .invalidate_file_cache_for(&to_read_again);
 
         // Rebuild the project graph to reflect the changes
         match ctx

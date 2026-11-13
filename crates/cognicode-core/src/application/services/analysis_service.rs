@@ -20,19 +20,22 @@ use crate::application::dto::{
 use crate::application::error::{AppError, AppResult};
 use crate::application::graph_snapshot::LoadedGraph;
 pub use crate::application::graph_snapshot::TreeFile;
+use crate::application::ingest::types::FileFacts;
 use crate::application::ports::SharedGraph;
+use crate::application::services::file_facts_cache::FileFactsCache;
 use crate::application::single_flight::SingleFlight;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::findings::digest::sha256_raw;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
-use crate::domain::traits::DependencyRepository;
+use crate::domain::traits::{DependencyRepository, ParseError};
 use crate::domain::value_objects::{
     Language, RejectedRelation, WalkFilter, published_column, published_line,
 };
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
+use crate::infrastructure::graph::semantic_layer::compute_content_hash;
+use crate::infrastructure::graph::semantic_layer::read_file_facts;
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::TreeSitterParser;
 use std::path::{Path, PathBuf};
@@ -69,6 +72,20 @@ fn default_repository_factory() -> RepositoryFactory {
     Arc::new(|| Box::new(PetGraphStore::new()) as Box<dyn DependencyRepository>)
 }
 
+/// How a build turns the source of one file into the facts it declares:
+/// the language, the source and the path the file is published under.
+///
+/// The reader is the one place a source becomes facts. It is a seam so that
+/// a caller can observe how many times a file is interpreted; what a build
+/// publishes is decided by the facts, not by who read them.
+pub type FactsReader =
+    Arc<dyn Fn(Language, &str, &str) -> Result<FileFacts, ParseError> + Send + Sync>;
+
+/// The reader a build uses when nobody injects another one.
+fn default_facts_reader() -> FactsReader {
+    Arc::new(read_file_facts)
+}
+
 /// La respuesta de una consulta al índice de símbolos, con la base
 /// temporal que la produce (TASK-221: una respuesta de análisis
 /// identifica su cobertura y base temporal). `graph_revision` es la
@@ -99,25 +116,9 @@ pub struct AnalysisService {
             std::sync::Arc<LightweightIndex>,
         >,
     >,
-    /// File cache: maps file path to (mtime, size, content_hash,
-    /// facts). The mtime is absent when the filesystem did not report a
-    /// time; an absent time is not the epoch, and it does not invalidate
-    /// the entry by itself — the content hash decides, and the hash is
-    /// the SHA-256 of the file bytes at parse time.
-    /// Uses Arc<Mutex<...>> to support Send across thread boundaries for async operations
-    file_cache: Arc<
-        Mutex<
-            std::collections::HashMap<
-                String,
-                (
-                    Option<i64>,
-                    u64,
-                    [u8; 32],
-                    crate::application::ingest::types::FileFacts,
-                ),
-            >,
-        >,
-    >,
+    /// What each file declared the last time it was read, by path, under
+    /// the identity of the bytes it was read from (see `FileFactsCache`).
+    file_cache: FileFactsCache,
     /// Coverage metrics from the last graph build
     coverage_metrics: Mutex<Option<GraphCoverageMetrics>>,
     /// F2.W8: skipped-file report from the last graph build. None
@@ -162,6 +163,8 @@ pub struct AnalysisService {
     /// changes where the repository comes from and nothing else: what a
     /// build publishes is decided by the rules, not by the factory.
     repository_factory: RepositoryFactory,
+    /// How a file becomes facts. Shared by every route that reads a file.
+    facts_reader: FactsReader,
     /// Somebody who is watching the tree and can say that a manifest
     /// still describes it.
     ///
@@ -236,13 +239,14 @@ impl AnalysisService {
             cycle_detector: CycleDetector::new(),
             graph_cache: Arc::new(GraphCache::new()),
             symbol_index: Mutex::new(std::collections::HashMap::new()),
-            file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            file_cache: FileFactsCache::default(),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             last_coverage: Mutex::new(None),
             reparse_costs: Mutex::new(Default::default()),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
+            facts_reader: default_facts_reader(),
             freshness_oracle: std::sync::OnceLock::new(),
             graph_builds: SingleFlight::new(),
         }
@@ -308,6 +312,19 @@ impl AnalysisService {
         F: Fn() -> Box<dyn DependencyRepository> + Send + Sync + 'static,
     {
         self.repository_factory = Arc::new(factory);
+        self
+    }
+
+    /// Replaces the reader that turns a file into its facts.
+    ///
+    /// Every route reads a file through it, so injecting a reader that
+    /// counts is how a caller observes how many times a file was
+    /// interpreted.
+    pub fn with_facts_reader<F>(mut self, reader: F) -> Self
+    where
+        F: Fn(Language, &str, &str) -> Result<FileFacts, ParseError> + Send + Sync + 'static,
+    {
+        self.facts_reader = Arc::new(reader);
         self
     }
 
@@ -429,10 +446,44 @@ impl AnalysisService {
     /// Must be called before `build_project_graph` when files have been modified
     /// externally so that the mtime-based cache does not return stale symbols.
     pub fn invalidate_file_cache_for(&self, paths: &[std::path::PathBuf]) {
-        let mut cache = self.file_cache.lock().unwrap();
-        for path in paths {
-            cache.remove(&path.to_string_lossy().into_owned());
-        }
+        self.file_cache.invalidate(paths);
+    }
+
+    /// Reads one file that changed, and keeps what it read for the build
+    /// that follows.
+    ///
+    /// The incremental reindex needs the facts of the file it was told
+    /// changed, and the build that rebuilds the graph needs the same facts:
+    /// reading the file in both places interprets the same bytes twice. The
+    /// facts are therefore handed to the cache under the identity the build
+    /// will measure the file by, and the build finds them there. A build
+    /// that measures another identity — the file changed again in between —
+    /// does not find them and reads the file itself.
+    ///
+    /// A file that cannot be read is an error and the cache is untouched:
+    /// the caller decides what a file nobody could read means.
+    pub fn read_changed_file(&self, path: &Path) -> AppResult<Arc<FileFacts>> {
+        let unreadable = |cause: &dyn std::fmt::Display| {
+            AppError::AnalysisError(format!("{}: {cause}", path.display()))
+        };
+        // Measured before it is read: an identity older than the bytes can
+        // only make the build read the file again, never trust stale facts.
+        let measured = crate::infrastructure::graph::source_files::measured(path)
+            .map_err(|e| unreadable(&e))?;
+        let language = measured
+            .language
+            .ok_or_else(|| unreadable(&"not a source file"))?;
+        let source = std::fs::read_to_string(path).map_err(|e| unreadable(&e))?;
+        let content_hash = compute_content_hash(&source);
+        let key = path.to_string_lossy().into_owned();
+        let facts = (self.facts_reader)(language, &source, &key).map_err(|e| unreadable(&e))?;
+        Ok(self.file_cache.seed(
+            key,
+            measured.mtime_secs(),
+            measured.size,
+            content_hash,
+            facts,
+        ))
     }
 
     pub fn build_project_graph(&self, project_dir: &Path) -> AppResult<()> {
@@ -795,29 +846,27 @@ impl AnalysisService {
                     };
                     let content_hash = compute_content_hash(&source);
 
-                    let cache = self.file_cache.lock().unwrap();
-                    if let Some((cached_mtime, cached_size, cached_hash, cached_facts)) =
-                        cache.get(&file_path).cloned()
-                        && cached_mtime == mtime
-                        && cached_size == size
-                        && cached_hash == content_hash
+                    if let Some(remembered) =
+                        self.file_cache
+                            .lookup(&file_path, mtime, size, content_hash)
                     {
-                        drop(cache);
                         return Some((
                             file_path,
                             mtime,
                             size,
                             content_hash,
-                            cached_facts,
-                            false, // from_cache = true
+                            remembered.facts,
+                            // Read ahead of this build and not yet counted by
+                            // any: this build interprets it, as far as the
+                            // coverage is concerned.
+                            remembered.unfolded,
                         ));
                     }
-                    drop(cache);
 
                     // A file whose reader fails is excluded from parsed
                     // coverage and reported, never silently counted as
                     // parsed with empty results.
-                    let facts = match read_file_facts(language, &source, &file_path) {
+                    let facts = match (self.facts_reader)(language, &source, &file_path) {
                         Ok(facts) => facts,
                         Err(e) => {
                             skipped.lock().unwrap().push(
@@ -835,7 +884,7 @@ impl AnalysisService {
                         mtime,
                         size,
                         content_hash,
-                        facts,
+                        Arc::new(facts),
                         true, // from_cache = false (parsed)
                     ))
                 }
@@ -886,7 +935,6 @@ impl AnalysisService {
             );
         }
 
-        let mut cache = self.file_cache.lock().unwrap();
         let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
         // What each file declares, for the ledger that decides what the
         // next build can keep.
@@ -913,15 +961,20 @@ impl AnalysisService {
                 content_hash,
                 &facts.symbols,
             ));
-            cache.insert(
-                file_path.clone(),
-                (mtime, size, content_hash, facts.clone()),
-            );
+            if was_parsed {
+                self.file_cache.remember(
+                    file_path.clone(),
+                    mtime,
+                    size,
+                    content_hash,
+                    facts.clone(),
+                );
+            }
 
-            for symbol in facts.symbols {
+            for symbol in &facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store
-                    .add_symbol(&symbol_id, &symbol)
+                    .add_symbol(&symbol_id, symbol)
                     .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                 global_index.insert(
                     symbol_id,
@@ -944,7 +997,7 @@ impl AnalysisService {
             // The calls travel as they were read: the file they are written
             // in is what lets the resolver apply the scope-aware rules, and
             // the line is what lets a refusal be pointed at.
-            all_calls.extend(facts.calls);
+            all_calls.extend(facts.calls.iter().cloned());
         }
 
         // The relations whose ends are already identified go in now
@@ -1094,6 +1147,7 @@ impl AnalysisService {
 
         let graph_cache = self.graph_cache.clone();
         let file_cache = self.file_cache.clone();
+        let facts_reader = self.facts_reader.clone();
         let reuse = self.reuse.clone();
         // The factory travels into the blocking task with the rest of the
         // state: a route that built its repository by another rule would
@@ -1204,30 +1258,26 @@ impl AnalysisService {
                             };
                             let content_hash = compute_content_hash(&source);
 
-                            let cache = file_cache.lock().unwrap();
-                            if let Some((cached_mtime, cached_size, cached_hash, cached_facts)) =
-                                cache.get(&file_path).cloned()
-                                && cached_mtime == mtime
-                                && cached_size == size
-                                && cached_hash == content_hash
+                            if let Some(remembered) =
+                                file_cache.lookup(&file_path, mtime, size, content_hash)
                             {
-                                drop(cache);
                                 return Some((
                                     file_path,
                                     mtime,
                                     size,
                                     content_hash,
-                                    cached_facts,
-                                    false, // from_cache = true
+                                    remembered.facts,
+                                    // Read ahead of this build and not yet
+                                    // counted by any: it counts as parsed here.
+                                    remembered.unfolded,
                                 ));
                             }
-                            drop(cache);
 
                             // Same contract as the sync builder: a file
                             // whose reader fails is excluded from parsed
                             // coverage and reported, never silently
                             // defaulted to empty results.
-                            let facts = match read_file_facts(language, &source, &file_path) {
+                            let facts = match facts_reader(language, &source, &file_path) {
                                 Ok(facts) => facts,
                                 Err(e) => {
                                     tracing::warn!("reading {} failed: {}", file_path, e);
@@ -1246,7 +1296,7 @@ impl AnalysisService {
                                 mtime,
                                 size,
                                 content_hash,
-                                facts,
+                                Arc::new(facts),
                                 true, // from_cache = false (parsed)
                             ))
                         }
@@ -1261,7 +1311,6 @@ impl AnalysisService {
                 let mut results = results;
                 results.sort_by(|a, b| a.0.cmp(&b.0));
 
-                let mut cache = file_cache.lock().unwrap();
                 let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
                 // What each file declares, for the ledger that decides what the
                 // next build can keep.
@@ -1287,15 +1336,24 @@ impl AnalysisService {
                         &facts.symbols,
                     ));
                     // PRF audit H-01: cache entries keyed by
-                    // (mtime, size, content_hash).
-                    cache.insert(file_path.clone(), (mtime, size, content_hash, facts.clone()));
+                    // (mtime, size, content_hash). A file the cache already
+                    // held under this identity is not written again.
+                    if was_parsed {
+                        file_cache.remember(
+                            file_path.clone(),
+                            mtime,
+                            size,
+                            content_hash,
+                            facts.clone(),
+                        );
+                    }
 
-                    for symbol in facts.symbols {
+                    for symbol in &facts.symbols {
                         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                         store
                             .lock()
                             .unwrap()
-                            .add_symbol(&symbol_id, &symbol)
+                            .add_symbol(&symbol_id, symbol)
                             .map_err(|e| AppError::AnalysisError(e.to_string()))?;
                         global_index.insert(
                             symbol_id,
@@ -1318,7 +1376,7 @@ impl AnalysisService {
                     // written in is what lets the resolver apply the
                     // scope-aware rules, and the line is what lets a
                     // refusal be pointed at.
-                    all_calls.extend(facts.calls);
+                    all_calls.extend(facts.calls.iter().cloned());
                 }
 
                 // The relations whose ends are already identified go in now
@@ -1928,86 +1986,6 @@ fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
         after,
     }
 }
-
-/// PRF audit H-01 (F2.W9): SHA-256 of the file bytes, used as a
-/// cache-invalidation key when (mtime, size) match but bytes may have
-/// changed (e.g. editor rewrites without re-save metadata updates).
-///
-/// Returns a 32-byte digest; collision-resistance is the only property we
-/// need (cache lookup, not security). The algorithm is the one of the digest
-/// owner, so every content digest in the crate changes together.
-fn compute_content_hash(source: &str) -> [u8; 32] {
-    sha256_raw(source.as_bytes())
-}
-
-/// What one file declares, read the way the product reads it.
-///
-/// A language that has a reader of its own is read by that reader, so the
-/// graph names a Terraform block or an Ansible task the way the tools that
-/// ask about them do. Every other language is read the generic way, and a
-/// file the generic reader cannot parse is an error the caller turns into a
-/// skipped file.
-///
-/// A reader of its own that falls over is not a file that declares nothing:
-/// the file was not read, and the caller turns that into a skipped file
-/// with the reader's own reason.
-fn read_file_facts(
-    language: Language,
-    source: &str,
-    file_path: &str,
-) -> Result<crate::application::ingest::types::FileFacts, crate::domain::traits::ParseError> {
-    let config =
-        crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
-    read_file_facts_with(config, source, file_path)
-}
-
-/// What one file declares, read by the reader it is handed.
-///
-/// The reader is a parameter because the reader is what decides what the
-/// file means, and a caller that holds one must be able to hand it over.
-fn read_file_facts_with(
-    config: &crate::infrastructure::parser::language_config::LanguageConfig,
-    source: &str,
-    file_path: &str,
-) -> Result<crate::application::ingest::types::FileFacts, crate::domain::traits::ParseError> {
-    match crate::infrastructure::graph::semantic_layer::semantic_facts_of(config, source, file_path)
-    {
-        crate::application::ingest::types::SemanticOutcome::Handled(facts) => return Ok(facts),
-        // The reader does not apply to this file: the generic reader
-        // answers it.
-        crate::application::ingest::types::SemanticOutcome::NotApplicable => {}
-        // The reader fell over. The file was not read, and the reason why
-        // is the reader's own: the caller turns this into a skipped file
-        // with that reason, not into a file with nothing in it.
-        crate::application::ingest::types::SemanticOutcome::Failed(cause) => {
-            return Err(crate::domain::traits::ParseError::InvalidSource(format!(
-                "{file_path}: {cause}"
-            )));
-        }
-    }
-    let parser = TreeSitterParser::with_cache(config.language)?;
-    // The tree is parsed once and read twice: the symbols and the calls
-    // come out of the very tree the soundness check looks at.
-    let tree = parser.parse_tree(source)?;
-    // A tree with error nodes is a file the reader did not understand.
-    // Publishing what a broken tree happens to hold would be a partial
-    // answer dressed as a whole one, so the file is reported as not
-    // read — the same thing the per-file route does with it.
-    if TreeSitterParser::has_error_nodes(&tree) {
-        return Err(crate::domain::traits::ParseError::InvalidSource(format!(
-            "Syntax errors in {file_path}"
-        )));
-    }
-    let symbols = parser.find_all_symbols_in_tree(&tree, source, file_path)?;
-    let calls = parser.find_call_sites_in_tree(&tree, source, file_path)?;
-    Ok(crate::application::ingest::types::FileFacts {
-        symbols,
-        identified: Vec::new(),
-        calls,
-        pending: Vec::new(),
-    })
-}
-
 impl AnalysisService {
     /// Finds all textual/AST occurrences of a symbol across the project
     /// source tree, skipping dependency/build/cache directories.
@@ -4023,56 +4001,5 @@ mod find_symbol_usages_tests {
         );
         assert_eq!(def.context_lines.as_ref().unwrap().after, vec!["    42"]);
         assert!(without_ctx.iter().all(|u| u.context_lines.is_none()));
-    }
-}
-
-#[cfg(test)]
-mod reader_failure_tests {
-    //! A reader of a language that falls over leaves the file unread.
-    //!
-    //! The consumer does not fall back to the generic reader: a file whose
-    //! reader fell over was not read, and saying so is what keeps the hole
-    //! visible in the coverage instead of publishing half a file.
-
-    use super::read_file_facts_with;
-    use crate::application::ingest::types::ExtractionResult;
-    use crate::domain::traits::ParseError;
-    use crate::domain::value_objects::Language;
-    use crate::infrastructure::parser::language_config::HCL_CONFIG;
-    use crate::infrastructure::parser::language_config::LanguageConfig;
-
-    /// A reader that cannot read.
-    fn a_reader_that_falls_over(
-        _source_path: &str,
-        _source_hash: &str,
-        _source: &str,
-        _tree: &tree_sitter::Tree,
-        _result: &ExtractionResult,
-    ) -> ExtractionResult {
-        panic!("this reader cannot read what it was handed");
-    }
-
-    /// A reader that falls over is an error with its cause, not a file with
-    /// nothing in it.
-    #[test]
-    fn a_reader_that_falls_over_is_an_error_with_its_cause() {
-        let config = LanguageConfig {
-            language: Language::Hcl,
-            ts_language: HCL_CONFIG.ts_language,
-            type_ref_walker: HCL_CONFIG.type_ref_walker,
-            semantic_handler: Some(a_reader_that_falls_over),
-        };
-
-        match read_file_facts_with(&config, "resource \"a\" \"b\" {}\n", "main.tf") {
-            Err(ParseError::InvalidSource(cause)) => assert!(
-                cause.contains("this reader cannot read what it was handed"),
-                "the error carries the reason the reader gave: {cause}"
-            ),
-            Err(other) => panic!("the failure is reported as a cause: {other:?}"),
-            Ok(facts) => panic!(
-                "a file whose reader fell over was read as {} symbols",
-                facts.symbols.len()
-            ),
-        }
     }
 }

@@ -6,7 +6,6 @@
 #![allow(clippy::len_zero)]
 
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::traits::Parser;
 use crate::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
 use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
@@ -304,13 +303,25 @@ impl SemanticSearchService {
         let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
             .map_err(|e| e.to_string())?;
 
-        let symbols = parser.find_all_symbols(source).map_err(|e| e.to_string())?;
+        // The symbols carry the path they were read from: a result that
+        // names the file "source" cannot be opened by whoever asked.
+        let symbols = parser
+            .find_all_symbols_with_path(source, file_path)
+            .map_err(|e| e.to_string())?;
 
-        // Write to DashMap (single source of truth after the Graph
-        // Intelligence v2 cleanup removed the FTS5 dual-write path).
-        self.index.index_file(file_path, symbols);
+        self.index_symbols(file_path, symbols);
 
         Ok(())
+    }
+
+    /// Indexes symbols that have already been read.
+    ///
+    /// A caller that interpreted the file for another purpose hands the
+    /// result here instead of paying for a second reading of the same
+    /// bytes. Writes to the DashMap (single source of truth after the Graph
+    /// Intelligence v2 cleanup removed the FTS5 dual-write path).
+    pub fn index_symbols(&self, file_path: &str, symbols: Vec<Symbol>) {
+        self.index.index_file(file_path, symbols);
     }
 
     /// Indexes a single file from path
