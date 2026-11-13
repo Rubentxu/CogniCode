@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-11, sobre `793033d40687781c68ab70613bc6210e9a6f54ac` (la
+> **Snapshot**: 2026-11-13, sobre `a6fd6b181283e2d0bc01737da369c24f5c130779` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -336,50 +336,70 @@
 > externo y su tag de frontera `v0.102.1` (TASK-177), y la `v0.103.1` del SDK
 > está publicada en crates.io y en GitHub Releases, verificada desde consumidor
 > limpio, con las referencias de versión ya volteadas (TASK-180).
+> Lo que las rutas reciben está confinado: las tools de índice y los goals
+> `inspect`/`change` pasan por `AuthorisedPath` (`ebb1e503`), la guarda de
+> symlinks de preview y apply usa una sola implementación de la frontera,
+> `PathRules` (`01af0750`), y el apply del CLI compara el plan con el estado
+> que vio el preview, no con uno recalculado (`7eefae5c`). El transporte HTTP
+> lee el cuerpo bajo un techo de 4 MiB y un plazo de 30 s, acepta
+> `Host: 0.0.0.0` sólo si está enlazado a esa dirección y tiene `--read-only`
+> (`9ce1a294`); la descarga de releases decide cada redirección y el token
+> sólo viaja a GitHub (`1c27db8a`). Cada palabra y cada cuenta tiene un
+> dueño: sólo `coverage_verdict` publica `Complete` (`5fa63f24`), hay un solo
+> digest de contenido, SHA-256 (`7dfa7371`), un solo cálculo de SCC,
+> iterativo (`e9b442a8`), un solo criterio de error, el tipo (`ad279860`), y
+> el refactor y `impact` miden sobre el grafo del análisis y rechazan un
+> nombre que varios símbolos llevan (`8013f430`, `a6148e5b`). El índice de
+> símbolos sigue al grafo y al directorio consultado (`ca1b339e`) y a los
+> ficheros: lo que un fichero ya no declara y lo que declaraba un fichero
+> borrado dejan de buscarse (`a6fd6b18`); un fichero editado se lee una vez
+> (`7e8b65ec`) y las construcciones del grafo se coalescen y salen del
+> runtime (`d9425391`). El gate reparte una sola selección por tipo de
+> objetivo, cada test una vez (`d9ce82f8`); el bucle de TDD y el gate
+> compilan el core con una sola variante de features (`3b7b561b`), un commit
+> ya no recompila el core (`7b7b8180`) y ningún test lanza cargo
+> (`f9e55dbc`). El hosting también guarda la política del mensaje de squash
+> (`f0066655`).
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`a7036ba06ee70b388fde184dbec3887297c8116a` → `793033d40687781c68ab70613bc6210e9a6f54ac`)
+## Qué cambió desde el snapshot anterior (`793033d40687781c68ab70613bc6210e9a6f54ac` → `a6fd6b181283e2d0bc01737da369c24f5c130779`)
 
-Entre una punta y otra entraron **15 commits** (`git rev-list --count a7036ba06ee70b388fde184dbec3887297c8116a..793033d40687781c68ab70613bc6210e9a6f54ac`).
+Entre una punta y otra entraron **26 commits** (`git rev-list --count 793033d40687781c68ab70613bc6210e9a6f54ac..a6fd6b181283e2d0bc01737da369c24f5c130779`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
-en qué commits está; la medición de cada unidad está en su recibo del `JOURNAL`.
+en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
+cuando la hay, en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| Los adaptadores MCP y sandbox salen del core | `efa36360` | Refactor; las suites del radio en verde. |
-| La cobertura por fichero se publica en el MCP y en el core (H24, C23) | `ea7af14d`, `97964977` (TASK-166, TASK-167) | Las tres rutas del grafo responden con la misma cobertura. |
-| El snapshot durable malformado se rechaza | `150e16f9` | Test que fallaba antes y pasa después. |
-| Se cierra el contrato observable de C23 y se reconcilia H24 | `73c7ccd9`, `436c6a92`, `ea43ce1a` | Documental. |
-| Se mide la reutilización del snapshot y el scanner frente al rebuild (H5) | `95daf95e`, `d8a32c7a`, `8cceb194`, `c35c1371` (TASK-170, TASK-172, TASK-173) | Cifras en el recibo del `JOURNAL`; el scanner sigue sin conectarse a la ruta real. |
-| Crates del SDK listos para el registro y ensayo de publicación | `6f9a29f6` | Ensayo sin subir nada; no hay publicación. |
-| Host de contenedor del Explorer y arreglos de explorer-ui | `6bd10a03` (TASK-191..202) | `docker build` NOT_RUN. |
-| README: la búsqueda semántica sin respaldo pasa a búsqueda difusa de símbolos | `3f80ac2b` (TASK-179) | Contrato de README en verde. |
-| README: todo binario del workspace se nombra y se dice cuáles se publican | `16f41c26` (TASK-179) | Contrato nuevo: 44/44. |
-| Preflight de publicación del SDK, de sólo lectura, que nombra cada bloqueo | `7aa0d5ff` (TASK-178) | Contrato de superficies del SDK en verde. |
-| Un comando que publica el SDK tras el preflight, y fija la comprobación del consumidor | `4164cd6d`, `9e7888d5` (TASK-178) | Nada se sube sin `--confirm-publish`. |
-| `auto-release-sdk.sh` publica la versión de `main` si crates.io no la tiene | `60958c13`, `5ee877fd` (TASK-178) | Se conserva como pieza; sin temporizador. |
-| `release-sdk.sh <versión>` prepara el bump y el PR; `--publish` publica y etiqueta | `4b2aabd0` (TASK-178) | `test_sdk_surfaces`: 52 OK; no se publicó ni se etiquetó nada. |
-| Se añade y se retira el temporizador del auto-release | `fda07186`, `6bab221b`, `be7ae08f` (TASK-178) | Cero referencias huérfanas medidas con `rg`. |
-| Docs de instalación y del SDK medidas contra `v0.102.1` | `40d8461e`, `ca3df4e8`, `276aa1e5`, `26ac7b65` (TASK-179) | Contratos de documentación en verde. |
-| Correcciones de CI, snapshot y recibo de TASK-5 | `40b2afa1`, `f731f0ea` | Documental y de contratos. |
-| Snapshot regenerado sobre `be7ae08f` | `0dfd150e` (TASK-178) | `run-all-contracts` rc=0. |
-| Evidencia medida de los assets de `v0.102.1` y ADR: sin atestación de procedencia | `875039fd`, `d4020b38` (TASK-180) | Documental. |
-| Bump del SDK a `0.103.0` y recibo de su publicación | `97d63cc5`, `6560597c` (TASK-180) | Publicada en crates.io y GitHub Releases. |
-| Referencias de versión vigentes apuntan a `0.103.0` | `a7036ba0` (TASK-180) | `run-all-contracts` rc=0. |
-| Rutas mise y asdf para `cogh` en las guías, plugin asdf publicado | `e7befbe6`, `ab272291`, `12538b81`, `ce9c4227`, `cdab6378` (TASK-180, PRs #780..#784) | `asdf plugin add` + `asdf install cogh 0.103.0`: «La suma coincide»; comportamiento fijado por test. |
-| El escaneo no borra lo que no puede recorrer | `1e138a13` (TASK-206) | RED real: un `Deleted` publicado por un directorio chmod 000; ahora `files`+`omissions` con cobertura por componente. |
-| Un solo dueño para el nombre del workspace | `d8a206cc` (TASK-208) | `workspace_id_for_path` eliminado con su re-export; `workspace_key` único dueño. |
-| El resolutor decide por el material que lee, no por la presencia de `.rs` | `979668dd` (TASK-210) | `GraphMaterial::{Present,NoReadableSources,NoFiles}`; el motivo declara la causa. |
-| La versión que un cert reclama es la del árbol que registró | `9592b436` (TASK-213) | `git show sha:Cargo.toml` en el `head_sha` del cert; el campo vuelve a `0.101.31`. |
-| Escritores concurrentes publican ficheros enteros | `705f2441` (TASK-209) | Test con barrera, sin sleeps, plazo de 10 s; la ventana del update condicional documentada en el módulo. |
-| El gate mide el radio con una sonda discriminante y dice su contexto de compilación | `83e9bc84` (TASK-211) | El lote que toca al dependiente beta no arrastra al alpha; el log dice warm/cold + sccache. |
-| Los 12 ficheros que `cargo fmt` rechaza quedan formateados | `f532846e` (TASK-214) | rustfmt puro (35+/35−); suite del crate 3429/3429. |
-| El Explorer y el runtime en árbol se dan de baja | `97b3f811`, `ef07632b` (TASK-177, PRs #785/#793) | La copia viva es el repo externo con su tag de frontera `v0.102.1`; recibo en `EXPLORER_HANDOFF.md`. |
-| Bump del SDK a `0.103.1` | `793033d4` (TASK-180, PR #794) | `release-sdk.sh 0.103.1`; ensayo de publicación en verde. |
-| `v0.103.1` publicada en crates.io y GitHub Releases (8 assets), tag sobre `793033d4` | tag `v0.103.1` (TASK-180) | Verificada desde consumidor limpio; los 8 assets verificados desde lo publicado; recibo en el `JOURNAL`. |
+| Las referencias de versión vigentes apuntan a `v0.103.1` | `cf70f1dd` (TASK-180) | 4 crates verificados desde un consumidor limpio y 8 assets verificados desde lo publicado. |
+| El gate corre cada test una vez, repartido por tipo de objetivo | `d9ce82f8` (TASK-215, #796) | 9.254 ejecuciones para 5.667 tests → 4.153 + 1.514 = 5.667; tiempo caliente de los dos pasos 38,3 s → 31,5 s; un radio sin ningún test falla. |
+| El analizador se identifica por el digest de sus fuentes, no por HEAD | `7b7b8180` (TASK-217, #797) | Tras un commit vacío core y mcp recompilaban en 70,79 s; ahora `Fresh` en 0,40 s. `SNAPSHOT_SCHEMA` v5→v6. |
+| Las tools de índice y los goals `inspect`/`change` confinan la ruta | `ebb1e503` (TASK-218, #798) | RED: tres formas de escape por cada una de las cinco entradas; `AuthorisedPath` obliga a pasar por el resolutor y se eliminó un segundo resolutor (`merge_graphs`). |
+| La guarda de symlinks de preview y apply usa `PathRules` | `01af0750` (TASK-219) | RED sobre `main`: el apply escribía a través de un directorio intermedio symlink (`committed: true`); core 3458/3458. |
+| La descarga de releases decide cada redirección | `1c27db8a` (TASK-230, #800) | El token sólo va a GitHub sobre https; cinco redirecciones y la sexta se detiene; el error no muestra query ni userinfo. |
+| El apply del CLI compara el plan con el estado que vio el preview | `7eefae5c` (TASK-220) | RED: el apply prosperaba con token caducado y sin proposal; ahora el preview persiste `plan.proposal.json`. core 3468/3468, cli 770/770. |
+| El cuerpo HTTP tiene techo y plazo, y el servidor tiene `--read-only` | `9ce1a294` (TASK-229, #802) | 4 MiB y 30 s (413 y 408, la conexión se cierra); `Host: 0.0.0.0` sólo lo acepta un servidor enlazado a esa dirección. |
+| El índice de símbolos sigue al grafo y al directorio consultado | `ca1b339e` (TASK-221) | 180× (66 ms frente a 11,8 s por 1000 consultas sobre 20k símbolos); dos RED: un símbolo borrado sobrevivía al rebuild y la consulta sobre B devolvía los de A. |
+| Sólo el veredicto de cobertura publica `Complete` | `5fa63f24` (TASK-222, #804) | Tres sitios fabricaban la palabra; `NoMaterial` es variante nueva y un sobre sin palabra se publica `unknown`. core 3475/3475. |
+| Un solo digest de contenido, SHA-256 | `7dfa7371` (TASK-226, #805) | Usos de producción de `DefaultHasher`/`blake3`: 12 en 6 ficheros → 0; cursores, planes y tokens emitidos antes dejan de validar. |
+| El refactor mide el impacto sobre el grafo del análisis | `8013f430` (TASK-223, #806) | RED: el rename se negaba por `target/gen.rs` y dos llamadores contaban 1; fixture mediano ~689 ms → ~150 ms; un fichero ilegible se nombra como hueco. |
+| El core se compila en una sola variante de features | `3b7b561b` (TASK-216, #807) | 0 recompilaciones del core en core→mcp→core (antes ~68 s); 3.490 → 4.094 tests del core que el bucle no veía. |
+| La política del mensaje de squash también se guarda en el hosting | `f0066655` (#808) | La guardia valida título+cuerpo y cada commit; cinco casos con `gh` simulado. |
+| La allowlist de CR-06 nombra módulos exactos, no subárboles | `08c6e289` (TASK-231, #810) | 29 rutas concretas → 13 módulos; al enumerar, los pares de producción pasan de 26 a 37 (la allowlist, de 40 a 52); RED `cr06_a_new_module_under_an_allowlisted_subtree_is_still_drift`. |
+| `impact` rechaza un nombre que varios símbolos llevan | `a6148e5b` (TASK-235.5, #811) | RED con el id `helper:0:0`; sin el respaldo por nombre pasan 3.104 unitarios del core, 48 de integración, 110 del CLI y 8 del MCP. |
+| Un solo dueño del SCC, iterativo | `e9b442a8` (TASK-235.6, #812) | `cycle_detector` se reescribe sobre `condensation`; `CallGraphProjection::detect_cycles` devolvía `false` para A↔B y se corrige. |
+| Los fallos se clasifican por tipo y la ambigüedad es un dato | `ad279860` (TASK-235.1, #813) | `InterfaceError::kind()` total; el contrato `-32006` + `data.candidates` sólo se cumplía en la ruta de handlers y ahora también en la del cliente; `content[0]` byte a byte. |
+| La terminal y el cable nombran el mismo siguiente paso | `66b3dd89` (TASK-235.4, #814) | El éxito del MCP tiene una sola construcción (`envelope_for`); `content[0]` sigue byte a byte. |
+| La guarda de capacidades lee el catálogo | `3871eff4` (TASK-235.2, #815) | Cada sitio que nombra una tool tiene un guardián que falla si falta; el dueño es `product/tools.json` (88 tools). Decisión del mantenedor pendiente: `capabilities.rs` no tiene consumidor de producción. |
+| Una sola definición de tasa de paso | `31768362` (TASK-235.3, #816) | Cinco sitios contaban «pasado» de forma distinta (sólo `pass`; `pass`+`expected_fail`; con y sin `preexisting_fail`). |
+| Las construcciones del grafo se coalescen y salen del runtime | `d9425391` (TASK-227, #817) | RED: 4 llamadores → 4 construcciones; ahora 4 → 1, el mismo `Arc`; una petición ligera ya no muere de hambre en un runtime de un hilo. core 4130, mcp 328, cli 789. |
+| Un fichero editado se lee una vez y el índice oye esa lectura | `7e8b65ec` (TASK-228, #818) | Reparse de un fichero: 12 ficheros 1,18 → 0,95 ms; 120, 5,79 → 3,86 ms; 1200, 57,6 → 42,9 ms; el coste sigue lineal en el árbol (lo domina el rebuild). CR-06 37 → 36. |
+| vitest resuelve `@scaffold-assets` como vite | `e0f8e32b` (#819) | Corrección de la configuración de la UI; el recibo no lleva medición propia. |
+| Ningún test lanza cargo ni usa el binario de otro árbol | `f9e55dbc` (TASK-224, #820) | Contrato nuevo de 5 casos: RED con 4 infractores, VERDE después; 1.548 tests antes y después; binarios de test 7 → 4. |
+| El índice de búsqueda sigue a los ficheros | `a6fd6b18` (TASK-237, #821) | RED: 8 de 16 pruebas de comportamiento fallaban; lo renombrado deja de buscarse, dos ficheros con el mismo nombre en el mismo sitio son dos resultados y un fichero borrado se olvida. core 3.140 unitarios + 1.005 de integración. |
 
 ## Release: la última publicada es la v0.103.1
 
@@ -1212,9 +1232,11 @@ era deriva de ritmo —el snapshot declaraba un árbol 56 commits por detrás de
 punta— y lo cerró TASK-126; el gate del lote de diez, medido en serie el
 2026-11-06 sobre `a3b8b862`, dio rc=0 con los tres pasos: 4701 unitarios, 6794 de
 integración y 627 mutantes —618 atrapados, 9 inviables, 0 supervivientes—. Ese
-certificado es del árbol del lote, no de la punta: después llegaron TASK-123,
-TASK-127, TASK-140 y TASK-141, y el árbol de hoy mide 4706 unitarios y 6809 de
-integración.
+certificado es del árbol del lote, no de la punta, y sus recuentos ya no
+describen el gate: desde TASK-215 (`d9ce82f8`) los dos pasos de test reparten
+una sola selección por tipo de objetivo y cada test corre una vez —medido
+entonces: 4.153 unitarios + 1.514 de integración = 5.667 tests distintos, donde
+antes se ejecutaban 9.254—.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
