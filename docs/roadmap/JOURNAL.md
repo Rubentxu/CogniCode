@@ -39381,3 +39381,24 @@ procedencia (AC6, igual que 0.103.0).
 0.103.1 (sí se verificó para 0.103.0 el 2026-11-09); la verificación de
 procedencia cosig sigue sin ser aplicable sin clave. Este recibo y el volteo
 de docs entran por PR en la rama `docs/release-v0.103.1`.
+
+## TASK-241 — flujo por bloques de 10 tareas y base del primer bloque (2026-11-13)
+
+**Cambio.** `AGENTS.md` gana la sección «Flujo de trabajo: bloques de 10 tareas» y reconcilia las
+tres frases que exigían el gate completo por unidad (punto 6 de la recuperación, «Disciplina
+diaria» y la fila «¿Qué verifico antes de dar algo por terminado?»): el gate ya se pasaba por
+lotes de 10, pero esas tres frases lo contradecían. Una tarea paga su prueba focal; el gate, los
+contratos, el `npm test` del explorer-ui y clippy se pagan una vez por bloque, y el recibo del
+`JOURNAL` es el del bloque, no el de cada tarea. El contador se deriva de `git log` y la base es el
+SHA que verificó el último gate verde: no hay fichero de estado.
+
+**Base del primer bloque: `e0f8e32b`.** El gate del bloque anterior (`GATE_BASE=9ce1a294~1`) salió
+con `rc=0` y declaró el paso de mutantes como no medido por el calendario («la edad de un hueco
+queda acotada a 50 fusiones»). El `npm test` del explorer-ui de esa misma pasada falló en 5
+ficheros (`@scaffold-assets` apuntaba a un directorio retirado) y #819 (`e0f8e32b`) lo dejó en 88
+ficheros / 950 tests en verde. Desde `e0f8e32b` el contador da 4 al abrir esta entrada
+(TASK-224, 225, 237, 238).
+
+**NOT_RUN.** Los logs de esa pasada vivían en `/tmp` y no se archivaron: el `rc` y los recuentos
+citados arriba son los de la sesión que los lanzó, no un artefacto del repositorio. Este cambio
+es solo documental: no ejecuta el gate.
