@@ -30,11 +30,17 @@
 //! |------------------------------|---------------------------|----------------------------------|
 //! | a file with mode 000         | hole (it opens the file)  | listed (it only measures it)     |
 //! | a directory with mode 000    | hole (the walk fails)     | hole (the walk fails)            |
-//! | a symlink to nothing         | not a file, not searched  | hole (the measurement fails)     |
+//! | a symlink (to anything)      | hole (declined: symlink)  | hole (declined: symlink)         |
+//!
+//! A symlink is declined on both routes whatever it points at (TASK-258): a
+//! link is a name, not a licence to read or measure what is behind it, the same
+//! rule the project inventory applies. It used to be read through, so a link
+//! that left the workspace read, or measured, a file outside it.
 //!
 //! These answers are read as JSON, the way a client reads them. The set of
-//! files each operation reads is the one it always read: the characterization
-//! in `each_reader_of_the_tree_says_which_files_it_reads` stays as it was.
+//! regular files each operation reads is the one it always read: the
+//! characterization in `each_reader_of_the_tree_says_which_files_it_reads`
+//! stays as it was.
 //!
 //! ## Retrieve and verify (TASK-252)
 //!
@@ -407,7 +413,9 @@ fn a_tree_with_one_sealed_directory() -> (tempfile::TempDir, PathBuf, Unlock) {
     (tmp, root, unlock)
 }
 
-/// A tree with one entry the walk lists and the measurement cannot follow.
+/// A tree with one symlink whose target does not exist. Both operations
+/// decline a symlink without asking where it points, so the missing target is
+/// the case that used to fail the measurement and now never gets that far.
 fn a_tree_with_a_symlink_to_nothing() -> (tempfile::TempDir, PathBuf) {
     let (tmp, root) = a_readable_tree();
     std::os::unix::fs::symlink(root.join("missing.rs"), root.join("dangling.rs"))
@@ -655,7 +663,7 @@ async fn the_listing_does_not_call_a_file_it_only_measures_a_hole() {
 }
 
 #[tokio::test]
-async fn the_listing_publishes_the_entry_it_could_not_measure() {
+async fn the_listing_declines_a_symlink_to_nothing_and_names_it() {
     let (_tmp, root) = a_tree_with_a_symlink_to_nothing();
     let answer = listing_answer(&root).await;
 
@@ -679,12 +687,45 @@ async fn the_listing_publishes_the_entry_it_could_not_measure() {
     assert_eq!(
         dangling.len(),
         1,
-        "the entry could not be measured and the listing does not name it: {holes:?}"
+        "the symlink was declined and the listing does not name it: {holes:?}"
+    );
+    assert_cause_is_a_declined_symlink(&dangling[0].1, "missing.rs");
+}
+
+/// The search never counted a symlink to nothing as a file, so it never said a
+/// word about it: a tree with one read as a tree covered whole. It names the
+/// link now, with the words the project inventory and the listing use.
+#[tokio::test]
+async fn the_search_declines_a_symlink_to_nothing_and_names_it() {
+    let (_tmp, root) = a_tree_with_a_symlink_to_nothing();
+    let answer = search_answer(&root, "pub fn").await;
+
+    assert_eq!(
+        status_of(&answer),
+        "partial",
+        "a symlink was declined and the search says it covered the tree"
+    );
+    let holes = holes_of(&answer);
+    let dangling = holes_ending_with(&holes, "dangling.rs");
+    assert_eq!(
+        dangling.len(),
+        1,
+        "the symlink was declined and the search does not name it: {holes:?}"
+    );
+    assert_cause_is_a_declined_symlink(&dangling[0].1, "missing.rs");
+    assert_eq!(answer["total"], 1, "the regular file still answers");
+}
+
+/// The cause a client reads for a declined symlink: the same sentence
+/// `SkipReason::Symlink` publishes for the project inventory.
+fn assert_cause_is_a_declined_symlink(cause: &str, target_name: &str) {
+    assert!(
+        cause.starts_with("symlink to ") && cause.ends_with(", not followed"),
+        "the hole carries its cause: {cause}"
     );
     assert!(
-        dangling[0].1.starts_with("read error"),
-        "the hole carries its cause: {}",
-        dangling[0].1
+        cause.contains(target_name),
+        "the cause says where the link pointed: {cause}"
     );
 }
 

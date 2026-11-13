@@ -123,6 +123,11 @@ pub enum UnreadKind {
     Read,
     /// The walk itself failed on the entry: a directory it could not list.
     Walk,
+    /// The entry is a symlink and the operation declined it on purpose: a
+    /// link is a name, not a licence to read or measure what is behind it,
+    /// whether the target lies inside the workspace or outside it. The
+    /// `detail` is where the link pointed.
+    Symlink,
 }
 
 /// An entry of the tree an operation could not read, and why.

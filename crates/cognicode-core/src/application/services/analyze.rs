@@ -257,6 +257,11 @@ pub fn read_coverage(unread: &[crate::application::dto::UnreadEntry]) -> Coverag
                             entry.detail.clone(),
                         )
                     }
+                    UnreadKind::Symlink => {
+                        crate::infrastructure::graph::per_file_graph::SkipReason::Symlink {
+                            target: entry.detail.clone(),
+                        }
+                    }
                 },
             },
         )

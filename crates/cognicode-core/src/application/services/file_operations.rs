@@ -22,13 +22,13 @@ use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, EditVerification, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
     RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
-    UnreadEntry, UnreadKind, VerificationStatus, VerifiedMatchDto, WriteFileRequest,
-    WriteFileResult,
+    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
 use crate::application::services::content_search::find_matches_in_content;
+use crate::application::services::unread_entries::{declined_symlink, read_failure, walk_failure};
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
@@ -41,38 +41,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-
-/// The walk failed on an entry: a directory it could not list.
-///
-/// The path is the one the walker names, wherever it sits in the error.
-fn walk_failure(error: &ignore::Error) -> UnreadEntry {
-    fn path_of(error: &ignore::Error) -> Option<&Path> {
-        match error {
-            ignore::Error::WithPath { path, .. } => Some(path.as_path()),
-            ignore::Error::Loop { child, .. } => Some(child.as_path()),
-            ignore::Error::WithDepth { err, .. } | ignore::Error::WithLineNumber { err, .. } => {
-                path_of(err)
-            }
-            _ => None,
-        }
-    }
-    UnreadEntry {
-        path: path_of(error)
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "<walk>".to_string()),
-        kind: UnreadKind::Walk,
-        detail: error.to_string(),
-    }
-}
-
-/// The walk listed an entry and the operation could not open or measure it.
-fn read_failure(path: &Path, error: &std::io::Error) -> UnreadEntry {
-    UnreadEntry {
-        path: path.to_string_lossy().into_owned(),
-        kind: UnreadKind::Read,
-        detail: error.to_string(),
-    }
-}
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1620,6 +1588,11 @@ impl FileOperationsService {
                 }
             };
 
+            if let Some(hole) = declined_symlink(&entry) {
+                unread.push(hole);
+                continue;
+            }
+
             let path = entry.path();
             if !path.is_file() {
                 continue;
@@ -1852,6 +1825,11 @@ impl FileOperationsService {
                     continue;
                 }
             };
+
+            if let Some(hole) = declined_symlink(&entry) {
+                unread.push(hole);
+                continue;
+            }
 
             let path = entry.path();
 
@@ -2157,7 +2135,7 @@ fn skipped_match(m: &ContentMatch, reason: String) -> VerifiedMatchDto {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::dto::{FileEdit, ReadMode};
+    use crate::application::dto::{FileEdit, ReadMode, UnreadKind};
     use crate::domain::traits::code_verifier::{
         CodeVerifier, CodeVerifierError, CompilationResult,
     };
@@ -2569,6 +2547,164 @@ mod tests {
 
         let output = result.unwrap();
         assert_eq!(output.total, 2); // Both HELLO and hello match
+    }
+
+    /// A workspace with one real file and a symlink inside it that points at a
+    /// file outside it. The outside file carries a marker no honest search of
+    /// the workspace may ever return.
+    #[cfg(unix)]
+    fn workspace_with_a_link_to_a_file_outside() -> (TempDir, TempDir) {
+        let workspace = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(workspace.path().join("real.txt"), "inside MARKER\n").unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside MARKER\n").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            workspace.path().join("link.txt"),
+        )
+        .unwrap();
+        (workspace, outside)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_content_does_not_read_through_a_symlink_that_leaves_the_workspace() {
+        let (workspace, outside) = workspace_with_a_link_to_a_file_outside();
+        let service = test_service_in_temp_dir(&workspace);
+
+        let output = service
+            .search_content(SearchContentRequest {
+                pattern: "MARKER".to_string(),
+                path: None,
+                file_glob: None,
+                regex: Some(false),
+                case_insensitive: Some(false),
+                max_results: Some(50),
+                context_lines: Some(0),
+            })
+            .unwrap();
+
+        let leaked: Vec<&str> = output.matches.iter().map(|m| m.text.as_str()).collect();
+        assert!(
+            output.matches.iter().all(|m| !m.file.ends_with("link.txt")),
+            "the search read the outside file through the link: {leaked:?} (outside at {})",
+            outside.path().display()
+        );
+        assert_eq!(output.total, 1, "only the real file may match: {leaked:?}");
+        assert_eq!(
+            output.files_scanned, 1,
+            "a declined link is not a scanned file"
+        );
+        let declined = output
+            .unread
+            .iter()
+            .find(|entry| entry.path.ends_with("link.txt"))
+            .expect("the declined link is published as a hole, not dropped silently");
+        assert_eq!(declined.kind, UnreadKind::Symlink);
+        assert!(
+            declined.detail.ends_with("secret.txt"),
+            "the hole names where the link pointed: {}",
+            declined.detail
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_content_declines_a_symlink_whose_target_stays_inside_too() {
+        let workspace = TempDir::new().unwrap();
+        fs::write(workspace.path().join("real.txt"), "MARKER\n").unwrap();
+        std::os::unix::fs::symlink("real.txt", workspace.path().join("alias.txt")).unwrap();
+        let service = test_service_in_temp_dir(&workspace);
+
+        let output = service
+            .search_content(SearchContentRequest {
+                pattern: "MARKER".to_string(),
+                path: None,
+                file_glob: None,
+                regex: Some(false),
+                case_insensitive: Some(false),
+                max_results: Some(50),
+                context_lines: Some(0),
+            })
+            .unwrap();
+
+        assert_eq!(output.total, 1, "the alias is the same file counted twice");
+        assert!(
+            output
+                .unread
+                .iter()
+                .any(|entry| entry.path.ends_with("alias.txt") && entry.detail == "real.txt"),
+            "one rule for every symlink, whatever its target: {:?}",
+            output.unread
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_files_does_not_measure_through_a_symlink_that_leaves_the_workspace() {
+        let (workspace, _outside) = workspace_with_a_link_to_a_file_outside();
+        let service = test_service_in_temp_dir(&workspace);
+
+        let output = service
+            .list_files(ListFilesRequest {
+                path: None,
+                glob: None,
+                offset: None,
+                limit: None,
+                recursive: None,
+                max_depth: None,
+            })
+            .unwrap();
+
+        assert!(
+            output.files.iter().all(|f| !f.path.ends_with("link.txt")),
+            "the listing published the size and mtime of the outside file: {:?}",
+            output.files
+        );
+        let declined = output
+            .unread
+            .iter()
+            .find(|entry| entry.path.ends_with("link.txt"))
+            .expect("the declined link is published as a hole, not dropped silently");
+        assert_eq!(declined.kind, UnreadKind::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_files_declines_a_symlinked_directory_without_descending() {
+        let workspace = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        fs::write(outside.path().join("hidden.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), workspace.path().join("linked")).unwrap();
+        let service = test_service_in_temp_dir(&workspace);
+
+        let output = service
+            .list_files(ListFilesRequest {
+                path: None,
+                glob: None,
+                offset: None,
+                limit: None,
+                recursive: None,
+                max_depth: None,
+            })
+            .unwrap();
+
+        assert!(
+            output
+                .files
+                .iter()
+                .all(|f| !f.path.contains("linked") && !f.path.ends_with("hidden.txt")),
+            "a symlinked directory is neither listed nor entered: {:?}",
+            output.files
+        );
+        assert!(
+            output
+                .unread
+                .iter()
+                .any(|entry| entry.path.ends_with("linked")),
+            "{:?}",
+            output.unread
+        );
     }
 
     #[test]
