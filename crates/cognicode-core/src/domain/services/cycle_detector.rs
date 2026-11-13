@@ -1,6 +1,12 @@
-//! Service for detecting cycles in call graphs using Tarjan's SCC algorithm
+//! Service for detecting cycles in call graphs.
 //!
-//! Tarjan's algorithm finds Strongly Connected Components (SCCs) in O(V+E) time.
+//! The strongly connected components are computed by
+//! [`cognicode_graph_algos::condensation`], the one implementation of the
+//! algorithm: iterative, so the depth of a call chain is bounded by the heap
+//! and not by the stack of the thread that asks, and mutation-tested in its
+//! own crate. This service decides what a *cycle* is for the product — a
+//! component of more than one symbol, or a symbol that calls itself — and
+//! how the answer is ordered.
 
 use std::collections::{HashMap, HashSet};
 
@@ -21,46 +27,36 @@ impl CycleDetector {
     /// its symbols in: the traversal starts at the smallest symbol id and
     /// visits the successors of each node in the order the graph
     /// publishes them, which is symbol id order, so the same graph always
-    /// publishes its cycles in the same order.
+    /// publishes its cycles in the same order. The members of a cycle are
+    /// listed in symbol id order too.
     pub fn detect_cycles(&self, graph: &CallGraph) -> CycleDetectionResult {
-        let mut state = TarjanState::new();
-        // The symbols come out of a hash map, so their order is different
-        // for every instance of the graph. Sorted by identifier, the
-        // traversal starts at the smallest one and the published cycles
-        // come out in the same order every time.
-        let mut symbol_ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
-        symbol_ids.sort();
+        let (symbol_ids, successors) = numbered_successors(graph);
 
-        // Initialize index for all symbols
-        for id in &symbol_ids {
-            if !state.node_index.contains_key(id) {
-                state.index = 0;
-                self.tarjanStronglyConnected(id, graph, &mut state);
-            }
-        }
+        let components = cognicode_graph_algos::condensation(&successors, symbol_ids.len());
+        let total_sccs = components.len();
 
-        // Save total SCCs count before consuming the vector
-        let total_sccs = state.strongly_connected_components.len();
-
-        // Collect multi-node SCCs as cycles (with symbol names)
-        let mut cycles: Vec<Cycle> = state
-            .strongly_connected_components
+        // Multi-node components are cycles (with symbol names).
+        let mut cycles: Vec<Cycle> = components
             .into_iter()
-            .filter(|scc| scc.len() > 1)
-            .map(|scc| {
-                let names = scc
+            .filter(|component| component.len() > 1)
+            .map(|component| {
+                let ids: Vec<SymbolId> = component
+                    .into_iter()
+                    .map(|position| symbol_ids[position].clone())
+                    .collect();
+                let names = ids
                     .iter()
                     .filter_map(|id| graph.get_symbol(id).map(|s| s.name().to_string()))
                     .collect();
-                Cycle::new(scc, names)
+                Cycle::new(ids, names)
             })
             .collect();
 
-        // Check for self-loops (single node calling itself)
-        for id in &symbol_ids {
-            for callee in graph.callees(id).iter().map(|(id, _)| id) {
-                if callee == id {
-                    // Found a self-loop
+        // A symbol that calls itself is a cycle of one.
+        for (position, callees) in successors.iter().enumerate() {
+            for &callee in callees {
+                if callee == position {
+                    let id = &symbol_ids[position];
                     let name = graph
                         .get_symbol(id)
                         .map(|s| s.name().to_string())
@@ -102,80 +98,12 @@ impl CycleDetector {
         // answer does not depend on the order the graph happens to hold
         // them in: the tie between two symbols that break the same
         // number of cycles is the smaller identifier.
-        let mut ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
-        ids.sort();
-        let mut position_of: HashMap<&SymbolId, usize> = HashMap::with_capacity(ids.len());
-        for (position, id) in ids.iter().enumerate() {
-            position_of.insert(id, position);
-        }
-
-        let mut successors: Vec<Vec<usize>> = vec![Vec::new(); ids.len()];
-        for (position, id) in ids.iter().enumerate() {
-            for (callee, _) in graph.callees(id) {
-                if let Some(&target) = position_of.get(&callee) {
-                    successors[position].push(target);
-                }
-            }
-        }
+        let (ids, successors) = numbered_successors(graph);
 
         cognicode_graph_algos::feedback_vertex_set(&successors, ids.len())
             .into_iter()
             .map(|position| ids[position].clone())
             .collect()
-    }
-
-    /// Tarjan's strongly connected components algorithm
-    #[allow(non_snake_case)]
-    fn tarjanStronglyConnected(&self, node: &SymbolId, graph: &CallGraph, state: &mut TarjanState) {
-        // Set the depth index for this node
-        state.node_index.insert(node.clone(), state.index);
-        state.node_lowlink.insert(node.clone(), state.index);
-        state.index += 1;
-        state.stack.push(node.clone());
-        state.in_stack.insert(node.clone());
-
-        // Consider all successors. The graph publishes them in symbol id
-        // order — that is the aggregate's contract, and it is the only
-        // place that decides it — and the order the traversal visits them
-        // in decides the order the cycles are published in.
-        for (successor, _) in graph.callees(node) {
-            if !state.node_index.contains_key(&successor) {
-                // Successor has not yet been visited
-                self.tarjanStronglyConnected(&successor, graph, state);
-                state.node_lowlink.insert(
-                    node.clone(),
-                    *state
-                        .node_lowlink
-                        .get(node)
-                        .unwrap()
-                        .min(state.node_lowlink.get(&successor).unwrap()),
-                );
-            } else if state.in_stack.contains(&successor) {
-                // Successor is on the stack, so it's in the current SCC
-                state.node_lowlink.insert(
-                    node.clone(),
-                    *state
-                        .node_lowlink
-                        .get(node)
-                        .unwrap()
-                        .min(state.node_index.get(&successor).unwrap()),
-                );
-            }
-        }
-
-        // If node is a root, pop the stack and generate an SCC
-        if *state.node_lowlink.get(node).unwrap() == *state.node_index.get(node).unwrap() {
-            let mut scc = Vec::new();
-            loop {
-                let w = state.stack.pop().unwrap();
-                state.in_stack.remove(&w);
-                scc.push(w.clone());
-                if w == *node {
-                    break;
-                }
-            }
-            state.strongly_connected_components.push(scc);
-        }
     }
 }
 
@@ -185,27 +113,34 @@ impl Default for CycleDetector {
     }
 }
 
-/// Internal state for Tarjan's algorithm
-struct TarjanState {
-    index: usize,
-    node_index: HashMap<SymbolId, usize>,
-    node_lowlink: HashMap<SymbolId, usize>,
-    stack: Vec<SymbolId>,
-    in_stack: HashSet<SymbolId>,
-    strongly_connected_components: Vec<Vec<SymbolId>>,
-}
+/// The symbols of `graph` numbered by their identifier, and the successors
+/// of each one as positions in that numbering.
+///
+/// The graph holds its symbols in a hash map, whose order is different for
+/// every instance; numbering them by identifier is what makes every answer
+/// built on the positions the same for the same graph. The successors of a
+/// symbol come in the order the graph publishes them, which is identifier
+/// order.
+fn numbered_successors(graph: &CallGraph) -> (Vec<SymbolId>, Vec<Vec<usize>>) {
+    let mut ids: Vec<SymbolId> = graph.symbol_ids().map(|(id, _)| id.clone()).collect();
+    ids.sort();
+    let position_of: HashMap<&SymbolId, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(position, id)| (id, position))
+        .collect();
 
-impl TarjanState {
-    fn new() -> Self {
-        Self {
-            index: 0,
-            node_index: HashMap::new(),
-            node_lowlink: HashMap::new(),
-            stack: Vec::new(),
-            in_stack: HashSet::new(),
-            strongly_connected_components: Vec::new(),
-        }
-    }
+    let successors = ids
+        .iter()
+        .map(|id| {
+            graph
+                .callees(id)
+                .into_iter()
+                .filter_map(|(callee, _)| position_of.get(&callee).copied())
+                .collect()
+        })
+        .collect();
+    (ids, successors)
 }
 
 /// Result of cycle detection
@@ -605,6 +540,116 @@ mod tests {
         graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
 
         assert!(detector.find_minimal_feedback_set(&graph).is_empty());
+    }
+
+    /// A call chain as deep as a large project can have.
+    ///
+    /// The answer must not depend on the stack of the thread that asks:
+    /// a traversal that recurses once per call-chain link dies with a stack
+    /// overflow — an abort of the whole process, not an error — on the
+    /// project that needs the answer most. The witness runs on a thread with
+    /// a deliberately small stack, so it measures the traversal and not the
+    /// default the test harness happens to give.
+    #[test]
+    fn a_call_chain_deeper_than_the_stack_still_answers() {
+        const LINKS: usize = 20_000;
+        const SMALL_STACK: usize = 256 * 1024;
+
+        let answer = std::thread::Builder::new()
+            .stack_size(SMALL_STACK)
+            .spawn(|| {
+                let mut graph = CallGraph::new();
+                let ids: Vec<SymbolId> = (0..LINKS)
+                    .map(|link| {
+                        graph.add_symbol(Symbol::new(
+                            format!("f{link:05}"),
+                            SymbolKind::Function,
+                            Location::new("chain.rs", 1, 1),
+                        ))
+                    })
+                    .collect();
+                for pair in ids.windows(2) {
+                    graph
+                        .add_dependency(&pair[0], &pair[1], DependencyType::Calls)
+                        .expect("the dependency is added");
+                }
+                // The last link calls the first: one cycle of every link.
+                graph
+                    .add_dependency(&ids[LINKS - 1], &ids[0], DependencyType::Calls)
+                    .expect("the dependency is added");
+
+                let result = CycleDetector::new().detect_cycles(&graph);
+                (
+                    result.has_cycles,
+                    result.cycles.len(),
+                    result.cycles.first().map(Cycle::length),
+                    result.total_sccs,
+                )
+            })
+            .expect("the thread starts")
+            .join()
+            .expect("the detector answers instead of overflowing the stack");
+
+        assert_eq!(answer, (true, 1, Some(LINKS), 1));
+    }
+
+    #[test]
+    fn total_sccs_counts_every_component_the_singletons_too() {
+        let detector = CycleDetector::new();
+        let mut graph = CallGraph::new();
+        let mut add = |name: &str| {
+            graph.add_symbol(Symbol::new(
+                name,
+                SymbolKind::Function,
+                Location::new("test.rs", 1, 1),
+            ))
+        };
+        let a = add("a");
+        let b = add("b");
+        let c = add("c");
+        graph.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &a, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &c, DependencyType::Calls).unwrap();
+
+        let result = detector.detect_cycles(&graph);
+
+        assert_eq!(result.cycles.len(), 1, "{{a, b}} is the only cycle");
+        assert_eq!(result.total_sccs, 2, "{{a, b}} and {{c}}");
+    }
+
+    #[test]
+    fn the_members_of_a_cycle_come_in_symbol_id_order() {
+        let detector = CycleDetector::new();
+        let mut graph = CallGraph::new();
+        // Added out of order, and the edges close the cycle backwards.
+        let c = graph.add_symbol(Symbol::new(
+            "c",
+            SymbolKind::Function,
+            Location::new("test.rs", 3, 1),
+        ));
+        let a = graph.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        ));
+        let b = graph.add_symbol(Symbol::new(
+            "b",
+            SymbolKind::Function,
+            Location::new("test.rs", 2, 1),
+        ));
+        graph.add_dependency(&c, &b, DependencyType::Calls).unwrap();
+        graph.add_dependency(&b, &a, DependencyType::Calls).unwrap();
+        graph.add_dependency(&a, &c, DependencyType::Calls).unwrap();
+
+        let result = detector.detect_cycles(&graph);
+
+        let members: Vec<&str> = result.cycles[0]
+            .symbols()
+            .iter()
+            .map(SymbolId::as_str)
+            .collect();
+        assert_eq!(members, ["test.rs:a:1", "test.rs:b:2", "test.rs:c:3"]);
+        assert_eq!(result.cycles[0].as_path(), "a -> b -> c");
     }
 
     #[test]

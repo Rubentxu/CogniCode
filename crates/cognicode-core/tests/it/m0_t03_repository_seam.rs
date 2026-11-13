@@ -16,7 +16,6 @@
 
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::{CallGraph, Symbol, SymbolId};
-use cognicode_core::domain::services::CycleDetectionResult;
 use cognicode_core::domain::traits::{DependencyError, DependencyRepository};
 use cognicode_core::domain::value_objects::DependencyType;
 use cognicode_core::infrastructure::graph::PetGraphStore;
@@ -80,10 +79,6 @@ impl DependencyRepository for CountingRepository {
 
     fn find_dependencies(&self, id: &SymbolId) -> HashSet<SymbolId> {
         self.inner.find_dependencies(id)
-    }
-
-    fn detect_cycles(&self) -> CycleDetectionResult {
-        self.inner.detect_cycles()
     }
 
     fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool {

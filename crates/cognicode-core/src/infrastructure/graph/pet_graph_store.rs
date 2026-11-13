@@ -2,7 +2,6 @@
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::services::CycleDetectionResult;
 use crate::domain::traits::DependencyRepository;
 use crate::domain::traits::dependency_repository::DependencyError;
 use crate::domain::value_objects::DependencyType;
@@ -204,32 +203,6 @@ impl DependencyRepository for PetGraphStore {
             }
         }
         result
-    }
-
-    fn detect_cycles(&self) -> CycleDetectionResult {
-        use petgraph::algo::tarjan_scc;
-
-        let sccs = tarjan_scc(&self.graph);
-        let cycles: Vec<_> = sccs
-            .into_iter()
-            .filter(|scc| scc.len() > 1)
-            .map(|scc| {
-                let names: Vec<String> = scc
-                    .into_iter()
-                    .filter_map(|idx| self.index_to_symbol.get(&idx).cloned())
-                    .collect();
-                let ids: Vec<SymbolId> = names.iter().map(SymbolId::new).collect();
-                crate::domain::services::Cycle::new(ids, names)
-            })
-            .collect();
-
-        let has_cycles = !cycles.is_empty();
-
-        CycleDetectionResult {
-            has_cycles,
-            cycles,
-            total_sccs: 0, // Not easily available from petgraph
-        }
     }
 
     fn has_path(&self, source: &SymbolId, target: &SymbolId) -> bool {
