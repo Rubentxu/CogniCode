@@ -22,3 +22,5 @@ pub mod impact_of;
 pub mod lsp_proxy_service;
 pub mod refactor_service;
 pub mod relation_candidates;
+// La busqueda de usos de un simbolo y lo que cubrio.
+pub mod usage_search;

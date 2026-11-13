@@ -434,6 +434,7 @@ fn sample_find_usages_output() -> FindUsagesOutput {
         total: 1,
         precision: precision_floor_for_tool("find_usages"),
         provider: default_provider_for_tool("find_usages").to_string(),
+        coverage: cognicode_core::interface::coverage::CoverageInfo::unmeasured(),
     }
 }
 

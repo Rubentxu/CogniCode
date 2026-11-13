@@ -2672,7 +2672,8 @@
         "get_symbol_code"
       ],
       "limitations": [
-        "AST-based; no LSP server required but no LSP precision"
+        "AST-based; no LSP server required but no LSP precision",
+        "A file the search could not read is named in `coverage.skipped_files` and the answer is `partial`, never `complete`"
       ]
     },
     {

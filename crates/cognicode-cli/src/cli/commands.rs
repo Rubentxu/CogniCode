@@ -2188,8 +2188,8 @@ impl CommandExecutor {
         //    Mismo `first_only_definition=true` que usa el handler MCP
         //    para mantener equivalencia L1.4.W4.
         let service = AnalysisService::new();
-        let usages = service
-            .find_symbol_usages(UsageSearchParams {
+        let search = service
+            .find_symbol_usages_with_coverage(UsageSearchParams {
                 project_dir: cwd_path,
                 symbol_name: symbol.to_string(),
                 include_declaration: include,
@@ -2198,8 +2198,9 @@ impl CommandExecutor {
             })
             .map_err(|e| format!("find-usages: backend error: {e}"))?;
 
-        let total = usages.len();
-        let entries: Vec<UsageEntry> = usages
+        let total = search.usages.len();
+        let entries: Vec<UsageEntry> = search
+            .usages
             .into_iter()
             .map(|u| UsageEntry {
                 file: u.file,
@@ -2221,10 +2222,8 @@ impl CommandExecutor {
             symbol: symbol.to_string(),
             usages: entries,
             total,
-            // B3.W1 — CLI mirror of the MCP `find_usages` handler: tag
-            // precision + provider so the JSON presenter emits them in
-            // the same shape as the MCP wire. The CLI text path ignores
-            // these fields; the JSON path is the one that needs them.
+            // CLI mirror of the MCP `find_usages` handler: the same
+            // precision, provider and coverage the MCP wire carries.
             precision: cognicode_core::interface::symbol_identity::precision_floor_for_tool(
                 "find_usages",
             ),
@@ -2232,6 +2231,7 @@ impl CommandExecutor {
                 "find_usages",
             )
             .to_string(),
+            coverage: cognicode_core::interface::coverage::CoverageInfo::of(&search.coverage),
         };
 
         // 4) Render the answer. The core does not write to the
@@ -2776,40 +2776,25 @@ fn render_evidence_rows(
     text
 }
 
-/// Prints the outline tree with indentation
-/// T1-5.3d: removed — moved to `crate::cli::presenter`
-/// alongside `present_index_result`, where the snapshot test can
-/// exercise the same recursion the bin does. The migration kept
-/// the byte-identical output; see `tests/t1_5_3d_index_presenter_snapshot.rs`.
-/// T1-5.3c — present an `IndexResult` to stdout.
-///
-/// T1-5.3d moved the implementation to
-/// `crate::cli::presenter::present_index_result`
-/// (a `&mut dyn Write` parameter makes it testable from
-/// `tests/t1_5_3d_index_presenter_snapshot.rs`). T1-5.5
-/// moved the whole presenter to `cognicode_cli::presenter`
-/// (the bin crate) and added JSON dispatch via
-/// `present_index_result_json` + `present_output`. The
-/// `*Result` enum still lives here in the lib; only the
-/// formatting moved.
-/// L1.4 / F0.1 — Render human-readable text output for `find-usages`.
-///
-/// Format:
-///   - one usage per line: `file:line:column: context`
-///   - definition lines prefixed with `def ` for grep-friendliness
-///   - blank line if no results, preceded by `(no usages found)`
-///
-/// Machine consumers should use `--format json`.
 /// The text answer of `find-usages`, rendered and not printed.
 ///
-/// The core returns it and the presenter writes it: a core that
-/// prints its own answer can interleave it with the document a
-/// consumer is parsing.
+/// One usage per line, `file:line:column: context`, with `def ` before the
+/// declaration. An answer that did not cover the whole tree says so after the
+/// usages and names each file it could not read: "no usages found" over a
+/// file nobody could open is not a finding. Machine consumers use
+/// `--format json`.
+///
+/// The core returns the text and the presenter writes it: a core that prints
+/// its own answer can interleave it with the document a consumer is parsing.
 fn render_text(out: &cognicode_core::interface::mcp::schemas::FindUsagesOutput) -> String {
     let mut text = String::new();
+    let covered = out.coverage.status == "complete";
     if out.usages.is_empty() {
-        text.push_str("(no usages found)\n");
-        return text;
+        text.push_str(if covered {
+            "(no usages found)\n"
+        } else {
+            "(no usages found in what could be searched)\n"
+        });
     }
     for u in &out.usages {
         let prefix = if u.is_definition { "def " } else { "    " };
@@ -2820,6 +2805,15 @@ fn render_text(out: &cognicode_core::interface::mcp::schemas::FindUsagesOutput) 
             col = u.column,
             ctx = u.context,
         ));
+    }
+    if !covered {
+        text.push_str(&format!("coverage: {}\n", out.coverage.status));
+        for file in &out.coverage.skipped_files {
+            text.push_str(&format!(
+                "  not searched: {} ({})\n",
+                file.path, file.reason
+            ));
+        }
     }
     text
 }
@@ -3083,13 +3077,93 @@ mod f0_1_find_usages_tests {
         );
     }
 
-    /// Tests del helper `print_text_render` que pinea el formato humano.
-    /// No spawnea el binario; captura stdout.
+    /// A usage as the search publishes it.
+    fn usage(
+        file: &str,
+        line: u32,
+        is_definition: bool,
+    ) -> cognicode_core::interface::mcp::schemas::UsageEntry {
+        cognicode_core::interface::mcp::schemas::UsageEntry {
+            file: file.to_string(),
+            line,
+            column: 4,
+            context: "alpha()".to_string(),
+            is_definition,
+            surrounding_lines: None,
+        }
+    }
+
+    /// The answer a search over `coverage` publishes.
+    fn answer(
+        usages: Vec<cognicode_core::interface::mcp::schemas::UsageEntry>,
+        coverage: cognicode_core::interface::coverage::CoverageInfo,
+    ) -> cognicode_core::interface::mcp::schemas::FindUsagesOutput {
+        cognicode_core::interface::mcp::schemas::FindUsagesOutput {
+            symbol: "alpha".to_string(),
+            total: usages.len(),
+            usages,
+            precision: cognicode_core::interface::symbol_identity::precision_floor_for_tool(
+                "find_usages",
+            ),
+            provider: "test".to_string(),
+            coverage,
+        }
+    }
+
+    fn coverage(
+        status: &str,
+        skipped: &[(&str, &str)],
+    ) -> cognicode_core::interface::coverage::CoverageInfo {
+        cognicode_core::interface::coverage::CoverageInfo {
+            status: status.to_string(),
+            skipped_files: skipped
+                .iter()
+                .map(
+                    |(path, reason)| cognicode_core::interface::coverage::SkippedFileInfo {
+                        path: path.to_string(),
+                        reason: reason.to_string(),
+                    },
+                )
+                .collect(),
+            pending_references: Vec::new(),
+            rejected_relations: Vec::new(),
+        }
+    }
+
+    /// The definition is marked and a complete answer adds nothing after it.
     #[test]
-    fn uat_print_text_render_marks_definitions_with_prefix() {
-        // La verificación completa del formato (cabecera + `def ` + ...)
-        // se hace en UAT binaria manual y en los tests E2E. Aquí sólo
-        // pineamos que la función está exportada y compila.
+    fn render_text_marks_definitions_and_stays_silent_when_complete() {
+        let text = render_text(&answer(
+            vec![usage("a.rs", 1, true), usage("a.rs", 2, false)],
+            coverage("complete", &[]),
+        ));
+        assert_eq!(text, "def a.rs:1:4: alpha()\n    a.rs:2:4: alpha()\n");
+    }
+
+    /// A partial answer names the status and every file it did not search,
+    /// after the usages it did find.
+    #[test]
+    fn render_text_names_the_files_a_partial_answer_did_not_search() {
+        let text = render_text(&answer(
+            vec![usage("a.rs", 2, false)],
+            coverage("partial", &[("b.rs", "read error: denied")]),
+        ));
+        assert_eq!(
+            text,
+            "    a.rs:2:4: alpha()\ncoverage: partial\n  not searched: b.rs (read error: denied)\n"
+        );
+    }
+
+    /// Nothing found over a hole is not "no usages": it says what it searched.
+    #[test]
+    fn render_text_does_not_call_an_empty_partial_answer_clean() {
+        let partial = render_text(&answer(
+            Vec::new(),
+            coverage("partial", &[("b.rs", "read error: denied")]),
+        ));
+        assert!(partial.starts_with("(no usages found in what could be searched)\n"));
+        let clean = render_text(&answer(Vec::new(), coverage("complete", &[])));
+        assert_eq!(clean, "(no usages found)\n");
     }
 }
 

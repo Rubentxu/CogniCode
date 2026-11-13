@@ -30,6 +30,7 @@ mod cognicode_plugin;
 mod cr07_protobuf_advisory_closed;
 mod cu1_w3_presenter_parity;
 mod evidence_cli_mcp_equivalence;
+mod find_usages_says_what_it_could_not_read;
 mod gitignore_negation_contract;
 mod graph_cli_mcp_equivalence;
 mod graph_impact_absent_symbol;

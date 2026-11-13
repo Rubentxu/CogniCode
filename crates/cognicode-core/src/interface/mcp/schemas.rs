@@ -236,6 +236,14 @@ pub struct FindUsagesOutput {
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
     pub provider: String,
+    /// What the search covered.
+    ///
+    /// A file the search could not read has no usages to list, and a list
+    /// that says nothing about it reads as a list over the whole tree. The
+    /// word and the files come from the search that ran. A payload written
+    /// before this field existed reads as "unknown", never as "complete".
+    #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1684,6 +1692,9 @@ pub struct FindUsagesWithContextOutput {
     pub symbol: String,
     pub usages: Vec<UsageWithContextEntry>,
     pub total: usize,
+    /// What the search covered; see [`FindUsagesOutput::coverage`].
+    #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 /// Entry with surrounding context lines

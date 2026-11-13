@@ -57,8 +57,8 @@ async fn run_mcp(cwd: &std::path::Path, symbol: &str, include_decl: bool) -> Fin
 /// test lib, pero podemos reproducir el camino de datos).
 async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) -> FindUsagesOutput {
     let service = AnalysisService::new();
-    let usages = service
-        .find_symbol_usages(UsageSearchParams {
+    let search = service
+        .find_symbol_usages_with_coverage(UsageSearchParams {
             project_dir: cwd.to_path_buf(),
             symbol_name: symbol.to_string(),
             include_declaration: include_decl,
@@ -69,8 +69,9 @@ async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) ->
 
     FindUsagesOutput {
         symbol: symbol.to_string(),
-        total: usages.len(),
-        usages: usages
+        total: search.usages.len(),
+        usages: search
+            .usages
             .into_iter()
             .map(|u| cognicode_core::interface::mcp::schemas::UsageEntry {
                 file: u.file,
@@ -92,6 +93,7 @@ async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) ->
         // honest precision is ast-heuristic.
         precision: Precision::AstHeuristic,
         provider: "tree-sitter-rust".to_string(),
+        coverage: cognicode_core::interface::coverage::CoverageInfo::of(&search.coverage),
     }
 }
 

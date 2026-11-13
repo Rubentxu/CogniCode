@@ -199,6 +199,37 @@ pub fn coverage_verdict(
         return Coverage::Unmeasured;
     }
 
+    settle(facts)
+}
+
+/// The coverage of an answer computed by reading the files of the tree
+/// itself, one by one, with no graph in between.
+///
+/// A usage search is the case: its answer is whatever the files it opened
+/// say, so what it did not cover is exactly the holes of the walk plus the
+/// files it opened and could not read or parse. It is measured the same
+/// way every other answer is —no hole, `Complete`; some, `Partial`; no
+/// material, `NoMaterial`— and by the same rule, [`settle`], so a route
+/// that reads the tree cannot say `Complete` over a hole the graph would
+/// have named.
+pub fn scan_coverage(
+    holes: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+    holds_material: bool,
+) -> Coverage {
+    let facts = CoverageFacts {
+        skipped: holes,
+        pending: Vec::new(),
+        rejected: Vec::new(),
+    };
+    if !holds_material {
+        return Coverage::NoMaterial(facts);
+    }
+    settle(facts)
+}
+
+/// The one rule that turns the holes of a measured answer into its
+/// verdict: a coverage with none is complete, and one with any is partial.
+fn settle(facts: CoverageFacts) -> Coverage {
     if facts.is_complete() {
         Coverage::Complete
     } else {

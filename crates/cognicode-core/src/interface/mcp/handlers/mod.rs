@@ -1546,9 +1546,9 @@ pub async fn handle_find_usages(
 ) -> HandlerResult<FindUsagesOutput> {
     ctx.validator.validate_query(&input.symbol_name)?;
 
-    let usages = ctx
+    let search = ctx
         .analysis_service
-        .find_symbol_usages(UsageSearchParams {
+        .find_symbol_usages_with_coverage(UsageSearchParams {
             project_dir: ctx.working_dir.clone(),
             symbol_name: input.symbol_name.clone(),
             include_declaration: input.include_declaration,
@@ -1557,9 +1557,10 @@ pub async fn handle_find_usages(
         })
         .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 
-    let total = usages.len();
+    let total = search.usages.len();
 
-    let usage_entries: Vec<UsageEntry> = usages
+    let usage_entries: Vec<UsageEntry> = search
+        .usages
         .into_iter()
         .map(|u| UsageEntry {
             file: u.file,
@@ -1579,15 +1580,11 @@ pub async fn handle_find_usages(
         symbol: input.symbol_name,
         usages: usage_entries,
         total,
-        // Parity with the MCP wire shape; `find_usages` is
-        // navigation, so its floor is `ast-heuristic` and its default
-        // provider is the symbol index. The values match what
-        // precision_floor_for_tool / default_provider_for_tool return
-        // for "find_usages" (computed here in literals to avoid a
-        // circular dependency between the handler module and the
-        // symbol_identity module on import order).
+        // Parity with the MCP wire shape: navigation, so the floor is
+        // `ast-heuristic` and the provider is the symbol index.
         precision: precision_floor_for_tool("find_usages"),
         provider: default_provider_for_tool("find_usages").to_string(),
+        coverage: crate::interface::coverage::CoverageInfo::of(&search.coverage),
     })
 }
 
@@ -3203,8 +3200,8 @@ pub async fn handle_find_usages_with_context(
 ) -> HandlerResult<FindUsagesWithContextOutput> {
     validator.validate_query(&input.symbol)?;
 
-    let usages = AnalysisService::new()
-        .find_symbol_usages(UsageSearchParams {
+    let search = AnalysisService::new()
+        .find_symbol_usages_with_coverage(UsageSearchParams {
             project_dir: working_dir,
             symbol_name: input.symbol.clone(),
             include_declaration: input.include_declaration,
@@ -3213,9 +3210,10 @@ pub async fn handle_find_usages_with_context(
         })
         .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 
-    let total = usages.len();
+    let total = search.usages.len();
 
-    let usage_entries: Vec<UsageWithContextEntry> = usages
+    let usage_entries: Vec<UsageWithContextEntry> = search
+        .usages
         .into_iter()
         .map(|u| UsageWithContextEntry {
             file: u.file,
@@ -3242,6 +3240,7 @@ pub async fn handle_find_usages_with_context(
         symbol: input.symbol,
         usages: usage_entries,
         total,
+        coverage: crate::interface::coverage::CoverageInfo::of(&search.coverage),
     })
 }
 

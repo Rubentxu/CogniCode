@@ -121,6 +121,15 @@ pub struct CoverageInfo {
 }
 
 impl CoverageInfo {
+    /// The coverage of an answer nobody measured: the word is "unknown".
+    ///
+    /// It is what a payload written before the coverage existed reads as.
+    /// Unknown is not complete, so an old answer is never promoted to a
+    /// statement about the tree it never made.
+    pub fn unmeasured() -> Self {
+        Self::of(&crate::application::services::analyze::Coverage::Unmeasured)
+    }
+
     /// The projection of a coverage, for every consumer that publishes it.
     ///
     /// The word comes from the state that owns it and the facts come from
