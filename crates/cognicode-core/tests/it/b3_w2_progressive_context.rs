@@ -25,23 +25,17 @@
 //!   - El catalogo `product/tools.json` lleva `intent_tags` por
 //!     tool, en paridad con `route_intent`: si una tool aparece en
 //!     un routing, su `intent_tags` lista esa `Intent` variante.
-//!   - `cognicode intent` es un scaffold: parsea el input como
-//!     best-effort, imprime "PROPOSED: contract under review; see
-//!     B3.W5" a stderr, y devuelve exit 0 (no panic) en cualquier
-//!     entrada. TASK-84: el comando se llamaba `inspect` hasta que
-//!     el goal `inspect` tomó ese nombre publicado; el aviso de
-//!     deprecación va en stderr y el test lo exige.
+//!   - `cognicode intent` (el scaffold de la CLI) se verifica en
+//!     `cognicode-cli`, que es quien lo construye: ver
+//!     `the_intent_command_survives_arbitrary_input`.
 //!
 //! Politica B3.W2: el scaffold NO pina contrato final. B3.W5
 //! cierra el shape cuando se valide el routing contra datos
-//! reales (workspace de smoke-test). El test pina que el
-//! scaffold compila, no panic, y honra el status `PROPOSED`.
+//! reales (workspace de smoke-test).
 
 use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
 use cognicode_core::interface::intent::{Intent, route_intent};
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
-use std::process::Command;
 
 // -----------------------------------------------------------------------
 // Routing function: tool presence
@@ -250,188 +244,6 @@ fn intent_tags_in_catalog_match_route_intent() {
         "intent_tags parity violations:\n{}",
         violations.join("\n")
     );
-}
-
-// -----------------------------------------------------------------------
-// CLI scaffold: cognicode intent must not panic on arbitrary input
-// -----------------------------------------------------------------------
-
-/// The directory cargo is actually building into, as cargo itself reports it.
-///
-/// `CARGO_TARGET_DIR` covers the env-var case only. A `target-dir` set in
-/// `~/.cargo/config.toml` — which is how this machine coexists with four other
-/// OpenCode instances — is invisible to the environment, so the only
-/// authoritative answer is to ask cargo. `None` when cargo is unavailable or
-/// unparseable, in which case the caller falls through to the workspace-relative
-/// default layout.
-fn cargo_target_dir() -> Option<PathBuf> {
-    use std::sync::OnceLock;
-    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let out = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version", "1"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
-    })
-    .clone()
-}
-
-fn cognicode_bin() -> Option<PathBuf> {
-    // Mirror the resolution strategy used in cognicode-cli/tests:
-    // 1. COGNICODE_CLI_BIN: override explícito. Cuando está seteado es la
-    //    respuesta: se asserta existencia y permiso de ejecución, y no hay
-    //    fallback, para que un typo falle aquí en vez de testear otro build
-    //    en silencio.
-    // 2. CARGO_BIN_EXE_cognicode at compile time (set when running
-    //    `cargo test` against the cognicode-cli crate).
-    // 3. Same env var at runtime (cargo-nextest, manual wrappers).
-    // 4. The target directory cargo is *actually* using, per
-    //    `cargo metadata`. This environment redirects `target-dir` in
-    //    ~/.cargo/config.toml, and that redirect is invisible as an env
-    //    var, so the old `CARGO_TARGET_DIR`-then-workspace-relative
-    //    fallback searched two directories that do not exist and reported
-    //    "binary not found" for a binary that was sitting right there.
-    //    A harness that cannot find the artifact it tests is a harness
-    //    lying about the state of the world.
-    // 5. Workspace-relative target/ (the default layout).
-
-    if let Some(explicit) = std::env::var_os("COGNICODE_CLI_BIN") {
-        let p = PathBuf::from(explicit);
-        assert!(
-            p.exists(),
-            "COGNICODE_CLI_BIN={} no existe. Apúntalo al binario `cognicode` \
-             compilado (`cargo build -p cognicode-cli --bin cognicode`) o \
-             desexporta la variable para usar la búsqueda por target-dir.",
-            p.display()
-        );
-        assert!(
-            is_executable(&p),
-            "COGNICODE_CLI_BIN={} existe pero no es ejecutable. \
-             `cargo build -p cognicode-cli --bin cognicode` produce un ejecutable.",
-            p.display()
-        );
-        return Some(p.canonicalize().unwrap_or(p));
-    }
-    if let Some(p) = option_env!("CARGO_BIN_EXE_cognicode") {
-        let p = PathBuf::from(p);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    if let Some(p) = std::env::var_os("CARGO_BIN_EXE_cognicode") {
-        let p = PathBuf::from(p);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-    if let Some(target) = cargo_target_dir() {
-        let release = target.join("release").join("cognicode");
-        if release.exists() {
-            return Some(release);
-        }
-        let debug = target.join("debug").join("cognicode");
-        if debug.exists() {
-            return Some(debug);
-        }
-    }
-    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let workspace_root = manifest_dir.join("..").join("..");
-    let release = workspace_root
-        .join("target")
-        .join("release")
-        .join("cognicode");
-    if release.exists() {
-        return Some(release.canonicalize().ok().unwrap_or(release));
-    }
-    let debug = workspace_root
-        .join("target")
-        .join("debug")
-        .join("cognicode");
-    if debug.exists() {
-        return Some(debug.canonicalize().ok().unwrap_or(debug));
-    }
-    None
-}
-
-/// `true` si `path` es un fichero regular con al menos un bit de ejecución.
-///
-/// Lo usa el override `COGNICODE_CLI_BIN`: un path que existe pero no se
-/// puede lanzar fallaría más tarde con un `PermissionDenied` que no dice
-/// qué variable de entorno está mal.
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
-}
-
-#[test]
-fn intent_subcommand_does_not_panic_on_arbitrary_input() {
-    // The scaffold must compile and exit 0 on any of these shapes.
-    // We don't pin the exact routing (that's B3.W5); we pin that
-    // the binary survives arbitrary free-text input.
-    //
-    // TASK-84: the command was `inspect` until the goal `inspect` took
-    // that published name. The consumer's guarantee — "the scaffold
-    // survives arbitrary free-text input" — travels with the command.
-    let bin = cognicode_bin().unwrap_or_else(|| {
-        panic!(
-            "binario `cognicode` no encontrado: este test solo tiene sentido \
-             contra el binario real (su sujeto es el comportamiento del \
-             subcomando `intent`), y saltarlo sería un verde vacío.\n\
-             Compílalo con `cargo build -p cognicode-cli --bin cognicode` \
-             (añade `--release` y ajusta CARGO_TARGET_DIR si tu config lo \
-             redirige), o exporta COGNICODE_CLI_BIN=/ruta/absoluta/a/cognicode \
-             y re-ejecuta \
-             `cargo test -p cognicode-core --test b3_w2_progressive_context`."
-        )
-    });
-
-    let inputs: &[&[&str]] = &[
-        &["intent", "fn", "foo"],
-        &["intent", "path/to/file.rs:10-20"],
-        &["intent", ""],
-        &["intent", "completely", "arbitrary", "text"],
-        &["intent", "sym::Method"],
-        &["intent", "verify that 2+3=5"],
-        &["intent", "summary of crates/cognicode-core"],
-    ];
-
-    for args in inputs {
-        let out = Command::new(&bin)
-            .args(*args)
-            .output()
-            .expect("spawn cognicode binary");
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let code = out.status.code().unwrap_or(-1);
-        assert_eq!(
-            code, 0,
-            "intent must exit 0 (no panic) for args={args:?}; \
-             stderr={stderr}"
-        );
-        // The scaffold must announce its provisional status so the
-        // agent does not treat the result as the production contract.
-        assert!(
-            stderr.contains("PROPOSED"),
-            "stderr must contain the PROPOSED status marker for \
-             args={args:?}; got stderr={stderr}"
-        );
-        // And it must say where it came from: the name it used to
-        // have now belongs to the goal `inspect` (TASK-84), and a
-        // deprecation that nobody reads is not a deprecation.
-        assert!(
-            stderr.contains("Deprecated: this command was `cognicode inspect`"),
-            "stderr must carry the deprecation notice for args={args:?}; \
-             got stderr={stderr}"
-        );
-    }
 }
 
 // -----------------------------------------------------------------------

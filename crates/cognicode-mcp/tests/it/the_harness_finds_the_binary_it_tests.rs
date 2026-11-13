@@ -12,11 +12,8 @@ mod harness {
     use crate::common::*;
     use std::path::{Path, PathBuf};
 
-    /// `binary_path` must return an absolute, well-formed path that ends with
-    /// the binary's filename. The actual existence check is environment
-    /// dependent (CARGO_BIN_EXE_* may or may not be set, the workspace target
-    /// may or may not be built); this test only pins the path shape so a
-    /// refactor that, say, dropped the file name is caught immediately.
+    /// `binary_path` must return an absolute path that ends with the binary's
+    /// filename, so a refactor that dropped the file name is caught at once.
     #[test]
     fn binary_path_resolves_to_cognicode_mcp_filename() {
         let path = binary_path();
@@ -33,23 +30,24 @@ mod harness {
         );
     }
 
-    /// When `CARGO_BIN_EXE_cognicode-mcp` is set at compile time, the path
-    /// returned must point at that env var. The env var is set by Cargo for
-    /// integration tests in the same crate as the binary; without it the
-    /// resolution falls through to the other branches.
+    /// The path is a file cargo built and that can be launched.
+    ///
+    /// Cargo builds a package's binaries before it compiles its integration
+    /// tests and fixes their path in `CARGO_BIN_EXE_<name>`, so a missing or
+    /// non-executable file here means the harness is broken, not that
+    /// something is left to build: no test builds anything.
     #[test]
-    fn binary_path_prefers_cargo_bin_exe_env_var_when_set() {
-        if let Some(expected) = option_env!("CARGO_BIN_EXE_cognicode-mcp") {
-            let path = binary_path();
-            assert_eq!(
-                path.to_str(),
-                Some(expected),
-                "binary_path must return CARGO_BIN_EXE_cognicode-mcp when set at compile time"
-            );
-        }
-        // If the env var is unset at compile time, the test is a no-op:
-        // `binary_path` falls back to the other resolution branches, which
-        // are environment dependent and not worth pinning here.
+    fn binary_path_names_the_executable_cargo_built() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = binary_path();
+        let meta = std::fs::metadata(&path)
+            .unwrap_or_else(|error| panic!("cannot stat {}: {error}", path.display()));
+        assert!(meta.is_file(), "{} is not a file", path.display());
+        assert!(
+            meta.permissions().mode() & 0o111 != 0,
+            "{} is not executable",
+            path.display()
+        );
     }
 
     /// The binary the UATs will actually run must not predate the code.
