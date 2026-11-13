@@ -15,9 +15,11 @@ use std::sync::Arc;
 
 use crate::application::dto::EditVerification;
 use crate::application::error::AppError;
+use crate::application::services::analyze::read_coverage;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::{ToolError, get_global_metrics, instrument_tool};
 use crate::infrastructure::verification::RustVerifier;
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     EditFileInput, EditFileOutput, ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput,
@@ -367,6 +369,7 @@ pub async fn handle_retrieve_and_verify(
     // Convert DTO result to MCP output. After T1-3, the dto and the
     // schema share a single canonical `VerificationStatus` (re-export);
     // the previous match was a no-op identity conversion.
+    let coverage = CoverageInfo::of(&read_coverage(&dto_result.unread));
     let output = RetrieveAndVerifyOutput {
         results: dto_result
             .results
@@ -387,6 +390,7 @@ pub async fn handle_retrieve_and_verify(
         verified_count: dto_result.verified_count,
         rejected_count: dto_result.rejected_count,
         skipped_count: dto_result.skipped_count,
+        coverage,
     };
 
     Ok(output)

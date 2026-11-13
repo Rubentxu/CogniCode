@@ -2560,6 +2560,16 @@ pub struct RetrieveAndVerifyOutput {
 
     /// Count of skipped matches
     pub skipped_count: u32,
+
+    /// What the retrieval covered.
+    ///
+    /// The retrieval is a search over the tree, and a file it could not open
+    /// or a directory it could not list has no matches to show: a list that
+    /// says nothing about them reads as a retrieval over the whole tree. A
+    /// payload written before this field existed reads as "unknown", never
+    /// as "complete".
+    #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 // ============================================================================

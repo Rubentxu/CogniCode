@@ -2041,17 +2041,7 @@ impl FileOperationsService {
             // If verify is disabled, mark all as skipped
             if !input.verify {
                 for m in &matches {
-                    verified_results.push(VerifiedMatchDto {
-                        file: m.file.clone(),
-                        line: m.line,
-                        col: m.col,
-                        matched_text: m.text.clone(),
-                        context: m.context.clone(),
-                        status: Vs::Skipped,
-                        check_output: None,
-                        error_snippet: None,
-                        reason: Some("verify-disabled".to_string()),
-                    });
+                    verified_results.push(skipped_match(m, "verify-disabled".to_string()));
                     skipped_count += 1;
                 }
                 continue;
@@ -2061,17 +2051,7 @@ impl FileOperationsService {
             let path = std::path::Path::new(&file);
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 for m in &matches {
-                    verified_results.push(VerifiedMatchDto {
-                        file: m.file.clone(),
-                        line: m.line,
-                        col: m.col,
-                        matched_text: m.text.clone(),
-                        context: m.context.clone(),
-                        status: Vs::Skipped,
-                        check_output: None,
-                        error_snippet: None,
-                        reason: Some("not-rust".to_string()),
-                    });
+                    verified_results.push(skipped_match(m, "not-rust".to_string()));
                     skipped_count += 1;
                 }
                 continue;
@@ -2111,17 +2091,7 @@ impl FileOperationsService {
                     // rustc not found or other error - skip all matches from this file
                     for m in &matches {
                         skipped_count += 1;
-                        verified_results.push(VerifiedMatchDto {
-                            file: m.file.clone(),
-                            line: m.line,
-                            col: m.col,
-                            matched_text: m.text.clone(),
-                            context: m.context.clone(),
-                            status: Vs::Skipped,
-                            check_output: None,
-                            error_snippet: None,
-                            reason: Some(format!("error: {}", e)),
-                        });
+                        verified_results.push(skipped_match(m, format!("error: {}", e)));
                     }
                 }
             }
@@ -2164,7 +2134,23 @@ impl FileOperationsService {
             verified_count,
             rejected_count,
             skipped_count,
+            unread: search_result.unread,
         })
+    }
+}
+
+/// A match the retrieval found and did not verify, and why.
+fn skipped_match(m: &ContentMatch, reason: String) -> VerifiedMatchDto {
+    VerifiedMatchDto {
+        file: m.file.clone(),
+        line: m.line,
+        col: m.col,
+        matched_text: m.text.clone(),
+        context: m.context.clone(),
+        status: crate::application::dto::VerificationStatus::Skipped,
+        check_output: None,
+        error_snippet: None,
+        reason: Some(reason),
     }
 }
 

@@ -321,4 +321,9 @@ pub struct RetrieveAndVerifyResult {
     pub verified_count: u32,
     pub rejected_count: u32,
     pub skipped_count: u32,
+    /// The entries the retrieval could not read, the ones its search
+    /// reported. Empty when it read everything it reached, and then absent
+    /// from the serialized result.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unread: Vec<super::UnreadEntry>,
 }

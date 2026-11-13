@@ -8395,7 +8395,8 @@
         "query"
       ],
       "limitations": [
-        "verify=true spawns rustc; slower"
+        "verify=true spawns rustc; slower",
+        "A file the search could not open and a directory it could not list are named in `coverage.skipped_files` and the answer is `partial`, never `complete`; a file that opens and is not text is not a hole"
       ]
     },
     {
