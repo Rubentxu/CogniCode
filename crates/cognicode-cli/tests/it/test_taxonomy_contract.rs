@@ -461,20 +461,17 @@ fn the_governing_document_declares_the_two_classes_and_the_three_steps() {
 }
 
 // ===========================================================================
-// Test 5 — the tests that share the tree take turns
+// Test 5 — no test writes into the repository tree
 // ===========================================================================
 
 /// The test modules that write into the repository tree.
 ///
 /// A test that writes into `crates/` shares state with every other test
-/// that does the same: they delete and rewrite the same files. Under
-/// `cargo test` the `#[serial]` annotations took turns; under nextest each
-/// test is its own process, so the annotations no longer serialize
-/// anything. The three tests of the SBOM contract delete each other's
-/// files: each one removes the SBOMs the others are producing, and the
-/// one that finds its file gone fails with "read
-/// crates/cogh-x86_64-unknown-linux-gnu.cdx.json: No such file or
-/// directory".
+/// that does the same: they delete and rewrite the same files. The SBOM
+/// contract is the case that motivated the rule —its three tests deleted each
+/// other's `crates/<component>-<target>.cdx.json` and one of them failed
+/// with "No such file or directory"— and it now runs in a private copy of the
+/// workspace.
 fn modules_that_write_into_the_tree() -> Vec<String> {
     let root = repo_root();
     let mut out = Vec::new();
@@ -502,6 +499,13 @@ fn modules_that_write_into_the_tree() -> Vec<String> {
                 continue;
             }
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            // This file hosts the detector and its controls, and the controls
+            // are source text that contains the very writes the detector must
+            // flag: scanned, the file would report itself. It reads the tree
+            // and writes nothing; the dynamic witness covers it like any other.
+            if path.file_stem() == Path::new(file!()).file_stem() {
                 continue;
             }
             let Ok(text) = std::fs::read_to_string(&path) else {
@@ -707,110 +711,87 @@ fn arguments(call: &str) -> Vec<String> {
     out
 }
 
-/// The filters of the nextest groups that run one test at a time.
+/// No test writes into the repository tree.
 ///
-/// `.config/nextest.toml` is the containment for the state that nextest
-/// stopped sharing. The file is small and regular — `[test-groups.<name>]`
-/// declares `max-threads`, and `[[profile.gate.overrides]]` binds a filter
-/// to a group — so reading it as text is enough, and it keeps this
-/// contract independent of a TOML parser.
-fn single_threaded_filters() -> Vec<String> {
-    let text = std::fs::read_to_string(repo_root().join(".config/nextest.toml"))
-        .expect(".config/nextest.toml is readable");
-
-    let mut group_threads: Vec<(String, usize)> = Vec::new();
-    let mut current_group: Option<String> = None;
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("[test-groups.") {
-            current_group = Some(rest.trim_end_matches(']').to_string());
-            continue;
-        }
-        if let Some(group) = current_group.clone()
-            && let Some(threads) = line
-                .strip_prefix("max-threads = ")
-                .and_then(|n| n.trim().parse::<usize>().ok())
-        {
-            group_threads.push((group, threads));
-            continue;
-        }
-        if line.starts_with('[') {
-            current_group = None;
-        }
-    }
-
-    let mut overrides: Vec<(String, String)> = Vec::new();
-    let mut filter: Option<String> = None;
-    let mut group: Option<String> = None;
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with("[[profile.gate.overrides]]") {
-            if let (Some(f), Some(g)) = (filter.take(), group.take()) {
-                overrides.push((f, g));
-            }
-            continue;
-        }
-        if let Some(value) = line.strip_prefix("filter = ") {
-            filter = Some(value.trim().trim_matches('\'').to_string());
-        }
-        if let Some(value) = line.strip_prefix("test-group = ") {
-            group = Some(value.trim().trim_matches('\'').to_string());
-        }
-    }
-    if let (Some(f), Some(g)) = (filter, group) {
-        overrides.push((f, g));
-    }
-
-    overrides
-        .into_iter()
-        .filter(|(_, group)| {
-            group_threads
-                .iter()
-                .any(|(name, threads)| name == group && *threads == 1)
-        })
-        .map(|(filter, _)| filter)
-        .collect()
+/// A test that writes into `crates/` shares state with every other test that
+/// does the same. Under `cargo test` the `#[serial]` annotations took turns;
+/// under nextest each test is its own process, so they serialize nothing. The
+/// containment that used to stand in for the fix —a nextest group of one
+/// thread— only made the cost visible: the SBOM contract still put fourteen
+/// files into `crates/` and left one of them behind. The rule is now the
+/// strong one: a test works in a temp dir of its own, so there is no shared
+/// state to take turns over.
+///
+/// The detection resolves the tree path through the names it travels by, so
+/// a test that READS a tracked file, or that writes into its own temp
+/// directory, is not mistaken for a test that writes into the tree. The
+/// build directory (`target/`) is cargo's, not the tests'.
+///
+/// What this does NOT check: a write reached through a shape the resolution
+/// does not follow —a path that crosses a function boundary, for instance.
+/// The dynamic witness (`scripts/ci/tree_witness.py`) is the other half: it
+/// compares the tree before and after the suite and sees every shape.
+#[test]
+fn no_test_writes_into_the_repository_tree() {
+    let writers = modules_that_write_into_the_tree();
+    assert!(
+        writers.is_empty(),
+        "these test modules write into the repository tree: {writers:?}. A test \
+         works in a temp dir of its own (see `PrivateWorkspace` in \
+         `prf_f6_w3_bis_sbom_contract.rs`): two tests that write the same file \
+         delete each other's, and nextest runs every test in its own process, \
+         so `#[serial]` no longer takes turns."
+    );
 }
 
-/// Every test that writes into the tree is in a group of one thread.
-///
-/// The groups are the containment, and a containment that nobody checks is
-/// a containment that gets deleted the first time somebody tidies the
-/// configuration file.
-///
-/// The detection resolves the tree path through the names it travels by,
-/// so a test that READS a tracked file, or that writes into its own temp
-/// directory, is not mistaken for a test that shares the tree. The build
-/// directory (`target/`) is cargo's, not the tests'.
-///
-/// What this does NOT check: a shared state reached through a shape the
-/// resolution does not follow — a path that crosses a function boundary,
-/// for instance. Such a test needs its own group, and this contract will
-/// not say so.
+/// The detector is only worth an empty answer if it can say yes. These are
+/// its controls: the shapes it must flag, and the shapes that look like a
+/// write into the tree and are not.
 #[test]
-fn the_tests_that_share_the_tree_take_turns() {
-    let shared = modules_that_write_into_the_tree();
-    assert!(
-        !shared.is_empty(),
-        "no test module writes into the repository tree, so this contract \
-         is looking at nothing; the detection has stopped seeing the shape \
-         it was written for"
-    );
-    assert!(
-        shared.iter().any(|m| m == "prf_f6_w3_bis_sbom_contract"),
-        "the SBOM contract is the module this contract was written for — the \
-         one that writes `crates/<component>-<target>.cdx.json` into the tree \
-         and deletes it again. The detection has stopped seeing it: {shared:?}"
-    );
+fn the_tree_write_detector_flags_what_it_was_written_for() {
+    // A write whose path travels through a binding: the SBOM contract's shape.
+    assert!(writes_into_the_tree(
+        r#"let sbom = repo_root().join("crates/x.cdx.json");
+           std::fs::write(&sbom, b"{}");"#
+    ));
+    // A loop over tree paths that removes each one.
+    assert!(writes_into_the_tree(
+        r#"let paths = vec![repo_root().join("crates/a"), repo_root().join("crates/b")];
+           for p in &paths { std::fs::remove_file(&p); }"#
+    ));
+    // The root named inside the write itself.
+    assert!(writes_into_the_tree(
+        r#"std::fs::create_dir_all(repo_root().join("crates/new"));"#
+    ));
+    // A shell command that mutates `crates/`.
+    assert!(writes_into_the_tree(
+        r#"Command::new("bash").args(["-c", "rm -f crates/*/*.cdx.json"]);"#
+    ));
+}
 
-    let filters = single_threaded_filters();
-    for module in shared {
-        assert!(
-            filters.iter().any(|filter| filter.contains(&module)),
-            "the tests of `{module}` write into the repository tree, so they \
-             share state with each other; under nextest each test is its own \
-             process and `#[serial]` no longer takes turns — they need a \
-             group with `max-threads = 1`, and no group covers them: {filters:?}"
-        );
-    }
+#[test]
+fn the_tree_write_detector_does_not_flag_what_shares_nothing() {
+    // Reading a tracked file out of the tree.
+    assert!(!writes_into_the_tree(
+        r#"let text = std::fs::read_to_string(repo_root().join("AGENTS.md"));"#
+    ));
+    // Copying FROM the tree into a temp dir of the test's own.
+    assert!(!writes_into_the_tree(
+        r#"let source = repo_root();
+           std::fs::copy(source.join("Cargo.toml"), dir.path().join("Cargo.toml"));"#
+    ));
+    // Writing into a private temp dir.
+    assert!(!writes_into_the_tree(
+        r#"let dir = tempfile::tempdir().unwrap();
+           std::fs::write(dir.path().join("a"), b"x");"#
+    ));
+    // The build directory is cargo's.
+    assert!(!writes_into_the_tree(
+        r#"let scratch = repo_root().join("target").join("scratch");
+           std::fs::create_dir_all(&scratch);"#
+    ));
+    // "confirm" ends in "rm": the verb must start the command.
+    assert!(!writes_into_the_tree(
+        r#"Command::new("bash").args(["-c", "confirm crates/x"]);"#
+    ));
 }

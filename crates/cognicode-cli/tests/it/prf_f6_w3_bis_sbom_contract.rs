@@ -10,7 +10,7 @@
 //! the layout where cargo-cyclonedx actually writes per-binary
 //! SBOMs (`crates/<crate>/<bin>_bin.cdx.json`).
 //!
-//! This test pins the corrected contract in three layers:
+//! This test pins the corrected contract in two layers:
 //!
 //! 1. **Script execution**: invoke `build-sboms-for-lane.sh` with a
 //!    known rust target triple and assert that exactly the three
@@ -25,23 +25,22 @@
 //!    against a future cargo-cyclonedx regression that silently
 //!    emits empty or per-crate files.
 //!
-//! 3. **Lane contract**: assert that the release lane generates SBOMs with
-//!    `scripts/ci/build-sboms-for-lane.sh` (not the broken
-//!    `cargo cyclonedx --format json` invocation) and that it stages payloads
-//!    through `scripts/ci/stage-platform-payloads.sh`, which is what places
-//!    the canonical SBOM names in the candidate. This is what makes the bug fix
-//!    un-driftable.
+//! The release lane's use of the shared scripts is pinned by the staging
+//! contract, not here.
 //!
-//! Layer 3 used to parse `release.yml` and `release-validate.yml` and assert
-//! the same thing about both. There is one lane now, and the artifact it
-//! publishes is a directory rather than a set of transferred uploads, so what
-//! remains to be pinned is that the lane uses the shared scripts at all. See
-//! `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
+//! **Where it runs.** The real `cargo cyclonedx` writes an SBOM next to the
+//! manifest of every workspace member, not only the crate it is started in.
+//! Run against the repository itself, the contract left files in `crates/`
+//! (the leftover `cognicode_graph_wasm_cdylib-rlib.cdx.json` is the one that
+//! survived) and the three tests deleted each other's files whenever they ran
+//! at the same time. Each test now runs the script in a private copy of the
+//! workspace, so the tool still sees a real workspace and the repository sees
+//! nothing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serial_test::serial;
+use tempfile::TempDir;
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -62,98 +61,95 @@ fn sbom_script() -> PathBuf {
 const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu"];
 const PUBLISHED_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 
-/// Set of canonical SBOM paths the script must produce.
-fn canonical_sbom_paths(target: &str) -> Vec<PathBuf> {
-    PUBLISHED_COMPONENTS
-        .iter()
-        .map(|c| repo_root().join(format!("crates/{c}-{target}.cdx.json")))
-        .collect()
+/// Directories that are build output or tooling state, never workspace
+/// source: copying them would cost time and carry nothing the tool reads.
+const NOT_WORKSPACE_SOURCE: &[&str] = &["target", "node_modules", ".git", "pkg"];
+
+/// A private copy of the workspace: the manifests, the lockfile, the
+/// toolchain pin and every crate. It lives in a temp dir that is removed
+/// when the value drops, on every exit path, so nothing needs a cleanup
+/// guard and nothing is shared with the other tests.
+struct PrivateWorkspace {
+    dir: TempDir,
 }
 
-/// Run the SBOM script for the given rust target. Returns (success, stdout).
-/// The script is invoked with the workspace root explicitly because cargo
-/// tests run with `cwd` set to the crate directory (CARGO_MANIFEST_DIR),
-/// not the workspace root.
-fn run_sbom_script(target: &str) -> (bool, String) {
-    let workspace = repo_root();
-    let out = Command::new("bash")
-        .arg(sbom_script())
-        .arg(target)
-        .arg(&workspace)
-        .output()
-        .expect("build-sboms-for-lane.sh must run");
-    (
-        out.status.success(),
-        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr),
-    )
-}
-
-fn remove_canonical_sboms(target: &str) {
-    for p in canonical_sbom_paths(target) {
-        let _ = std::fs::remove_file(&p);
+impl PrivateWorkspace {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().expect("a private workspace needs a temp dir");
+        let source = repo_root();
+        for file in [
+            "Cargo.toml",
+            "Cargo.lock",
+            "rust-toolchain.toml",
+            ".cargo/config.toml",
+        ] {
+            copy_file(&source.join(file), &dir.path().join(file));
+        }
+        copy_tree(&source.join("crates"), &dir.path().join("crates"));
+        Self { dir }
     }
-    // Clean any leftover _bin.cdx.json from prior runs.
-    let _ = Command::new("bash")
-        .arg("-c")
-        .arg("rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true")
-        .output();
-}
 
-/// RAII guard: registers a spurious per-bin SBOM file path that
-/// WILL be deleted when this guard drops, even if the test body
-/// panics or returns early. Without this, a panic between the
-/// `std::fs::write` of a spurius file and the final
-/// `remove_canonical_sboms` leaves a stale file that pollutes
-/// subsequent test runs in the same cargo invocation.
-///
-/// Usage:
-///   let _g = SpuriousFile::new(spurious_path);
-///   std::fs::write(&_g.path, ...);  // file is created; will be
-///                                   // deleted at end of scope.
-struct SpuriousFile {
-    path: PathBuf,
-}
-
-impl SpuriousFile {
-    fn new(path: PathBuf) -> Self {
-        Self { path }
+    fn root(&self) -> &Path {
+        self.dir.path()
     }
-}
 
-impl Drop for SpuriousFile {
-    fn drop(&mut self) {
-        // `rm -f` semantics: silently ignore non-existent files.
-        // Same rationale as `remove_canonical_sboms` — the helper
-        // is invoked from many places, some of which may have
-        // already cleaned up.
-        let _ = std::fs::remove_file(&self.path);
+    /// Set of canonical SBOM paths the script must produce.
+    fn canonical_sbom_paths(&self, target: &str) -> Vec<PathBuf> {
+        PUBLISHED_COMPONENTS
+            .iter()
+            .map(|c| self.root().join(format!("crates/{c}-{target}.cdx.json")))
+            .collect()
+    }
+
+    /// Run the SBOM script for the given rust target against this copy.
+    /// Returns (success, stdout + stderr).
+    fn run_sbom_script(&self, target: &str) -> (bool, String) {
+        let out = Command::new("bash")
+            .arg(sbom_script())
+            .arg(target)
+            .arg(self.root())
+            .output()
+            .expect("build-sboms-for-lane.sh must run");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).to_string()
+                + &String::from_utf8_lossy(&out.stderr),
+        )
     }
 }
 
-/// RAII guard: registers a workspace cleanup action that WILL run
-/// when this guard drops, even if the test body panics. This is
-/// the file-system analogue of a Python `try/finally` block.
-///
-/// Why this exists: previously each test called
-/// `remove_canonical_sboms(target)` only at the start (to clean
-/// the slate) and again at the very end (best-effort). A test
-/// panic between those two points would leave the canonical
-/// `crates/<component>-<target>.cdx.json` files in the workspace,
-/// which then confuse the next test invocation. The Drop guard
-/// makes the cleanup non-skippable.
-struct WorkspaceSbomGuard<'a> {
-    target: &'a str,
-}
-
-impl<'a> WorkspaceSbomGuard<'a> {
-    fn new(target: &'a str) -> Self {
-        Self { target }
+fn copy_file(from: &Path, to: &Path) {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("create {}: {e}", parent.display()));
     }
+    // `fs::copy` follows symlinks: the crates' LICENSE files are links to
+    // the root licenses, and the copy gets their content.
+    std::fs::copy(from, to)
+        .unwrap_or_else(|e| panic!("copy {} -> {}: {e}", from.display(), to.display()));
 }
 
-impl Drop for WorkspaceSbomGuard<'_> {
-    fn drop(&mut self) {
-        remove_canonical_sboms(self.target);
+/// Copy a directory tree, leaving out build output and any SBOM a previous
+/// run of the tool left behind (the copy must start without them).
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap_or_else(|e| panic!("create {}: {e}", to.display()));
+    for entry in std::fs::read_dir(from).unwrap_or_else(|e| panic!("read {}: {e}", from.display()))
+    {
+        let entry = entry.unwrap_or_else(|e| panic!("entry of {}: {e}", from.display()));
+        let name = entry.file_name();
+        let name_text = name.to_string_lossy();
+        let path = entry.path();
+        // `metadata` (not `file_type`) so a symlink is judged by what it
+        // points at.
+        let meta =
+            std::fs::metadata(&path).unwrap_or_else(|e| panic!("stat {}: {e}", path.display()));
+        if meta.is_dir() {
+            if !NOT_WORKSPACE_SOURCE.contains(&name_text.as_ref()) {
+                copy_tree(&path, &to.join(&name));
+            }
+        } else if !name_text.ends_with(".cdx.json") && !name_text.ends_with(".cdx.xml") {
+            copy_file(&path, &to.join(&name));
+        }
     }
 }
 
@@ -166,39 +162,23 @@ impl Drop for WorkspaceSbomGuard<'_> {
 /// nothing else under `crates/*.cdx.json` (no per-crate or
 /// per-binary leftovers).
 #[test]
-#[serial]
 fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
     for target in TIER1_TRIPLES {
-        // Drop guard: `remove_canonical_sboms(target)` runs on
-        // every exit path (panic or success). Previously a panic
-        // mid-test left the canonical SBOMs in the workspace,
-        // confusing subsequent runs.
-        let _g = WorkspaceSbomGuard::new(target);
-        remove_canonical_sboms(target);
+        let workspace = PrivateWorkspace::new();
 
-        let (ok, out) = run_sbom_script(target);
+        let (ok, out) = workspace.run_sbom_script(target);
         assert!(
             ok,
             "build-sboms-for-lane.sh failed for target={target}; output:\n{out}"
         );
-        // The script writes the absolute path of each staged SBOM,
-        // so the marker substring matches either a relative or
-        // absolute form.
-        assert!(
-            out.contains("staged crates/cogh-")
-                || out.contains(&format!("staged {}/crates/cogh-", repo_root().display())),
-            "script output missing the staged marker for cogh (target={target}); got:\n{out}"
-        );
-        assert!(
-            out.contains("staged crates/cognicode-mcp-")
-                || out.contains(&format!(
-                    "staged {}/crates/cognicode-mcp-",
-                    repo_root().display()
-                )),
-            "script output missing the staged marker for cognicode-mcp (target={target}); got:\n{out}"
-        );
 
-        for expected in canonical_sbom_paths(target) {
+        for expected in workspace.canonical_sbom_paths(target) {
+            // The script writes the absolute path of each staged SBOM.
+            assert!(
+                out.contains(&format!("staged {}", expected.display())),
+                "script output missing the staged marker for {} (target={target}); got:\n{out}",
+                expected.display()
+            );
             assert!(
                 expected.exists(),
                 "missing canonical SBOM {} after running the script",
@@ -222,38 +202,24 @@ fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
 /// would either skip them (silent drift) or upload them and let
 /// the flatten script choke on extras.
 #[test]
-#[serial]
 fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     let target = TIER1_TRIPLES[0];
-    // Drop guard: SBOM cleanup runs even if the test panics between
-    // writing the spurius files and the manual cleanup below.
-    let _g = WorkspaceSbomGuard::new(target);
-    remove_canonical_sboms(target);
+    let workspace = PrivateWorkspace::new();
 
     // Plant a known spurious file to simulate a previous
     // `cargo cyclonedx --describe binaries` run that leaked the
-    // mcp-client SBOM into the workspace. The Drop guard ensures
-    // these are deleted at scope end (panic or success).
-    let spurious_path = repo_root().join("crates/cognicode-mcp/mcp-client_bin.cdx.json");
-    if let Some(parent) = spurious_path.parent() {
-        std::fs::create_dir_all(parent).unwrap();
-    }
-    let _spurious_guard = SpuriousFile::new(spurious_path.clone());
-    std::fs::write(
-        &spurious_path,
-        br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-    )
-    .unwrap();
+    // mcp-client SBOM into the workspace.
+    let stub = br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#;
+    let spurious_path = workspace
+        .root()
+        .join("crates/cognicode-mcp/mcp-client_bin.cdx.json");
+    std::fs::write(&spurious_path, stub).unwrap();
+    let release_spurious = workspace
+        .root()
+        .join("crates/cognicode-cli/cognicode-release_bin.cdx.json");
+    std::fs::write(&release_spurious, stub).unwrap();
 
-    let release_spurious = repo_root().join("crates/cognicode-cli/cognicode-release_bin.cdx.json");
-    let _release_guard = SpuriousFile::new(release_spurious.clone());
-    std::fs::write(
-        &release_spurious,
-        br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-    )
-    .unwrap();
-
-    let (ok, out) = run_sbom_script(target);
+    let (ok, out) = workspace.run_sbom_script(target);
     assert!(ok, "script failed; output:\n{out}");
 
     assert!(
@@ -265,9 +231,6 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
         !release_spurious.exists(),
         "stray per-bin SBOM of cognicode-release was not cleaned up"
     );
-
-    // Drop guards also run the canonical SBOM cleanup. Explicit
-    // `remove_canonical_sboms(target)` removed here: redundant.
 }
 
 // -------------------------------------------------------------------
@@ -279,21 +242,18 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
 /// regression in cargo-cyclonedx that emits an empty file or a
 /// per-crate (non-binary) SBOM would surface here.
 #[test]
-#[serial]
 fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
     use std::collections::HashMap;
     let target = TIER1_TRIPLES[0];
-    // Drop guard: cleanup runs on every exit path. A panic in this
-    // test would leave 3 canonical SBOMs + the spurious bin files
-    // in the workspace; the guard ensures neither survives.
-    let _g = WorkspaceSbomGuard::new(target);
-    remove_canonical_sboms(target);
-    let (ok, out) = run_sbom_script(target);
+    let workspace = PrivateWorkspace::new();
+    let (ok, out) = workspace.run_sbom_script(target);
     assert!(ok, "script failed; output:\n{out}");
 
     let mut sboms: HashMap<String, serde_json::Value> = HashMap::new();
     for comp in PUBLISHED_COMPONENTS {
-        let path = repo_root().join(format!("crates/{comp}-{target}.cdx.json"));
+        let path = workspace
+            .root()
+            .join(format!("crates/{comp}-{target}.cdx.json"));
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let v: serde_json::Value = serde_json::from_str(&text)
@@ -334,7 +294,9 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
     // `cogh` and `cognicode` share `cognicode-cli`, so they share the same
     // transitive closure; `cognicode-mcp` has its own.
     for comp in PUBLISHED_COMPONENTS {
-        let path = repo_root().join(format!("crates/{comp}-{target}.cdx.json"));
+        let path = workspace
+            .root()
+            .join(format!("crates/{comp}-{target}.cdx.json"));
         let v = sboms.get(*comp).unwrap();
         let count = v["components"].as_array().map(|a| a.len()).unwrap_or(0);
         assert!(
@@ -343,7 +305,4 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
             path.display()
         );
     }
-
-    // Drop guard `let _g = ...` (line 286) cleans up the canonical
-    // SBOMs on every exit path; explicit cleanup removed: redundant.
 }

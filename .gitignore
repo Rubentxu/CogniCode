@@ -4,7 +4,6 @@
 **/*.pdb
 **/*.exp
 **/*.lib
-**/*.rlib
 
 # Release staging and output directories. The CI lanes that wrote to
 # `staging/` and uploaded from `release/` were retired on 2026-11-04, so
@@ -102,7 +101,6 @@ sandbox/reports/*
 
 # Temp / scratch files
 .tmp-*/
-adder.go
 .cognicode/
 
 # Local environment overrides (PR 3 of postgres-default-config).
@@ -242,8 +240,9 @@ uat-guided-v1.0.0-current.html
 # over core.excludesFile, so declare the layout here.
 !crates/cognicode-cli/src/bin/
 sandbox/scripts/tests/__pycache__/
+# Output of the release lane (`scripts/ci/build-sboms-for-lane.sh`), not an accident:
+# a suite that leaves one behind fails `scripts/ci/tree_witness.py`.
 *.cdx.json
-*.cdx.xml
 
 # Compat matrix binaries (Post-PRF L1.3): binarios legacy para tests
 # de compat (extraídos de releases publicados, no commiteados).
