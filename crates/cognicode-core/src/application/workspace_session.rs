@@ -874,7 +874,7 @@ impl WorkspaceSession {
         let impact = crate::application::services::analysis_service::AnalysisService::impact_of(
             &graph, symbol,
         )
-        .map_err(|absent| WorkspaceError::SymbolNotFound(absent.to_string()))?;
+        .map_err(|refusal| WorkspaceError::SymbolNotFound(refusal.to_string()))?;
 
         let summary = format!(
             "{} symbols across {} files would be affected.",

@@ -1667,8 +1667,7 @@ pub async fn handle_analyze_impact(
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
 
-    let impact = AnalysisService::impact_of(&graph, &input.symbol_name)
-        .map_err(|absent| HandlerError::NotFound(absent.to_string()))?;
+    let impact = AnalysisService::impact_of(&graph, &input.symbol_name)?;
 
     let auto_note = if ensure.auto_built {
         ensure.message.clone()
