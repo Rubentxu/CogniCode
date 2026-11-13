@@ -2311,26 +2311,19 @@ impl CommandExecutor {
         let path_str = path.to_string();
 
         // Use spawn_blocking to avoid blocking the async runtime
+        // The sample is the first five `.rs` files directly under the path, in
+        // the inventory's file-name order: the same tree names the same files.
         let file_names: Vec<String> = tokio::task::spawn_blocking(move || {
-            std::fs::read_dir(&path_str)
-                .ok()
-                .map(|entries| {
-                    entries
-                        .filter_map(Result::ok)
-                        .filter_map(|e| {
-                            let p = e.path();
-                            if p.extension().and_then(|s| s.to_str()) == Some("rs") {
-                                p.file_name()
-                                    .and_then(|s| s.to_str())
-                                    .map(|s| s.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .take(5)
-                        .collect()
-                })
-                .unwrap_or_default()
+            let root = std::path::Path::new(&path_str);
+            let inventory = cognicode_core::infrastructure::graph::source_files::inventory(root);
+            inventory
+                .files
+                .iter()
+                .filter(|f| f.path.parent() == Some(root))
+                .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
+                .filter_map(|f| f.path.file_name()?.to_str().map(str::to_string))
+                .take(5)
+                .collect()
         })
         .await
         .unwrap_or_default();

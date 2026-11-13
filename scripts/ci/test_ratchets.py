@@ -1317,13 +1317,13 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
         "not the source files of the project",
     # -- project readers that keep a list of their own because the list is part
     # -- of a published answer; aligning it changes that answer.
-    "crates/cognicode-cli/src/cli/commands.rs":
-        "lists the `.rs` files directly under one directory for the complexity "
-        "section of the report: one level, one extension, a path the user passed",
     "crates/cognicode-core/src/application/architecture/control_query.rs":
         "reads a source root for the architecture query with a two-name skip list; "
         "the identity digest of the query is computed over the files it reads, so "
-        "changing the file set changes a published identity",
+        "changing the file set changes a published identity. Measured against the "
+        "inventory in `each_reader_of_the_tree_says_which_files_it_reads` (reads "
+        "build, vendor and hidden directories and follows symlinks); moving it "
+        "would add a CR-06 pair, which needs a named approval",
     "crates/cognicode-core/src/application/ingest/scan.rs":
         "the ingest scan: its rules (`workspace_rules`) are shared with the watcher "
         "so both agree on the same places, and its noise list is deliberately "
@@ -1331,10 +1331,14 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
     "crates/cognicode-core/src/application/services/file_operations.rs":
         "the content-search and directory-listing tools walk the path the caller "
         "names with gitignore awareness and a depth bound; their output is a "
-        "published contract, not the project's file set",
+        "published contract, not the project's file set. Measured in "
+        "`each_reader_of_the_tree_says_which_files_it_reads`: it lists non-source "
+        "files and `build/`, which the inventory prunes by design",
     "crates/cognicode-core/src/assurance_export/workspace_extractor.rs":
         "the assurance export walks Rust files sorted by path with its own skip "
-        "list; the export digest is computed over what it reads",
+        "list; the export digest is computed over what it reads. Measured in "
+        "`each_reader_of_the_tree_says_which_files_it_reads`: it lists vendor and "
+        "hidden directories and follows symlinks, so aligning it changes the digest",
 }
 
 # Every production file that keeps an inline list of directories to skip

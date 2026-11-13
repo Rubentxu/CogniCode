@@ -284,6 +284,34 @@ pub struct SourceRead {
     pub source: ArchitectureSource,
     /// La identidad de esas fuentes.
     pub basis: SourceBasis,
+    /// Lo que el recorrido alcanzó y no pudo leer, ordenado por ruta. Una
+    /// lectura con huecos es parcial: la identidad cubre lo leído y no dice
+    /// nada de esto.
+    pub unreadable: Vec<UnreadableSource>,
+}
+
+/// Un fichero o un directorio que el recorrido alcanzó y no pudo leer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct UnreadableSource {
+    /// La ruta relativa a la raíz leída, con `/` como separador (`.` es la
+    /// propia raíz).
+    pub path: String,
+    /// El motivo que dio el sistema operativo.
+    pub reason: String,
+}
+
+impl UnreadableSource {
+    fn new(root: &std::path::Path, path: &std::path::Path, error: &std::io::Error) -> Self {
+        let relative = relative_to(root, path);
+        Self {
+            path: if relative.is_empty() {
+                ".".to_string()
+            } else {
+                relative
+            },
+            reason: error.to_string(),
+        }
+    }
 }
 
 /// El estado de la identidad de una lectura.
@@ -330,9 +358,9 @@ pub struct SourceBasis {
 ///
 /// El `module_path` de cada fichero sale de su ruta relativa a la raíz
 /// (`src/domain/service.rs` -> `domain::service`), que es lo que
-/// `LayerId::from_module_path` resuelve. Los ficheros que no se pueden
-/// leer se saltan; el estado de la consulta se encarga de la cobertura
-/// que falta.
+/// `LayerId::from_module_path` resuelve. Un fichero o un directorio que no
+/// se puede leer no entra en la lectura y **se publica** en `unreadable`: la
+/// lectura no es completa y lo dice.
 ///
 /// La identidad se calcula sobre el mismo conjunto que el evaluador va a
 /// examinar y sobre la ruta **relativa** de cada fichero, de modo que el
@@ -343,10 +371,15 @@ pub fn read_from_source_root(root: &std::path::Path) -> SourceRead {
     // orden cae cada fichero en vez de copiar su contenido: el contenido
     // ya está en `files` y no hace falta tenerlo dos veces.
     let mut order: Vec<(String, usize)> = Vec::new();
+    let mut unreadable: Vec<UnreadableSource> = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) => {
+                unreadable.push(UnreadableSource::new(root, &dir, &error));
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -359,8 +392,12 @@ pub fn read_from_source_root(root: &std::path::Path) -> SourceRead {
                 }
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs") {
-                let Ok(source) = std::fs::read_to_string(&path) else {
-                    continue;
+                let source = match std::fs::read_to_string(&path) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        unreadable.push(UnreadableSource::new(root, &path, &error));
+                        continue;
+                    }
                 };
                 let rel = path.strip_prefix(root).unwrap_or(&path).with_extension("");
                 let segments: Vec<String> = rel
@@ -380,10 +417,12 @@ pub fn read_from_source_root(root: &std::path::Path) -> SourceRead {
     // El recorrido sigue el sistema de ficheros, que no garantiza un
     // orden. Sin ordenar, el mismo código daría identidades distintas.
     order.sort_unstable();
+    unreadable.sort_unstable_by(|a, b| a.path.cmp(&b.path));
     let basis = source_basis_of(&files, &order);
     SourceRead {
         source: ArchitectureSource { files },
         basis,
+        unreadable,
     }
 }
 
