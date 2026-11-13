@@ -16,7 +16,6 @@
 //! | `graph_repository` | `GraphRepository` | existing |
 //! | `ingest_commit_port` | `IngestCommitPort` | new (PR1) · cfg `multimodal` |
 //! | `manifest_store` | `ManifestStore` | existing |
-//! | `node_property_repository` | `NodePropertyRepository` | renamed (e29-3) |
 //! | `quality_store` | `QualityStore` | new (PR2 — relocated from cognicode-explorer) |
 //! | `report_store` | `ReportStore` | existing |
 //! | `revision_store` | `RevisionStore` | new (PR1) |
@@ -40,7 +39,6 @@ pub mod graph_repository;
 pub mod ingest_commit_port;
 pub mod manifest_store;
 pub mod narrative_store;
-pub mod node_property_repository;
 pub mod quality_store;
 pub mod report_store;
 pub mod revision_store;
@@ -73,7 +71,6 @@ pub use ingest_commit_port::{
 };
 pub use manifest_store::{ManifestError, ManifestStore, ScanManifest};
 pub use narrative_store::{NarrativeError, NarrativeSnapshot, NarrativeStore};
-pub use node_property_repository::NodePropertyRepository;
 pub use quality_store::{
     IssueFilter, NewIssue, QualityError, QualityGateSummary, QualityIssue, QualityStore,
     RuleSummary, UpsertSummary,

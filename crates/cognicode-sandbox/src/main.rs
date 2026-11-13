@@ -32,21 +32,21 @@ use walkdir::WalkDir;
 
 use cognicode_core::application::sandbox_failure::FailureClass;
 use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
-use cognicode_core::sandbox_core::artifacts::{
+use cognicode_mcp::rmcp_adapter::lookup_tool_deps;
+use cognicode_sandbox::sandbox_core::artifacts::{
     PipelineStageResult, ScenarioResult, Timing, ValidationResult,
 };
-use cognicode_core::sandbox_core::ground_truth::GroundTruth;
-use cognicode_core::sandbox_core::history::{
+use cognicode_sandbox::sandbox_core::ground_truth::GroundTruth;
+use cognicode_sandbox::sandbox_core::history::{
     RunEntry, TrendDirection, append_run, compute_dimension_averages, compute_health_from_averages,
     compute_trends,
 };
-use cognicode_core::sandbox_core::manifest::{ExpandedScenario, Manifest};
-use cognicode_core::sandbox_core::scoring::{
+use cognicode_sandbox::sandbox_core::manifest::{ExpandedScenario, Manifest};
+use cognicode_sandbox::sandbox_core::scoring::{
     DimensionScores, ExecutionMetadata, MetricsDefinition, build_benchmark_result,
     compute_consistency_score, compute_latency_score, compute_robustness_score,
     compute_scalability_score, score_scenario,
 };
-use cognicode_mcp::rmcp_adapter::lookup_tool_deps;
 use mcp_core::{CapturedCall, McpError, McpServer};
 use resource::{compute_delta, take_snapshot};
 
@@ -870,7 +870,7 @@ fn execute_scenario(
     let mut mcp_error_detail: Option<String> = None; // Captured MCP error message
     let mut root_cause_validation_passed = true; // For debug_analyze root_cause validation
     let mut reconstructed_status: Option<
-        cognicode_core::sandbox_core::read_source_reconstructor::ReconstructedContent,
+        cognicode_sandbox::sandbox_core::read_source_reconstructor::ReconstructedContent,
     > = None; // H4.3
 
     // Build params: merge action into scenario arguments
@@ -1278,7 +1278,7 @@ fn execute_scenario(
                 // regardless of outcome, and a summary `ReconstructedContent`
                 // is attached to the `ScenarioResult.reconstructed` field.
                 if reconstructed_status.is_none()
-                    && cognicode_core::sandbox_core::read_source_reconstructor::should_reconstruct(
+                    && cognicode_sandbox::sandbox_core::read_source_reconstructor::should_reconstruct(
                         scenario,
                     )
                 {
@@ -1309,7 +1309,7 @@ fn execute_scenario(
                     } else {
                         // No continuation needed — record a single-page reconstruction
                         // and keep the original response unchanged.
-                        let sp = cognicode_core::sandbox_core::read_source_reconstructor::reconstruct_single_page(
+                        let sp = cognicode_sandbox::sandbox_core::read_source_reconstructor::reconstruct_single_page(
                             &initial_tool_result,
                         );
                         reconstructed_status = Some(sp);
@@ -1330,7 +1330,7 @@ fn execute_scenario(
                         // tool response only if the disk content matches the
                         // first-page hash (i.e. no concurrent mutation).
                         let recon_result =
-                            cognicode_core::sandbox_core::read_source_reconstructor::reconstruct_read_file(
+                            cognicode_sandbox::sandbox_core::read_source_reconstructor::reconstruct_read_file(
                                 &initial_for_recon,
                                 |_args| {
                                     // Disk-mode: no additional MCP calls.
@@ -1340,7 +1340,7 @@ fn execute_scenario(
                                     )
                                 },
                                 target_path.as_deref(),
-                                cognicode_core::sandbox_core::read_source_reconstructor::ReconstructionLimits::default(),
+                                cognicode_sandbox::sandbox_core::read_source_reconstructor::ReconstructionLimits::default(),
                             );
 
                         if verbose {
@@ -1358,7 +1358,7 @@ fn execute_scenario(
                         // response untouched — the scenario is NOT silently
                         // turned into a pass.
                         if recon_result.status
-                            == cognicode_core::sandbox_core::read_source_reconstructor::ReconstructionStatus::Complete
+                            == cognicode_sandbox::sandbox_core::read_source_reconstructor::ReconstructionStatus::Complete
                         {
                             if let Some(reconstructed_content) = recon_result.content.as_ref() {
                                 if let Some(tool_res) = tool_response.as_mut() {
@@ -2420,8 +2420,8 @@ fn resolve_repo_provenance(
     repo_name: &str,
     scenario_workspace: &str,
     actual_workspace: &Path,
-) -> Option<cognicode_core::sandbox_core::artifacts::RepoProvenance> {
-    use cognicode_core::sandbox_core::artifacts::RepoProvenance;
+) -> Option<cognicode_sandbox::sandbox_core::artifacts::RepoProvenance> {
+    use cognicode_sandbox::sandbox_core::artifacts::RepoProvenance;
 
     let repo_path = repos_dir.join(repo_name);
 
@@ -3318,7 +3318,7 @@ mod edit_file_schema_tests {
 #[cfg(test)]
 mod expand_manifests_tests {
     use super::*;
-    use cognicode_core::sandbox_core::manifest::Manifest;
+    use cognicode_sandbox::sandbox_core::manifest::Manifest;
 
     fn make_test_manifest() -> Manifest {
         let yaml = r#"
@@ -3476,7 +3476,9 @@ mod workspace_root_substitution_tests {
 #[cfg(test)]
 mod validation_pipeline_tests {
     use super::*;
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, StageDef, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::manifest::{
+        ExpandedScenario, StageDef, ValidationPipeline,
+    };
     use std::collections::HashMap;
 
     fn make_readonly_scenario() -> ExpandedScenario {
@@ -3655,8 +3657,8 @@ mod validation_pipeline_tests {
 #[cfg(test)]
 mod protocol_violation_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::ValidationResult;
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::artifacts::ValidationResult;
+    use cognicode_sandbox::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
     use std::collections::HashMap;
 
     /// Create a minimal ExpandedScenario for testing.
@@ -3938,8 +3940,8 @@ fn benchmark(args: BenchmarkArgs, verbose: bool) -> Result<i32, String> {
 #[cfg(test)]
 mod classify_outcome_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
+    use cognicode_sandbox::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
     use std::collections::HashMap;
 
     fn make_test_scenario(expected_outcome: &str) -> ExpandedScenario {
@@ -4292,7 +4294,7 @@ mod classify_outcome_tests {
 #[cfg(test)]
 mod determine_failure_class_tests {
     use super::*;
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::manifest::{ExpandedScenario, ValidationPipeline};
     use std::collections::HashMap;
 
     fn make_test_scenario(tool: &str) -> ExpandedScenario {
@@ -4620,7 +4622,7 @@ mod dimension_scores_on_tool_error_tests {
 #[cfg(test)]
 mod aggregate_summary_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{ScenarioResult, Timing};
+    use cognicode_sandbox::sandbox_core::artifacts::{ScenarioResult, Timing};
 
     fn make_result(
         outcome: &str,
@@ -5735,8 +5737,10 @@ mod debug_tools_integration_tests {
 #[cfg(test)]
 mod bug_detection_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, StageDef, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
+    use cognicode_sandbox::sandbox_core::manifest::{
+        ExpandedScenario, StageDef, ValidationPipeline,
+    };
     use std::collections::HashMap;
 
     fn make_test_scenario(expected_outcome: &str) -> ExpandedScenario {
@@ -6179,7 +6183,7 @@ mod bug_detection_tests {
             expected_outcome: "pass".into(),
             outcome: outcome.into(),
             failure_class,
-            timing_ms: cognicode_core::sandbox_core::artifacts::Timing {
+            timing_ms: cognicode_sandbox::sandbox_core::artifacts::Timing {
                 setup_ms: 10,
                 server_startup_ms: 20,
                 tool_call_ms: 30,
@@ -6209,8 +6213,10 @@ mod bug_detection_tests {
 #[cfg(test)]
 mod edge_case_tests {
     use super::*;
-    use cognicode_core::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
-    use cognicode_core::sandbox_core::manifest::{ExpandedScenario, StageDef, ValidationPipeline};
+    use cognicode_sandbox::sandbox_core::artifacts::{PipelineStageResult, ValidationResult};
+    use cognicode_sandbox::sandbox_core::manifest::{
+        ExpandedScenario, StageDef, ValidationPipeline,
+    };
     use std::collections::HashMap;
 
     fn make_test_scenario(expected_outcome: &str) -> ExpandedScenario {
@@ -6263,7 +6269,7 @@ mod edge_case_tests {
             expected_outcome: "pass".into(),
             outcome: outcome.into(),
             failure_class,
-            timing_ms: cognicode_core::sandbox_core::artifacts::Timing {
+            timing_ms: cognicode_sandbox::sandbox_core::artifacts::Timing {
                 setup_ms: 10,
                 server_startup_ms: 20,
                 tool_call_ms: 30,
@@ -7071,7 +7077,7 @@ scenarios:
             expected_outcome: "pass".to_string(),
             outcome: "pass".to_string(),
             failure_class,
-            timing_ms: cognicode_core::sandbox_core::artifacts::Timing {
+            timing_ms: cognicode_sandbox::sandbox_core::artifacts::Timing {
                 setup_ms: 10,
                 server_startup_ms: 20,
                 tool_call_ms: 30,
@@ -7425,7 +7431,7 @@ scenarios:
     /// default for missing fields is None when the field is Option).
     #[test]
     fn test_legacy_result_json_deserializes_without_repo_provenance() {
-        use cognicode_core::sandbox_core::artifacts::ScenarioResult;
+        use cognicode_sandbox::sandbox_core::artifacts::ScenarioResult;
 
         // Construct a legacy result.json (pre-provenance) by omitting the
         // new fields entirely.
@@ -7469,7 +7475,7 @@ scenarios:
     /// round-trips and exposes the actual_* fields.
     #[test]
     fn test_current_result_json_with_provenance_roundtrips() {
-        use cognicode_core::sandbox_core::artifacts::{RepoProvenance, ScenarioResult};
+        use cognicode_sandbox::sandbox_core::artifacts::{RepoProvenance, ScenarioResult};
 
         let result = ScenarioResult {
             scenario_id: "tier1_serde".into(),
@@ -7482,7 +7488,7 @@ scenarios:
             expected_outcome: "pass".into(),
             outcome: "pass".into(),
             failure_class: None,
-            timing_ms: cognicode_core::sandbox_core::artifacts::Timing {
+            timing_ms: cognicode_sandbox::sandbox_core::artifacts::Timing {
                 setup_ms: 0,
                 server_startup_ms: 0,
                 tool_call_ms: 5,

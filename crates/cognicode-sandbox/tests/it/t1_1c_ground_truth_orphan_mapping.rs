@@ -28,7 +28,7 @@
 //! ninguna variante conocida".
 
 use cognicode_core::domain::value_objects::symbol_kind::SymbolKind as CanonicalSymbolKind;
-use cognicode_core::sandbox_core::ground_truth::SymbolKind as GroundTruthSymbolKind;
+use cognicode_sandbox::sandbox_core::ground_truth::SymbolKind as GroundTruthSymbolKind;
 
 #[test]
 fn four_orphans_map_to_unknown() {

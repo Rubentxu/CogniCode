@@ -32,7 +32,7 @@ FAMILY_BUDGETS: dict[str, tuple[float, str]] = {
 #   The MCP Health Score (weighted average of correctness, latency,
 #   scalability, consistency, robustness dimensions, computed by
 #   sandbox_core::scoring) MUST be >= 85/100 for the candidate release.
-# Authoritative source of weights: crates/cognicode-core/src/sandbox_core/
+# Authoritative source of weights: crates/cognicode-sandbox/src/sandbox_core/
 # scoring.rs:1400 (HEALTH_WEIGHTS). Update both together.
 G3_THRESHOLD: float = 85.0
 G3_HEALTH_WEIGHTS: tuple[float, ...] = (0.35, 0.20, 0.15, 0.15, 0.15)
@@ -477,7 +477,7 @@ def gate_g3(run_dirs: list[str], stability_path: str = "") -> GateResult:
       sandbox_core::scoring) MUST be >= 85/100 for the candidate release.
 
     Authoritative source of the formula:
-      crates/cognicode-core/src/sandbox_core/scoring.rs:1400
+      crates/cognicode-sandbox/src/sandbox_core/scoring.rs:1400
         HEALTH_WEIGHTS = (0.35, 0.20, 0.15, 0.15, 0.15)
         compute_health_score(scores) =
             CORR*0.35 + LAT*0.20 + ESC*0.15 + CON*0.15 + ROB*0.15

@@ -23,7 +23,6 @@ pub mod product;
 //   B5.W3: `refactor::apply` (autoridad separada, transactional
 //          writes, rollback, AAT-B5-01..03).
 pub mod refactor;
-pub mod sandbox_core;
 pub mod schemas;
 
 // Re-export the main facade

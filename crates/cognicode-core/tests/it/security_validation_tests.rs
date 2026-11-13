@@ -132,6 +132,51 @@ fn test_input_validator_returns_first_error() {
 }
 
 #[test]
+fn test_rules_travel_with_the_validator_when_it_is_moved() {
+    let mut validator = InputValidator::new();
+    validator.add_rule(Box::new(PathValidationRule::new()));
+
+    // Moving a value changes its address. The rules belong to the validator, not
+    // to the place where it happened to live when the rule was added.
+    let moved = Box::new(validator);
+
+    assert!(
+        moved.validate_input("path", "../etc/passwd").is_err(),
+        "a moved validator must keep the rules it was given: failing open here \
+         accepts a traversal path"
+    );
+}
+
+#[test]
+fn test_rules_travel_with_the_validator_when_it_is_cloned() {
+    let mut validator = InputValidator::new();
+    validator.add_rule(Box::new(SqlValidationRule::new()));
+
+    let cloned = validator.clone();
+    drop(validator);
+
+    assert!(
+        cloned
+            .validate_input("sql", "'; DROP TABLE users;")
+            .is_err(),
+        "a cloned validator must keep the rules it was given"
+    );
+}
+
+#[test]
+fn test_rules_of_one_validator_do_not_leak_into_another() {
+    let mut strict = InputValidator::new();
+    strict.add_rule(Box::new(PathValidationRule::new()));
+    let lax = InputValidator::new();
+
+    assert!(strict.validate_input("path", "../etc/passwd").is_err());
+    assert!(
+        lax.validate_input("path", "../etc/passwd").is_ok(),
+        "a validator with no rules applies none"
+    );
+}
+
+#[test]
 fn test_validation_rule_trait_object_safety() {
     // Verify that Box<dyn ValidationRule> works correctly
     let rules: Vec<Box<dyn ValidationRule>> = vec![

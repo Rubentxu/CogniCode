@@ -15,8 +15,8 @@
 //!     length threshold and the substring match do. This keeps the test
 //!     reproducible from Git alone.
 
-use cognicode_core::sandbox_core::ground_truth::GroundTruth;
-use cognicode_core::sandbox_core::scoring::{ExecutionMetadata, score_scenario};
+use cognicode_sandbox::sandbox_core::ground_truth::GroundTruth;
+use cognicode_sandbox::sandbox_core::scoring::{ExecutionMetadata, score_scenario};
 
 /// The substring the ground-truth will search for. Must appear inside
 /// the synthetic reconstructed content below.

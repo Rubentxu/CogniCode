@@ -3,7 +3,7 @@
 #
 # Background: a P0 audit found that McpServer::read_response and
 # McpServer::drain_notifications in
-# crates/cognicode-core/src/sandbox_core/mcp_core.rs calculate a
+# crates/cognicode-sandbox/src/mcp_core.rs calculate a
 # deadline but then call self.stdout.read_line(&mut line), which is
 # a BLOCKING syscall. If the server is alive but emits no further
 # data and does not close stdout, the read blocks forever and the
@@ -37,7 +37,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-MCP_CORE="$REPO_ROOT/crates/cognicode-core/src/sandbox_core/mcp_core.rs"
+MCP_CORE="$REPO_ROOT/crates/cognicode-sandbox/src/mcp_core.rs"
 
 if [ ! -f "$MCP_CORE" ]; then
     echo "FAIL: $MCP_CORE not found"

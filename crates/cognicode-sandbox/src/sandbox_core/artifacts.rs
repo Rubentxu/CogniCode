@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use super::history::DimensionAverages;
 use super::read_source_reconstructor::ReconstructedContent;
 use super::scoring::DimensionScores;
-use crate::application::sandbox_failure::FailureClass;
-use crate::application::sandbox_resource_usage::ResourceUsage;
+use cognicode_core::application::sandbox_failure::FailureClass;
+use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
 
 /// Timing information for a scenario, broken down by phase (in milliseconds).
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,4 +1,5 @@
-//! The sandbox resource DTO has a neutral core owner.
+//! The sandbox resource DTO has a neutral owner in the analysis core, and the
+//! artifact models in `cognicode-sandbox` use it instead of declaring their own.
 
 use std::fs;
 use std::path::Path;
@@ -6,9 +7,8 @@ use std::path::Path;
 #[test]
 fn resource_usage_is_owned_by_the_neutral_application_module() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let core_src = manifest.join("src");
-    let application = core_src.join("application");
-    let artifacts = core_src.join("sandbox_core/artifacts.rs");
+    let application = manifest.join("../cognicode-core/src/application");
+    let artifacts = manifest.join("src/sandbox_core/artifacts.rs");
 
     let application_mod = fs::read_to_string(application.join("mod.rs"))
         .expect("read application module declarations");
@@ -27,7 +27,8 @@ fn resource_usage_is_owned_by_the_neutral_application_module() {
         "artifacts.rs still owns ResourceUsage"
     );
     assert!(
-        artifacts_source.contains("application::sandbox_resource_usage::ResourceUsage"),
+        artifacts_source
+            .contains("cognicode_core::application::sandbox_resource_usage::ResourceUsage"),
         "artifacts.rs does not use the neutral ResourceUsage owner"
     );
 }

@@ -41,8 +41,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::domain::findings::sha256_hex;
 use crate::sandbox_core::manifest::Manifest;
+use cognicode_core::domain::findings::sha256_hex;
 
 /// Sentinel emitted by the sandbox orchestrator when it refuses to issue
 /// further MCP continuation calls (because the single stdio MCP process

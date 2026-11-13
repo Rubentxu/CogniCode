@@ -316,7 +316,7 @@ fi
 # 2026-11-12 over the workspace: `--lib` then `--tests` ran 9,254 tests for
 # 5,667 distinct ones, and the tests of the binaries only ran in step 2.
 #
-# A half can be empty for a real radius: `cognicode-sandbox` has no
+# A half can be empty for a real radius: `cognicode-ladybug` has no
 # integration target and `cognicode-graph-wasm` has no unit test. That half
 # says so in the log and does not fail, because the other half of the same
 # selection holds the tests. Both halves empty is a radius without a test,

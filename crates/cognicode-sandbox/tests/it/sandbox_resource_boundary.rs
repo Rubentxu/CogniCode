@@ -1,8 +1,9 @@
-//! Ownership boundary for the first `sandbox_core` extraction slice.
+//! Ownership boundary for resource measurement.
 //!
 //! Resource measurement belongs to the sandbox executable, not the analysis
-//! core. This test is intentionally structural: it prevents the two crates
-//! from carrying duplicate owners for the same resource contract.
+//! core and not the shared `sandbox_core` library. This test is intentionally
+//! structural: it prevents two modules from carrying duplicate owners for the
+//! same resource contract.
 
 use std::path::PathBuf;
 
@@ -15,9 +16,9 @@ fn resource_module_is_owned_by_cognicode_sandbox() {
     let root = workspace_root();
     assert!(
         !root
-            .join("crates/cognicode-core/src/sandbox_core/resource.rs")
+            .join("crates/cognicode-sandbox/src/sandbox_core/resource.rs")
             .exists(),
-        "resource.rs must not remain in cognicode-core"
+        "resource.rs must not move into the sandbox_core library"
     );
     assert!(
         root.join("crates/cognicode-sandbox/src/resource.rs")
