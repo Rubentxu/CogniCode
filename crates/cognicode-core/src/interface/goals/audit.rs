@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::goals::common::{GoalBasis, coverage_line, graph_basis};
 use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -41,6 +43,15 @@ pub struct GoalAudit {
     pub symbols_in_cycles: usize,
     /// Cuántos componentes fuertemente conexos tiene el grafo.
     pub total_sccs: usize,
+    /// What the graph this answer was computed over covers: the files the
+    /// walk could not read, the references without a declaration and the
+    /// relations the repository refused. A dead symbol that is only
+    /// referenced from an unread file is not dead, so the consumer needs
+    /// the holes next to the verdict.
+    pub coverage: CoverageInfo,
+    /// What the graph was built from, when the load kept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
 }
 
 /// Un símbolo al que no llega ninguna llamada.
@@ -87,6 +98,8 @@ pub fn audit(workspace: &Path) -> Result<GoalAudit, String> {
         has_cycles: cycles.has_cycles,
         symbols_in_cycles: cycles.symbols_in_cycles(),
         total_sccs: cycles.total_sccs,
+        coverage: CoverageInfo::of(&built.coverage),
+        basis: graph_basis(workspace, &built),
     })
 }
 
@@ -113,6 +126,7 @@ pub fn render(answer: &Value) -> String {
             symbol.file, symbol.line, symbol.symbol
         ));
     }
+    text.push_str(&coverage_line(&audited.coverage));
     text
 }
 
@@ -137,5 +151,28 @@ mod tests {
             answer.summary.contains(&answer.dead_code_count.to_string()),
             "the summary says another count than the fields: {answer:?}"
         );
+    }
+
+    #[test]
+    fn the_text_says_what_the_audit_covered() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
+
+        let whole = render(&run(&env(dir.path()), &serde_json::json!({})).expect("answers"));
+        assert!(whole.ends_with("  coverage: complete\n"), "{whole}");
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/nowhere", dir.path().join("link.rs")).expect("symlink");
+            let partial = render(&run(&env(dir.path()), &serde_json::json!({})).expect("answers"));
+            assert!(
+                partial.ends_with("  coverage: partial (1 file(s) unreadable)\n"),
+                "an audit over a tree it could not read whole says so: {partial}"
+            );
+        }
+    }
+
+    fn env(workspace: &Path) -> GoalEnvironment<'_> {
+        GoalEnvironment::new(workspace, None)
     }
 }
