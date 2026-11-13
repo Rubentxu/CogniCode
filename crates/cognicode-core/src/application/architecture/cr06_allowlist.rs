@@ -63,13 +63,16 @@ use crate::domain::architecture::TemporaryException;
 /// test fails — the allowlist is not a permission to drift, it is
 /// an inventory of work.
 ///
-/// The `dependency_path` is matched by **prefix** (see
-/// [`TemporaryException::matches`]), so an entry whose path ends in
-/// `::` covers every leaf under that prefix (e.g. the entry
-/// `infrastructure::parser::` covers both
-/// `infrastructure::parser::Language` and
-/// `infrastructure::parser::TreeSitterParser` from the same `use`
-/// statement).
+/// The `dependency_path` has two forms (see
+/// [`TemporaryException::matches`]). A path without a trailing `::` names
+/// **exactly that path**; a path with one names **a module and everything
+/// below it**. The evaluator reports one violation per resolvable leaf of an
+/// import group and the bare module path for a group it cannot resolve, so a
+/// module imported in several spellings carries one entry per spelling.
+/// That is on purpose: the entry for `infrastructure::graph::reuse::` covers
+/// the items `reuse` has today and tomorrow, and a new module next to it
+/// (`infrastructure::graph::brand_new_module`) fails the gate instead of
+/// riding along under a broader entry.
 pub fn exceptions() -> Vec<TemporaryException> {
     vec![
         // ====================================================================
@@ -87,17 +90,18 @@ pub fn exceptions() -> Vec<TemporaryException> {
         //
         // The three survivors are the regression guard, not leftover debt.
         // Each carries the rule: a match on a non-test line means ST-01
-        // regressed. The prefixes stay BROAD on purpose — matching is by
-        // prefix (see `TemporaryException::matches`), so `infrastructure::parser`
-        // also catches a future `infrastructure::parser::TreeSitterParser`
-        // import in production code, which a narrowed
-        // `infrastructure::parser::syntax_analysis` would let through.
+        // regressed. Two of them name the ONE adapter the tests compose,
+        // exactly (see `TemporaryException::matches`): a production import
+        // of any other `infrastructure::parser` item in this file is no
+        // longer suppressed, so the gate itself reports it. They used to be
+        // `infrastructure::parser` and `interface::mcp::security`, which
+        // prefix-matched and silenced the whole subtree.
         ex(
             "application_no_infrastructure",
             "application/services/file_operations.rs",
-            "infrastructure::parser",
+            "infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis",
             "team:st-01",
-            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter. This gate CANNOT see line numbers, so it suppresses that import anywhere in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
         ex(
             "application_no_infrastructure",
@@ -109,9 +113,9 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_interface",
             "application/services/file_operations.rs",
-            "interface::mcp::security",
+            "interface::mcp::security::InputValidator",
             "team:st-01",
-            "cfg(test)-only: behaviour tests compose InputValidator directly. Production path validation goes through the PathPolicy port (ST-01). This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+            "cfg(test)-only: behaviour tests compose InputValidator directly. Production path validation goes through the PathPolicy port (ST-01). This gate CANNOT see line numbers, so it suppresses that import anywhere in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
         // application_no_infrastructure — ST-02 (WorkspaceSession composition)
         // ====================================================================
@@ -129,26 +133,108 @@ pub fn exceptions() -> Vec<TemporaryException> {
         // ====================================================================
         // application_no_infrastructure — ST-03 (AnalysisService mega-split)
         // ====================================================================
-        // Bare module path (`use crate::infrastructure::graph;` with
-        // no leaf) emits without trailing `::`; prefix-match below
-        // covers the module itself plus every leaf under it.
+        // `analysis_service.rs` used to carry two entries, `infrastructure::graph`
+        // and `infrastructure::parser`, which prefix-matched: every module
+        // that would ever appear under either was already allowed, and the
+        // coupling could grow without the inventory noticing. They are now
+        // the modules and items the file names today, and nothing else.
+        //
+        // The bare paths (`infrastructure::graph`,
+        // `infrastructure::graph::per_file_graph`) are the spelling of an
+        // import GROUP the evaluator cannot resolve to a leaf; a module path
+        // with a trailing `::` is the same module reached through its items.
+        // `Language` is not here: it is a domain value object and the file
+        // imports it from there.
         ex(
             "application_no_infrastructure",
             "application/services/analysis_service.rs",
             "infrastructure::graph",
             "team:st-03",
-            "ST-03: graph types behind a port (LightweightIndex, PerFileGraphCache, BuildStatus, PetGraphStore).",
+            "ST-03: the import group `infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation}`, which the evaluator reports as the bare module path.",
         ),
-        // The evaluator emits the bare module path when an import
-        // group (`use crate::infrastructure::parser::{Language, ...}`)
-        // cannot be resolved to a leaf; prefix-match below covers the
-        // group itself plus every leaf under it.
         ex(
             "application_no_infrastructure",
             "application/services/analysis_service.rs",
-            "infrastructure::parser",
+            "infrastructure::graph::per_file_graph",
             "team:st-03",
-            "ST-03: parser types behind a port (Language, TreeSitterParser).",
+            "ST-03: the import groups `per_file_graph::{..}`, which the evaluator reports as the bare module path.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::per_file_graph::",
+            "team:st-03",
+            "ST-03: the build report vocabulary (BuildReport, BuildStatus, SkippedFile) and the walk classifiers live in the infrastructure module; they move behind the port the service consumes.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::reuse::",
+            "team:st-03",
+            "ST-03: the reuse ledger (ReuseLedger, DeclaredFile, Resolution, resolve) of the per-file graph.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::source_files::",
+            "team:st-03",
+            "ST-03: the source inventory walk of the per-file graph.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::pending::",
+            "team:st-03",
+            "ST-03: pending-reference resolution of the per-file graph.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::semantic_layer::",
+            "team:st-03",
+            "ST-03: the semantic facts reader of the per-file graph.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::SymbolLocation",
+            "team:st-03",
+            "ST-03: graph types behind a port (SymbolLocation).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::LightweightIndex",
+            "team:st-03",
+            "ST-03: graph types behind a port (LightweightIndex).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::PerFileGraphCache",
+            "team:st-03",
+            "ST-03: graph types behind a port (PerFileGraphCache).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::graph::PetGraphStore::new",
+            "team:st-03",
+            "cfg(test)-only: one unit test builds a real PetGraphStore. This gate CANNOT see line numbers, so it suppresses that path anywhere in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::parser::TreeSitterParser",
+            "team:st-03",
+            "ST-03: the parser behind a port (TreeSitterParser).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/analysis_service.rs",
+            "infrastructure::parser::language_config::",
+            "team:st-03",
+            "ST-03: the language reader configuration (LanguageConfig, HCL_CONFIG) reached inline instead of through a port.",
         ),
         ex(
             "application_no_infrastructure",
@@ -352,9 +438,16 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_infrastructure",
             "application/services/lsp_proxy_service.rs",
+            "infrastructure::lsp::providers::composite::CompositeProvider",
+            "team:st-04",
+            "ST-04: the composite LSP provider behind a port (CompositeProvider).",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/lsp_proxy_service.rs",
             "infrastructure::lsp",
             "team:st-04",
-            "ST-04: LSP module behind a port (CompositeProvider).",
+            "ST-04: the import group `infrastructure::lsp::{LspClient, LspError, LspServerConfig}`, which the evaluator reports as the bare module path.",
         ),
         // ====================================================================
         // application_no_infrastructure — dependencies written INLINE
@@ -700,10 +793,27 @@ mod tests {
         // policy. It now asks `AnalysisService::tree_state` for the files, the
         // same walk the snapshot freshness check uses, and the file names no
         // `infrastructure` path any more: the entry covered nothing.
+        //
+        // 40 -> 52 (TASK-231). Not new debt: the same coupling, named. The
+        // two entries on `analysis_service.rs`, `infrastructure::graph` and
+        // `infrastructure::parser`, prefix-matched, so any module added under
+        // either was allowed before anyone looked at it. A measurement of the
+        // file found 29 distinct concrete paths behind them, 22 under
+        // `infrastructure::graph`, and 4 of the 29 were `Language`, which is a
+        // domain value object the file was importing through the parser's
+        // re-export: those left with the import, not with an entry. What is
+        // left is 13 entries, one per module of the per-file graph that the
+        // file reaches (a trailing `::`, so a new item in a module the file
+        // already uses is not a new coupling) and one per root-level item
+        // (exact, so a new sibling is). The other three entries that the
+        // exact reading exposed were 1:1 renames on `file_operations.rs` (two
+        // test-only guards), plus one new entry on `lsp_proxy_service.rs`: its
+        // `infrastructure::lsp` entry covered both a leaf import and a group
+        // import, and an exact path covers one of them.
         assert_eq!(
             list.len(),
-            40,
-            "expected exactly 40 entries; if you removed/added a drift \
+            52,
+            "expected exactly 52 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
@@ -912,7 +1022,7 @@ mod tests {
         const GUARDED: &[(&str, &str)] = &[
             (
                 "application/services/file_operations.rs",
-                "infrastructure::parser",
+                "infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis",
             ),
             (
                 "application/services/file_operations.rs",
@@ -920,7 +1030,11 @@ mod tests {
             ),
             (
                 "application/services/file_operations.rs",
-                "interface::mcp::security",
+                "interface::mcp::security::InputValidator",
+            ),
+            (
+                "application/services/analysis_service.rs",
+                "infrastructure::graph::PetGraphStore::new",
             ),
             // Prefix widened from `interface::mcp::security` to `interface::`
             // in ST-02 slice 1, in step with `exceptions()`. Two things caught

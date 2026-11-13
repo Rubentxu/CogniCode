@@ -25,13 +25,13 @@ use crate::domain::findings::digest::sha256_raw;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, attach_relations};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{
-    RejectedRelation, WalkFilter, published_column, published_line,
+    Language, RejectedRelation, WalkFilter, published_column, published_line,
 };
 use crate::infrastructure::graph::per_file_graph::{
     GlobalSymbolIndex, WalkClassification, classify_walk_path,
 };
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
-use crate::infrastructure::parser::{Language, TreeSitterParser};
+use crate::infrastructure::parser::TreeSitterParser;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
@@ -1483,7 +1483,6 @@ impl AnalysisService {
     /// Coverage metrics are only available after `build_project_graph` or
     /// `build_project_graph_async` has been called.
     pub fn get_graph_stats(&self) -> GraphStatsDto {
-        use crate::infrastructure::parser::Language;
         use std::collections::HashMap;
 
         let graph = self.graph_cache.get();
@@ -2457,7 +2456,8 @@ def d():
     #[test]
     fn test_debug_call_relationships_in_real_code() {
         use crate::domain::traits::DependencyRepository;
-        use crate::infrastructure::parser::{Language, TreeSitterParser};
+        use crate::domain::value_objects::Language;
+        use crate::infrastructure::parser::TreeSitterParser;
 
         let parser = TreeSitterParser::new(Language::Rust).unwrap();
         let real_file = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4044,8 +4044,9 @@ mod reader_failure_tests {
     use super::read_file_facts_with;
     use crate::application::ingest::types::ExtractionResult;
     use crate::domain::traits::ParseError;
-    use crate::infrastructure::parser::Language;
-    use crate::infrastructure::parser::language_config::{HCL_CONFIG, LanguageConfig};
+    use crate::domain::value_objects::Language;
+    use crate::infrastructure::parser::language_config::HCL_CONFIG;
+    use crate::infrastructure::parser::language_config::LanguageConfig;
 
     /// A reader that cannot read.
     fn a_reader_that_falls_over(

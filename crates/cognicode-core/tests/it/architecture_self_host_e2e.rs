@@ -568,3 +568,66 @@ fn cr06_a_path_quoted_in_a_string_is_not_a_dependency() {
         report.violations
     );
 }
+
+/// The allowlist names the modules it forgives; it does not forgive the
+/// subtree they live in.
+///
+/// `analysis_service.rs` is already allowed to reach a handful of
+/// `infrastructure::graph` modules. A *new* module under that subtree is
+/// a new coupling, and it has to be seen: the real inventory, applied to
+/// the real source plus one synthetic import, must report that import and
+/// nothing else.
+#[test]
+fn cr06_a_new_module_under_an_allowlisted_subtree_is_still_drift() {
+    const FILE: &str = "application/services/analysis_service.rs";
+    const NEW_COUPLING: &str = "infrastructure::graph::brand_new_module::Thing";
+
+    let Some(crate_root) = locate_crate_root() else {
+        eprintln!("self-host skipped: CARGO_MANIFEST_DIR not set");
+        return;
+    };
+    let Some(mut source) = build_self_host_source(&crate_root) else {
+        eprintln!("self-host skipped: source tree not found");
+        return;
+    };
+    let target = source
+        .files
+        .iter_mut()
+        .find(|f| f.file_path == FILE)
+        .expect("the file the allowlist names must be in the measured tree");
+    target
+        .source
+        .push_str("\nuse crate::infrastructure::graph::brand_new_module::Thing;\n");
+
+    let mut registry =
+        ArchitectureRegistry::new().with_temporary_exceptions(cr06_allowlist::exceptions());
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    for candidate in canonical_constraints() {
+        assert!(
+            registry
+                .admission
+                .admit(candidate, &admitter, &clock)
+                .result
+                .is_ok()
+        );
+    }
+
+    let mut reported: Vec<String> = Vec::new();
+    for constraint in registry.admission.admitted() {
+        let report = registry
+            .evaluate(constraint, &source)
+            .expect("self-host evaluation must succeed");
+        reported.extend(
+            report
+                .violations
+                .iter()
+                .map(|v| format!("{} -> {}", v.file_path, v.dependency_path)),
+        );
+    }
+    assert_eq!(
+        reported,
+        vec![format!("{FILE} -> {NEW_COUPLING}")],
+        "an import of a module that is not in the allowlist must be reported, and it must be the only thing reported"
+    );
+}
