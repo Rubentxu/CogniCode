@@ -28,20 +28,26 @@ use crate::application::services::analysis_service::{AnalysisService, TreeState}
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::findings::digest::{DigestStream, sha256_hex};
 use crate::domain::value_objects::file_manifest::FileManifest;
-use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
+use crate::domain::value_objects::{AnalyzerBuild, Language, SNAPSHOT_SCHEMA, SnapshotKey};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// A source file of the tree, and the time it was written.
+/// A source file of the tree, the language it is read in, and the time it
+/// was written.
 ///
-/// The application's own name for what the walk found: the path, and the
-/// time whose absence does not condemn the file. The infrastructure's
-/// source file carries more —the language, the size— and the application
-/// does not need it.
+/// The application's own name for what the walk found: the path, the
+/// language the registry assigns to it, and the time whose absence does not
+/// condemn the file. The infrastructure's source file carries more —the
+/// size— and the application does not need it.
 #[derive(Debug, Clone)]
 pub struct TreeFile {
     /// The path, as the walk found it.
     pub path: PathBuf,
+    /// The language the registry assigns to the extension.
+    ///
+    /// Always present: a file the registry does not read is not a source
+    /// file of the tree, it is a gap the walk declares among its holes.
+    pub language: Language,
     /// The modification time, in milliseconds since the epoch.
     ///
     /// `None` when the filesystem did not report one: an absent time is
