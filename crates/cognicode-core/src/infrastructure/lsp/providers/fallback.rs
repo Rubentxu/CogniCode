@@ -243,12 +243,13 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
         }
 
         let dir = file_path.parent().unwrap_or(Path::new("."));
-        for entry in crate::infrastructure::walk_policy::contained_walk(dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        // The directory is read through the one walk the product owns: what
+        // a definition lookup may open is what the graph may open, so it
+        // does not read `target/`, a `.gitignore`d tree or a secrets
+        // directory just because a file happens to live next to them.
+        for entry in crate::infrastructure::graph::source_files::walk(dir).filter_map(|e| e.ok()) {
             let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry)
+            if !crate::infrastructure::walk_policy::ignore_is_real_file(&entry)
                 || Language::from_extension(path.extension()).is_none()
             {
                 continue;

@@ -196,19 +196,76 @@ fn extension_of(path: &Path) -> String {
         .to_string()
 }
 
+/// The walk every route over the tree uses.
+///
+/// This is the only place that says which entries of a project tree a
+/// route may look at: it honours `.gitignore`, it skips hidden entries,
+/// it never follows a symlink, and it does not descend into the names
+/// [`WalkFilter`] declares (`target`, `node_modules`, the secrets, ...).
+///
+/// The pruning happens BEFORE the descent. A directory the filter
+/// excludes is not read, so a failure inside it is not a hole in the
+/// coverage — nothing there was ever going to be covered — and a tree
+/// full of build output costs no more than its top-level entry.
+///
+/// Every route that reads files of a project (the graph, the light
+/// index, the search index, the usage search, the fallback provider)
+/// takes its entries from here or from [`inventory`], which is built on
+/// it. A route that opens its own walk decides the set of files on its
+/// own, and two routes that decide it on their own drift: the same
+/// question then gets two answers, and neither says it is partial.
+pub fn walk(project_dir: &Path) -> ignore::Walk {
+    let filter = WalkFilter::default();
+    let root = project_dir.to_path_buf();
+    contained_ignore_walk(project_dir)
+        .hidden(true)
+        .git_ignore(true)
+        .git_exclude(true)
+        // The order is the names' order, not the disk's: two disks (or two
+        // runs) that hold the same tree yield the same files in the same
+        // order, so whatever a route keeps "first" is the same thing
+        // everywhere.
+        .sort_by_file_name(|a, b| a.cmp(b))
+        .filter_entry(move |entry| !filter.matches_any_component(entry.path(), &root))
+        .build()
+}
+
+/// The real files [`walk`] yields, for a route that only needs to look at
+/// them and has nothing to say about an entry it could not stat.
+///
+/// An entry the walk failed on is dropped here; a route that must publish
+/// such an entry as a hole takes [`inventory`] instead. The probe that
+/// asks "is there anything to analyse at all" is the case this is for: it
+/// stops at the first source and never reports coverage.
+pub fn real_files(project_dir: &Path) -> impl Iterator<Item = PathBuf> {
+    walk(project_dir)
+        .filter_map(|entry| entry.ok())
+        .filter(ignore_is_real_file)
+        .map(|entry| entry.into_path())
+}
+
+/// The hole a file leaves when the walk found it and a route could not
+/// read it.
+///
+/// The walk yields the file, the route opens it, and the open fails
+/// (permissions, a race with a delete). That is not a file the route
+/// left out on purpose: whatever it declares is missing from the answer,
+/// so the failure is kept, with its cause, next to the other holes of the
+/// tree instead of vanishing in a `continue`.
+pub fn unreadable(path: &Path, error: &std::io::Error) -> SkippedFile {
+    SkippedFile {
+        path: path.to_string_lossy().into_owned(),
+        reason: SkipReason::Read(error.to_string()),
+    }
+}
+
 /// Walks `project_dir` and decides which files the graph is built from.
 pub fn inventory(project_dir: &Path) -> SourceInventory {
-    let walk_filter = WalkFilter::default();
     let mut files = Vec::new();
     let mut declined = Vec::new();
     let mut errors = Vec::new();
 
-    for entry in contained_ignore_walk(project_dir)
-        .hidden(true)
-        .git_ignore(true)
-        .git_exclude(true)
-        .build()
-    {
+    for entry in walk(project_dir) {
         // An error of the walk is not a file it left out: it is a
         // failure of the traversal, and it leaves a hole. It is kept
         // apart from the decisions so that the caller can count it.
@@ -221,9 +278,6 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
         };
 
         let path = entry.path();
-        if walk_filter.matches_any_component(path, project_dir) {
-            continue;
-        }
         if !ignore_is_real_file(&entry) {
             // A symlink is declined, not forgotten: the caller has to
             // know that the graph does not describe what is behind it.

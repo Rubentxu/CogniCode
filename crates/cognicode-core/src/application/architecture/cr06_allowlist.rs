@@ -466,13 +466,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         // of waiting to be discovered by a human.
         ex(
             "application_no_infrastructure",
-            "application/consumer_analysis.rs",
-            "infrastructure::walk_policy::",
-            "team:st-02",
-            "PathPolicy is reached inline instead of through the port. ST-02 owns the walk policy seam: the call sites that name `crate::infrastructure::walk_policy::` must go through the port that ST-02 wires.",
-        ),
-        ex(
-            "application_no_infrastructure",
             "application/services/analysis_service.rs",
             "infrastructure::walk_policy::",
             "team:st-02",
@@ -810,10 +803,19 @@ mod tests {
         // test-only guards), plus one new entry on `lsp_proxy_service.rs`: its
         // `infrastructure::lsp` entry covered both a leaf import and a group
         // import, and an exact path covers one of them.
+        //
+        // 52 -> 51 (TASK-225). `consumer_analysis.rs` named
+        // `infrastructure::walk_policy::` because its workspace-material probe
+        // opened a walk of its own, with its own copy of the policy and
+        // without the names `WalkFilter` excludes. It now asks
+        // `AnalysisService::real_files`, the window to the one file set, and
+        // the file names no `infrastructure` path any more: the entry covered
+        // nothing. The pair is retired, not swapped: swapping would have been
+        // a new coupling under a new name.
         assert_eq!(
             list.len(),
-            52,
-            "expected exactly 52 entries; if you removed/added a drift \
+            51,
+            "expected exactly 51 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

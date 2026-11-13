@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Ratchets over the production sources: file size, public-type homonyms, the
-CR-06 allowlist and the one content digest.
+CR-06 allowlist, the one content digest and the one file set.
 
-This file holds three families of ratchet that share one way of working: each
+This file holds several families of ratchet that share one way of working: each
 compares HEAD with the PR's base commit, so there is no number in this file to
 raise, and each fails closed when the base cannot be resolved. They share
 `git`, `check`, `failures` and `resolve_base`; each family keeps its own
-measurement (`SIZE`, `CR06` and `DIGEST`) and its own `setup_*` function, and
-`setup()` runs all of them.
+measurement (`SIZE`, `CR06`, `DIGEST`, `TRAVERSALS` and `EXCLUSIONS`) and its
+own `setup_*` function, and `setup()` runs all of them.
 
 # Part I -- file size and public-type homonyms
 
@@ -126,6 +126,37 @@ subsystems (`portable_execution::paths::content_digest`, the self-hosting
 baseline), which are stable and deterministic and carry their `fnv64:` prefix;
 and neither is `Sha256` itself: the owner decides the algorithm, the
 ratchet only stops a second one from coming back.
+
+# Part IV -- one file set
+
+`infrastructure::graph::source_files` owns which files are the project: the
+blocklist, the performance skips, `.gitignore`, hidden entries and a
+deterministic order are decided in one walk (`inventory`, or `walk` for a route
+that needs the entries and not the classified files), and
+`infrastructure::walk_policy` owns the containment the walk is built on. A
+route that walks the tree on its own answers with the files its own list lets
+through, and two routes then disagree about the same project.
+
+Two measures, both per production file and both against the base:
+
+- **Traversals.** A production file may not call `contained_walk`,
+  `contained_ignore_walk`, `WalkDir::new`, `WalkBuilder::new` or `read_dir` more
+  times than it did at the base, and every file that still does is named in
+  `REGISTERED_TRAVERSALS` with the reason it is not the inventory's. A file that
+  no longer walks must leave the registry, so the registry only shrinks, and
+  adding to it is the visible, reviewed act of declaring a second walk.
+- **Exclusion lists.** The literal `"node_modules"` is the signature of an
+  inline list of the directories to skip. Outside
+  `domain::value_objects::walk_filter` (the one list) it may not appear more
+  times than at the base, and each remaining list is named in
+  `REGISTERED_EXCLUSION_LISTS` with the reason it differs.
+
+Comments are blanked before counting and code after the first column-0
+`#[cfg(test)]` is not production, as in the digest ratchet. What this does NOT
+see: a traversal through a crate this file does not name (`glob`, a shell-out),
+and a traversal reached through a re-export under another name. It stops the
+common regression, a new `read_dir` loop written because it was the shortest
+way to list files, and makes the old ones a list somebody can shrink.
 
 ## Resolution of the base commit
 
@@ -1126,32 +1157,49 @@ DIGEST_OWNER = f"{CORE_SRC}/domain/findings/digest.rs"
 COMPETING_HASHER = re.compile(r"\bDefaultHasher\b|\bRandomState\b|\bblake3\b")
 
 
-def competing_hasher_uses(text: str) -> int:
-    """Uses of a hasher other than the owner's in the production half of `text`.
+def production_matches(text: str, pattern: re.Pattern[str]) -> int:
+    """Matches of `pattern` in the production half of `text`.
 
     Production is what precedes the first column-0 `#[cfg(test)]`. Comments are
     blanked first (with the one scanner of the repo), so documentation that
-    names a retired hasher is not a use of it.
+    names a retired call is not a use of it.
     """
     lines = text.split("\n")
     production = "\n".join(lines[: production_lines(text)])
-    return len(COMPETING_HASHER.findall(comment_scan.strip_rust_comments(production)))
+    return len(pattern.findall(comment_scan.strip_rust_comments(production)))
 
 
-class DigestMeasure:
-    base: str | None = None
-    head: dict[str, int] = {}
-    base_counts: dict[str, int] = {}
-    files: int = 0
+def competing_hasher_uses(text: str) -> int:
+    """Uses of a hasher other than the owner's in the production half of `text`."""
+    return production_matches(text, COMPETING_HASHER)
+
+
+class PatternMeasure:
+    """Per-file production matches of one pattern, at HEAD and at the base.
+
+    The owners of the thing being counted are exempt: they are the one place
+    where the pattern is allowed.
+    """
+
+    def __init__(self, pattern: re.Pattern[str], owners: tuple[str, ...]) -> None:
+        self.pattern = pattern
+        self.owners = owners
+        self.base: str | None = None
+        self.head: dict[str, int] = {}
+        self.base_counts: dict[str, int] = {}
+        self.files: int = 0
+
+    def count(self, text: str) -> int:
+        return production_matches(text, self.pattern)
 
     def resolve(self) -> None:
         self.base = resolve_base()
         for rel in measured_files():
             path = REPO_ROOT / rel
-            if rel == DIGEST_OWNER or not path.is_file():
+            if rel in self.owners or not path.is_file():
                 continue
             self.files += 1
-            count = competing_hasher_uses(path.read_text(encoding="utf-8", errors="replace"))
+            count = self.count(path.read_text(encoding="utf-8", errors="replace"))
             if count:
                 self.head[rel] = count
         if self.base:
@@ -1160,10 +1208,10 @@ class DigestMeasure:
             )
             for rel in self.head:
                 old = read_at(self.base, moved.get(rel, rel))
-                self.base_counts[rel] = 0 if old is None else competing_hasher_uses(old)
+                self.base_counts[rel] = 0 if old is None else self.count(old)
 
 
-DIGEST = DigestMeasure()
+DIGEST = PatternMeasure(COMPETING_HASHER, (DIGEST_OWNER,))
 
 
 def setup_digest() -> None:
@@ -1223,6 +1271,221 @@ def test_no_file_gained_a_second_hasher() -> None:
         )
 
 
+# --- Part IV: one file set ---------------------------------------------------------
+
+INFRA = f"{CORE_SRC}/infrastructure"
+SOURCE_INVENTORY = f"{INFRA}/graph/source_files.rs"
+WALK_POLICY = f"{INFRA}/walk_policy.rs"
+WALK_FILTER = f"{CORE_SRC}/domain/value_objects/walk_filter.rs"
+
+TRAVERSAL_CALL = re.compile(
+    r"\bcontained_walk\s*\(|\bcontained_ignore_walk\s*\(|\bWalkDir::new\b"
+    r"|\bWalkBuilder::new\b|\bread_dir\s*\("
+)
+# The signature of an inline list of the directories to skip.
+EXCLUSION_LITERAL = re.compile(r'"node_modules"')
+
+# Every production file that still walks a directory on its own, with the
+# reason it is not the inventory's walk. A file leaves this table when it stops
+# walking; a file joins it only by a reviewed edit of this table.
+REGISTERED_TRAVERSALS: dict[str, str] = {
+    # -- the product's own installer, release and sandbox directories: none of
+    # -- them is the project being analysed.
+    "crates/cognicode-cli/src/cmd/cache.rs":
+        "cleans the `.part` downloads of the installer cache: not a project tree",
+    "crates/cognicode-cli/src/cmd/ide.rs":
+        "copies an asset directory of the installer: not a project tree",
+    "crates/cognicode-cli/src/cmd/installer_transaction.rs":
+        "reads the installed `bin` directory of the product: not a project tree",
+    "crates/cognicode-cli/src/cmd/layout.rs":
+        "reads the plugin and journal directories of the product's own home: not a project tree",
+    "crates/cognicode-cli/src/cmd/platform_adapter.rs":
+        "copies the staged bundle of a release: not a project tree",
+    "crates/cognicode-cli/src/cmd/release_contract.rs":
+        "lists the release staging directory: not a project tree",
+    "crates/cognicode-cli/src/cmd/release_test_support.rs":
+        "lists the release staging directory for the release tests: not a project tree",
+    "crates/cognicode-sandbox/src/main.rs":
+        "reads and copies the sandbox's own work and results directories: not the analysed project",
+    # -- evidence and documentation corpora: a directory the caller names for a
+    # -- purpose of its own, not the source files of the project.
+    "crates/cognicode-core/src/application/self_hosting/acceptance.rs":
+        "enumerates every regular file of the directory the self-hosting acceptance "
+        "digests: a baseline of evidence, not the source set",
+    "crates/cognicode-core/src/infrastructure/extraction/docs_extractor.rs":
+        "reads the markdown documentation corpus and the ADR directory: documents, "
+        "not the source files of the project",
+    # -- project readers that keep a list of their own because the list is part
+    # -- of a published answer; aligning it changes that answer.
+    "crates/cognicode-cli/src/cli/commands.rs":
+        "lists the `.rs` files directly under one directory for the complexity "
+        "section of the report: one level, one extension, a path the user passed",
+    "crates/cognicode-core/src/application/architecture/control_query.rs":
+        "reads a source root for the architecture query with a two-name skip list; "
+        "the identity digest of the query is computed over the files it reads, so "
+        "changing the file set changes a published identity",
+    "crates/cognicode-core/src/application/ingest/scan.rs":
+        "the ingest scan: its rules (`workspace_rules`) are shared with the watcher "
+        "so both agree on the same places, and its noise list is deliberately "
+        "broader than the walk filter",
+    "crates/cognicode-core/src/application/services/file_operations.rs":
+        "the content-search and directory-listing tools walk the path the caller "
+        "names with gitignore awareness and a depth bound; their output is a "
+        "published contract, not the project's file set",
+    "crates/cognicode-core/src/assurance_export/workspace_extractor.rs":
+        "the assurance export walks Rust files sorted by path with its own skip "
+        "list; the export digest is computed over what it reads",
+}
+
+# Every production file that keeps an inline list of directories to skip
+# outside the one list (`WALK_FILTER`), with the reason it differs.
+REGISTERED_EXCLUSION_LISTS: dict[str, str] = {
+    "crates/cognicode-core/src/application/architecture/control_query.rs":
+        "a two-name subset of the walk filter's list; the identity of the query "
+        "depends on the files it reads, so aligning it is a change of published identity",
+    "crates/cognicode-core/src/application/ingest/scan.rs":
+        "`NOISE_DIRECTORIES`, deliberately broader than the walk filter and shared "
+        "with the watcher",
+    "crates/cognicode-core/src/assurance_export/workspace_extractor.rs":
+        "a six-name subset of the walk filter's list; the export digest depends on "
+        "the files it reads, so aligning it is a change of published output",
+}
+
+MIN_REASON = 40
+
+
+def traversal_uses(text: str) -> int:
+    """Directory walks other than the inventory's, in the production half of `text`."""
+    return production_matches(text, TRAVERSAL_CALL)
+
+
+def exclusion_literals(text: str) -> int:
+    """Inline exclusion-list entries, in the production half of `text`."""
+    return production_matches(text, EXCLUSION_LITERAL)
+
+
+TRAVERSALS = PatternMeasure(TRAVERSAL_CALL, (SOURCE_INVENTORY, WALK_POLICY))
+EXCLUSIONS = PatternMeasure(EXCLUSION_LITERAL, (WALK_FILTER,))
+
+
+def setup_traversals() -> None:
+    """Resolve the base and count the walks and the inline lists before any check reads them."""
+    TRAVERSALS.resolve()
+    EXCLUSIONS.resolve()
+
+
+def test_a_directory_walk_is_counted_in_production_only() -> None:
+    check(traversal_uses("fn f() { let _ = std::fs::read_dir(p); }\n") == 1, "counts read_dir")
+    check(traversal_uses("fn f() { let _ = fs::read_dir (p); }\n") == 1, "counts a spaced call")
+    check(traversal_uses("use walkdir::WalkDir;\nfn f() { WalkDir::new(p); }\n") == 1,
+          "counts the call and not the import")
+    check(traversal_uses("fn f() { let b = WalkBuilder::new(root); }\n") == 1, "counts WalkBuilder::new")
+    check(traversal_uses("fn f() { contained_walk(root); }\n") == 1, "counts contained_walk")
+    check(traversal_uses("fn f() { contained_ignore_walk(root); }\n") == 1, "counts contained_ignore_walk")
+    check(traversal_uses("fn f() { source_files::walk(root); }\n") == 0,
+          "the inventory's own walk is the sanctioned one")
+    check(traversal_uses("fn f() { read_dir_entries(root); }\n") == 0, "a longer name is not read_dir")
+    check(traversal_uses("/// read_dir( was replaced\n// WalkDir::new(x)\nfn f() {}\n") == 0,
+          "a comment that names a walk is not a walk")
+    check(traversal_uses("fn f() {}\n#[cfg(test)]\nmod t { fn g() { std::fs::read_dir(p); } }\n") == 0,
+          "test code is not production")
+    check(traversal_uses("fn f() {}\n    #[cfg(test)]\nfn g() { std::fs::read_dir(p); }\n") == 1,
+          "an indented cfg(test) is not a module boundary")
+
+
+def test_an_inline_exclusion_entry_is_counted_in_production_only() -> None:
+    check(exclusion_literals('fn f(n: &str) -> bool { n == "node_modules" }\n') == 1, "counts the literal")
+    check(exclusion_literals('const L: [&str; 2] = ["target", "node_modules"];\n') == 1, "counts a list entry")
+    check(exclusion_literals('fn f() { let _ = "node_modules_cache"; }\n') == 0, "a longer literal is not the entry")
+    check(exclusion_literals('// "node_modules" is skipped\nfn f() {}\n') == 0, "a comment is not a list")
+    check(exclusion_literals('fn f() {}\n#[cfg(test)]\nmod t { const X: &str = "node_modules"; }\n') == 0,
+          "test code is not production")
+
+
+def test_the_file_set_owners_are_where_the_ratchet_expects_them() -> None:
+    for rel in (SOURCE_INVENTORY, WALK_POLICY, WALK_FILTER):
+        check((REPO_ROOT / rel).is_file(),
+              f"{rel} does not exist: the ratchet would exempt nothing and name no owner")
+    inventory = REPO_ROOT / SOURCE_INVENTORY
+    if inventory.is_file():
+        text = inventory.read_text(encoding="utf-8", errors="replace")
+        check("pub fn inventory" in text and "pub fn walk" in text,
+              f"{SOURCE_INVENTORY} no longer exports the inventory and the walk")
+    flt = REPO_ROOT / WALK_FILTER
+    if flt.is_file():
+        check("node_modules" in flt.read_text(encoding="utf-8", errors="replace"),
+              f"{WALK_FILTER} no longer holds the list: the exclusion ratchet would count nothing")
+
+
+def test_file_set_scan_found_sources() -> None:
+    check(TRAVERSALS.files > 100, f"only {TRAVERSALS.files} sources scanned; the glob is vacuous")
+    check(EXCLUSIONS.files > 100, f"only {EXCLUSIONS.files} sources scanned; the glob is vacuous")
+
+
+def test_no_file_gained_a_directory_walk() -> None:
+    check(
+        TRAVERSALS.base is not None,
+        "cannot resolve a base commit to compare against. Set GITHUB_BASE_SHA, or "
+        "fetch origin/main. This fails instead of passing vacuously.",
+    )
+    if not TRAVERSALS.base:
+        return
+    for rel, count in sorted(TRAVERSALS.head.items()):
+        before = TRAVERSALS.base_counts.get(rel, 0)
+        check(
+            count <= before,
+            f"{rel}: {count} production directory walk(s) ({before} at the base "
+            f"{TRAVERSALS.base[:12]}). Which files are the project is "
+            f"`{SOURCE_INVENTORY}`: use `inventory` or `walk` instead of a walk of your own.",
+        )
+
+
+def test_every_directory_walk_is_registered_with_its_reason() -> None:
+    for rel, count in sorted(TRAVERSALS.head.items()):
+        check(
+            rel in REGISTERED_TRAVERSALS,
+            f"{rel} walks a directory ({count} time(s)) and is not in REGISTERED_TRAVERSALS: "
+            f"route it through `{SOURCE_INVENTORY}`, or register it with the reason it cannot be.",
+        )
+    for rel, reason in sorted(REGISTERED_TRAVERSALS.items()):
+        check(
+            rel in TRAVERSALS.head,
+            f"{rel} is registered as a directory walk but no longer walks one: remove it "
+            f"from REGISTERED_TRAVERSALS (the registry only shrinks).",
+        )
+        check(len(reason) >= MIN_REASON, f"{rel}: the reason is a placeholder, not a reason: {reason!r}")
+
+
+def test_no_file_gained_an_inline_exclusion_list() -> None:
+    if not EXCLUSIONS.base:
+        check(False, "cannot resolve a base commit to compare against. This fails instead of passing vacuously.")
+        return
+    for rel, count in sorted(EXCLUSIONS.head.items()):
+        before = EXCLUSIONS.base_counts.get(rel, 0)
+        check(
+            count <= before,
+            f"{rel}: {count} inline exclusion entr(ies) for `node_modules` ({before} at the base "
+            f"{EXCLUSIONS.base[:12]}). The directories to skip are `{WALK_FILTER}`: ask it, "
+            f"do not list them again.",
+        )
+
+
+def test_every_inline_exclusion_list_is_registered_with_its_reason() -> None:
+    for rel in sorted(EXCLUSIONS.head):
+        check(
+            rel in REGISTERED_EXCLUSION_LISTS,
+            f"{rel} keeps an inline exclusion list and is not in REGISTERED_EXCLUSION_LISTS: "
+            f"use `{WALK_FILTER}`, or register the list with the reason it differs.",
+        )
+    for rel, reason in sorted(REGISTERED_EXCLUSION_LISTS.items()):
+        check(
+            rel in EXCLUSIONS.head,
+            f"{rel} is registered as an inline exclusion list but keeps none: remove it "
+            f"from REGISTERED_EXCLUSION_LISTS (the registry only shrinks).",
+        )
+        check(len(reason) >= MIN_REASON, f"{rel}: the reason is a placeholder, not a reason: {reason!r}")
+
+
 def _selftest() -> int:
     """strip_rust_comments must not treat comment syntax inside a literal.
 
@@ -1264,6 +1527,7 @@ def setup() -> None:
     setup_size_and_homonyms()
     setup_cr06()
     setup_digest()
+    setup_traversals()
 
 
 def main() -> int:
@@ -1283,6 +1547,13 @@ def main() -> int:
         f"digest ratchet: {sum(DIGEST.head.values())} production use(s) of a hasher other than "
         f"the owner's in {len(DIGEST.head)} file(s) (base {base}, "
         f"{sum(DIGEST.base_counts.values())} in the same files)"
+    )
+    print(
+        f"file-set ratchet: {sum(TRAVERSALS.head.values())} production directory walk(s) outside the "
+        f"inventory in {len(TRAVERSALS.head)} file(s) (base {base}, "
+        f"{sum(TRAVERSALS.base_counts.values())} in the same files); "
+        f"{sum(EXCLUSIONS.head.values())} inline exclusion entr(ies) in {len(EXCLUSIONS.head)} file(s) "
+        f"({sum(EXCLUSIONS.base_counts.values())} at the base)"
     )
     if CR06.head_entries:
         print(
@@ -1311,6 +1582,10 @@ def main() -> int:
 
     print("PASS — no production file crossed the limit or grew past its base size, and no public type name became more ambiguous")
     print("PASS — no production file gained a second content hasher next to the digest owner")
+    print(
+        "PASS — no production file gained a directory walk or an inline exclusion list next to "
+        "the inventory, and every one that remains is registered with its reason"
+    )
     print(
         "PASS — the CR-06 production allowlist did not grow against the base "
         "commit, the cfg(test) guards were not counted as debt, and this "
