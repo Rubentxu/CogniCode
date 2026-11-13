@@ -493,6 +493,8 @@ def test_an_uncertain_calendar_measures_the_crate_now() -> None:
 
 JOURNAL_REL = Path("docs") / "roadmap" / "JOURNAL.md"
 GOOD_RUSTC = "1.96.0 (ac68faa20 2026-05-25)"
+# The root manifest the fixture is created with; the doubts append to it.
+WORKSPACE_ROOT = '[workspace]\nmembers = ["alpha", "beta", "gamma"]\nresolver = "2"\n'
 
 
 def _tools(
@@ -739,6 +741,93 @@ def _doubt_git_cannot_compare(root: Path, anchor: str) -> dict:
     return {"diff": False}
 
 
+def _doubt_the_cargo_config_changed(root: Path, anchor: str) -> dict:
+    _write(root / ".cargo" / "config.toml", '[build]\nrustflags = ["-C", "opt-level=0"]\n')
+    _commit(root, "chore: the cargo config changed")
+    return {}
+
+
+def _doubt_the_toolchain_changed(root: Path, anchor: str) -> dict:
+    _write(root / "rust-toolchain.toml", '[toolchain]\nchannel = "1.97.0"\n')
+    _commit(root, "chore: the toolchain changed")
+    return {}
+
+
+def _doubt_the_memory_budget_changed(root: Path, anchor: str) -> dict:
+    _write(root / "scripts" / "mutants-budget.sh", "MUTANT_CEILING_GIB=1\n")
+    _commit(root, "chore: the budget changed")
+    return {}
+
+
+def _doubt_the_test_runner_changed(root: Path, anchor: str) -> dict:
+    _write(root / "scripts" / "mem-capped-runner.sh", "#!/bin/sh\nexec \"$@\"\n")
+    _commit(root, "chore: the runner changed")
+    return {}
+
+
+def _doubt_the_workspace_edition_changed(root: Path, anchor: str) -> dict:
+    _write(root / "Cargo.toml", WORKSPACE_ROOT + '\n[workspace.package]\nedition = "2024"\n')
+    _commit(root, "chore: the workspace edition changed")
+    return {}
+
+
+def _doubt_a_third_party_version_changed(root: Path, anchor: str) -> dict:
+    _write(root / "Cargo.toml", WORKSPACE_ROOT + '\n[workspace.dependencies]\nserde = "1.0.200"\n')
+    _commit(root, "chore: a third party version changed")
+    return {}
+
+
+def _doubt_the_journal_has_an_uncommitted_edit(root: Path, anchor: str) -> dict:
+    path = root / JOURNAL_REL
+    path.write_text(path.read_text(encoding="utf-8") + "una nota sin confirmar\n", encoding="utf-8")
+    return {}
+
+
+def _malformed(anchor: str, **change: str | None) -> str:
+    """A receipt line for `gamma` with one thing wrong in it."""
+    fields = {
+        "crate": "gamma",
+        "sha": anchor,
+        "cargo-mutants": "27.1.0",
+        "rustc": "1.96.0/ac68faa20",
+        "resultado": "FAIL",
+    }
+    for key, value in change.items():
+        fields.pop(key.replace("_", "-"), None)
+        if value is not None:
+            fields[key.replace("_", "-")] = value
+    return "Medición del calendario: " + " ".join(f"{k}={v}" for k, v in fields.items()) + "\n"
+
+
+def _doubt_a_red_receipt_has_a_typo_in_a_key(root: Path, anchor: str) -> dict:
+    line = _malformed(anchor, resultado=None).rstrip("\n") + " resultad=FAIL\n"
+    _record(root, _receipt(anchor), line)
+    return {}
+
+
+def _doubt_a_red_receipt_is_spaced_out(root: Path, anchor: str) -> dict:
+    line = "Medición del calendario: crate = gamma sha = " + anchor + " resultado = FAIL\n"
+    _record(root, _receipt(anchor), line)
+    return {}
+
+
+def _doubt_a_red_receipt_repeats_a_key(root: Path, anchor: str) -> dict:
+    line = _malformed(anchor).rstrip("\n") + " resultado=PASS\n"
+    _record(root, _receipt(anchor), line)
+    return {}
+
+
+def _doubt_a_red_receipt_has_a_stray_token(root: Path, anchor: str) -> dict:
+    line = _malformed(anchor).rstrip("\n") + " (a mano)\n"
+    _record(root, _receipt(anchor), line)
+    return {}
+
+
+def _doubt_a_red_receipt_has_an_empty_value(root: Path, anchor: str) -> dict:
+    _record(root, _receipt(anchor), _malformed(anchor, rustc=""))
+    return {}
+
+
 # (what is in doubt, how the world is changed, a fragment of the reason it gives)
 DOUBTS = [
     ("the journal is missing", _doubt_no_journal, "JOURNAL"),
@@ -757,6 +846,18 @@ DOUBTS = [
     ("git cannot compare", _doubt_git_cannot_compare, "git diff"),
     ("the crate has an uncommitted edit", _doubt_the_crate_has_an_uncommitted_edit, "sin confirmar"),
     ("the crate has an untracked file", _doubt_the_crate_has_an_untracked_file, "sin confirmar"),
+    ("the cargo config changed", _doubt_the_cargo_config_changed, "cambios desde"),
+    ("the pinned toolchain changed", _doubt_the_toolchain_changed, "cambios desde"),
+    ("the memory budget changed", _doubt_the_memory_budget_changed, "cambios desde"),
+    ("the test runner changed", _doubt_the_test_runner_changed, "cambios desde"),
+    ("the workspace edition changed", _doubt_the_workspace_edition_changed, "Cargo.toml"),
+    ("a third party version changed", _doubt_a_third_party_version_changed, "Cargo.toml"),
+    ("the journal has an uncommitted edit", _doubt_the_journal_has_an_uncommitted_edit, "sin confirmar"),
+    ("a red receipt has a typo in a key", _doubt_a_red_receipt_has_a_typo_in_a_key, "no es un recibo"),
+    ("a red receipt is spaced out", _doubt_a_red_receipt_is_spaced_out, "no es un recibo"),
+    ("a red receipt repeats a key", _doubt_a_red_receipt_repeats_a_key, "no es un recibo"),
+    ("a red receipt has a stray token", _doubt_a_red_receipt_has_a_stray_token, "no es un recibo"),
+    ("a red receipt has an empty value", _doubt_a_red_receipt_has_an_empty_value, "no es un recibo"),
 ]
 
 
@@ -788,6 +889,122 @@ def test_every_doubt_about_the_anchor_measures_the_whole_crate() -> None:
                 f"[{label}] el rechazo no dice el motivo ({fragment!r}): "
                 f"{answer.get('calendar-skip-refused')!r}",
             )
+
+
+def _selector():
+    spec = importlib.util.spec_from_file_location("gate_scope_for_manifest", SELECTOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+RELEASE_MANIFEST = """[workspace]
+members = ["alpha", "beta", "gamma"]
+resolver = "2"
+
+[workspace.package]
+version = "{version}"
+edition = "2021"
+rust-version = "1.96.0"
+
+[workspace.dependencies]
+alpha = {{ path = "alpha", version = "{version}" }}
+serde = "1"
+"""
+
+
+def test_a_release_bump_of_the_workspace_leaves_the_anchor_standing() -> None:
+    """The root manifest changes in 11 of 200 merges, almost always a version
+    bump. Comparing it byte for byte would cancel the skip nearly every period,
+    so it is compared by meaning: the workspace version, the `version` next to
+    an internal `path` and the list of members are what a release changes, and
+    nothing a mutant's verdict reads. The same world with a different edition
+    is refused (a doubt of the table above), so the skip is the meaning and not
+    the file."""
+    with _skip_world() as (root, base, anchor, tools):
+        _write(root / "Cargo.toml", RELEASE_MANIFEST.format(version="0.1.0"))
+        _commit(root, "chore: a workspace manifest with inherited fields")
+        measured = _git(root, "rev-parse", "HEAD")
+        _record(root, _receipt(measured))
+
+        bumped = RELEASE_MANIFEST.format(version="0.2.0").replace(
+            'members = ["alpha", "beta", "gamma"]', 'members = ["gamma", "beta", "alpha"]'
+        )
+        _write(root / "Cargo.toml", bumped)
+        _commit(root, "chore: release 0.2.0")
+        answer, rc = _ask_calendar(root, base, tools)
+        check(rc == 0, "el selector no pudo decidir: {}".format(answer.get("reason")))
+        check(
+            answer.get("calendar") == "skipped",
+            "una subida de version del workspace anulo el salto: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+        check(
+            answer.get("calendar-anchor") == measured,
+            f"el ancla no es la medicion: {answer.get('calendar-anchor')!r}",
+        )
+
+        _write(root / "Cargo.toml", bumped.replace('serde = "1"', 'serde = "2"'))
+        _commit(root, "chore: a third party major")
+        answer, _ = _ask_calendar(root, base, tools)
+        check(
+            answer.get("calendar") == "fires"
+            and "Cargo.toml" in answer.get("calendar-skip-refused", ""),
+            "un cambio de dependencia de terceros en la raiz no vuelve a medir: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+
+
+def test_the_workspace_manifest_is_compared_by_what_the_crates_inherit() -> None:
+    """The meaning of the root manifest is everything but the three things a
+    release changes. Checked on the function itself, so each inherited section
+    that a crate reads is named once and a section added later is compared by
+    default (a refusal, which is the safe direction)."""
+    meaning = _selector()._manifest_meaning
+    base = RELEASE_MANIFEST.format(version="0.1.0")
+    release = RELEASE_MANIFEST.format(version="0.2.0").replace(
+        'members = ["alpha", "beta", "gamma"]', 'members = ["alpha", "gamma"]'
+    )
+    check(meaning(base) == meaning(release), "una subida de version cambia el significado")
+    for label, edited in (
+        ("edition", base.replace('edition = "2021"', 'edition = "2024"')),
+        ("rust-version", base.replace('rust-version = "1.96.0"', 'rust-version = "1.97.0"')),
+        ("third party", base.replace('serde = "1"', 'serde = "2"')),
+        ("a new section", base + "\n[workspace.lints.rust]\nunsafe_code = \"forbid\"\n"),
+        ("a profile", base + "\n[profile.test]\nopt-level = 3\n"),
+        ("an internal path", base.replace('path = "alpha"', 'path = "elsewhere"')),
+    ):
+        check(meaning(base) != meaning(edited), f"un cambio de {label} no cambia el significado")
+
+
+def test_a_malformed_line_of_another_crate_or_a_later_good_one_does_not_block_the_skip() -> None:
+    """The strict reading must not turn the journal into a trap. A malformed
+    line counts only when it names THIS crate, and only until a later
+    well-formed line of the crate replaces it; prose that starts with the label
+    but names no crate is not a receipt."""
+    with _skip_world() as (root, base, anchor, tools):
+        _record(
+            root,
+            _receipt(anchor),
+            "Medición del calendario: crate=alpha resultad=FAIL\n",
+            "Medición del calendario: no se midio (turno omitido)\n",
+            "- `Medición del calendario: crate=gamma-extra sha=zz resultado=FAIL`\n",
+        )
+        answer, _ = _ask_calendar(root, base, tools)
+        check(
+            answer.get("calendar") == "skipped",
+            "una linea mal formada de otro crate o de prosa retiro el ancla: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
+
+        _record(root, _receipt(anchor), _malformed(anchor, sha=None), _receipt(anchor))
+        answer, _ = _ask_calendar(root, base, tools)
+        check(
+            answer.get("calendar") == "skipped",
+            "una linea bien formada POSTERIOR a la mal formada no restauro el ancla: "
+            f"{answer.get('calendar')!r} ({answer.get('calendar-skip-refused')!r})",
+        )
 
 
 def test_a_change_in_what_the_calendar_crate_depends_on_measures_the_crate() -> None:
