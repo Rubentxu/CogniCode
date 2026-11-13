@@ -224,6 +224,7 @@ R_TOUCHED="$(radius_field touched)"
 R_TEST="$(radius_field test-scope)"
 R_TEST_FULL="$(radius_field test-scope-full)"
 R_MUTANT="$(radius_field mutant-scope)"
+R_MUTANT_MODE="$(radius_field mutant-mode)"
 R_CALENDAR="$(radius_field calendar)"
 R_REASON="$(radius_field reason)"
 
@@ -238,8 +239,16 @@ if [ -z "${R_STATUS}" ]; then
   R_TEST=""
   R_TEST_FULL="true"
   R_MUTANT="${MUTANT_AFFORDABLE_PACKAGES} ${MUTANT_CALENDAR_PACKAGE}"
+  R_MUTANT_MODE="full"
   R_CALENDAR="unknown"
   R_REASON="el selector del radio no respondio (rc=${RADIUS_RC}): ${RADIUS}"
+fi
+
+# The mode of the mutation step comes from the selector, like the rest of the
+# radius. A selector that answers without a mode is read as the crate WHOLE:
+# an uncertain answer is more measurement, never less.
+if [ "${R_MUTANT_MODE}" != "diff" ]; then
+  R_MUTANT_MODE="full"
 fi
 
 # The scope of the two test steps: the whole workspace when the radius could
@@ -263,6 +272,7 @@ else
   printf 'radio test:  TODO EL WORKSPACE (el gate corre entero)\n'
 fi
 printf 'radio mut.:  %s\n' "${R_MUTANT:-(vacio)}"
+printf 'modo mut.:   %s\n' "${R_MUTANT_MODE}"
 printf 'calendario:  %s (%s fusiones desde el marcador %s, cada %s)\n' \
   "${R_CALENDAR}" "$(radius_field calendar-count)" "${MUTANT_CALENDAR_MARKER:0:12}" \
   "${MUTANT_CALENDAR_EVERY_N}"
@@ -482,13 +492,69 @@ if $RUN_MUTANTS; then
       for pkg in ${R_MUTANT}; do
         MUTANT_PKG_ARGS+=(-p "${pkg}")
       done
-      run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
-        MUTANT_TEST_VMEM_KB="${MUTANTS_GATE_VMEM_KIB}" \
-        cargo mutants -j "${MUTANTS_JOBS}" \
-        --gitignore true \
-        "${MUTANT_PKG_ARGS[@]}" \
-        -- -- --test-threads=4
+      # A batch pays for the mutants of the lines IT changed; the crate is
+      # measured whole on its turn of the calendar. The selector decides which
+      # one this run is (`mutant-mode`), and the diff is taken against the same
+      # base it resolved for the radius, in the same working tree: a second
+      # resolution here would be a second base.
+      #
+      # When the diff cannot be produced the run falls back to the crate WHOLE
+      # and says so. Not being able to read the diff is a reason to measure
+      # more, never less.
+      MUTANT_MODE_ARGS=()
+      MUTANT_MODE_NOTE="el crate entero"
+      if [ "${R_MUTANT_MODE}" = "diff" ]; then
+        MUTANT_DIFF_FILE="${MUTANTS_TARGET_DIR}/batch.diff"
+        if [ -n "${R_BASE}" ] && git diff --no-ext-diff -U0 "${R_BASE}" > "${MUTANT_DIFF_FILE}"; then
+          MUTANT_MODE_ARGS=(--in-diff "${MUTANT_DIFF_FILE}")
+          MUTANT_MODE_NOTE="solo los mutantes del diff contra ${R_BASE:0:12}"
+        else
+          printf 'AVISO: no se pudo producir el diff del lote; se mide el crate entero\n'
+        fi
+      fi
+      printf '\n--- mutants: %s ---\n' "${MUTANT_MODE_NOTE}"
+      # A diff that touches no mutable line selects no mutant, and
+      # cargo-mutants then ends with rc=0 after saying so in one INFO line.
+      # The gate counts first and says it, so that a measurement of nothing
+      # is never read as a measurement that found nothing.
+      # A count that could not be taken is not a count of zero: the step then
+      # measures, because skipping is only honest when the zero was seen.
+      MUTANT_LIST_RC=0
+      MUTANT_LIST="$(cargo mutants --list --gitignore true \
+        "${MUTANT_PKG_ARGS[@]}" "${MUTANT_MODE_ARGS[@]}" 2>/dev/null)" || MUTANT_LIST_RC=$?
+      if [ "${MUTANT_LIST_RC}" -eq 0 ]; then
+        MUTANT_COUNT="$(printf '%s' "${MUTANT_LIST}" | awk 'NF { n++ } END { print n + 0 }')"
+      else
+        MUTANT_COUNT="desconocido (rc=${MUTANT_LIST_RC})"
+      fi
+      printf 'mutantes seleccionados: %s\n' "${MUTANT_COUNT}"
+      if [ "${MUTANT_COUNT}" = "0" ] && [ "${#MUTANT_MODE_ARGS[@]}" -gt 0 ]; then
+        printf 'SKIP (mutants): el diff del lote no toca ninguna linea mutable.\n'
+        printf '  lo que no se dice: que la mutacion se midio y no encontro nada;\n'
+        printf '  el crate entero se mide en el turno del calendario.\n'
+      else
+        # What a mutant costs is the rebuild of the one library it mutates, and
+        # the machine's cargo config makes that rebuild from scratch
+        # (`incremental = false`, and sccache, which refuses incremental
+        # compilation, as the compiler wrapper). Measured 2026-11-13 on
+        # `cognicode-graph-algos` after touching `lib.rs`: 3.5-3.7 s with the
+        # machine's config, 0.9-1.1 s with `CARGO_INCREMENTAL=1` and the
+        # wrapper switched off. Both settings live in THIS command only: the
+        # step has its own target directory (rule 8), so no other build of the
+        # machine reads what it writes, and `~/.cargo/config.toml` is not
+        # touched. An empty `RUSTC_WRAPPER` overrides the configured one.
+        # (Asking for `--lib` was measured too: it saves 0.4 s of 5.7 and is
+        # not worth a rule about where the tests live.)
+        run_step "mutants" env CARGO_TARGET_DIR="${MUTANTS_TARGET_DIR}" \
+          CARGO_INCREMENTAL=1 RUSTC_WRAPPER= \
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER="${PWD}/scripts/mem-capped-runner.sh" \
+          MUTANT_TEST_VMEM_KB="${MUTANTS_GATE_VMEM_KIB}" \
+          cargo mutants -j "${MUTANTS_JOBS}" \
+          --gitignore true \
+          "${MUTANT_PKG_ARGS[@]}" \
+          "${MUTANT_MODE_ARGS[@]}" \
+          -- -- --test-threads=4
+      fi
     fi
   fi
 fi

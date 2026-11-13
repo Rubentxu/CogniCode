@@ -68,6 +68,19 @@ start of the batch and the position at the end are both counted, and the batch
 fires when the two fall in different periods. Every multiple is crossed by
 exactly one batch, because the batches tile the history.
 
+THE MUTATION MODE
+-----------------
+A batch pays for the mutants of the lines it changed (`diff`); the crate is
+measured whole (`full`) on its turn of the calendar. The two halves hold each
+other up: the diff keeps the cost of a batch proportional to what it touched,
+and the calendar bounds how long a hole outside any diff can live.
+
+The mode is `diff` only when the calendar is declared AND says it waits. Every
+other case is `full`: a calendar that fires, one that cannot be counted, a run
+without a calendar (nothing would ever measure the crate whole) and a radius
+that could not be determined (there is no base to diff against). An uncertain
+answer is more measurement, never less.
+
 Usage:
     scripts/gate_scope.py --field test-scope
     scripts/gate_scope.py --field mutant-scope --affordable cognicode-graph-algos
@@ -315,6 +328,9 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
             mutant_scope.add(args.calendar_crate)
 
     reason = calendar_reason
+    # `diff` needs a calendar that has been counted and is not due: without
+    # one, nothing would ever measure the whole crate.
+    mutant_mode = "diff" if args.calendar_crate and calendar_state == "waits" else "full"
     return {
         "status": "ok",
         "base": base,
@@ -322,6 +338,7 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
         "test-scope": sorted(test_scope),
         "test-scope-full": sorted(test_scope) == sorted(roots),
         "mutant-scope": sorted(mutant_scope),
+        "mutant-mode": mutant_mode,
         "calendar": calendar_state,
         "calendar-count": calendar_count,
         "calendar-start": calendar_start,
@@ -354,6 +371,7 @@ def _whole_gate(args: argparse.Namespace, reason: str) -> dict[str, object]:
         "test-scope": sorted(roots),
         "test-scope-full": True,
         "mutant-scope": sorted(mutant_scope),
+        "mutant-mode": "full",
         "calendar": "unknown",
         "calendar-count": 0,
         "calendar-start": 0,
@@ -403,6 +421,7 @@ def main() -> int:
             "test-scope",
             "test-scope-full",
             "mutant-scope",
+            "mutant-mode",
             "calendar",
         ],
         help="un unico campo, separado por espacios, para consumo del shell",
@@ -428,6 +447,14 @@ def main() -> int:
         print(f"  tocado:         {', '.join(result['touched']) or '(ninguno)'}")
         print(f"  radio de test:  {', '.join(result['test-scope'])}")
         print(f"  radio de mutes: {', '.join(result['mutant-scope']) or '(vacio)'}")
+        print(
+            f"  modo de mutes:  {result['mutant-mode']} "
+            + (
+                "(solo los mutantes del diff del lote)"
+                if result["mutant-mode"] == "diff"
+                else "(el crate entero)"
+            )
+        )
         print(
             f"  calendario:     {result['calendar']} "
             f"({result['calendar-count']} fusiones desde el marcador; "
@@ -456,6 +483,7 @@ def main() -> int:
     print(f"test-scope={' '.join(result['test-scope'])}")
     print(f"test-scope-full={'true' if result['test-scope-full'] else 'false'}")
     print(f"mutant-scope={' '.join(result['mutant-scope'])}")
+    print(f"mutant-mode={result['mutant-mode']}")
     print(f"calendar={result['calendar']}")
     print(f"calendar-count={result['calendar-count']}")
     print(f"calendar-start={result['calendar-start']}")
