@@ -22,9 +22,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::application::analysis_basis::GraphSource;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::analyze::Coverage;
 use crate::domain::aggregates::call_graph::CallGraph;
+use crate::domain::value_objects::file_manifest::FileManifest;
 
 /// The project's graph, and what the build could not cover.
 pub struct ProjectGraph {
@@ -38,6 +40,16 @@ pub struct ProjectGraph {
     /// to keep its own copy of the rule, and a second copy of a rule is
     /// a rule that goes stale while the first one is kept.
     pub coverage: Coverage,
+    /// The sources the graph describes, when the load kept the manifest.
+    ///
+    /// A command that publishes the freshness of its answer reads the
+    /// digest from here: the manifest the load already holds is the
+    /// identity of the sources, and hashing the tree a second time would
+    /// be paying for a fact the product already has.
+    pub manifest: Option<FileManifest>,
+    /// Where the graph came from: built now, served from the snapshot, or
+    /// served from the snapshot with a live daemon vouching for it.
+    pub source: GraphSource,
 }
 
 /// Builds the project's graph with the service the MCP uses.
@@ -94,6 +106,8 @@ pub fn service_with_graph(dir: &Path) -> Result<(AnalysisService, ProjectGraph),
         ProjectGraph {
             graph: loaded.graph,
             coverage: loaded.coverage,
+            manifest: loaded.manifest,
+            source: loaded.source,
         },
     ))
 }

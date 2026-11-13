@@ -14,7 +14,9 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::infrastructure::graph::source_files::inventory;
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::goals::common::{GoalBasis, coverage_line, graph_basis};
 use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -37,6 +39,13 @@ pub struct GoalFind {
     pub symbol: String,
     /// Los sitios donde el nombre está declarado.
     pub locations: Vec<FoundSymbol>,
+    /// What the graph this answer was computed over covers. An empty list
+    /// over a tree with unread files is not the same answer as an empty
+    /// list over a tree that was read whole.
+    pub coverage: CoverageInfo,
+    /// What the graph was built from, when the load kept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
 }
 
 /// Un sitio donde el nombre está declarado.
@@ -56,7 +65,7 @@ pub struct FoundSymbol {
 
 /// La respuesta del goal `find` para ese símbolo.
 pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
-    let (service, _built) = service_with_graph(workspace)?;
+    let (service, built) = service_with_graph(workspace)?;
     let locations: Vec<FoundSymbol> = service
         .find_symbol(symbol, workspace)
         .locations
@@ -84,6 +93,8 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
         goal: "find".to_string(),
         symbol: symbol.to_string(),
         locations,
+        coverage: CoverageInfo::of(&built.coverage),
+        basis: graph_basis(workspace, &built),
     })
 }
 
@@ -134,6 +145,7 @@ pub fn render(answer: &Value) -> String {
             location.file, location.line, location.column, location.name, location.kind
         ));
     }
+    text.push_str(&coverage_line(&found.coverage));
     text
 }
 
@@ -214,5 +226,29 @@ mod tests {
         assert_eq!(answer.locations.len(), 1);
         assert!(answer.locations[0].file.ends_with("main.rs"));
         assert_eq!(answer.locations[0].line, 1);
+    }
+
+    #[test]
+    fn the_text_says_what_the_search_covered() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn helper() {}\nfn main() {}").expect("write");
+        let ask = |dir: &Path| {
+            let environment = GoalEnvironment::new(dir, None);
+            let arguments = serde_json::json!({ "symbol": "helper" });
+            render(&run(&environment, &arguments).expect("answers"))
+        };
+
+        let whole = ask(dir.path());
+        assert!(whole.ends_with("  coverage: complete\n"), "{whole}");
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/nowhere", dir.path().join("link.rs")).expect("symlink");
+            let partial = ask(dir.path());
+            assert!(
+                partial.ends_with("  coverage: partial (1 file(s) unreadable)\n"),
+                "a search over a tree it could not read whole says so: {partial}"
+            );
+        }
     }
 }
