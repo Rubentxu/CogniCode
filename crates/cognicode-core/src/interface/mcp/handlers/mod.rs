@@ -1147,15 +1147,7 @@ pub async fn handle_build_graph(
     // The decision —serve the snapshot or read the tree again— belongs to
     // the application layer, and the CLI makes the same one: what one of
     // them calculates, the other one serves.
-    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
-    let loaded = crate::application::graph_snapshot::load_or_build_graph(
-        &ctx.analysis_service,
-        &directory,
-        ctx.cache_root(),
-        session_manifest.as_ref(),
-        false,
-    )
-    .map_err(HandlerError::App)?;
+    let loaded = load_graph_off_the_runtime(ctx, directory.clone()).await?;
     let graph_source = loaded.source;
     // The holes the tree has RIGHT NOW —what the walk declines, what it
     // cannot do and what it cannot read yet— are what the coverage of a
@@ -1315,7 +1307,7 @@ pub async fn handle_get_call_hierarchy(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying
-    let ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1394,7 +1386,7 @@ pub async fn handle_get_file_symbols(
     let file_path = authorise_file_path(ctx, &input.file_path)?;
 
     // Ensure graph is built for compressed output
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Call the analysis service to get symbols
     let symbol_dtos = ctx
@@ -1651,7 +1643,7 @@ pub async fn handle_analyze_impact(
     ctx.validator.validate_query(&input.symbol_name)?;
 
     // Ensure the project graph is built before querying dependents
-    let ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1731,7 +1723,7 @@ impl EnsureResult {
 /// tree has to say so, and the coverage it says is the one that was
 /// measured when the graph was loaded —the same one the next question of
 /// this session will say.
-fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
+async fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
     let graph = ctx.analysis_service.get_project_graph();
     let count = graph.symbols().count();
     if count > 0 {
@@ -1751,15 +1743,7 @@ fn ensure_graph_built(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
         ctx.working_dir
     );
     let start = std::time::Instant::now();
-    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
-    let loaded = crate::application::graph_snapshot::load_or_build_graph(
-        &ctx.analysis_service,
-        &ctx.working_dir,
-        ctx.cache_root(),
-        session_manifest.as_ref(),
-        false,
-    )
-    .map_err(HandlerError::App)?;
+    let loaded = load_graph_off_the_runtime(ctx, ctx.working_dir.clone()).await?;
     let count = loaded.graph.symbols().count();
     let elapsed = start.elapsed().as_millis() as u64;
     if loaded.source != GraphSource::Built {
@@ -1848,7 +1832,7 @@ pub async fn handle_check_architecture(
     }
 
     // Ensure graph is built before querying
-    let ensure = ensure_graph_built(ctx)?;
+    let ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -1971,8 +1955,10 @@ pub async fn handle_check_architecture(
 mod basis;
 mod complexity_handlers;
 pub mod goal;
+mod graph_loading;
 pub use basis::BasisDto;
 use basis::compute_basis;
+use graph_loading::load_graph_off_the_runtime;
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -2040,7 +2026,7 @@ pub async fn handle_get_entry_points(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2094,7 +2080,7 @@ pub async fn handle_get_leaf_functions(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2152,7 +2138,7 @@ pub async fn handle_trace_path(
     ctx.validator.validate_query(&input.target)?;
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2269,7 +2255,7 @@ pub async fn handle_export_mermaid(
     let start = Instant::now();
 
     // Ensure the project graph is built before exporting
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2358,7 +2344,7 @@ pub async fn handle_get_hot_paths(
     let start = Instant::now();
 
     // Ensure graph is built before querying
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     // Get the project graph
     let graph = ctx.analysis_service.get_project_graph();
@@ -2459,7 +2445,7 @@ pub async fn handle_find_dead_code(
     ctx: &HandlerContext,
     input: FindDeadCodeInput,
 ) -> HandlerResult<FindDeadCodeOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let result = ctx.analysis_service.detect_dead_code();
 
@@ -2493,7 +2479,7 @@ pub async fn handle_get_module_dependencies(
     ctx: &HandlerContext,
     input: GetModuleDependenciesInput,
 ) -> HandlerResult<GetModuleDependenciesOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let result = ctx.analysis_service.detect_module_dependencies();
 
@@ -2538,7 +2524,7 @@ pub async fn handle_get_all_symbols(
     ctx: &HandlerContext,
     input: GetAllSymbolsInput,
 ) -> HandlerResult<GetAllSymbolsOutput> {
-    let _ensure = ensure_graph_built(ctx)?;
+    let _ensure = ensure_graph_built(ctx).await?;
 
     let all_symbols = ctx
         .analysis_service
@@ -5364,7 +5350,7 @@ mod tests {
             .build();
 
         // Call ensure_graph_built on empty state — should auto-build
-        let result = ensure_graph_built(&ctx).unwrap();
+        let result = ensure_graph_built(&ctx).await.unwrap();
         assert!(result.auto_built);
         assert!(result.count > 0);
         assert!(result.message.contains("auto-built"));
@@ -5387,7 +5373,7 @@ mod tests {
             .unwrap();
 
         // Now ensure should not auto-build
-        let result = ensure_graph_built(&ctx).unwrap();
+        let result = ensure_graph_built(&ctx).await.unwrap();
         assert!(!result.auto_built);
     }
 

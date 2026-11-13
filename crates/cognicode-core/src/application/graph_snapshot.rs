@@ -24,7 +24,7 @@
 use crate::application::analysis_basis::GraphSource;
 use crate::application::error::AppResult;
 use crate::application::graph_cache;
-use crate::application::services::analysis_service::{AnalysisService, TreeFile, TreeState};
+use crate::application::services::analysis_service::{AnalysisService, TreeState};
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::findings::digest::{DigestStream, sha256_hex};
 use crate::domain::value_objects::file_manifest::FileManifest;
@@ -32,7 +32,29 @@ use crate::domain::value_objects::{AnalyzerBuild, SNAPSHOT_SCHEMA, SnapshotKey};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// A source file of the tree, and the time it was written.
+///
+/// The application's own name for what the walk found: the path, and the
+/// time whose absence does not condemn the file. The infrastructure's
+/// source file carries more —the language, the size— and the application
+/// does not need it.
+#[derive(Debug, Clone)]
+pub struct TreeFile {
+    /// The path, as the walk found it.
+    pub path: PathBuf,
+    /// The modification time, in milliseconds since the epoch.
+    ///
+    /// `None` when the filesystem did not report one: an absent time is
+    /// not the epoch, and it does not condemn the file by itself — the
+    /// content hash decides.
+    pub mtime_millis: Option<i64>,
+}
+
 /// The graph the product answers with, and where it came from.
+///
+/// `Clone` because one build answers every caller that asked for it while it
+/// ran (see `single_flight`): the graph is shared, the rest is copied.
+#[derive(Clone)]
 pub struct LoadedGraph {
     /// The graph, as the service holds it now.
     pub graph: Arc<CallGraph>,
@@ -116,7 +138,30 @@ fn loaded(
 ///
 /// `force_rebuild` says the caller wants the tree read again whatever the
 /// snapshot says. The CLI's `--rebuild` is that flag.
+///
+/// Callers that ask for the same tree while a build of it is running share
+/// that build: one parses, the rest wait and receive its answer, whether it
+/// is a graph or a failure. A forced rebuild never joins one — it asked for
+/// the tree to be read again, and the build in progress may be about to
+/// serve the snapshot.
 pub fn load_or_build_graph(
+    service: &AnalysisService,
+    project_dir: &Path,
+    cache_root: Option<&Path>,
+    session_manifest: Option<&FileManifest>,
+    force_rebuild: bool,
+) -> AppResult<LoadedGraph> {
+    if force_rebuild {
+        return decide_the_graph(service, project_dir, cache_root, session_manifest, true);
+    }
+    service.graph_builds().run(project_dir.to_path_buf(), || {
+        decide_the_graph(service, project_dir, cache_root, session_manifest, false)
+    })
+}
+
+/// The decision itself, once: what `load_or_build_graph` runs for the caller
+/// that leads.
+fn decide_the_graph(
     service: &AnalysisService,
     project_dir: &Path,
     cache_root: Option<&Path>,

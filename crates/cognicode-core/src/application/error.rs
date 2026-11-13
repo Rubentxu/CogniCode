@@ -5,7 +5,7 @@
 use thiserror::Error;
 
 /// Application-level error type
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum AppError {
     // Navigation errors
     #[error("Symbol not found: {0}")]

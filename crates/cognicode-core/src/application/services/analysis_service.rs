@@ -18,7 +18,10 @@ use crate::application::dto::{
     RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
+use crate::application::graph_snapshot::LoadedGraph;
+pub use crate::application::graph_snapshot::TreeFile;
 use crate::application::ports::SharedGraph;
+use crate::application::single_flight::SingleFlight;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::findings::digest::sha256_raw;
@@ -36,29 +39,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
-/// A source file of the tree, and the time it was written.
-///
-/// The application's own name for what the walk found: the path, and the
-/// time whose absence does not condemn the file. The infrastructure's
-/// source file carries more —the language, the size— and the application
-/// does not need it.
-#[derive(Debug, Clone)]
-pub struct TreeFile {
-    /// The path, as the walk found it.
-    pub path: PathBuf,
-    /// The modification time, in milliseconds since the epoch.
-    ///
-    /// `None` when the filesystem did not report one: an absent time is
-    /// not the epoch, and it does not condemn the file by itself — the
-    /// content hash decides.
-    pub mtime_millis: Option<i64>,
-}
-
 /// The tree as it is right now.
 ///
 /// The files the graph is built from, and the holes the walk declares. One
 /// walk says both: the walk that decides whether a snapshot is still fresh
 /// is the same walk that says what the tree cannot offer.
+#[derive(Clone)]
 pub struct TreeState {
     /// The source files the walk found.
     pub files: Vec<TreeFile>,
@@ -189,6 +175,8 @@ pub struct AnalysisService {
     /// to ask: a service two sessions share has to answer the same way to
     /// both.
     freshness_oracle: std::sync::OnceLock<Arc<dyn crate::application::freshness::FreshnessOracle>>,
+    /// The graph builds in progress, by tree: concurrent callers share one.
+    graph_builds: SingleFlight<PathBuf, LoadedGraph, AppError>,
 }
 
 /// What the service remembers between builds about what the last one proved.
@@ -256,6 +244,7 @@ impl AnalysisService {
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
             freshness_oracle: std::sync::OnceLock::new(),
+            graph_builds: SingleFlight::new(),
         }
     }
 
@@ -1476,6 +1465,11 @@ impl AnalysisService {
     /// índice de símbolos declaran (TASK-221).
     pub fn current_graph_revision(&self) -> u64 {
         self.graph_cache.current_id().map(|c| c.0).unwrap_or(0)
+    }
+
+    /// The graph builds in progress: `load_or_build_graph` runs through it.
+    pub fn graph_builds(&self) -> &SingleFlight<PathBuf, LoadedGraph, AppError> {
+        &self.graph_builds
     }
 
     /// Returns statistics about the call graph, including coverage metrics

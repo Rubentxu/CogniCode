@@ -1,28 +1,16 @@
 use super::*;
 
-#[cognicode_macros::aix_tool(
-    name = "safe_refactor",
-    description = "Perform safe refactoring with validation and preview.",
-    input_schema = SafeRefactorInput
-)]
 /// La base del refactor: el grafo del dueño del análisis, servido del
 /// snapshot cuando puede responder por el árbol y calculado cuando no.
 ///
 /// Una decisión, la misma que toman las demás tools de grafo
-/// (TASK-223): lo que una calcula, la otra lo sirve.
-fn refactor_basis(
+/// (TASK-223): lo que una calcula, la otra lo sirve. Se decide fuera del
+/// runtime: construir el grafo de un árbol frío no cede el hilo.
+async fn refactor_basis(
     ctx: &HandlerContext,
 ) -> HandlerResult<crate::application::services::refactor_service::RefactorBasis> {
     use crate::application::services::refactor_service::RefactorBasis;
-    let session_manifest = ctx.get_graph_store().load_manifest().ok().flatten();
-    let loaded = crate::application::graph_snapshot::load_or_build_graph(
-        ctx.analysis_service(),
-        ctx.working_dir(),
-        ctx.cache_root(),
-        session_manifest.as_ref(),
-        false,
-    )
-    .map_err(HandlerError::App)?;
+    let loaded = load_graph_off_the_runtime(ctx, ctx.working_dir().to_path_buf()).await?;
     Ok(RefactorBasis {
         graph: loaded.graph,
         coverage: loaded.coverage,
@@ -30,6 +18,11 @@ fn refactor_basis(
     })
 }
 
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor",
+    description = "Perform safe refactoring with validation and preview.",
+    input_schema = SafeRefactorInput
+)]
 pub async fn handle_safe_refactor(
     ctx: &HandlerContext,
     input: SafeRefactorInput,
@@ -71,7 +64,7 @@ pub async fn handle_safe_refactor(
             let command = RenameSymbolCommand::new(&input.target, &new_name, &file_path_str);
 
             // Execute rename via RefactorService
-            let basis = refactor_basis(ctx)?;
+            let basis = refactor_basis(ctx).await?;
             match ctx.refactor_service.rename_symbol(command, &basis) {
                 Ok(preview) => {
                     // Generate the actual edits for the preview
@@ -280,7 +273,7 @@ pub async fn handle_safe_refactor(
             let command = MoveSymbolCommand::new(&input.target, &source_path, &target_path);
 
             // Execute move via RefactorService
-            let basis = refactor_basis(ctx)?;
+            let basis = refactor_basis(ctx).await?;
             match ctx.refactor_service.move_symbol(command, &basis) {
                 Ok(preview) => Ok(SafeRefactorOutput {
                     action: input.action,
@@ -351,7 +344,7 @@ pub async fn handle_safe_refactor(
             };
 
             // Execute change_signature via RefactorService
-            let basis = refactor_basis(ctx)?;
+            let basis = refactor_basis(ctx).await?;
             match ctx.refactor_service.change_signature(command, &basis) {
                 Ok(preview) => Ok(SafeRefactorOutput {
                     action: input.action,

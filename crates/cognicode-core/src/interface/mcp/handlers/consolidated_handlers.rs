@@ -264,7 +264,7 @@ pub async fn handle_project_overview(
     input: ProjectOverviewInput,
 ) -> HandlerResult<ProjectOverviewOutput> {
     // Ensure graph is built (auto-build if empty)
-    let _ensure = super::ensure_graph_built(ctx)?;
+    let _ensure = super::ensure_graph_built(ctx).await?;
 
     // The level the client asked for. The answer carries what the level
     // says it carries, and it says which level it answered.
