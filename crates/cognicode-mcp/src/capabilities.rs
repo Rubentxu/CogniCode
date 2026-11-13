@@ -60,13 +60,15 @@ pub const LSP_SUPPORTED_LANGS: &[&str] = &["python", "rust", "javascript", "type
 
 /// Devuelve las capabilities declaradas de una tool por nombre.
 ///
-/// Devuelve `Some(ToolCapabilities)` para tools registradas en
-/// `build_all_tools()`, `None` para tools desconocidas.
+/// Devuelve `Some(ToolCapabilities)` para las tools que declaran
+/// capacidades, `None` para las desconocidas.
 ///
-/// La tabla cubre las **88 tools** que viven en
-/// `rmcp_adapter.rs::build_all_tools()`. Si añades una tool estable y
-/// olvidas añadirla aquí, `test_capabilities_matrix_for_stable_tools`
-/// falla con su nombre — esa es la intención.
+/// La tabla cubre **toda tool estable del catálogo** (`product/tools.json`),
+/// esté o no compilada su feature en esta build: una tool estable cuya
+/// feature está apagada sigue siendo una tool que el producto publica.
+/// Si añades una tool estable y olvidas añadirla aquí,
+/// `test_capabilities_matrix_for_stable_tools` falla con su nombre,
+/// con las features por defecto — esa es la intención.
 pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
     let caps = match tool_name {
         // ----------------------------------------------------------------
@@ -208,9 +210,18 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // Contract (composite sobre AST)
         // ----------------------------------------------------------------
-        "retrieve_and_verify" => ToolCapabilities {
+        "retrieve_and_verify" | "validate_contract" => ToolCapabilities {
             langs: tree_sitter_langs(),
             precision: "compuesto",
+        },
+
+        // ----------------------------------------------------------------
+        // Evidence (language-agnostic): leen filas del almacén de
+        // evidencia, no parsean código.
+        // ----------------------------------------------------------------
+        "list_evidence" | "search_evidence" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
         },
 
         // ----------------------------------------------------------------
@@ -258,7 +269,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
 ///
 /// Construido dinámicamente desde las arms del match para evitar
 /// drift. Si una tool estable NO aparece aquí, el test
-/// `test_stable_tools_have_capabilities` pana.
+/// `test_capabilities_matrix_for_stable_tools` falla.
 pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
     // Cada tool enumerada aquí DEBE resolver a `Some(...)` en
     // `list_tool_capabilities`. El set coincide con `build_all_tools()`
@@ -334,6 +345,10 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "list_files",
         // Contract stable
         "retrieve_and_verify",
+        "validate_contract",
+        // Evidence stable
+        "list_evidence",
+        "search_evidence",
         // Goals stable (TASK-82 / TASK-84) — la capa de goals
         "status",
         "context",
@@ -367,26 +382,36 @@ pub fn all_stable_capabilities() -> Vec<(&'static str, ToolCapabilities)> {
 mod tests {
     use super::*;
 
+    /// Las tools estables del catálogo **completo**, no las de esta build.
+    ///
+    /// `build_all_tools()` publica sólo las tools cuya feature está activa:
+    /// con las features por defecto faltan `validate_contract`,
+    /// `list_evidence` y `search_evidence`, que son estables. Un guardián
+    /// que recorre la build deja pasar justo lo que la build no compiló, y
+    /// sólo falla en quien activa la feature. El catálogo (`product/tools.json`)
+    /// es el dueño de la lista de tools y no depende de cómo se compiló el
+    /// binario, así que el guardián lo lee a él.
+    fn stable_tools_of_the_catalogue() -> std::collections::BTreeSet<String> {
+        let stable: std::collections::BTreeSet<String> =
+            cognicode_core::interface::catalog::load_tool_catalog()
+                .into_iter()
+                .filter(|tool| tool.stability == "stable")
+                .map(|tool| tool.name)
+                .collect();
+        assert!(
+            stable.len() > 40,
+            "el catálogo completo tiene decenas de tools estables, no {}",
+            stable.len()
+        );
+        stable
+    }
+
     /// RED→GREEN pineando la invariante: cada tool estable
     /// (no `experimental`, no `gated`) DEBE tener capabilities
-    /// declaradas con `precision` no-vacía.
+    /// declaradas con `precision` no-vacía, esté o no compilada su feature.
     #[test]
     fn test_capabilities_matrix_for_stable_tools() {
-        use crate::rmcp_adapter::build_all_tools;
-        for tool in build_all_tools() {
-            let name = tool.name.to_string();
-            let stability = tool
-                .meta
-                .as_ref()
-                .and_then(|m| m.get("cognicode"))
-                .and_then(|v| v.get("stability"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            // Sólo pineamos tools stables; experimental/gated pueden
-            // quedar `None` hasta que se promotionen.
-            if stability != "stable" {
-                continue;
-            }
+        for name in stable_tools_of_the_catalogue() {
             let caps = list_tool_capabilities(&name).unwrap_or_else(|| {
                 panic!(
                     "PRF-ANA-01: tool estable '{name}' no tiene capabilities \
@@ -406,21 +431,7 @@ mod tests {
     /// Esto es el pineo de que la lista no tiene tools inexistentes.
     #[test]
     fn test_stable_tool_names_are_real() {
-        use crate::rmcp_adapter::build_all_tools;
-        let real_stable: std::collections::HashSet<String> = build_all_tools()
-            .iter()
-            .filter(|t| {
-                let stability = t
-                    .meta
-                    .as_ref()
-                    .and_then(|m| m.get("cognicode"))
-                    .and_then(|v| v.get("stability"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                stability == "stable"
-            })
-            .map(|t| t.name.to_string())
-            .collect();
+        let real_stable = stable_tools_of_the_catalogue();
         for declared in stable_tool_names_with_capabilities() {
             assert!(
                 real_stable.contains(*declared),
@@ -504,22 +515,10 @@ mod tests {
             // PERO `all_stable_capabilities` usa (2) como filtro, y
             // queremos el opuesto: declarar (1) y ver qué NO está en (2).
             //
-            // Solución: tomar todos los tools de `build_all_tools()`
-            // que tengan stability == "stable" y ver cuáles resuelven
-            // `list_tool_capabilities(...) == Some` con precision
-            // no-vacía. Esos son los "declarados (1) reales".
-            for tool in crate::rmcp_adapter::build_all_tools() {
-                let name = tool.name.to_string();
-                let stability = tool
-                    .meta
-                    .as_ref()
-                    .and_then(|m| m.get("cognicode"))
-                    .and_then(|v| v.get("stability"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if stability != "stable" {
-                    continue;
-                }
+            // Solución: tomar las tools estables del catálogo completo y
+            // ver cuáles resuelven `list_tool_capabilities(...) == Some`
+            // con precision no-vacía. Esos son los "declarados (1) reales".
+            for name in stable_tools_of_the_catalogue() {
                 if let Some(caps) = list_tool_capabilities(&name)
                     && !caps.precision.is_empty()
                 {
