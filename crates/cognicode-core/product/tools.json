@@ -7061,7 +7061,8 @@
         "tool_version": "0.102.1"
       },
       "limitations": [
-        ".gitignore aware; honors workspace root"
+        ".gitignore aware; honors workspace root",
+        "A directory it could not list and an entry it could not measure are named in `coverage.skipped_files` and the answer is `partial`, never `complete`"
       ]
     },
     {
@@ -8928,7 +8929,8 @@
         "pattern"
       ],
       "limitations": [
-        ".gitignore aware; regex default true"
+        ".gitignore aware; regex default true",
+        "A file it could not open and a directory it could not list are named in `coverage.skipped_files` and the answer is `partial`, never `complete`; a file that opens and is not text is not a hole"
       ]
     },
     {

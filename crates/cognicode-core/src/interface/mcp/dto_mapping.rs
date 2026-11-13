@@ -16,6 +16,8 @@ use crate::application::dto::{
     ReadMode, SearchContentRequest, SearchContentResult, SymbolKind, SymbolSummary,
     WriteFileRequest, WriteFileResult,
 };
+use crate::application::services::analyze::read_coverage;
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::mcp::schemas::{
     CallEntry, EditFileInput, EditFileOutput, GetCallHierarchyOutput, GetFileSymbolsOutput,
     ListFilesInput, ListFilesOutput, ReadFileInput, ReadFileOutput, SearchContentInput,
@@ -138,10 +140,12 @@ impl From<SearchContentInput> for SearchContentRequest {
 
 impl From<SearchContentResult> for SearchContentOutput {
     fn from(result: SearchContentResult) -> Self {
+        let coverage = CoverageInfo::of(&read_coverage(&result.unread));
         SearchContentOutput {
             matches: result.matches.into_iter().map(|m| m).collect(),
             total: result.total,
             files_scanned: result.files_scanned,
+            coverage,
         }
     }
 }
@@ -165,10 +169,12 @@ impl From<ListFilesInput> for ListFilesRequest {
 
 impl From<ListFilesResult> for ListFilesOutput {
     fn from(result: ListFilesResult) -> Self {
+        let coverage = CoverageInfo::of(&read_coverage(&result.unread));
         ListFilesOutput {
             files: result.files,
             total: result.total,
             depth_traversed: result.depth_traversed,
+            coverage,
         }
     }
 }

@@ -1923,6 +1923,15 @@ pub struct SearchContentOutput {
 
     /// Number of files scanned
     pub files_scanned: usize,
+
+    /// What the search covered.
+    ///
+    /// A file it could not open and a directory it could not list have no
+    /// matches to show, and a list that says nothing about them reads as a
+    /// search over the whole tree. A payload written before this field
+    /// existed reads as "unknown", never as "complete".
+    #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 /// Input for list_files tool
@@ -1969,6 +1978,15 @@ pub struct ListFilesOutput {
 
     /// The maximum depth reached during traversal
     pub depth_traversed: Option<usize>,
+
+    /// What the listing covered.
+    ///
+    /// A directory it could not list and an entry it could not measure are
+    /// missing from `files`, and a listing that says nothing about them
+    /// reads as the whole directory. A payload written before this field
+    /// existed reads as "unknown", never as "complete".
+    #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
 // ============================================================================
