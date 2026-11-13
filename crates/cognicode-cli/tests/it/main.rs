@@ -56,4 +56,5 @@ mod the_goals_and_the_profiles;
 mod the_published_coverage_has_one_owner;
 mod the_questions_say_their_coverage;
 mod the_recipe_executor;
+mod the_terminal_and_the_wire_name_the_same_next_step;
 mod unresolved_references_are_facts;
