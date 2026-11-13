@@ -134,43 +134,18 @@ fn fn_body(text: &str, signature: &str) -> Option<String> {
 /// The `cogh` binary this test drives.
 ///
 /// `common::binary_path` is this crate's single answer to "where is this
-/// binary": `CARGO_BIN_EXE_cogh` captured at compile time, the runtime
-/// variable set by cargo-nextest, `CARGO_TARGET_DIR`, the directory
-/// `cargo metadata` reports, and only then `<repo>/target`. It preserves
-/// the profile: cargo points `CARGO_BIN_EXE_cogh` at the profile the test
-/// itself is running under, which is the profile this gate always wanted.
+/// binary": the `CARGO_BIN_EXE_cogh` cargo fixed when it built this test, in
+/// the profile the test itself is running under.
 ///
-/// This function used to re-derive that whole chain locally and read
-/// cargo's answer by splitting the JSON on `"target_directory":`. That
-/// split returns `None` the moment cargo emits a space after the colon,
-/// and `None` here is silent — the chain falls through to a full
-/// `cargo build` *inside a test*. The test still passes. It just takes
-/// minutes, for a reason that has nothing to do with `cogh setup`.
-///
-/// The build fallback stays: a contract that only passes when the
-/// operator happened to run `cargo build` first is not hermetic.
+/// There is no build fallback. Cargo builds the package's binaries before it
+/// compiles its integration tests, so a missing file here is a broken
+/// harness, not a state to repair: a `cargo build` launched from inside a
+/// test is paid on every run of the suite and on every mutant of the gate.
 fn cogh_binary() -> PathBuf {
-    let p = common::binary_path("cogh");
-    if p.is_file() {
-        return p;
-    }
-    let root = repo_root();
-    let build = Command::new("cargo")
-        .args(["build", "-p", "cognicode-cli", "--bin", "cogh", "--quiet"])
-        .current_dir(&root)
-        .output()
-        .expect("cannot run `cargo build`");
-    assert!(
-        build.status.success(),
-        "`cargo build -p cognicode-cli --bin cogh` failed:\n{}",
-        String::from_utf8_lossy(&build.stderr)
-    );
-    // Re-resolve: the build may have written where the pre-build probe
-    // did not look.
     let p = common::binary_path("cogh");
     assert!(
         p.is_file(),
-        "cannot find the cogh binary after building it; common::binary_path resolved {}",
+        "the cogh binary cargo built for this test is missing at {}",
         p.display()
     );
     p

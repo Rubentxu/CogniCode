@@ -1,153 +1,48 @@
-//! Harness compartido para UATs de CLI (binarios reales).
-//! Helper centralizado para resolver la ruta de los binarios `cogh` y
-//! `cognicode` bajo test, además de helpers de workspace (versión, tag,
-//! repo_root) compartidos entre los tests de release-flow.
+//! Harness compartido para los tests de CLI (binarios reales).
 //!
-//! Cada archivo `tests/*.rs` es un test binary independiente (Cargo
-//! genera un binario por archivo), por lo que `tests/common/mod.rs`
-//! está disponible vía `mod common;` + `use common::binary_path;` en
-//! cada test.
+//! Resuelve la ruta de los binarios `cogh`, `cognicode` y
+//! `cognicode-release` bajo test, y reúne los helpers de workspace
+//! (versión, tag, repo_root) que comparten los tests de release-flow.
 //!
-//! Resolución (primer match gana):
+//! Cada archivo bajo `tests/` es un módulo de un binario de test (o un
+//! binario de test propio); `tests/common/mod.rs` se incluye vía
+//! `mod common;`.
 //!
-//! 1. `CARGO_BIN_EXE_<NAME>` (compile-time) — set por Cargo cuando un
-//!    integration test del mismo crate se ejecuta. Correcto siempre,
-//!    sin traversal del filesystem. Fallback graceful si está unset.
-//! 2. `CARGO_BIN_EXE_<NAME>` (runtime) — set por cargo-nextest. Si el
-//!    compile-time fallback no encontró nada, intenta leer el env var
-//!    en runtime.
-//! 3. `CARGO_TARGET_DIR/release/<NAME>` y
-//!    `CARGO_TARGET_DIR/debug/<NAME>` — honra el override de target-dir
-//!    del usuario.
-//! 4. `<target_directory>/{release,debug}/<NAME>` — donde cargo dice que
-//!    escribe (`cargo metadata`), no `<repo>/target`: un checkout con
-//!    `target-dir` en `~/.cargo/config.toml` no escribe ahí, y cargo NO
-//!    exporta `CARGO_TARGET_DIR` a los procesos de test, así que la
-//!    variable no es una autoridad.
-//! 5. `<workspace_root>/target/{release,debug}/<NAME>` — fallback
-//!    histórico.
+//! ## Dónde está el binario bajo test
 //!
-//! Las branches 2-5 son robustas bajo `cargo-nextest` (que solo setea
-//! env vars en runtime, no en compile-time) y bajo `CARGO_TARGET_DIR`
-//! custom.
+//! Cargo construye los binarios del paquete ANTES de compilar sus tests de
+//! integración y le entrega a cada uno la ruta en `CARGO_BIN_EXE_<nombre>`,
+//! fijada en tiempo de compilación. Esa es la única autoridad: no se
+//! pregunta a `cargo metadata` dónde escribe (un subproceso por ejecución de
+//! la suite, y una respuesta sobre el directorio de quien corre, que puede
+//! compartirse con otro checkout), no se construye nada desde un test y no
+//! hay variables de entorno que la sustituyan.
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 
-/// Resolve the absolute path to the given binary under test.
+/// Absolute path to the binary under test.
 ///
-/// `name` is the cargo binary name (e.g. `"cogh"` or `"cognicode"`).
-/// The returned path is absolute and points at the binary that cargo
-/// built for this test target (release profile by default, debug if
-/// the binary doesn't exist in release).
+/// `name` is the cargo binary name: `"cogh"`, `"cognicode"` or
+/// `"cognicode-release"`. The path is the one cargo fixed when it built this
+/// test target, in whichever profile the suite is being run.
+///
+/// An unknown name is a defect of the caller and fails loudly: the match is
+/// closed because `env!` needs a literal, and a name that falls through to a
+/// guessed path would turn "the harness does not know this binary" into
+/// "binary not found".
 pub fn binary_path(name: &str) -> PathBuf {
-    resolve_binary_path(name)
-}
-
-fn resolve_binary_path(name: &str) -> PathBuf {
-    // 1. Compile-time env var: set by `cargo test --bin <name>` and
-    //    by integration tests in the same crate as the binary.
-    if let Some(p) = compile_time_bin_exe(name) {
-        return PathBuf::from(p);
-    }
-
-    // 2. Runtime env var: set by `cargo-nextest` (and by wrappers
-    //    that invoke cargo manually). Independent of compile-time
-    //    capture.
-    if let Some(p) = runtime_bin_exe(name) {
-        let p = PathBuf::from(p);
-        if p.exists() {
-            return p;
-        }
-    }
-
-    // 3. CARGO_TARGET_DIR override (release profile).
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        let release = PathBuf::from(&target).join("release").join(name);
-        if release.exists() {
-            return release;
-        }
-        let debug = PathBuf::from(&target).join("debug").join(name);
-        if debug.exists() {
-            return debug;
-        }
-    }
-
-    // 4. Where cargo says it writes.
-    //
-    // `<repo>/target` is an assumption, and on this repository it is
-    // simply false: `~/.cargo/config.toml` sets `target-dir`, and cargo
-    // does NOT export `CARGO_TARGET_DIR` to test processes. A resolver
-    // that stops here returns a path that does not exist, and the test
-    // that consumes it reports "binary not found" — a message about the
-    // harness, dressed as a message about the code.
-    //
-    // This branch only ever returns a path that exists, and every branch
-    // above it is consulted first, so it can never change which bytes a
-    // currently-passing test runs.
-    if let Some(target) = cargo_target_dir() {
-        let release = target.join("release").join(name);
-        if release.exists() {
-            return release;
-        }
-        let debug = target.join("debug").join(name);
-        if debug.exists() {
-            return debug;
-        }
-    }
-
-    // 5. Workspace-relative fallback.
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crate parent")
-        .parent()
-        .expect("workspace root")
-        .to_path_buf();
-    let release = workspace_root.join("target").join("release").join(name);
-    if release.exists() {
-        return release;
-    }
-    workspace_root.join("target").join("debug").join(name)
-}
-
-/// Where cargo is actually writing, according to cargo.
-///
-/// `<repo>/target` is an assumption; `CARGO_TARGET_DIR` is an override
-/// that cargo does not propagate to test processes. `cargo metadata` is
-/// the only authority for a checkout that redirects `target-dir`.
-///
-/// Cached for the life of the process: the answer cannot change while a
-/// test binary runs, and the alternative is one `cargo metadata`
-/// subprocess per resolution.
-pub fn cargo_target_dir() -> Option<PathBuf> {
-    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        let out = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version", "1"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let meta: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-        Some(PathBuf::from(meta.get("target_directory")?.as_str()?))
-    })
-    .clone()
-}
-
-fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
-    // env! requires a literal string. Match on the known names.
-    match name {
-        "cogh" => option_env!("CARGO_BIN_EXE_cogh"),
-        "cognicode" => option_env!("CARGO_BIN_EXE_cognicode"),
-        _ => None,
-    }
-}
-
-fn runtime_bin_exe(name: &str) -> Option<std::ffi::OsString> {
-    let var = format!("CARGO_BIN_EXE_{name}");
-    std::env::var_os(var)
+    let path = match name {
+        "cogh" => env!("CARGO_BIN_EXE_cogh"),
+        "cognicode" => env!("CARGO_BIN_EXE_cognicode"),
+        "cognicode-release" => env!("CARGO_BIN_EXE_cognicode-release"),
+        other => panic!(
+            "binary_path: `{other}` is not a binary of cognicode-cli; \
+             add it to the match in tests/common/mod.rs"
+        ),
+    };
+    PathBuf::from(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -231,10 +126,9 @@ pub fn workspace_tag() -> String {
 ///
 /// 1. `COGNICODE_RELEASE_BIN` — absolute path to the release-profile
 ///    tool. Asserted to exist and returned verbatim.
-/// 2. The same resolution chain as `binary_path` (robust under
-///    `CARGO_TARGET_DIR` overrides and stale `target/` directories),
-///    **plus** a profile assertion: the resolved binary must live in a
-///    directory named `release`.
+/// 2. `binary_path("cognicode-release")`, or its release-profile sibling
+///    when the suite runs in `debug/`, **plus** a profile assertion: the
+///    resolved binary must live in a directory named `release`.
 ///
 /// Why the profile assertion exists: Cargo exports
 /// `CARGO_BIN_EXE_<name>` to integration tests, and under a plain
@@ -330,7 +224,6 @@ fn assert_release_profile(path: &Path, ctx: &str) {
 ///    binary lives in `debug/` (the usual case under `cargo test`
 ///    without `--release`). This directory is normally populated by
 ///    a separate `cargo build --release` invocation.
-/// 4. The literal `<repo_root>/target/release` — workspace default.
 ///
 /// Without an override the resolved path must end with a `release`
 /// component or this function fails. The reason is the one given in
@@ -340,11 +233,11 @@ fn assert_release_profile(path: &Path, ctx: &str) {
 /// names onto a debug directory and stay green while reading artifacts
 /// that were never built for release.
 ///
-/// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
-/// because it breaks under a global `~/.cargo/config.toml`
-/// target-dir override. Honours the resolved target-dir chosen by
-/// Cargo for the integration test, falling back to the workspace
-/// default only when it fails.
+/// There is no fallback to a literal `<repo_root>/target/release`: that
+/// path is an assumption about where cargo writes, and on a checkout that
+/// redirects `target-dir` it names a directory that does not exist or, worse,
+/// one that belongs to another checkout. When the sibling `release/` is not
+/// there the answer is a failure that names the build that fills it.
 pub fn release_dir() -> PathBuf {
     if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN_DIR") {
         let dir = PathBuf::from(raw);
@@ -409,5 +302,11 @@ fn resolve_release_dir() -> PathBuf {
             return s;
         }
     }
-    repo_root().join("target").join("release")
+    panic!(
+        "release_dir: no release-profile directory next to {}; build the \
+         release binaries first (`cargo build --release -p cognicode-cli --bins` \
+         and `cargo build --release -p cognicode-mcp`) or point \
+         COGNICODE_RELEASE_BIN_DIR at the directory that holds them",
+        probe.display()
+    );
 }

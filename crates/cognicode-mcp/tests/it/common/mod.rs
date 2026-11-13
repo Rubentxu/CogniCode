@@ -26,135 +26,22 @@ use tokio::process::{Child, Command};
 /// reached.
 const RESPONSE_DEADLINE: Duration = Duration::from_secs(60);
 
-/// Resolve the absolute path to the `cognicode-mcp` binary under test.
+/// The absolute path to the `cognicode-mcp` binary under test.
 ///
-/// Convenience wrapper for `binary_path_for("cognicode-mcp")`. Existing
-/// callers that don't care about the binary name (the mcp crate only
-/// has one binary, `cognicode-mcp`) can keep using this form unchanged.
+/// Cargo builds the binaries of the crate whose integration tests it is
+/// about to run, and hands each test the path of the one it built in
+/// `CARGO_BIN_EXE_cognicode-mcp`, fixed when the test is compiled. That path
+/// is the binary of THIS tree, in the profile of the test, wherever
+/// `target-dir` points (`~/.cargo/config.toml` included). Nothing else is
+/// needed, so nothing else is consulted:
+///
+/// - the resolver used to search `release/` and `debug/` of several
+///   directories first, and a `release` binary that another checkout left in
+///   a shared target directory won over the one this tree had just built;
+/// - it used to ask `cargo metadata` where the target directory is, one
+///   subprocess per test binary, from inside a test (AGENTS.md, hard rule 6).
 pub fn binary_path() -> PathBuf {
-    binary_path_for("cognicode-mcp")
-}
-
-/// Resolve the absolute path to the named binary under test.
-///
-/// Resolution order (first match wins):
-///
-/// 1. `CARGO_BIN_EXE_<name>` — set by Cargo when an integration test in
-///    the same crate as the binary is run; always correct, no filesystem
-///    traversal required. Falls back gracefully when unset.
-/// 2. `CARGO_BIN_EXE_<name>` at **runtime** — set by `cargo-nextest` and
-///    by wrappers that invoke cargo manually. This branch is the
-///    difference between "tests run under cargo-nextest" and "tests
-///    fail with confusing build error under cargo-nextest" (§125.V7).
-/// 3. `CARGO_TARGET_DIR/release/<name>` — honors the user's cargo
-///    target-dir override (e.g. `~/.cargo/config.toml` redirecting
-///    `target-dir` away from the workspace `target/`).
-/// 4. `<workspace_root>/target/release/<name>` — historical fallback
-///    (works when cargo and the workspace agree on `target/`).
-///
-/// Resolution is delegated to `resolve_binary_path_for` so the
-/// precedence list is the single source of truth across every test
-/// that needs the binary.
-pub fn binary_path_for(name: &str) -> PathBuf {
-    resolve_binary_path_for(name)
-}
-
-fn resolve_binary_path_for(name: &str) -> PathBuf {
-    // 1. Compile-time env var.
-    if let Some(p) = compile_time_bin_exe(name) {
-        return PathBuf::from(p);
-    }
-
-    // 2. Runtime env var (cargo-nextest).
-    if let Some(p) = runtime_bin_exe(name) {
-        let p = PathBuf::from(p);
-        if p.exists() {
-            return p;
-        }
-    }
-
-    // 3. CARGO_TARGET_DIR override (release profile).
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        let release = PathBuf::from(&target).join("release").join(name);
-        if release.exists() {
-            return release;
-        }
-        let debug = PathBuf::from(&target).join("debug").join(name);
-        if debug.exists() {
-            return debug;
-        }
-    }
-
-    // 4. The directory cargo itself reports. Covers a `target-dir` set in
-    //    ~/.cargo/config.toml, which is how this machine coexists with four
-    //    other OpenCode instances and is invisible as an environment variable.
-    if let Some(target) = cargo_target_dir() {
-        let release = target.join("release").join(name);
-        if release.exists() {
-            return release;
-        }
-        let debug = target.join("debug").join(name);
-        if debug.exists() {
-            return debug;
-        }
-    }
-
-    // 5. Workspace-relative fallback (the default layout).
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let release = workspace_root.join("target").join("release").join(name);
-    if release.exists() {
-        return release;
-    }
-    let debug = workspace_root.join("target").join("debug").join(name);
-    if debug.exists() {
-        return debug;
-    }
-    debug
-}
-
-/// The target directory Cargo is configured to write to, if the workspace
-/// declares one in `.cargo/config.toml`.
-///
-/// Returns `None` when the build lands in the default location, in which case
-/// the caller already has the right path and this is all noise.
-fn cargo_target_dir() -> Option<PathBuf> {
-    // The only authority that answers "where is Cargo actually writing".
-    // `CARGO_TARGET_DIR` is unset here, and a `target-dir` set in
-    // ~/.cargo/config.toml is invisible to both the environment and any
-    // workspace-local config file, so heuristics that read those two
-    // sources report a directory that does not exist. Asking cargo is one
-    // subprocess and is right in every configuration.
-    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        let out = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version", "1"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let v: Value = serde_json::from_slice(&out.stdout).ok()?;
-        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
-    })
-    .clone()
-}
-
-fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
-    // env! requires a literal string. Match on the known names.
-    match name {
-        "cognicode-mcp" => option_env!("CARGO_BIN_EXE_cognicode-mcp"),
-        _ => None,
-    }
-}
-
-fn runtime_bin_exe(name: &str) -> Option<std::ffi::OsString> {
-    let var = format!("CARGO_BIN_EXE_{name}");
-    std::env::var_os(var)
+    PathBuf::from(env!("CARGO_BIN_EXE_cognicode-mcp"))
 }
 
 pub struct McpSession {
@@ -528,7 +415,6 @@ impl McpSession {
 ///    debug binary points at `debug/cognicode-mcp`, but a sibling
 ///    `release/` dir is expected to exist if the user built with
 ///    `cargo build --release --bin cognicode-mcp`).
-/// 5. The literal `<repo_root>/target/release` — workspace default.
 ///
 /// Without an override the resolved path must end with a `release`
 /// component or this function fails. Reason: Cargo exports
@@ -540,9 +426,12 @@ impl McpSession {
 ///
 /// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
 /// because it breaks under a global `~/.cargo/config.toml`
-/// target-dir override. We honour the same location Cargo chose for
-/// the binary resolved by `binary_path`, falling back to the
-/// repo-root default only when that fails.
+/// target-dir override. The directory is derived from the location
+/// Cargo chose for the binary resolved by `binary_path`, and there is
+/// no fallback: a literal `<repo_root>/target/release` is, on a machine
+/// that redirects `target-dir`, the directory of some other checkout.
+/// When neither case applies the function fails and says how to build
+/// the release binary.
 pub fn release_dir() -> PathBuf {
     if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN_DIR") {
         let dir = PathBuf::from(raw);
@@ -610,8 +499,12 @@ fn resolve_release_dir() -> PathBuf {
             return s;
         }
     }
-    // 3. Workspace-relative fallback.
-    repo_root().join("target").join("release")
+    panic!(
+        "release_dir: no `release` directory next to {}; build the release \
+         binary with `cargo build --release --bin cognicode-mcp` or set \
+         COGNICODE_RELEASE_BIN_DIR=/abs/path/to/release",
+        probe.display()
+    );
 }
 
 /// Compute the repo root the same way as in binary_path resolution.

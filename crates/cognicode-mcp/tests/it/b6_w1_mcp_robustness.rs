@@ -4,10 +4,10 @@
 //!
 //! Every test in this suite spawns the compiled `cognicode-mcp` binary
 //! as a subprocess and exchanges JSON-RPC frames over its stdio. The
-//! binary must exist before the suite runs: build it with
-//! `cargo build --bin cognicode-mcp`, or point `COGNICODE_MCP_BIN` at an
-//! existing build. A missing binary is a hard failure, never a skip: a
-//! skipped contract test is a green result that certifies nothing.
+//! binary is the one cargo builds for this package before the suite runs
+//! (`CARGO_BIN_EXE_cognicode-mcp`, see `common::binary_path`), so it cannot
+//! be missing and it cannot belong to another checkout. Nothing in this file
+//! launches cargo (AGENTS.md, hard rule 6).
 //!
 //! The contract is intentionally adversarial: a server that ships
 //! observability on stdout, that blocks past its timeout, or that
@@ -29,6 +29,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+
+use crate::common::{binary_path, release_dir};
 
 /// Page size the stdio server uses for `tools/list` pagination. It is
 /// a private constant in `rmcp_adapter::list_tools`; restating it here
@@ -63,100 +65,11 @@ unsafe fn fcntl_setfl(fd: i32, flags: i32) -> i32 {
 // Helpers
 // ===========================================================================
 
-/// The directory cargo is actually building into, as cargo itself reports it.
-///
-/// `CARGO_TARGET_DIR` covers the env-var case only. A `target-dir` set in
-/// `~/.cargo/config.toml` — which is how this machine coexists with four other
-/// OpenCode instances — is invisible to the environment, so the only
-/// authoritative answer is to ask cargo. `None` when cargo is unavailable or
-/// unparseable, in which case the caller falls through to the workspace-relative
-/// default layout.
-fn cargo_target_dir() -> Option<PathBuf> {
-    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        let out = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version", "1"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
-    })
-    .clone()
-}
-
-/// Locate the compiled `cognicode-mcp` binary.
-///
-/// Resolution order (first match wins):
-///
-/// 1. `COGNICODE_MCP_BIN` — explicit override. When it is set it is
-///    asserted to exist and to be executable, and no fallback happens:
-///    a typo must fail here instead of silently testing another build.
-/// 2. `CARGO_TARGET_DIR/{release,debug}/cognicode-mcp`.
-/// 3. The directory `cargo metadata` reports. This is the step that matters on
-///    a machine whose `target-dir` lives in `~/.cargo/config.toml`: both
-///    `CARGO_TARGET_DIR` and the workspace-relative `target/` name directories
-///    that do not exist, so a resolver without this step reports "binary not
-///    found" for a binary that is sitting right there. A harness that cannot
-///    find the artifact it tests is a harness lying about the world.
-/// 4. workspace-relative
-///    `<workspace_root>/target/{release,debug}/cognicode-mcp`.
-/// 5. bare `target/{release,debug}/cognicode-mcp`.
-///
-/// Returns `None` if no candidate exists. Callers must fail loudly on
-/// `None` (see `require_binary!`), never skip.
-fn binary_path() -> Option<PathBuf> {
-    if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN") {
-        let path = PathBuf::from(explicit);
-        assert!(
-            path.exists(),
-            "COGNICODE_MCP_BIN={} does not exist. Point it at the compiled \
-             `cognicode-mcp` binary (`cargo build --bin cognicode-mcp`) or unset \
-             it to fall back to the target-dir search.",
-            path.display()
-        );
-        assert!(
-            is_executable(&path),
-            "COGNICODE_MCP_BIN={} exists but is not executable. \
-             `cargo build --bin cognicode-mcp` produces an executable file.",
-            path.display()
-        );
-        return Some(path.canonicalize().unwrap_or(path));
-    }
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(td) = std::env::var_os("CARGO_TARGET_DIR") {
-        let td = PathBuf::from(td);
-        candidates.push(td.join("release/cognicode-mcp"));
-        candidates.push(td.join("debug/cognicode-mcp"));
-    }
-    if let Some(target) = cargo_target_dir() {
-        candidates.push(target.join("release/cognicode-mcp"));
-        candidates.push(target.join("debug/cognicode-mcp"));
-    }
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .to_path_buf();
-    candidates.push(workspace_root.join("target/release/cognicode-mcp"));
-    candidates.push(workspace_root.join("target/debug/cognicode-mcp"));
-    candidates.push(PathBuf::from("target/release/cognicode-mcp"));
-    candidates.push(PathBuf::from("target/debug/cognicode-mcp"));
-    for p in &candidates {
-        if p.exists() {
-            return Some(p.canonicalize().unwrap_or_else(|_| p.clone()));
-        }
-    }
-    eprintln!("binary_path: no candidate found. tried: {candidates:#?}");
-    None
-}
-
 /// `true` when `path` is a regular file with at least one execute bit.
 ///
-/// Used by the `COGNICODE_MCP_BIN` override: a path that exists but
-/// cannot be spawned would otherwise fail later with a bare
-/// `PermissionDenied` that says nothing about which env var is wrong.
+/// Used by the release smoke test: a path that exists but cannot be spawned
+/// would otherwise fail later with a bare `PermissionDenied` that says nothing
+/// about which binary is wrong.
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path)
@@ -165,9 +78,8 @@ fn is_executable(path: &Path) -> bool {
 }
 
 /// Spawn `cognicode-mcp` rooted at `cwd` and return the child handle.
-fn spawn_binary(cwd: &Path) -> Option<Child> {
-    let bin = binary_path()?;
-    let mut cmd = Command::new(&bin);
+fn spawn_binary(cwd: &Path) -> Child {
+    let mut cmd = Command::new(binary_path());
     cmd.arg("--cwd").arg(cwd);
     // TASK-84: the `full` surface is asked for explicitly. This suite
     // measures the pagination of `tools/list` and dispatches tools; the
@@ -178,7 +90,7 @@ fn spawn_binary(cwd: &Path) -> Option<Child> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    Some(cmd.spawn().expect("spawn cognicode-mcp"))
+    cmd.spawn().expect("spawn cognicode-mcp")
 }
 
 /// Send a JSON-RPC request (one frame, newline-terminated) and flush.
@@ -396,30 +308,6 @@ fn shutdown_and_reap(mut child: Child) -> std::io::Result<std::process::ExitStat
     }
 }
 
-/// Fail the current test loudly when `cognicode-mcp` is not built.
-///
-/// This macro used to print `SKIP_NOT_APPLICABLE` and `return`, which
-/// turned a missing binary into a green test: the suite reported success
-/// while asserting nothing. A vacuous pass is worse than a failure,
-/// because nothing distinguishes it from a real one.
-macro_rules! require_binary {
-    () => {
-        match binary_path() {
-            Some(p) => p,
-            None => panic!(
-                "cognicode-mcp binary not found: b6_w1_mcp_robustness.rs cannot \
-                 verify the stdio MCP contract without it, and skipping would be \
-                 a vacuous pass (a green test that asserts nothing).\n\
-                 Build it with `cargo build --bin cognicode-mcp` (add `--release`, \
-                 and set CARGO_TARGET_DIR if your config redirects it), or point \
-                 the harness at an existing build with \
-                 COGNICODE_MCP_BIN=/abs/path/to/cognicode-mcp, then re-run \
-                 `cargo test -p cognicode-core --test b6_w1_mcp_robustness`."
-            ),
-        }
-    };
-}
-
 // ===========================================================================
 // Test 1 — stdout framing keeps only JSON
 // ===========================================================================
@@ -432,9 +320,8 @@ macro_rules! require_binary {
 /// not asserted on the stdout side.
 #[test]
 fn stdio_framing_keeps_stdout_pure_json() {
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
-    let mut child = spawn_binary(workspace.path()).expect("spawn");
+    let mut child = spawn_binary(workspace.path());
 
     rpc_send(
         &mut child,
@@ -496,9 +383,8 @@ fn stdio_framing_keeps_stdout_pure_json() {
 /// would inherit by definition.
 #[test]
 fn initialize_then_clean_shutdown_no_orphan() {
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
-    let child = spawn_binary(workspace.path()).expect("spawn");
+    let child = spawn_binary(workspace.path());
     let pid = child.id();
     let mut child = child;
 
@@ -582,9 +468,8 @@ fn initialize_then_clean_shutdown_no_orphan() {
 /// we are pinning is that *our* server exposes the contract honestly.
 #[test]
 fn large_response_uses_pagination() {
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
-    let mut child = spawn_binary(workspace.path()).expect("spawn");
+    let mut child = spawn_binary(workspace.path());
 
     rpc_send(
         &mut child,
@@ -828,10 +713,9 @@ fn slow_tool_call_is_bounded_and_does_not_wedge_the_transport() {
     /// while costing only ~2 s to materialise.
     const CORPUS_FILES: usize = 25_000;
 
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
     write_scan_corpus(workspace.path(), CORPUS_FILES);
-    let mut child = spawn_binary(workspace.path()).expect("spawn");
+    let mut child = spawn_binary(workspace.path());
 
     rpc_send(
         &mut child,
@@ -957,7 +841,6 @@ async fn dispatch_timeout_cannot_interrupt_a_blocking_handler() {
 /// sanity check on the harness, not as evidence.
 #[test]
 fn concurrent_requests_in_different_sessions_isolated() {
-    let _bin = require_binary!();
     let ws_a = TempDir::new().expect("ws a");
     let ws_b = TempDir::new().expect("ws b");
     write_marker(ws_a.path(), "alpha_marker");
@@ -967,8 +850,8 @@ fn concurrent_requests_in_different_sessions_isolated() {
     let b_file = ws_b.path().join("beta_marker.rs");
     let b_file_str = b_file.to_string_lossy().into_owned();
 
-    let mut child_a = spawn_binary(ws_a.path()).expect("spawn a");
-    let mut child_b = spawn_binary(ws_b.path()).expect("spawn b");
+    let mut child_a = spawn_binary(ws_a.path());
+    let mut child_b = spawn_binary(ws_b.path());
 
     for (child, name) in [(&mut child_a, "session_a"), (&mut child_b, "session_b")] {
         rpc_send(
@@ -1153,9 +1036,8 @@ fn concurrent_requests_in_different_sessions_isolated() {
 /// B5.W4 pinned for refactor errors and we keep the same shape).
 #[test]
 fn structured_error_response_is_iserror() {
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
-    let mut child = spawn_binary(workspace.path()).expect("spawn");
+    let mut child = spawn_binary(workspace.path());
     rpc_send(
         &mut child,
         1,
@@ -1262,9 +1144,8 @@ fn server_diagnostics_is_copy_and_limits_are_pinned() {
 #[test]
 fn wire_tools_list_matches_hand_authored_catalog() {
     use base64::Engine;
-    let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
-    let mut child = spawn_binary(workspace.path()).expect("spawn");
+    let mut child = spawn_binary(workspace.path());
 
     rpc_send(
         &mut child,
@@ -1389,7 +1270,7 @@ fn wire_tools_list_matches_hand_authored_catalog() {
 
 /// H2.4 spec: "prueba cliente MCP stdio sobre binario de release
 /// si la UAT de este bloque no lo prueba ya." The other tests in
-/// this file prefer release via `binary_path()`; this test makes
+/// this file run the binary cargo built for the test profile; this test makes
 /// the release-binary coverage EXPLICIT. A missing release binary
 /// fails the test rather than skipping: this file's doctrine is that a
 /// skip is a vacuous green, and release coverage that silently never
@@ -1397,25 +1278,18 @@ fn wire_tools_list_matches_hand_authored_catalog() {
 /// cognicode-mcp` and re-run.
 #[test]
 fn release_binary_stdio_round_trip_smoke() {
-    // Locate the release binary: prefer the env override, then the
-    // directory cargo reports. The test does NOT fall back to debug —
-    // release-only is the spec.
+    // Locate the release binary: the explicit override, or the `release/`
+    // directory next to the profile directory cargo built this test in. The
+    // test does NOT fall back to debug — release-only is the spec — and it
+    // does not ask cargo where its target directory is.
     //
     // A missing release binary fails loudly. This test used to print a
     // `SKIP:` line and `return`, which is the vacuous green that its own
     // doc comment calls a worse failure mode than a missing binary: the
     // suite would report release coverage it never ran.
-    let release_path = if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN_RELEASE") {
-        std::path::PathBuf::from(explicit)
-    } else if let Some(target) = cargo_target_dir() {
-        target.join("release").join("cognicode-mcp")
-    } else {
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("target")
-            .join("release")
-            .join("cognicode-mcp")
+    let release_path = match std::env::var_os("COGNICODE_MCP_BIN_RELEASE") {
+        Some(explicit) => std::path::PathBuf::from(explicit),
+        None => release_dir().join("cognicode-mcp"),
     };
     assert!(
         release_path.exists(),
@@ -1429,7 +1303,6 @@ fn release_binary_stdio_round_trip_smoke() {
         "release binary at {} is not executable",
         release_path.display()
     );
-    let _bin = release_path.clone();
 
     let workspace = TempDir::new().expect("tempdir");
     let mut child = std::process::Command::new(&release_path)
