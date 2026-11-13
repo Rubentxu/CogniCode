@@ -50,8 +50,10 @@ pub struct GoalImpact {
 /// La respuesta del goal `impact` para ese símbolo.
 pub fn impact(workspace: &Path, symbol: &str) -> Result<GoalImpact, String> {
     let (_service, built) = service_with_graph(workspace)?;
-    let impact = AnalysisService::impact_of(&built.graph, symbol)
-        .map_err(|error| format!("`{symbol}` is not in the project's graph: {error}"))?;
+    // The refusal names the symbol, and for a homonym it names the
+    // candidates: the caller writes the identity it means and asks again.
+    let impact =
+        AnalysisService::impact_of(&built.graph, symbol).map_err(|refusal| refusal.to_string())?;
 
     // El riesgo lo publica el dueño con su propia palabra: el goal no
     // decide qué nivel es «alto».

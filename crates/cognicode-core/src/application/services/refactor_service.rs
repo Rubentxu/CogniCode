@@ -63,16 +63,17 @@ impl RefactorBasis {
     }
 }
 
-/// Los dependientes transitivos de un símbolo por aristas exactas.
+/// Los dependientes transitivos de un símbolo, en el orden en que el
+/// recorrido los descubre, sin el símbolo mismo.
 ///
-/// El recorrido es exacto a propósito: el `find_all_dependents` del
-/// grafo cae a un índice por nombre cuando el id exacto no produce
-/// aristas — el paliativo que el grafo falso de `nombre:0:0` exigía, y
-/// que funde a los homónimos. El grafo del análisis no tiene nodos
-/// falsos: cada llamada que sí se resolvió es una arista entre ids
-/// reales, y una llamada que el proyecto no sabe atribuir no es
-/// arista de nadie (es una referencia pendiente, y así la publica la
-/// cobertura). El símbolo mismo no cuenta: el impacto de un cambio es
+/// Es el recorrido por aristas exactas que ya hace
+/// `CallGraph::find_all_dependents`, con dos diferencias que el
+/// refactor necesita: devuelve un `Vec` (el orden se publica en el
+/// resultado) y no cuenta al símbolo cuando un ciclo vuelve a él. El
+/// grafo del análisis no tiene nodos falsos: cada llamada que sí se
+/// resolvió es una arista entre ids reales, y una llamada que el
+/// proyecto no sabe atribuir no es arista de nadie (es una referencia
+/// pendiente, y así la publica la cobertura). El impacto de un cambio es
 /// lo que queda fuera de él.
 fn transitive_dependents(graph: &CallGraph, id: &SymbolId) -> Vec<SymbolId> {
     let mut result: Vec<SymbolId> = Vec::new();

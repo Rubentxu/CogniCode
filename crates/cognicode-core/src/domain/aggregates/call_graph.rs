@@ -603,7 +603,12 @@ impl CallGraph {
         None
     }
 
-    /// Returns all symbols that depend on the given symbol (transitively)
+    /// Returns all symbols that depend on the given symbol (transitively).
+    ///
+    /// The traversal follows the edges of the exact id and nothing else: a
+    /// symbol that merely shares the NAME of `id` is another symbol, and its
+    /// callers are not dependents of this one. Resolving a name to an id is
+    /// [`crate::domain::services::resolve_target`]'s job, before this call.
     pub fn find_all_dependents(&self, id: &SymbolId) -> HashSet<SymbolId> {
         let mut result = HashSet::new();
         let mut to_visit: Vec<SymbolId> = vec![id.clone()];
@@ -612,21 +617,6 @@ impl CallGraph {
             for dependent in self.dependents(&current) {
                 if result.insert(dependent.clone()) {
                     to_visit.push(dependent.clone());
-                }
-            }
-            // Also search for dependents by name pattern when the exact ID isn't found
-            // This handles cases where callee IDs have placeholder formats like "name:0:0"
-            let id_str = current.to_string();
-            let base_name = id_str.split(':').next().unwrap_or(&id_str);
-            let base_name_lower = base_name.to_lowercase();
-            if let Some(symbol_ids) = self.name_index.get(&base_name_lower) {
-                for symbol_id in symbol_ids {
-                    if !result.contains(symbol_id)
-                        && symbol_id != &current
-                        && result.insert(symbol_id.clone())
-                    {
-                        to_visit.push(symbol_id.clone());
-                    }
                 }
             }
         }
@@ -2080,6 +2070,66 @@ mod tests {
         let all_dependents = graph.find_all_dependents(&id3);
         assert!(all_dependents.contains(&id2));
         assert!(all_dependents.contains(&id1));
+    }
+
+    /// Two functions called `helper`, one per file. Only the one in `a.rs`
+    /// has a caller.
+    fn homonyms_with_one_caller() -> (CallGraph, SymbolId, SymbolId, SymbolId) {
+        let mut graph = CallGraph::new();
+        let helper_a = graph.add_symbol(Symbol::new(
+            "helper",
+            SymbolKind::Function,
+            Location::new("a.rs", 1, 1),
+        ));
+        let helper_b = graph.add_symbol(Symbol::new(
+            "helper",
+            SymbolKind::Function,
+            Location::new("b.rs", 1, 1),
+        ));
+        let caller = graph.add_symbol(Symbol::new(
+            "caller",
+            SymbolKind::Function,
+            Location::new("c.rs", 1, 1),
+        ));
+        graph
+            .add_dependency(&caller, &helper_a, DependencyType::Calls)
+            .unwrap();
+        (graph, helper_a, helper_b, caller)
+    }
+
+    #[test]
+    fn an_id_the_graph_does_not_hold_has_no_dependents_even_if_a_name_matches() {
+        let (graph, _helper_a, _helper_b, _caller) = homonyms_with_one_caller();
+
+        // `helper:0:0` is the placeholder shape of a call whose callee was
+        // never attributed: it names no symbol, so nothing depends on it.
+        // The traversal does not borrow the callers of the symbols whose
+        // NAME is `helper`.
+        assert!(
+            graph
+                .find_all_dependents(&SymbolId::new("helper:0:0"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_symbol_nobody_calls_has_no_dependents_even_if_a_homonym_has() {
+        let (graph, _helper_a, helper_b, _caller) = homonyms_with_one_caller();
+
+        assert!(
+            graph.find_all_dependents(&helper_b).is_empty(),
+            "the callers of the `helper` in a.rs are not the callers of the one in b.rs"
+        );
+    }
+
+    #[test]
+    fn the_dependents_of_a_symbol_are_the_ones_its_own_edges_reach() {
+        let (graph, helper_a, _helper_b, caller) = homonyms_with_one_caller();
+
+        assert_eq!(
+            graph.find_all_dependents(&helper_a),
+            HashSet::from([caller])
+        );
     }
 
     #[test]

@@ -1,29 +1,37 @@
 //! The one answer to "what depends on this name".
 //!
 //! The MCP tool, the CLI command and the workspace session all put this
-//! question. They share the answer, so a name resolves to the same symbols and
+//! question. They share the answer, so a name resolves to the same symbol and
 //! the same risk whichever surface asked.
 //!
-//! A name means the symbols that carry it — by simple name or by fully
-//! qualified name, case-insensitively — and nothing that merely contains it:
-//! the dependents of `foo_bar` are not dependents of `foo`. A name the graph
-//! does not hold is [`SymbolNotInGraph`], never an empty impact.
+//! A name means ONE symbol, and the domain's rule decides which
+//! ([`crate::domain::services::resolve_target`]): the same rule that answers a call hierarchy or a
+//! call path. The full identity (`file:name:line`) names exactly one symbol;
+//! a name that several symbols carry is refused together with its
+//! candidates, because the impact of "`helper`" is the impact of none of the
+//! `helper`s: adding them up publishes the callers of one as if they were
+//! the callers of the other, and inflates the risk with them. A name the
+//! graph does not hold is [`GraphQueryError::NotFound`], never an empty
+//! impact.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::application::analysis_basis::{SymbolNotInGraph, require_present};
 use crate::application::dto::AffectedTest;
 use crate::application::dto::RiskLevel;
+use crate::application::services::graph_queries::{GraphQueryError, resolve};
 use crate::domain::aggregates::Symbol;
-use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::services::command_for;
 use crate::domain::value_objects::{Language, published_line};
 
 /// What changing a named symbol reaches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImpactOf {
-    /// How many symbols in the graph carry the name.
+    /// How many symbols the name resolved to.
+    ///
+    /// Always one: a name that several symbols carry is refused instead of
+    /// summed. The field stays because the goal `impact` publishes it.
     pub matched: usize,
     /// Names of the symbols that depend, directly or not, on any of them.
     pub symbols: Vec<String>,
@@ -39,29 +47,19 @@ pub struct ImpactOf {
     pub affected_tests: Vec<AffectedTest>,
 }
 
-/// The impact of changing the symbols called `name` in `graph`.
-pub fn impact_of(graph: &CallGraph, name: &str) -> Result<ImpactOf, SymbolNotInGraph> {
-    let wanted = name.to_lowercase();
-    let matched: Vec<SymbolId> = graph
-        .symbols()
-        .filter(|s| {
-            s.name().to_lowercase() == wanted || s.fully_qualified_name().to_lowercase() == wanted
-        })
-        .map(|s| SymbolId::new(s.fully_qualified_name()))
-        .collect();
-    let matched = require_present(matched, name)?;
+/// The impact of changing the symbol `name` means in `graph`.
+pub fn impact_of(graph: &CallGraph, name: &str) -> Result<ImpactOf, GraphQueryError> {
+    let target = resolve(graph, name)?;
 
     let mut symbols = BTreeSet::new();
     let mut files = BTreeSet::new();
     let mut affected_tests: Vec<AffectedTest> = Vec::new();
-    for id in &matched {
-        for dependent in graph.find_all_dependents(id) {
-            if let Some(symbol) = graph.get_symbol(&dependent) {
-                symbols.insert(symbol.name().to_string());
-                files.insert(symbol.location().file().to_string());
-                if symbol.is_test() {
-                    affected_tests.push(affected_test(symbol));
-                }
+    for dependent in graph.find_all_dependents(&target) {
+        if let Some(symbol) = graph.get_symbol(&dependent) {
+            symbols.insert(symbol.name().to_string());
+            files.insert(symbol.location().file().to_string());
+            if symbol.is_test() {
+                affected_tests.push(affected_test(symbol));
             }
         }
     }
@@ -71,7 +69,7 @@ pub fn impact_of(graph: &CallGraph, name: &str) -> Result<ImpactOf, SymbolNotInG
     affected_tests.sort_by(|a, b| (&a.file, a.line, &a.name).cmp(&(&b.file, b.line, &b.name)));
 
     Ok(ImpactOf {
-        matched: matched.len(),
+        matched: 1,
         risk: RiskLevel::from_impacted_symbols(symbols.len()),
         symbols: symbols.into_iter().collect(),
         files: files.into_iter().collect(),
@@ -142,6 +140,69 @@ mod tests {
     fn a_name_the_graph_does_not_hold_is_not_an_empty_impact() {
         assert!(impact_of(&graph(), "fo").is_err());
         assert!(impact_of(&graph(), "missing").is_err());
+    }
+
+    /// Two functions called `helper`, one per file, each with its own
+    /// caller. Returns the graph and the identity of each homonym.
+    fn homonyms() -> (CallGraph, String, String) {
+        let mut graph = CallGraph::new();
+        let helper_a = graph.add_symbol(function("helper", "a.rs"));
+        let helper_b = graph.add_symbol(function("helper", "b.rs"));
+        let caller_a = graph.add_symbol(function("caller_of_a", "ca.rs"));
+        let caller_b = graph.add_symbol(function("caller_of_b", "cb.rs"));
+        graph
+            .add_dependency(&caller_a, &helper_a, DependencyType::Calls)
+            .unwrap();
+        graph
+            .add_dependency(&caller_b, &helper_b, DependencyType::Calls)
+            .unwrap();
+        (
+            graph,
+            helper_a.as_str().to_string(),
+            helper_b.as_str().to_string(),
+        )
+    }
+
+    #[test]
+    fn a_name_that_two_symbols_carry_is_refused_with_its_candidates() {
+        let (graph, in_a, in_b) = homonyms();
+
+        let refusal = impact_of(&graph, "helper").unwrap_err();
+
+        assert_eq!(
+            refusal,
+            GraphQueryError::Ambiguous {
+                name: "helper".to_string(),
+                candidates: vec![in_a, in_b],
+            },
+            "the impact of `helper` is the impact of NEITHER of them: it says which two"
+        );
+    }
+
+    #[test]
+    fn the_identity_of_one_homonym_reaches_only_its_own_callers() {
+        let (graph, in_a, in_b) = homonyms();
+
+        let impact_a = impact_of(&graph, &in_a).unwrap();
+        let impact_b = impact_of(&graph, &in_b).unwrap();
+
+        assert_eq!(impact_a.matched, 1);
+        assert_eq!(impact_a.symbols, vec!["caller_of_a".to_string()]);
+        assert_eq!(impact_a.files, vec!["ca.rs".to_string()]);
+        assert_eq!(impact_b.symbols, vec!["caller_of_b".to_string()]);
+        assert_eq!(impact_b.files, vec!["cb.rs".to_string()]);
+    }
+
+    #[test]
+    fn the_refusal_of_a_missing_name_is_not_the_refusal_of_a_homonym() {
+        let (graph, _, _) = homonyms();
+
+        assert_eq!(
+            impact_of(&graph, "ghost").unwrap_err(),
+            GraphQueryError::NotFound {
+                name: "ghost".to_string()
+            }
+        );
     }
 
     #[test]

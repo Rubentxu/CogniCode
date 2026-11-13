@@ -1615,8 +1615,7 @@ impl AnalysisService {
     pub fn impact_of(
         graph: &CallGraph,
         name: &str,
-    ) -> Result<super::impact_of::ImpactOf, crate::application::analysis_basis::SymbolNotInGraph>
-    {
+    ) -> Result<super::impact_of::ImpactOf, super::graph_queries::GraphQueryError> {
         super::impact_of::impact_of(graph, name)
     }
 
