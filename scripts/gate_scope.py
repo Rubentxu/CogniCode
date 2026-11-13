@@ -68,6 +68,46 @@ start of the batch and the position at the end are both counted, and the batch
 fires when the two fall in different periods. Every multiple is crossed by
 exactly one batch, because the batches tile the history.
 
+THE TURN THAT IS NOT REPEATED
+-----------------------------
+Measuring the crate whole costs about 39 minutes, and a second measurement of
+a crate that has not changed produces the same verdicts: the hole did not age,
+because nothing that could be mutated moved. So a turn that is DUE is skipped
+when, and only when, all of this is proven:
+
+    * the last line `Medición del calendario:` of the crate in the JOURNAL is a
+      PASS, its sha is 40 hex and an ancestor of HEAD, and no later line that
+      names the crate is malformed (a red measurement with a typo is the last
+      word, not noise);
+    * `cargo-mutants` and `rustc` are the versions that line recorded;
+    * `git diff` finds nothing between that sha and HEAD in the crate, in the
+      workspace crates it depends on, in `.cargo/`, in `rust-toolchain.toml` and
+      in the two scripts that fix the ceiling and the runner of the mutants;
+    * the root `Cargo.toml` says the same by meaning (edition, rust-version,
+      lints, profiles and third-party versions are inherited by the crates), once
+      the workspace version, the `version` next to an internal `path` and the
+      list of members, which are what a release changes, are set aside;
+    * the working tree has no change or untracked file in any of those, nor in
+      the JOURNAL that was read.
+
+Skipping is an act of trust earned on proof: every doubt (a missing or
+unreadable journal, a short or foreign sha, another tool version, a diff that
+cannot be read) measures the crate, and the answer says WHY in
+`calendar-skip-refused`. An answer that skips names the commit it compared
+with in `calendar-anchor`, so the gate can print it.
+
+The anchor is NOT advanced here and the marker is not touched: the turn is a
+crossing of a multiple of the period, so a skipped turn leaves the count
+exactly where it was and the next crossing asks the same question again.
+
+What the comparison does NOT cover, measured over the last 200 merges to main:
+  * `Cargo.lock` (15 of 200): comparing it whole would make a period of 50
+    merges almost never skippable; that a patch bump of `serde` flips a mutant
+    verdict has not been measured, and nobody has had to claim it.
+  * `scripts/test-gate.sh` (9 of 200), where the flags of the mutation step
+    live: comparing it whole would cancel the skip nearly every period, and a
+    change of those flags is a change of the gate that its own task measures.
+
 THE MUTATION MODE
 -----------------
 A batch pays for the mutants of the lines it changed (`diff`); the crate is
@@ -97,8 +137,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -106,7 +149,30 @@ class Undetermined(Exception):
     """The radius could not be determined, so the caller has to measure everything."""
 
 
+class SkipRefused(Exception):
+    """The turn of the calendar cannot be skipped, so the crate is measured whole."""
+
+
 GIT_DEADLINE_S = 120
+
+JOURNAL_REL = Path("docs") / "roadmap" / "JOURNAL.md"
+WORKSPACE_MANIFEST_REL = Path("Cargo.toml")
+# What decides the verdict of a mutant besides the crate and its workspace
+# dependencies: the mutation configuration (and the cargo configuration that
+# sits next to it), the toolchain the repository pins, and the two scripts that
+# fix the ceiling and the runner of the test binaries. They are compared byte
+# for byte with the anchor. The root manifest is compared by meaning (below).
+VERDICT_INPUTS = (
+    Path(".cargo"),
+    Path("rust-toolchain.toml"),
+    Path("scripts") / "mutants-budget.sh",
+    Path("scripts") / "mem-capped-runner.sh",
+)
+# The line a block close writes in the JOURNAL after it measured the crate of the
+# calendar whole. The fields are ONE promise in two places: this tuple is what
+# the parser requires, and `AGENTS.md` carries the template that writes them.
+RECEIPT_LABEL = "Medición del calendario:"
+RECEIPT_KEYS = ("crate", "sha", "cargo-mutants", "rustc", "resultado")
 
 
 def _bounded(args: list[str], cwd: Path) -> "subprocess.CompletedProcess[str]":
@@ -275,6 +341,198 @@ def _calendar_fires(
     return (end // every) > (start // every), end, start
 
 
+def _parse_receipt(rest: str) -> dict[str, str] | None:
+    """The fields of one receipt line, or None when it is not a receipt.
+
+    A receipt is exactly the keys of `RECEIPT_KEYS`, each once, as `key=value`
+    tokens with a value. Anything else (a stray token, a missing value, a
+    repeated key) is not a receipt: this parser does not guess what a line
+    meant.
+    """
+    fields: dict[str, str] = {}
+    for token in rest.split():
+        key, separator, value = token.partition("=")
+        value = value.strip("`")
+        if not separator or not value or key in fields:
+            return None
+        fields[key] = value
+    return fields if set(fields) == set(RECEIPT_KEYS) else None
+
+
+def _last_receipt(repo: Path, crate: str) -> dict[str, str]:
+    """The last `Medición del calendario:` line of `crate`, as its fields.
+
+    The last line of the crate in the journal is the one that counts: a red
+    measurement after a green one withdraws the anchor, and a green one after
+    a red one restores it. The lines of another crate say nothing about this one.
+
+    A line that names the crate but is not a well-formed receipt also counts as
+    the last word: a red measurement written with a typo must not leave the
+    previous green one standing. A later well-formed line replaces it.
+    """
+    path = repo / JOURNAL_REL
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SkipRefused(f"no se pudo leer el JOURNAL ({JOURNAL_REL}): {error}") from error
+
+    names_the_crate = re.compile(rf"(?<![\w-]){re.escape(crate)}(?![\w-])")
+    last: dict[str, str] | None = None
+    malformed: int | None = None
+    for number, line in enumerate(text.splitlines(), start=1):
+        body = line.strip().lstrip("-*` ")
+        if not body.startswith(RECEIPT_LABEL):
+            continue
+        rest = body[len(RECEIPT_LABEL) :]
+        fields = _parse_receipt(rest)
+        if fields is None:
+            if names_the_crate.search(rest):
+                last, malformed = None, number
+        elif fields["crate"] == crate:
+            last, malformed = fields, None
+    if malformed is not None:
+        raise SkipRefused(
+            f"la linea {malformed} del JOURNAL nombra {crate} pero no es un recibo "
+            f"«{RECEIPT_LABEL}» valido ({', '.join(RECEIPT_KEYS)})"
+        )
+    if last is None:
+        raise SkipRefused(
+            f"el JOURNAL no tiene ninguna linea «{RECEIPT_LABEL}» del crate {crate}"
+        )
+    return last
+
+
+def _tool_versions(repo: Path) -> tuple[str, str]:
+    """The versions of `cargo-mutants` and `rustc`, in the form the receipt records.
+
+    A version that cannot be read is not a version that matches.
+    """
+    proc = _bounded(["cargo", "mutants", "--version"], repo)
+    found = re.search(r"cargo-mutants\s+(\S+)", proc.stdout) if proc.returncode == 0 else None
+    if not found:
+        raise SkipRefused("no se pudo leer la version de cargo-mutants")
+    mutants = found.group(1)
+
+    proc = _bounded(["rustc", "--version"], repo)
+    found = re.match(r"rustc\s+(\S+)\s+\((\S+)", proc.stdout) if proc.returncode == 0 else None
+    if not found:
+        raise SkipRefused("no se pudo leer la version de rustc")
+    return mutants, f"{found.group(1)}/{found.group(2)}"
+
+
+def _dependency_closure(crate: str, dependents: dict[str, set[str]]) -> set[str]:
+    """The workspace crates `crate` depends on, directly or not.
+
+    `dependents` answers "who depends on X"; this is the same graph read the
+    other way round. A crate that nothing in the workspace feeds has an empty
+    closure, and then its own directory is all there is to compare.
+    """
+    dependencies: dict[str, set[str]] = {}
+    for provider, consumers in dependents.items():
+        for consumer in consumers:
+            dependencies.setdefault(consumer, set()).add(provider)
+    seen: set[str] = set()
+    frontier = [crate]
+    while frontier:
+        for provider in dependencies.get(frontier.pop(), ()):
+            if provider not in seen:
+                seen.add(provider)
+                frontier.append(provider)
+    return seen
+
+
+def _manifest_meaning(text: str) -> dict[str, object]:
+    """What a workspace manifest says about how crates are built, not what it
+    says about which crates or which release it names.
+
+    The crates inherit edition, rust-version, lints, profiles and the versions
+    of third-party dependencies from the root manifest, so those are part of
+    what a mutant's verdict depends on. Three things are not, and they are what
+    a release changes: the workspace version, the `version` that sits next to
+    the `path` of an internal dependency, and the list of members. Dropping
+    them is what lets a release bump leave the anchor standing.
+    """
+    data = tomllib.loads(text)
+    workspace = data.get("workspace")
+    if isinstance(workspace, dict):
+        package = workspace.get("package")
+        if isinstance(package, dict):
+            package.pop("version", None)
+        workspace.pop("members", None)
+        workspace.pop("exclude", None)
+        dependencies = workspace.get("dependencies")
+        if isinstance(dependencies, dict):
+            for spec in dependencies.values():
+                if isinstance(spec, dict) and "path" in spec:
+                    spec.pop("version", None)
+    return data
+
+
+def _workspace_manifest_changed(repo: Path, sha: str) -> bool:
+    """Whether the root manifest means something else than it did at `sha`."""
+    rel = WORKSPACE_MANIFEST_REL.as_posix()
+    then = _git(["show", f"{sha}:{rel}"], repo)
+    now = _git(["show", f"HEAD:{rel}"], repo)
+    if then == now:
+        return False
+    try:
+        return _manifest_meaning(then) != _manifest_meaning(now)
+    except tomllib.TOMLDecodeError as error:
+        raise SkipRefused(f"{rel} no se pudo leer para compararlo: {error}") from error
+
+
+def _skip_anchor(
+    repo: Path, crate: str, roots: dict[str, str], dependents: dict[str, set[str]]
+) -> str:
+    """The commit of the last green whole-crate measurement, if it still holds.
+
+    Returns its sha when the crate, what it is built from and the tools are
+    those of that measurement. Raises `SkipRefused` with the reason otherwise:
+    the caller then measures the crate whole.
+    """
+    receipt = _last_receipt(repo, crate)
+    if receipt["resultado"] != "PASS":
+        raise SkipRefused(f"la ultima medicion de {crate} no fue PASS ({receipt['resultado']})")
+    sha = receipt["sha"]
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise SkipRefused(f"el SHA del recibo ({sha}) no son 40 hex")
+    if not _is_ancestor(repo, sha, "HEAD"):
+        raise SkipRefused(f"el SHA del recibo ({sha[:12]}) no es ancestro de HEAD")
+
+    mutants, rustc = _tool_versions(repo)
+    if mutants != receipt["cargo-mutants"]:
+        raise SkipRefused(
+            f"cargo-mutants es {mutants} y el recibo midio con {receipt['cargo-mutants']}"
+        )
+    if rustc != receipt["rustc"]:
+        raise SkipRefused(f"rustc es {rustc} y el recibo midio con {receipt['rustc']}")
+
+    members = [crate, *sorted(_dependency_closure(crate, dependents))]
+    compared = [os.path.relpath(roots[name], repo) for name in members] + [
+        str(path) for path in VERDICT_INPUTS
+    ]
+    where = ", ".join(compared)
+    committed = _bounded(["git", "diff", "--quiet", sha, "HEAD", "--", *compared], repo)
+    if committed.returncode == 1:
+        raise SkipRefused(f"hay cambios desde {sha[:12]} en {where}")
+    if committed.returncode != 0:
+        raise SkipRefused(
+            f"`git diff --quiet` no pudo comparar con {sha[:12]} (rc={committed.returncode})"
+        )
+    if _workspace_manifest_changed(repo, sha):
+        raise SkipRefused(
+            f"hay cambios desde {sha[:12]} en {WORKSPACE_MANIFEST_REL} "
+            "(mas que la version o la lista de miembros)"
+        )
+    # What is not committed is not in the history, so the anchor cannot vouch for
+    # it. The journal and the root manifest are watched too: the first holds the
+    # receipt this decision read, the second is compared by meaning above.
+    watched = [*compared, str(WORKSPACE_MANIFEST_REL), str(JOURNAL_REL)]
+    if _git(["status", "--porcelain", "--untracked-files=all", "--", *watched], repo).strip():
+        raise SkipRefused(f"hay cambios sin confirmar en {', '.join(watched)}")
+    return sha
+
+
 def _declared_roots(roots: dict[str, str], args: argparse.Namespace) -> set[str]:
     """The packages the gate declares it may mutate, checked against reality."""
     affordable = {name for name in (args.affordable or "").split(",") if name}
@@ -308,6 +566,8 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
     calendar_count = 0
     calendar_start = 0
     calendar_reason = ""
+    calendar_anchor = ""
+    skip_refused = ""
     if args.calendar_crate:
         if args.calendar_crate not in roots:
             raise Undetermined(
@@ -324,13 +584,26 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
             fires = True
             calendar_state = "unknown"
             calendar_reason = str(error)
+        if calendar_state == "fires":
+            # Only a turn that is DUE can be skipped, and only on proof. Any
+            # doubt, including a git or a tool that does not answer, keeps the
+            # turn: a skip that is not certain is less measurement.
+            try:
+                calendar_anchor = _skip_anchor(repo, args.calendar_crate, roots, dependents)
+                calendar_state = "skipped"
+                fires = False
+            except (SkipRefused, Undetermined) as error:
+                skip_refused = str(error)
         if fires:
             mutant_scope.add(args.calendar_crate)
 
     reason = calendar_reason
-    # `diff` needs a calendar that has been counted and is not due: without
-    # one, nothing would ever measure the whole crate.
-    mutant_mode = "diff" if args.calendar_crate and calendar_state == "waits" else "full"
+    # `diff` needs a calendar that has been counted and either is not due or
+    # was due and is proven redundant: without a counted calendar, nothing
+    # would ever measure the whole crate.
+    mutant_mode = (
+        "diff" if args.calendar_crate and calendar_state in ("waits", "skipped") else "full"
+    )
     return {
         "status": "ok",
         "base": base,
@@ -345,6 +618,8 @@ def decide(args: argparse.Namespace) -> dict[str, object]:
         "calendar-next": _next_turn(calendar_count, args.calendar_every)
         if args.calendar_crate and calendar_state != "unknown"
         else 0,
+        "calendar-anchor": calendar_anchor,
+        "calendar-skip-refused": skip_refused,
         "workspace": sorted(roots),
         "reason": reason,
     }
@@ -376,6 +651,8 @@ def _whole_gate(args: argparse.Namespace, reason: str) -> dict[str, object]:
         "calendar-count": 0,
         "calendar-start": 0,
         "calendar-next": 0,
+        "calendar-anchor": "",
+        "calendar-skip-refused": "",
         "workspace": sorted(roots),
         "reason": reason,
     }
@@ -423,6 +700,8 @@ def main() -> int:
             "mutant-scope",
             "mutant-mode",
             "calendar",
+            "calendar-anchor",
+            "calendar-skip-refused",
         ],
         help="un unico campo, separado por espacios, para consumo del shell",
     )
@@ -461,6 +740,13 @@ def main() -> int:
             f"{result['calendar-start']} al empezar el lote; "
             f"el siguiente turno, a {result['calendar-next']} fusiones)"
         )
+        if result["calendar-anchor"]:
+            print(
+                f"  turno omitido:  sin cambios desde {result['calendar-anchor'][:12]} "
+                "(ultima medicion PASS del crate entero)"
+            )
+        elif result["calendar-skip-refused"]:
+            print(f"  turno medido:   {result['calendar-skip-refused']}")
         if result["reason"]:
             print(f"  motivo:         {result['reason']}")
         return 0 if result["status"] == "ok" else 1
@@ -488,6 +774,8 @@ def main() -> int:
     print(f"calendar-count={result['calendar-count']}")
     print(f"calendar-start={result['calendar-start']}")
     print(f"calendar-next={result['calendar-next']}")
+    print(f"calendar-anchor={result['calendar-anchor']}")
+    print(f"calendar-skip-refused={result['calendar-skip-refused']}")
     print(f"reason={result['reason']}")
     return 0 if result["status"] == "ok" else 1
 

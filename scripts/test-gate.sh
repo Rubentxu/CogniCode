@@ -239,6 +239,10 @@ R_TEST_FULL="$(radius_field test-scope-full)"
 R_MUTANT="$(radius_field mutant-scope)"
 R_MUTANT_MODE="$(radius_field mutant-mode)"
 R_CALENDAR="$(radius_field calendar)"
+# The turn of the calendar that is not repeated: the selector decides it, the
+# gate only reports which commit it was compared with (or why it was not).
+R_CALENDAR_ANCHOR="$(radius_field calendar-anchor)"
+R_SKIP_REFUSED="$(radius_field calendar-skip-refused)"
 R_REASON="$(radius_field reason)"
 
 # The selector could not even answer (it is missing, or python is missing, or
@@ -254,7 +258,18 @@ if [ -z "${R_STATUS}" ]; then
   R_MUTANT="${MUTANT_AFFORDABLE_PACKAGES} ${MUTANT_CALENDAR_PACKAGE}"
   R_MUTANT_MODE="full"
   R_CALENDAR="unknown"
+  R_CALENDAR_ANCHOR=""
+  R_SKIP_REFUSED=""
   R_REASON="el selector del radio no respondio (rc=${RADIUS_RC}): ${RADIUS}"
+fi
+
+# Only the selector can skip a turn, and only with an anchor to show for it. An
+# answer that says `skipped` without the commit it compared with is an answer
+# the gate does not believe: the crate is measured.
+if [ "${R_CALENDAR}" = "skipped" ] && [ -z "${R_CALENDAR_ANCHOR}" ]; then
+  R_CALENDAR="unknown"
+  R_MUTANT="${R_MUTANT} ${MUTANT_CALENDAR_PACKAGE}"
+  R_MUTANT_MODE="full"
 fi
 
 # The mode of the mutation step comes from the selector, like the rest of the
@@ -289,6 +304,12 @@ printf 'modo mut.:   %s\n' "${R_MUTANT_MODE}"
 printf 'calendario:  %s (%s fusiones desde el marcador %s, cada %s)\n' \
   "${R_CALENDAR}" "$(radius_field calendar-count)" "${MUTANT_CALENDAR_MARKER:0:12}" \
   "${MUTANT_CALENDAR_EVERY_N}"
+if [ "${R_CALENDAR}" = "skipped" ]; then
+  printf 'turno omitido: %s sin cambios desde %s (ultima medicion PASS del crate entero)\n' \
+    "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR_ANCHOR:0:12}"
+elif [ -n "${R_SKIP_REFUSED}" ]; then
+  printf 'turno medido:  %s se mide entero: %s\n' "${MUTANT_CALENDAR_PACKAGE}" "${R_SKIP_REFUSED}"
+fi
 
 # The compilation context of this run, in the log: numbers measured on a
 # warm target are not numbers measured cold, and a receipt that does not
@@ -400,8 +421,13 @@ if $RUN_MUTANTS; then
     printf 'SKIP (mutants): este lote NO midio mutacion.\n'
     printf '  motivo:      el lote toco %s, y ninguno es mutable por coste;\n' \
       "${R_TOUCHED:-(nada)}"
-    printf '               el crate del calendario (%s) no esta en su turno (%s).\n' \
-      "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR}"
+    if [ "${R_CALENDAR}" = "skipped" ]; then
+      printf '               el turno del calendario (%s) se omitio: sin cambios desde %s.\n' \
+        "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR_ANCHOR:0:12}"
+    else
+      printf '               el crate del calendario (%s) no esta en su turno (%s).\n' \
+        "${MUTANT_CALENDAR_PACKAGE}" "${R_CALENDAR}"
+    fi
     printf '  el hueco:    el calendario va en %s fusiones desde el marcador; su ultimo\n' \
       "$(radius_field calendar-count)"
     printf '               turno ya paso y el siguiente llega a %s fusiones de aqui.\n' \
