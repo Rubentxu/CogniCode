@@ -880,7 +880,7 @@ impl ServerHandler for CogniCodeHandler {
                     crate::link_trace::record(&tool_name, &arguments, &answered);
                     Ok(answered)
                 }
-                Err(e) => Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
+                Err(e) => Ok(crate::tool_response::error_result(&e)),
             }
         }
     }
@@ -943,9 +943,9 @@ pub async fn call_tool_handler(
     // Authority comes from the declared `cognicode.authority` field (primary oracle),
     // with no second list to fall back to.
     if tool_is_mutating(tool_name) && ctx.is_read_only() {
-        return Err(InterfaceError::Internal(format!(
-            "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
-        )));
+        return Err(InterfaceError::ReadOnly {
+            tool: tool_name.to_string(),
+        });
     }
 
     // UAT 2026-08-10 DEFECT-1: BC layer for parameter naming.
@@ -985,8 +985,7 @@ pub async fn call_tool_handler(
         format!("tool:{}", tool_name)
     };
     if !ctx.rate_limiter().check_with_key(&rate_key) {
-        let err: InterfaceResult<String> =
-            Err(InterfaceError::Internal("rate_limit_exceeded".to_string()));
+        let err: InterfaceResult<String> = Err(InterfaceError::RateLimited);
         let status = crate::status::classify_status(tool_name, &err);
         let duration_ms = start.elapsed().as_millis() as f64;
         // M3.4: Emit the structured per-call log line for parity
@@ -1941,7 +1940,7 @@ pub async fn call_tool_handler(
     };
     let result = match tokio::time::timeout(timeout, dispatch).await {
         Ok(inner) => inner,
-        Err(_elapsed) => Err(InterfaceError::Internal("timeout".to_string())),
+        Err(_elapsed) => Err(InterfaceError::Timeout),
     };
 
     // M1.2: Classify status for metrics
@@ -1984,16 +1983,9 @@ pub async fn call_tool_handler(
         && let Some(m) = &metrics
     {
         // M3.2 / M3.3: Distinguish timeout and rate_limit_exceeded
-        // from generic errors. Both are conveyed as
-        // `InterfaceError::Internal(<sentinel>)` so we match on
-        // the inner string to keep the error_type taxonomy
-        // machine-readable.
-        let error_type = match e {
-            InterfaceError::ToolNotFound(_) => "missing",
-            InterfaceError::Internal(msg) if msg == "timeout" => "timeout",
-            InterfaceError::Internal(msg) if msg == "rate_limit_exceeded" => "rate_limit_exceeded",
-            _ => "error",
-        };
+        // from generic errors. The kind of the failure is its type; the
+        // taxonomy is machine-readable without reading the message.
+        let error_type = crate::status::error_type(e);
         m.errors.add(
             1,
             &[
@@ -2221,8 +2213,8 @@ mod tests {
             "expected tokio::time::timeout to fire on slow handler"
         );
         // Map the Elapsed to the same error we use in the boundary.
-        let err: InterfaceResult<String> = Err(InterfaceError::Internal("timeout".to_string()));
-        assert!(matches!(err, Err(InterfaceError::Internal(ref m)) if m == "timeout"));
+        let err: InterfaceResult<String> = Err(InterfaceError::Timeout);
+        assert!(matches!(err, Err(InterfaceError::Timeout)));
     }
 
     #[tokio::test]

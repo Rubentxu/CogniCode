@@ -10,6 +10,7 @@ mod a009_agent_safe_profile;
 mod a010_tool_authority_audit;
 mod a012_structured_output;
 mod a016_tools_runtime_consistency;
+mod an_ambiguous_name_reaches_the_client_as_data;
 mod b2_w2_catalog_parity;
 mod b2_w3_output_schema_contract;
 mod b6_w1_mcp_robustness;
