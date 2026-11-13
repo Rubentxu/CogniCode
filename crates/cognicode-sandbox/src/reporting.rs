@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cognicode_core::application::sandbox_failure::FailureClass;
-use cognicode_core::sandbox_core::artifacts::{ScenarioResult, Summary};
+use cognicode_core::sandbox_core::artifacts::{OutcomeKind, ScenarioResult, Summary, pass_rate};
 
 const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -44,25 +44,26 @@ pub fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
             .or_default()
             .push(r.timing_ms.total_ms);
 
-        match r.outcome.as_str() {
-            "pass" => {
+        let kind = OutcomeKind::of(&r.outcome);
+        match kind {
+            OutcomeKind::Passed => {
                 summary.passed += 1;
             }
-            "expected_fail" | "preexisting_fail" => {
+            OutcomeKind::ExpectedFailure => {
                 summary.expected_failures += 1;
             }
-            "unexpected_pass" => {
+            OutcomeKind::UnexpectedPass => {
                 summary.unexpected_passes += 1;
                 summary.failed += 1;
             }
-            _ => {
+            OutcomeKind::Failed => {
                 summary.failed += 1;
             }
         }
 
         let lang_entry = summary.by_language.entry(r.language.clone()).or_default();
         lang_entry.total += 1;
-        if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
+        if kind.met_expectation() {
             lang_entry.passed += 1;
         } else {
             lang_entry.failed += 1;
@@ -75,7 +76,7 @@ pub fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
 
         let tool_entry = summary.by_tool.entry(r.tool.clone()).or_default();
         tool_entry.total += 1;
-        if r.outcome == "pass" || r.outcome == "expected_fail" || r.outcome == "preexisting_fail" {
+        if kind.met_expectation() {
             tool_entry.passed += 1;
         } else {
             tool_entry.failed += 1;
@@ -87,15 +88,11 @@ pub fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
         }
     }
 
-    if summary.total > 0 {
-        summary.pass_rate = summary.passed as f64 / summary.total as f64;
-    }
+    summary.pass_rate = pass_rate(summary.met_expectation(), summary.total);
 
     for (lang, durations) in &mut lang_durations {
         if let Some(lang_entry) = summary.by_language.get_mut(lang) {
-            if lang_entry.total > 0 {
-                lang_entry.pass_rate = lang_entry.passed as f64 / lang_entry.total as f64;
-            }
+            lang_entry.pass_rate = pass_rate(lang_entry.passed, lang_entry.total);
             durations.sort();
             let len = durations.len();
             lang_entry.timing_p50_ms = Some(durations[len / 2]);
@@ -106,9 +103,7 @@ pub fn aggregate_summary(results: &[ScenarioResult]) -> Summary {
 
     for (tool, durations) in &mut tool_durations {
         if let Some(tool_entry) = summary.by_tool.get_mut(tool) {
-            if tool_entry.total > 0 {
-                tool_entry.pass_rate = tool_entry.passed as f64 / tool_entry.total as f64;
-            }
+            tool_entry.pass_rate = pass_rate(tool_entry.passed, tool_entry.total);
             durations.sort();
             let len = durations.len();
             tool_entry.timing_p50_ms = Some(durations[len / 2]);
@@ -294,12 +289,17 @@ pub fn load_baseline_summary(path: &Path) -> std::io::Result<Summary> {
 pub fn compute_regressions(current: &[ScenarioResult], baseline: &Summary) -> Vec<String> {
     let mut regressions = Vec::new();
 
+    // The same definition the baseline was published under: the share of
+    // scenarios that behaved as declared.
     let baseline_pass_rate = baseline.pass_rate;
-    let current_pass_rate = current
+    let met_expectation = current
         .iter()
-        .filter(|r| r.outcome == "pass" || r.outcome == "expected_fail")
-        .count() as f64
-        / current.len().max(1) as f64;
+        .filter(|r| OutcomeKind::of(&r.outcome).met_expectation())
+        .count();
+    let current_pass_rate = pass_rate(
+        u32::try_from(met_expectation).unwrap_or(u32::MAX),
+        u32::try_from(current.len()).unwrap_or(u32::MAX),
+    );
 
     if current_pass_rate < baseline_pass_rate - 0.05 {
         regressions.push(format!(
@@ -341,4 +341,150 @@ pub fn write_summary(summary: &Summary, results_dir: &Path) -> std::io::Result<P
     let json = serde_json::to_string_pretty(summary).unwrap_or_else(|_| "{}".into());
     fs::write(&path, json)?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    //! One pass rate, three levels: the summary, the language breakdown and the
+    //! tool breakdown divide the same numerator by the same total, and the
+    //! regression check compares like with like.
+
+    use super::*;
+    use cognicode_core::application::sandbox_resource_usage::ResourceUsage;
+    use cognicode_core::sandbox_core::artifacts::Timing;
+
+    fn a_result(outcome: &str, language: &str, tool: &str) -> ScenarioResult {
+        ScenarioResult {
+            scenario_id: format!("scenario_{outcome}_{language}_{tool}"),
+            language: language.into(),
+            tier: "A".into(),
+            repo: "repo".into(),
+            commit: "abc123".into(),
+            tool: tool.into(),
+            action: "concrete".into(),
+            expected_outcome: "pass".into(),
+            outcome: outcome.into(),
+            failure_class: None,
+            timing_ms: Timing {
+                setup_ms: 1,
+                server_startup_ms: 1,
+                tool_call_ms: 1,
+                validation_ms: 1,
+                teardown_ms: 1,
+                total_ms: 5,
+            },
+            resource_usage: ResourceUsage {
+                peak_rss_mb: 1.0,
+                cpu_time_s: 0.1,
+            },
+            mutation: None,
+            validation: None,
+            dimension_scores: None,
+            artifacts: vec![],
+            container_image: "image:latest".into(),
+            workspace_snapshot_id: None,
+            started_at: "2025-01-01T00:00:00Z".into(),
+            completed_at: "2025-01-01T00:01:00Z".into(),
+            repo_provenance: None,
+            reconstructed: None,
+            measured_source_head: None,
+        }
+    }
+
+    /// `count` scenarios that ended in `outcome`, in the default language.
+    fn some(outcome: &str, count: usize) -> Vec<ScenarioResult> {
+        (0..count)
+            .map(|_| a_result(outcome, "rust", "edit_file"))
+            .collect()
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn the_three_levels_publish_the_same_rate() {
+        // 2 passes, 1 expected failure, 1 pre-existing failure, 1 real failure.
+        let results = vec![
+            a_result("pass", "rust", "edit_file"),
+            a_result("pass", "python", "read_file"),
+            a_result("expected_fail", "rust", "read_file"),
+            a_result("preexisting_fail", "python", "edit_file"),
+            a_result("unexpected_fail", "rust", "edit_file"),
+        ];
+
+        let summary = aggregate_summary(&results);
+
+        assert!(
+            close(summary.pass_rate, 0.8),
+            "four of five scenarios met their declared expectation: {}",
+            summary.pass_rate
+        );
+        let language_passed: u32 = summary.by_language.values().map(|l| l.passed).sum();
+        let tool_passed: u32 = summary.by_tool.values().map(|t| t.passed).sum();
+        assert_eq!(
+            language_passed,
+            summary.passed + summary.expected_failures,
+            "the languages count what the summary counts"
+        );
+        assert_eq!(tool_passed, language_passed);
+        let language_total: u32 = summary.by_language.values().map(|l| l.total).sum();
+        assert!(
+            close(
+                f64::from(language_passed) / f64::from(language_total),
+                summary.pass_rate
+            ),
+            "the rate the languages imply is the rate the summary publishes"
+        );
+    }
+
+    #[test]
+    fn a_run_that_failed_only_as_declared_is_not_zero_percent() {
+        let mut results = some("expected_fail", 1);
+        results.extend(some("preexisting_fail", 1));
+
+        let summary = aggregate_summary(&results);
+
+        assert_eq!(summary.failed, 0, "nothing failed unexpectedly");
+        assert!(
+            close(summary.pass_rate, 1.0),
+            "every scenario behaved as declared: {}",
+            summary.pass_rate
+        );
+    }
+
+    #[test]
+    fn a_drop_hidden_behind_declared_failures_is_reported() {
+        // The baseline met its expectation everywhere (5 passes and 5 declared
+        // failures); the current run lost half of the scenarios.
+        let mut baseline_run = some("pass", 5);
+        baseline_run.extend(some("expected_fail", 5));
+        let baseline = aggregate_summary(&baseline_run);
+
+        let mut current = some("pass", 5);
+        current.extend(some("mcp_error", 5));
+
+        let regressions = compute_regressions(&current, &baseline);
+
+        assert_eq!(regressions.len(), 1, "{regressions:?}");
+        assert!(
+            regressions[0].contains("100.0%") && regressions[0].contains("50.0%"),
+            "the drop is from 100% to 50%: {regressions:?}"
+        );
+    }
+
+    #[test]
+    fn a_declared_preexisting_failure_is_not_a_regression() {
+        let baseline = aggregate_summary(&some("pass", 10));
+
+        let mut current = some("pass", 9);
+        current.extend(some("preexisting_fail", 1));
+
+        let regressions = compute_regressions(&current, &baseline);
+
+        assert!(
+            regressions.is_empty(),
+            "a failure the repository already had is not the product's: {regressions:?}"
+        );
+    }
 }

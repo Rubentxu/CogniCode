@@ -3064,7 +3064,7 @@ fn report(args: ReportArgs) -> Result<i32, String> {
         health_score,
         dimensions: dimension_averages.clone(),
         total_scenarios: summary.total,
-        passed_scenarios: summary.passed + summary.expected_failures,
+        passed_scenarios: summary.met_expectation(),
         pass_rate: summary.pass_rate,
         orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
     };
@@ -4726,8 +4726,9 @@ mod aggregate_summary_tests {
         assert_eq!(summary.failed, 0);
         assert_eq!(summary.expected_failures, 2);
         assert_eq!(summary.unexpected_passes, 0);
-        // pass_rate = passed / total = 0 / 2 = 0.0
-        assert_eq!(summary.pass_rate, 0.0);
+        // Both scenarios behaved as declared: pass_rate = (passed +
+        // expected_failures) / total = 2 / 2.
+        assert_eq!(summary.pass_rate, 1.0);
     }
 
     // --- unexpected_pass counting ---

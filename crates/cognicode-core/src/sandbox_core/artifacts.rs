@@ -190,12 +190,64 @@ impl ScenarioResult {
     }
 }
 
+/// What a scenario's `outcome` word means for the pass rate.
+///
+/// This is the one place that reads the outcome vocabulary for counting.
+/// The summary, the language and tool breakdowns, the run history and the
+/// regression check all ask this type, so they cannot disagree about which
+/// scenarios count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutcomeKind {
+    /// `pass`: the scenario did what it was supposed to do.
+    Passed,
+    /// `expected_fail` or `preexisting_fail`: it failed, and the manifest (or
+    /// the baseline of the repository under test) said it would.
+    ExpectedFailure,
+    /// `unexpected_pass`: it was declared to fail and did not.
+    UnexpectedPass,
+    /// Every other outcome: a failure nobody declared.
+    Failed,
+}
+
+impl OutcomeKind {
+    /// Classify an outcome word.
+    pub fn of(outcome: &str) -> Self {
+        match outcome {
+            "pass" => Self::Passed,
+            "expected_fail" | "preexisting_fail" => Self::ExpectedFailure,
+            "unexpected_pass" => Self::UnexpectedPass,
+            _ => Self::Failed,
+        }
+    }
+
+    /// Whether the scenario behaved as declared. This is the numerator of the
+    /// pass rate: a failure the manifest announced is not a defect of the
+    /// product, and it must not lower the rate any more than a pass raises it.
+    pub fn met_expectation(self) -> bool {
+        matches!(self, Self::Passed | Self::ExpectedFailure)
+    }
+}
+
+/// The pass rate: the share of `total` scenarios that behaved as declared.
+///
+/// An empty run has no rate to publish; it reports `0.0`, which reads as
+/// failing rather than as clean. The orchestrator refuses to run with no
+/// scenarios, so the case cannot reach a published summary.
+pub fn pass_rate(met_expectation: u32, total: u32) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        f64::from(met_expectation) / f64::from(total)
+    }
+}
+
 /// Aggregate summary across all scenarios in a run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
     /// Total scenarios run
     pub total: u32,
-    /// Scenarios that passed
+    /// Scenarios whose outcome was `pass`. The breakdowns' `passed` counts
+    /// more: see [`Summary::met_expectation`].
     pub passed: u32,
     /// Scenarios that failed unexpectedly
     pub failed: u32,
@@ -203,7 +255,9 @@ pub struct Summary {
     pub expected_failures: u32,
     /// Scenarios that passed unexpectedly (should have failed)
     pub unexpected_passes: u32,
-    /// Pass rate as a fraction [0.0, 1.0]
+    /// Share of scenarios that behaved as declared
+    /// (`met_expectation / total`), as a fraction [0.0, 1.0]. The language and
+    /// tool breakdowns publish the same definition.
     pub pass_rate: f64,
     /// Per-language breakdown: language -> LanguageBreakdown
     pub by_language: HashMap<String, LanguageBreakdown>,
@@ -237,6 +291,7 @@ pub struct Summary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageBreakdown {
     pub total: u32,
+    /// Scenarios that behaved as declared (`pass` plus declared failures).
     pub passed: u32,
     pub failed: u32,
     /// Pass rate as a fraction [0.0, 1.0]
@@ -272,6 +327,7 @@ impl LanguageBreakdown {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolBreakdown {
     pub total: u32,
+    /// Scenarios that behaved as declared (`pass` plus declared failures).
     pub passed: u32,
     pub failed: u32,
     /// Pass rate as a fraction [0.0, 1.0]
@@ -305,6 +361,13 @@ impl ToolBreakdown {
 }
 
 impl Summary {
+    /// Scenarios that behaved as declared: the passes plus the failures the
+    /// manifest announced. It is the numerator of [`Summary::pass_rate`], and
+    /// the sum of the `passed` counts of the language (or tool) breakdowns.
+    pub fn met_expectation(&self) -> u32 {
+        self.passed + self.expected_failures
+    }
+
     pub fn new(started_at: String, version: String) -> Self {
         Self {
             total: 0,
@@ -408,6 +471,47 @@ impl BenchmarkResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_pass_and_a_declared_failure_met_their_expectation() {
+        let met = ["pass", "expected_fail", "preexisting_fail"];
+        let not_met = [
+            "unexpected_pass",
+            "unexpected_fail",
+            "validation_failed",
+            "mcp_error",
+            "",
+        ];
+        for outcome in met {
+            assert!(
+                OutcomeKind::of(outcome).met_expectation(),
+                "`{outcome}` behaved as declared"
+            );
+        }
+        for outcome in not_met {
+            assert!(
+                !OutcomeKind::of(outcome).met_expectation(),
+                "`{outcome}` did not behave as declared"
+            );
+        }
+        assert_eq!(OutcomeKind::of("pass"), OutcomeKind::Passed);
+        assert_eq!(
+            OutcomeKind::of("preexisting_fail"),
+            OutcomeKind::ExpectedFailure
+        );
+        assert_eq!(
+            OutcomeKind::of("unexpected_pass"),
+            OutcomeKind::UnexpectedPass
+        );
+    }
+
+    #[test]
+    fn the_rate_is_the_share_that_met_its_expectation() {
+        assert_eq!(pass_rate(3, 4), 0.75);
+        assert_eq!(pass_rate(4, 4), 1.0);
+        assert_eq!(pass_rate(0, 4), 0.0);
+        assert_eq!(pass_rate(0, 0), 0.0, "an empty run reads as failing");
+    }
 
     fn make_test_timing() -> Timing {
         Timing {
