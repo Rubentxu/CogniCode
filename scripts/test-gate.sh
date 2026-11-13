@@ -184,6 +184,19 @@ printf '=== test-gate @ %s ===\n' "$(git rev-parse --short HEAD)"
 overall_rc=0
 EMPTY_HALVES=0
 
+# THE TREE WITNESS (TASK-234). A test that writes into the repository is a test
+# with shared state (rule 1), and `.gitignore` hides it. The state of the tree is
+# recorded before the first step and compared after the last: whatever is new is
+# residue and the gate is red. The mutation report (`mutants.out/`) is the gate's
+# own output and the witness knows it; a witness that cannot tell (rc=2) is red
+# as well, never a clean bill.
+TREE_WITNESS_DIR="$(mktemp -d)"
+trap 'rm -rf "${TREE_WITNESS_DIR}"' EXIT
+if ! python3 scripts/ci/tree_witness.py snapshot "${TREE_WITNESS_DIR}/before.json"; then
+  printf 'FAIL: el chivato del arbol no pudo anotar el estado inicial\n' >&2
+  exit 2
+fi
+
 run_step() {
   local label="$1"; shift
   printf '\n--- %s ---\n' "$label"
@@ -558,6 +571,8 @@ if $RUN_MUTANTS; then
     fi
   fi
 fi
+
+run_step "tree witness" python3 scripts/ci/tree_witness.py compare "${TREE_WITNESS_DIR}/before.json"
 
 printf '\n=== test-gate rc=%d ===\n' "$overall_rc"
 exit "$overall_rc"

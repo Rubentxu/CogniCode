@@ -97,6 +97,26 @@ echo "=== contratos: ${JOBS} en paralelo (CONTRACTS_JOBS=1 para el modo serie) =
 # completos y las condiciones de la maquina (carga, tempdir, espacio libre).
 export CONTRACTS_FAILURE_REPORT="${CONTRACTS_FAILURE_REPORT:-${XDG_STATE_HOME:-$HOME/.local/state}/cognicode/contract-failure.txt}"
 
-exec python3 scripts/run_contract_tests.py --jobs "$JOBS" \
+# El chivato del árbol (TASK-234). Un contrato que escribe en el repositorio es un
+# test con estado compartido (regla 1), y `.gitignore` lo esconde: antes de
+# correr, se anota el estado del árbol; después, se compara. Lo que aparece y no
+# estaba es residuo y la etapa falla. Por eso la suite ya NO se lanza con `exec`:
+# nada correría después de ella. El veredicto de la suite manda primero (un
+# contrato rojo se ve antes que el residuo); un chivato que no puede decidir
+# (rc=2) también falla la etapa.
+WITNESS_DIR="$(mktemp -d)"
+trap 'rm -rf "${WITNESS_DIR}"' EXIT
+python3 scripts/ci/tree_witness.py snapshot "${WITNESS_DIR}/before.json" || exit 2
+
+suite_rc=0
+python3 scripts/run_contract_tests.py --jobs "$JOBS" \
     scripts/product/test_*.py \
-    "${CI_CONTRACTS[@]}"
+    "${CI_CONTRACTS[@]}" || suite_rc=$?
+
+witness_rc=0
+python3 scripts/ci/tree_witness.py compare "${WITNESS_DIR}/before.json" || witness_rc=$?
+
+if [[ ${suite_rc} -ne 0 ]]; then
+    exit "${suite_rc}"
+fi
+exit "${witness_rc}"
