@@ -15,10 +15,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), yaml()],
   resolve: {
     alias: {
-      "@scaffold-assets": path.resolve(
-        __dirname,
-        "../../crates/cognicode-explorer/assets",
-      ),
+      "@scaffold-assets": path.resolve(__dirname, "./scaffold-assets"),
     },
   },
   test: {
