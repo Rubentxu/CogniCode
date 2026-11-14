@@ -679,6 +679,44 @@ impl Language {
         matches!(self, Language::Rust)
     }
 
+    /// Whether a name written in this language means the same name whatever
+    /// its spelling.
+    ///
+    /// PHP, PowerShell and Fortran do not tell `Describe` from
+    /// `describe`: the language itself does not, and a name the language
+    /// folds is one name. The rest of the languages the product reads do
+    /// tell them apart, and in Rust the distinction is meaning —a type and
+    /// a function that differ only in the case are two different things—,
+    /// so folding them turns a call to one of them into a hole where an
+    /// edge was.
+    ///
+    /// The languages that join here publish names that all fold: PHP
+    /// publishes functions, methods and types, and every one of them is
+    /// case-insensitive in PHP; PowerShell and Fortran publish names their
+    /// languages do not distinguish either. A language whose fold is
+    /// partial —PHP's variables do not fold, and its reader does not
+    /// publish any— does not join.
+    ///
+    /// This is a seam, and it is per language on purpose: a language
+    /// joins when its own measurement says the fold holds.
+    pub const fn folds_case(self) -> bool {
+        matches!(
+            self,
+            Language::Php | Language::PowerShell | Language::Fortran
+        )
+    }
+
+    /// Whether a name written in `file` folds its case.
+    ///
+    /// A name is written in one language, and that language says whether
+    /// the spelling matters. A file whose language the product does not
+    /// know does not fold: a name nobody declared in that exact spelling
+    /// is not a homonym of another one.
+    pub fn folds_case_in(file: Option<&std::path::Path>) -> bool {
+        file.and_then(Self::from_path)
+            .is_some_and(|language| language.folds_case())
+    }
+
     /// Whether a type must be named in the file that uses it.
     ///
     /// A language where a type is named before it is used lets the file say
