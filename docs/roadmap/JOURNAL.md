@@ -39451,3 +39451,108 @@ regeneró con sus tres bloques (cabecera y prosa, tabla de «qué cambió» y `#
   `roadmap_claims_contract`) sí se corrió sobre `f74ff490`.
 - **Los logs de la pasada vivían en `/tmp` y no se archivaron:** el `rc`, los tiempos y los
   recuentos de esta entrada son los de la sesión que los lanzó, no un artefacto del repositorio.
+
+## Recibo de bloque 2 — PASS, base `f74ff490` (2026-11-14)
+
+**Estado: PASS** sobre `a42fb659`, tras tres correcciones hacia delante. La primera corrida de los
+contratos salió `rc=1` con **cuatro** suites en rojo: la deriva del snapshot de `CURRENT.md` (13
+commits con una ventana de 5) y tres suites que no podían commitear en su propio repositorio de
+fixture —con 16 aserciones del gate sin medir—. Se corrigieron en TASK-271, TASK-283 y TASK-284, y
+la tercera corrida volvió a salir verde. Hasta esa tercera corrida este recibo era `FAIL`.
+
+**Base y SHA verificados.** Base: `f74ff490` (#835, el snapshot que cerró el bloque 1). El gate,
+`npm test`, `run-all-contracts.sh` y `fmt` + `clippy` se midieron sobre `a42fb659` (#852,
+TASK-268). Los contratos se re-midieron sobre el árbol `4e1416d9` (el snapshot regenerado más la
+identidad de los fixtures). El cierre del bloque es `d4575908` (#855, TASK-284) más este recibo:
+entre `a42fb659` y ese commit sólo cambian `scripts/` y `docs/`, ninguno toca el producto. El radio
+que el propio gate resolvió: `base f74ff4905ca3`, `tocado cognicode-core`, radio de tests
+`cognicode`, `cognicode-cli`, `cognicode-core`, `cognicode-ladybug`, `cognicode-mcp`,
+`cognicode-sandbox`, radio de mutantes `cognicode-graph-algos` (modo `full`). **La base del
+bloque 3 es `d4575908`.**
+
+**Las tareas.** El contador de `AGENTS.md` da 12 sobre `f74ff490..main`:
+`git log --format=%s f74ff490..main | grep -v '^docs' | grep -o 'TASK-[0-9.]*' | sort -u | wc -l`
+
+- TASK-247 (#837, `94f21d0b`) — la búsqueda de contenido y el listado de directorio publican lo que no pudieron leer.
+- TASK-252 (#838, `55aba4f5`) — `retrieve_and_verify` publica lo que no pudo leer.
+- TASK-254 (#843, `d4db3c10`) — un import agrupado en `application/` ponía rojos tres tests de autoalojamiento.
+- TASK-256 (#844, `555e496e`) — el proveedor de respaldo de LSP dice los ficheros que no pudo leer.
+- TASK-257 (#847, `828b8452`) — `safe_refactor` confina al workspace cada ruta que abre.
+- TASK-258 (#848, `03a88a02`) — la búsqueda de contenido y el listado declinan los enlaces simbólicos.
+- TASK-260 (#849, `ee2eec36`) — los goals `audit` y `find` publican su cobertura y su base.
+- TASK-265 (`a1933bed`) — el paso de mutantes omite su turno del calendario cuando el crate no cambió, y sólo con prueba.
+- TASK-268 (#852, `a42fb659`) — un calificador de tipo que el proyecto no declara ya no se une a su símbolo.
+- TASK-272 (#851, `fb6ebbbd`) — la gramática de Haskell pasa a 0.24.1 y con ella se van los abortos de heap.
+- TASK-283 (#853, `7de0fe20`) — la ventana de deriva del snapshot se dimensiona al bloque.
+- TASK-284 (#855, `d4575908fe23c1ce4c8b04b29521217dc4a70b66`) — los contratos que construyen un repositorio de fixture pueden commitear en cualquier máquina.
+
+Quedan fuera del contador, por su prefijo `docs(...)`: TASK-251 (#836, `54b9787f`, el recibo del
+bloque 1), TASK-245 (#839, `5843fce6`), TASK-248 (#841, `e98696ab`), TASK-253 (#840, `239d32ec`),
+TASK-180 (#842, `4c44e75e`), TASK-231 (#845, `34254ba8`), TASK-255 (#846, `f400088a`) y TASK-271
+(#854, `1f42a5ee`, el snapshot regenerado). Los tres que cuentan y no son producto (265, 283 y 284)
+tocan la maquinaria del gate: sin ellos el bloque no se cerraba, y así queda escrito.
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1 | `GATE_BASE=f74ff490 bash scripts/test-gate.sh` | `a42fb659` | 0 | 36 min 45 s | 4.006 unitarios (0 omitidos) y 1.630 de integración (2 omitidos); mutantes: el crate del calendario medido entero |
+| 2 | `npm test --prefix apps/explorer-ui` | `a42fb659` | 0 | 13 s | 88 ficheros, 950 tests |
+| 3 | `bash scripts/ci/run-all-contracts.sh` | `a42fb659` | 1 | 75 s | cuatro suites en rojo: `test_roadmap_coherence.py` (la deriva del snapshot), `test_gate_contracts.py`, `test_pr_merge_guard.py` y `test_sdk_surfaces.py` (los fixtures sin identidad) |
+| 3b | `bash scripts/ci/run-all-contracts.sh` | `a334a7ed` | 1 | 75,48 s | tres suites en rojo: las de los fixtures. El snapshot ya no fallaba |
+| 3c | `bash scripts/ci/run-all-contracts.sh` | `4e1416d9` | 0 | 75,96 s | 39 suites (33 de `scripts/ci/` + 6 de `scripts/product/`), 485 casos, 0 fallos |
+| 4 | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `a42fb659` | 0 | 74 s | sin avisos |
+
+**Mutantes.** El calendario se dispara (215 fusiones desde el marcador `fb526521db6e`, periodo 50)
+y el gate no encontró ninguna línea «Medición del calendario:» del crate `cognicode-graph-algos`
+en el Journal, así que el turno se midió entero y no se omitió: 627 mutantes del crate completo,
+en serie (`MUTANTS_JOBS=1`), con su propio directorio de destino y el techo de memoria. **627
+mutantes en 36 min: 618 atrapados, 9 inviables, 0 supervivientes.** Los nueve inviables son los
+mismos que la medición del 2026-11-13 sobre `4c44e75e`: el crate no ha cambiado desde entonces, así
+que el veredicto es el que ya se midió, no una medición nueva que se parezca a la anterior.
+
+**Corrección hacia delante.** Tres, y las tres están medidas:
+
+- **TASK-283** (#853, `7de0fe20`): la ventana que mide la deriva del snapshot pasa de 5 a 20
+  commits. La ventana de 5 se calibró cuando un ciclo eran dos commits (el squash y su recibo);
+  el ritmo medido del bloque 2 es ~1,6 commits por tarea de código, así que expiraba antes de la
+  tercera tarea del bloque y dejaba el ratchet rojo en `main` el resto del bloque. Con la ventana
+  en 20, un snapshot de la edad de un bloque (16 commits) sigue siendo honesto y uno de dos
+  bloques (32) se rechaza.
+- **TASK-271** (#854, `1f42a5ee`): el snapshot de `CURRENT.md` se regeneró (cabecera, prosa y
+  tabla «qué cambió», una fila por unidad) sobre `7de0fe20`.
+- **TASK-284** (#855, `d4575908`): tres contratos construían un repositorio de fixture y no
+  podían commitear en él, porque el runner neutraliza la configuración de git de la máquina y con
+  ella se va la identidad. En esta máquina el síntoma es el wrapper (`repo NO CLASIFICADO, no
+  firmo commits`); sin él, git falla con «Author identity unknown». Lo que no se midía era lo más
+  caro: 15 casos que vigilan el radio del gate y el calendario de mutantes, y 6 más de las
+  superficies del SDK y del guard de merge. El arreglo es el patrón que el repositorio ya
+  tenía (`test_tree_witness.py`): la identidad se declara en la llamada, no se hereda de la
+  máquina; y el runner pasa la identidad de quien ejecuta en las variables de entorno de git,
+  porque el guard de merge juzga un commit con el `git-control` real y necesita alguien a quien
+  juzgar.
+
+**Lo que este bloque NO midió, y por qué.** El gate, `npm test` y `fmt` + `clippy` se midieron
+sobre `a42fb659`, que es el árbol del producto de las diez tareas de código del bloque. Lo que
+cambió después (el contrato, el snapshot y el documento) no toca el producto: son `scripts/` y
+`docs/`. Los contratos —que son los que leen esos ficheros— sí se corrieron sobre el árbol
+`4e1416d9`, que es el producto más los tres cambios ✓.
+
+**NOT_RUN.**
+
+- **El gate, `npm test` y `fmt` + `clippy` no se repitieron sobre `4e1416d9`**: el único cambio
+  desde `a42fb659` son la ventana del contrato, el snapshot y los tres ficheros de los fixtures,
+  y ninguno toca el producto.
+- **Los logs de esta pasada vivían en `/var/home/rubentxu/cognicode-tmp/` y no se archivaron:** el
+  `rc`, los tiempos y los recuentos de esta entrada son los de la sesión que los lanzó, no un
+  artefacto del repositorio.
+- **`main` local no puede avanzar al commit que el hosting escribió.** El squash de #854 y el de
+  #855 quedaron con un trailer `Co-authored-by` que el hosting añadió —no el agente— y que la
+  política global de la máquina prohíbe, así que ninguna referencia local puede apuntar a esos
+  commits: el `fetch` y el `update-ref` se niegan. El trabajo sigue (las ramas se actualizan en
+  el servidor con la API de GitHub, que es donde el commit puede existir sin que una referencia
+  local lo nombre), pero el `main` local queda atrás y el contador de bloques hay que calcularlo
+  con el SHA explícito. El hecho y su medida están en TASK-282, y la decisión sobre la política es
+  del mantenedor.
+
+Medición del calendario: crate=cognicode-graph-algos sha=a42fb659a8ce4a3b986812bb8a284b35351f28c9 cargo-mutants=27.1.0 rustc=1.96.0/ac68faa20 resultado=PASS
