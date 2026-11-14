@@ -28,6 +28,8 @@ pub mod relation_candidates;
 pub(crate) mod unread_entries;
 // La busqueda de usos de un simbolo y lo que cubrio.
 pub mod usage_search;
+// La verificacion de los candidatos recuperados y el presupuesto que la acota.
+pub mod verification;
 // El recorrido del árbol que hacen la búsqueda de contenido y la lista
 // de ficheros, y el hilo en el que ocurren.
 pub(crate) mod workspace_walk;

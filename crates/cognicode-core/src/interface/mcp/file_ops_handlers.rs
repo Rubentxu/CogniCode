@@ -327,8 +327,11 @@ pub async fn handle_list_files(
 /// Combines lexical search with sandboxed rustc verification:
 /// - Uses existing search_content for retrieval (respects .gitignore)
 /// - Verifies each .rs candidate via `rustc --edition 2021 --crate-type lib`
-/// - Per-candidate timeout: 10s | Total timeout: 60s
-/// - Returns verified/rejected/skipped status per match
+/// - Per-candidate timeout: 10s | Total budget: 45s
+/// - The walk of the tree happens off the runtime that serves the call
+/// - Returns verified/rejected/skipped status per match; a candidate the
+///   budget did not reach comes out `skipped`, with the reason that names
+///   the bound that was reached
 #[cognicode_macros::aix_tool(
     name = "retrieve_and_verify",
     description = "Search for code matching a query and verify Rust files via sandboxed rustc compilation.",
@@ -364,9 +367,10 @@ pub async fn handle_retrieve_and_verify(
         verify: input.verify,
     };
 
-    // Call the service (async with per-candidate 10s timeout)
+    // The walk of the tree runs off the runtime that serves the call, and
+    // the verification is bounded by the budget of the tool.
     let dto_result = service
-        .retrieve_and_verify(dto_input)
+        .retrieve_and_verify_off_the_runtime(dto_input)
         .await
         .map_err(HandlerError::App)?;
 

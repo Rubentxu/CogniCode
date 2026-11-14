@@ -12,5 +12,7 @@ pub mod file_ops_handlers;
 pub mod handlers;
 pub mod schemas;
 pub mod security;
+// El presupuesto del trabajo de una herramienta, para la ventana del despacho.
+pub mod work_budget;
 
 pub use error::{InterfaceError, InterfaceResult};
