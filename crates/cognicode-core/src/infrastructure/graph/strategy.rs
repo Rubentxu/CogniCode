@@ -10,9 +10,12 @@ use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::graph::lightweight_index::LightweightIndex;
 use crate::infrastructure::graph::on_demand_graph::{CallHierarchyResult, OnDemandGraphBuilder};
-use crate::infrastructure::graph::per_file_graph::PerFileGraphCache;
+use crate::infrastructure::graph::per_file_graph::{
+    GlobalSymbolIndex, PerFileGraphCache, build_global_index,
+};
+use crate::infrastructure::graph::source_files;
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 /// A strategy that indexes a project so its symbols can be found by name.
@@ -93,7 +96,12 @@ impl GraphStrategy for LightweightStrategy {
 /// This strategy uses lazy evaluation to build only the necessary
 /// portions of the graph for each query.
 pub struct OnDemandStrategy {
-    builder: OnDemandGraphBuilder,
+    /// The declarations the calls are judged against.
+    ///
+    /// A call qualified by a type the project does not declare is somebody
+    /// else's call, and the index that owns the project's declarations is
+    /// the one that says so.
+    declarations: Option<Arc<GlobalSymbolIndex>>,
     index: Arc<RwLock<LightweightIndex>>,
 }
 
@@ -101,7 +109,7 @@ impl OnDemandStrategy {
     /// Creates a new OnDemandStrategy
     pub fn new() -> Self {
         Self {
-            builder: OnDemandGraphBuilder::new(),
+            declarations: None,
             index: Arc::new(RwLock::new(LightweightIndex::new())),
         }
     }
@@ -117,6 +125,9 @@ impl OnDemandStrategy {
         direction: TraversalDirection,
     ) -> CallHierarchyResult {
         let mut builder = OnDemandGraphBuilder::with_index(self.index.clone());
+        if let Some(declarations) = &self.declarations {
+            builder = builder.with_declarations(declarations.clone());
+        }
         builder.build_for_symbol(symbol_name, depth, direction)
     }
 }
@@ -131,8 +142,19 @@ impl GraphStrategy for OnDemandStrategy {
     fn build_index(&mut self, project_dir: &Path) -> std::io::Result<()> {
         // Build the strategy's own index — uses RwLock write guard (no silent failure)
         self.index.write().unwrap().build_index(project_dir)?;
-        // Also build the builder's index
-        self.builder.set_index(project_dir)
+        // The declarations the calls are judged against: the project's own,
+        // read by the same reader the per-file route reads them with. The
+        // builder's own index is gone — it was never read — and the pass it
+        // spent over the tree is the one that pays for the declarations
+        // now, so the number of passes does not grow.
+        let inventory = source_files::inventory(project_dir);
+        let paths: Vec<PathBuf> = inventory
+            .source_files()
+            .map(|file| file.path.clone())
+            .collect();
+        let borrowed: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+        self.declarations = Some(Arc::new(build_global_index(&borrowed)));
+        Ok(())
     }
 
     fn query_symbols(

@@ -225,6 +225,22 @@ impl GlobalSymbolIndex {
             })
     }
 
+    /// Whether a call is the project's to begin with.
+    ///
+    /// A call written `Duration::from_millis(10)` names a method of
+    /// `Duration`. When the project declares no `Duration`, that method is
+    /// not one of the project's, and joining it to the project's own
+    /// `from_millis` would publish the standard library's call count as the
+    /// project's.
+    ///
+    /// This is the rule [`Self::resolve_call`] applies, and it lives here so
+    /// that every route which judges a call asks the same question. A route
+    /// that writes the rule a second time is a route that answers
+    /// differently one day.
+    pub fn owns_call(&self, type_qualifier: Option<&str>) -> bool {
+        !type_qualifier.is_some_and(|qualifier| !self.declares(qualifier))
+    }
+
     /// Resolves a call site's callee, judging its type qualifier first.
     ///
     /// A call written `Duration::from_millis(10)` names a method of
@@ -244,7 +260,7 @@ impl GlobalSymbolIndex {
         type_qualifier: Option<&str>,
         caller_file: Option<&Path>,
     ) -> TargetResolution {
-        if type_qualifier.is_some_and(|qualifier| !self.declares(qualifier)) {
+        if !self.owns_call(type_qualifier) {
             return TargetResolution::Unresolved(name_lower.to_string());
         }
         self.resolve(name_lower, caller_file)
@@ -270,6 +286,99 @@ impl GlobalSymbolIndex {
     pub fn is_empty(&self) -> bool {
         self.by_id.is_empty()
     }
+}
+
+/// The declarations of a set of files, as the resolver reads them.
+///
+/// One owner: every route that judges a call against the project's
+/// declarations asks this index, so a call is judged the same way wherever
+/// it is judged. Two constructors would be two answers.
+pub fn build_global_index(file_paths: &[&Path]) -> GlobalSymbolIndex {
+    let sources: Vec<(&Path, String)> = file_paths
+        .iter()
+        .filter_map(|path| {
+            let source = std::fs::read_to_string(path).ok()?;
+            Some((*path, source))
+        })
+        .collect();
+    build_global_index_from_sources(
+        sources
+            .iter()
+            .map(|(path, source)| (*path, source.as_str())),
+    )
+}
+
+/// The declarations of a set of sources, as the resolver reads them.
+///
+/// PRF F2.W5 — H-R4-2: this is the global lookup that lets the resolver
+/// find callees across files. Failures to parse or read individual files
+/// are silently skipped here; their absence is surfaced separately by
+/// `merge_with_report` (R3 from F2.W2).
+/// The index keys are the lowercased symbol names so resolution is
+/// case-insensitive (matches the legacy per-file behaviour).
+pub fn build_global_index_from_sources<'a, P, I>(sources: I) -> GlobalSymbolIndex
+where
+    P: AsRef<Path> + Copy,
+    I: IntoIterator<Item = (P, &'a str)>,
+{
+    let mut idx = GlobalSymbolIndex::new();
+    for (path, source) in sources {
+        let path = path.as_ref();
+        let language = match Language::from_path(path) {
+            Some(l) => l,
+            None => continue,
+        };
+        // A language with a semantic layer names its declarations the
+        // way its reader named them, and those declarations are the ones
+        // a reference written in another file can point at. The index
+        // takes them from the same reader the graph takes them from:
+        // indexing the generic symbols of the same file would be a
+        // second authority saying something else.
+        if crate::infrastructure::parser::language_config::LanguageConfig::for_language(language)
+            .semantic_handler
+            .is_some()
+        {
+            if let SemanticOutcome::Handled(facts) =
+                semantic_facts(language, source, &path.to_string_lossy())
+            {
+                for symbol in facts.symbols {
+                    let sid = SymbolId::new(symbol.fully_qualified_name());
+                    idx.insert(sid, path.to_path_buf(), symbol.name());
+                }
+            }
+            // A file whose reader fell over is not in the index, and the
+            // reason it is missing is the one the same file's own graph
+            // records: the file was not read.
+            continue;
+        }
+        let parser = match TreeSitterParser::new(language) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let tree = match parser.parse_tree(source) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        // A file with parse errors stays in the index with what parsed:
+        // its own graph keeps the same symbols, and the two must agree.
+        // The tree is already built, and the symbols are read from it:
+        // asking the parser to parse the file again would cost a second
+        // tree to learn what the first one already holds.
+        let symbols = match parser.find_all_symbols_in_tree(&tree, source, &path.to_string_lossy())
+        {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for symbol in symbols {
+            // A declaration (a Jenkins stage) is run, never called.
+            if symbol.kind() == &crate::domain::value_objects::SymbolKind::Declaration {
+                continue;
+            }
+            let sid = SymbolId::new(symbol.fully_qualified_name());
+            idx.insert(sid, path.to_path_buf(), symbol.name());
+        }
+    }
+    idx
 }
 
 /// Shared crate root = the longest common path prefix between two files
@@ -550,7 +659,7 @@ impl PerFileGraphCache {
         // resolving any call edges. This is the global lookup that lets
         // `caller → callee` work across files. Without it, the per-file
         // map inside `build_file_graph` drops every cross-file edge.
-        let global_index = self.build_global_index(file_paths);
+        let global_index = build_global_index(file_paths);
 
         let mut merged = CallGraph::new();
         let mut skipped: Vec<SkippedFile> = Vec::new();
@@ -686,81 +795,6 @@ impl PerFileGraphCache {
             graph: merged,
             status,
         }
-    }
-
-    /// Builds a project-wide symbol index by parsing each file and
-    /// recording every discovered symbol with its file path and name.
-    ///
-    /// PRF F2.W5 — H-R4-2: this is the global lookup that lets the
-    /// resolver find callees across files. Failures to parse or read
-    /// individual files are silently skipped here; their absence is
-    /// surfaced separately by `merge_with_report` (R3 from F2.W2).
-    /// The index keys are the lowercased symbol names so resolution is
-    /// case-insensitive (matches the legacy per-file behaviour).
-    fn build_global_index(&self, file_paths: &[&Path]) -> GlobalSymbolIndex {
-        let mut idx = GlobalSymbolIndex::new();
-        for path in file_paths {
-            let path_str = path.to_string_lossy().to_string();
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let language = match Language::from_path(path) {
-                Some(l) => l,
-                None => continue,
-            };
-            // A language with a semantic layer names its declarations the
-            // way its reader named them, and those declarations are the ones
-            // a reference written in another file can point at. The index
-            // takes them from the same reader the graph takes them from:
-            // indexing the generic symbols of the same file would be a
-            // second authority saying something else.
-            if crate::infrastructure::parser::language_config::LanguageConfig::for_language(
-                language,
-            )
-            .semantic_handler
-            .is_some()
-            {
-                if let SemanticOutcome::Handled(facts) =
-                    semantic_facts(language, &source, &path_str)
-                {
-                    for symbol in facts.symbols {
-                        let sid = SymbolId::new(symbol.fully_qualified_name());
-                        idx.insert(sid, path.to_path_buf(), symbol.name());
-                    }
-                }
-                // A file whose reader fell over is not in the index, and
-                // the reason it is missing is the one the same file's own
-                // graph records: the file was not read.
-                continue;
-            }
-            let parser = match TreeSitterParser::new(language) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let tree = match parser.parse_tree(&source) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            // A file with parse errors stays in the index with what parsed:
-            // its own graph keeps the same symbols, and the two must agree.
-            // The tree is already built, and the symbols are read from it:
-            // asking the parser to parse the file again would cost a second
-            // tree to learn what the first one already holds.
-            let symbols = match parser.find_all_symbols_in_tree(&tree, &source, &path_str) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            for symbol in symbols {
-                // A declaration (a Jenkins stage) is run, never called.
-                if symbol.kind() == &crate::domain::value_objects::SymbolKind::Declaration {
-                    continue;
-                }
-                let sid = SymbolId::new(symbol.fully_qualified_name());
-                idx.insert(sid, path.to_path_buf(), symbol.name());
-            }
-        }
-        idx
     }
 
     /// Merges all cached file graphs into a single graph
@@ -2259,8 +2293,7 @@ mod one_tree_per_file_tests {
         let refs: Vec<&Path> = paths.iter().map(Path::new).collect();
 
         crate::infrastructure::parser::tree::reset_trees_built_here();
-        let cache = PerFileGraphCache::new();
-        let index = cache.build_global_index(&refs);
+        let index = build_global_index(&refs);
 
         assert!(
             !index.is_empty(),

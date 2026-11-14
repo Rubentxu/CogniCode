@@ -23,10 +23,11 @@
 //! published as unresolved — the count the product already keeps for a name
 //! the project does not declare — and no edge is invented for them.
 //!
-//! The same question is asked of both routes that build a graph (the
-//! project route, and the per-file route that merges files one by one),
-//! because two routes answering the same question differently is the defect
-//! the routes' own consistency test exists to catch.
+//! The same question is asked of every route that builds a graph (the
+//! project route, the per-file route that merges files one by one, and the
+//! on-demand route that answers about one symbol), because two routes
+//! answering the same question differently is the defect the routes' own
+//! consistency test exists to catch.
 //!
 //! ## What must keep working
 //!
@@ -39,7 +40,9 @@
 
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
+use cognicode_core::domain::value_objects::TraversalDirection;
 use cognicode_core::infrastructure::graph::per_file_graph::PerFileGraphCache;
+use cognicode_core::infrastructure::graph::{GraphStrategy, OnDemandStrategy};
 use std::path::{Path, PathBuf};
 
 const EVENT_RS: &str = "\
@@ -605,5 +608,133 @@ pub fn make() -> Shape {
         callers_of(&graph, "unit"),
         vec!["make".to_string()],
         "the per-file route answers the same"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The on-demand route.
+//
+// The on-demand route is the third route that answers "what does this
+// symbol call". It used to read the calls of a file as pairs — the caller
+// and the name — and the pair has no qualifier in it: the judgment that a
+// call qualified by a type the project does not declare is somebody else's
+// call could not be made, because the qualifier was gone before anyone
+// could ask.
+//
+// The route reads the calls the other routes read now, and it asks the
+// index that owns the project's declarations.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The names the on-demand route publishes as the callees of `symbol`.
+fn on_demand_callees(strategy: &OnDemandStrategy, symbol: &str) -> Vec<String> {
+    let result = strategy.build_subgraph(symbol, 1, TraversalDirection::Callees);
+    let mut names: Vec<String> = result
+        .entries
+        .iter()
+        .map(|entry| entry.symbol.name().to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+/// The names the per-file route says `caller` calls.
+fn per_file_callees(graph: &CallGraph, caller: &str) -> Vec<String> {
+    let declared: Vec<_> = graph
+        .symbol_ids()
+        .filter(|(_, symbol)| symbol.name() == caller)
+        .map(|(id, _)| id.clone())
+        .collect();
+    assert_eq!(
+        declared.len(),
+        1,
+        "the fixture declares `{caller}` exactly once, and the graph holds {declared:?}"
+    );
+    let mut callees: Vec<String> = graph
+        .callees(&declared[0])
+        .iter()
+        .map(|(id, _)| {
+            graph
+                .get_symbol(id)
+                .map(|symbol| symbol.name().to_string())
+                .unwrap_or_else(|| id.as_str().to_string())
+        })
+        .collect();
+    callees.sort();
+    callees
+}
+
+#[test]
+fn the_on_demand_route_does_not_join_a_std_call_to_the_project_symbol() {
+    let (dir, _files) = project(&[("lib.rs", LIB_RS), ("event.rs", EVENT_RS)]);
+    let mut strategy = OnDemandStrategy::new();
+    strategy
+        .build_index(dir.path())
+        .expect("the project is indexed");
+
+    assert!(
+        on_demand_callees(&strategy, "wait_a").is_empty(),
+        "`wait_a` calls the standard library's `Duration::from_millis`, and the project \
+         declares no `Duration`: the on-demand route must not publish the project's own \
+         `from_millis` as its callee"
+    );
+}
+
+#[test]
+fn the_on_demand_route_agrees_with_the_per_file_route() {
+    let (dir, files) = project(&[("lib.rs", LIB_RS), ("event.rs", EVENT_RS)]);
+    let per_file = per_file_route(dir.path(), &files);
+    let mut strategy = OnDemandStrategy::new();
+    strategy
+        .build_index(dir.path())
+        .expect("the project is indexed");
+
+    for caller in ["stamp", "wait_a", "wait_b", "wait_c"] {
+        assert_eq!(
+            on_demand_callees(&strategy, caller),
+            per_file_callees(&per_file, caller),
+            "the two routes answer differently about what `{caller}` calls"
+        );
+    }
+}
+
+/// A qualifier the project declares keeps its edge: the judgment is about
+/// names the project does not own, not about qualified calls.
+#[test]
+fn a_qualifier_the_project_declares_still_resolves_on_the_on_demand_route() {
+    let (dir, _files) = project(&[("lib.rs", LIB_RS), ("event.rs", EVENT_RS)]);
+    let mut strategy = OnDemandStrategy::new();
+    strategy
+        .build_index(dir.path())
+        .expect("the project is indexed");
+
+    assert_eq!(
+        on_demand_callees(&strategy, "stamp"),
+        vec!["from_millis".to_string()],
+        "`stamp` calls the project's own `EventTime::from_millis`, and the project declares \
+         `EventTime`: the edge stays"
+    );
+}
+
+/// A call without a qualifier is not touched: it is how a project calls its
+/// own free functions.
+#[test]
+fn an_unqualified_call_still_resolves_on_the_on_demand_route() {
+    let lib = "\
+pub fn helper() {}
+
+pub fn run() {
+    helper();
+}
+";
+    let (dir, _files) = project(&[("lib.rs", lib)]);
+    let mut strategy = OnDemandStrategy::new();
+    strategy
+        .build_index(dir.path())
+        .expect("the project is indexed");
+
+    assert_eq!(
+        on_demand_callees(&strategy, "run"),
+        vec!["helper".to_string()],
+        "an unqualified call is the project's own"
     );
 }
