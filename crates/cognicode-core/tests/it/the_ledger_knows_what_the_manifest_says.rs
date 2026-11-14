@@ -202,6 +202,51 @@ fn a_call_written_through_a_crate_keeps_its_answer() {
     );
 }
 
+/// A build that touches one file keeps the answers of the files that did
+/// not change.
+///
+/// The ledger exists for that: a consumer that changed one file paid for
+/// the whole project otherwise. The calls written through a crate were the
+/// ones that paid — they were answered again on every build, whatever the
+/// build touched.
+#[test]
+fn a_build_that_touches_one_file_keeps_the_answers_of_the_others() {
+    let (_tmp, root) = package(
+        MANIFEST,
+        &[
+            ("lib.rs", LIB_RS),
+            ("caller.rs", CALLER_RS),
+            ("other.rs", OTHER_RS),
+        ],
+    );
+    let service = AnalysisService::new();
+
+    service.build_project_graph(&root).expect("the cold build");
+
+    // One file changes: the body of the function that calls `own`, and one
+    // declaration more. The call written through the crate lives in another
+    // file, and the manifest did not change.
+    std::fs::write(
+        root.join("src/other.rs"),
+        "/// A call written without a path.\npub fn calls_own() -> u32 {\n    own()\n}\n\n\
+         /// A declaration that is new to the project.\npub fn another() -> u32 {\n    2\n}\n",
+    )
+    .expect("the file is rewritten");
+    service.build_project_graph(&root).expect("the warm build");
+
+    let warm = service
+        .get_reuse_metrics()
+        .expect("the build publishes how much it reused");
+    assert_eq!(
+        warm.relationships_reused, 1,
+        "the answer of the call written through the crate is kept; got {warm:?}"
+    );
+    assert_eq!(
+        warm.relationships_resolved, 1,
+        "only the file that changed is answered again; got {warm:?}"
+    );
+}
+
 /// A manifest that starts declaring the crate invalidates the answer that
 /// was kept.
 ///
