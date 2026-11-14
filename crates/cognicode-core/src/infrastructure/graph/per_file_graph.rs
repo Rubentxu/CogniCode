@@ -8,7 +8,7 @@ use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
 use crate::domain::value_objects::{
-    DependencyType, PendingClass, PendingReference, RejectedRelation, TargetResolution,
+    DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation, TargetResolution,
     WalkDecision,
 };
 use crate::infrastructure::graph::package;
@@ -261,9 +261,17 @@ impl GlobalSymbolIndex {
         type_qualifier: Option<&str>,
         path_head: Option<&str>,
         caller_file: Option<&Path>,
+        receiver: Option<&Receiver>,
     ) -> bool {
         let mut packages = self.packages.lock().unwrap();
-        call_is_owned(self, &mut packages, caller_file, type_qualifier, path_head)
+        call_is_owned(
+            self,
+            &mut packages,
+            caller_file,
+            type_qualifier,
+            path_head,
+            receiver,
+        )
     }
 
     /// Resolves a call site's callee, judging its qualifier first.
@@ -285,8 +293,9 @@ impl GlobalSymbolIndex {
         type_qualifier: Option<&str>,
         path_head: Option<&str>,
         caller_file: Option<&Path>,
+        receiver: Option<&Receiver>,
     ) -> TargetResolution {
-        if !self.owns_call(type_qualifier, path_head, caller_file) {
+        if !self.owns_call(type_qualifier, path_head, caller_file, receiver) {
             return TargetResolution::Unresolved(name_lower.to_string());
         }
         self.resolve(name_lower, caller_file)
@@ -485,12 +494,31 @@ fn call_is_owned<S: Declares + ?Sized>(
     caller_file: Option<&Path>,
     type_qualifier: Option<&str>,
     path_head: Option<&str>,
+    receiver: Option<&Receiver>,
 ) -> bool {
     if type_qualifier.is_some_and(|qualifier| !scope.declares(qualifier)) {
         return false;
     }
     if path_head.is_some_and(|head| manifests.is_external_crate(head, caller_file)) {
         return false;
+    }
+    // A call written on a value names a method of the receiver's type, and
+    // the file said whose the receiver is. A receiver that belongs to
+    // somebody else is not a call to the project's declaration of the same
+    // name: joining them would publish the standard library's call count as
+    // the project's.
+    //
+    // The receiver is judged by what the file said, not by what the scope
+    // declares, so that the two routes answer the same question about the
+    // same call: the file is the one that knows.
+    match receiver {
+        Some(Receiver::Crate(crate_name)) => {
+            if manifests.is_external_crate(crate_name, caller_file) {
+                return false;
+            }
+        }
+        Some(Receiver::Unbound) => return false,
+        Some(Receiver::Project) | Some(Receiver::Uncertain) | None => {}
     }
     true
 }
@@ -516,9 +544,17 @@ fn resolve_call_within_file(
     caller_file: Option<&Path>,
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
+    receiver: Option<&Receiver>,
 ) -> TargetResolution {
     let scope = FileScope { local, graph };
-    if !call_is_owned(&scope, manifests, caller_file, type_qualifier, path_head) {
+    if !call_is_owned(
+        &scope,
+        manifests,
+        caller_file,
+        type_qualifier,
+        path_head,
+        receiver,
+    ) {
         return TargetResolution::Unresolved(name_lower.to_string());
     }
     resolve_within_file(name_lower, local)
@@ -1125,8 +1161,11 @@ impl PerFileGraphCache {
             // file does not declare names nothing here.
             let qualifier = site.type_qualifier.as_deref();
             let head = site.path_head.as_deref();
+            let receiver = site.receiver.as_ref();
             let resolution = match global_index {
-                Some(index) => index.resolve_call(&name_lower, qualifier, head, Some(caller_path)),
+                Some(index) => {
+                    index.resolve_call(&name_lower, qualifier, head, Some(caller_path), receiver)
+                }
                 None => {
                     let mut packages = self.packages.lock().unwrap();
                     resolve_call_within_file(
@@ -1137,6 +1176,7 @@ impl PerFileGraphCache {
                         Some(caller_path),
                         &name_to_symbol,
                         &graph,
+                        receiver,
                     )
                 }
             };

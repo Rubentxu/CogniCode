@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node;
 
-use crate::domain::value_objects::NameRule;
+use crate::domain::value_objects::{NameRule, Receiver};
 
 /// The name a declaration carries, read by the language's rule.
 ///
@@ -743,6 +743,281 @@ fn first_identifier(node: &Node, source: &[u8], kind: &str) -> Option<String> {
     None
 }
 
+/// The receiver of a call, when the call is written on a value.
+///
+/// The text of a call written on a value is the receiver, a dot, and the
+/// name: `bytes.as_bytes` names `as_bytes` on `bytes`. The receiver is
+/// what is written before the last dot, and a call written through a path
+/// has no receiver at all: `serde_json::to_value` names what the path
+/// names.
+pub fn receiver_of(raw: &str) -> Option<&str> {
+    let dot = raw.rfind('.')?;
+    let receiver = raw[..dot].trim();
+    if receiver.is_empty() {
+        return None;
+    }
+    Some(receiver)
+}
+
+/// What a file says about the receivers of its calls.
+///
+/// A call written on a value names a method of the receiver's type, and the
+/// type is the file's to say. The file says it in four ways:
+///
+/// - `self` is the type of the `impl` that holds it;
+/// - a parameter or a local that declares a type is that type;
+/// - a constructor is the type it constructs (`Workspace::new()`);
+/// - a type the file names in a path is named with the crate it comes from.
+///
+/// What the file cannot say, this does not say either: a receiver that is a
+/// field, or the result of a call, has no type here, and the call keeps the
+/// answer it had.
+pub struct Receivers {
+    /// The `impl` blocks of the file, the type each one holds, and the
+    /// lines it holds them on.
+    impls: Vec<ImplType>,
+    /// The names the file binds to a type, and the scope each binding is
+    /// written in.
+    ///
+    /// The bindings are indexed by the name they bind: a call asks about one
+    /// name, and a file that binds the same name in many scopes would
+    /// otherwise be walked once per call.
+    bindings: HashMap<String, Vec<Binding>>,
+    /// The generic parameters the file declares.
+    generics: HashSet<String>,
+    /// The types the file declares.
+    declared: HashSet<String>,
+    /// The names the file imports, and the crate each comes from.
+    imported: HashMap<String, String>,
+}
+
+/// An `impl` block, the type it holds, and the lines it holds them on.
+struct ImplType {
+    /// The first line of the block.
+    start: usize,
+    /// The last line of the block.
+    end: usize,
+    /// The type the block holds.
+    name: String,
+}
+
+/// A name the file binds to a type.
+struct Binding {
+    /// The type the binding holds.
+    type_name: String,
+    /// The lines of the function the binding is written in.
+    scope: (usize, usize),
+    /// The line the binding is written on.
+    at: usize,
+}
+
+impl Receivers {
+    /// What the file says about the receiver written on this line.
+    ///
+    /// The answer is the file's, and it is the same for every route that
+    /// asks about the same call: the judgment of a call is not the
+    /// judgment of a scope.
+    pub fn of(&self, receiver: &str, line: usize) -> Receiver {
+        let Some((name, origin)) = self.type_of(receiver, line) else {
+            return Receiver::Uncertain;
+        };
+        self.classify(&name, origin.as_deref())
+    }
+
+    /// The type the receiver has, and the crate it comes from.
+    fn type_of(&self, receiver: &str, line: usize) -> Option<(String, Option<String>)> {
+        if receiver == "self" {
+            let block = self
+                .impls
+                .iter()
+                .filter(|block| block.start <= line && line <= block.end)
+                .max_by_key(|block| block.end - block.start)?;
+            return Some((block.name.clone(), None));
+        }
+        if is_identifier(receiver) {
+            let binding = self
+                .bindings
+                .get(receiver)?
+                .iter()
+                .filter(|binding| binding.scope.0 <= line && line <= binding.scope.1)
+                .max_by_key(|binding| binding.at)?;
+            return type_and_origin(&binding.type_name);
+        }
+        // A constructor: `Workspace::new()` is a value of the type it
+        // constructs.
+        let text = receiver.strip_suffix("()").unwrap_or(receiver);
+        let segments: Vec<&str> = text
+            .split("::")
+            .map(str::trim)
+            .filter(|segment| !segment.is_empty())
+            .collect();
+        if segments.len() < 2 {
+            return None;
+        }
+        let name = segments[segments.len() - 2];
+        if !is_type_name(name) {
+            return None;
+        }
+        let origin = match segments.len() {
+            2 => None,
+            _ => Some(segments[0].to_string()),
+        };
+        Some((name.to_string(), origin))
+    }
+
+    /// What the file says about a type, and the crate it comes from.
+    fn classify(&self, name: &str, origin: Option<&str>) -> Receiver {
+        if let Some(origin) = origin {
+            return if is_own_root(origin) {
+                Receiver::Project
+            } else {
+                Receiver::Crate(origin.to_string())
+            };
+        }
+        if self.declared.contains(name) {
+            return Receiver::Project;
+        }
+        if self.generics.contains(name) {
+            // The type is whatever the caller chose, and the file does not
+            // say whose: the call keeps the answer it had.
+            return Receiver::Uncertain;
+        }
+        match self.imported.get(name) {
+            Some(origin) if is_own_root(origin) => Receiver::Project,
+            Some(origin) => Receiver::Crate(origin.clone()),
+            None => Receiver::Unbound,
+        }
+    }
+}
+
+/// The receivers of the calls of a file, and what the file says about them.
+pub fn receivers_in(root: Node, source: &[u8], import_types: &[&str]) -> Receivers {
+    let mut receivers = Receivers {
+        impls: Vec::new(),
+        bindings: HashMap::new(),
+        generics: HashSet::new(),
+        declared: HashSet::new(),
+        imported: HashMap::new(),
+    };
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "impl_item" => {
+                if let Some(type_node) = node.child_by_field_name("type") {
+                    if let Some((name, _)) = type_and_origin(&node_text(&type_node, source)) {
+                        receivers.impls.push(ImplType {
+                            start: node.start_position().row + 1,
+                            end: node.end_position().row + 1,
+                            name,
+                        });
+                    }
+                }
+            }
+            "struct_item" | "enum_item" | "trait_item" | "union_item" | "type_item" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    receivers.declared.insert(node_text(&name, source));
+                }
+            }
+            "type_parameter" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    receivers.generics.insert(node_text(&name, source));
+                }
+            }
+            "parameter" => {
+                let name = node
+                    .child_by_field_name("pattern")
+                    .map(|pattern| node_text(&pattern, source))
+                    .unwrap_or_default();
+                let type_name = node
+                    .child_by_field_name("type")
+                    .map(|type_node| node_text(&type_node, source))
+                    .unwrap_or_default();
+                if let Some(scope) = enclosing_function(&node) {
+                    receivers.bindings.entry(name).or_default().push(Binding {
+                        type_name,
+                        scope,
+                        at: node.start_position().row + 1,
+                    });
+                }
+            }
+            "let_declaration" => {
+                let name = node
+                    .child_by_field_name("pattern")
+                    .map(|pattern| node_text(&pattern, source))
+                    .unwrap_or_default();
+                let name = name.trim_start_matches("mut ").trim().to_string();
+                let type_name = node
+                    .child_by_field_name("type")
+                    .map(|type_node| node_text(&type_node, source))
+                    .unwrap_or_default();
+                if let Some(scope) = enclosing_function(&node) {
+                    receivers.bindings.entry(name).or_default().push(Binding {
+                        type_name,
+                        scope,
+                        at: node.start_position().row + 1,
+                    });
+                }
+            }
+            kind if import_types.contains(&kind) => {
+                for (name, origin) in import_bindings(&node, source) {
+                    receivers.imported.insert(name, origin);
+                }
+            }
+            _ => {}
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    receivers
+}
+
+/// The lines of the function a node is written in.
+fn enclosing_function(node: &Node) -> Option<(usize, usize)> {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if matches!(parent.kind(), "function_item" | "closure_expression") {
+            return Some((
+                parent.start_position().row + 1,
+                parent.end_position().row + 1,
+            ));
+        }
+        current = parent.parent();
+    }
+    None
+}
+
+/// The type a text names, and the crate it comes from.
+///
+/// `&crate::event::Event` names `Event` and comes from the crate graph's
+/// root; `Vec<u8>` names `Vec` and comes from nowhere the file names.
+fn type_and_origin(raw: &str) -> Option<(String, Option<String>)> {
+    let raw = raw
+        .trim()
+        .trim_start_matches('&')
+        .trim_start_matches("mut ")
+        .trim();
+    let head = raw.split('<').next().unwrap_or(raw).trim();
+    let segments: Vec<&str> = head
+        .split("::")
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    match segments.len() {
+        0 => None,
+        1 => {
+            let name = segments[0];
+            is_identifier(name).then(|| (name.to_string(), None))
+        }
+        _ => {
+            let name = segments[segments.len() - 1];
+            if !is_identifier(name) {
+                return None;
+            }
+            Some((name.to_string(), Some(segments[0].to_string())))
+        }
+    }
+}
+
 /// Whether a child holds the arguments of a call rather than its callee.
 fn is_arguments(kind: &str) -> bool {
     kind.ends_with("arguments") || kind.ends_with("argument_list")
@@ -756,9 +1031,10 @@ fn node_text(node: &Node, source: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        clean_callee_name, import_origins_in, path_head_of, type_names_bound_in, type_qualifier_of,
+        clean_callee_name, import_origins_in, path_head_of, receiver_of, receivers_in,
+        type_names_bound_in, type_qualifier_of,
     };
-    use crate::domain::value_objects::Language;
+    use crate::domain::value_objects::{Language, Receiver};
     use std::collections::HashSet;
 
     /// The crate a name of a Rust file comes from, in the module that holds
@@ -775,6 +1051,21 @@ mod tests {
             Language::Rust.symbols().import_types,
         );
         origins.crate_of(name, line).map(str::to_string)
+    }
+
+    /// What a Rust file says about the receiver written on a line.
+    fn receiver_in(source: &str, receiver: &str, line: usize) -> Receiver {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("the Rust grammar loads");
+        let tree = parser.parse(source, None).expect("the fixture parses");
+        let receivers = receivers_in(
+            tree.root_node(),
+            source.as_bytes(),
+            Language::Rust.symbols().import_types,
+        );
+        receivers.of(receiver, line)
     }
 
     fn qualifier(raw: &str) -> Option<String> {
@@ -966,6 +1257,124 @@ trait Source { type Output; }
             clean_callee_name("x.parse::<u32>"),
             "parse",
             "the receiver is not the callee either"
+        );
+    }
+
+    #[test]
+    fn a_call_on_a_value_names_the_receiver_it_is_written_on() {
+        assert_eq!(receiver_of("bytes.as_bytes"), Some("bytes"));
+        assert_eq!(
+            receiver_of("Workspace::new().build"),
+            Some("Workspace::new()"),
+            "the receiver of a chained call is what the chain returns"
+        );
+        assert_eq!(receiver_of("serde_json::to_value"), None);
+        assert_eq!(receiver_of("to_value"), None);
+    }
+
+    #[test]
+    fn a_receiver_of_the_projects_own_type_is_the_projects() {
+        let source = "\
+struct Holder { value: u32 }
+impl Holder {
+    pub fn len(&self) -> usize {
+        self.value as usize
+    }
+}
+";
+        assert_eq!(
+            receiver_in(source, "self", 5),
+            Receiver::Project,
+            "`self` is the type of the `impl` that holds it"
+        );
+    }
+
+    #[test]
+    fn a_receiver_of_a_type_the_file_declares_is_the_projects() {
+        let source = "\
+struct Holder { value: u32 }
+fn measure(holder: &Holder) -> usize {
+    holder.len()
+}
+";
+        assert_eq!(
+            receiver_in(source, "holder", 4),
+            Receiver::Project,
+            "the type of a parameter the file declares is the project's"
+        );
+    }
+
+    #[test]
+    fn a_receiver_of_a_type_the_file_does_not_bind_is_nobody_s() {
+        let source = "\
+fn measure(values: &Vec<u8>) -> usize {
+    values.len()
+}
+";
+        assert_eq!(
+            receiver_in(source, "values", 2),
+            Receiver::Unbound,
+            "a type the file does not bind is the standard library's"
+        );
+    }
+
+    #[test]
+    fn a_receiver_of_a_type_from_another_crate_is_that_crate_s() {
+        let source = "\
+use serde::Value;
+fn measure(value: &Value) -> usize {
+    value.len()
+}
+";
+        assert_eq!(
+            receiver_in(source, "value", 3),
+            Receiver::Crate("serde".to_string()),
+            "the import says whose type it is, and the manifest says whether that crate is \
+             the project's"
+        );
+    }
+
+    #[test]
+    fn a_receiver_of_a_type_the_project_imports_is_the_projects() {
+        let source = "\
+use crate::holder::Holder;
+fn measure(holder: &Holder) -> usize {
+    holder.len()
+}
+";
+        assert_eq!(
+            receiver_in(source, "holder", 3),
+            Receiver::Project,
+            "a type the file imports from the project's own root is the project's"
+        );
+    }
+
+    #[test]
+    fn a_receiver_whose_type_the_file_does_not_state_is_uncertain() {
+        let source = "\
+struct Holder { value: u32 }
+fn measure(holder: &Holder) -> usize {
+    holder.value as usize
+}
+";
+        assert_eq!(
+            receiver_in(source, "holder.value", 4),
+            Receiver::Uncertain,
+            "the type of a field is not the file's to say"
+        );
+    }
+
+    #[test]
+    fn a_generic_parameter_is_not_a_type_the_project_declares() {
+        let source = "\
+fn measure<T>(value: &T) -> usize {
+    value.len()
+}
+";
+        assert_eq!(
+            receiver_in(source, "value", 2),
+            Receiver::Uncertain,
+            "the type is whatever the caller chose, and the file does not say whose"
         );
     }
 
