@@ -250,11 +250,21 @@ async fn mcp_answer(dir: &Path, cache: &Path) -> BuildGraphOutput {
     .expect("the MCP answers with a graph")
 }
 
-/// Un enlace simbólico que el recorrido DECLINA: es un hueco en la
-/// cobertura, y no es uno de los ficheros de los que se construye el
-/// grafo, así que tampoco está en el manifiesto.
+/// Un enlace simbólico que el recorrido DECLINA y que SÍ es un hueco: su
+/// destino está fuera del workspace, así que el contenido que describe no
+/// lo lee nadie.
+///
+/// El destino importa (TASK-266): un enlace que apunta dentro del
+/// workspace no es un hueco —el walk lee ese contenido bajo su nombre
+/// real, o el grafo nunca lo reclamó—, así que un enlace interior no
+/// mediría lo que este test afirma medir.
 fn decline_a_symlink(root: &Path) {
-    std::os::unix::fs::symlink("ok.rs", root.join("src").join("link.rs"))
+    let outside = root
+        .parent()
+        .expect("the corpus has a parent")
+        .join("outside.rs");
+    std::fs::write(&outside, "pub fn outside() {}\n").expect("the outside file is written");
+    std::os::unix::fs::symlink(&outside, root.join("src").join("link.rs"))
         .expect("the corpus can hold a symlink");
 }
 

@@ -76,6 +76,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::domain::value_objects::file_time::{measured_millis, seconds_of_millis};
+use crate::domain::value_objects::lexical_path::normalize_path;
 use crate::domain::value_objects::{Language, WalkFilter};
 use crate::infrastructure::graph::per_file_graph::{
     SkipReason, SkippedFile, WalkClassification, classify_declined_ignore_entry,
@@ -142,6 +143,11 @@ impl SourceFile {
 /// [`SourceInventory::coverage_holes`], so every route that publishes
 /// them publishes the same ones.
 pub struct SourceInventory {
+    /// The tree this inventory describes.
+    ///
+    /// The walk was rooted here, and the root is what says whether the
+    /// content behind a link is inside the tree or out of it.
+    root: PathBuf,
     /// Every file the walk yielded and could measure.
     pub files: Vec<SourceFile>,
     /// The entries the walk declined — symlinks — with the reason.
@@ -179,9 +185,10 @@ impl SourceInventory {
     /// The holes in the coverage of this tree, in one list.
     ///
     /// Three things leave the graph incomplete: what the walk DECLINED
-    /// (a symlink it refused to follow), what it could not DO (a
-    /// directory it could not read, an entry it could not measure), and
-    /// what it could not READ yet (a language nobody supports yet).
+    /// (a symlink it refused to follow) and did not cover anyway, what it
+    /// could not DO (a directory it could not read, an entry it could not
+    /// measure), and what it could not READ yet (a language nobody
+    /// supports yet).
     ///
     /// They are one list because a consumer cannot act on three lists:
     /// what it has to know is whether the graph it holds describes the
@@ -190,10 +197,59 @@ impl SourceInventory {
     /// here and the routes call it.
     pub fn coverage_holes(&self) -> Vec<SkippedFile> {
         let mut holes = Vec::with_capacity(self.declined.len() + self.errors.len());
-        holes.extend(self.declined.iter().cloned());
+        holes.extend(
+            self.declined
+                .iter()
+                .filter(|declined| self.leaves_a_hole(declined))
+                .cloned(),
+        );
         holes.extend(self.errors.iter().cloned());
         holes.extend(self.known_gaps());
         holes
+    }
+
+    /// Whether a decline leaves content that this walk does not describe.
+    ///
+    /// The walk never follows a link —that is the law and it does not
+    /// change here—. What this decides is whether the decline COSTS the
+    /// coverage:
+    ///
+    /// - a link that points inside the workspace describes content the
+    ///   walk reads under its real name (a source), or content the graph
+    ///   never claimed (a licence): declining it leaves nothing out, and
+    ///   counting it as a hole trains the reader to ignore `partial`;
+    /// - a link that points outside describes content the walk cannot
+    ///   reach: that content is a hole, and it is named as one.
+    ///
+    /// A decline that is not a link is a hole: the walk said it could not
+    /// read what was there.
+    fn leaves_a_hole(&self, declined: &SkippedFile) -> bool {
+        let SkipReason::Symlink { target } = &declined.reason else {
+            return true;
+        };
+        !self.points_inside(&declined.path, Path::new(target))
+    }
+
+    /// Whether the target of a link stays inside the workspace.
+    ///
+    /// The target is read as the link spells it —relative to the link's
+    /// own directory— and then compared with the root by the path the
+    /// disk says: the canonical one resolves the `..` of a relative target
+    /// AND the components that are themselves links. A target that does
+    /// not exist cannot be canonicalized, so it is normalized lexically:
+    /// its `..` still has to be resolved for the comparison to mean
+    /// anything.
+    fn points_inside(&self, link: &str, target: &Path) -> bool {
+        let link = Path::new(link);
+        let resolved = if target.is_absolute() {
+            target.to_path_buf()
+        } else {
+            link.parent().unwrap_or(Path::new("")).join(target)
+        };
+        let resolved =
+            std::fs::canonicalize(&resolved).unwrap_or_else(|_| normalize_path(&resolved));
+        let root = std::fs::canonicalize(&self.root).unwrap_or_else(|_| normalize_path(&self.root));
+        resolved.starts_with(&root)
     }
 
     /// The files the analysis leaves out on purpose: a README, a
@@ -332,6 +388,7 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
     }
 
     SourceInventory {
+        root: project_dir.to_path_buf(),
         files,
         declined,
         errors,
