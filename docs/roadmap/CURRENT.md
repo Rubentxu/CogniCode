@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-14, sobre `7de0fe20d0c6bdb9c702f859e9f5315daeed854a` (la
+> **Snapshot**: 2026-11-14, sobre `6ca67fde794f442a940fd6f4d66f32f006a978ad` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -408,34 +408,66 @@
 > atrapados, 9 inviables y 0 supervivientes—; el único desfase que dejaron los
 > contratos fue de documentación, la deriva de este snapshot, y su corrección
 > va en este mismo cierre; su recibo está en el Journal.
+> El tercer bloque cerró en verde sobre `57916a3a` —4.041 unitarios, 1.657 de
+> integración (2 omitidos) y el crate del calendario medido entero: 627
+> mutantes, 618 atrapados, 9 inviables y 0 supervivientes—, y su recibo está en
+> el Journal (`2f063322`); lo dejó en rojo el clippy del workspace, con dos
+> lints que el propio lote había introducido, y la corrección hacia delante
+> (`57916a3a`, TASK-291) volvió a dejarlo verde sobre la misma base.
+> Y el cuarto bloque, sobre la base `57916a3a`, lleva diez tareas de código con
+> un hilo: el runtime que sirve el MCP deja de quedarse bloqueado por el
+> trabajo de una herramienta —la búsqueda de usos (`70f32659`) y los
+> recorridos del workspace (`739e7c7e`)—, y la ventana de despacho pasa a
+> decidirse por lo que la herramienta declara y no sólo por su categoría:
+> `query_symbol_index` construye el grafo dentro de la llamada y con los
+> 500 ms de su categoría moría (`6ca67fde`); un nombre que sólo difiere en la
+> grafía deja de ser un homónimo (`1367bb1d`) y `find` compara los nombres
+> como los lee el lenguaje (`eae50faa`); la definición de un símbolo es el
+> sitio donde se declara (`2ad23efb`); `impact` y `trace` dicen qué cubren y
+> de cuándo es su respuesta (`275bf8fd`); un enlace que se queda dentro del
+> workspace ya no es un agujero (`81885e0c`); la búsqueda de usos tiene
+> presupuesto y dice lo que no cubrió (`abcb47fa`); y el aviso de una
+> construcción parcial es un resumen acotado a 4 KiB, no un volcado de una
+> línea por agujero (`4cf1bd72`).
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`5843fce6ce720e398b2f939608d202879fdc6c84` → `7de0fe20d0c6bdb9c702f859e9f5315daeed854a`)
+## Qué cambió desde el snapshot anterior (`7de0fe20d0c6bdb9c702f859e9f5315daeed854a` → `6ca67fde794f442a940fd6f4d66f32f006a978ad`)
 
-Entre una punta y otra entraron **14 commits** (`git rev-list --count 5843fce6ce720e398b2f939608d202879fdc6c84..7de0fe20d0c6bdb9c702f859e9f5315daeed854a`).
+Entre una punta y otra entraron **26 commits** (`git rev-list --count 7de0fe20d0c6bdb9c702f859e9f5315daeed854a..6ca67fde794f442a940fd6f4d66f32f006a978ad`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
 cuando la hay, en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera sobre los commits del bloque | `239d32ec` (TASK-253, #840) | Documental: sólo `docs/roadmap/CURRENT.md`; la deriva estaba en 5, el límite de la ventana, y la siguiente fusión la habría puesto en 6. |
-| La API de lectura del árbol tiene un consumidor externo y se conserva | `e98696ab` (TASK-248, #841) | Documental: tres comentarios que decían «sin consumidor» nombran al explorador externo (`gh search code` en `Rubentxu/cognicode-explorer`: dos llamadas, fijadas a v0.102.1); el parche de retirada (470 líneas, que funcionaba) queda fuera del repo. |
-| El README español vuelve a la versión publicada | `4c44e75e` (TASK-180, #842) | Documental: `README.es.md` líneas 73-75 seguían esperando `0.103.0`; el contrato del README casa por subcadena y no vigilaba esas líneas. |
-| Un import agrupado en `application/` pone rojos tres tests de autoalojamiento | `d4db3c10` (TASK-254, #843) | RED en `main`: los tres tests fallaban (`architecture_self_host_e2e` ×2 y `e2_w1_canonical_control_query`); 13/13 después. La allowlist de CR-06 no crece (34 → 34): importar por hoja o con ruta completa, nunca agrupado. Regla nueva para la focal: un diff que toque `application/` añade los tests self-host. |
-| El proveedor de respaldo de LSP no dice «no hay definición» cuando no pudo leer | `555e496e` (TASK-256, #844) | RED: 3 de 5 tests nuevos fallaban con `None` (fichero ilegible, directorio ilegible, candidato del índice); lib 3005/3005 después. El acierto en un fichero legible no se degrada y el contrato publicado no cambia. |
-| Los doce pares de CR-06 que no estaban aprobados por un mantenedor nombrado lo están | `34254ba8` (TASK-231, #845) | Documental: sólo un comentario; `test_ratchets.py` PASS y la cuenta igual (37 → 37). |
-| La procedencia de la release pasa a `accepted` con la custodia de la clave ya decidida | `f400088a` (TASK-255, #846) | Documental: 7 bundles + la clave pública subidos como assets NUEVOS (8 → 16, los originales con su tamaño intacto); `cosign verify-blob` 7/7 `Verified OK` desde una descarga limpia, y un fichero con un byte más se rechaza; el ADR pasa de `proposed` a `accepted`. Límite declarado: la firma es retroactiva y `gh attestation verify` sigue dando 404. |
-| `safe_refactor` confina al workspace cada ruta que abre | `828b8452` (TASK-257, #847) | Diez puntos de entrada afectados, no seis: `rename`, `extract`, `inline`, `change_signature` y `move`; todas pasan por `authorise_file_path`, y `resolve_file_path` deja de re-exportarse a los handlers. |
-| La búsqueda de contenido y el listado de directorio declinan los enlaces simbólicos | `03a88a02` (TASK-258, #848) | `!path.is_file()` seguía el enlace: uno fuera del workspace hacía leer un fichero de fuera. Ahora es un hueco `UnreadKind::Symlink` con la causa «symlink to <target>, not followed». `file_operations.rs` 2156 → 2134 líneas de producción. |
-| Los goals `audit` y `find` publican su cobertura y su base | `ee2eec36` (TASK-260, #849) | `coverage` sale de la medición del grafo (`complete`/`partial`) y `basis` del manifiesto que la carga ya tenía, sin un segundo recorrido del árbol; un build que no leyó el árbol no publica digest. |
-| El paso de mutantes omite su turno del calendario cuando el crate no cambió, y sólo con prueba | `a1933bed` (TASK-265) | RED contra el selector anterior: 39 fallos en la tabla de dudas; `test_gate_contracts.py` PASS. Corridas reales: crate sin cambios → «turno omitido» rc=0; cambio bajo el crate → «turno medido», crate entero, 627 mutantes. Dos huecos de la primera versión los encontró la revisión independiente. |
-| La gramática de Haskell pasa a 0.24.1 y con ella se van los abortos de heap | `fb6ebbbd` (TASK-272, #851) | 0.23.1 compila un `scanner.c` con aliasing estricto (8 sitios); gcc 16 a -O2 lo explota y glibc aborta (rc 134). Medido en el binario de release, 60 corridas por gramática: 19/26/46 abortos → 0. Un test de depuración no puede fallar antes: cargo compila C a -O0. |
-| Un calificador de tipo que el proyecto no declara ya no se une a su símbolo | `a42fb659` (TASK-268, #852) | RED antes / verde después en las dos rutas que construyen grafo, más los controles que deben seguir resolviendo (tipo declarado, ruta de módulo, `Self`, llamada sin calificar, rasgo declarado, enum declarado, `impl` de un rasgo del proyecto para un tipo de la std). Medido sobre `crates/`: aristas 19.761 → 19.323, sin resolver 76.860 → 77.924, pared 4,91-5,07 s → 4,17-4,58 s, RSS 451 → 457 MB; `from_millis` sale del top 15. |
-| La ventana que mide la deriva del snapshot se dimensiona al bloque | `7de0fe20` (TASK-283, #853) | RED: con la ventana en 5 commits, `test_current_sha_matches_head` y `test_control_all_green` fallaban (el snapshot declaraba `5843fce6`, 13 commits por detrás); 29/29 con la ventana en 20. Un snapshot de la edad de un bloque (16 commits) sigue siendo honesto y uno de dos bloques (32) se rechaza. Sólo cambian la constante y su comentario. |
+| El snapshot se regenera sobre el bloque 2 | `1f42a5ee` (TASK-271, #854) | Documental: la ventana que mide la deriva del snapshot pasa a medir un bloque y no una fusión; el ratchet del snapshot queda verde. |
+| Los fixtures de contrato pueden hacer commit en cualquier máquina | `d4575908` (TASK-284, #855) | El runner neutraliza la configuración de git de la máquina: dieciséis aserciones del gate no se estaban midiendo. |
+| El recibo del bloque 2 | `f88d96b1` (TASK-281, #856) | Documental: el recibo que cierra el bloque 2, appended-only al final del Journal. |
+| La ruta bajo demanda juzga una llamada por su calificador | `45a25f4b` (TASK-279, #857) | La lectura de las llamadas de un fichero las llevaba como pares sin calificador: el juicio de «un tipo que el proyecto no declara» no se podía hacer porque el calificador se había perdido. |
+| Una llamada escrita a través de una ruta de crate ajeno no es del proyecto | `fce27230` (TASK-278, #858) | Medido sobre `crates/`: `to_value` era el tercer símbolo más llamado del proyecto, con un fan-in de **117**, y ese recuento era el de `serde_json`. |
+| El verificador corta su error en un carácter y da al hijo un entorno limpio | `9f840d1e` (TASK-259, #859) | `stderr[..200]` abortaba el proceso que sirve a cada agente conectado cuando el corte caía dentro de un carácter multibyte; y `rustc` heredaba el entorno entero del servidor. |
+| La regla de la ruta de crate lee cada dependencia y conserva los módulos propios | `b5a9e11b` (TASK-286, #860) | Los tres casos que la revisión independiente de TASK-278 encontró: la regla se juzgaba con el manifiesto equivocado en cada uno. |
+| La regla de la ruta de crate tiene un solo escritor y conserva el manifiesto | `f17f5bde` (TASK-289, #861) | Dos escritores de una regla: `GlobalSymbolIndex::owns_call` y `resolve_call_within_file`; la segunda ruta leía el manifiesto otra vez por cada fichero. |
+| El cambio no publica nada que diga que no publica | `8c6c1b97` (TASK-290, #862) | Dos contratos con un consumidor fuera del repositorio: el cambio publicaba dos cosas que el crate dice que no publica. |
+| Un nombre que el fichero importa de un crate es el nombre del crate | `100e66bf` (TASK-287, #863) | Un nombre importado de fuera se unía al símbolo propio del mismo nombre, y el grafo publicaba esa arista. |
+| Un turbofish no es un nombre | `fd4b9940` (TASK-276, #864) | `parse::<u32>` llamaba a `parse`: el nombre del calleo era el último segmento de su texto. |
+| Una llamada sobre un valor nombra un método del tipo de su receptor | `a06d5f65` (TASK-275, #865) | `values.len()` se resolvía por el nombre y no por el tipo del receptor, que es el fichero el que lo conoce. |
+| El libro mayor de reutilización sabe lo que dice el manifiesto | `bd915c6f` y `9bbcfb26` (TASK-285, #866/#867) | A/B sobre el mismo árbol: una construcción caliente re-resuelve 8.468 relaciones y pasa a 51 (**−99,4 %**), y el tiempo caliente baja de 4,94–5,01 s a 3,54–3,58 s (**−1,4 s**). |
+| Dos lints del lote corregidos hacia delante | `57916a3a` (TASK-291, #868) | RED: `cargo clippy --workspace --all-targets -- -D warnings` rc=101 (dos lints de `a06d5f65`) → GREEN rc=0 sobre el workspace entero. |
+| El recibo del bloque 3 | `2f063322` (TASK-292, #869) | Documental: el recibo que cierra el bloque 3; el título lleva el prefijo `docs(...)` y no cuenta para el contador. |
+| Un enlace que se queda dentro del workspace no es un agujero | `81885e0c` (TASK-266, #870) | RED 2 de 4, GREEN 4 de 4; con el binario, `overview` y `status` pasan de `partial` (ocho `LICENSE-*`) a `complete` con `skipped_files: []`. |
+| `impact` y `trace` dicen qué cubren y de cuándo es su respuesta | `275bf8fd` (TASK-270, #871) | El sobre salía con `state: unknown` y con la base nula, aunque la carga del grafo ya le hubiera medido las dos cosas. |
+| La definición de un símbolo es el sitio donde se declara | `2ad23efb` (TASK-261, #872) | `is_definition` era una heurística de texto: la primera línea con `fn ` era la definición, y una llamada escrita en la línea de otra función cumplía la condición antes que la declaración. |
+| La búsqueda de usos tiene presupuesto y dice lo que no cubrió | `abcb47fa` (TASK-269, #873) | Presupuesto de 10 s y 50.000 ficheros, consultado entre ficheros; al agotarlo la respuesta es `partial`, dice cuántos ficheros dejó fuera y por qué paró; el `.gitignore` del proyecto se lee tenga o no repositorio git. |
+| La búsqueda de usos no ocupa el runtime y su plazo cubre su presupuesto | `70f32659` (TASK-295, #874) | El recorrido ocupaba el hilo del runtime que sirve las llamadas y el plazo no podía cortarla: el sondeo del futuro estaba dentro de la búsqueda. |
+| Un nombre que sólo difiere en la grafía no es un homónimo | `1367bb1d` (TASK-277, #875) | `Describe` y `describe()` eran una sola clave del índice: la llamada a uno encontraba al otro y el grafo publicaba la llamada como ambigua, un hueco donde había una arista. |
+| `find` compara los nombres como los lee el lenguaje | `eae50faa` (TASK-262, #876) | Medido: `cognicode find --symbol Ok --format json` respondía con 67 declaraciones, y `doctor.rs:50` (`pub fn ok`) no era una de ellas; ahora la respuesta publica la comparación (`exact` o `case-insensitive`). |
+| Los recorridos del workspace no ocupan el runtime y su plazo los cubre | `739e7c7e` (TASK-297, #877) | Medido: 339 ms sobre `crates/` (1.150 ficheros) y 645 ms sobre el repositorio entero; mientras el recorrido corría, el runtime no atendía a nadie. |
+| El aviso de una construcción parcial es un resumen, no un volcado | `4cf1bd72` (TASK-263, #878) | El aviso escribía una línea por agujero; ahora es un resumen acotado a 4 KiB con el recuento exacto y una muestra, y el detalle sigue en el resultado estructurado. |
+| La ventana de despacho cubre el trabajo que la herramienta declara | `6ca67fde` (TASK-304, #879) | Medido con el binario release en frío: `query_symbol_index` respondía «internal: timeout» a los 0,51 s; con la ventana del grafo responde en 11,49 s, y la segunda llamada, en 0,00 s. |
 
 ## Release: la última publicada es la v0.103.1
 
