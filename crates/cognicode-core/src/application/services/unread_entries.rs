@@ -41,6 +41,20 @@ pub(super) fn read_failure(path: &Path, error: &std::io::Error) -> UnreadEntry {
     }
 }
 
+/// The walk stopped before it finished: the bound it answers to ran out.
+///
+/// The path is `<walk>`, like the walk's own failures: the walker names no
+/// entry, the bound does. The walk that was cut did not fail — it was
+/// stopped — and the detail says which bound reached it, so the answer
+/// does not publish a walk that read the whole tree when it did not.
+pub(super) fn walk_cut(detail: &str) -> UnreadEntry {
+    UnreadEntry {
+        path: "<walk>".to_string(),
+        kind: UnreadKind::Walk,
+        detail: detail.to_string(),
+    }
+}
+
 /// The hole a symlink leaves, or `None` when the entry is not one.
 ///
 /// **A symlink is a name, not a licence to read through it.** `Path::is_file`

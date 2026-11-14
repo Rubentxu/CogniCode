@@ -8374,7 +8374,7 @@
         "network": null
       },
       "requirements_status": "not_declared",
-      "estimated_latency_ms": 80,
+      "estimated_latency_ms": 40000,
       "public_profiles": [
         "core",
         "reviewer"
@@ -8382,7 +8382,7 @@
       "runtime_metadata": {
         "authority": "read",
         "category": "search",
-        "estimated_latency_ms": 80,
+        "estimated_latency_ms": 40000,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
@@ -8397,7 +8397,9 @@
       ],
       "limitations": [
         "verify=true spawns rustc; slower",
-        "A file the search could not open and a directory it could not list are named in `coverage.skipped_files` and the answer is `partial`, never `complete`; a file that opens and is not text is not a hole"
+        "A file the search could not open and a directory it could not list are named in `coverage.skipped_files` and the answer is `partial`, never `complete`; a file that opens and is not text is not a hole",
+        "The whole call has a budget: the walk of the tree stops when it is reached, and the candidates that the verification did not reach come out `skipped`, with the reason that names the bound",
+        "Which candidates get verified depends on how long the walk and the compilations take, so the same query can verify a different set of files in another run"
       ]
     },
     {

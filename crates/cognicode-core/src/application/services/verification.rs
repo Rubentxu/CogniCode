@@ -18,6 +18,20 @@
 //! - the dispatch window of the server is derived from it, so the window and
 //!   the work cannot disagree about the same call.
 //!
+//! ## The budget covers the walk too
+//!
+//! The budget is the budget of the whole call, and the walk of the tree is
+//! part of it: the walk reads every file of the tree, and a walk of a big
+//! repository is the one part of this work that nothing else bounds. The
+//! walk therefore answers to the same bound (`Bound`), and a walk that was
+//! cut is a hole in the coverage: the answer says that it stopped, and
+//! which bound reached it, instead of publishing a walk that read
+//! everything.
+//!
+//! What the bound does not do is interrupt the work that is already in
+//! flight: a candidate that was being compiled when the budget ran out
+//! spends its own timeout, and that is the part the worst case accounts for.
+//!
 //! ## Why the owner is this layer
 //!
 //! The catalogue could have declared the budget, and it does declare what a
@@ -61,17 +75,86 @@ use std::time::{Duration, Instant};
 /// dispatch window is derived from, so the window covers the work instead
 /// of cutting it.
 ///
-/// Forty-five seconds is below the ceiling the server publishes (sixty),
-/// and leaves that ceiling room to answer with the result of the work that
-/// did fit.
-pub const VERIFICATION_BUDGET: Duration = Duration::from_secs(45);
+/// Forty seconds, plus the timeout of the candidate that was already in
+/// flight when the budget ran out, is the longest the work can take
+/// (`worst_case`). The window of the dispatch is derived from that worst
+/// case, and the worst case is below the ceiling the server publishes
+/// (sixty), with room for the answer to travel back.
+pub(crate) const VERIFICATION_BUDGET: Duration = Duration::from_secs(40);
 
 /// The timeout of a single candidate.
-pub const CANDIDATE_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const CANDIDATE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The longest the work of the verification can take.
+///
+/// The budget stops the verification from starting a new candidate, and
+/// the candidate that was in flight when the budget ran out can still
+/// spend its own timeout. The window of the dispatch has to cover this,
+/// or the caller gets a timeout instead of the answer.
+pub(crate) fn worst_case() -> Duration {
+    VERIFICATION_BUDGET + CANDIDATE_TIMEOUT
+}
+
+/// The words the answer publishes when the budget is reached.
+///
+/// The budget has one owner, and the words that name it belong to the
+/// same place: a second copy of the number in prose is a second number
+/// waiting to drift, and the drift is invisible until a consumer reads
+/// one of them.
+pub(crate) fn budget_exhausted(budget: Duration) -> String {
+    format!("the budget of the call ({budget:?}) was exhausted")
+}
+
+/// The bound the work of the call answers to.
+///
+/// The budget is a duration; the work needs an instant to stop at and the
+/// words that name the limit it reached. This is the budget in the shape
+/// the work takes it: when the instant passes, the work stops, and the
+/// answer says which bound reached it.
+///
+/// The walk of the tree is part of the work, and it is the part that
+/// nothing else bounds: a walk of a big repository reads every file of
+/// it, and the dispatch window of the tool would cut the answer while
+/// the walk was still reading.
+#[derive(Debug, Clone)]
+pub(crate) struct Bound {
+    /// The instant at which the work stops.
+    deadline: Instant,
+    /// The bound, in the words the answer publishes.
+    detail: String,
+}
+
+impl Bound {
+    /// The bound of a call that starts now, with the budget given.
+    pub(crate) fn starting_now(budget: Duration) -> Self {
+        let now = Instant::now();
+        Bound {
+            // A bound that cannot be represented is a bound that is
+            // already reached: the work stops instead of running free.
+            deadline: now.checked_add(budget).unwrap_or(now),
+            detail: budget_exhausted(budget),
+        }
+    }
+
+    /// What is left of the bound, right now.
+    pub(crate) fn remaining(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
+    /// Whether the bound has been reached.
+    pub(crate) fn reached(&self) -> bool {
+        self.remaining().is_zero()
+    }
+
+    /// The words the answer publishes when the bound is reached.
+    pub(crate) fn detail(&self) -> &str {
+        &self.detail
+    }
+}
 
 /// A candidate: the file it was found in, and the matches it holds.
 #[derive(Debug, Clone)]
-pub struct Candidate {
+pub(crate) struct Candidate {
     /// The file the matches were found in.
     pub file: String,
     /// The matches of that file.
@@ -84,7 +167,7 @@ pub struct Candidate {
 /// after it. The two travel together because the budget of the
 /// verification covers the walk as well: the walk is part of the work.
 #[derive(Debug, Clone)]
-pub struct Retrieval {
+pub(crate) struct Retrieval {
     /// The candidates, in the order they are verified.
     pub candidates: Vec<Candidate>,
     /// The entries the walk could not read.
@@ -95,7 +178,7 @@ pub struct Retrieval {
 
 /// Groups the matches by file and puts the files in the order they are
 /// verified: more matches first, path ascending for the ties.
-pub fn candidates_in_verification_order(matches: Vec<ContentMatch>) -> Vec<Candidate> {
+pub(crate) fn candidates_in_verification_order(matches: Vec<ContentMatch>) -> Vec<Candidate> {
     let mut by_file: BTreeMap<String, Vec<ContentMatch>> = BTreeMap::new();
     for m in matches {
         by_file.entry(m.file.clone()).or_default().push(m);
@@ -120,20 +203,23 @@ pub fn candidates_in_verification_order(matches: Vec<ContentMatch>) -> Vec<Candi
 /// bound that was reached: the answer says what it did not cover instead of
 /// pretending it covered everything.
 ///
-/// The budget covers the whole call, not only this part of it: `started` is
-/// the moment the call began, so the walk that retrieved the candidates
-/// spends the budget too.
-pub async fn verify_candidates(
+/// The budget covers the whole call, not only this part of it: the walk
+/// that retrieved the candidates spends it too, and `remaining` is what is
+/// left of it at this moment. The caller supplies it, so the decision of
+/// what is left is taken where the clock is: the tests can then say what
+/// happens when the budget runs out between two candidates, without
+/// sleeping and hoping the clock moved.
+pub(crate) async fn verify_candidates(
     verifier: &dyn CodeVerifier,
     candidates: &[Candidate],
     budget: Duration,
-    started: Instant,
+    remaining: &(dyn Fn() -> Duration + Sync),
 ) -> Vec<VerifiedMatchDto> {
     let mut results: Vec<VerifiedMatchDto> = Vec::new();
 
     for candidate in candidates {
-        if started.elapsed() >= budget {
-            let reason = format!("the verification budget ({budget:?}) was exhausted");
+        if remaining().is_zero() {
+            let reason = budget_exhausted(budget);
             for m in &candidate.matches {
                 results.push(skipped_match(m, reason.clone()));
             }
@@ -182,7 +268,7 @@ fn is_rust(file: &str) -> bool {
 ///
 /// Every match is in the answer, and every one of them says why it was
 /// not verified.
-pub fn skipped_candidates(candidates: &[Candidate], reason: &str) -> Vec<VerifiedMatchDto> {
+pub(crate) fn skipped_candidates(candidates: &[Candidate], reason: &str) -> Vec<VerifiedMatchDto> {
     candidates
         .iter()
         .flat_map(|candidate| candidate.matches.iter())
@@ -256,7 +342,6 @@ fn verified_match(m: &ContentMatch, status: VerificationStatus) -> VerifiedMatch
 mod tests {
     use super::*;
     use crate::domain::traits::code_verifier::{CodeVerifierError, CompilationResult};
-    use std::sync::Arc;
 
     /// A verifier that says every file compiles, and counts the calls.
     struct CountingVerifier {
@@ -295,6 +380,30 @@ mod tests {
             Ok(CompilationResult::Verified {
                 stdout: String::new(),
             })
+        }
+    }
+
+    /// A verifier whose verification always fails, with the error it fails with.
+    struct FailingVerifier {
+        error: CodeVerifierError,
+    }
+
+    #[async_trait::async_trait]
+    impl CodeVerifier for FailingVerifier {
+        fn toolchain_available(&self) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn verify(&self, _path: &str) -> Result<CompilationResult, CodeVerifierError> {
+            Err(self.error.clone())
+        }
+
+        async fn verify_with_timeout(
+            &self,
+            _path: &str,
+            _timeout_secs: u64,
+        ) -> Result<CompilationResult, CodeVerifierError> {
+            Err(self.error.clone())
         }
     }
 
@@ -340,7 +449,7 @@ mod tests {
             candidates_in_verification_order(vec![match_in("a.rs", 1), match_in("b.rs", 1)]);
 
         let results =
-            verify_candidates(&verifier, &candidates, Duration::ZERO, Instant::now()).await;
+            verify_candidates(&verifier, &candidates, Duration::ZERO, &|| Duration::ZERO).await;
 
         assert_eq!(
             results.len(),
@@ -351,7 +460,7 @@ mod tests {
             assert_eq!(result.status, VerificationStatus::Skipped);
             let reason = result.reason.as_deref().expect("the reason is there");
             assert!(
-                reason.contains("the verification budget"),
+                reason.contains("the budget of the call"),
                 "the reason names the bound that was reached: {reason}"
             );
         }
@@ -365,6 +474,64 @@ mod tests {
         );
     }
 
+    /// A budget that runs out between two candidates verifies the first and
+    /// skips the second.
+    ///
+    /// This is the shape the defect had: the work did not stop where the
+    /// budget said, and the answer said nothing about what it left out.
+    /// The clock here is the caller's, so the case is decided and not
+    /// waited for.
+    #[tokio::test]
+    async fn a_budget_that_runs_out_between_candidates_says_what_it_left_out() {
+        let verifier = CountingVerifier::new();
+        let candidates =
+            candidates_in_verification_order(vec![match_in("a.rs", 1), match_in("b.rs", 1)]);
+
+        // The first candidate finds budget left; the second does not.
+        let asked = std::sync::atomic::AtomicU32::new(0);
+        let remaining = || {
+            if asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Duration::from_secs(60)
+            } else {
+                Duration::ZERO
+            }
+        };
+
+        let results =
+            verify_candidates(&verifier, &candidates, Duration::from_secs(60), &remaining).await;
+
+        assert_eq!(
+            results.len(),
+            2,
+            "every match is in the answer: {results:?}"
+        );
+        assert_eq!(
+            results[0].status,
+            VerificationStatus::Verified,
+            "the candidate the budget reached is verified: {results:?}"
+        );
+        assert_eq!(
+            results[1].status,
+            VerificationStatus::Skipped,
+            "the candidate the budget did not reach is skipped: {results:?}"
+        );
+        let reason = results[1].reason.as_deref().expect("the reason is there");
+        assert!(
+            reason.contains("the budget of the call"),
+            "the reason names the bound that was reached: {reason}"
+        );
+        let calls = verifier
+            .calls
+            .lock()
+            .expect("the lock is not poisoned")
+            .clone();
+        assert_eq!(
+            calls,
+            vec!["a.rs".to_string()],
+            "the candidate the budget did not reach is not compiled"
+        );
+    }
+
     /// A budget that is not gone verifies the candidates, in order.
     #[tokio::test]
     async fn a_budget_that_is_not_gone_verifies_the_candidates() {
@@ -372,12 +539,9 @@ mod tests {
         let candidates =
             candidates_in_verification_order(vec![match_in("a.rs", 1), match_in("b.rs", 1)]);
 
-        let results = verify_candidates(
-            &verifier,
-            &candidates,
-            Duration::from_secs(60),
-            Instant::now(),
-        )
+        let results = verify_candidates(&verifier, &candidates, Duration::from_secs(60), &|| {
+            Duration::from_secs(60)
+        })
         .await;
 
         assert_eq!(
@@ -404,12 +568,9 @@ mod tests {
         let verifier = CountingVerifier::new();
         let candidates = candidates_in_verification_order(vec![match_in("a.py", 1)]);
 
-        let results = verify_candidates(
-            &verifier,
-            &candidates,
-            Duration::from_secs(60),
-            Instant::now(),
-        )
+        let results = verify_candidates(&verifier, &candidates, Duration::from_secs(60), &|| {
+            Duration::from_secs(60)
+        })
         .await;
 
         assert_eq!(results.len(), 1);
@@ -425,24 +586,44 @@ mod tests {
         );
     }
 
-    /// The budget of the product is below the ceiling the server
-    /// publishes, so the window derived from it fits under that ceiling.
-    #[test]
-    fn the_budget_of_the_product_fits_under_the_published_ceiling() {
-        assert!(
-            VERIFICATION_BUDGET <= Duration::from_secs(60),
-            "the budget is below the ceiling: {VERIFICATION_BUDGET:?}"
+    /// A candidate that cannot be verified says why, with the words the
+    /// wire publishes.
+    ///
+    /// The reason travels to the consumer as a free string, so a change of
+    /// its words is a change of what the consumer reads. It is pinned here
+    /// so that it is a decision and not a drift.
+    #[tokio::test]
+    async fn a_candidate_that_cannot_be_verified_says_why() {
+        let verifier = FailingVerifier {
+            error: CodeVerifierError::Timeout(10),
+        };
+        let candidates = candidates_in_verification_order(vec![match_in("a.rs", 1)]);
+
+        let results = verify_candidates(&verifier, &candidates, Duration::from_secs(60), &|| {
+            Duration::from_secs(60)
+        })
+        .await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].status, VerificationStatus::Skipped);
+        assert_eq!(
+            results[0].reason.as_deref(),
+            Some("error: verification timed out after 10s"),
+            "the reason is the one the wire publishes: {results:?}"
         );
+    }
+
+    /// A candidate cannot cost more than the whole budget.
+    ///
+    /// The budget is what bounds the work, and a candidate that costs
+    /// more than the budget would break the bound it is under. The
+    /// ceiling the server publishes is the server's business: the
+    /// contract that ties the two is there, where the ceiling lives.
+    #[test]
+    fn a_candidate_cannot_cost_more_than_the_budget() {
         assert!(
             CANDIDATE_TIMEOUT <= VERIFICATION_BUDGET,
             "a candidate cannot cost more than the whole budget: {CANDIDATE_TIMEOUT:?}"
         );
-    }
-
-    /// The verifier is used through the trait object the service holds.
-    #[test]
-    fn the_verifier_is_a_trait_object() {
-        let verifier: Arc<dyn CodeVerifier> = Arc::new(CountingVerifier::new());
-        assert!(verifier.toolchain_available().is_ok());
     }
 }

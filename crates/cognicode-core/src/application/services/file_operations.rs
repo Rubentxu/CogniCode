@@ -28,16 +28,17 @@ use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
 use crate::application::services::content_search::find_matches_in_content;
-use crate::application::services::unread_entries::{declined_symlink, read_failure, walk_failure};
+use crate::application::services::path_glob::path_matches_glob;
+use crate::application::services::unread_entries::{
+    declined_symlink, read_failure, walk_cut, walk_failure,
+};
 use crate::application::services::verification::{
-    Retrieval, VERIFICATION_BUDGET, candidates_in_verification_order, skipped_candidates,
+    Bound, Retrieval, VERIFICATION_BUDGET, candidates_in_verification_order, skipped_candidates,
     verify_candidates,
 };
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::CodeVerifier;
-#[cfg(test)]
-use crate::domain::traits::code_verifier::CompilationResult;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::file_time::measured_seconds;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -47,7 +48,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1551,6 +1552,20 @@ impl FileOperationsService {
     /// Supports literal and regex patterns, case-insensitive search,
     /// and returns matches with surrounding context lines.
     pub fn search_content(&self, input: SearchContentRequest) -> AppResult<SearchContentResult> {
+        self.search_content_until(input, None)
+    }
+
+    /// The same search, with a bound the walk answers to.
+    ///
+    /// The walk stops when the bound passes, and the answer says that it
+    /// stopped: a walk that was cut is not a walk that read everything, and
+    /// the answer must not publish it as one. The hole it leaves says which
+    /// bound was reached.
+    pub(crate) fn search_content_until(
+        &self,
+        input: SearchContentRequest,
+        bound: Option<Bound>,
+    ) -> AppResult<SearchContentResult> {
         let search_path = input
             .path
             .as_ref()
@@ -1587,6 +1602,17 @@ impl FileOperationsService {
                 break;
             }
 
+            // The walk answers to a bound: when it passes, the walk stops
+            // and the answer says that it stopped. A walk that reads the
+            // whole tree of a big repository is the one part of this work
+            // that nothing else bounds.
+            if let Some(bound) = &bound
+                && bound.reached()
+            {
+                unread.push(walk_cut(bound.detail()));
+                break;
+            }
+
             let entry = match result {
                 Ok(e) => e,
                 Err(error) => {
@@ -1607,7 +1633,7 @@ impl FileOperationsService {
 
             // Apply glob filter if provided
             if let Some(glob) = &input.file_glob
-                && !Self::path_matches_glob(path, glob)
+                && !path_matches_glob(path, glob)
             {
                 continue;
             }
@@ -1672,77 +1698,6 @@ impl FileOperationsService {
         // failure it is. Naming it here too made the client read the same
         // words twice.
         Regex::new(pattern).map(|_| ()).map_err(|e| e.to_string())
-    }
-
-    /// Checks if a path matches a glob pattern
-    fn path_matches_glob(path: &Path, glob: &str) -> bool {
-        // Simple glob matching - supports **/*.ext patterns
-        let path_str = path.to_string_lossy();
-
-        // Handle **/*.rs style patterns
-        if let Some(ext_pattern) = glob.strip_prefix("**/") {
-            if let Some(path_str) = path_str.rsplit('/').next() {
-                return Self::glob_match(path_str, ext_pattern);
-            }
-        } else if let Some(_ext_pattern) = glob.strip_prefix("*.") {
-            // Handle *.rs style patterns
-            if let Some(path_str) = path_str.rsplit('/').next() {
-                return Self::glob_match(path_str, glob);
-            }
-        }
-
-        Self::glob_match(&path_str, glob)
-    }
-
-    /// Simple glob pattern matching
-    fn glob_match(text: &str, pattern: &str) -> bool {
-        // Handle simple patterns like *.rs, test_*.py, etc.
-        if let Some(ext) = pattern.strip_prefix("*.") {
-            if let Some(text_ext) = text.rsplit('.').next() {
-                return text_ext == ext || ext == "*";
-            }
-            return false;
-        }
-
-        // Handle **.rs -> ends with .rs
-        if let Some(ext) = pattern.strip_prefix("**.") {
-            if let Some(text_ext) = text.rsplit('.').next() {
-                return text_ext == ext;
-            }
-            return false;
-        }
-
-        // Handle prefix*suffix pattern (e.g., test*.py) - asterisk in middle
-        // This is: starts with prefix, ends with suffix, * matches anything in between
-        if pattern.contains('*')
-            && !pattern.starts_with('*')
-            && !pattern.ends_with('*')
-            && let Some(star_pos) = pattern.find('*')
-        {
-            let prefix = &pattern[..star_pos];
-            let suffix = &pattern[star_pos + 1..];
-            // text must start with prefix and end with suffix
-            // and be at least as long as prefix + suffix
-            if text.starts_with(prefix)
-                && text.ends_with(suffix)
-                && prefix.len() + suffix.len() <= text.len()
-            {
-                return true;
-            }
-        }
-
-        // Handle *suffix pattern (e.g., *test.py)
-        if let Some(stripped) = pattern.strip_prefix('*') {
-            return text.ends_with(stripped);
-        }
-
-        // Handle suffix* pattern (e.g., test*)
-        if let Some(stripped) = pattern.strip_suffix('*') {
-            return text.starts_with(stripped);
-        }
-
-        // Simple contains check for other patterns
-        text.contains(pattern)
     }
 
     /// Checks if a file is binary
@@ -1847,7 +1802,7 @@ impl FileOperationsService {
 
             // Apply glob filter if provided
             if let Some(glob) = &input.glob
-                && !Self::path_matches_glob(path, glob)
+                && !path_matches_glob(path, glob)
             {
                 continue;
             }
@@ -1914,6 +1869,7 @@ impl FileOperationsService {
         Option<String>,
     )> {
         use crate::application::dto::VerificationStatus as Vs;
+        use crate::domain::traits::code_verifier::CompilationResult;
 
         let result = self.code_verifier.verify(file_path)?;
         Ok(match result {
@@ -1946,6 +1902,7 @@ impl FileOperationsService {
         Option<String>,
     )> {
         use crate::application::dto::VerificationStatus as Vs;
+        use crate::domain::traits::code_verifier::CompilationResult;
 
         let result = self
             .code_verifier
@@ -1988,18 +1945,22 @@ impl FileOperationsService {
         input: RetrieveAndVerifyRequest,
         budget: Duration,
     ) -> AppResult<RetrieveAndVerifyResult> {
-        let started = Instant::now();
-        let retrieval = self.retrieve_candidates(&input)?;
-        Ok(self.verify_retrieval(retrieval, budget, started).await)
+        let bound = Bound::starting_now(budget);
+        let retrieval = self.retrieve_candidates(&input, Some(bound.clone()))?;
+        Ok(self.verify_retrieval(retrieval, budget, &bound).await)
     }
 
     /// The retrieval of the candidates: the walk of the tree.
     ///
     /// Synchronous on purpose: this is the part that has to move off the
     /// runtime, and the off-the-runtime variant moves it as a whole.
+    ///
+    /// The walk answers to the bound when there is one: it stops when the
+    /// bound is reached, and the answer says that it stopped.
     pub(crate) fn retrieve_candidates(
         &self,
         input: &RetrieveAndVerifyRequest,
+        bound: Option<Bound>,
     ) -> AppResult<Retrieval> {
         // Validate query is not empty
         if input.query.trim().is_empty() {
@@ -2052,7 +2013,7 @@ impl FileOperationsService {
             context_lines: Some(2),
         };
 
-        let search_result = self.search_content(search_input)?;
+        let search_result = self.search_content_until(search_input, bound)?;
 
         Ok(Retrieval {
             candidates: candidates_in_verification_order(search_result.matches),
@@ -2063,22 +2024,23 @@ impl FileOperationsService {
 
     /// The verification of the retrieved candidates.
     ///
-    /// The budget covers the whole call: `started` is the moment the call
-    /// began, so the walk that retrieved the candidates spends it too. What
-    /// the budget did not reach comes out of the answer with the reason
-    /// that names the bound that was reached.
+    /// The budget covers the whole call: the bound starts when the call
+    /// begins, so the walk that retrieved the candidates spends it too.
+    /// What the budget did not reach comes out of the answer with the
+    /// reason that names the bound that was reached.
     pub(crate) async fn verify_retrieval(
         &self,
         retrieval: Retrieval,
         budget: Duration,
-        started: Instant,
+        bound: &Bound,
     ) -> RetrieveAndVerifyResult {
+        let remaining = || bound.remaining();
         let results = if retrieval.verify {
             verify_candidates(
                 self.code_verifier.as_ref(),
                 &retrieval.candidates,
                 budget,
-                started,
+                &remaining,
             )
             .await
         } else {
@@ -2776,15 +2738,6 @@ mod tests {
     }
 
     #[test]
-    fn test_glob_match() {
-        assert!(FileOperationsService::glob_match("test.rs", "*.rs"));
-        assert!(!FileOperationsService::glob_match("test.py", "*.rs"));
-        assert!(FileOperationsService::glob_match("src/lib.rs", "*.rs"));
-        assert!(FileOperationsService::glob_match("test.py", "test*.py"));
-        assert!(!FileOperationsService::glob_match("test.py", "foo*.py"));
-    }
-
-    #[test]
     fn test_list_files_recursive_false_returns_only_immediate_children() {
         let temp_dir = TempDir::new().unwrap();
 
@@ -3471,21 +3424,20 @@ mod tests {
             .await
             .expect("the answer arrives even when the budget is gone");
 
-        assert_eq!(output.total, 1, "the candidate is in the answer");
-        assert_eq!(output.verified_count, 0, "the budget did not reach it");
-        assert_eq!(output.skipped_count, 1, "the answer says it was skipped");
+        // The budget is the budget of the whole call, and the walk of the
+        // tree is part of it: a budget that is already gone stops the walk
+        // before it finds anything, and the answer says that it stopped
+        // instead of publishing a walk that read the tree.
+        assert_eq!(output.total, 0, "the walk stopped before it found anything");
         assert_eq!(
-            output.results[0].status,
-            VerificationStatus::Skipped,
-            "the candidate that the budget did not reach is skipped"
+            output.unread.len(),
+            1,
+            "the answer says that the walk stopped: {output:?}"
         );
-        let reason = output.results[0]
-            .reason
-            .as_deref()
-            .expect("the answer says why it was not verified");
+        assert_eq!(output.unread[0].path, "<walk>");
         assert!(
-            reason.contains("the verification budget"),
-            "the reason names the bound that was reached: {reason}"
+            output.unread[0].detail.contains("the budget of the call"),
+            "the hole names the bound that was reached: {output:?}"
         );
     }
 
