@@ -3,6 +3,7 @@
 //! This verifier checks Rust source files by compiling them with `rustc` in a
 //! sandboxed temporary directory.
 
+use crate::application::text_boundary::truncate_at_boundary;
 use crate::domain::traits::code_verifier::{CodeVerifier, CodeVerifierError, CompilationResult};
 use async_trait::async_trait;
 use std::fs;
@@ -15,6 +16,48 @@ const MAX_ERROR_LENGTH: usize = 200;
 
 /// rustc invocation arguments
 const RUSTC_ARGS: &[&str] = &["--edition", "2021", "--crate-type", "lib"];
+
+/// The mark that says the message was cut.
+///
+/// It is part of the published length: the snippet never grows because it
+/// was cut.
+const TRUNCATION_MARK: &str = "... (truncated)";
+
+/// The environment variables the child `rustc` is given by name.
+///
+/// The server's environment is not the compiler's environment: a token, a
+/// `RUSTFLAGS` or a `RUSTC_WRAPPER` would change what is compiled or travel
+/// to a process that does not need it. The child starts with an empty
+/// environment and is given, by name, what `rustc` needs to find its
+/// toolchain and its linker.
+const RUSTC_ENVIRONMENT: &[&str] = &["PATH", "HOME", "RUSTUP_HOME", "RUSTUP_TOOLCHAIN", "TMPDIR"];
+
+/// The snippet of a compiler error, cut to the published length.
+///
+/// The cut is a byte index and the text is UTF-8: an index that falls inside
+/// a character parts it, and a byte slice that falls there aborts the
+/// process. The rule that cuts at a character boundary has one owner
+/// (`application::text_boundary`); what the verifier adds is the mark that
+/// says the message was cut, and the length the mark comes out of.
+fn error_snippet(stderr: &str) -> String {
+    if stderr.len() <= MAX_ERROR_LENGTH {
+        return stderr.to_string();
+    }
+    let room = MAX_ERROR_LENGTH.saturating_sub(TRUNCATION_MARK.len());
+    let mut snippet = truncate_at_boundary(stderr, room).to_string();
+    snippet.push_str(TRUNCATION_MARK);
+    snippet
+}
+
+/// The environment the child `rustc` is given.
+///
+/// Only the variables the whitelist names, and only those the parent has.
+fn rustc_environment() -> Vec<(&'static str, String)> {
+    RUSTC_ENVIRONMENT
+        .iter()
+        .filter_map(|name| std::env::var(name).ok().map(|value| (*name, value)))
+        .collect()
+}
 
 /// Verifies Rust source files by compiling them with rustc.
 #[derive(Debug, Default)]
@@ -68,7 +111,9 @@ impl RustVerifier {
             .unwrap_or_else(|| std::path::PathBuf::from("."));
 
         let mut cmd = tokio::process::Command::new("rustc");
-        cmd.args(RUSTC_ARGS)
+        cmd.env_clear()
+            .envs(rustc_environment())
+            .args(RUSTC_ARGS)
             .arg(&temp_file)
             .current_dir(&work_dir)
             .kill_on_drop(true);
@@ -119,6 +164,8 @@ impl RustVerifier {
         // and one of them fails with "failed to open object file: No such file
         // or directory (os error 2)" — see M0.5 in MAINTENANCE.md.
         let output = std::process::Command::new("rustc")
+            .env_clear()
+            .envs(rustc_environment())
             .args(RUSTC_ARGS)
             .arg(&temp_file_path)
             .current_dir(temp_dir.path())
@@ -138,11 +185,7 @@ impl RustVerifier {
             Ok(output) => {
                 // Compilation failed - truncate stderr to MAX_ERROR_LENGTH chars
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let error_snippet = if stderr.len() > MAX_ERROR_LENGTH {
-                    stderr[..MAX_ERROR_LENGTH].to_string()
-                } else {
-                    stderr
-                };
+                let error_snippet = error_snippet(&stderr);
                 Ok(CompilationResult::Rejected {
                     error: error_snippet,
                 })
@@ -220,11 +263,7 @@ impl CodeVerifier for RustVerifier {
             }
             Ok(Ok(output)) => {
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                let error_snippet = if stderr.len() > MAX_ERROR_LENGTH {
-                    stderr[..MAX_ERROR_LENGTH].to_string()
-                } else {
-                    stderr
-                };
+                let error_snippet = error_snippet(&stderr);
                 Ok(CompilationResult::Rejected {
                     error: error_snippet,
                 })
@@ -239,6 +278,135 @@ impl CodeVerifier for RustVerifier {
 mod tests {
     use super::*;
     use serial_test::serial;
+
+    /// A variable of the parent that the child must not see.
+    ///
+    /// The child is given a few variables by name, so the one picked here is
+    /// one the parent has and the child must not get.
+    fn a_variable_the_child_must_not_see() -> String {
+        std::env::vars()
+            .map(|(name, _)| name)
+            .find(|name| {
+                !RUSTC_ENVIRONMENT.contains(&name.as_str())
+                    && !name.is_empty()
+                    && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
+            .expect("the parent has a variable that the child must not see")
+    }
+
+    /// A file that only compiles if the child sees a variable.
+    fn a_file_that_needs_a_variable(name: &str) -> (TempDir, std::path::PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("needs_a_variable.rs");
+        std::fs::write(&file_path, format!("const _: &str = env!(\"{}\");", name)).unwrap();
+        (temp_dir, file_path)
+    }
+
+    #[test]
+    fn a_snippet_cut_inside_a_character_does_not_panic() {
+        // 199 ASCII bytes and then a character of two bytes: the cut at 200
+        // falls inside it.
+        let message = format!("{}{}", "x".repeat(199), "é");
+
+        let snippet = error_snippet(&message);
+
+        assert!(
+            snippet.len() <= MAX_ERROR_LENGTH,
+            "the snippet keeps the published length, got {} bytes",
+            snippet.len()
+        );
+        assert!(
+            snippet.ends_with(TRUNCATION_MARK),
+            "the snippet says that it was cut: {}",
+            snippet
+        );
+        assert_eq!(
+            snippet,
+            format!(
+                "{}{}",
+                "x".repeat(MAX_ERROR_LENGTH - TRUNCATION_MARK.len()),
+                TRUNCATION_MARK
+            ),
+            "the cut falls between two characters and keeps the published length"
+        );
+    }
+
+    #[test]
+    fn a_short_error_is_published_whole() {
+        let message = "error: expected one of `!`, `(` or `::`";
+
+        let snippet = error_snippet(message);
+
+        assert_eq!(snippet, message);
+    }
+
+    #[test]
+    fn the_child_is_given_only_what_rustc_needs() {
+        let environment = rustc_environment();
+
+        assert!(
+            environment
+                .iter()
+                .all(|(name, _)| RUSTC_ENVIRONMENT.contains(name)),
+            "the child gets the whitelist by name: {:?}",
+            environment
+        );
+        assert!(
+            environment.iter().any(|(name, _)| *name == "PATH"),
+            "the child needs the PATH to find the linker"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn the_child_does_not_inherit_the_parents_environment() {
+        let verifier = RustVerifier::new();
+        let variable = a_variable_the_child_must_not_see();
+        let (_temp_dir, file_path) = a_file_that_needs_a_variable(&variable);
+
+        let result = verifier.verify(file_path.to_str().unwrap());
+
+        match result.unwrap() {
+            CompilationResult::Rejected { error } => {
+                assert!(
+                    error.contains(&variable),
+                    "the child must not see the parent's variable: {}",
+                    error
+                );
+            }
+            other => panic!(
+                "Expected Rejected (the child did not see {}), got {:?}",
+                variable, other
+            ),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn the_child_does_not_inherit_the_parents_environment_with_a_timeout() {
+        let verifier = RustVerifier::new();
+        let variable = a_variable_the_child_must_not_see();
+        let (_temp_dir, file_path) = a_file_that_needs_a_variable(&variable);
+
+        let result = verifier
+            .verify_with_timeout(file_path.to_str().unwrap(), 30)
+            .await;
+
+        match result.unwrap() {
+            CompilationResult::Rejected { error } => {
+                assert!(
+                    error.contains(&variable),
+                    "the child must not see the parent's variable: {}",
+                    error
+                );
+            }
+            other => panic!(
+                "Expected Rejected (the child did not see {}), got {:?}",
+                variable, other
+            ),
+        }
+    }
 
     #[test]
     #[serial]
