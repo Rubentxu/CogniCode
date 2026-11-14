@@ -64,6 +64,25 @@ name = \"fixture\"
 serde_json = { path = \"../serde_json\" }
 ";
 
+/// The same package, with `serde_json` declared for one platform only.
+const TARGET_MANIFEST: &str = "\
+[package]
+name = \"fixture\"
+
+[target.'cfg(unix)'.dependencies]
+serde_json = \"1\"
+";
+
+/// A package that pulls `log` from a registry and declares a module of its
+/// own that carries the same name.
+const SHADOWED_MANIFEST: &str = "\
+[package]
+name = \"fixture\"
+
+[dependencies]
+log = \"0.4\"
+";
+
 const LIB_RS: &str = "\
 pub mod event;
 
@@ -89,6 +108,19 @@ pub fn build() -> u32 {
 }
 ";
 
+/// A module of the project that carries the name of one of its dependencies.
+const SHADOWED_LIB_RS: &str = "\
+/// A module of the project, with the name of a crate the package pulls.
+pub mod log {
+    pub fn info() {}
+}
+
+/// A call through the module of the project.
+pub fn from_the_module() {
+    log::info();
+}
+";
+
 /// A temporary package with the given manifest and files, and the paths of
 /// the files.
 fn package(manifest: &str, files: &[(&str, &str)]) -> (tempfile::TempDir, Vec<PathBuf>) {
@@ -105,6 +137,47 @@ fn package(manifest: &str, files: &[(&str, &str)]) -> (tempfile::TempDir, Vec<Pa
         })
         .collect();
     (dir, paths)
+}
+
+/// A workspace with one member, and a crate that lives outside it.
+///
+/// The member declares the outside crate with a path: the manifest says
+/// where it lives, and that is what the rule asks.
+fn workspace_with_a_crate_from_outside(
+    files: &[(&str, &str)],
+) -> (tempfile::TempDir, tempfile::TempDir, Vec<PathBuf>) {
+    let workspace = tempfile::tempdir().expect("a temporary workspace");
+    let outside = tempfile::tempdir().expect("a crate that lives outside");
+    let outside_name = outside
+        .path()
+        .file_name()
+        .expect("the crate has a name")
+        .to_string_lossy()
+        .to_string();
+    std::fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"core\"]\n",
+    )
+    .expect("the workspace manifest is written");
+    let member = workspace.path().join("core");
+    std::fs::create_dir_all(member.join("src")).expect("the member is created");
+    std::fs::write(
+        member.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"core\"\n\n[dependencies]\n\
+             serde_json = {{ path = \"../../{outside_name}\" }}\n"
+        ),
+    )
+    .expect("the member manifest is written");
+    let paths = files
+        .iter()
+        .map(|(name, content)| {
+            let path = member.join("src").join(name);
+            std::fs::write(&path, content).expect("the fixture is written");
+            path
+        })
+        .collect();
+    (workspace, outside, paths)
 }
 
 /// The graph of the project route, and what it published as unresolved.
@@ -264,6 +337,77 @@ fn a_crate_of_this_workspace_still_resolves() {
     assert_eq!(
         callers_of(&graph, "to_value"),
         vec!["from_the_crate".to_string()],
+        "the per-file route answers the same"
+    );
+}
+
+/// A dependency that only exists for one platform is a dependency all the
+/// same: the rule reads it like any other.
+#[test]
+fn a_dependency_of_a_target_is_judged_too() {
+    let (dir, files) = package(
+        TARGET_MANIFEST,
+        &[("lib.rs", LIB_RS), ("event.rs", EVENT_RS)],
+    );
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "to_value"),
+        Vec::<String>::new(),
+        "the package pulls `serde_json` from a registry for one platform: \
+         `serde_json::to_value` is not a call to the project's own `to_value`"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "to_value"),
+        Vec::<String>::new(),
+        "the per-file route answers the same"
+    );
+}
+
+/// A crate that lives outside the workspace is somebody else's, however the
+/// manifest declares it.
+#[test]
+fn a_crate_that_lives_outside_the_workspace_is_judged_too() {
+    let (workspace, _outside, files) =
+        workspace_with_a_crate_from_outside(&[("lib.rs", LIB_RS), ("event.rs", EVENT_RS)]);
+
+    let (graph, _) = project_route(workspace.path());
+    assert_eq!(
+        callers_of(&graph, "to_value"),
+        Vec::<String>::new(),
+        "the package declares `serde_json` with a path that leaves the workspace: it is a crate \
+         from outside it, and `serde_json::to_value` is not a call to the project's own \
+         `to_value`"
+    );
+
+    let graph = per_file_route(workspace.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "to_value"),
+        Vec::<String>::new(),
+        "the per-file route answers the same"
+    );
+}
+
+/// A module of the project that carries the name of one of its dependencies
+/// keeps its edge: the call is the project's own.
+#[test]
+fn a_module_of_the_project_that_shadows_a_dependency_keeps_its_edge() {
+    let (dir, files) = package(SHADOWED_MANIFEST, &[("lib.rs", SHADOWED_LIB_RS)]);
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "info"),
+        vec!["from_the_module".to_string()],
+        "the file declares `pub mod log;`, so `log::info()` names the project's own module, not \
+         the `log` crate the package pulls"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "info"),
+        vec!["from_the_module".to_string()],
         "the per-file route answers the same"
     );
 }

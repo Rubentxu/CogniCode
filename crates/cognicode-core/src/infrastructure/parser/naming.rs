@@ -244,6 +244,73 @@ pub fn type_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
     bound
 }
 
+/// The names a file binds to something of its own.
+///
+/// A module the file declares (`pub mod log;`) and a name it imports
+/// (`use super::log;`) are the file's own: a path that starts at one of them
+/// names the project's own thing, even when a crate from outside carries the
+/// same name. In Rust 2018 an item declared in the current module shadows
+/// the crate of the same name, so `log::info()` written in a module that
+/// declares `pub mod log;` is the project's own call.
+///
+/// The names are collected from the whole file, not by scope: a name bound
+/// anywhere in the file is not judged anywhere in it, which can only keep an
+/// edge, never invent one.
+pub fn own_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
+    let mut bound = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "mod_item" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    bound.insert(node_text(&name, source));
+                }
+            }
+            "use_declaration" => {
+                if let Some(argument) = node.child_by_field_name("argument") {
+                    use_bound_names(&argument, source, &mut bound);
+                }
+            }
+            _ => {}
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    bound
+}
+
+/// The names a `use` declaration binds.
+///
+/// A `use` binds the name it is written with: the last segment of the path
+/// (`use super::log;` binds `log`) or the alias it renames it with
+/// (`use super::log as trace;` binds `trace`).
+fn use_bound_names(node: &Node, source: &[u8], bound: &mut HashSet<String>) {
+    match node.kind() {
+        "scoped_identifier" => {
+            if let Some(name) = node.child_by_field_name("name") {
+                bound.insert(node_text(&name, source));
+            }
+        }
+        "use_as_clause" => {
+            if let Some(alias) = node.child_by_field_name("alias") {
+                bound.insert(node_text(&alias, source));
+            }
+        }
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                use_bound_names(&child, source, bound);
+            }
+        }
+        "scoped_use_list" => {
+            if let Some(list) = node.child_by_field_name("list") {
+                use_bound_names(&list, source, bound);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The type qualifier of a callee as written. See [`callee_type_qualifier`].
 pub fn type_qualifier_of(raw: &str) -> Option<String> {
     let raw = raw.trim();

@@ -805,6 +805,14 @@ impl TreeSitterParser {
         } else {
             Default::default()
         };
+        // A head the file binds itself (a module it declares, a name it
+        // imports) is the file's own spelling of something of the project: it
+        // is not published, and the call keeps the bare name.
+        let own = if calls.iter().any(|call| call.callee.path_head.is_some()) {
+            naming::own_names_bound_in(tree.root_node(), source.as_bytes())
+        } else {
+            Default::default()
+        };
         Ok(calls
             .into_iter()
             .map(|call| CallSite {
@@ -816,7 +824,7 @@ impl TreeSitterParser {
                     .callee
                     .type_qualifier
                     .filter(|qualifier| !bound.contains(qualifier)),
-                path_head: call.callee.path_head,
+                path_head: call.callee.path_head.filter(|head| !own.contains(head)),
             })
             .collect())
     }
