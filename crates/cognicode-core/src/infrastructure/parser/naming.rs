@@ -182,6 +182,88 @@ pub fn callee_name(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option
     }
 }
 
+/// The type a call is qualified by, when the path says one.
+///
+/// [`callee_name`] keeps the last segment of the path, so `Duration::from_millis`
+/// and `EventTime::from_millis` are both `from_millis`. What the call names is
+/// then no longer enough to say WHOSE `from_millis` it is, and a resolver that
+/// finds one declaration of that name in the project joins every call to it,
+/// the standard library's included. The segment before the name is what tells
+/// the two apart, so it is read here, once, from the same node.
+///
+/// Only a path that spells a type is a qualifier: `Type::name`,
+/// `a::b::Type::name`, `Type::<T>::name`. A value (`x.name`, `make().name`),
+/// a qualified-trait path (`<T as Trait>::name`) and a path with no
+/// qualifier at all have none, and neither does a module path (`module::name`),
+/// `Self` or a one-letter generic parameter: those name something the project
+/// declares or something that cannot be judged from the text.
+///
+/// The capital letter is the convention of the language that asks (see
+/// `Language::spells_types_with_capitals`); a caller of another language does
+/// not ask.
+pub fn callee_type_qualifier(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
+    let callee = callee_node(node, callee_fields)?;
+    type_qualifier_of(&node_text(&callee, source))
+}
+
+/// The type qualifier of a callee as written. See [`callee_type_qualifier`].
+pub fn type_qualifier_of(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.starts_with('<') {
+        return None;
+    }
+    let path = without_generic_arguments(raw);
+    let mut segments: Vec<&str> = path.split("::").collect();
+    // A path may start at the root of the crate graph: `::std::time::Duration`.
+    if segments.first() == Some(&"") {
+        segments.remove(0);
+    }
+    let is_identifier = |segment: &&str| {
+        !segment.is_empty() && segment.chars().all(|c| c.is_alphanumeric() || c == '_')
+    };
+    if segments.len() < 2 || !segments.iter().all(is_identifier) {
+        return None;
+    }
+    let qualifier = segments[segments.len() - 2];
+    is_type_name(qualifier).then(|| qualifier.to_string())
+}
+
+/// A path with its generic arguments removed: `Vec::<u8>::new` is `Vec::new`.
+///
+/// The `::` that introduces an argument list goes with it, so what is left
+/// is the path as a reader would write it without turbofish.
+fn without_generic_arguments(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut depth = 0usize;
+    for c in raw.chars() {
+        match c {
+            '<' => {
+                if depth == 0 && out.ends_with("::") {
+                    out.truncate(out.len() - 2);
+                }
+                depth += 1;
+            }
+            '>' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether a path segment is spelled as the name of a type: it starts with a
+/// capital letter, it is not `Self` and it is longer than one letter.
+///
+/// One letter is how a generic parameter is written (`T::default()`), and a
+/// parameter is a type the project does not declare because it is not a
+/// declaration at all. `Self` is the enclosing type, which the project does
+/// declare.
+fn is_type_name(segment: &str) -> bool {
+    segment != "Self"
+        && segment.chars().count() > 1
+        && segment.chars().next().is_some_and(char::is_uppercase)
+}
+
 /// The last segment of a callee's name.
 pub fn clean_callee_name(raw: &str) -> String {
     let cleaned = raw
@@ -230,4 +312,79 @@ fn is_arguments(kind: &str) -> bool {
 /// The text of a node.
 fn node_text(node: &Node, source: &[u8]) -> String {
     String::from_utf8_lossy(&source[node.start_byte()..node.end_byte()]).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::type_qualifier_of;
+
+    fn qualifier(raw: &str) -> Option<String> {
+        type_qualifier_of(raw)
+    }
+
+    #[test]
+    fn a_type_path_names_its_type() {
+        assert_eq!(
+            qualifier("Duration::from_millis").as_deref(),
+            Some("Duration")
+        );
+        assert_eq!(
+            qualifier("std::time::Duration::from_millis").as_deref(),
+            Some("Duration")
+        );
+        assert_eq!(
+            qualifier("::std::time::Duration::from_millis").as_deref(),
+            Some("Duration")
+        );
+    }
+
+    #[test]
+    fn the_generic_arguments_of_a_path_are_not_a_segment() {
+        assert_eq!(qualifier("Vec::<u8>::new").as_deref(), Some("Vec"));
+        assert_eq!(
+            qualifier("HashMap::<String, Vec<u8>>::with_capacity").as_deref(),
+            Some("HashMap")
+        );
+    }
+
+    #[test]
+    fn a_module_path_has_no_type_qualifier() {
+        assert_eq!(qualifier("event::build"), None);
+        assert_eq!(qualifier("crate::nested::callee"), None);
+        assert_eq!(qualifier("super::helper"), None);
+    }
+
+    #[test]
+    fn self_and_a_generic_parameter_are_not_judged() {
+        assert_eq!(qualifier("Self::from_millis"), None);
+        assert_eq!(qualifier("T::default"), None);
+    }
+
+    #[test]
+    fn a_value_has_no_type_qualifier() {
+        assert_eq!(qualifier("x.method"), None);
+        assert_eq!(qualifier("self.items.push"), None);
+        assert_eq!(qualifier("Foo::new().bar"), None);
+        assert_eq!(qualifier("make().Foo::bar"), None);
+    }
+
+    #[test]
+    fn a_qualified_trait_path_is_not_judged() {
+        assert_eq!(qualifier("<Foo as Trait>::method"), None);
+        assert_eq!(qualifier("<Foo>::method"), None);
+    }
+
+    #[test]
+    fn a_name_without_a_path_has_no_qualifier() {
+        assert_eq!(qualifier("helper"), None);
+        assert_eq!(qualifier(""), None);
+        assert_eq!(qualifier("::helper"), None);
+    }
+
+    #[test]
+    fn a_path_that_is_not_made_of_identifiers_is_not_judged() {
+        assert_eq!(qualifier("Foo::"), None);
+        assert_eq!(qualifier("Foo::::bar"), None);
+        assert_eq!(qualifier("Foo :: bar"), None);
+    }
 }

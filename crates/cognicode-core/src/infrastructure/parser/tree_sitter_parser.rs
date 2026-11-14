@@ -283,13 +283,14 @@ impl TreeSitterParser {
     }
 
     /// The calls a script file writes outside any function or class, as
-    /// `(callee, line)`. Empty for a language or file that is not a script.
+    /// `(callee, line, owner)`. Empty for a language or file that is not a
+    /// script.
     fn top_level_calls(
         &self,
         tree: &tree_sitter::Tree,
         source: &str,
         file_path: &str,
-    ) -> Vec<(String, u32, Option<Symbol>)> {
+    ) -> Vec<(Callee, u32, Option<Symbol>)> {
         if !self.language.is_script_file(file_path) {
             return Vec::new();
         }
@@ -302,7 +303,7 @@ impl TreeSitterParser {
                 continue;
             }
             if declared.call_types.contains(&kind)
-                && let Some(callee) = self.extract_callee_name(current, source)
+                && let Some(callee) = self.extract_callee(current, source)
             {
                 found.push((
                     callee,
@@ -774,7 +775,7 @@ impl TreeSitterParser {
         Ok(self
             .find_calls_in_tree(tree, source, file_path)?
             .into_iter()
-            .map(|(caller, callee, _line)| (caller, callee))
+            .map(|call| (call.caller, call.callee.name))
             .collect())
     }
 
@@ -795,11 +796,12 @@ impl TreeSitterParser {
         Ok(self
             .find_calls_in_tree(tree, source, file_path)?
             .into_iter()
-            .map(|(caller, callee, line)| CallSite {
-                source: SymbolId::new(caller.fully_qualified_name()),
+            .map(|call| CallSite {
+                source: SymbolId::new(call.caller.fully_qualified_name()),
                 origin_file: file_path.to_string(),
-                line,
-                target: callee,
+                line: call.line,
+                target: call.callee.name,
+                type_qualifier: call.callee.type_qualifier,
             })
             .collect())
     }
@@ -857,7 +859,7 @@ impl TreeSitterParser {
         tree: &tree_sitter::Tree,
         source: &str,
         file_path: &str,
-    ) -> ParseResult<Vec<(Symbol, String, u32)>> {
+    ) -> ParseResult<Vec<FoundCall>> {
         let mut calls = Vec::new();
 
         // Find all function definitions
@@ -868,7 +870,11 @@ impl TreeSitterParser {
         if !top_level.is_empty() {
             let script = Self::script_symbol(file_path);
             for (callee, line, owner) in top_level {
-                calls.push((owner.unwrap_or_else(|| script.clone()), callee, line));
+                calls.push(FoundCall {
+                    caller: owner.unwrap_or_else(|| script.clone()),
+                    callee,
+                    line,
+                });
             }
         }
 
@@ -882,7 +888,7 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
         language: Language,
-        relationships: &mut Vec<(Symbol, String, u32)>,
+        relationships: &mut Vec<FoundCall>,
     ) {
         let mut stack = Vec::new();
         stack.push(node);
@@ -912,7 +918,7 @@ impl TreeSitterParser {
         node: tree_sitter::Node,
         source: &str,
         caller_symbol: &Symbol,
-        relationships: &mut Vec<(Symbol, String, u32)>,
+        relationships: &mut Vec<FoundCall>,
     ) {
         let call_types = self.language.symbols().call_types;
         let call_type = self.language.call_node_type();
@@ -926,11 +932,15 @@ impl TreeSitterParser {
             } else {
                 current.kind() == call_type
             };
-            if is_call && let Some(callee_name) = self.extract_callee_name(current, source) {
+            if is_call && let Some(callee) = self.extract_callee(current, source) {
                 // The tree counts rows from zero; the world counts lines
                 // from one, and so does every place a line is published.
                 let line = current.start_position().row as u32 + 1;
-                relationships.push((caller_symbol.clone(), callee_name, line));
+                relationships.push(FoundCall {
+                    caller: caller_symbol.clone(),
+                    callee,
+                    line,
+                });
             }
 
             let cc = current.child_count();
@@ -942,14 +952,26 @@ impl TreeSitterParser {
         }
     }
 
-    /// Extracts the callee name from a call expression node.
+    /// Extracts what a call expression node calls.
     ///
     /// The name is read from the field the grammar declares for it, so this
     /// parser and the generic walker answer the same question about the same
     /// node in the same way. A qualified path names the thing it calls, not
-    /// the path that reaches it.
-    fn extract_callee_name(&self, call_node: tree_sitter::Node, source: &str) -> Option<String> {
-        naming::callee_name(&call_node, source.as_bytes(), self.language.callee_fields())
+    /// the path that reaches it; the type that qualifies it travels beside
+    /// the name, because a name alone cannot say whose it is.
+    fn extract_callee(&self, call_node: tree_sitter::Node, source: &str) -> Option<Callee> {
+        let bytes = source.as_bytes();
+        let fields = self.language.callee_fields();
+        let name = naming::callee_name(&call_node, bytes, fields)?;
+        let type_qualifier = if self.language.spells_types_with_capitals() {
+            naming::callee_type_qualifier(&call_node, bytes, fields)
+        } else {
+            None
+        };
+        Some(Callee {
+            name,
+            type_qualifier,
+        })
     }
 
     /// Extracts context (line of code) from pre-split lines
@@ -1060,6 +1082,20 @@ impl TreeSitterParser {
 
 /// The name of the symbol that owns a script's top-level calls.
 pub const SCRIPT_SYMBOL: &str = "<script>";
+
+/// What one call expression calls: the name, and the type that qualifies it.
+struct Callee {
+    name: String,
+    type_qualifier: Option<String>,
+}
+
+/// A call found in a tree: who writes it, what it calls, and the line it is
+/// written on.
+struct FoundCall {
+    caller: Symbol,
+    callee: Callee,
+    line: u32,
+}
 
 #[cfg(test)]
 mod tests {

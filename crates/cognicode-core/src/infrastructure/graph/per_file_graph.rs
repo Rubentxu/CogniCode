@@ -207,6 +207,49 @@ impl GlobalSymbolIndex {
         ambiguous
     }
 
+    /// Whether the project declares a symbol spelled exactly `name`.
+    ///
+    /// The index is keyed by the lowercase name, so a lookup by that key
+    /// cannot tell `Duration` from a function the project calls `duration`.
+    /// The spelling is the evidence that a capitalised qualifier names a
+    /// type the project owns, and the declaration keeps it.
+    pub fn declares(&self, name: &str) -> bool {
+        self.by_name
+            .get(&name.to_lowercase())
+            .is_some_and(|candidates| {
+                candidates.iter().any(|id| {
+                    self.by_id
+                        .get(id)
+                        .is_some_and(|(_, declared)| declared == name)
+                })
+            })
+    }
+
+    /// Resolves a call site's callee, judging its type qualifier first.
+    ///
+    /// A call written `Duration::from_millis(10)` names a method of
+    /// `Duration`. When the project declares no `Duration`, that method is
+    /// not one of the project's, and joining it to the project's own
+    /// `from_millis` would publish the standard library's call count as the
+    /// project's. The call is refused the way every name the project does
+    /// not declare is refused: `Unresolved`, which the coverage counts and
+    /// which leaves no pending reference behind.
+    ///
+    /// A call with no qualifier to judge (`None`) resolves exactly as
+    /// [`Self::resolve`] does. This is the one place the rule lives: every
+    /// route that resolves a call site asks here.
+    pub fn resolve_call(
+        &self,
+        name_lower: &str,
+        type_qualifier: Option<&str>,
+        caller_file: Option<&Path>,
+    ) -> TargetResolution {
+        if type_qualifier.is_some_and(|qualifier| !self.declares(qualifier)) {
+            return TargetResolution::Unresolved(name_lower.to_string());
+        }
+        self.resolve(name_lower, caller_file)
+    }
+
     /// Returns the candidate `SymbolId`s for a given name (used by callers
     /// that want to audit ambiguity, e.g. diagnostics or tests).
     #[cfg_attr(not(test), allow(dead_code))]
@@ -244,6 +287,34 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
     } else {
         Some(a[..common].iter().collect())
     }
+}
+
+/// A call site judged against the file as the whole scope.
+///
+/// The type qualifier is checked against the declarations of the file the
+/// way [`GlobalSymbolIndex::resolve_call`] checks it against the project's:
+/// by exact spelling, and only when the call states one.
+fn resolve_call_within_file(
+    name_lower: &str,
+    type_qualifier: Option<&str>,
+    local: &HashMap<String, Vec<SymbolId>>,
+    graph: &CallGraph,
+) -> TargetResolution {
+    if let Some(qualifier) = type_qualifier {
+        let declared = local
+            .get(&qualifier.to_lowercase())
+            .is_some_and(|candidates| {
+                candidates.iter().any(|id| {
+                    graph
+                        .get_symbol(id)
+                        .is_some_and(|symbol| symbol.name() == qualifier)
+                })
+            });
+        if !declared {
+            return TargetResolution::Unresolved(name_lower.to_string());
+        }
+    }
+    resolve_within_file(name_lower, local)
 }
 
 /// The answer the file itself gives about a name.
@@ -902,9 +973,10 @@ impl PerFileGraphCache {
             // answers — a name declared once names its declaration, a
             // name declared several times is ambiguous, and a name the
             // file does not declare names nothing here.
+            let qualifier = site.type_qualifier.as_deref();
             let resolution = match global_index {
-                Some(index) => index.resolve(&name_lower, Some(caller_path)),
-                None => resolve_within_file(&name_lower, &name_to_symbol),
+                Some(index) => index.resolve_call(&name_lower, qualifier, Some(caller_path)),
+                None => resolve_call_within_file(&name_lower, qualifier, &name_to_symbol, &graph),
             };
 
             match resolution.outcome() {

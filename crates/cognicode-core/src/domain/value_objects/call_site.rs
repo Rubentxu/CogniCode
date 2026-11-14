@@ -24,4 +24,15 @@ pub struct CallSite {
     pub line: u32,
     /// The name the call names, as it was written.
     pub target: String,
+    /// The type the call is qualified by, when the path spells one:
+    /// `Duration` in `Duration::from_millis(10)`.
+    ///
+    /// `target` keeps the last segment of the path, so on its own it cannot
+    /// tell the project's `EventTime::from_millis` from the standard
+    /// library's `Duration::from_millis`. The qualifier is what can, and a
+    /// resolver that finds no declaration of it in the project knows the call
+    /// is somebody else's. `None` when the call is written without a path,
+    /// through a value, through a module, or in a language whose spelling
+    /// does not say which segment is a type.
+    pub type_qualifier: Option<String>,
 }

@@ -661,6 +661,23 @@ impl Language {
             _ => false,
         }
     }
+
+    /// Whether the spelling of a path says what its segments are: a capital
+    /// letter is a type, a lowercase name is a module.
+    ///
+    /// A call qualified by a type the project never declares is somebody
+    /// else's call (`Duration::from_millis` is not the project's own
+    /// `from_millis`), and only a language whose convention is enforced by
+    /// its own tooling lets the reader tell a type from a module by its
+    /// spelling. Rust does (`non_camel_case_types` and
+    /// `non_snake_case` are on by default); C++ puts `std::chrono::seconds` in
+    /// lowercase, and a Ruby `Foo::bar` may be a module.
+    ///
+    /// This is the seam, and it is per language on purpose: a language
+    /// joins when its own measurement says the convention holds.
+    pub const fn spells_types_with_capitals(self) -> bool {
+        matches!(self, Language::Rust)
+    }
 }
 
 impl Language {

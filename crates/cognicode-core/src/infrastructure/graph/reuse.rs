@@ -42,12 +42,18 @@
 //! for and the path of its caller — and the rule above already watches
 //! both.
 //!
+//! A call that names the type it belongs to (`Duration::from_millis`) is
+//! judged against the declarations of that type too: the same name called
+//! through two types has two answers, so the type is part of what the
+//! ledger remembers, and a change that declares or drops the type touches
+//! the answers of every call written through it.
+//!
 //! The ledger remembers two things between builds: what the last build
 //! knew about each file (its content hash and the identity of every
 //! declaration it made), and what it resolved for each (caller file, called
-//! name) pair. Both are replaced wholesale by the current build when it
-//! ends, so the ledger always describes exactly one build and never a
-//! mixture of two.
+//! name, judged type) triple. Both are replaced wholesale by the current
+//! build when it ends, so the ledger always describes exactly one build and
+//! never a mixture of two.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -135,13 +141,18 @@ impl Changes {
     }
 }
 
+/// What a call asks: the file it is written in, the lowercased name it
+/// calls, and the type that qualifies it when the call states one the
+/// resolver judges.
+type Question = (String, String, Option<String>);
+
 /// What the last build knew about each file, and what it resolved.
 #[derive(Debug, Default)]
 pub struct ReuseLedger {
     /// The files the last build covered, by path.
     files: HashMap<String, Remembered>,
-    /// The answers of the last build, by (caller file, called name).
-    outcomes: HashMap<(String, String), Answer>,
+    /// The answers of the last build, by what each call asked.
+    outcomes: HashMap<Question, Answer>,
 }
 
 /// What the ledger remembers about one file.
@@ -217,13 +228,15 @@ impl ReuseLedger {
     /// The answer the last build gave, when it can be kept.
     ///
     /// `None` means the answer has to be computed again.
-    fn kept(&self, caller_file: &str, name: &str, changes: &Changes) -> Option<Answer> {
-        if changes.touches(name) || changes.changed(caller_file) {
+    fn kept(&self, question: &Question, changes: &Changes) -> Option<Answer> {
+        let (caller_file, name, type_qualifier) = question;
+        let qualifier_touched = type_qualifier
+            .as_deref()
+            .is_some_and(|qualifier| changes.touches(&qualifier.to_lowercase()));
+        if changes.touches(name) || qualifier_touched || changes.changed(caller_file) {
             return None;
         }
-        self.outcomes
-            .get(&(caller_file.to_string(), name.to_string()))
-            .cloned()
+        self.outcomes.get(question).cloned()
     }
 
     /// Remembers what this build knew, replacing what it knew before.
@@ -269,7 +282,7 @@ pub struct Resolution {
     /// The relationships whose answer this build computed again.
     pub resolved: usize,
     /// The answers, for the ledger to remember.
-    outcomes: HashMap<(String, String), Answer>,
+    outcomes: HashMap<Question, Answer>,
 }
 
 /// Resolves the calls of a build, keeping what the last build proved.
@@ -287,15 +300,19 @@ pub fn resolve(
     let mut resolution = Resolution::default();
 
     for site in calls {
-        let name = site.target.to_lowercase();
-        let answer = match ledger.kept(&site.origin_file, &name, changes) {
+        let question: Question = (
+            site.origin_file.clone(),
+            site.target.to_lowercase(),
+            site.type_qualifier.clone(),
+        );
+        let answer = match ledger.kept(&question, changes) {
             Some(answer) => {
                 resolution.reused += 1;
                 answer
             }
             None => {
                 resolution.resolved += 1;
-                look_up(index, &name, &site.origin_file)
+                look_up(index, &question)
             }
         };
         // The answer goes into the new ledger either way: a kept answer is
@@ -303,9 +320,7 @@ pub fn resolve(
         // computed ones would empty itself on every warm build — the second
         // build after a change would find nothing to keep and would redo
         // the whole project.
-        resolution
-            .outcomes
-            .insert((site.origin_file.clone(), name.clone()), answer.clone());
+        resolution.outcomes.insert(question, answer.clone());
 
         match answer {
             Answer::Found(target) => {
@@ -336,9 +351,13 @@ pub fn resolve(
 /// project declares several times, and a name it does not declare at all
 /// — and the answer carries which one it was. The reason comes from the
 /// resolution itself, so no route decides it on its own.
-fn look_up(index: &GlobalSymbolIndex, name_lower: &str, caller_file: &str) -> Answer {
+fn look_up(index: &GlobalSymbolIndex, question: &Question) -> Answer {
+    let (caller_file, name_lower, type_qualifier) = question;
     let caller_path = std::path::Path::new(caller_file);
-    match index.resolve(name_lower, Some(caller_path)).outcome() {
+    match index
+        .resolve_call(name_lower, type_qualifier.as_deref(), Some(caller_path))
+        .outcome()
+    {
         Ok(target) => Answer::Found(target),
         Err(class) => Answer::Refused(class),
     }
