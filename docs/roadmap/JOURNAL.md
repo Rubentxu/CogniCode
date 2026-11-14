@@ -39633,3 +39633,81 @@ medible en frío. Los bordes en frío de TASK-275 (llamadas 19.386 → 18.998, s
   cambió fue la prevención del lado del agente, no la política.
 
 **La base del bloque 4 es `57916a3a`.**
+
+## Recibo de bloque 4 — PASS, base `57916a3a` (2026-11-14)
+
+**Estado: PASS** sobre `6ca67fde`, con un rojo de documentación corregido en el mismo
+cierre. El cierre del bloque encontró la suite de contratos en rojo: no por el código del
+lote, sino por la deriva del snapshot operativo, que a 26 commits de la base con `main`
+ya no cabe en la ventana de 20 que mide su edad. La corrección —regenerar el snapshot
+sobre la punta real— va en este mismo cierre (TASK-309, #880, `c6285a4a`), y los
+contratos se volvieron a correr enteros después de ella: verdes.
+
+**Base y árbol verificados.** Base: `57916a3a` (#868), la punta del bloque 3. El gate se
+midió sobre `6ca67fde` (la punta del bloque 4), con la base `57916a3a`. El commit
+`c6285a4a` es documental —sólo `docs/roadmap/CURRENT.md`— y no cambia el árbol de código:
+el gate lo midió un commit antes y los contratos, que sí leen el documento, se midieron
+sobre él. La base del bloque 5 es `c6285a4a`.
+
+**Las tareas.** El contador de `AGENTS.md` da 10 sobre `57916a3a..main`: TASK-261 (#872,
+`2ad23efb`), TASK-262 (#876, `eae50faa`), TASK-263 (#878, `4cf1bd72`), TASK-266 (#870,
+`81885e0c`), TASK-269 (#873, `abcb47fa`), TASK-270 (#871, `275bf8fd`), TASK-277 (#875,
+`1367bb1d`), TASK-295 (#874, `70f32659`), TASK-297 (#877, `739e7c7e`) y TASK-304 (#879,
+`6ca67fde`). Quedan fuera del contador, por su prefijo `docs(...)`: TASK-292 (#869,
+`2f063322`, el recibo del bloque 3) y TASK-309 (#880, `c6285a4a`, el snapshot).
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1 | `GATE_BASE=57916a3a bash scripts/test-gate.sh` | `6ca67fde` | 0 | unitarios 23,4 s; integración 13,9 s; target caliente | 4.054 unitarios (0 omitidos) y 1.697 de integración (2 omitidos); mutantes: no medidos, con el motivo en el log; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `6ca67fde` | 0 | 11,0 s | 88 ficheros, 950 tests |
+| 3a | `bash scripts/ci/run-all-contracts.sh` | `6ca67fde` | 1 | — | **contratos en rojo**: 2 comprobaciones de `test_roadmap_coherence.py` (la deriva del snapshot); el informe con la salida y el entorno quedó en `$XDG_STATE_HOME/cognicode/contract-failure.txt` |
+| 3b | `bash scripts/ci/run-all-contracts.sh` | `c6285a4a` | 0 | 1 min 17 s | 40 suites, 485 casos, 0 fallos; testigo del árbol limpio |
+| 4 | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `6ca67fde` | 0 | clippy 1 min 06 s | sin avisos |
+
+**El rojo y su corrección.** Los dos rojos eran `test_current_sha_matches_head` y
+`test_control_all_green`, y los dos decían lo mismo: «CURRENT.md declara SHA
+7de0fe20d0c6, HEAD es 6ca67fde794f… Regenera el snapshot». No era un defecto del
+producto: el snapshot declaraba la punta del bloque 2, y a 26 commits de la base su
+edad ya no cabe en la ventana de 20 que la mide (`SNAPSHOT_MAX_DRIFT`, la que TASK-283
+calibró para un bloque). El bloque 3 cerró a 14 commits de distancia —dentro de la
+ventana— y por eso no lo corrigió; el bloque 4 suma 11 (diez tareas más el recibo del
+bloque 3) y lo cruza. La corrección (TASK-309, #880) regenera el snapshot sobre la punta
+real: la cabecera con el SHA, la prosa que acumula lo que llegó con el commit que lo
+midió, y la tabla «Qué cambió» con los 26 commits y lo que midió cada uno. El
+instrumento es el contrato: **RED** 2 rojos con el snapshot viejo, **GREEN** 29/29 con
+el nuevo, y la suite entera verde después.
+
+**Lo que este bloque cambió, medido.** El hilo del bloque es que el runtime que sirve
+el MCP no se quede bloqueado por el trabajo de una herramienta, y que la ventana de
+despacho no sea una categoría sino lo que la herramienta declara: la búsqueda de usos
+tiene presupuesto y dice lo que no cubrió (`abcb47fa`), los recorridos del workspace
+salen del runtime (`739e7c7e`), y `query_symbol_index` —que construye el grafo dentro
+de la llamada— pasó de «internal: timeout» a los 0,51 s a responder en 11,49 s con el
+binario release en frío (`6ca67fde`). Y la verdad del grafo: un enlace que se queda
+dentro del workspace ya no es un agujero (`81885e0c`), un nombre que sólo difiere en la
+grafía no es un homónimo (`1367bb1d`), `find` compara los nombres como los lee el
+lenguaje (`eae50faa`) y la definición de un símbolo es el sitio donde se declara
+(`2ad23efb`).
+
+**NOT_RUN.**
+
+- **Mutantes (paso 3 del gate).** El lote tocó `cognicode-cli`, `cognicode-core` y
+  `cognicode-mcp`, y ninguno es asequible de mutar por coste; el crate del calendario
+  (`cognicode-graph-algos`) no estaba en su turno: 242 fusiones desde el marcador
+  `fb526521db6e`, periodo 50, y el siguiente cruce es a 250. El gate lo dijo en su log
+  —«este lote NO midio mutacion»—, y eso no es que la mutación se midiera y no
+  encontrara nada. **No se escribe línea de calendario**: el turno no se pagó y el ancla
+  sigue siendo la medición real de `a42fb659` (627 mutantes, 618 atrapados, 9
+  inviables, 0 supervivientes), que es la última línea «Medición del calendario» del
+  Journal.
+- **El gate no se repitió sobre `c6285a4a`.** El commit que hay entre el árbol medido y
+  la punta es documental y no toca código: el gate midió `6ca67fde` y los contratos —que
+  sí leen el documento corregido— se midieron sobre `c6285a4a`. Repetir el gate entero
+  para medir un fichero de documentación no compra nada.
+- **El tiempo de pared del gate no está registrado:** el log conserva sus componentes
+  (unitarios, integración) y el tipo de la compilación (target caliente, con la tasa de
+  aciertos de `sccache` a la vista), no la duración total de la corrida.
+
+**La base del bloque 5 es `c6285a4a`.**
