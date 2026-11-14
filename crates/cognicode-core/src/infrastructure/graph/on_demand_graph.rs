@@ -816,11 +816,16 @@ impl OnDemandGraphBuilder {
     /// Whether the project owns the call.
     ///
     /// The rule belongs to the index that owns the project's declarations: a
-    /// call qualified by a type the project does not declare is somebody
-    /// else's call. The route asks; it does not judge.
-    fn owns_call(&self, type_qualifier: Option<&str>) -> bool {
+    /// call qualified by a type the project does not declare, or written
+    /// through a crate the caller's own package pulls from outside the
+    /// project, is somebody else's call. The route asks; it does not judge.
+    fn owns_call(&self, site: &CallSite) -> bool {
         match &self.declarations {
-            Some(index) => index.owns_call(type_qualifier),
+            Some(index) => index.owns_call(
+                site.type_qualifier.as_deref(),
+                site.path_head.as_deref(),
+                Some(Path::new(&site.origin_file)),
+            ),
             None => false,
         }
     }
@@ -851,7 +856,7 @@ impl OnDemandGraphBuilder {
 
             // The judgment: a call qualified by a type the project does
             // not declare is somebody else's call.
-            if !self.owns_call(site.type_qualifier.as_deref()) {
+            if !self.owns_call(site) {
                 continue;
             }
 
@@ -920,7 +925,7 @@ impl OnDemandGraphBuilder {
             // The judgment, in the other direction too: a call that is
             // somebody else's does not make the project's symbol a caller
             // of anything.
-            if !self.owns_call(site.type_qualifier.as_deref()) {
+            if !self.owns_call(site) {
                 continue;
             }
 
@@ -997,7 +1002,7 @@ impl OnDemandGraphBuilder {
                 };
                 if caller.name().to_lowercase() == source_name.to_lowercase()
                     && site.target.to_lowercase() == target_name.to_lowercase()
-                    && self.owns_call(site.type_qualifier.as_deref())
+                    && self.owns_call(site)
                 {
                     // Add edge to graph
                     let source_id = SymbolId::new(source_name);
@@ -1050,7 +1055,7 @@ impl OnDemandGraphBuilder {
 
                     // The judgment, here too: the call of somebody else is
                     // not a step of the project's path.
-                    if !self.owns_call(site.type_qualifier.as_deref()) {
+                    if !self.owns_call(site) {
                         continue;
                     }
 

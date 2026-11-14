@@ -11,13 +11,14 @@ use crate::domain::value_objects::{
     DependencyType, PendingClass, PendingReference, RejectedRelation, TargetResolution,
     WalkDecision,
 };
+use crate::infrastructure::graph::package;
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
 };
 use crate::infrastructure::parser::{Language, TreeSitterParser};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 // =============================================================================
 // PRF F2.W5 — Global symbol index for cross-file call resolution (H-R4-2).
@@ -84,6 +85,11 @@ pub struct GlobalSymbolIndex {
     /// Reverse map so the resolver can read the symbol's file path without
     /// having to walk the source `CallGraph` for every lookup.
     by_id: HashMap<SymbolId, (PathBuf, String)>,
+    /// The crates each package pulls from outside the project.
+    ///
+    /// The manifest is read once per package: the answer is asked once per
+    /// call, and the answer does not change while the build runs.
+    packages: Mutex<package::Manifests>,
 }
 
 impl Default for GlobalSymbolIndex {
@@ -97,6 +103,7 @@ impl GlobalSymbolIndex {
         Self {
             by_name: HashMap::new(),
             by_id: HashMap::new(),
+            packages: Mutex::new(package::Manifests::default()),
         }
     }
 
@@ -227,21 +234,74 @@ impl GlobalSymbolIndex {
 
     /// Whether a call is the project's to begin with.
     ///
-    /// A call written `Duration::from_millis(10)` names a method of
-    /// `Duration`. When the project declares no `Duration`, that method is
-    /// not one of the project's, and joining it to the project's own
-    /// `from_millis` would publish the standard library's call count as the
-    /// project's.
+    /// Two facts say it, and both are asked here so that no route decides
+    /// them on its own:
+    ///
+    /// - A call written `Duration::from_millis(10)` names a method of
+    ///   `Duration`. When the project declares no `Duration`, that method is
+    ///   not one of the project's, and joining it to the project's own
+    ///   `from_millis` would publish the standard library's call count as
+    ///   the project's.
+    /// - A call written `serde_json::to_value(1)` names a function of the
+    ///   crate the package pulls. When the package declares that crate from
+    ///   a registry, the call is not the project's, and joining it to the
+    ///   project's own `to_value` would publish a dependency's call count
+    ///   as the project's.
+    ///
+    /// A path that starts at a crate of this workspace is the project's:
+    /// `cognicode_graph_algos::page_rank` names a crate that lives here,
+    /// and the package says so with the path it declares it with.
     ///
     /// This is the rule [`Self::resolve_call`] applies, and it lives here so
     /// that every route which judges a call asks the same question. A route
     /// that writes the rule a second time is a route that answers
     /// differently one day.
-    pub fn owns_call(&self, type_qualifier: Option<&str>) -> bool {
-        !type_qualifier.is_some_and(|qualifier| !self.declares(qualifier))
+    pub fn owns_call(
+        &self,
+        type_qualifier: Option<&str>,
+        path_head: Option<&str>,
+        caller_file: Option<&Path>,
+    ) -> bool {
+        if type_qualifier.is_some_and(|qualifier| !self.declares(qualifier)) {
+            return false;
+        }
+        if path_head.is_some_and(|head| self.is_external_crate(head, caller_file)) {
+            return false;
+        }
+        true
     }
 
-    /// Resolves a call site's callee, judging its type qualifier first.
+    /// Whether the crate a path starts at is one the project pulls from
+    /// outside itself.
+    ///
+    /// The package that writes the call is the one that says: a call in
+    /// `crates/core` is judged by what `crates/core` declares, and not by
+    /// what another package of the workspace declares.
+    ///
+    /// A file that belongs to no package, and a package whose manifest
+    /// cannot be read, is a package that says nothing: the call is not
+    /// judged, and the edge it may hold is kept. So is a file no manifest
+    /// governs: a `Cargo.toml` speaks about the Rust files of its package.
+    fn is_external_crate(&self, head: &str, caller_file: Option<&Path>) -> bool {
+        let Some(file) = caller_file else {
+            return false;
+        };
+        if !package::is_governed_by_a_manifest(file) {
+            return false;
+        }
+        let Some(directory) = file.parent() else {
+            return false;
+        };
+        self.external_crates_of(directory).contains(head)
+    }
+
+    /// The crates the package of a directory pulls from outside the project.
+    fn external_crates_of(&self, directory: &Path) -> Arc<HashSet<String>> {
+        let mut packages = self.packages.lock().unwrap();
+        packages.external_crates_of(directory)
+    }
+
+    /// Resolves a call site's callee, judging its qualifier first.
     ///
     /// A call written `Duration::from_millis(10)` names a method of
     /// `Duration`. When the project declares no `Duration`, that method is
@@ -258,9 +318,10 @@ impl GlobalSymbolIndex {
         &self,
         name_lower: &str,
         type_qualifier: Option<&str>,
+        path_head: Option<&str>,
         caller_file: Option<&Path>,
     ) -> TargetResolution {
-        if !self.owns_call(type_qualifier) {
+        if !self.owns_call(type_qualifier, path_head, caller_file) {
             return TargetResolution::Unresolved(name_lower.to_string());
         }
         self.resolve(name_lower, caller_file)
@@ -403,9 +464,16 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
 /// The type qualifier is checked against the declarations of the file the
 /// way [`GlobalSymbolIndex::resolve_call`] checks it against the project's:
 /// by exact spelling, and only when the call states one.
+///
+/// The crate the path starts at is checked the same way the index checks
+/// it: against the crates the file's own package pulls from outside the
+/// project. A call through one of them is not the project's, and the file
+/// that writes it is the only one that says which package it belongs to.
 fn resolve_call_within_file(
     name_lower: &str,
     type_qualifier: Option<&str>,
+    path_head: Option<&str>,
+    external_crates: &HashSet<String>,
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
 ) -> TargetResolution {
@@ -422,6 +490,9 @@ fn resolve_call_within_file(
         if !declared {
             return TargetResolution::Unresolved(name_lower.to_string());
         }
+    }
+    if path_head.is_some_and(|head| external_crates.contains(head)) {
+        return TargetResolution::Unresolved(name_lower.to_string());
     }
     resolve_within_file(name_lower, local)
 }
@@ -940,6 +1011,24 @@ impl PerFileGraphCache {
             .find_call_sites_in_tree(&tree, &source, file_path)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
+        // The crates the file's own package pulls from outside the project:
+        // a call written through one of them is not the project's, and the
+        // package that writes the call is the one that says. The manifest
+        // is read once for the file, and only when the file names a crate.
+        // The rule is the one the index applies, and it asks the same
+        // question: only a file a manifest governs is judged by one.
+        let external_crates = if global_index.is_none()
+            && calls.iter().any(|call| call.path_head.is_some())
+            && package::is_governed_by_a_manifest(Path::new(file_path))
+        {
+            let directory = Path::new(file_path)
+                .parent()
+                .unwrap_or_else(|| Path::new(""));
+            package::external_crates_of(directory)
+        } else {
+            HashSet::new()
+        };
+
         let mut graph = CallGraph::new();
         // H4.3 — multimap keyed by lowercase name. A single-symbol
         // map overwrote homonyms (e.g. `Foo` then `foo` both
@@ -1008,9 +1097,17 @@ impl PerFileGraphCache {
             // name declared several times is ambiguous, and a name the
             // file does not declare names nothing here.
             let qualifier = site.type_qualifier.as_deref();
+            let head = site.path_head.as_deref();
             let resolution = match global_index {
-                Some(index) => index.resolve_call(&name_lower, qualifier, Some(caller_path)),
-                None => resolve_call_within_file(&name_lower, qualifier, &name_to_symbol, &graph),
+                Some(index) => index.resolve_call(&name_lower, qualifier, head, Some(caller_path)),
+                None => resolve_call_within_file(
+                    &name_lower,
+                    qualifier,
+                    head,
+                    &external_crates,
+                    &name_to_symbol,
+                    &graph,
+                ),
             };
 
             match resolution.outcome() {

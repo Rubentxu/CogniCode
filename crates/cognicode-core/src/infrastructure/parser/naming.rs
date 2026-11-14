@@ -175,8 +175,7 @@ pub fn callee_node<'tree>(node: &Node<'tree>, callee_fields: &[&str]) -> Option<
 /// it calls, not the path that reaches it. `crate::nested::callee()` calls
 /// `callee`, and `obj.method()` calls `method`.
 pub fn callee_name(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
-    let callee = callee_node(node, callee_fields)?;
-    let cleaned = clean_callee_name(&node_text(&callee, source));
+    let cleaned = clean_callee_name(&callee_text(node, source, callee_fields)?);
     if cleaned.is_empty() {
         None
     } else {
@@ -204,8 +203,7 @@ pub fn callee_name(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option
 /// `Language::spells_types_with_capitals`); a caller of another language does
 /// not ask.
 pub fn callee_type_qualifier(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
-    let callee = callee_node(node, callee_fields)?;
-    type_qualifier_of(&node_text(&callee, source))
+    type_qualifier_of(&callee_text(node, source, callee_fields)?)
 }
 
 /// The type-like names a Rust file binds by itself.
@@ -253,19 +251,89 @@ pub fn type_qualifier_of(raw: &str) -> Option<String> {
         return None;
     }
     let path = without_generic_arguments(raw);
-    let mut segments: Vec<&str> = path.split("::").collect();
+    let segments = path_segments(&path)?;
+    let qualifier = segments[segments.len() - 2];
+    is_type_name(qualifier).then(|| qualifier.to_string())
+}
+
+/// The text of what a call calls.
+///
+/// The name, the type qualifier and the head of the path are three readings
+/// of the same text. Reading it once and reading it three times cost the
+/// same in a file with few calls and three times more in a file with many,
+/// and the text of a callee is read for every call of every file of the
+/// project.
+pub fn callee_text(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
+    let callee = callee_node(node, callee_fields)?;
+    Some(node_text(&callee, source))
+}
+
+/// The crate or module a callee's path starts at.
+///
+/// A path says who the callee belongs to before it says its name:
+/// `serde_json::to_value` and `event::build` both call something called
+/// `to_value` or `build`, and only the head tells the project's own module
+/// from a crate the project pulls from outside itself.
+///
+/// A path that starts with a type is not one of those: `Duration::from_millis`
+/// starts with a type, and the type qualifier carries that call. `Self` and
+/// a one-letter parameter are types the project may not declare at all, and
+/// they are not crates either.
+pub fn callee_path_head(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
+    path_head_of(&callee_text(node, source, callee_fields)?)
+}
+
+/// The head of a path, as written. See [`callee_path_head`].
+pub fn path_head_of(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.starts_with('<') {
+        return None;
+    }
+    // Generic arguments are not a segment: `Vec::<u8>::new` is `Vec::new`.
+    // Only a path that carries them pays for the copy.
+    let without_arguments;
+    let raw = if raw.contains('<') {
+        without_arguments = without_generic_arguments(raw);
+        without_arguments.as_str()
+    } else {
+        raw
+    };
     // A path may start at the root of the crate graph: `::std::time::Duration`.
+    let raw = raw.strip_prefix("::").unwrap_or(raw);
+    let mut segments = raw.split("::");
+    let head = segments.next()?;
+    let mut rest = 0;
+    for segment in segments {
+        if !is_identifier(segment) {
+            return None;
+        }
+        rest += 1;
+    }
+    if rest == 0 || !is_identifier(head) {
+        return None;
+    }
+    is_crate_or_module(head).then(|| head.to_string())
+}
+
+/// The segments of a path, when the path is written in segments.
+///
+/// A path may start at the root of the crate graph (`::std::time::Duration`)
+/// and may carry generic arguments (`Vec::<u8>::new`); neither is a segment
+/// the caller names.
+fn path_segments(path: &str) -> Option<Vec<&str>> {
+    let mut segments: Vec<&str> = path.split("::").collect();
     if segments.first() == Some(&"") {
         segments.remove(0);
     }
-    let is_identifier = |segment: &&str| {
-        !segment.is_empty() && segment.chars().all(|c| c.is_alphanumeric() || c == '_')
-    };
-    if segments.len() < 2 || !segments.iter().all(is_identifier) {
+    if segments.len() < 2 || !segments.iter().all(|segment| is_identifier(segment)) {
         return None;
     }
-    let qualifier = segments[segments.len() - 2];
-    is_type_name(qualifier).then(|| qualifier.to_string())
+    Some(segments)
+}
+
+/// Whether a path segment is written as an identifier.
+fn is_identifier(segment: &str) -> bool {
+    !segment.is_empty() && segment.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
 /// A path with its generic arguments removed: `Vec::<u8>::new` is `Vec::new`.
@@ -302,6 +370,17 @@ fn is_type_name(segment: &str) -> bool {
     segment != "Self"
         && segment.chars().count() > 1
         && segment.chars().next().is_some_and(char::is_uppercase)
+}
+
+/// Whether a path segment names a crate or a module.
+///
+/// A crate or a module is written in lower case, and it is never `Self` and
+/// never a single letter: those are a type and a type parameter, and the
+/// type qualifier is what carries them.
+fn is_crate_or_module(segment: &str) -> bool {
+    segment != "Self"
+        && segment.chars().count() > 1
+        && segment.chars().next().is_some_and(|c| !c.is_uppercase())
 }
 
 /// The last segment of a callee's name.
@@ -356,11 +435,15 @@ fn node_text(node: &Node, source: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{type_names_bound_in, type_qualifier_of};
+    use super::{path_head_of, type_names_bound_in, type_qualifier_of};
     use std::collections::HashSet;
 
     fn qualifier(raw: &str) -> Option<String> {
         type_qualifier_of(raw)
+    }
+
+    fn head(raw: &str) -> Option<String> {
+        path_head_of(raw)
     }
 
     /// The names a Rust file binds, as a sorted list.
@@ -406,6 +489,39 @@ mod tests {
         assert_eq!(qualifier("event::build"), None);
         assert_eq!(qualifier("crate::nested::callee"), None);
         assert_eq!(qualifier("super::helper"), None);
+    }
+
+    #[test]
+    fn a_path_names_the_crate_it_starts_at() {
+        assert_eq!(head("serde_json::to_value").as_deref(), Some("serde_json"));
+        assert_eq!(
+            head("tokio::time::sleep").as_deref(),
+            Some("tokio"),
+            "the head is the crate, not the module the path goes through"
+        );
+        assert_eq!(
+            head("::std::time::Duration::new").as_deref(),
+            Some("std"),
+            "a path that starts at the root of the crate graph names that root"
+        );
+    }
+
+    #[test]
+    fn a_path_that_starts_at_a_type_names_no_crate() {
+        assert_eq!(head("Duration::from_millis"), None);
+        assert_eq!(head("Self::from_millis"), None);
+        assert_eq!(head("T::default"), None);
+    }
+
+    #[test]
+    fn a_path_that_names_no_crate_is_not_one() {
+        assert_eq!(head("build"), None);
+        assert_eq!(head("x.method"), None);
+        assert_eq!(
+            head("make().to_value"),
+            None,
+            "the path of a value is not a crate path"
+        );
     }
 
     #[test]

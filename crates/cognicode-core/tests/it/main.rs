@@ -5,6 +5,7 @@
 mod fixtures;
 
 mod a014_product_asset_resolution;
+mod a_crate_path_does_not_join_a_project_symbol;
 mod a_cut_never_splits_a_character;
 mod a_date_is_published_only_when_it_was_measured;
 mod a_name_with_two_symbols_is_refused_not_chosen;

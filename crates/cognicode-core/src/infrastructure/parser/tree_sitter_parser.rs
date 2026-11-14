@@ -816,6 +816,7 @@ impl TreeSitterParser {
                     .callee
                     .type_qualifier
                     .filter(|qualifier| !bound.contains(qualifier)),
+                path_head: call.callee.path_head,
             })
             .collect())
     }
@@ -976,15 +977,23 @@ impl TreeSitterParser {
     fn extract_callee(&self, call_node: tree_sitter::Node, source: &str) -> Option<Callee> {
         let bytes = source.as_bytes();
         let fields = self.language.callee_fields();
-        let name = naming::callee_name(&call_node, bytes, fields)?;
+        // The name, the qualifier and the head are three readings of the
+        // same text, and the text is read once.
+        let text = naming::callee_text(&call_node, bytes, fields)?;
+        let name = naming::clean_callee_name(&text);
+        if name.is_empty() {
+            return None;
+        }
         let type_qualifier = if self.language.spells_types_with_capitals() {
-            naming::callee_type_qualifier(&call_node, bytes, fields)
+            naming::type_qualifier_of(&text)
         } else {
             None
         };
+        let path_head = naming::path_head_of(&text);
         Some(Callee {
             name,
             type_qualifier,
+            path_head,
         })
     }
 
@@ -1097,10 +1106,12 @@ impl TreeSitterParser {
 /// The name of the symbol that owns a script's top-level calls.
 pub const SCRIPT_SYMBOL: &str = "<script>";
 
-/// What one call expression calls: the name, and the type that qualifies it.
+/// What one call expression calls: the name, the type that qualifies it, and
+/// the crate or module its path starts at.
 struct Callee {
     name: String,
     type_qualifier: Option<String>,
+    path_head: Option<String>,
 }
 
 /// A call found in a tree: who writes it, what it calls, and the line it is

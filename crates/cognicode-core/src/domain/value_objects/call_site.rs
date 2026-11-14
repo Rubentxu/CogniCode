@@ -32,7 +32,21 @@ pub struct CallSite {
     /// library's `Duration::from_millis`. The qualifier is what can, and a
     /// resolver that finds no declaration of it in the project knows the call
     /// is somebody else's. `None` when the call is written without a path,
-    /// through a value, through a module, or in a language whose spelling
-    /// does not say which segment is a type.
+    /// through a value, or in a language whose spelling does not say which
+    /// segment is a type.
     pub type_qualifier: Option<String>,
+    /// The head of the path the call is written through: the crate, module
+    /// or package the path starts at, `serde_json` in `serde_json::to_value(1)`.
+    ///
+    /// The same name can belong to the project and to a crate the project
+    /// pulls: `to_value` is the project's own function and `serde_json`'s,
+    /// and the last segment of the path cannot tell them apart. The head of
+    /// the path can — a package that pulls `serde_json` from a registry does
+    /// not own what that crate calls, so a call written through it is not a
+    /// call to the project's declaration of the same name.
+    ///
+    /// `None` when the call is written without a path, through a value, or
+    /// through a type: `Duration::from_millis` starts with a type, and the
+    /// type qualifier carries that call, not this.
+    pub path_head: Option<String>,
 }
