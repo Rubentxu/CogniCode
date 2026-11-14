@@ -21,6 +21,15 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# The identity the fixture's commits carry. It is declared HERE, not copied
+# from the machine: the runner neutralises the machine's git configuration,
+# so the copy was empty and the fixture could not commit at all -- on a
+# machine whose git refuses to sign in a repository with no remote, and on a
+# machine whose git simply has nobody to sign with.
+FIXTURE_NAME = "fixture"
+FIXTURE_EMAIL = "fixture@example.invalid"
+
 RELEASE_ORDER = [
     "cognicode-graph-algos",
     "cognicode-macros",
@@ -648,8 +657,7 @@ class SdkSurfaceContract(unittest.TestCase):
         script_dir = ROOT / "scripts" / "distribution"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            ident = [subprocess.run(["git", "config", "--get", f"user.{k}"], cwd=ROOT, capture_output=True,
-                                    text=True, timeout=30).stdout.strip() for k in ("name", "email")]
+            ident = [FIXTURE_NAME, FIXTURE_EMAIL]
             genv = dict(os.environ)
 
             def git(cwd, *args):
@@ -697,8 +705,7 @@ class SdkSurfaceContract(unittest.TestCase):
     def _release_fixture(self, tmp):
         """A repo with the release script, a bare remote, and fake cargo/gh/runners."""
         script_dir = ROOT / "scripts" / "distribution"
-        ident = [subprocess.run(["git", "config", "--get", f"user.{k}"], cwd=ROOT, capture_output=True,
-                                text=True, timeout=30).stdout.strip() for k in ("name", "email")]
+        ident = [FIXTURE_NAME, FIXTURE_EMAIL]
         genv = dict(os.environ)
 
         def git(cwd, *args, check=True):
