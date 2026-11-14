@@ -138,7 +138,7 @@ pub enum IndexResult {
     },
     /// `cognicode index query <symbol> <path>` — symbol found at N
     /// locations. El presenter text emite
-    /// "Found {n} location(s):\n  FILE:LINE:COL (KIND)\n  ...".
+    /// "Found {n} location(s):\n  FILE:LINE:COL NAME (KIND)\n  ...".
     Query {
         symbol: String,
         path: PathBuf,

@@ -248,7 +248,9 @@ pub const FIND: GoalSpec = GoalSpec {
 con su fichero y su línea. El nombre se compara como lo lee el lenguaje de cada \
 declaración: en un lenguaje que distingue mayúsculas, `Ok` y `ok` son dos nombres, \
 y en uno que las pliega —PHP, PowerShell y Fortran— son el mismo. La respuesta dice \
-con qué comparación encontró cada declaración. Es la pregunta que se hace un \
+con qué comparación encontró las declaraciones: `exact` cuando todas están \
+escritas como el nombre buscado, y `case-insensitive` cuando alguna contesta sólo \
+porque el lenguaje que la escribió pliega la grafía. Es la pregunta que se hace un \
 homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find \
 --symbol helper`, `cognicode find --symbol helper --format json`.",
     examples: &[

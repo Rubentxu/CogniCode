@@ -7,6 +7,14 @@
 //! [`Language`](crate::domain::value_objects::Language), and this type is
 //! the word for the comparison that rule produced.
 //!
+//! The word is about the answer, not about the process: `exact` says that
+//! every declaration the answer publishes is spelled the way the name
+//! that was searched is spelled, and `case-insensitive` says that at least
+//! one of them answers to the name only because the language that wrote
+//! it folds the case. A search that folded the case and found nothing but
+//! exact spellings is `exact`, because nothing in the answer mixes the
+//! spellings.
+//!
 //! The word exists because a consumer that reads a count of declarations
 //! has to know whether that count is the count of the name it asked for:
 //! "seven declarations of `Ok`" and "seven declarations that answer to

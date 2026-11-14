@@ -116,3 +116,54 @@ fn a_language_that_folds_the_case_answers_with_both_spellings_and_says_so() {
         "the answer must say that it folded the case: {text}"
     );
 }
+
+/// A project with two languages: a Rust declaration spelled `Ok` and a PHP
+/// declaration spelled `ok`.
+///
+/// The answer mixes the two spellings —the PHP one answers only because
+/// PHP folds the case— and says so. The word is about the answer, not
+/// about each declaration: it says that the answer is not only made of
+/// declarations spelled the way the name was searched.
+#[test]
+fn a_project_with_two_languages_says_that_its_answer_mixes_the_spellings() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(tmp.path().join("lib.rs"), "pub fn Ok() -> u8 { 1 }\n").expect("write");
+    std::fs::write(
+        tmp.path().join("lib.php"),
+        "<?php\nfunction ok() { return 2; }\n",
+    )
+    .expect("write");
+
+    let (answer, text) = answer_of(tmp.path(), "Ok");
+
+    let names = published_names(&answer);
+    assert_eq!(
+        names.len(),
+        2,
+        "the Rust declaration and the PHP one both answer to `Ok`, got {names:?}"
+    );
+    assert!(
+        names.contains(&"Ok") && names.contains(&"ok"),
+        "each declaration publishes its own spelling, got {names:?}"
+    );
+    assert!(
+        text.contains("comparison: case-insensitive"),
+        "the answer mixes the spellings and must say so: {text}"
+    );
+}
+
+/// An answer with no declarations says that the comparison was exact:
+/// nothing was folded, because nothing answered.
+#[test]
+fn an_answer_without_declarations_says_that_the_comparison_was_exact() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    rust_corpus(tmp.path());
+
+    let (answer, text) = answer_of(tmp.path(), "nowhere");
+
+    assert!(answer.locations.is_empty());
+    assert!(
+        text.contains("comparison: exact"),
+        "an empty answer says that nothing was folded: {text}"
+    );
+}

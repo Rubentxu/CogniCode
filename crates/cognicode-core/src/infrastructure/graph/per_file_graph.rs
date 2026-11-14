@@ -125,15 +125,12 @@ impl GlobalSymbolIndex {
         let Some(bucket) = self.by_name.get(&name.to_lowercase()) else {
             return Vec::new();
         };
-        if folds_case {
-            return bucket.clone();
-        }
         bucket
             .iter()
             .filter(|id| {
-                self.by_id
-                    .get(*id)
-                    .is_some_and(|(_, declared)| declared == name)
+                self.by_id.get(*id).is_some_and(|(_, declared)| {
+                    Language::answers_to_in(declared, name, folds_case)
+                })
             })
             .cloned()
             .collect()
@@ -371,8 +368,9 @@ pub fn build_global_index(file_paths: &[&Path]) -> GlobalSymbolIndex {
 /// find callees across files. Failures to parse or read individual files
 /// are silently skipped here; their absence is surfaced separately by
 /// `merge_with_report` (R3 from F2.W2).
-/// The index keys are the lowercased symbol names so resolution is
-/// case-insensitive (matches the legacy per-file behaviour).
+/// The index keys the declarations by the lowercased name, and the
+/// resolution reads the fold the way the language that wrote the call
+/// reads it: a language that tells the case apart does not fold.
 pub fn build_global_index_from_sources<'a, P, I>(sources: I) -> GlobalSymbolIndex
 where
     P: AsRef<Path> + Copy,
@@ -487,13 +485,10 @@ impl Declares for FileScope<'_> {
         let Some(candidates) = self.local.get(&name.to_lowercase()) else {
             return false;
         };
-        if folds_case {
-            return !candidates.is_empty();
-        }
         candidates.iter().any(|id| {
             self.graph
                 .get_symbol(id)
-                .is_some_and(|symbol| symbol.name() == name)
+                .is_some_and(|symbol| Language::answers_to_in(symbol.name(), name, folds_case))
         })
     }
 }
@@ -614,21 +609,15 @@ fn resolve_within_file(
 ) -> TargetResolution {
     let candidates: Vec<SymbolId> = match local.get(&name.to_lowercase()) {
         None => Vec::new(),
-        Some(bucket) => {
-            if folds_case {
-                bucket.clone()
-            } else {
-                bucket
-                    .iter()
-                    .filter(|id| {
-                        graph
-                            .get_symbol(id)
-                            .is_some_and(|symbol| symbol.name() == name)
-                    })
-                    .cloned()
-                    .collect()
-            }
-        }
+        Some(bucket) => bucket
+            .iter()
+            .filter(|id| {
+                graph
+                    .get_symbol(id)
+                    .is_some_and(|symbol| Language::answers_to_in(symbol.name(), name, folds_case))
+            })
+            .cloned()
+            .collect(),
     };
     match candidates.as_slice() {
         [] => TargetResolution::Unresolved(name.to_string()),

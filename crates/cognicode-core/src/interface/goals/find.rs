@@ -46,9 +46,12 @@ pub struct GoalFind {
     /// La comparación es del lenguaje de cada declaración: un lenguaje que
     /// distingue mayúsculas sólo contesta con la declaración escrita
     /// como el nombre buscado, y uno que las pliega contesta con todas
-    /// las declaraciones del nombre plegado. Sin esta palabra, un recuento
-    /// de declaraciones se lee como el recuento del nombre buscado, y no
-    /// lo es.
+    /// las declaraciones del nombre plegado. La palabra es sobre la
+    /// respuesta: `exact` dice que todas las declaraciones que publica
+    /// están escritas como el nombre buscado, y `case-insensitive` que
+    /// alguna contesta sólo porque el lenguaje que la escribió pliega la
+    /// grafía. Sin ella, un recuento de declaraciones se lee como el
+    /// recuento del nombre buscado, y no lo es.
     pub comparison: NameComparison,
     /// What the graph this answer was computed over covers. An empty list
     /// over a tree with unread files is not the same answer as an empty

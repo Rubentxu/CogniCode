@@ -720,12 +720,26 @@ impl Language {
     /// Whether a declaration spelled `declared` answers to a name spelled
     /// `name`, the way this language reads the two.
     ///
-    /// This is the rule every surface that looks a name up has to read
-    /// the same way: the language that wrote the declaration says whether
-    /// the spelling matters, and the index that holds the declaration does
-    /// not get to decide on its own.
+    /// The rule is the language's, and the language that answers is the
+    /// one that wrote the thing being asked about: the index asks with
+    /// the language of the file that holds the declaration —"where is `Ok`
+    /// declared?"— and the graph asks with the language of the file that
+    /// wrote the call —"what does this call name?"—. A call written in
+    /// Rust names the declaration spelled as the call, even when a
+    /// declaration of the folded name lives in a PHP file.
     pub fn answers_to(self, declared: &str, name: &str) -> bool {
-        if self.folds_case() {
+        Self::answers_to_in(declared, name, self.folds_case())
+    }
+
+    /// The same question, with the fold decided by the caller.
+    ///
+    /// The routes that ask know which language they are asking about, and
+    /// this is the one comparison they all make: a language that folds
+    /// the case answers with the declaration however it is spelled, and a
+    /// language that tells the case apart answers only with the
+    /// declaration spelled the way the name is spelled.
+    pub fn answers_to_in(declared: &str, name: &str, folds_case: bool) -> bool {
+        if folds_case {
             declared.to_lowercase() == name.to_lowercase()
         } else {
             declared == name

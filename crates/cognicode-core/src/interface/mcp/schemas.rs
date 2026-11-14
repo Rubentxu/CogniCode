@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::application::dto::ReadMode;
 use crate::application::reparse_cost::ReparseCost;
 use crate::domain::value_objects::MermaidFormat;
+use crate::domain::value_objects::NameComparison;
 use crate::interface::symbol_identity::Precision;
 
 pub use crate::schemas::view_descriptor::ViewDescriptor;
@@ -888,6 +889,16 @@ pub struct QuerySymbolOutput {
     pub symbol_name: String,
     pub locations: Vec<SymbolLocationEntry>,
     pub total: usize,
+    /// How the names were compared with the declarations the answer
+    /// publishes.
+    ///
+    /// The comparison is the language's: a language that tells `Ok` from
+    /// `ok` answers only with the declaration spelled the way the name
+    /// was spelled, and one that folds the case answers with every
+    /// declaration of the folded name. The answer says which of the two
+    /// it was, because a consumer that reads `total` has to know whether
+    /// the total is the total of the name it asked for.
+    pub comparison: NameComparison,
     /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
     pub precision: Precision,
     /// B4.W1 — provider that produced the result.
@@ -912,10 +923,49 @@ pub struct SymbolIndexBasis {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolLocationEntry {
+    /// The name the declaration was written with.
+    ///
+    /// The place does not say which declaration it is: a declaration
+    /// spelled `ok` and one spelled `Ok` are at different lines, and a
+    /// consumer that cannot see the spelling cannot tell them apart.
+    pub name: String,
     pub file: String,
     pub line: u32,
     pub column: u32,
     pub symbol_kind: String,
+}
+
+impl QuerySymbolOutput {
+    /// The answer of a symbol query, with the count and the comparison
+    /// that its locations say.
+    ///
+    /// The count and the comparison are consequences of the locations: the
+    /// count is how many there are, and the comparison says whether every
+    /// one of them is spelled the way the name that was searched is
+    /// spelled. They are computed here, so the surfaces that answer
+    /// cannot disagree about them.
+    pub fn of(
+        symbol_name: String,
+        locations: Vec<SymbolLocationEntry>,
+        precision: Precision,
+        provider: String,
+        basis: SymbolIndexBasis,
+    ) -> Self {
+        let comparison = NameComparison::of(
+            &symbol_name,
+            locations.iter().map(|location| location.name.as_str()),
+        );
+        let total = locations.len();
+        Self {
+            symbol_name,
+            locations,
+            total,
+            comparison,
+            precision,
+            provider,
+            basis,
+        }
+    }
 }
 
 // ============================================================================

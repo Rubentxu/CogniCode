@@ -475,6 +475,20 @@ mod tests {
         );
     }
 
+    /// A file whose language the product does not know does not fold: a
+    /// name nobody declared in that exact spelling is not a declaration
+    /// of another name.
+    #[test]
+    fn a_file_whose_language_the_product_does_not_know_answers_with_the_exact_spelling() {
+        let location = SymbolLocation::new("Hello", "notes.txt", 0, 0, SymbolKind::Function);
+
+        assert!(location.answers_to("Hello"));
+        assert!(
+            !location.answers_to("hello"),
+            "an unknown language does not fold: only the exact spelling answers"
+        );
+    }
+
     #[test]
     fn test_lightweight_index_find_in_file() {
         let mut index = LightweightIndex::new();
