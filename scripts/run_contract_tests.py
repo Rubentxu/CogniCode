@@ -41,6 +41,31 @@ from pathlib import Path
 from types import ModuleType
 
 
+def operator_identity() -> tuple[str, str]:
+    """The name and email this machine commits with.
+
+    Read BEFORE the configuration is neutralised, because neutralising it
+    takes the identity with it.
+
+    The identity is data, not a rule: it says who is running the contracts.
+    The rules that decide who may sign live in the operator's own policy,
+    and those are exactly what the contracts must not inherit. A contract
+    that judges a commit -- the merge guard runs the operator's real
+    `git-control` -- needs an identity to judge, and without one it reads
+    "nobody may sign" where the operator is a person with a name.
+    """
+    def _read(key: str) -> str:
+        proc = subprocess.run(
+            ["git", "config", "--get", f"user.{key}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return proc.stdout.strip()
+
+    return _read("name"), _read("email")
+
+
 def neutralise_git_configuration() -> None:
     """Give the contracts a git that does not carry the operator's rules.
 
@@ -60,9 +85,21 @@ def neutralise_git_configuration() -> None:
     Both the global and the system configuration are neutralised: the
     global one is where the operator's rules live, and the system one is
     where a machine-wide policy would live.
+
+    The identity travels, because neutralising the configuration takes it
+    away and a commit needs somebody to sign it. It travels in git's own
+    environment variables, which is where git reads it from, so every
+    contract that commits -- the ones that declare their own fixture
+    identity included -- has somebody to sign with.
     """
+    name, email = operator_identity()
     os.environ["GIT_CONFIG_GLOBAL"] = "/dev/null"
     os.environ["GIT_CONFIG_SYSTEM"] = "/dev/null"
+    if name and email:
+        os.environ["GIT_AUTHOR_NAME"] = name
+        os.environ["GIT_AUTHOR_EMAIL"] = email
+        os.environ["GIT_COMMITTER_NAME"] = name
+        os.environ["GIT_COMMITTER_EMAIL"] = email
 
 
 def load_module(path: Path) -> ModuleType:

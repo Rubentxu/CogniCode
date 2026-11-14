@@ -111,6 +111,21 @@ BUDGET_KIB = 16 * 1024 * 1024
 
 failures: list[str] = []
 
+# A git that does not carry the operator's rules: the fixture is a repository
+# of its own, and the verdict must be the same on every machine.
+ISOLATED_GIT = {
+    **os.environ,
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+}
+
+# The identity the fixture's commits carry. It is declared HERE, in the call,
+# and not copied from the machine: the runner neutralises the machine's git
+# configuration, so the copy was empty and the fixture could not commit at
+# all -- on a machine whose git refuses to sign in a repository with no
+# remote, and on a machine whose git simply has nobody to sign with.
+FIXTURE_IDENTITY = ("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid")
+
 
 def check(condition: bool, message: str) -> None:
     if not condition:
@@ -121,31 +136,26 @@ def check(condition: bool, message: str) -> None:
 
 
 def _git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)}: {proc.stderr.strip()}")
-    return proc.stdout.strip()
-
-
-def _identity(key: str) -> str:
-    """The identity this repository commits with."""
     proc = subprocess.run(
-        ["git", "config", "--get", f"user.{key}"],
-        cwd=REPO,
+        ["git", *FIXTURE_IDENTITY, *args],
+        cwd=repo,
         capture_output=True,
         text=True,
         timeout=120,
+        env=ISOLATED_GIT,
     )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {proc.stderr.strip()}")
     return proc.stdout.strip()
 
 
 def _commit(repo: Path, message: str) -> None:
     """A commit in the fixture.
 
-    The identity is the one this machine is configured with, and the message
-    is a conventional one: the policy that guards the commits of the operator
-    is global, and a fixture that violated it would be measuring the policy
-    instead of the selector.
+    The identity is the one the fixture declares (see `FIXTURE_IDENTITY`) and
+    the message is a conventional one: the policy that guards the commits of
+    the operator is global, and a fixture that violated it would be measuring
+    the policy instead of the selector.
     """
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", message)
@@ -189,11 +199,6 @@ def _fixture(root: Path) -> tuple[str, str]:
     _write(root / "gamma" / "src" / "lib.rs", "pub fn other() -> u32 {\n    7\n}\n")
 
     _git(root, "init", "-q", "-b", "main")
-    # The identity of the operator, copied from this repository: the guard that
-    # signs the commits is global, and a fixture without an identity of its own
-    # is refused by it before the selector is ever asked.
-    _git(root, "config", "user.email", _identity("email"))
-    _git(root, "config", "user.name", _identity("name"))
     _git(root, "add", "-A")
     _commit(root, "chore: base")
     base = _git(root, "rev-parse", "HEAD")
