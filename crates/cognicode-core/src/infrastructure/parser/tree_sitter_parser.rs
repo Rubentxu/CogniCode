@@ -793,15 +793,29 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
     ) -> ParseResult<Vec<CallSite>> {
-        Ok(self
-            .find_calls_in_tree(tree, source, file_path)?
+        let calls = self.find_calls_in_tree(tree, source, file_path)?;
+        // A qualifier the file binds itself (`use … as`, `type`, a generic
+        // parameter) is the file's own spelling of some type, the project's
+        // included: it is not published, and the call keeps the bare name.
+        let bound = if calls
+            .iter()
+            .any(|call| call.callee.type_qualifier.is_some())
+        {
+            naming::type_names_bound_in(tree.root_node(), source.as_bytes())
+        } else {
+            Default::default()
+        };
+        Ok(calls
             .into_iter()
             .map(|call| CallSite {
                 source: SymbolId::new(call.caller.fully_qualified_name()),
                 origin_file: file_path.to_string(),
                 line: call.line,
                 target: call.callee.name,
-                type_qualifier: call.callee.type_qualifier,
+                type_qualifier: call
+                    .callee
+                    .type_qualifier
+                    .filter(|qualifier| !bound.contains(qualifier)),
             })
             .collect())
     }

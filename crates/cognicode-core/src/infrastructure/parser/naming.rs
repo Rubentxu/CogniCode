@@ -16,6 +16,8 @@
 //! complexity calculator and the tool handlers all answer the same question
 //! about the same node the same way.
 
+use std::collections::HashSet;
+
 use tree_sitter::Node;
 
 use crate::domain::value_objects::NameRule;
@@ -206,6 +208,44 @@ pub fn callee_type_qualifier(node: &Node, source: &[u8], callee_fields: &[&str])
     type_qualifier_of(&node_text(&callee, source))
 }
 
+/// The type-like names a Rust file binds by itself.
+///
+/// A type qualifier is judged foreign when the project declares no type of
+/// that name. A file can bind a name the project never declares and still
+/// mean one of the project's types by it:
+///
+/// - `use event::EventTime as Et;` — `Et` is another spelling of `EventTime`;
+/// - `type Moment = EventTime;` — the same, by an alias;
+/// - `fn make<Time: Clock>() { Time::now() }` — `Time` is whatever the caller
+///   chose, the project's own type included;
+/// - `trait Source { type Item; }` — `Item` is the implementor's type.
+///
+/// Judging those would lose a true edge to avoid a false one, so the parser
+/// does not publish them as qualifiers: the call keeps the bare-name answer
+/// it had before qualifiers were read. The names are collected from the whole
+/// file, not by scope: a name bound anywhere in the file is not judged
+/// anywhere in it, which can only keep an edge, never invent one.
+pub fn type_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
+    let mut bound = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let name_field = match node.kind() {
+            "use_as_clause" => Some("alias"),
+            "type_item" | "associated_type" | "type_parameter" => Some("name"),
+            _ => None,
+        };
+        if let Some(name) = name_field
+            .and_then(|field| node.child_by_field_name(field))
+            .map(|name| node_text(&name, source))
+        {
+            bound.insert(name);
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    bound
+}
+
 /// The type qualifier of a callee as written. See [`callee_type_qualifier`].
 pub fn type_qualifier_of(raw: &str) -> Option<String> {
     let raw = raw.trim();
@@ -316,10 +356,24 @@ fn node_text(node: &Node, source: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::type_qualifier_of;
+    use super::{type_names_bound_in, type_qualifier_of};
+    use std::collections::HashSet;
 
     fn qualifier(raw: &str) -> Option<String> {
         type_qualifier_of(raw)
+    }
+
+    /// The names a Rust file binds, as a sorted list.
+    fn bound_in(source: &str) -> Vec<String> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("the Rust grammar loads");
+        let tree = parser.parse(source, None).expect("the fixture parses");
+        let names: HashSet<String> = type_names_bound_in(tree.root_node(), source.as_bytes());
+        let mut names: Vec<String> = names.into_iter().collect();
+        names.sort();
+        names
     }
 
     #[test]
@@ -386,5 +440,65 @@ mod tests {
         assert_eq!(qualifier("Foo::"), None);
         assert_eq!(qualifier("Foo::::bar"), None);
         assert_eq!(qualifier("Foo :: bar"), None);
+    }
+
+    #[test]
+    fn a_two_letter_name_is_a_type_and_a_one_letter_name_is_not() {
+        assert_eq!(qualifier("Et::from_millis").as_deref(), Some("Et"));
+        assert_eq!(qualifier("T::from_millis"), None);
+    }
+
+    #[test]
+    fn a_lowercase_name_is_not_a_type() {
+        assert_eq!(qualifier("duration::from_millis"), None);
+        assert_eq!(qualifier("_Hidden::from_millis"), None);
+    }
+
+    #[test]
+    fn a_qualified_trait_path_with_an_associated_type_is_not_judged() {
+        assert_eq!(qualifier("<Foo as Trait>::Assoc::method"), None);
+    }
+
+    #[test]
+    fn a_renamed_import_binds_its_alias() {
+        assert_eq!(
+            bound_in("use event::EventTime as Et;\nuse other::{Thing as Other, Plain};\n"),
+            vec!["Et".to_string(), "Other".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_type_alias_binds_its_name() {
+        assert_eq!(
+            bound_in("type Moment = EventTime;\nstruct Real;\n"),
+            vec!["Moment".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_generic_parameter_binds_its_name_wherever_it_is_declared() {
+        let source = "\
+fn make<Time: Clock>() -> Time { Time::now() }
+struct Holder<Item>(Item);
+impl<Unit> Holder<Unit> {}
+trait Source { type Output; }
+";
+        assert_eq!(
+            bound_in(source),
+            vec![
+                "Item".to_string(),
+                "Output".to_string(),
+                "Time".to_string(),
+                "Unit".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_that_binds_nothing_binds_no_name() {
+        assert!(
+            bound_in("use std::time::Duration;\nfn run() { Duration::from_millis(1); }\n")
+                .is_empty()
+        );
     }
 }

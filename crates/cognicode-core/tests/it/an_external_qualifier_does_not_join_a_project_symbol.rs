@@ -344,6 +344,233 @@ pub fn run(thing: &Thing) -> u8 {
     );
 }
 
+/// A name the file binds itself is the file's to explain: `use … as Et` makes
+/// `Et` another spelling of the project's `EventTime`, so `Et::from_millis`
+/// is a call to the project's declaration even though no `Et` is declared.
+/// Judging `Et` as a foreign type would trade a false join for a lost true
+/// edge.
+#[test]
+fn a_renamed_import_of_a_project_type_still_resolves() {
+    let lib = "\
+pub mod event;
+use event::EventTime as Et;
+
+pub fn stamp() -> Et {
+    Et::from_millis(9)
+}
+";
+    let (dir, files) = project(&[("lib.rs", lib), ("event.rs", EVENT_RS)]);
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the project route: `Et` is the file's own name for `EventTime`"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the per-file route answers the same"
+    );
+}
+
+/// A `type` alias is a name the file binds, like a renamed import.
+#[test]
+fn a_type_alias_of_a_project_type_still_resolves() {
+    let lib = "\
+pub mod event;
+use event::EventTime;
+
+type Moment = EventTime;
+
+pub fn stamp() -> Moment {
+    Moment::from_millis(9)
+}
+";
+    let (dir, files) = project(&[("lib.rs", lib), ("event.rs", EVENT_RS)]);
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the project route: `Moment` is the file's own name for `EventTime`"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the per-file route answers the same"
+    );
+}
+
+/// A generic parameter is a name the file binds too: `Time` stands for
+/// whatever the caller chose, which may well be the project's own type, so a
+/// call through it is not judged foreign. The call keeps the old, bare-name
+/// answer: the project's one `from_millis`.
+#[test]
+fn a_generic_parameter_qualifier_is_not_judged_foreign() {
+    let lib = "\
+pub mod event;
+use event::EventTime;
+
+pub fn make<Time: Convert>() -> Time {
+    Time::from_millis(9)
+}
+
+pub fn stamp() -> EventTime {
+    EventTime::from_millis(9)
+}
+";
+    let (dir, files) = project(&[("lib.rs", lib), ("event.rs", EVENT_RS)]);
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["make".to_string(), "stamp".to_string()],
+        "the project route: `Time` is a parameter, not a type the project lacks"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["make".to_string(), "stamp".to_string()],
+        "the per-file route answers the same"
+    );
+}
+
+/// The project declares a function `describe`; it does not declare a type
+/// `Describe`. The index folds names to lowercase to find candidates, but a
+/// qualifier is judged by its exact spelling: a lowercase function is not the
+/// type a call is written through.
+#[test]
+fn a_qualifier_is_judged_by_its_exact_spelling() {
+    let lib = "\
+pub mod event;
+use event::EventTime;
+
+pub fn describe() {}
+
+pub fn ghost() {
+    Describe::from_millis(1);
+}
+
+pub fn stamp() -> EventTime {
+    EventTime::from_millis(9)
+}
+";
+    let (dir, files) = project(&[("lib.rs", lib), ("event.rs", EVENT_RS)]);
+
+    let (graph, _) = project_route(dir.path());
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the project route: `describe` is a function, `Describe` is not declared"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the per-file route answers the same"
+    );
+}
+
+/// With no project index the file is the whole scope, and the qualifier is
+/// judged against the declarations of that file by the same rule.
+#[test]
+fn the_single_file_route_judges_the_qualifier_against_the_file() {
+    let lib = "\
+pub struct Local(pub u64);
+
+impl Local {
+    pub fn from_millis(ms: u64) -> Self {
+        Local(ms)
+    }
+}
+
+pub fn wait() {
+    Duration::from_millis(10);
+}
+
+pub fn stamp() -> Local {
+    Local::from_millis(9)
+}
+";
+    let (dir, files) = project(&[("lib.rs", lib)]);
+    let cache = PerFileGraphCache::with_project_dir(dir.path().to_string_lossy().into_owned());
+    let (graph, _pending) = cache
+        .get_or_build(&files[0])
+        .expect("the file is read and its graph is built");
+
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        vec!["stamp".to_string()],
+        "the file declares `Local`, not `Duration`"
+    );
+}
+
+/// What the second build keeps is what a cold build would say. A call that
+/// was foreign because its qualifier was not declared stops being foreign
+/// when a new file declares that qualifier, although neither the caller's
+/// file nor the name it calls changed: only the qualifier did.
+#[test]
+fn declaring_a_qualifier_between_two_builds_is_what_a_cold_build_says() {
+    let lib = "\
+pub mod event;
+use event::EventTime;
+
+pub fn ghost() {
+    Gadget::from_millis(1);
+}
+
+pub fn stamp() -> EventTime {
+    EventTime::from_millis(9)
+}
+";
+    let (dir, _files) = project(&[("lib.rs", lib), ("event.rs", EVENT_RS)]);
+
+    let service = AnalysisService::new();
+    service
+        .build_project_graph(dir.path())
+        .expect("the first build");
+    assert_eq!(
+        callers_of(&service.get_project_graph(), "from_millis"),
+        vec!["stamp".to_string()],
+        "before the project declares `Gadget`, the call through it is foreign"
+    );
+
+    // The project starts to declare the qualifier. No file that was there
+    // changed, and no name that was called is declared again.
+    std::fs::write(
+        dir.path().join("src").join("gadget.rs"),
+        "pub struct Gadget;\n",
+    )
+    .expect("the new file is written");
+    service
+        .build_project_graph(dir.path())
+        .expect("the second build");
+    let incremental = callers_of(&service.get_project_graph(), "from_millis");
+
+    let cold_service = AnalysisService::new();
+    cold_service
+        .build_project_graph(dir.path())
+        .expect("the cold build");
+    let cold = callers_of(&cold_service.get_project_graph(), "from_millis");
+
+    assert_eq!(
+        incremental, cold,
+        "the second build and a cold build say the same about the same tree"
+    );
+    assert_eq!(
+        cold,
+        vec!["ghost".to_string(), "stamp".to_string()],
+        "`Gadget` is declared now, so the call through it is judged as the project's"
+    );
+}
+
 /// A call qualified by an enum the project declares is a call into the
 /// project, for the same reason.
 #[test]
