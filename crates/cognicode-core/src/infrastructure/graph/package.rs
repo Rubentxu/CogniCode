@@ -73,6 +73,38 @@ impl Manifests {
             .insert(directory.to_path_buf(), crates.clone());
         crates
     }
+
+    /// Whether the crate a path starts at is one the package that writes the
+    /// call pulls from outside the project.
+    ///
+    /// The package that writes the call is the one that says: a call in
+    /// `crates/core` is judged by what `crates/core` declares, and not by
+    /// what another package of the workspace declares.
+    ///
+    /// A file that belongs to no package, and a package whose manifest
+    /// cannot be read, is a package that says nothing: the call is not
+    /// judged, and the edge it may hold is kept. So is a file no manifest
+    /// governs: a `Cargo.toml` speaks about the Rust files of its package.
+    pub fn is_external_crate(&mut self, head: &str, caller_file: Option<&Path>) -> bool {
+        let Some(file) = caller_file else {
+            return false;
+        };
+        if !is_governed_by_a_manifest(file) {
+            return false;
+        }
+        let Some(directory) = file.parent() else {
+            return false;
+        };
+        self.external_crates_of(directory).contains(head)
+    }
+
+    /// How many manifests have been read.
+    ///
+    /// The answer the cache holds is one manifest per package: a project of
+    /// many files in one package reads it once.
+    pub fn manifests_read(&self) -> usize {
+        self.by_manifest.len()
+    }
 }
 
 /// Whether a manifest governs a file.
