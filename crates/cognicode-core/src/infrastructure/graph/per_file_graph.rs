@@ -1371,6 +1371,13 @@ pub enum SkipReason {
     /// able to say so. A walk that fails silently reports `Complete`
     /// over a tree it never saw.
     Walk(String),
+    /// The search that was reading the tree ran out of budget.
+    ///
+    /// The file was not left out because it could not be read: it was
+    /// not reached, because the answer had to arrive. The text says how
+    /// far the search got and which bound stopped it, so that a
+    /// consumer knows the answer is about a part of the tree.
+    Budget(String),
     /// Any other I/O error not covered above.
     Other(String),
 }
@@ -1580,6 +1587,13 @@ impl FileDisposition {
             // not read a directory did not describe what was inside
             // it, so this one affects BuildStatus.
             SkipReason::Walk(reason) => FileDisposition::ReadFailed {
+                reason: reason.clone(),
+            },
+            // The search stopped at its budget, so the file was not
+            // reached: it is outside the scope of the answer by policy,
+            // and it says nothing about the build (which never had this
+            // file in its scope to begin with).
+            SkipReason::Budget(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
             SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {

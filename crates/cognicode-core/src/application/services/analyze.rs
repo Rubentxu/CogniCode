@@ -202,6 +202,23 @@ pub fn coverage_verdict(
     settle(facts)
 }
 
+/// The hole a search that stopped at its budget leaves.
+///
+/// The file the search did not reach is a file the answer does not
+/// cover, and the coverage is the one that says so — so the hole is
+/// named here, by the owner of the coverage's vocabulary, and the
+/// search that stops asks for it instead of writing the reason in a
+/// vocabulary of its own.
+pub fn budget_hole(
+    path: String,
+    reason: String,
+) -> crate::infrastructure::graph::per_file_graph::SkippedFile {
+    crate::infrastructure::graph::per_file_graph::SkippedFile {
+        path,
+        reason: crate::infrastructure::graph::per_file_graph::SkipReason::Budget(reason),
+    }
+}
+
 /// The coverage of an answer computed by reading the files of the tree
 /// itself, one by one, with no graph in between.
 ///
@@ -620,6 +637,10 @@ pub(crate) fn skip_reason_text(
         crate::infrastructure::graph::per_file_graph::SkipReason::Walk(d) => {
             format!("walk error: {d}")
         }
+        // The budget's text is already a sentence about the answer, so
+        // it is published as it is: a prefix would say the same thing
+        // twice.
+        crate::infrastructure::graph::per_file_graph::SkipReason::Budget(d) => d.clone(),
         crate::infrastructure::graph::per_file_graph::SkipReason::Other(d) => {
             format!("other: {d}")
         }

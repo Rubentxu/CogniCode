@@ -378,8 +378,31 @@ impl AnalysisService {
         let source = std::fs::read_to_string(path).map_err(|error| {
             crate::infrastructure::graph::source_files::unreadable(path, &error)
         })?;
-        let found = TreeSitterParser::new(language)
-            .and_then(|parser| parser.find_all_occurrences_of_identifier(&source, identifier))
+        // The parser comes before the filter, on purpose: a language
+        // whose grammar cannot be loaded leaves the hole it has always
+        // left — the filter skips the parse, not the parser. The parser
+        // itself comes from the thread's cache, because a search that
+        // builds one parser per file pays for the tree, not for the
+        // question.
+        let parser = TreeSitterParser::with_cache(language).map_err(|error| SkippedFile {
+            path: path.to_string_lossy().into_owned(),
+            reason: SkipReason::Parse(error.to_string()),
+        })?;
+        // A file that does not name the identifier cannot hold an
+        // occurrence of it: the parser compares the text of an
+        // identifier node with the name, and that text is a slice of the
+        // source. So the file is read (the search has to read it to
+        // know) and not parsed — and the parse is the expensive half of
+        // a search, because a tree has far more files that do not name
+        // the symbol than files that do.
+        if !source.contains(identifier) {
+            return Ok(FileOccurrences {
+                source,
+                occurrences: Vec::new(),
+            });
+        }
+        let found = parser
+            .find_all_occurrences_of_identifier(&source, identifier)
             .map_err(|error| SkippedFile {
                 path: path.to_string_lossy().into_owned(),
                 reason: SkipReason::Parse(error.to_string()),
@@ -3772,6 +3795,7 @@ mod find_symbol_usages_tests {
                 include_declaration: true,
                 context_lines: None,
                 first_only_definition: true,
+                budget: crate::application::analysis_basis::Budget::default(),
             })
             .unwrap();
         cleanup(&dir);
@@ -3797,6 +3821,7 @@ mod find_symbol_usages_tests {
                 include_declaration: false,
                 context_lines: None,
                 first_only_definition: true,
+                budget: crate::application::analysis_basis::Budget::default(),
             })
             .unwrap();
         cleanup(&dir);
@@ -3820,6 +3845,7 @@ mod find_symbol_usages_tests {
                 include_declaration: true,
                 context_lines: None,
                 first_only_definition: true,
+                budget: crate::application::analysis_basis::Budget::default(),
             })
             .unwrap();
         cleanup(&dir);
@@ -3847,6 +3873,7 @@ mod find_symbol_usages_tests {
                 include_declaration: true,
                 context_lines: Some(1),
                 first_only_definition: true,
+                budget: crate::application::analysis_basis::Budget::default(),
             })
             .unwrap();
         let without_ctx = service
@@ -3856,6 +3883,7 @@ mod find_symbol_usages_tests {
                 include_declaration: true,
                 context_lines: None,
                 first_only_definition: true,
+                budget: crate::application::analysis_basis::Budget::default(),
             })
             .unwrap();
         cleanup(&dir);

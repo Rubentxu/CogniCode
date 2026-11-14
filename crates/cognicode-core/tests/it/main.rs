@@ -19,6 +19,7 @@ mod a_snapshot_says_who_produced_it;
 #[cfg(feature = "persistence")]
 mod a_symbol_count_is_published_only_when_it_was_measured;
 mod a_turbofish_is_not_the_name_of_the_callee;
+mod a_usage_search_is_bounded_and_says_what_it_covered;
 mod a_value_receiver_names_a_method_of_its_type;
 #[cfg(feature = "persistence")]
 mod an_edited_file_is_read_once;

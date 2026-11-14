@@ -64,6 +64,7 @@ async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) ->
             include_declaration: include_decl,
             context_lines: None,
             first_only_definition: true,
+            budget: cognicode_core::application::analysis_basis::Budget::default(),
         })
         .expect("AnalysisService no debe fallar en workspace válido");
 
@@ -94,6 +95,8 @@ async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) ->
         precision: Precision::AstHeuristic,
         provider: "tree-sitter-rust".to_string(),
         coverage: cognicode_core::interface::coverage::CoverageInfo::of(&search.coverage),
+        omitted: search.omitted,
+        truncation_reason: search.truncation_reason,
     }
 }
 

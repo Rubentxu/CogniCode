@@ -363,6 +363,7 @@ fn reason_text(reason: &SkipReason) -> String {
         | SkipReason::Parse(message)
         | SkipReason::UnsupportedExtension(message)
         | SkipReason::Walk(message)
+        | SkipReason::Budget(message)
         | SkipReason::Other(message) => message.clone(),
         SkipReason::Symlink { target } => target.clone(),
     }
@@ -386,6 +387,7 @@ fn find_symbol_usages_prunes_security_and_performance_at_the_same_seam() {
         include_declaration: true,
         context_lines: Some(0),
         first_only_definition: false,
+        budget: cognicode_core::application::analysis_basis::Budget::default(),
     };
     let usages = svc.find_symbol_usages(params).expect("ok");
     let paths: Vec<String> = usages.iter().map(|u| u.file.clone()).collect();

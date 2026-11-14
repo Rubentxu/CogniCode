@@ -5,11 +5,55 @@
 //! from, with the security blocklist and the performance skips applied by the
 //! one walk that owns them. A file the walk lists and the search cannot read
 //! is a hole in the answer, not a file without usages.
+//!
+//! The search has a budget. A tree can be bigger than a consumer can wait
+//! for, and the cost of the answer depends on the tree and not on the
+//! question, so the search stops at its budget and says what it stopped at:
+//! `partial`, the number of files it left out, and the reason. An answer
+//! that covers a part of the tree never reads as an answer about the whole
+//! tree.
 
+use crate::application::analysis_basis::Budget;
 use crate::application::error::AppResult;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::analyze::Coverage;
 use crate::domain::value_objects::{published_column, published_line};
+use std::time::Instant;
+
+/// The budget the product's own surfaces give the usage search.
+///
+/// One number for the two of them: the CLI and the MCP answer the same
+/// question about the same tree, and two numbers would be two answers to
+/// the same question. Ten seconds is long enough for a real repository
+/// (the search of this one takes a quarter of a second) and short enough
+/// that a consumer does not wait forever for a tree nobody can read in
+/// time. Fifty thousand files is the other side of the same bound: it is
+/// a tree twenty times bigger than this one, and the time limit is the
+/// one that stops first.
+pub const USAGE_SEARCH_BUDGET: Budget = Budget {
+    max_elapsed: Some(std::time::Duration::from_secs(10)),
+    max_entities: Some(50_000),
+};
+
+/// Why the search has to stop, if it has to.
+///
+/// The two bounds are the two the domain's budget names: the files it may
+/// read and the time it may take. The reason names the bound that was
+/// reached, because a consumer that knows "the search stopped" cannot tell
+/// whether the tree was too big or the machine was too slow.
+fn budget_stopped(budget: &Budget, started: Instant, read: usize) -> Option<String> {
+    if let Some(max) = budget.max_entities
+        && read >= max
+    {
+        return Some(format!("the file budget ({max}) was exhausted"));
+    }
+    if let Some(max) = budget.max_elapsed
+        && started.elapsed() >= max
+    {
+        return Some(format!("the time budget ({max:?}) was exhausted"));
+    }
+    None
+}
 
 #[derive(Debug, Clone)]
 pub struct UsageSearchParams {
@@ -18,6 +62,18 @@ pub struct UsageSearchParams {
     pub include_declaration: bool,
     pub context_lines: Option<usize>,
     pub first_only_definition: bool,
+    /// How much of the tree the search may read.
+    ///
+    /// The search reads the files of the tree until it has read them
+    /// all or until the budget stops it. A search that stops says so —
+    /// `partial`, the number of files it left out, and the reason — so
+    /// that an answer that covers a part of the tree never reads as an
+    /// answer about the whole tree.
+    ///
+    /// The budget is consulted between files, so one enormous file is
+    /// read whole: the bound is on the number of files and on the time
+    /// the search spends, not on the size of a single read.
+    pub budget: Budget,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +129,12 @@ pub struct UsageSearch {
     pub usages: Vec<UsageResult>,
     /// What the search covered, in the vocabulary every other answer uses.
     pub coverage: Coverage,
+    /// How many files the search did not read because its budget stopped
+    /// it. `None` when the search read the whole tree.
+    pub omitted: Option<usize>,
+    /// Why the search stopped before the end of the tree. `None` when it
+    /// read the whole tree.
+    pub truncation_reason: Option<String>,
 }
 
 /// One place where an identifier occurs in a file: what the reader of the
@@ -133,12 +195,32 @@ impl AnalysisService {
         // the one walk that owns them.
         let tree = self.tree_state(&params.project_dir);
         let mut holes = tree.holes;
+        let total_files = tree.files.len();
+        let started = Instant::now();
+        let mut read = 0usize;
+        // The budget is consulted before the file is read, so a search
+        // that stops does not read one file more than it can afford.
+        let mut truncation: Option<String> = None;
         for file in &tree.files {
+            if let Some(bound) = budget_stopped(&params.budget, started, read) {
+                let reason =
+                    format!("the search stopped after {read} of {total_files} files ({bound})");
+                truncation = Some(reason.clone());
+                // The file the search did not reach is a hole: it was
+                // not read, and neither were the files after it.
+                holes.push(crate::application::services::analyze::budget_hole(
+                    file.path.to_string_lossy().into_owned(),
+                    reason,
+                ));
+                break;
+            }
             let path = file.path.as_path();
+            let found = self.identifier_in_file(path, file.language, &params.symbol_name);
+            read += 1;
             let FileOccurrences {
                 source,
                 occurrences,
-            } = match self.identifier_in_file(path, file.language, &params.symbol_name) {
+            } = match found {
                 Ok(found) => found,
                 Err(hole) => {
                     holes.push(hole);
@@ -187,6 +269,12 @@ impl AnalysisService {
         // language the product reads was in the walk.
         let coverage =
             crate::application::services::analyze::scan_coverage(holes, !tree.files.is_empty());
-        Ok(UsageSearch { usages, coverage })
+        let omitted = truncation.as_ref().map(|_| total_files - read);
+        Ok(UsageSearch {
+            usages,
+            coverage,
+            omitted,
+            truncation_reason: truncation,
+        })
     }
 }

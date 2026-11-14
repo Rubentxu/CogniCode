@@ -144,13 +144,16 @@ pub enum ConsumerProfile {
 
 /// Budget de ejecucion. Por defecto sin limite, pero el caller
 /// puede fijar `max_elapsed` o `max_entities` para evitar que
-/// una operacion bloquee al consumer. Los servicios que ya
-/// soportan cancelacion (AnalysisService::build_project_graph_async)
-/// lo consultan; los que no lo hacen en este WU pueden
+/// una operacion bloquee al consumer. Lo consulta la busqueda de usos
+/// (`AnalysisService::find_symbol_usages_with_coverage`), que para
+/// entre ficheros y publica el corte; el resto de los servicios pueden
 /// ignorarlo — el budget se pinea por el test, no por fuerza.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Budget {
     pub max_elapsed: Option<Duration>,
+    /// How many entities the operation may touch. What an entity is
+    /// belongs to the operation: for the usage search it is the files it
+    /// reads.
     pub max_entities: Option<usize>,
 }
 

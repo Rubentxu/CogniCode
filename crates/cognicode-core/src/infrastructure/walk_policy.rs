@@ -28,6 +28,13 @@
 //! the *production* graph path uses. A law that only governed
 //! `walkdir` would have been a law the wired path did not obey.
 //!
+//! The `.gitignore` of a project is honoured whether or not the
+//! project is a git repository: the file is the project's declaration
+//! of what is out of bounds, and `ignore`'s default (`require_git`)
+//! would honour it only inside a repository — so the same tree was
+//! read whole or read as the project wrote it, depending on whether
+//! somebody had run `git init`.
+//!
 //! ## What this law does not govern
 //!
 //! Walks that only enumerate *names* for a caller-initiated search —
@@ -72,9 +79,20 @@ pub fn is_real_file(entry: &DirEntry) -> bool {
 /// default is written down: the whole defect here was a walker that
 /// behaved correctly *by accident of a default nobody had read*, and a
 /// reader had no way to tell that from one that was pinned.
+///
+/// `require_git` is spelled out too, and it is the opposite of its
+/// default. `ignore` applies the git rules only inside a git
+/// repository, so a project that is not a repository yet — a directory
+/// of sources that nobody has committed — had its `.gitignore` read as
+/// if it were not there, and the walk descended into the trees the
+/// project had said to leave out. The `.gitignore` of a project is the
+/// project's: whether the project is a repository is not the
+/// project's business, and the cost of not honouring it is a walk over
+/// a tree the project declared out of bounds.
 pub fn contained_ignore_walk(root: impl AsRef<Path>) -> WalkBuilder {
     let mut walk = WalkBuilder::new(root);
     walk.follow_links(false);
+    walk.require_git(false);
     walk
 }
 

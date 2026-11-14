@@ -244,6 +244,69 @@ pub struct FindUsagesOutput {
     /// before this field existed reads as "unknown", never as "complete".
     #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
     pub coverage: crate::interface::coverage::CoverageInfo,
+    /// How many files of the tree the search did not read because its
+    /// budget stopped it.
+    ///
+    /// `None` when the search read the whole tree. The count is what
+    /// turns "the answer is partial" into "the answer is about this
+    /// much of the tree".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted: Option<usize>,
+    /// Why the search stopped before the end of the tree.
+    ///
+    /// `None` when the search read the whole tree. The reason names the
+    /// bound that was reached, so a consumer can tell a tree that was
+    /// too big from a machine that was too slow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncation_reason: Option<String>,
+}
+
+impl FindUsagesOutput {
+    /// The answer of the usage search, in the shape the wire carries.
+    ///
+    /// The CLI and the MCP ask the same question about the same tree, so
+    /// they build the answer the same way: one constructor, one meaning. A
+    /// field that one of them filled and the other left empty is an
+    /// answer that depends on who asked.
+    pub fn of_search(
+        symbol: String,
+        search: crate::application::services::usage_search::UsageSearch,
+    ) -> Self {
+        let total = search.usages.len();
+        let usages = search
+            .usages
+            .into_iter()
+            .map(|u| UsageEntry {
+                file: u.file,
+                line: u.line,
+                column: u.column,
+                context: u.context,
+                is_definition: u.is_definition,
+                surrounding_lines: u.context_lines.map(|c| ContextLines {
+                    before: c.before,
+                    current: c.current,
+                    after: c.after,
+                }),
+            })
+            .collect();
+        Self {
+            symbol,
+            usages,
+            total,
+            // Navigation shape: the floor is `ast-heuristic` and the
+            // provider is the symbol index.
+            precision: crate::interface::symbol_identity::precision_floor_for_tool("find_usages"),
+            provider: crate::interface::symbol_identity::default_provider_for_tool("find_usages")
+                .to_string(),
+            coverage: crate::interface::coverage::CoverageInfo::of(&search.coverage),
+            // What the search did not reach, and why: the consumer reads
+            // the answer and this together, because an answer about a part
+            // of the tree that reads as an answer about the whole tree is
+            // the lie this product does not tell.
+            omitted: search.omitted,
+            truncation_reason: search.truncation_reason,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -996,6 +1059,16 @@ pub enum SkippedReasonKind {
     /// addition is additive: no value a consumer already handles
     /// disappears.
     Walk,
+    /// The search stopped at its budget, so the file was never
+    /// reached.
+    ///
+    /// Its own tag rather than `Other` for the same reason `Walk` has
+    /// one: the condition is precisely named — the answer does not
+    /// cover the file because the answer had to arrive — and a
+    /// consumer that reads `Other` as "something we cannot name" would
+    /// read this as a mystery. The addition is additive: no value a
+    /// consumer already handles disappears.
+    Budget,
     Other,
 }
 
@@ -1024,6 +1097,7 @@ impl SkippedFileInfo {
                 format!("symlink to {target}, not followed"),
             ),
             R::Walk(d) => (SkippedReasonKind::Walk, d),
+            R::Budget(d) => (SkippedReasonKind::Budget, d),
             R::Other(d) => (SkippedReasonKind::Other, d),
         };
         Self {
