@@ -39556,3 +39556,80 @@ cambió después (el contrato, el snapshot y el documento) no toca el producto: 
   del mantenedor.
 
 Medición del calendario: crate=cognicode-graph-algos sha=a42fb659a8ce4a3b986812bb8a284b35351f28c9 cargo-mutants=27.1.0 rustc=1.96.0/ac68faa20 resultado=PASS
+
+## Recibo de bloque 3 — PASS, base `d4575908` (2026-11-14)
+
+**Estado: PASS** sobre `57916a3a`, tras una corrección hacia delante. El cierre del bloque encontró
+`cargo clippy --workspace --all-targets -- -D warnings` en rojo con dos lints que el propio lote
+había introducido (`too_many_arguments` y `collapsible_if`, ambos de `a06d5f65`, TASK-275). Un
+bloque rojo no se cierra con un `PASS`: se corrige hacia delante, en su propia rama, y la misma
+base tiene que volver a salir verde. TASK-291 (#868) corrigió los dos lints y la misma base se
+midió entera otra vez sobre `57916a3a`: verde en los cuatro pasos.
+
+**Base y SHA verificados.** Base: `d4575908` (#855). El gate, `npm test`, los contratos y
+`fmt` + `clippy` se midieron sobre `57916a3a` (#868). El gate se corrió **dos veces** con la misma
+base: la primera sobre `9bbcfb26` (el árbol del producto de las once tareas) y la segunda sobre
+`57916a3a` (el producto más la corrección). El primer `npm test` y la primera corrida de
+contratos también se midieron sobre `9bbcfb26`, y los dos salieron verdes; la segunda corrida de
+cada uno, sobre `57916a3a`, también.
+
+**Las tareas.** El contador de `AGENTS.md` da 11 sobre `d4575908..57916a3a`: TASK-259 (#859,
+`9f840d1e`), TASK-275 (#865, `a06d5f65`), TASK-276 (#864, `fd4b9940`), TASK-278 (#858,
+`fce27230`), TASK-279 (#857, `45a25f4b`), TASK-285 (#866 `bd915c6f` y #867 `9bbcfb26`), TASK-286
+(#860, `b5a9e11b`), TASK-287 (#863, `100e66bf`), TASK-289 (#861, `f17f5bde`), TASK-290 (#862,
+`8c6c1b97`) y TASK-291 (#868, `57916a3a`). La 291 es la corrección hacia delante, y por la regla
+del bloque rojo cuenta para el bloque siguiente: el bloque tiene una más de diez. Queda fuera
+del contador, por su prefijo `docs(...)`: TASK-281 (#856, `f88d96b1`, el recibo del bloque 2).
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1a | `GATE_BASE=d4575908 bash scripts/test-gate.sh` | `9bbcfb26` | 0 | compilación 1 min 18 s; unitarios 24,6 s; integración 13,7 s | 4.041 unitarios (0 omitidos) y 1.657 de integración (2 omitidos); mutantes: no medidos, con el motivo en el log |
+| 1b | `GATE_BASE=d4575908 bash scripts/test-gate.sh` | `57916a3a` | 0 | 2 min 08 s (compilación 1 min 24 s; unitarios 24,5 s; integración 14,1 s) | 4.041 unitarios (0 omitidos) y 1.657 de integración (2 omitidos); testigo del árbol limpio |
+| 2a | `npm test --prefix apps/explorer-ui` | `9bbcfb26` | 0 | 13,4 s | 88 ficheros, 950 tests |
+| 2b | `npm test --prefix apps/explorer-ui` | `57916a3a` | 0 | 13,8 s | 88 ficheros, 950 tests |
+| 3a | `bash scripts/ci/run-all-contracts.sh` | `9bbcfb26` | 0 | — | todas las suites en verde |
+| 3b | `bash scripts/ci/run-all-contracts.sh` | `57916a3a` | 0 | 1 min 17 s | 39 suites, 485 casos, 0 fallos; testigo del árbol limpio |
+| 4a | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `9bbcfb26` | 1 | 74 s | **clippy en rojo**: 2 lints (`too_many_arguments` en `per_file_graph.rs:539`, `collapsible_if` en `naming.rs:906`) |
+| 4b | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `57916a3a` | 0 | 1 min 06 s | sin avisos |
+
+**El rojo y su corrección.** Los dos lints los introdujo `a06d5f65` (TASK-275): el octavo
+argumento de `resolve_call_within_file` y el `if` anidado de `naming.rs`. TASK-291 (#868,
+`57916a3a`) los corrigió sin tocar el comportamiento: la llamada se juzga ahora con el `CallSite`
+que ya la describe —el nombre, el calificador, la cabeza del camino y el receptor salen de ahí, y
+no de cuatro parámetros sueltos que podían no concordar entre sí—, y el `if` se colapsa con una
+cadena de letas. El instrumento de la corrección es el propio lint: **RED** rc=101 con los dos
+nombres, **GREEN** rc=0 sobre el workspace entero. El lint vive fuera de la suite a propósito: es
+un recipe, no un test.
+
+**Lo que este bloque cambió, medido.** TASK-285 (el ledger de reutilización sabe lo que dice el
+manifiesto) es la medición grande del bloque, y su A/B sobre el mismo árbol dio: una construcción
+caliente re-resuelve 8.468 relaciones y pasa a 51 (**−99,4 %**), y el tiempo caliente baja de
+4,94–5,01 s a 3,54–3,58 s (**−1,4 s**); las bandas frías se solapan, así que no hay regresión
+medible en frío. Los bordes en frío de TASK-275 (llamadas 19.386 → 18.998, sin resolver 79.015 →
+79.527, pendientes 37.909 → 36.399) están en su propia tarea.
+
+**NOT_RUN.**
+
+- **Mutantes (paso 3 del gate).** El lote tocó `cognicode-core`, que no es asequible de mutar
+  (217k líneas), y el crate del calendario (`cognicode-graph-algos`) no estaba en su turno: 231
+  fusiones desde el marcador `fb526521db6e`, periodo 50, y el siguiente cruce es a 250. El gate lo
+  dijo en su log —«este lote NO midio mutacion»—, y eso no es que la mutación se midiera y no
+  encontrara nada. **No se escribe línea de calendario**: el turno no se pagó y el ancla sigue
+  siendo la medición real de `a42fb659` (627 mutantes, 618 atrapados, 9 inviables, 0
+  supervivientes), que es la última línea «Medición del calendario» del Journal.
+- **El primer gate (1a) no se repitió con su propio árbol:** lo que se repitió fue el gate entero
+  con la MISMA base sobre el árbol ya corregido (1b). El `rc=0` de la segunda pasada es la medida
+  que cierra el bloque; el de la primera pasada ya no mide el árbol que está en `main`.
+- **El tiempo de pared de la primera pasada del gate no está registrado:** el log conserva sus
+  componentes (compilación, unitarios, integración) y no la duración total. Los logs de las dos
+  pasadas vivían en `/var/home/rubentxu/cognicode-tmp/` y no se archivaron: los `rc`, los tiempos
+  y los recuentos de esta entrada son los de la sesión que los lanzó, no un artefacto del
+  repositorio.
+- **El `main` local pudo avanzar a `57916a3a` en este bloque**, a diferencia del bloque 2: los
+  once squashes se hicieron con `--subject` y `--body` explícitos y ninguno lleva trailer. La
+  instancia histórica (`fb6ebbbd`) sigue siendo la decisión del mantenedor, en TASK-282; lo que
+  cambió fue la prevención del lado del agente, no la política.
+
+**La base del bloque 4 es `57916a3a`.**
