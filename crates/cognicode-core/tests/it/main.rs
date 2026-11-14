@@ -158,6 +158,7 @@ mod the_broken_file_is_not_published;
 mod the_callflow_of_a_real_project_shows_the_relations;
 mod the_complexity_of_a_real_project_answers;
 mod the_consumer_can_declare_the_version;
+mod the_content_search_does_not_hold_the_runtime;
 mod the_core_has_no_command_line;
 mod the_declaration_knows_where_it_is;
 mod the_fact_path_does_not_invent_the_place_of_a_declaration;

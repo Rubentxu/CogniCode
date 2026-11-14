@@ -239,7 +239,8 @@ pub async fn handle_search_content(
         None => {
             let dto_input: crate::application::dto::SearchContentRequest = input.into();
             let dto_result = service
-                .search_content(dto_input)
+                .search_content_off_the_runtime(dto_input)
+                .await
                 .map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
@@ -249,7 +250,7 @@ pub async fn handle_search_content(
     let result = instrument_tool(
         &metrics,
         "search_content",
-        async { service.search_content(dto_input) },
+        async { service.search_content_off_the_runtime(dto_input).await },
         app_error_to_tool_error,
     )
     .await;
