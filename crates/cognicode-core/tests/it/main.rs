@@ -166,6 +166,7 @@ mod the_graph_over_real_code_answers;
 mod the_identity_the_product_writes_is_the_one_it_reads;
 mod the_impact_names_the_tests_it_reaches;
 mod the_index_reads_a_file_the_way_the_graph_does;
+mod the_ledger_knows_what_the_manifest_says;
 mod the_product_observes_one_set_of_files;
 mod the_product_publishes_the_name_a_symbol_carries;
 #[cfg(feature = "persistence")]
