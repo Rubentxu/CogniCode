@@ -16,7 +16,7 @@
 //! complexity calculator and the tool handlers all answer the same question
 //! about the same node the same way.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node;
 
@@ -311,6 +311,242 @@ fn use_bound_names(node: &Node, source: &[u8], bound: &mut HashSet<String>) {
     }
 }
 
+/// The crate the names a file imports come from.
+///
+/// A file that writes `use serde_json::to_value;` and then calls
+/// `to_value(..)` calls the crate's function, not a symbol of the project
+/// that happens to have the same name: the import shadows the name in the
+/// module it is written in. The head of the path the import is written
+/// through is the crate, and it is the only place the file says where the
+/// name comes from.
+///
+/// The imports are read per module, because a `use` binds its name in the
+/// module it is written in, and a module does not inherit the imports of
+/// the module that holds it. The walk reads the modules of the file and the
+/// imports of each; it does not go inside a function, because a `use`
+/// written in a body binds its name in that body, and a name the reader
+/// cannot place keeps the answer it had — which can only keep an edge.
+///
+/// The shape read here is the shape of a Rust import. A language that
+/// writes its imports differently keeps the answer it had.
+pub struct ImportOrigins {
+    /// The modules of the file, with the crate each name comes from.
+    modules: Vec<ModuleOrigins>,
+}
+
+/// The names one module binds, and the crate each comes from.
+struct ModuleOrigins {
+    /// The first line the module covers.
+    start: usize,
+    /// The last line the module covers.
+    end: usize,
+    /// The crate each imported name comes from.
+    origins: HashMap<String, String>,
+}
+
+impl ImportOrigins {
+    /// The crate the name comes from, in the module that holds the line.
+    ///
+    /// `None` when the module does not import the name, and `None` too when
+    /// the name comes from the project itself: a path that starts at a root
+    /// of the crate graph (`crate`, `self`, `super`) names the project's
+    /// own thing, and there is no crate to judge.
+    pub fn crate_of(&self, name: &str, line: usize) -> Option<&str> {
+        let module = self.module_of(line)?;
+        module.origins.get(name).map(String::as_str)
+    }
+
+    /// The module that holds the line.
+    ///
+    /// The innermost one: a module inside a module is the one that holds
+    /// the line, and the module that holds it does not bind the names the
+    /// inner module binds.
+    fn module_of(&self, line: usize) -> Option<&ModuleOrigins> {
+        self.modules
+            .iter()
+            .filter(|module| module.start <= line && line <= module.end)
+            .min_by_key(|module| module.end - module.start)
+    }
+}
+
+/// The crates the names a file imports come from.
+///
+/// See [`ImportOrigins`] for what the answer is for and how the imports are
+/// read.
+pub fn import_origins_in(root: Node, source: &[u8], import_types: &[&str]) -> ImportOrigins {
+    let mut modules = vec![ModuleOrigins {
+        start: root.start_position().row + 1,
+        end: root.end_position().row + 1,
+        origins: HashMap::new(),
+    }];
+    // The modules of the file and the imports of each. The stack holds the
+    // module an item belongs to and the node whose children are that
+    // module's items.
+    let mut stack = vec![(0usize, root)];
+    while let Some((module, node)) = stack.pop() {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "mod_item" => {
+                    // The body of a module is another module.
+                    let Some(body) = child.child_by_field_name("body") else {
+                        continue;
+                    };
+                    let index = modules.len();
+                    modules.push(ModuleOrigins {
+                        start: body.start_position().row + 1,
+                        end: body.end_position().row + 1,
+                        origins: HashMap::new(),
+                    });
+                    stack.push((index, body));
+                }
+                kind if import_types.contains(&kind) => {
+                    for (name, origin) in import_bindings(&child, source) {
+                        // A path that starts at a root of the crate graph
+                        // names the project's own thing, and there is no
+                        // crate to judge.
+                        if !is_own_root(&origin) {
+                            modules[module].origins.insert(name, origin);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    ImportOrigins { modules }
+}
+
+/// The names an import binds, and the crate each comes from.
+///
+/// An import binds the name it is written with: the last segment of the
+/// path (`use serde_json::to_value;` binds `to_value`) or the alias it
+/// renames it with (`use serde_json::to_value as tv;` binds `tv`). The
+/// crate is the head of the path the import is written through.
+fn import_bindings(node: &Node, source: &[u8]) -> Vec<(String, String)> {
+    let Some(argument) = node.child_by_field_name("argument") else {
+        return Vec::new();
+    };
+    let mut bound = Vec::new();
+    collect_import(&argument, source, None, &mut bound);
+    bound
+}
+
+/// The names an import path binds, and the crate they come from.
+///
+/// The head of the path is inherited by the names a list binds: in
+/// `use serde_json::{to_value, from_value};` both names come from
+/// `serde_json`.
+fn collect_import(
+    node: &Node,
+    source: &[u8],
+    head: Option<&str>,
+    bound: &mut Vec<(String, String)>,
+) {
+    match node.kind() {
+        "scoped_identifier" => {
+            let name = node
+                .child_by_field_name("name")
+                .map(|name| node_text(&name, source));
+            let path = node
+                .child_by_field_name("path")
+                .and_then(|path| path_head(&path, source));
+            match (head, path) {
+                (Some(head), _) => {
+                    if let Some(name) = name {
+                        bound.push((name, head.to_string()));
+                    }
+                }
+                (None, Some(path)) => {
+                    if let Some(name) = name {
+                        bound.push((name, path));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        "use_as_clause" => {
+            let alias = node
+                .child_by_field_name("alias")
+                .map(|alias| node_text(&alias, source));
+            let path = node
+                .child_by_field_name("path")
+                .and_then(|path| path_head(&path, source));
+            match (head, path) {
+                (Some(head), _) => {
+                    if let Some(alias) = alias {
+                        bound.push((alias, head.to_string()));
+                    }
+                }
+                (None, Some(path)) => {
+                    if let Some(alias) = alias {
+                        bound.push((alias, path));
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        "identifier" => {
+            // The name of a list: `use serde_json::{to_value, from_value};`
+            // binds `to_value` and `from_value`, and both come from the
+            // head the list is written through.
+            if let Some(head) = head {
+                bound.push((node_text(node, source), head.to_string()));
+            }
+        }
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                collect_import(&child, source, head, bound);
+            }
+        }
+        "scoped_use_list" => {
+            let path = node
+                .child_by_field_name("path")
+                .and_then(|path| path_head(&path, source));
+            match (head, path) {
+                (Some(head), _) => {
+                    if let Some(list) = node.child_by_field_name("list") {
+                        collect_import(&list, source, Some(head), bound);
+                    }
+                }
+                (None, Some(path)) => {
+                    if let Some(list) = node.child_by_field_name("list") {
+                        collect_import(&list, source, Some(&path), bound);
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The head of a path an import is written through.
+///
+/// The head is the crate: `serde_json` in `use serde_json::to_value;`. A
+/// path that starts at a root of the crate graph names the project's own
+/// thing, and the root is its head.
+fn path_head(node: &Node, source: &[u8]) -> Option<String> {
+    match node.kind() {
+        "identifier" => Some(node_text(node, source)),
+        "crate" | "self" | "super" => Some(node.kind().to_string()),
+        "scoped_identifier" => node
+            .child_by_field_name("path")
+            .and_then(|path| path_head(&path, source)),
+        _ => None,
+    }
+}
+
+/// The roots of the crate graph.
+///
+/// A path that starts at one of them names the project's own thing: `crate`
+/// is the crate itself, `self` the module the path is written in, and
+/// `super` the module that holds it.
+fn is_own_root(head: &str) -> bool {
+    matches!(head, "crate" | "self" | "super")
+}
+
 /// The type qualifier of a callee as written. See [`callee_type_qualifier`].
 pub fn type_qualifier_of(raw: &str) -> Option<String> {
     let raw = raw.trim();
@@ -505,8 +741,25 @@ fn node_text(node: &Node, source: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{path_head_of, type_names_bound_in, type_qualifier_of};
+    use super::{import_origins_in, path_head_of, type_names_bound_in, type_qualifier_of};
+    use crate::domain::value_objects::Language;
     use std::collections::HashSet;
+
+    /// The crate a name of a Rust file comes from, in the module that holds
+    /// the line.
+    fn origin_in(source: &str, name: &str, line: usize) -> Option<String> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("the Rust grammar loads");
+        let tree = parser.parse(source, None).expect("the fixture parses");
+        let origins = import_origins_in(
+            tree.root_node(),
+            source.as_bytes(),
+            Language::Rust.symbols().import_types,
+        );
+        origins.crate_of(name, line).map(str::to_string)
+    }
 
     fn qualifier(raw: &str) -> Option<String> {
         type_qualifier_of(raw)
@@ -685,6 +938,80 @@ trait Source { type Output; }
         assert!(
             bound_in("use std::time::Duration;\nfn run() { Duration::from_millis(1); }\n")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn an_import_says_where_the_name_comes_from() {
+        let source = "use serde_json::to_value;\nfn run() { to_value(&1); }\n";
+        assert_eq!(
+            origin_in(source, "to_value", 2).as_deref(),
+            Some("serde_json"),
+            "the import says the name is the crate's"
+        );
+    }
+
+    #[test]
+    fn an_import_of_the_project_names_no_crate() {
+        let source = "use crate::event::build;\nfn run() { build(); }\n";
+        assert_eq!(
+            origin_in(source, "build", 2),
+            None,
+            "a path that starts at a root of the crate graph names the project's own thing"
+        );
+    }
+
+    #[test]
+    fn an_alias_says_where_the_name_comes_from() {
+        let source = "use serde_json::to_value as tv;\nfn run() { tv(&1); }\n";
+        assert_eq!(
+            origin_in(source, "tv", 2).as_deref(),
+            Some("serde_json"),
+            "the alias names the crate's function too"
+        );
+    }
+
+    #[test]
+    fn a_list_import_says_where_every_name_comes_from() {
+        let source = "use serde_json::{to_value, from_value};\nfn run() { to_value(&1); }\n";
+        assert_eq!(
+            origin_in(source, "to_value", 2).as_deref(),
+            Some("serde_json")
+        );
+        assert_eq!(
+            origin_in(source, "from_value", 2).as_deref(),
+            Some("serde_json")
+        );
+    }
+
+    #[test]
+    fn a_module_does_not_inherit_the_imports_of_the_module_that_holds_it() {
+        let source = "\
+mod inner {
+    use serde_json::to_value;
+}
+fn run() { to_value(&1); }
+";
+        assert_eq!(
+            origin_in(source, "to_value", 2).as_deref(),
+            Some("serde_json"),
+            "the module that writes the import binds the name"
+        );
+        assert_eq!(
+            origin_in(source, "to_value", 5),
+            None,
+            "the module that holds the module does not bind the name"
+        );
+    }
+
+    #[test]
+    fn an_import_of_a_module_of_the_project_names_the_module() {
+        let source = "use events::build;\nfn run() { build(); }\n";
+        assert_eq!(
+            origin_in(source, "build", 2).as_deref(),
+            Some("events"),
+            "the module the name comes from is named, and the rule asks the manifest whether it \
+             is a crate from outside"
         );
     }
 }
