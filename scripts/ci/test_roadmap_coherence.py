@@ -504,7 +504,19 @@ def test_roadmap_or_journal_cites_the_workspace_version() -> None:
     )
 
 
-SNAPSHOT_MAX_DRIFT = 5  # commits: a snapshot describing HEAD~5 is still honest
+# La ventana en la que se mide la edad del snapshot, en commits.
+#
+# Está dimensionada al BLOQUE, no a una fusión. Un bloque de diez tareas de
+# código mete dieciséis commits (medido: bloque 2, `f74ff490..a42fb659`), y el
+# snapshot se regenera una vez, al cerrar el bloque. Con una ventana de cinco,
+# la ventana expiraba antes de la tercera tarea del bloque —la deriva medida
+# era de trece commits— y el ratchet quedaba rojo en `main` el resto del
+# bloque: la ventana se calibró cuando un ciclo eran dos commits (el squash y
+# su recibo), y el ritmo de ahora es uno y medio commits por tarea de código.
+#
+# Con la ventana en veinte, un snapshot de la edad de un bloque (16 commits)
+# sigue siendo honesto, y uno de dos bloques (32 commits) se rechaza.
+SNAPSHOT_MAX_DRIFT = 20
 
 
 def test_current_sha_matches_head() -> None:
