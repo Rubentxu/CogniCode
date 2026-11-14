@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-13, sobre `5843fce6ce720e398b2f939608d202879fdc6c84` (la
+> **Snapshot**: 2026-11-14, sobre `7de0fe20d0c6bdb9c702f859e9f5315daeed854a` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -376,30 +376,66 @@
 > por bloque (`ba0ccad2`, `f62dd0aa`). El primer bloque cerró su gate en
 > verde y dejó dos desfases de documentación que los contratos vieron y se
 > corrigieron hacia delante (`5d2dd880`, `f74ff490`); su recibo está en el
-> Journal (`54b9787f`). El segundo bloque lleva dos tareas de código: la
-> búsqueda de contenido, el listado de directorio y `retrieve_and_verify`
-> publican los ficheros que no pudieron leer en vez de callarlos
-> (`94f21d0b`, `55aba4f5`), y la poda de directorios por nombre es una
-> limitación documentada en el README y no un silencio (`5843fce6`).
+> Journal (`54b9787f`). El segundo bloque lleva once tareas de código y siete
+> documentales: la búsqueda de contenido, el listado de directorio y
+> `retrieve_and_verify` publican los ficheros que no pudieron leer en vez de
+> callarlos (`94f21d0b`, `55aba4f5`), y la poda de directorios por nombre es una
+> limitación documentada en el README y no un silencio (`5843fce6`); un import
+> agrupado de infraestructura en `application/` había puesto rojos tres tests de
+> autoalojamiento, y el arreglo importa por hoja (`d4db3c10`); el proveedor de
+> respaldo de LSP dice los ficheros que no pudo leer en vez de «no hay
+> definición» (`555e496e`); `safe_refactor` confina al workspace cada ruta que
+> abre (`828b8452`); la búsqueda de contenido y el listado de directorio
+> declinan los enlaces simbólicos (`03a88a02`); los goals `audit` y `find`
+> publican su cobertura y su base (`ee2eec36`); el paso de mutantes omite su
+> turno del calendario cuando el crate no cambió, y sólo con prueba
+> (`a1933bed`); la gramática de Haskell pasa a 0.24.1 y con ella se van los
+> abortos de heap (`fb6ebbbd`); un calificador de tipo que el proyecto no
+> declara ya no se une a su símbolo (`a42fb659`): `Duration::from_millis` deja
+> de publicarse como el `from_millis` del proyecto, y lo medido son 19.761 →
+> 19.323 aristas y 76.860 → 77.924 referencias sin resolver; y la ventana que
+> mide la deriva de este snapshot pasa a medir un bloque y no una fusión
+> (`7de0fe20`), porque la que había se calibró para un ciclo de dos commits y
+> el ritmo medido es uno y medio commits por tarea de código. Documental: la
+> API de lectura del árbol tiene un consumidor externo y se conserva
+> (`e98696ab`), el snapshot se regenera sobre los commits del bloque
+> (`239d32ec`), el README español vuelve a la versión publicada (`4c44e75e`),
+> los doce pares de CR-06 que no estaban aprobados por un mantenedor nombrado
+> lo están (`34254ba8`) y el ADR de la procedencia de las releases pasa a
+> `accepted` con la custodia de la clave ya decidida (`f400088a`). El segundo
+> bloque cierra su gate en verde —4.006 unitarios, 1.630 de integración (2
+> omitidos) y el crate del calendario medido entero: 627 mutantes, 618
+> atrapados, 9 inviables y 0 supervivientes—; el único desfase que dejaron los
+> contratos fue de documentación, la deriva de este snapshot, y su corrección
+> va en este mismo cierre; su recibo está en el Journal.
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a` → `5843fce6ce720e398b2f939608d202879fdc6c84`)
+## Qué cambió desde el snapshot anterior (`5843fce6ce720e398b2f939608d202879fdc6c84` → `7de0fe20d0c6bdb9c702f859e9f5315daeed854a`)
 
-Entre una punta y otra entraron **5 commits** (`git rev-list --count 5d2dd880b1bb8904eb06b909176fc2f1e27a7b2a..5843fce6ce720e398b2f939608d202879fdc6c84`).
+Entre una punta y otra entraron **14 commits** (`git rev-list --count 5843fce6ce720e398b2f939608d202879fdc6c84..7de0fe20d0c6bdb9c702f859e9f5315daeed854a`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
 cuando la hay, en su recibo del `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera tras el primer bloque | `f74ff490` (TASK-250, #835) | Documental: el único fichero tocado es `docs/roadmap/CURRENT.md`; el ratchet del snapshot vuelve a verde. |
-| El recibo del primer bloque entra en el Journal | `54b9787f` (TASK-251, #836) | Documental: gate rc=0 con 3.971 unitarios y 1.596 de integración (2 omitidos); mutantes `SKIP` (radio vacío); contratos rc=1 por dos desfases de documentación, corregidos hacia delante. |
-| La búsqueda de contenido y el listado de directorio publican lo que no pudieron leer | `94f21d0b` (TASK-247, #837) | RED: 8 tests nuevos fallaban con `<no coverage in the answer>` (12 pasaban); 28/28 después, con los 7 de caracterización sin tocar sus expectativas. Un directorio o fichero ilegible da ahora `coverage: partial` con la causa; un fichero que no es UTF-8 válido no es un hueco (decisión fijada por test). `file_operations.rs` 2216 → 2170 líneas de producción; CR-06 34 → 34. |
-| `retrieve_and_verify` publica los ficheros que la búsqueda no pudo leer | `55aba4f5` (TASK-252, #838) | RED: 4 de 6 tests nuevos fallaban; 6/6 después y 37/37 en el módulo entero. El campo es aditivo (un payload anterior se lee `unknown`) y reutiliza `read_coverage`, sin segunda fuente de verdad; una mutación del eslabón servicio→DTO mata 2 tests. |
-| La poda por nombre de directorio es una limitación documentada | `5843fce6` (TASK-245, #839) | Documental: README y documentación de `source_files.rs`; 5 de los 25 repositorios de `sandbox/` tienen un directorio de nombre podado en la raíz, así que nombrar cada poda volvería `partial` una quinta parte del corpus; opción reversible, un test la fija. |
+| El snapshot se regenera sobre los commits del bloque | `239d32ec` (TASK-253, #840) | Documental: sólo `docs/roadmap/CURRENT.md`; la deriva estaba en 5, el límite de la ventana, y la siguiente fusión la habría puesto en 6. |
+| La API de lectura del árbol tiene un consumidor externo y se conserva | `e98696ab` (TASK-248, #841) | Documental: tres comentarios que decían «sin consumidor» nombran al explorador externo (`gh search code` en `Rubentxu/cognicode-explorer`: dos llamadas, fijadas a v0.102.1); el parche de retirada (470 líneas, que funcionaba) queda fuera del repo. |
+| El README español vuelve a la versión publicada | `4c44e75e` (TASK-180, #842) | Documental: `README.es.md` líneas 73-75 seguían esperando `0.103.0`; el contrato del README casa por subcadena y no vigilaba esas líneas. |
+| Un import agrupado en `application/` pone rojos tres tests de autoalojamiento | `d4db3c10` (TASK-254, #843) | RED en `main`: los tres tests fallaban (`architecture_self_host_e2e` ×2 y `e2_w1_canonical_control_query`); 13/13 después. La allowlist de CR-06 no crece (34 → 34): importar por hoja o con ruta completa, nunca agrupado. Regla nueva para la focal: un diff que toque `application/` añade los tests self-host. |
+| El proveedor de respaldo de LSP no dice «no hay definición» cuando no pudo leer | `555e496e` (TASK-256, #844) | RED: 3 de 5 tests nuevos fallaban con `None` (fichero ilegible, directorio ilegible, candidato del índice); lib 3005/3005 después. El acierto en un fichero legible no se degrada y el contrato publicado no cambia. |
+| Los doce pares de CR-06 que no estaban aprobados por un mantenedor nombrado lo están | `34254ba8` (TASK-231, #845) | Documental: sólo un comentario; `test_ratchets.py` PASS y la cuenta igual (37 → 37). |
+| La procedencia de la release pasa a `accepted` con la custodia de la clave ya decidida | `f400088a` (TASK-255, #846) | Documental: 7 bundles + la clave pública subidos como assets NUEVOS (8 → 16, los originales con su tamaño intacto); `cosign verify-blob` 7/7 `Verified OK` desde una descarga limpia, y un fichero con un byte más se rechaza; el ADR pasa de `proposed` a `accepted`. Límite declarado: la firma es retroactiva y `gh attestation verify` sigue dando 404. |
+| `safe_refactor` confina al workspace cada ruta que abre | `828b8452` (TASK-257, #847) | Diez puntos de entrada afectados, no seis: `rename`, `extract`, `inline`, `change_signature` y `move`; todas pasan por `authorise_file_path`, y `resolve_file_path` deja de re-exportarse a los handlers. |
+| La búsqueda de contenido y el listado de directorio declinan los enlaces simbólicos | `03a88a02` (TASK-258, #848) | `!path.is_file()` seguía el enlace: uno fuera del workspace hacía leer un fichero de fuera. Ahora es un hueco `UnreadKind::Symlink` con la causa «symlink to <target>, not followed». `file_operations.rs` 2156 → 2134 líneas de producción. |
+| Los goals `audit` y `find` publican su cobertura y su base | `ee2eec36` (TASK-260, #849) | `coverage` sale de la medición del grafo (`complete`/`partial`) y `basis` del manifiesto que la carga ya tenía, sin un segundo recorrido del árbol; un build que no leyó el árbol no publica digest. |
+| El paso de mutantes omite su turno del calendario cuando el crate no cambió, y sólo con prueba | `a1933bed` (TASK-265) | RED contra el selector anterior: 39 fallos en la tabla de dudas; `test_gate_contracts.py` PASS. Corridas reales: crate sin cambios → «turno omitido» rc=0; cambio bajo el crate → «turno medido», crate entero, 627 mutantes. Dos huecos de la primera versión los encontró la revisión independiente. |
+| La gramática de Haskell pasa a 0.24.1 y con ella se van los abortos de heap | `fb6ebbbd` (TASK-272, #851) | 0.23.1 compila un `scanner.c` con aliasing estricto (8 sitios); gcc 16 a -O2 lo explota y glibc aborta (rc 134). Medido en el binario de release, 60 corridas por gramática: 19/26/46 abortos → 0. Un test de depuración no puede fallar antes: cargo compila C a -O0. |
+| Un calificador de tipo que el proyecto no declara ya no se une a su símbolo | `a42fb659` (TASK-268, #852) | RED antes / verde después en las dos rutas que construyen grafo, más los controles que deben seguir resolviendo (tipo declarado, ruta de módulo, `Self`, llamada sin calificar, rasgo declarado, enum declarado, `impl` de un rasgo del proyecto para un tipo de la std). Medido sobre `crates/`: aristas 19.761 → 19.323, sin resolver 76.860 → 77.924, pared 4,91-5,07 s → 4,17-4,58 s, RSS 451 → 457 MB; `from_millis` sale del top 15. |
+| La ventana que mide la deriva del snapshot se dimensiona al bloque | `7de0fe20` (TASK-283, #853) | RED: con la ventana en 5 commits, `test_current_sha_matches_head` y `test_control_all_green` fallaban (el snapshot declaraba `5843fce6`, 13 commits por detrás); 29/29 con la ventana en 20. Un snapshot de la edad de un bloque (16 commits) sigue siendo honesto y uno de dos bloques (32) se rechaza. Sólo cambian la constante y su comentario. |
 
 ## Release: la última publicada es la v0.103.1
 
@@ -1245,9 +1281,18 @@ calendario no le tocaba el turno; `npm test` y `cargo fmt` + `clippy` rc=0; cont
 rc=1 por dos desfases de documentación —la arquitectura del SDK y este
 snapshot—, corregidos hacia delante en TASK-249 y TASK-250.
 
-El segundo bloque parte de `f74ff490` y cuenta 2 de 10 (TASK-247 y TASK-252);
-TASK-245 es documental y no cuenta. Entre cierres de bloque sólo se afirma que
-cada tarea cumple su criterio, no que `main` esté verde.
+El segundo bloque parte de `f74ff490` y cerró con once tareas de código (TASK-247,
+252, 254, 256, 257, 258, 260, 265, 268, 272 y 283) y siete documentales (245, 248,
+251, 253, 180, 231 y 255); el contador de `AGENTS.md` da 11 sobre `f74ff490..main`,
+porque TASK-265 y TASK-283 son `chore(gate):` y sólo un prefijo `docs` sale del
+conteo. Su gate se midió en serie sobre `a42fb659`: rc=0 con 4.006 unitarios y
+1.630 de integración (2 omitidos) y el crate del calendario medido entero —627
+mutantes: 618 atrapados, 9 inviables y 0 supervivientes—; `npm test` y `cargo fmt`
++ `clippy` rc=0; los contratos rc=1 por un único desfase de documentación —la
+deriva de este snapshot, 13 commits con una ventana de 5—, corregido hacia delante
+en TASK-283, que dimensiona la ventana al bloque (5 → 20 commits), y en este
+snapshot, que se regenera. Entre cierres de bloque sólo se afirma que cada tarea
+cumple su criterio, no que `main` esté verde.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con
