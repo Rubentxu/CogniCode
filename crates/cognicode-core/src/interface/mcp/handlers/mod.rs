@@ -204,7 +204,6 @@ use crate::interface::mcp::schemas::{
     SystemPromptContextInput,
     TracePathInput,
     TracePathOutput,
-    UsageEntry,
     UsageWithContextEntry,
     ValidateSyntaxInput,
     ValidateSyntaxOutput,
@@ -996,6 +995,7 @@ fn skipped_file_dto(
             }
             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
             crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
+            crate::infrastructure::graph::per_file_graph::SkipReason::Budget(_) => "budget",
             crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
         },
         reason: match &sf.reason {
@@ -1003,6 +1003,7 @@ fn skipped_file_dto(
             | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
             | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
             | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
+            | crate::infrastructure::graph::per_file_graph::SkipReason::Budget(s)
             | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
                 format!("symlink to {target}, not followed")
@@ -1554,38 +1555,11 @@ pub async fn handle_find_usages(
             include_declaration: input.include_declaration,
             context_lines: input.context_lines,
             first_only_definition: true,
+            budget: crate::application::services::usage_search::USAGE_SEARCH_BUDGET,
         })
         .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 
-    let total = search.usages.len();
-
-    let usage_entries: Vec<UsageEntry> = search
-        .usages
-        .into_iter()
-        .map(|u| UsageEntry {
-            file: u.file,
-            line: u.line,
-            column: u.column,
-            context: u.context,
-            is_definition: u.is_definition,
-            surrounding_lines: u.context_lines.map(|c| ContextLines {
-                before: c.before,
-                current: c.current,
-                after: c.after,
-            }),
-        })
-        .collect();
-
-    Ok(FindUsagesOutput {
-        symbol: input.symbol_name,
-        usages: usage_entries,
-        total,
-        // Parity with the MCP wire shape: navigation, so the floor is
-        // `ast-heuristic` and the provider is the symbol index.
-        precision: precision_floor_for_tool("find_usages"),
-        provider: default_provider_for_tool("find_usages").to_string(),
-        coverage: crate::interface::coverage::CoverageInfo::of(&search.coverage),
-    })
+    Ok(FindUsagesOutput::of_search(input.symbol_name, search))
 }
 
 /// Handler for structural_search tool
@@ -3207,6 +3181,7 @@ pub async fn handle_find_usages_with_context(
             include_declaration: input.include_declaration,
             context_lines: Some(input.context_lines as usize),
             first_only_definition: false,
+            budget: crate::application::services::usage_search::USAGE_SEARCH_BUDGET,
         })
         .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
 

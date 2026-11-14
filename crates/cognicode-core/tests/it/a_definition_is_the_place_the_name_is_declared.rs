@@ -62,6 +62,7 @@ fn definitions_of(root: &Path, symbol: &str) -> Vec<(u32, u32)> {
             include_declaration: true,
             context_lines: None,
             first_only_definition: true,
+            budget: cognicode_core::application::analysis_basis::Budget::default(),
         })
         .expect("the search answers");
 

@@ -2166,7 +2166,7 @@ impl CommandExecutor {
         use cognicode_core::application::services::analysis_service::{
             AnalysisService, UsageSearchParams,
         };
-        use cognicode_core::interface::mcp::schemas::{FindUsagesOutput, UsageEntry};
+        use cognicode_core::interface::mcp::schemas::FindUsagesOutput;
         use cognicode_core::interface::mcp::security::InputValidator;
 
         // 1) Input validation: cwd exists.
@@ -2195,44 +2195,14 @@ impl CommandExecutor {
                 include_declaration: include,
                 context_lines,
                 first_only_definition: true,
+                budget: cognicode_core::application::services::usage_search::USAGE_SEARCH_BUDGET,
             })
             .map_err(|e| format!("find-usages: backend error: {e}"))?;
 
-        let total = search.usages.len();
-        let entries: Vec<UsageEntry> = search
-            .usages
-            .into_iter()
-            .map(|u| UsageEntry {
-                file: u.file,
-                line: u.line,
-                column: u.column,
-                context: u.context,
-                is_definition: u.is_definition,
-                surrounding_lines: u.context_lines.map(|c| {
-                    cognicode_core::interface::mcp::schemas::ContextLines {
-                        before: c.before,
-                        current: c.current,
-                        after: c.after,
-                    }
-                }),
-            })
-            .collect();
-
-        let out = FindUsagesOutput {
-            symbol: symbol.to_string(),
-            usages: entries,
-            total,
-            // CLI mirror of the MCP `find_usages` handler: the same
-            // precision, provider and coverage the MCP wire carries.
-            precision: cognicode_core::interface::symbol_identity::precision_floor_for_tool(
-                "find_usages",
-            ),
-            provider: cognicode_core::interface::symbol_identity::default_provider_for_tool(
-                "find_usages",
-            )
-            .to_string(),
-            coverage: cognicode_core::interface::coverage::CoverageInfo::of(&search.coverage),
-        };
+        // The same constructor the MCP handler uses: the CLI and the MCP
+        // ask the same question about the same tree, and their answers
+        // are the same answer.
+        let out = FindUsagesOutput::of_search(symbol.to_string(), search);
 
         // 4) Render the answer. The core does not write to the
         // standard output; the presenter writes what the core
@@ -2808,6 +2778,14 @@ fn render_text(out: &cognicode_core::interface::mcp::schemas::FindUsagesOutput) 
             ));
         }
     }
+    if out.truncation_reason.is_some() {
+        // The reason is in the line above (the file the search did not
+        // reach carries it); what is missing here is the count.
+        text.push_str(&format!(
+            "  truncated: {} files left out\n",
+            out.omitted.unwrap_or_default()
+        ));
+    }
     text
 }
 
@@ -3100,6 +3078,8 @@ mod f0_1_find_usages_tests {
             ),
             provider: "test".to_string(),
             coverage,
+            omitted: None,
+            truncation_reason: None,
         }
     }
 
@@ -3121,6 +3101,19 @@ mod f0_1_find_usages_tests {
             pending_references: Vec::new(),
             rejected_relations: Vec::new(),
         }
+    }
+
+    /// The answer a search that ran out of budget publishes.
+    fn truncated(
+        usages: Vec<cognicode_core::interface::mcp::schemas::UsageEntry>,
+        coverage: cognicode_core::interface::coverage::CoverageInfo,
+        omitted: usize,
+        reason: &str,
+    ) -> cognicode_core::interface::mcp::schemas::FindUsagesOutput {
+        let mut out = answer(usages, coverage);
+        out.omitted = Some(omitted);
+        out.truncation_reason = Some(reason.to_string());
+        out
     }
 
     /// The definition is marked and a complete answer adds nothing after it.
@@ -3157,6 +3150,32 @@ mod f0_1_find_usages_tests {
         assert!(partial.starts_with("(no usages found in what could be searched)\n"));
         let clean = render_text(&answer(Vec::new(), coverage("complete", &[])));
         assert_eq!(clean, "(no usages found)\n");
+    }
+
+    /// An answer that stopped at its budget says how many files it left
+    /// out: a reader of the text has to see that the answer is about a
+    /// part of the tree.
+    #[test]
+    fn render_text_says_how_many_files_a_truncated_answer_left_out() {
+        let text = render_text(&truncated(
+            vec![usage("a.rs", 2, false)],
+            coverage("partial", &[("b.rs", "the file budget (1) was exhausted")]),
+            2,
+            "the search stopped after 1 of 3 files (the file budget (1) was exhausted)",
+        ));
+        assert!(
+            text.contains("truncated: 2 files left out"),
+            "the count of the files left out is in the answer: {text}"
+        );
+
+        let complete = render_text(&answer(
+            vec![usage("a.rs", 2, false)],
+            coverage("complete", &[]),
+        ));
+        assert!(
+            !complete.contains("truncated"),
+            "an answer that read the whole tree says nothing about truncation: {complete}"
+        );
     }
 }
 

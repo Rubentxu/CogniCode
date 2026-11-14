@@ -255,6 +255,7 @@ fn find_symbol_usages_still_skips_target_node_modules_and_venv() {
         include_declaration: true,
         context_lines: Some(0),
         first_only_definition: false,
+        budget: cognicode_core::application::analysis_basis::Budget::default(),
     };
     let usages = svc.find_symbol_usages(params).expect("ok");
     let paths: Vec<String> = usages.iter().map(|u| u.file.clone()).collect();
@@ -299,6 +300,7 @@ fn find_symbol_usages_now_skips_security_blocklist_dirs() {
         include_declaration: true,
         context_lines: Some(0),
         first_only_definition: false,
+        budget: cognicode_core::application::analysis_basis::Budget::default(),
     };
     let usages = svc.find_symbol_usages(params).expect("ok");
     let paths: Vec<String> = usages.iter().map(|u| u.file.clone()).collect();

@@ -186,6 +186,7 @@ fn the_usage_search_reads_what_the_inventory_reads() {
                     include_declaration: true,
                     context_lines: None,
                     first_only_definition: false,
+                    budget: cognicode_core::application::analysis_basis::Budget::default(),
                 })
                 .expect("the usage search answers")
                 .is_empty()

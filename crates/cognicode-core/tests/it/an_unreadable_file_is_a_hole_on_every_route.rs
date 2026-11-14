@@ -229,6 +229,7 @@ fn usage_search_of(root: &Path, symbol: &str) -> UsageSearchParams {
         include_declaration: true,
         context_lines: None,
         first_only_definition: true,
+        budget: cognicode_core::application::analysis_basis::Budget::default(),
     }
 }
 
