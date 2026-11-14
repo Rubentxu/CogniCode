@@ -7,7 +7,7 @@ use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::{ParseError, ParseResult, ParsedTree, Parser};
 use crate::domain::value_objects::{CallSite, Location, SymbolKind};
 use parking_lot::Mutex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
@@ -813,18 +813,29 @@ impl TreeSitterParser {
         } else {
             Default::default()
         };
+        // The crates the names the file imports come from: an import says
+        // where a name comes from, and a call written with that name calls
+        // the crate's function.
+        let origins = naming::import_origins_in(
+            tree.root_node(),
+            source.as_bytes(),
+            self.language.symbols().import_types,
+        );
         Ok(calls
             .into_iter()
-            .map(|call| CallSite {
-                source: SymbolId::new(call.caller.fully_qualified_name()),
-                origin_file: file_path.to_string(),
-                line: call.line,
-                target: call.callee.name,
-                type_qualifier: call
-                    .callee
-                    .type_qualifier
-                    .filter(|qualifier| !bound.contains(qualifier)),
-                path_head: call.callee.path_head.filter(|head| !own.contains(head)),
+            .map(|call| {
+                let path_head = Self::callee_crate(&call.callee, call.line, &own, &origins);
+                CallSite {
+                    source: SymbolId::new(call.caller.fully_qualified_name()),
+                    origin_file: file_path.to_string(),
+                    line: call.line,
+                    target: call.callee.name,
+                    type_qualifier: call
+                        .callee
+                        .type_qualifier
+                        .filter(|qualifier| !bound.contains(qualifier)),
+                    path_head,
+                }
             })
             .collect())
     }
@@ -1003,6 +1014,36 @@ impl TreeSitterParser {
             type_qualifier,
             path_head,
         })
+    }
+
+    /// The crate the callee of a call comes from.
+    ///
+    /// A call written `serde_json::to_value(1)` says through its path that
+    /// it calls the crate's function. A call written `to_value(1)` in a file
+    /// that writes `use serde_json::to_value;` says the same thing with the
+    /// import instead of the path, and the import is what says where the
+    /// name comes from.
+    ///
+    /// A head the file binds itself (a module it declares, a name it
+    /// imports that the reader cannot place) is the file's own spelling of
+    /// something of the project: it is not published, and the call keeps
+    /// the bare name.
+    fn callee_crate(
+        callee: &Callee,
+        line: u32,
+        own: &HashSet<String>,
+        origins: &naming::ImportOrigins,
+    ) -> Option<String> {
+        match &callee.path_head {
+            Some(head) => match origins.crate_of(head, line as usize) {
+                Some(crate_name) => Some(crate_name.to_string()),
+                None if own.contains(head) => None,
+                None => Some(head.clone()),
+            },
+            None => origins
+                .crate_of(&callee.name, line as usize)
+                .map(str::to_string),
+        }
     }
 
     /// Extracts context (line of code) from pre-split lines
