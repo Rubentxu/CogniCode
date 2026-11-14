@@ -335,22 +335,25 @@ pub fn callee_text(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option
     Some(node_text(&callee, source))
 }
 
-/// The crate or module a callee's path starts at.
+/// The head of a path, as written.
 ///
 /// A path says who the callee belongs to before it says its name:
 /// `serde_json::to_value` and `event::build` both call something called
 /// `to_value` or `build`, and only the head tells the project's own module
 /// from a crate the project pulls from outside itself.
 ///
-/// A path that starts with a type is not one of those: `Duration::from_millis`
+/// A path that starts at a type is not one of those: `Duration::from_millis`
 /// starts with a type, and the type qualifier carries that call. `Self` and
 /// a one-letter parameter are types the project may not declare at all, and
 /// they are not crates either.
-pub fn callee_path_head(node: &Node, source: &[u8], callee_fields: &[&str]) -> Option<String> {
-    path_head_of(&callee_text(node, source, callee_fields)?)
-}
-
-/// The head of a path, as written. See [`callee_path_head`].
+///
+/// The text of a callee is read once and read three ways — the name, the
+/// qualifier and the head — and the helper that read it again is not
+/// published:
+///
+/// ```compile_fail
+/// use cognicode_core::infrastructure::parser::naming::callee_path_head;
+/// ```
 pub fn path_head_of(raw: &str) -> Option<String> {
     let raw = raw.trim();
     if raw.starts_with('<') {

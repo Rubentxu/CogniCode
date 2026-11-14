@@ -102,6 +102,7 @@ impl Manifests {
     ///
     /// The answer the cache holds is one manifest per package: a project of
     /// many files in one package reads it once.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn manifests_read(&self) -> usize {
         self.by_manifest.len()
     }
@@ -193,22 +194,6 @@ pub fn manifest_of(directory: &Path) -> Option<PathBuf> {
         current = dir.parent();
     }
     None
-}
-
-/// The crates the package that owns a directory pulls from outside the
-/// project.
-///
-/// A directory that belongs to no package belongs to a package that says
-/// nothing, and a package that says nothing is one that declares no crate
-/// from outside.
-///
-/// This is the question without a memory behind it: a caller that asks it
-/// once is answered by reading the manifest. A caller that asks it many
-/// times keeps the answer in [`Manifests`].
-pub fn external_crates_of(directory: &Path) -> HashSet<String> {
-    let mut manifests = Manifests::default();
-    let crates = manifests.external_crates_of(directory);
-    crates.as_ref().clone()
 }
 
 /// Whether a dependency is a crate of this workspace.

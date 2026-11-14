@@ -2610,6 +2610,11 @@ mod crate_path_rule_tests {
             "the manifest of a package is read once and kept: the second file of the package \
              answers like the first"
         );
+        assert_eq!(
+            cache.packages.lock().unwrap().manifests_read(),
+            1,
+            "two files of one package read one manifest"
+        );
     }
 
     /// The two routes judge the crate path the same way: the rule is one,
