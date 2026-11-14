@@ -690,7 +690,21 @@ fn is_crate_or_module(segment: &str) -> bool {
 }
 
 /// The last segment of a callee's name.
+///
+/// A turbofish is not a name: `parse::<u32>` calls `parse`, and the
+/// generic arguments are not the callee. Without this the name of
+/// `x.parse::<u32>()` is published as `<u32>`, which no declaration can
+/// ever carry, and the call is counted as unresolved even when the
+/// project declares the method.
 pub fn clean_callee_name(raw: &str) -> String {
+    // Only a path that carries them pays for the copy.
+    let without_arguments;
+    let raw = if raw.contains('<') {
+        without_arguments = without_generic_arguments(raw);
+        without_arguments.as_str()
+    } else {
+        raw
+    };
     let cleaned = raw
         .split("::")
         .last()
@@ -741,7 +755,9 @@ fn node_text(node: &Node, source: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{import_origins_in, path_head_of, type_names_bound_in, type_qualifier_of};
+    use super::{
+        clean_callee_name, import_origins_in, path_head_of, type_names_bound_in, type_qualifier_of,
+    };
     use crate::domain::value_objects::Language;
     use std::collections::HashSet;
 
@@ -938,6 +954,18 @@ trait Source { type Output; }
         assert!(
             bound_in("use std::time::Duration;\nfn run() { Duration::from_millis(1); }\n")
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_turbofish_is_not_the_name_of_the_callee() {
+        assert_eq!(clean_callee_name("parse::<u32>"), "parse");
+        assert_eq!(clean_callee_name("Vec::<u8>::new"), "new");
+        assert_eq!(clean_callee_name("collect::<Vec<_>>"), "collect");
+        assert_eq!(
+            clean_callee_name("x.parse::<u32>"),
+            "parse",
+            "the receiver is not the callee either"
         );
     }
 

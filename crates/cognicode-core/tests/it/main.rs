@@ -15,6 +15,7 @@ mod a_rejection_arrives_as_a_rejection;
 mod a_snapshot_says_who_produced_it;
 #[cfg(feature = "persistence")]
 mod a_symbol_count_is_published_only_when_it_was_measured;
+mod a_turbofish_is_not_the_name_of_the_callee;
 #[cfg(feature = "persistence")]
 mod an_edited_file_is_read_once;
 mod an_external_qualifier_does_not_join_a_project_symbol;
