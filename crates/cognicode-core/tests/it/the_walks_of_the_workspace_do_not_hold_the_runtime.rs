@@ -31,9 +31,12 @@
 //! reading files.
 
 use cognicode_core::interface::mcp::handlers::{
-    HandlerContext, handle_get_outline, handle_list_files, handle_search_content,
+    HandlerContext, handle_get_outline, handle_list_files, handle_retrieve_and_verify,
+    handle_search_content,
 };
-use cognicode_core::interface::mcp::schemas::{ListFilesInput, OutlineInput, SearchContentInput};
+use cognicode_core::interface::mcp::schemas::{
+    ListFilesInput, OutlineInput, RetrieveAndVerifyInput, SearchContentInput,
+};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -101,6 +104,20 @@ fn outline_input() -> OutlineInput {
         file_path: "src/names.rs".to_string(),
         include_private: false,
         include_tests: false,
+    }
+}
+
+/// The retrieval of a literal marker over the whole workspace.
+///
+/// The verification is off: the work of this call is the walk, and the
+/// walk is what has to stop occupying the runtime. The verification is
+/// the other half of the tool, and it is measured on its own.
+fn retrieve_input(query: &str) -> RetrieveAndVerifyInput {
+    RetrieveAndVerifyInput {
+        query: query.to_string(),
+        language: "rust".to_string(),
+        max_results: 20,
+        verify: false,
     }
 }
 
@@ -182,6 +199,48 @@ async fn a_listing_in_flight_does_not_stop_the_server_from_answering() {
         answer.total > 1_200,
         "the listing walked the tree: {answer:?}"
     );
+}
+
+/// A retrieval in flight does not stop the server from answering
+/// somebody else.
+///
+/// The retrieval walks the same tree the search walks, and it walked it
+/// in the same place: inside the handler `async`, on the thread of the
+/// runtime that serves it. The verification that follows the walk is
+/// the other half of the same tool, and it is the half that makes the
+/// call long; the walk is the half that occupies the runtime.
+#[tokio::test(flavor = "current_thread")]
+async fn a_retrieval_in_flight_does_not_stop_the_server_from_answering() {
+    let (_tmp, root) = workspace(1_200);
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+
+    let retrieve_ctx = ctx.clone();
+    let retrieve = tokio::spawn(async move {
+        handle_retrieve_and_verify(&retrieve_ctx, retrieve_input(MARKER)).await
+    });
+    let other_ctx = ctx.clone();
+    let other = tokio::spawn(async move { handle_get_outline(&other_ctx, outline_input()).await });
+
+    let outline = tokio::time::timeout(DEADLINE, other)
+        .await
+        .expect("the other call answers within its deadline")
+        .expect("the other call's task did not panic")
+        .expect("the other call answers");
+    assert!(
+        outline.total_nodes > 0,
+        "the other call really answered: {outline:?}"
+    );
+    assert!(
+        !retrieve.is_finished(),
+        "the retrieval held the runtime: it only finished after the other call was served"
+    );
+
+    let answer = tokio::time::timeout(DEADLINE, retrieve)
+        .await
+        .expect("the retrieval answers within its deadline")
+        .expect("the retrieval's task did not panic")
+        .expect("the retrieval answers");
+    assert_eq!(answer.total, 2, "the retrieval found the two markers");
 }
 
 /// The answer of the search keeps its shape: the walk that moved off

@@ -22,16 +22,22 @@ use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, EditVerification, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
     RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
-    VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
+    VerificationStatus, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
 use crate::application::services::content_search::find_matches_in_content;
 use crate::application::services::unread_entries::{declined_symlink, read_failure, walk_failure};
+use crate::application::services::verification::{
+    Retrieval, VERIFICATION_BUDGET, candidates_in_verification_order, skipped_candidates,
+    verify_candidates,
+};
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
-use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
+use crate::domain::traits::code_verifier::CodeVerifier;
+#[cfg(test)]
+use crate::domain::traits::code_verifier::CompilationResult;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::file_time::measured_seconds;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -41,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1890,6 +1897,12 @@ impl FileOperationsService {
     /// Returns the verification status, stdout (if verified), and error snippet (if rejected).
     ///
     /// NOTE: This method delegates to `code_verifier` for the actual verification.
+    ///
+    /// The verification of a retrieved candidate does not come through here
+    /// any more: it belongs to `application/services/verification.rs`, with
+    /// the budget that bounds it. What is left is the seam the tests of
+    /// this module use to reach the verifier.
+    #[cfg(test)]
     fn verify_rust_file(
         &self,
         file_path: &str,
@@ -1916,6 +1929,12 @@ impl FileOperationsService {
     /// timeout fires and the future is dropped, the rustc subprocess is killed.
     ///
     /// NOTE: This method delegates to `code_verifier` for the actual verification.
+    ///
+    /// The verification of a retrieved candidate does not come through here
+    /// any more: it belongs to `application/services/verification.rs`, with
+    /// the budget that bounds it. What is left is the seam the tests of
+    /// this module use to reach the verifier.
+    #[cfg(test)]
     async fn verify_rust_file_with_timeout(
         &self,
         file_path: &str,
@@ -1939,16 +1958,49 @@ impl FileOperationsService {
         })
     }
 
-    /// Performs retrieve and verify operation: searches for content and optionally verifies Rust files.
+    /// The retrieval of the candidates and their verification.
     ///
-    /// Uses existing `search_content` for lexical retrieval, then verifies `.rs` candidates
-    /// via `rustc --edition 2021 --crate-type lib` with a 10s timeout per file.
+    /// The retrieval is a lexical search over the tree; the verification
+    /// compiles every Rust candidate it found, with a timeout per candidate
+    /// and a budget for the whole call.
+    ///
+    /// The walk of the tree is synchronous, so the handler that serves this
+    /// tool does not call this method: it calls
+    /// `retrieve_and_verify_off_the_runtime` (see `workspace_walk.rs`),
+    /// which runs the walk off the thread of the runtime. This method
+    /// keeps the published signature, and it is the entry point for a
+    /// consumer that calls the application directly.
     pub async fn retrieve_and_verify(
         &self,
         input: RetrieveAndVerifyRequest,
     ) -> AppResult<RetrieveAndVerifyResult> {
-        use crate::application::dto::VerificationStatus as Vs;
+        self.retrieve_and_verify_within(input, VERIFICATION_BUDGET)
+            .await
+    }
 
+    /// The same work, with the budget the caller gives it.
+    ///
+    /// The budget is a parameter of the work and not a constant inside it:
+    /// the product's own budget is the one the published entry point uses,
+    /// and a caller that needs another bound says so.
+    pub(crate) async fn retrieve_and_verify_within(
+        &self,
+        input: RetrieveAndVerifyRequest,
+        budget: Duration,
+    ) -> AppResult<RetrieveAndVerifyResult> {
+        let started = Instant::now();
+        let retrieval = self.retrieve_candidates(&input)?;
+        Ok(self.verify_retrieval(retrieval, budget, started).await)
+    }
+
+    /// The retrieval of the candidates: the walk of the tree.
+    ///
+    /// Synchronous on purpose: this is the part that has to move off the
+    /// runtime, and the off-the-runtime variant moves it as a whole.
+    pub(crate) fn retrieve_candidates(
+        &self,
+        input: &RetrieveAndVerifyRequest,
+    ) -> AppResult<Retrieval> {
         // Validate query is not empty
         if input.query.trim().is_empty() {
             return Err(AppError::InvalidParameter(
@@ -2002,133 +2054,60 @@ impl FileOperationsService {
 
         let search_result = self.search_content(search_input)?;
 
-        // Group matches by file to avoid verifying the same file multiple times
-        let mut file_matches: std::collections::HashMap<String, Vec<ContentMatch>> =
-            std::collections::HashMap::new();
-        for m in search_result.matches {
-            file_matches.entry(m.file.clone()).or_default().push(m);
-        }
+        Ok(Retrieval {
+            candidates: candidates_in_verification_order(search_result.matches),
+            unread: search_result.unread,
+            verify: input.verify,
+        })
+    }
 
-        let mut verified_results: Vec<VerifiedMatchDto> = Vec::new();
+    /// The verification of the retrieved candidates.
+    ///
+    /// The budget covers the whole call: `started` is the moment the call
+    /// began, so the walk that retrieved the candidates spends it too. What
+    /// the budget did not reach comes out of the answer with the reason
+    /// that names the bound that was reached.
+    pub(crate) async fn verify_retrieval(
+        &self,
+        retrieval: Retrieval,
+        budget: Duration,
+        started: Instant,
+    ) -> RetrieveAndVerifyResult {
+        let results = if retrieval.verify {
+            verify_candidates(
+                self.code_verifier.as_ref(),
+                &retrieval.candidates,
+                budget,
+                started,
+            )
+            .await
+        } else {
+            // The verification was not asked for: every match is in the
+            // answer, and every one of them says why it was not verified.
+            skipped_candidates(&retrieval.candidates, "verify-disabled")
+        };
+
         let mut verified_count = 0u32;
         let mut rejected_count = 0u32;
         let mut skipped_count = 0u32;
-
-        // Process each unique file
-        for (file, matches) in file_matches {
-            // If verify is disabled, mark all as skipped
-            if !input.verify {
-                for m in &matches {
-                    verified_results.push(skipped_match(m, "verify-disabled".to_string()));
-                    skipped_count += 1;
-                }
-                continue;
-            }
-
-            // Check file extension - non-Rust files are skipped
-            let path = std::path::Path::new(&file);
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                for m in &matches {
-                    verified_results.push(skipped_match(m, "not-rust".to_string()));
-                    skipped_count += 1;
-                }
-                continue;
-            }
-
-            // Verify the Rust file with timeout (async with spawn_blocking)
-            let file_path = file.clone();
-            let verify_result = self.verify_rust_file_with_timeout(&file_path, 10).await;
-
-            match verify_result {
-                Ok((status, check_output, error_snippet, reason)) => {
-                    // Add all matches from this file with the same verification result
-                    for m in &matches {
-                        let (vc, rc, sc) = match status {
-                            Vs::Verified => (1u32, 0u32, 0u32),
-                            Vs::Rejected => (0u32, 1u32, 0u32),
-                            Vs::Skipped => (0u32, 0u32, 1u32),
-                        };
-                        verified_count += vc;
-                        rejected_count += rc;
-                        skipped_count += sc;
-
-                        verified_results.push(VerifiedMatchDto {
-                            file: m.file.clone(),
-                            line: m.line,
-                            col: m.col,
-                            matched_text: m.text.clone(),
-                            context: m.context.clone(),
-                            status,
-                            check_output: check_output.clone(),
-                            error_snippet: error_snippet.clone(),
-                            reason: reason.clone(),
-                        });
-                    }
-                }
-                Err(e) => {
-                    // rustc not found or other error - skip all matches from this file
-                    for m in &matches {
-                        skipped_count += 1;
-                        verified_results.push(skipped_match(m, format!("error: {}", e)));
-                    }
-                }
+        for result in &results {
+            match result.status {
+                VerificationStatus::Verified => verified_count += 1,
+                VerificationStatus::Rejected => rejected_count += 1,
+                VerificationStatus::Skipped => skipped_count += 1,
             }
         }
 
-        // Sort deterministically: match count desc, then path asc
-        // Group results by file first to ensure consistent sorting
-        // Use BTreeMap for deterministic ordering by file path
-        use std::collections::BTreeMap;
-        let mut file_results: BTreeMap<String, Vec<VerifiedMatchDto>> = BTreeMap::new();
-        for r in verified_results {
-            file_results.entry(r.file.clone()).or_default().push(r);
-        }
+        let total = results.len() as u32;
 
-        // Count matches per file and sort files by match count desc, then path asc
-        let mut sorted_files: Vec<String> = file_results.keys().cloned().collect();
-        sorted_files.sort_by(|a, b| {
-            let results_a = file_results.get(a).map(|v| v.len()).unwrap_or(0);
-            let results_b = file_results.get(b).map(|v| v.len()).unwrap_or(0);
-            // Primary: more matches first (descending)
-            // Secondary: path ascending (lexicographic)
-            results_b.cmp(&results_a).then_with(|| a.cmp(b))
-        });
-
-        // Rebuild results in sorted file order
-        let mut sorted_results: Vec<VerifiedMatchDto> = Vec::new();
-        for file in sorted_files {
-            if let Some(results) = file_results.remove(&file) {
-                sorted_results.extend(results);
-            }
-        }
-
-        verified_results = sorted_results;
-
-        let total = verified_results.len() as u32;
-
-        Ok(RetrieveAndVerifyResult {
-            results: verified_results,
+        RetrieveAndVerifyResult {
+            results,
             total,
             verified_count,
             rejected_count,
             skipped_count,
-            unread: search_result.unread,
-        })
-    }
-}
-
-/// A match the retrieval found and did not verify, and why.
-fn skipped_match(m: &ContentMatch, reason: String) -> VerifiedMatchDto {
-    VerifiedMatchDto {
-        file: m.file.clone(),
-        line: m.line,
-        col: m.col,
-        matched_text: m.text.clone(),
-        context: m.context.clone(),
-        status: crate::application::dto::VerificationStatus::Skipped,
-        check_output: None,
-        error_snippet: None,
-        reason: Some(reason),
+            unread: retrieval.unread,
+        }
     }
 }
 
@@ -3462,6 +3441,81 @@ mod tests {
             Some("verify-disabled".to_string()),
             "Reason should be 'verify-disabled'"
         );
+    }
+
+    /// The budget stops the verification, and the answer says what it
+    /// did not cover.
+    ///
+    /// The doc of the handler promised a total timeout that nothing
+    /// executed: the only limit was the one of ten seconds per candidate,
+    /// and twenty candidates are two hundred seconds of work. Here the
+    /// budget is a parameter of the work, so the test can give it a bound
+    /// that is already gone and see what the answer says about the
+    /// candidate it did not verify.
+    #[tokio::test]
+    async fn test_retrieve_and_verify_budget_says_what_it_did_not_cover() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("a.rs"), "fn hello() {}").unwrap();
+
+        let service = test_service_in_temp_dir(&temp_dir);
+
+        let input = RetrieveAndVerifyRequest {
+            query: "hello".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let output = service
+            .retrieve_and_verify_within(input, Duration::ZERO)
+            .await
+            .expect("the answer arrives even when the budget is gone");
+
+        assert_eq!(output.total, 1, "the candidate is in the answer");
+        assert_eq!(output.verified_count, 0, "the budget did not reach it");
+        assert_eq!(output.skipped_count, 1, "the answer says it was skipped");
+        assert_eq!(
+            output.results[0].status,
+            VerificationStatus::Skipped,
+            "the candidate that the budget did not reach is skipped"
+        );
+        let reason = output.results[0]
+            .reason
+            .as_deref()
+            .expect("the answer says why it was not verified");
+        assert!(
+            reason.contains("the verification budget"),
+            "the reason names the bound that was reached: {reason}"
+        );
+    }
+
+    /// The budget of the product verifies the candidates of a real
+    /// workspace: the budget bounds the work, it does not cancel it.
+    #[tokio::test]
+    async fn test_retrieve_and_verify_the_budget_of_the_product_verifies() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::write(temp_dir.path().join("a.rs"), "fn hello() {}").unwrap();
+
+        let service = test_service_in_temp_dir(&temp_dir);
+
+        let input = RetrieveAndVerifyRequest {
+            query: "hello".to_string(),
+            language: "rust".to_string(),
+            max_results: 20,
+            verify: true,
+        };
+
+        let output = service
+            .retrieve_and_verify(input)
+            .await
+            .expect("the answer arrives");
+
+        assert_eq!(output.total, 1, "the candidate is in the answer");
+        assert_eq!(
+            output.verified_count, 1,
+            "the budget of the product verifies the candidate: {output:?}"
+        );
+        assert_eq!(output.skipped_count, 0, "nothing was left out");
     }
 
     #[tokio::test]

@@ -26,11 +26,14 @@
 //! work.
 
 use crate::application::dto::{
-    ListFilesRequest, ListFilesResult, SearchContentRequest, SearchContentResult,
+    ListFilesRequest, ListFilesResult, RetrieveAndVerifyRequest, RetrieveAndVerifyResult,
+    SearchContentRequest, SearchContentResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::services::file_operations::FileOperationsService;
+use crate::application::services::verification::VERIFICATION_BUDGET;
 use std::sync::Arc;
+use std::time::Instant;
 
 impl FileOperationsService {
     /// The content search, off the runtime.
@@ -45,6 +48,31 @@ impl FileOperationsService {
         tokio::task::spawn_blocking(move || service.search_content(input))
             .await
             .map_err(|e| AppError::InternalError(format!("the content search panicked: {e}")))?
+    }
+
+    /// The retrieval of the candidates and their verification, off the
+    /// runtime.
+    ///
+    /// The walk of the tree is the part that occupies the runtime, and it
+    /// is the part that moves: the verification that follows waits for a
+    /// subprocess, so it yields while it waits.
+    ///
+    /// The budget starts before the walk, because the walk is part of the
+    /// work the budget bounds.
+    pub(crate) async fn retrieve_and_verify_off_the_runtime(
+        self: &Arc<Self>,
+        input: RetrieveAndVerifyRequest,
+    ) -> AppResult<RetrieveAndVerifyResult> {
+        let started = Instant::now();
+        let service = Arc::clone(self);
+        let retrieval = tokio::task::spawn_blocking(move || service.retrieve_candidates(&input))
+            .await
+            .map_err(|e| {
+                AppError::InternalError(format!("the retrieval of the candidates panicked: {e}"))
+            })??;
+        Ok(self
+            .verify_retrieval(retrieval, VERIFICATION_BUDGET, started)
+            .await)
     }
 
     /// The listing of the tree, off the runtime.

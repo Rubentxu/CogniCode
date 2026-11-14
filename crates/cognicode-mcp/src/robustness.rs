@@ -136,14 +136,34 @@ pub fn timeout_for_category(category: &str) -> Duration {
 /// (`runtime_metadata.requires_graph`), the same declaration the wire
 /// publishes, so the window and the metadata cannot disagree about the
 /// same tool.
+///
+/// A tool whose work carries a budget gets a window that covers that
+/// budget: the work answers within its own budget, and a window shorter
+/// than the budget answers the caller with a timeout instead of with the
+/// result of the work that did fit. The budget is declared by the layer
+/// that does the work and reaches the server through the interface, so
+/// the window and the work read the same number.
 pub fn timeout_for_tool(tool_name: &str, category: &str) -> Duration {
     let window = timeout_for_category(category);
-    if tool_requires_graph(tool_name) {
+    let window = if tool_requires_graph(tool_name) {
         window.max(GRAPH_WINDOW)
     } else {
         window
+    };
+    match cognicode_core::interface::mcp::work_budget::for_tool(tool_name) {
+        Some(budget) => window.max(budget + WORK_BUDGET_MARGIN),
+        None => window,
     }
 }
+
+/// The margin the dispatch window leaves over the budget of the work.
+///
+/// The work answers within its own budget, so the window has to be
+/// longer than that budget: the margin is the room the answer needs to
+/// travel back. Without it the deadline of the dispatch fires at the
+/// same moment the work ends, and the caller gets a timeout instead of
+/// the result.
+const WORK_BUDGET_MARGIN: Duration = Duration::from_secs(5);
 
 /// Whether the catalogue declares that the tool needs the graph.
 ///
@@ -381,6 +401,51 @@ mod tests {
                  while the graph is built anyway",
                 descriptor.name,
                 descriptor.category
+            );
+        }
+    }
+
+    /// The window of a tool whose work carries a budget covers that
+    /// budget.
+    ///
+    /// The verification compiles every candidate it retrieved, and that
+    /// work takes longer than the window of the `search` category its
+    /// tool belongs to. A window shorter than the budget answers the
+    /// caller with a timeout while the work is running, and the work
+    /// that was done is thrown away.
+    ///
+    /// The budget is read from the layer that does the work, so the
+    /// window and the work cannot disagree about the same call.
+    #[test]
+    fn the_window_of_a_tool_that_carries_work_covers_that_work() {
+        let budget = cognicode_core::interface::mcp::work_budget::for_tool("retrieve_and_verify")
+            .expect("the verification declares the budget of its work");
+        let window = timeout_for_tool("retrieve_and_verify", "search");
+        assert!(
+            window > budget,
+            "the window has to leave room to answer after the work ends: {window:?} vs {budget:?}"
+        );
+        assert!(
+            window <= Duration::from_millis(default_limits().request_timeout_ms),
+            "the window cannot pass the ceiling the server publishes: {window:?}"
+        );
+    }
+
+    /// No window passes the ceiling the server publishes.
+    ///
+    /// The ceiling is the upper bound the window is allowed to choose.
+    /// A tool whose work carries a budget gets a window derived from
+    /// that budget, and a budget that grows past the ceiling would take
+    /// the window with it: the contract says it does not happen.
+    #[test]
+    fn no_window_passes_the_published_ceiling() {
+        let ceiling = Duration::from_millis(default_limits().request_timeout_ms);
+        for descriptor in cognicode_core::interface::catalog::load_tool_catalog_active() {
+            let window = timeout_for_tool(&descriptor.name, &descriptor.category);
+            assert!(
+                window <= ceiling,
+                "{}: the window {window:?} passes the ceiling {ceiling:?}",
+                descriptor.name
             );
         }
     }
