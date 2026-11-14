@@ -16,6 +16,12 @@
 //! grafo no pudo atar y las relaciones que el repositorio rechazó las mide
 //! el grafo, y este goal no lo construye: publicarlas vacías sería publicar
 //! una cuenta que nadie midió.
+//!
+//! Y por lo mismo no publica frescura. La frescura es el digest del
+//! manifiesto que conserva la carga del grafo; este goal es el primero que
+//! corre y carga lo que el llamante le da, así que no tiene manifiesto que
+//! pueda digestar. Un digest inventado sería una identidad que nadie midió,
+//! y esta respuesta se publica sin fechar.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

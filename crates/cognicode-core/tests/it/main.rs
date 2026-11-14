@@ -8,6 +8,7 @@ mod a014_product_asset_resolution;
 mod a_crate_path_does_not_join_a_project_symbol;
 mod a_cut_never_splits_a_character;
 mod a_date_is_published_only_when_it_was_measured;
+mod a_goal_that_reads_the_tree_says_what_it_covered;
 mod a_link_inside_the_workspace_is_not_a_hole;
 mod a_name_with_two_symbols_is_refused_not_chosen;
 mod a_new_session_serves_what_the_last_one_calculated;
