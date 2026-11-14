@@ -59,7 +59,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{CallSite, DependencyType, PendingClass, PendingReference};
+use crate::domain::value_objects::{
+    CallSite, DependencyType, PendingClass, PendingReference, Receiver,
+};
 use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 
 /// What one build knows about one file.
@@ -143,8 +145,15 @@ impl Changes {
 
 /// What a call asks: the file it is written in, the lowercased name it
 /// calls, the type that qualifies it when the call states one the
-/// resolver judges, and the crate or module its path starts at.
-type Question = (String, String, Option<String>, Option<String>);
+/// resolver judges, the crate or module its path starts at, and what the
+/// file says about the receiver of a call written on a value.
+type Question = (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<Receiver>,
+);
 
 /// What the last build knew about each file, and what it resolved.
 #[derive(Debug, Default)]
@@ -229,7 +238,7 @@ impl ReuseLedger {
     ///
     /// `None` means the answer has to be computed again.
     fn kept(&self, question: &Question, changes: &Changes) -> Option<Answer> {
-        let (caller_file, name, type_qualifier, path_head) = question;
+        let (caller_file, name, type_qualifier, path_head, _receiver) = question;
         let qualifier_touched = type_qualifier
             .as_deref()
             .is_some_and(|qualifier| changes.touches(&qualifier.to_lowercase()));
@@ -313,6 +322,7 @@ pub fn resolve(
             site.target.to_lowercase(),
             site.type_qualifier.clone(),
             site.path_head.clone(),
+            site.receiver.clone(),
         );
         let answer = match ledger.kept(&question, changes) {
             Some(answer) => {
@@ -361,7 +371,7 @@ pub fn resolve(
 /// — and the answer carries which one it was. The reason comes from the
 /// resolution itself, so no route decides it on its own.
 fn look_up(index: &GlobalSymbolIndex, question: &Question) -> Answer {
-    let (caller_file, name_lower, type_qualifier, path_head) = question;
+    let (caller_file, name_lower, type_qualifier, path_head, receiver) = question;
     let caller_path = std::path::Path::new(caller_file);
     match index
         .resolve_call(
@@ -369,6 +379,7 @@ fn look_up(index: &GlobalSymbolIndex, question: &Question) -> Answer {
             type_qualifier.as_deref(),
             path_head.as_deref(),
             Some(caller_path),
+            receiver.as_ref(),
         )
         .outcome()
     {

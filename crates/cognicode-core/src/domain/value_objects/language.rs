@@ -678,6 +678,24 @@ impl Language {
     pub const fn spells_types_with_capitals(self) -> bool {
         matches!(self, Language::Rust)
     }
+
+    /// Whether a type must be named in the file that uses it.
+    ///
+    /// A language where a type is named before it is used lets the file say
+    /// whether the type it names is its own: `use crate::event::Event;` binds
+    /// the name `Event`, and a name the file does not bind belongs to
+    /// somebody else — the standard library's, or a dependency's.
+    ///
+    /// A language that does not name its types before using them (Python's
+    /// `from x import Y`, JavaScript's `require`) has no such answer, and the
+    /// reader must not invent one: there, a name the file does not bind is
+    /// unknown, not foreign.
+    ///
+    /// This is the seam, and it is per language on purpose: a language joins
+    /// when its own grammar says the answer exists.
+    pub const fn names_types_before_use(self) -> bool {
+        matches!(self, Language::Rust)
+    }
 }
 
 impl Language {

@@ -825,6 +825,7 @@ impl OnDemandGraphBuilder {
                 site.type_qualifier.as_deref(),
                 site.path_head.as_deref(),
                 Some(Path::new(&site.origin_file)),
+                site.receiver.as_ref(),
             ),
             None => false,
         }

@@ -41,7 +41,7 @@ pub mod space;
 #[cfg(feature = "multimodal")]
 pub mod space_id;
 
-pub use call_site::CallSite;
+pub use call_site::{CallSite, Receiver};
 pub use checkpoint_id::CheckpointId;
 pub use client_identity::ClientIdentity;
 pub use declaration::Declaration;

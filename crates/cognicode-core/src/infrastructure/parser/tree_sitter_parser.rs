@@ -821,10 +821,31 @@ impl TreeSitterParser {
             source.as_bytes(),
             self.language.symbols().import_types,
         );
+        // What the file says about the receiver of a call written on a
+        // value. A language where a type is named before it is used can say
+        // whose the receiver is; a language that does not name its types
+        // cannot, and its calls keep the answer they had.
+        let receivers = if self.language.names_types_before_use()
+            && calls.iter().any(|call| call.callee.receiver.is_some())
+        {
+            Some(naming::receivers_in(
+                tree.root_node(),
+                source.as_bytes(),
+                self.language.symbols().import_types,
+            ))
+        } else {
+            None
+        };
         Ok(calls
             .into_iter()
             .map(|call| {
                 let path_head = Self::callee_crate(&call.callee, call.line, &own, &origins);
+                let receiver = match (&receivers, &call.callee.receiver) {
+                    (Some(receivers), Some(receiver)) => {
+                        Some(receivers.of(receiver, call.line as usize))
+                    }
+                    _ => None,
+                };
                 CallSite {
                     source: SymbolId::new(call.caller.fully_qualified_name()),
                     origin_file: file_path.to_string(),
@@ -835,6 +856,7 @@ impl TreeSitterParser {
                         .type_qualifier
                         .filter(|qualifier| !bound.contains(qualifier)),
                     path_head,
+                    receiver,
                 }
             })
             .collect())
@@ -1009,10 +1031,12 @@ impl TreeSitterParser {
             None
         };
         let path_head = naming::path_head_of(&text);
+        let receiver = naming::receiver_of(&text).map(str::to_string);
         Some(Callee {
             name,
             type_qualifier,
             path_head,
+            receiver,
         })
     }
 
@@ -1155,12 +1179,14 @@ impl TreeSitterParser {
 /// The name of the symbol that owns a script's top-level calls.
 pub const SCRIPT_SYMBOL: &str = "<script>";
 
-/// What one call expression calls: the name, the type that qualifies it, and
-/// the crate or module its path starts at.
+/// What one call expression calls: the name, the type that qualifies it, the
+/// crate or module its path starts at, and the value it is written on.
 struct Callee {
     name: String,
     type_qualifier: Option<String>,
     path_head: Option<String>,
+    /// The value the call is written on, when it is written on one.
+    receiver: Option<String>,
 }
 
 /// A call found in a tree: who writes it, what it calls, and the line it is
