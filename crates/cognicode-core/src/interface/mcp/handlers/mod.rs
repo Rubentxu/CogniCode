@@ -2640,7 +2640,7 @@ pub async fn handle_build_lightweight_index(
 /// Handler for query_symbol_index tool
 #[cognicode_macros::aix_tool(
     name = "query_symbol_index",
-    description = "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+    description = "Query the symbol index to find locations of a symbol by name. The name is compared the way the language of each declaration reads it: a language that tells `Ok` from `ok` answers only with the declaration spelled the way the name is spelled, and a language that folds the case answers with every declaration of the folded name.",
     input_schema = QuerySymbolInput
 )]
 pub async fn handle_query_symbol_index(
@@ -2656,17 +2656,16 @@ pub async fn handle_query_symbol_index(
 
     // Empty symbol name returns empty results
     if input.symbol_name.is_empty() {
-        return Ok(QuerySymbolOutput {
-            symbol_name: input.symbol_name,
-            locations: Vec::new(),
-            total: 0,
-            precision: precision_floor_for_tool("query_symbol_index"),
-            provider: default_provider_for_tool("query_symbol_index").to_string(),
-            basis: SymbolIndexBasis {
+        return Ok(QuerySymbolOutput::of(
+            input.symbol_name,
+            Vec::new(),
+            precision_floor_for_tool("query_symbol_index"),
+            default_provider_for_tool("query_symbol_index").to_string(),
+            SymbolIndexBasis {
                 graph_revision: ctx.analysis_service.current_graph_revision(),
                 directory: directory.to_string_lossy().to_string(),
             },
-        });
+        ));
     }
 
     // TASK-221 — el índice sigue al grafo y al directorio consultado:
@@ -2701,6 +2700,7 @@ pub async fn handle_query_symbol_index(
         .locations
         .iter()
         .map(|loc| SymbolLocationEntry {
+            name: loc.name.clone(),
             file: loc.file.clone(),
             line: published_line(loc.line),
             column: published_column(loc.column),
@@ -2708,19 +2708,16 @@ pub async fn handle_query_symbol_index(
         })
         .collect();
 
-    let total = location_entries.len();
-
-    Ok(QuerySymbolOutput {
-        symbol_name: input.symbol_name,
-        locations: location_entries,
-        total,
-        precision: precision_floor_for_tool("query_symbol_index"),
-        provider: default_provider_for_tool("query_symbol_index").to_string(),
-        basis: SymbolIndexBasis {
+    Ok(QuerySymbolOutput::of(
+        input.symbol_name,
+        location_entries,
+        precision_floor_for_tool("query_symbol_index"),
+        default_provider_for_tool("query_symbol_index").to_string(),
+        SymbolIndexBasis {
             graph_revision: answer.graph_revision,
             directory: answer.directory.to_string_lossy().to_string(),
         },
-    })
+    ))
 }
 
 /// Handler for build_call_subgraph tool
@@ -2844,6 +2841,7 @@ pub async fn handle_get_per_file_graph(
     let symbols: Vec<SymbolLocationEntry> = graph
         .symbols()
         .map(|s| SymbolLocationEntry {
+            name: s.name().to_string(),
             file: s.location().file().to_string(),
             line: published_line(s.location().line()),
             column: published_column(s.location().column()),
@@ -2942,6 +2940,7 @@ pub async fn handle_merge_graphs(
     let symbols: Vec<SymbolLocationEntry> = merged
         .symbols()
         .map(|s| SymbolLocationEntry {
+            name: s.name().to_string(),
             file: s.location().file().to_string(),
             line: published_line(s.location().line()),
             column: published_column(s.location().column()),
@@ -3467,7 +3466,9 @@ mod tests {
     };
     use crate::application::services::analysis_service::TreeFile;
     use crate::domain::findings::digest::sha256_hex;
-    use crate::domain::value_objects::{MermaidFormat, SNAPSHOT_SCHEMA, SnapshotKey};
+    use crate::domain::value_objects::{
+        MermaidFormat, NameComparison, SNAPSHOT_SCHEMA, SnapshotKey,
+    };
 
     /// Los ficheros del árbol TAL COMO ESTÁ AHORA.
     ///
@@ -4241,6 +4242,61 @@ mod tests {
         assert!(
             !out_b_beta.locations.is_empty(),
             "beta lives in B: the scoped query must find it"
+        );
+    }
+
+    /// TASK-262 — la ruta MCP compara los nombres como los lee el lenguaje
+    /// y lo dice.
+    ///
+    /// La ruta publicaba las localizaciones sin el nombre de la
+    /// declaración: en un lenguaje que pliega la grafía, la respuesta
+    /// mezclaba dos grafías sin decirlo. Ahora cada localización dice con
+    /// qué nombre está escrita, y la respuesta dice con qué comparación
+    /// se encontró.
+    #[tokio::test]
+    async fn query_symbol_index_compares_the_names_the_way_the_language_does() {
+        let ws = tempfile::tempdir().unwrap();
+        std::fs::write(
+            ws.path().join("cased.rs"),
+            "pub fn Ok() -> u8 { 1 }\n\npub fn ok() -> u8 { 2 }\n",
+        )
+        .unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(ws.path().to_path_buf())
+            .build();
+
+        let asked = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "Ok".to_string(),
+                directory: None,
+            },
+        )
+        .await
+        .expect("query succeeds");
+
+        assert_eq!(
+            asked.locations.len(),
+            1,
+            "Rust tells `Ok` from `ok`: the answer must name the declaration that was searched"
+        );
+        assert_eq!(asked.locations[0].name, "Ok");
+        assert_eq!(asked.comparison, NameComparison::Exact);
+
+        let other = handle_query_symbol_index(
+            &ctx,
+            QuerySymbolInput {
+                symbol_name: "ok".to_string(),
+                directory: None,
+            },
+        )
+        .await
+        .expect("query succeeds");
+        assert_eq!(other.locations.len(), 1);
+        assert_eq!(
+            other.locations[0].name, "ok",
+            "the second spelling is another declaration, not the first one"
         );
     }
 

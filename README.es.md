@@ -159,7 +159,7 @@ esquemas de entrada y salida por herramienta están en
 | `trace_path` | Encuentra camino de ejecución entre dos símbolos (BFS). |
 | `export_mermaid` | Exporta el grafo como diagrama Mermaid o SVG. |
 | `build_lightweight_index` | Construye un índice rápido de solo símbolos. |
-| `query_symbol_index` | Búsqueda de símbolos insensible a mayúsculas. |
+| `query_symbol_index` | Búsqueda de símbolos; el nombre se compara como lo lee el lenguaje de cada declaración. |
 
 ### Operaciones de Grafos (3 herramientas)
 

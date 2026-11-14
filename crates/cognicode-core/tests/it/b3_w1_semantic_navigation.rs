@@ -370,12 +370,14 @@ fn sample_query_symbol_output() -> QuerySymbolOutput {
     QuerySymbolOutput {
         symbol_name: "foo".to_string(),
         locations: vec![SymbolLocationEntry {
+            name: "foo".to_string(),
             file: "src/lib.rs".to_string(),
             line: 1,
             column: 0,
             symbol_kind: "Function".to_string(),
         }],
         total: 1,
+        comparison: cognicode_core::domain::value_objects::NameComparison::Exact,
         precision: precision_floor_for_tool("query_symbol_index"),
         provider: default_provider_for_tool("query_symbol_index").to_string(),
         basis: cognicode_core::interface::mcp::schemas::SymbolIndexBasis {

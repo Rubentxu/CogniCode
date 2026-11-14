@@ -495,9 +495,8 @@ impl AnalysisService {
             if !Path::new(file).starts_with(&dir) {
                 continue;
             }
-            let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
-            let name_lower = symbol.name().to_lowercase();
-            index.insert(name_lower, location);
+            let location = SymbolLocation::of(symbol.name(), symbol.location(), *symbol.kind());
+            index.insert(location);
         }
         let arc = std::sync::Arc::new(index);
         guard.insert((dir, revision), arc.clone());
