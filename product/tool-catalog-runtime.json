@@ -7160,7 +7160,7 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "file",
+        "category": "search",
         "estimated_latency_ms": 80,
         "mutates_workspace": false,
         "requires_graph": false,

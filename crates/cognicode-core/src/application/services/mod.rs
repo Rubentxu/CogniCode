@@ -12,9 +12,6 @@ pub mod analyze;
 pub mod context_compressor;
 // Casar un patron contra el texto de un fichero, sin abrir ninguno.
 pub(crate) mod content_search;
-// El recorrido del árbol que hace la búsqueda de contenido, y el hilo
-// en el que ocurre.
-pub(crate) mod content_walk;
 // Lo que el servicio recuerda de cada fichero leido (TASK-228).
 pub(crate) mod file_facts_cache;
 pub mod file_operations;
@@ -31,3 +28,6 @@ pub mod relation_candidates;
 pub(crate) mod unread_entries;
 // La busqueda de usos de un simbolo y lo que cubrio.
 pub mod usage_search;
+// El recorrido del árbol que hacen la búsqueda de contenido y la lista
+// de ficheros, y el hilo en el que ocurren.
+pub(crate) mod workspace_walk;

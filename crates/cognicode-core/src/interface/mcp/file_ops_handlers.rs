@@ -295,7 +295,10 @@ pub async fn handle_list_files(
         Some(m) => m,
         None => {
             let dto_input: crate::application::dto::ListFilesRequest = input.into();
-            let dto_result = service.list_files(dto_input).map_err(HandlerError::App)?;
+            let dto_result = service
+                .list_files_off_the_runtime(dto_input)
+                .await
+                .map_err(HandlerError::App)?;
             return Ok(dto_result.into());
         }
     };
@@ -304,7 +307,7 @@ pub async fn handle_list_files(
     let result = instrument_tool(
         &metrics,
         "list_files",
-        async { service.list_files(dto_input) },
+        async { service.list_files_off_the_runtime(dto_input).await },
         app_error_to_tool_error,
     )
     .await;

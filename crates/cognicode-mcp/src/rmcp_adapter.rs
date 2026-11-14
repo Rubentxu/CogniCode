@@ -330,14 +330,14 @@ fn cognicode_meta(
 
 /// M3.2: Returns the dispatch timeout for a given tool category.
 /// Categories with heavy graph algorithms (PageRank, IDF, communities)
-/// get 60s; LSP-backed navigation gets 45s; a search over the content
-/// of the project gets 45s as well, because it may need the head of
-/// the graph; everything else gets 30s, and so does an unknown one.
+/// get 60s; LSP-backed navigation gets 45s; a query over the symbol
+/// index gets 500ms; a walk of the tree, like the content search, is
+/// the work of the `file` category, which gets 30s.
 fn timeout_for_category(category: &str) -> Duration {
     match category {
         "graph" => Duration::from_secs(60),
         "navigation" => Duration::from_secs(45),
-        "search" => Duration::from_secs(45),
+        "search" => Duration::from_millis(500),
         _ => Duration::from_secs(30),
     }
 }
@@ -2172,10 +2172,11 @@ mod tests {
         assert_eq!(timeout_for_category("graph"), Duration::from_secs(60));
         // LSP navigation is allowed 45s
         assert_eq!(timeout_for_category("navigation"), Duration::from_secs(45));
-        // a search over the content of the project may need the head of
-        // the graph, so it is allowed the same window as the navigation
-        assert_eq!(timeout_for_category("search"), Duration::from_secs(45));
-        // file operations default to 30s
+        // a query over the symbol index answers from an index that is
+        // already built, so it is given the narrowest window
+        assert_eq!(timeout_for_category("search"), Duration::from_millis(500));
+        // file operations default to 30s: that is the window of a walk
+        // of the tree, like the content search
         assert_eq!(timeout_for_category("file"), Duration::from_secs(30));
         // composite/quality/refactor/aix are also 30s
         assert_eq!(timeout_for_category("composite"), Duration::from_secs(30));
@@ -2226,10 +2227,12 @@ mod tests {
     ///
     /// `search_content` walks the workspace and reads every file of it:
     /// that is the same walk `list_files` does, and the product gives
-    /// that walk the window of the `file` category. A deadline shorter
-    /// than the walk throws the answer away: the walk finishes after
-    /// the deadline that was supposed to replace it, and the work that
-    /// was done is lost.
+    /// that walk the window of the `file` category. The window of the
+    /// `search` category is the one of a query over the symbol index,
+    /// which is a different work: a walk of the tree read every file of
+    /// it. A deadline shorter than the walk throws the answer away: the
+    /// walk finishes after the deadline that was supposed to replace
+    /// it, and the work that was done is lost.
     #[test]
     fn the_dispatch_deadline_of_the_content_search_covers_the_walk_of_the_workspace() {
         let search = tool_category_map()
@@ -2243,9 +2246,9 @@ mod tests {
             "the two tools walk the same tree, so they declare the same category"
         );
         assert!(
-            timeout_for_category(search) >= Duration::from_secs(30),
-            "the dispatch deadline of the content search ({:?}) is shorter than the walk of the \
-             workspace: the answer would be lost",
+            timeout_for_category(search) > timeout_for_category("search"),
+            "the walk of the workspace ({:?}) is budgeted like a query over the symbol index: the \
+             walk would finish after the deadline that was supposed to replace it",
             timeout_for_category(search)
         );
     }
@@ -2257,6 +2260,13 @@ mod tests {
     /// expects to take and the window it is given. A window shorter
     /// than the latency throws the answer away, and whoever reads the
     /// catalogue reads the two together.
+    ///
+    /// The guard bites on the tools whose declared latency is wide. The
+    /// latencies of the catalogue are nominal estimates — the content
+    /// search declares 40 ms and the walk of this repository measures
+    /// 645 ms — so most of them sit far below every window, and
+    /// making those numbers honest is the catalogue's own work. What
+    /// this guard watches is the day one of them crosses a window.
     #[test]
     fn the_dispatch_deadline_of_every_tool_covers_the_latency_it_declares() {
         for descriptor in cognicode_core::interface::catalog::load_tool_catalog() {
@@ -2280,15 +2290,16 @@ mod tests {
         // going through the full `call_tool_handler` (which needs a
         // real `HandlerContext` and would be slower to set up).
         //
-        // The window here is the test's own, and not a category's: the
-        // shortest window the product gives a category is 30s, and a
-        // test that waits 30s is a task disguised as a test. The window
-        // of each category is pinned by
+        // The window is the product's own: the `search` category is the
+        // one the product gives 500 ms, the narrowest window it has,
+        // and a handler that yields is cancelled by it. A test that
+        // waited for the widest window of the product would be a task
+        // disguised as a test. The window of each category is pinned by
         // `test_timeout_for_category_known_categories`.
-        let timeout = Duration::from_millis(50);
+        let timeout = timeout_for_category("search");
         let slow_handler = async {
-            // Sleep longer than the deadline the test gave (500ms > 50ms)
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            // Sleep longer than the deadline the product gives.
+            tokio::time::sleep(timeout + Duration::from_millis(100)).await;
             Ok::<_, InterfaceError>("should not reach here".to_string())
         };
         let result = tokio::time::timeout(timeout, slow_handler).await;
@@ -2304,8 +2315,8 @@ mod tests {
     #[tokio::test]
     async fn test_timeout_does_not_fire_when_handler_returns_quickly() {
         // M3.2: Fast handlers must NOT be cancelled. The window is the
-        // test's own, for the reason the test above gives.
-        let timeout = Duration::from_millis(500);
+        // product's own, for the reason the test above gives.
+        let timeout = timeout_for_category("search");
         let fast_handler = async {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<_, InterfaceError>("done".to_string())

@@ -1944,7 +1944,7 @@ impl FileOperationsService {
     /// Uses existing `search_content` for lexical retrieval, then verifies `.rs` candidates
     /// via `rustc --edition 2021 --crate-type lib` with a 10s timeout per file.
     pub async fn retrieve_and_verify(
-        self: &Arc<Self>,
+        &self,
         input: RetrieveAndVerifyRequest,
     ) -> AppResult<RetrieveAndVerifyResult> {
         use crate::application::dto::VerificationStatus as Vs;
@@ -2000,7 +2000,7 @@ impl FileOperationsService {
             context_lines: Some(2),
         };
 
-        let search_result = self.search_content_off_the_runtime(search_input).await?;
+        let search_result = self.search_content(search_input)?;
 
         // Group matches by file to avoid verifying the same file multiple times
         let mut file_matches: std::collections::HashMap<String, Vec<ContentMatch>> =
@@ -2146,16 +2146,16 @@ mod tests {
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
-    fn test_service_with_workspace(path: std::path::PathBuf) -> Arc<FileOperationsService> {
-        Arc::new(FileOperationsService::new(
+    fn test_service_with_workspace(path: std::path::PathBuf) -> FileOperationsService {
+        FileOperationsService::new(
             path.to_string_lossy().to_string(),
             Arc::new(InputValidator::new().with_workspace(vec![path])),
             Arc::new(RustVerifier::new()),
             Arc::new(TreeSitterSyntaxAnalysis::new()),
-        ))
+        )
     }
 
-    fn test_service_in_temp_dir(temp_dir: &TempDir) -> Arc<FileOperationsService> {
+    fn test_service_in_temp_dir(temp_dir: &TempDir) -> FileOperationsService {
         test_service_with_workspace(temp_dir.path().to_path_buf())
     }
 
@@ -2216,7 +2216,7 @@ mod tests {
         );
     }
 
-    fn test_service_with_temp_file(file: &NamedTempFile) -> Arc<FileOperationsService> {
+    fn test_service_with_temp_file(file: &NamedTempFile) -> FileOperationsService {
         let parent = file.path().parent().unwrap();
         test_service_with_workspace(parent.to_path_buf())
     }
@@ -3697,12 +3697,12 @@ mod tests {
         )
         .unwrap();
 
-        let service = Arc::new(FileOperationsService::new(
+        let service = FileOperationsService::new(
             temp_dir.path().to_string_lossy().to_string(),
             Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])),
             Arc::new(ToolchainUnavailableVerifier),
             Arc::new(TreeSitterSyntaxAnalysis::new()),
-        ));
+        );
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),

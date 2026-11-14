@@ -8334,7 +8334,7 @@
       "name": "retrieve_and_verify",
       "title": "Search for code matching a query and verify Rust files via sandboxed rustc compilation",
       "description": "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
-      "category": "file",
+      "category": "search",
       "authority": "read",
       "stability": "stable",
       "input_schema": {
@@ -8381,7 +8381,7 @@
       ],
       "runtime_metadata": {
         "authority": "read",
-        "category": "file",
+        "category": "search",
         "estimated_latency_ms": 80,
         "mutates_workspace": false,
         "requires_graph": false,
