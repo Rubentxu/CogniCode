@@ -106,6 +106,42 @@ fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
     }
 }
 
+/// The node that carries the name of a declaration.
+///
+/// The rule is the one [`own_name`] applies, and it answers with the node
+/// instead of with its text: a reader that has to know WHICH node writes
+/// the name —the occurrence search, to tell a declaration from a use— asks
+/// here, so the two readers cannot disagree about where a name is written.
+///
+/// A header that names more than one thing (HCL) has one node per name.
+/// The first of them is the one this returns, and it is the one a reader
+/// can match an occurrence against.
+pub fn declaration_name_node<'tree>(node: &Node<'tree>, rule: &NameRule) -> Option<Node<'tree>> {
+    if let Some(name) = swallowed_declaration_name(node) {
+        return Some(name);
+    }
+    if let Some(name) = node.child_by_field_name("name") {
+        return Some(name);
+    }
+
+    for i in 0..node.child_count() {
+        let Some(child) = node.child(i) else { break };
+        if !child.is_named() {
+            continue;
+        }
+        let kind = child.kind();
+        if rule.kinds.contains(&kind) {
+            return Some(child);
+        } else if rule.prefixes.contains(&kind) {
+            continue;
+        } else {
+            break;
+        }
+    }
+
+    None
+}
+
 /// The name of a callable the grammar swallowed into the declaration before
 /// it.
 ///
