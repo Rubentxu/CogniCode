@@ -7623,7 +7623,7 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "search",
+        "category": "file",
         "estimated_latency_ms": 40,
         "mutates_workspace": false,
         "requires_graph": false,

@@ -668,49 +668,48 @@ fn master_catalogue() -> (BTreeSet<String>, BTreeSet<String>) {
 // Test 4 — request timeout cancels in-flight
 // ===========================================================================
 
-/// A `tools/call` that overruns its category budget must still be
-/// answered, and it must leave the transport usable.
+/// A `tools/call` that takes a long time must still be answered, with
+/// its answer, and it must leave the transport usable.
 ///
-/// # Known gap, measured against `cognicode-mcp`
+/// # What the dispatch deadline can and cannot do
 ///
-/// The per-category budget in `timeout_for_category` (`search` = 500
-/// ms) does **not** cancel a synchronous handler. `call_tool_handler`
-/// wraps the dispatch in `tokio::time::timeout`, but tokio's
-/// `Timeout` only reports `Elapsed` once the inner future returns
-/// `Pending`; a handler whose whole body runs inside one poll — which
-/// is every file_ops, graph and AIX handler today — reaches the
+/// `call_tool_handler` wraps the dispatch in `tokio::time::timeout`, and
+/// tokio's `Timeout` only reports `Elapsed` once the inner future returns
+/// `Pending`. A handler whose whole body runs inside one poll reaches the
 /// deadline *after* it has already produced its value, and the value
-/// wins. Measured 2026-10-15: a `search_content` over a 670 MB corpus
-/// took 1350 ms against the 500 ms budget and returned `isError:false`
-/// with a complete result. No timeout, no cancellation.
+/// wins: the deadline is not a cancellation. That is the shape of the
+/// handlers that work over the graph, and it is why the window of the
+/// `graph` category is wide.
 ///
-/// So this test does not claim to prove cancellation, because
-/// cancellation does not happen. It pins the two properties that do
-/// hold, and that a wedged or starved transport would break:
+/// The handlers that walk the workspace do not have that shape any more:
+/// the walk happens in the blocking pool, so the handler yields and the
+/// deadline can fire. The budget of that walk is the window of the `file`
+/// category, and this test is the evidence that the window covers the
+/// walk: the answer of a walk that takes longer than the narrowest window
+/// the product has — 500 ms, the window of a query over the symbol index
+/// — is its result, not a timeout that replaced it.
+///
+/// So this test pins three properties:
 ///
 ///   1. **bounded** — the slow call is answered, well inside the
 ///      published `default_limits().request_timeout_ms` ceiling;
-///   2. **not wedged** — the very next request is served, so a long
+///   2. **answered with its answer** — the frame carries the result of
+///      the walk and not a timeout;
+///   3. **not wedged** — the very next request is served, so a long
 ///      dispatch leaves no stuck state, no leaked worker, and no
 ///      poisoned stdio pipe behind it.
-///
-/// When the handlers are made genuinely async (`spawn_blocking` or a
-/// real await that yields), the timeout will start firing; this test
-/// must then be tightened to assert an `isError` frame whose body is
-/// `timeout`, and the `MIN_USEFUL_WORK_MS` guard below becomes the
-/// thing to remove.
 #[test]
 fn slow_tool_call_is_bounded_and_does_not_wedge_the_transport() {
     /// Floor on how long the corpus scan must take for this test to
-    /// be exercising a slow dispatch at all. Well under the 500 ms
-    /// `search` budget so it does not turn into a machine-speed
+    /// be exercising a slow dispatch at all. Well under the window of
+    /// the `file` category so it does not turn into a machine-speed
     /// assertion, but far above the ~2 ms a no-op round trip costs.
     const MIN_USEFUL_WORK_MS: u128 = 150;
 
     /// ~25k small files (≈100 MB). A scan whose pattern matches
     /// nothing cannot stop on `max_results`, so it reads the whole
-    /// tree — measured ≈0.65 s, comfortably past the 500 ms budget,
-    /// while costing only ~2 s to materialise.
+    /// tree — measured ≈0.65 s, past the narrowest window the product
+    /// has, while costing only ~2 s to materialise.
     const CORPUS_FILES: usize = 25_000;
 
     let workspace = TempDir::new().expect("tempdir");
@@ -770,7 +769,26 @@ fn slow_tool_call_is_bounded_and_does_not_wedge_the_transport() {
         "slow call must produce a JSON-RPC result or error object: {frame}"
     );
 
-    // (3) Not wedged: the transport still serves the next request.
+    // (3) Answered with its answer: the walk of the workspace answers
+    // with its result, and the window of its category covers the walk.
+    // A timeout would arrive as a tool error whose body names the
+    // timeout — that is what the answer would look like if the budget
+    // were shorter than the walk.
+    let is_error = frame["result"]["isError"].as_bool().unwrap_or(false);
+    assert!(
+        !is_error,
+        "the walk of the workspace was cut by the dispatch deadline instead of \
+         answered: {frame}"
+    );
+    let body = frame["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        !body.contains("timeout"),
+        "the answer of the walk names a timeout: {frame}"
+    );
+
+    // (4) Not wedged: the transport still serves the next request.
     rpc_send(&mut child, 3, "tools/list", json!({}));
     let (next, _) = rpc_recv_by_id(&mut child, 3, Duration::from_secs(10));
     let next = next.expect("server must still serve requests after a slow dispatch");
@@ -788,14 +806,17 @@ fn slow_tool_call_is_bounded_and_does_not_wedge_the_transport() {
 /// `call_tool_handler` guards its dispatch with
 /// `tokio::time::timeout(timeout_for_category(&category), dispatch)`.
 /// This runs the same primitive over a future whose body blocks its
-/// worker thread synchronously — the shape every current handler has
-/// — and asserts the timeout does **not** fire.
+/// worker thread synchronously — the shape of the handlers that work
+/// over the graph — and asserts the timeout does **not** fire.
 ///
-/// It passes today, and it is here so that the day someone makes a
-/// handler genuinely async it turns red and forces a decision about
-/// what the transport-level test above should then assert, instead of
-/// the cancellation guarantee quietly changing underneath a test that
-/// claims to pin it.
+/// The handlers that walk the workspace have left that shape: their
+/// walk happens in the blocking pool, so they yield and their deadline
+/// can fire. This tripwire does not watch them — it watches the shape
+/// itself, and it is here so that the day the shape changes for the
+/// remaining handlers it turns red and forces a decision about what the
+/// transport-level test above should then assert, instead of the
+/// cancellation guarantee quietly changing underneath a test that claims
+/// to pin it.
 #[tokio::test]
 async fn dispatch_timeout_cannot_interrupt_a_blocking_handler() {
     let budget = Duration::from_millis(50);

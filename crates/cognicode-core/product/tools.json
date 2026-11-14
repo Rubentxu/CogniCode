@@ -8839,7 +8839,7 @@
       "name": "search_content",
       "title": "Search file contents with",
       "description": "Search file contents with .gitignore awareness.",
-      "category": "search",
+      "category": "file",
       "authority": "read",
       "stability": "stable",
       "input_schema": {
@@ -8914,7 +8914,7 @@
       ],
       "runtime_metadata": {
         "authority": "read",
-        "category": "search",
+        "category": "file",
         "estimated_latency_ms": 40,
         "mutates_workspace": false,
         "requires_graph": false,

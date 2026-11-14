@@ -193,6 +193,7 @@ mod the_specialized_reader_says_what_happened;
 mod the_tree_has_one_file_set;
 mod the_usage_search_does_not_hold_the_runtime;
 mod the_walk_prunes_by_directory_name;
+mod the_walks_of_the_workspace_do_not_hold_the_runtime;
 mod the_whole_route_is_the_filtered_route_over_the_root;
 mod the_workspace_has_one_name;
 mod the_write_refuses_a_file_that_changed;
