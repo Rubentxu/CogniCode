@@ -15,6 +15,12 @@
 //! declared under another name (`serde = { package = "serde" }`) is spelled
 //! with the name the manifest gives it, and that is the name a path spells
 //! too.
+//!
+//! Two facts the manifest is the only place that holds are read here: a
+//! dependency that only exists for one platform is declared under a target
+//! section, and it is a dependency all the same; and a dependency that names
+//! a path outside the workspace names a crate that lives elsewhere, however
+//! it is declared.
 
 use crate::domain::value_objects::Language;
 use std::collections::HashMap;
@@ -86,7 +92,10 @@ pub fn is_governed_by_a_manifest(file: &Path) -> bool {
 /// The crates a package pulls from outside the project.
 ///
 /// The names are the ones a path spells: a dependency declared as
-/// `tree-sitter` is written `tree_sitter` in the code that uses it.
+/// `tree-sitter` is written `tree_sitter` in the code that uses it. That is
+/// the name the manifest gives it, and it is the name a path spells unless
+/// the dependency renames its library (`[lib] name = "…"`), which the
+/// manifest of the caller does not say.
 pub fn external_crates(manifest: &Path) -> HashSet<String> {
     let Some(text) = read_manifest(manifest) else {
         return HashSet::new();
@@ -94,20 +103,46 @@ pub fn external_crates(manifest: &Path) -> HashSet<String> {
     let Ok(parsed) = text.parse::<toml::Value>() else {
         return HashSet::new();
     };
-    let workspace = workspace_dependencies(manifest);
+    let (root, workspace) = workspace_of(manifest);
+    let directory = manifest.parent();
     let mut names = HashSet::new();
-    for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
-        let Some(table) = parsed.get(section).and_then(toml::Value::as_table) else {
-            continue;
-        };
+    for table in dependency_tables(&parsed) {
         for (name, spec) in table {
-            if is_local(name, spec, &workspace) {
+            if is_local(name, spec, &workspace, root.as_deref(), directory) {
                 continue;
             }
             names.insert(name.replace('-', "_"));
         }
     }
     names
+}
+
+/// Every table of a manifest that declares dependencies.
+///
+/// The three sections of the package, and the same three under each target:
+/// a dependency that only exists for one platform is a dependency all the
+/// same.
+fn dependency_tables(parsed: &toml::Value) -> Vec<&toml::Table> {
+    const SECTIONS: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
+    let mut tables = Vec::new();
+    for section in SECTIONS {
+        if let Some(table) = parsed.get(section).and_then(toml::Value::as_table) {
+            tables.push(table);
+        }
+    }
+    if let Some(targets) = parsed.get("target").and_then(toml::Value::as_table) {
+        for (_, target) in targets {
+            let Some(target) = target.as_table() else {
+                continue;
+            };
+            for section in SECTIONS {
+                if let Some(table) = target.get(section).and_then(toml::Value::as_table) {
+                    tables.push(table);
+                }
+            }
+        }
+    }
+    tables
 }
 
 /// The manifest that governs a directory, when the directory belongs to a
@@ -146,32 +181,79 @@ pub fn external_crates_of(directory: &Path) -> HashSet<String> {
 
 /// Whether a dependency is a crate of this workspace.
 ///
-/// A dependency that names a path is a crate that lives here. One that
-/// inherits from the workspace says so, and the workspace says which: the
-/// inherited entry is the one that knows the path.
-fn is_local(name: &str, spec: &toml::Value, workspace: &toml::Table) -> bool {
+/// A dependency that names a path is a crate that lives here — as long as it
+/// lives inside the workspace. One that lives outside it is somebody else's
+/// crate, however it is declared: a vendored copy, a checkout of another
+/// project, a submodule.
+///
+/// One that inherits from the workspace says so, and the workspace says
+/// which: the inherited entry is the one that knows the path.
+///
+/// Without a workspace there is nothing to compare the path with, and the
+/// manifest cannot tell a sibling crate from a vendored one. The dependency
+/// is then taken for the project's own, as it was before.
+fn is_local(
+    name: &str,
+    spec: &toml::Value,
+    workspace: &toml::Table,
+    root: Option<&Path>,
+    directory: Option<&Path>,
+) -> bool {
     let Some(table) = spec.as_table() else {
         return false;
     };
-    if table.contains_key("path") {
-        return true;
+    if let Some(path) = table.get("path").and_then(toml::Value::as_str) {
+        return lives_inside_the_root(path, directory, root);
     }
     if table.get("workspace").and_then(toml::Value::as_bool) != Some(true) {
         return false;
     }
-    workspace
-        .get(name)
-        .and_then(toml::Value::as_table)
-        .is_some_and(|inherited| inherited.contains_key("path"))
+    let Some(inherited) = workspace.get(name).and_then(toml::Value::as_table) else {
+        return false;
+    };
+    match inherited.get("path").and_then(toml::Value::as_str) {
+        Some(path) => lives_inside_the_root(path, root, root),
+        None => false,
+    }
 }
 
-/// The dependencies the workspace declares for the packages that inherit
-/// them.
+/// Whether a path dependency lives inside the workspace.
+///
+/// A crate under the workspace root is a crate of this project; a crate
+/// outside it is somebody else's.
+fn lives_inside_the_root(path: &str, base: Option<&Path>, root: Option<&Path>) -> bool {
+    let (Some(base), Some(root)) = (base, root) else {
+        return true;
+    };
+    normalized(&base.join(path)).starts_with(normalized(root))
+}
+
+/// A path without the `.` and `..` components.
+///
+/// The components are resolved without touching the file system: a path that
+/// is compared with another one has to be the same path, and the file system
+/// is not consulted to know where a crate lives.
+fn normalized(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// The workspace the package belongs to, and the dependencies it declares for
+/// the packages that inherit them.
 ///
 /// A package that inherits a dependency does not say where it comes from;
 /// the workspace does, and that is what tells a sibling crate from a crate
 /// pulled from a registry.
-fn workspace_dependencies(manifest: &Path) -> toml::Table {
+fn workspace_of(manifest: &Path) -> (Option<PathBuf>, toml::Table) {
     let mut directory = manifest.parent();
     while let Some(current) = directory {
         let path = current.join("Cargo.toml");
@@ -180,15 +262,16 @@ fn workspace_dependencies(manifest: &Path) -> toml::Table {
             && let Ok(parsed) = text.parse::<toml::Value>()
             && let Some(workspace) = parsed.get("workspace").and_then(toml::Value::as_table)
         {
-            return workspace
+            let dependencies = workspace
                 .get("dependencies")
                 .and_then(toml::Value::as_table)
                 .cloned()
                 .unwrap_or_default();
+            return (Some(current.to_path_buf()), dependencies);
         }
         directory = current.parent();
     }
-    toml::Table::new()
+    (None, toml::Table::new())
 }
 
 /// The text of a manifest, when it can be read.
@@ -249,7 +332,7 @@ mod tests {
         std::fs::write(
             &root,
             "[workspace]\nmembers = [\"core\"]\n\n[workspace.dependencies]\n\
-             serde_json = \"1\"\ntree-sitter = { path = \"../tree-sitter\" }\n",
+             serde_json = \"1\"\ntree-sitter = { path = \"vendor/tree-sitter\" }\n",
         )
         .expect("the workspace manifest is written");
         let package = dir.path().join("core");
@@ -273,7 +356,97 @@ mod tests {
         );
         assert!(
             !crates.contains("tree_sitter"),
-            "the workspace's `tree-sitter` names a path: it is a crate of this workspace: \
+            "the workspace's `tree-sitter` names a path inside the workspace: it is a crate of \
+             this workspace: {crates:?}"
+        );
+    }
+
+    /// A dependency that only exists for one platform is a dependency all
+    /// the same.
+    #[test]
+    fn a_dependency_of_a_target_is_a_crate_from_outside() {
+        let (_dir, file) = package(
+            "[package]\nname = \"thing\"\n\n[target.'cfg(unix)'.dependencies]\n\
+             serde_json = \"1\"\n",
+        );
+        let manifest = manifest_of(file.parent().expect("the file is in a directory"))
+            .expect("the package has a manifest");
+        let crates = external_crates(&manifest);
+
+        assert!(
+            crates.contains("serde_json"),
+            "the package pulls `serde_json` from a registry for one platform: {crates:?}"
+        );
+    }
+
+    /// A crate that lives outside the workspace is somebody else's, however
+    /// the manifest declares it.
+    #[test]
+    fn a_path_dependency_outside_the_workspace_is_a_crate_from_outside() {
+        let workspace = tempfile::tempdir().expect("a temporary workspace");
+        let vendor = tempfile::tempdir().expect("a temporary vendor");
+        let vendor_name = vendor
+            .path()
+            .file_name()
+            .expect("the vendor has a name")
+            .to_string_lossy()
+            .to_string();
+        std::fs::write(
+            workspace.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"core\"]\n",
+        )
+        .expect("the workspace manifest is written");
+        let package = workspace.path().join("core");
+        std::fs::create_dir_all(package.join("src")).expect("the package is created");
+        std::fs::write(
+            package.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"core\"\n\n[dependencies]\n\
+                 serde_json = {{ path = \"../../{vendor_name}\" }}\n"
+            ),
+        )
+        .expect("the package manifest is written");
+        let file = package.join("src").join("lib.rs");
+        std::fs::write(&file, "pub fn run() {}\n").expect("the source is written");
+
+        let manifest = manifest_of(file.parent().expect("the file is in a directory"))
+            .expect("the package has a manifest");
+        let crates = external_crates(&manifest);
+
+        assert!(
+            crates.contains("serde_json"),
+            "the dependency names a path outside the workspace: it is a crate from outside it: \
+             {crates:?}"
+        );
+    }
+
+    /// A crate that lives inside the workspace is the project's own.
+    #[test]
+    fn a_path_dependency_inside_the_workspace_is_a_crate_of_this_workspace() {
+        let workspace = tempfile::tempdir().expect("a temporary workspace");
+        std::fs::write(
+            workspace.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"core\"]\n",
+        )
+        .expect("the workspace manifest is written");
+        let package = workspace.path().join("core");
+        std::fs::create_dir_all(package.join("src")).expect("the package is created");
+        std::fs::write(
+            package.join("Cargo.toml"),
+            "[package]\nname = \"core\"\n\n[dependencies]\n\
+             graph-algos = { path = \"../algos\" }\n",
+        )
+        .expect("the package manifest is written");
+        let file = package.join("src").join("lib.rs");
+        std::fs::write(&file, "pub fn run() {}\n").expect("the source is written");
+
+        let manifest = manifest_of(file.parent().expect("the file is in a directory"))
+            .expect("the package has a manifest");
+        let crates = external_crates(&manifest);
+
+        assert!(
+            !crates.contains("graph_algos"),
+            "the dependency names a path inside the workspace: it is a crate of this workspace: \
              {crates:?}"
         );
     }
