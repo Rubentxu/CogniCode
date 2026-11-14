@@ -15,7 +15,7 @@
 // actually implies, so the next unfailable assertion in this file becomes a
 // compile error instead of a silent pass.
 
-use crate::application::analysis_basis::{GraphSource, OutcomeState};
+use crate::application::analysis_basis::{Budget, GraphSource, OutcomeState};
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
 };
@@ -58,7 +58,7 @@ use crate::application::dto::{
     SystemPromptContext,
 };
 use crate::application::error::AppError;
-use crate::application::services::analysis_service::{AnalysisService, UsageSearchParams};
+use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::context_compressor::ContextCompressorService;
 use crate::application::services::graph_queries::GraphQueryError;
 use crate::application::services::refactor_service::RefactorService;
@@ -93,7 +93,6 @@ use crate::interface::mcp::schemas::{
     CompareCallGraphsInput,
     ComplexityMetrics,
     ContextFormatDetail,
-    ContextLines,
     DeadCodeEntry,
     DependencyInfo,
     DetectApiBreaksInput,
@@ -107,10 +106,6 @@ use crate::interface::mcp::schemas::{
     FindPatternByIntentInput,
     FindReferencesInput,
     FindReferencesOutput,
-    FindUsagesInput,
-    FindUsagesOutput,
-    FindUsagesWithContextInput,
-    FindUsagesWithContextOutput,
     GetAllSymbolsInput,
     GetAllSymbolsOutput,
     GetCallHierarchyInput,
@@ -204,7 +199,6 @@ use crate::interface::mcp::schemas::{
     SystemPromptContextInput,
     TracePathInput,
     TracePathOutput,
-    UsageWithContextEntry,
     ValidateSyntaxInput,
     ValidateSyntaxOutput,
     ValidationResult,
@@ -241,6 +235,11 @@ pub struct HandlerContext {
     validator: Arc<InputValidator>,
     /// Read through `analysis_service()`.
     analysis_service: Arc<AnalysisService>,
+    /// The budget the usage search obeys.
+    ///
+    /// The surface that answers decides how much tree it can afford to
+    /// read; without an override, the product's own budget applies.
+    usage_search_budget: Budget,
     /// Read only from modules inside `handlers`, which see this
     /// private field directly. No accessor exists because no caller outside
     /// the module needs one.
@@ -554,6 +553,7 @@ pub struct HandlerContextBuilder {
     cache_root: Option<PathBuf>,
     validator: Option<Arc<InputValidator>>,
     analysis_service: Option<Arc<AnalysisService>>,
+    usage_search_budget: Option<Budget>,
     refactor_service: Option<Arc<RefactorService>>,
     compressor: Option<Arc<ContextCompressorService>>,
     semantic_search: Option<Arc<SemanticSearchService>>,
@@ -624,6 +624,15 @@ impl HandlerContextBuilder {
     /// Sets a custom AnalysisService.
     pub fn with_analysis_service(mut self, service: AnalysisService) -> Self {
         self.analysis_service = Some(Arc::new(service));
+        self
+    }
+
+    /// The budget the usage search obeys, instead of the product's.
+    ///
+    /// The surface that answers decides how much tree it can afford to
+    /// read. Without this, the product's budget applies.
+    pub fn with_usage_search_budget(mut self, budget: Budget) -> Self {
+        self.usage_search_budget = Some(budget);
         self
     }
 
@@ -811,6 +820,9 @@ impl HandlerContextBuilder {
                 }
                 service
             },
+            usage_search_budget: self
+                .usage_search_budget
+                .unwrap_or(crate::application::services::usage_search::USAGE_SEARCH_BUDGET),
             refactor_service: self
                 .refactor_service
                 .unwrap_or_else(|| Arc::new(RefactorService::new())),
@@ -1535,33 +1547,6 @@ fn estimate_symbol_length(_name: &str, _kind: &str) -> u32 {
     10
 }
 
-/// Handler for find_usages tool
-#[cognicode_macros::aix_tool(
-    name = "find_usages",
-    description = "Find all usages of a symbol across the project.",
-    input_schema = FindUsagesInput
-)]
-pub async fn handle_find_usages(
-    ctx: &HandlerContext,
-    input: FindUsagesInput,
-) -> HandlerResult<FindUsagesOutput> {
-    ctx.validator.validate_query(&input.symbol_name)?;
-
-    let search = ctx
-        .analysis_service
-        .find_symbol_usages_with_coverage(UsageSearchParams {
-            project_dir: ctx.working_dir.clone(),
-            symbol_name: input.symbol_name.clone(),
-            include_declaration: input.include_declaration,
-            context_lines: input.context_lines,
-            first_only_definition: true,
-            budget: crate::application::services::usage_search::USAGE_SEARCH_BUDGET,
-        })
-        .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
-
-    Ok(FindUsagesOutput::of_search(input.symbol_name, search))
-}
-
 /// Handler for structural_search tool
 #[cognicode_macros::aix_tool(
     name = "structural_search",
@@ -1927,9 +1912,11 @@ mod basis;
 mod complexity_handlers;
 pub mod goal;
 mod graph_loading;
+pub mod usage_search;
 pub use basis::BasisDto;
 use basis::compute_basis;
 use graph_loading::load_graph_off_the_runtime;
+pub use usage_search::{handle_find_usages, handle_find_usages_with_context};
 /// Handler for safe_refactor tool
 // Refactor handlers module
 pub mod refactor_handlers;
@@ -3161,61 +3148,6 @@ pub async fn handle_semantic_search(
         results: results_dto,
         total: results.len(),
         search_time_ms: elapsed,
-    })
-}
-
-/// Handler for find_usages_with_context tool
-///
-/// Migrated to use Validation capability trait directly.
-pub async fn handle_find_usages_with_context(
-    validator: Arc<InputValidator>,
-    working_dir: PathBuf,
-    input: FindUsagesWithContextInput,
-) -> HandlerResult<FindUsagesWithContextOutput> {
-    validator.validate_query(&input.symbol)?;
-
-    let search = AnalysisService::new()
-        .find_symbol_usages_with_coverage(UsageSearchParams {
-            project_dir: working_dir,
-            symbol_name: input.symbol.clone(),
-            include_declaration: input.include_declaration,
-            context_lines: Some(input.context_lines as usize),
-            first_only_definition: false,
-            budget: crate::application::services::usage_search::USAGE_SEARCH_BUDGET,
-        })
-        .map_err(|e| HandlerError::App(AppError::AnalysisError(e.to_string())))?;
-
-    let total = search.usages.len();
-
-    let usage_entries: Vec<UsageWithContextEntry> = search
-        .usages
-        .into_iter()
-        .map(|u| UsageWithContextEntry {
-            file: u.file,
-            line: u.line,
-            column: u.column,
-            context: u.context,
-            context_lines: u.context_lines.map_or(
-                ContextLines {
-                    before: vec![],
-                    current: String::new(),
-                    after: vec![],
-                },
-                |c| ContextLines {
-                    before: c.before,
-                    current: c.current,
-                    after: c.after,
-                },
-            ),
-            is_definition: u.is_definition,
-        })
-        .collect();
-
-    Ok(FindUsagesWithContextOutput {
-        symbol: input.symbol,
-        usages: usage_entries,
-        total,
-        coverage: crate::interface::coverage::CoverageInfo::of(&search.coverage),
     })
 }
 

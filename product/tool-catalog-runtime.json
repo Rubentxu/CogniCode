@@ -2192,8 +2192,8 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 40,
+        "category": "navigation",
+        "estimated_latency_ms": 300,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
