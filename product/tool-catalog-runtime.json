@@ -6878,7 +6878,7 @@
         "category": "search",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.102.1"

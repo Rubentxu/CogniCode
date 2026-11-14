@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// The oracle that asks the daemon watching this workspace.
 ///
@@ -326,20 +326,6 @@ fn cognicode_meta(
         }),
     );
     meta
-}
-
-/// M3.2: Returns the dispatch timeout for a given tool category.
-/// Categories with heavy graph algorithms (PageRank, IDF, communities)
-/// get 60s; LSP-backed navigation gets 45s; a query over the symbol
-/// index gets 500ms; a walk of the tree, like the content search, is
-/// the work of the `file` category, which gets 30s.
-fn timeout_for_category(category: &str) -> Duration {
-    match category {
-        "graph" => Duration::from_secs(60),
-        "navigation" => Duration::from_secs(45),
-        "search" => Duration::from_millis(500),
-        _ => Duration::from_secs(30),
-    }
 }
 
 /// M3.3: Categories that use a stricter rate-limit key namespace.
@@ -1026,10 +1012,11 @@ pub async fn call_tool_handler(
 
     // M3.2: Wrap the per-tool match dispatch with a category-based
     // timeout. The match block itself is unchanged; only the wrapper
-    // differs. The timeout is selected by `timeout_for_category` from
-    // the cognicode_meta.category of the tool. On timeout, the
-    // dispatch future is dropped and we return Internal("timeout").
-    let timeout = timeout_for_category(&category);
+    // differs. The window is the one the tool's category declares,
+    // raised to the window of the graph when the catalogue says the
+    // tool needs the graph. On timeout, the dispatch future is dropped
+    // and we return Internal("timeout").
+    let timeout = crate::robustness::timeout_for_tool(tool_name, &category);
     let dispatch = async {
         // TASK-82 — los goals. Un goal no es un tool con su brazo: es una
         // declaración del registro que dice cómo se implementa, y la
@@ -2003,6 +1990,7 @@ mod tests {
     use super::*;
 
     use std::sync::Arc;
+    use std::time::Duration;
 
     // ============================================================================
     // Concurrent Request Tests
@@ -2166,36 +2154,6 @@ mod tests {
     // M3.2 — Per-tool timeout
     // ============================================================================
 
-    #[test]
-    fn test_timeout_for_category_known_categories() {
-        // graph analytics is allowed the longest window (60s)
-        assert_eq!(timeout_for_category("graph"), Duration::from_secs(60));
-        // LSP navigation is allowed 45s
-        assert_eq!(timeout_for_category("navigation"), Duration::from_secs(45));
-        // a query over the symbol index answers from an index that is
-        // already built, so it is given the narrowest window
-        assert_eq!(timeout_for_category("search"), Duration::from_millis(500));
-        // file operations default to 30s: that is the window of a walk
-        // of the tree, like the content search
-        assert_eq!(timeout_for_category("file"), Duration::from_secs(30));
-        // composite/quality/refactor/aix are also 30s
-        assert_eq!(timeout_for_category("composite"), Duration::from_secs(30));
-        assert_eq!(timeout_for_category("quality"), Duration::from_secs(30));
-        assert_eq!(timeout_for_category("refactor"), Duration::from_secs(30));
-        assert_eq!(timeout_for_category("aix"), Duration::from_secs(30));
-    }
-
-    #[test]
-    fn test_timeout_for_category_unknown_defaults_to_30s() {
-        // Unknown categories and the empty string fall through to the
-        // 30s default so we never accidentally disable the timeout.
-        assert_eq!(
-            timeout_for_category("unknown_category"),
-            Duration::from_secs(30)
-        );
-        assert_eq!(timeout_for_category(""), Duration::from_secs(30));
-    }
-
     /// The dispatch deadline of a tool has to cover the work the tool
     /// does on its own.
     ///
@@ -2210,7 +2168,7 @@ mod tests {
         let category = tool_category_map()
             .get("find_usages")
             .expect("find_usages declares a category");
-        let deadline = timeout_for_category(category);
+        let deadline = crate::robustness::timeout_for_tool("find_usages", category);
         let budget = cognicode_core::application::services::usage_search::USAGE_SEARCH_BUDGET;
         let search_budget = budget
             .max_elapsed
@@ -2228,11 +2186,11 @@ mod tests {
     /// `search_content` walks the workspace and reads every file of it:
     /// that is the same walk `list_files` does, and the product gives
     /// that walk the window of the `file` category. The window of the
-    /// `search` category is the one of a query over the symbol index,
-    /// which is a different work: a walk of the tree read every file of
-    /// it. A deadline shorter than the walk throws the answer away: the
-    /// walk finishes after the deadline that was supposed to replace
-    /// it, and the work that was done is lost.
+    /// `search` category is the narrowest the product has, and the walk
+    /// of the whole tree does not fit in it. A deadline shorter than the
+    /// walk throws the answer away: the walk finishes after the
+    /// deadline that was supposed to replace it, and the work that was
+    /// done is lost.
     #[test]
     fn the_dispatch_deadline_of_the_content_search_covers_the_walk_of_the_workspace() {
         let search = tool_category_map()
@@ -2246,10 +2204,11 @@ mod tests {
             "the two tools walk the same tree, so they declare the same category"
         );
         assert!(
-            timeout_for_category(search) > timeout_for_category("search"),
-            "the walk of the workspace ({:?}) is budgeted like a query over the symbol index: the \
-             walk would finish after the deadline that was supposed to replace it",
-            timeout_for_category(search)
+            crate::robustness::timeout_for_tool("search_content", search)
+                > crate::robustness::timeout_for_category("search"),
+            "the walk of the workspace ({:?}) is budgeted in the narrowest window the product \
+             has: the walk would finish after the deadline that was supposed to replace it",
+            crate::robustness::timeout_for_tool("search_content", search)
         );
     }
 
@@ -2270,7 +2229,8 @@ mod tests {
     #[test]
     fn the_dispatch_deadline_of_every_tool_covers_the_latency_it_declares() {
         for descriptor in cognicode_core::interface::catalog::load_tool_catalog() {
-            let deadline = timeout_for_category(&descriptor.category);
+            let deadline =
+                crate::robustness::timeout_for_tool(&descriptor.name, &descriptor.category);
             let latency = Duration::from_millis(u64::from(descriptor.estimated_latency_ms));
             assert!(
                 deadline >= latency,
@@ -2296,7 +2256,7 @@ mod tests {
         // waited for the widest window of the product would be a task
         // disguised as a test. The window of each category is pinned by
         // `test_timeout_for_category_known_categories`.
-        let timeout = timeout_for_category("search");
+        let timeout = crate::robustness::timeout_for_category("search");
         let slow_handler = async {
             // Sleep longer than the deadline the product gives.
             tokio::time::sleep(timeout + Duration::from_millis(100)).await;
@@ -2316,7 +2276,7 @@ mod tests {
     async fn test_timeout_does_not_fire_when_handler_returns_quickly() {
         // M3.2: Fast handlers must NOT be cancelled. The window is the
         // product's own, for the reason the test above gives.
-        let timeout = timeout_for_category("search");
+        let timeout = crate::robustness::timeout_for_category("search");
         let fast_handler = async {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<_, InterfaceError>("done".to_string())
