@@ -21,11 +21,15 @@
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::value_objects::TraversalDirection;
-use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+use crate::domain::value_objects::{CallSite, DependencyType, Location, SymbolKind};
 use crate::infrastructure::graph::lightweight_index::{LightweightIndex, SymbolLocation};
+use crate::infrastructure::graph::per_file_graph::{
+    GlobalSymbolIndex, build_global_index, build_global_index_from_sources,
+};
+use crate::infrastructure::graph::source_files;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 /// Result of a call hierarchy query
@@ -196,8 +200,13 @@ impl TreeNode {
 pub struct OnDemandGraphBuilder {
     /// Index for fast symbol lookup (`Arc<RwLock>` so multiple builders can share with concurrent access)
     index: Arc<RwLock<LightweightIndex>>,
+    /// The declarations of the project: the judgment a call is asked
+    /// about. A call qualified by a type the project does not declare is
+    /// somebody else's, and the index that owns the project's declarations
+    /// is the one that says so.
+    declarations: Option<Arc<GlobalSymbolIndex>>,
     /// Cache of parsed files to avoid re-parsing
-    file_cache: HashMap<String, (Vec<Symbol>, Vec<(Symbol, String)>)>, // (symbols, relationships)
+    file_cache: HashMap<String, (Vec<Symbol>, Vec<CallSite>)>, // (symbols, calls)
 }
 
 impl OnDemandGraphBuilder {
@@ -205,6 +214,7 @@ impl OnDemandGraphBuilder {
     pub fn new() -> Self {
         Self {
             index: Arc::new(RwLock::new(LightweightIndex::new())),
+            declarations: None,
             file_cache: HashMap::new(),
         }
     }
@@ -213,14 +223,28 @@ impl OnDemandGraphBuilder {
     pub fn with_index(index: Arc<RwLock<LightweightIndex>>) -> Self {
         Self {
             index,
+            declarations: None,
             file_cache: HashMap::new(),
         }
     }
 
+    /// The declarations the route judges the calls against.
+    ///
+    /// A route without them cannot tell a call of the project from a call
+    /// of somebody else, so it publishes none: the honest answer to "is
+    /// this call the project's?" without the project is "no".
+    pub fn with_declarations(mut self, declarations: Arc<GlobalSymbolIndex>) -> Self {
+        self.declarations = Some(declarations);
+        self
+    }
+
     /// Sets the index from a directory scan
     pub fn set_index<P: AsRef<Path>>(&mut self, project_dir: P) -> std::io::Result<()> {
+        let project_dir = project_dir.as_ref();
         // Use RwLock write guard for safe concurrent mutation
-        self.index.write().unwrap().build_index(project_dir)
+        self.index.write().unwrap().build_index(project_dir)?;
+        self.declarations = Some(Arc::new(self.declarations_of(project_dir)));
+        Ok(())
     }
 
     /// Builds the index from in-memory sources
@@ -239,7 +263,28 @@ impl OnDemandGraphBuilder {
         for (file_path, source) in &sources {
             self.parse_source_into_cache(file_path, source);
         }
-        self.index.write().unwrap().build_from_sources(sources);
+        self.index
+            .write()
+            .unwrap()
+            .build_from_sources(sources.iter().copied());
+        self.declarations = Some(Arc::new(build_global_index_from_sources(
+            sources.iter().copied(),
+        )));
+    }
+
+    /// The declarations of the project's files.
+    ///
+    /// The set of files is the inventory's — the same one the index
+    /// walked — because an index that answers "which files?" with a
+    /// different set has two answers.
+    fn declarations_of(&self, project_dir: &Path) -> GlobalSymbolIndex {
+        let inventory = source_files::inventory(project_dir);
+        let paths: Vec<PathBuf> = inventory
+            .source_files()
+            .map(|file| file.path.clone())
+            .collect();
+        let borrowed: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+        build_global_index(&borrowed)
     }
 
     /// Builds a subgraph centered on a specific symbol
@@ -738,24 +783,46 @@ impl OnDemandGraphBuilder {
             Err(_) => return,
         };
 
+        // One tree, two projections: the symbols the file declares and the
+        // calls it states. A caller that already holds the tree does not
+        // make the parser build it again — and the calls it reads are the
+        // calls the per-file route reads, so the two routes see the same
+        // call with the same qualifier.
+        let tree = match parser.parse_tree(source) {
+            Ok(tree) => tree,
+            Err(_) => return,
+        };
+
         let symbols = parser
-            .find_all_symbols_with_path(source, file_path)
+            .find_all_symbols_in_tree(&tree, source, file_path)
             .unwrap_or_default();
 
-        let relationships = parser
-            .find_call_relationships(source, file_path)
+        let calls = parser
+            .find_call_sites_in_tree(&tree, source, file_path)
             .unwrap_or_default();
 
         self.file_cache
-            .insert(file_path.to_string(), (symbols, relationships));
+            .insert(file_path.to_string(), (symbols, calls));
     }
 
-    /// Gets relationships from the cache
-    fn get_file_relationships(&self, file_path: &str) -> &[(Symbol, String)] {
+    /// Gets the calls of a file from the cache
+    fn get_file_calls(&self, file_path: &str) -> &[CallSite] {
         self.file_cache
             .get(file_path)
-            .map(|(_, r)| r.as_slice())
+            .map(|(_, calls)| calls.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// Whether the project owns the call.
+    ///
+    /// The rule belongs to the index that owns the project's declarations: a
+    /// call qualified by a type the project does not declare is somebody
+    /// else's call. The route asks; it does not judge.
+    fn owns_call(&self, type_qualifier: Option<&str>) -> bool {
+        match &self.declarations {
+            Some(index) => index.owns_call(type_qualifier),
+            None => false,
+        }
     }
 
     /// Traverses callees (what this symbol calls)
@@ -773,13 +840,22 @@ impl OnDemandGraphBuilder {
         }
 
         let file_path = current.location().file();
-        let relationships = self.get_file_relationships(file_path);
+        let calls = self.get_file_calls(file_path);
+        let holder = current.fully_qualified_name();
 
-        for (caller, callee_name) in relationships {
-            // Check if this caller matches our current symbol
-            if caller.name() != current.name() {
+        for site in calls {
+            // The call has to be held by the symbol the traversal is at.
+            if site.source.as_str() != holder {
                 continue;
             }
+
+            // The judgment: a call qualified by a type the project does
+            // not declare is somebody else's call.
+            if !self.owns_call(site.type_qualifier.as_deref()) {
+                continue;
+            }
+
+            let callee_name = &site.target;
 
             // Find the callee's locations
             let callee_locs = self.index.read().unwrap().find_symbol(callee_name);
@@ -833,31 +909,34 @@ impl OnDemandGraphBuilder {
         }
 
         let file_path = current.location().file();
-        let relationships = self.get_file_relationships(file_path);
+        let calls = self.get_file_calls(file_path);
 
-        for (caller, callee_name) in relationships {
+        for site in calls {
             // Check if the callee matches our current symbol
-            if callee_name.to_lowercase() != current.name().to_lowercase() {
+            if site.target.to_lowercase() != current.name().to_lowercase() {
                 continue;
             }
 
-            let caller_loc = self.index.read().unwrap().find_symbol(caller.name());
-            if caller_loc.is_empty() {
+            // The judgment, in the other direction too: a call that is
+            // somebody else's does not make the project's symbol a caller
+            // of anything.
+            if !self.owns_call(site.type_qualifier.as_deref()) {
                 continue;
             }
 
-            let caller_loc = &caller_loc[0];
-            let key = self.symbol_key(caller.name(), &caller_loc.file, caller_loc.line);
+            let Some(caller) = self.declaration_holding(site) else {
+                continue;
+            };
+
+            let key = self.symbol_key(
+                caller.name(),
+                caller.location().file(),
+                caller.location().line(),
+            );
 
             if visited.insert(key.clone()) {
-                let caller_symbol = Symbol::new(
-                    caller.name(),
-                    caller_loc.symbol_kind,
-                    Location::new(&caller_loc.file, caller_loc.line, caller_loc.column),
-                );
-
                 entries.push(HierarchyEntry {
-                    symbol: caller_symbol.clone(),
+                    symbol: caller.clone(),
                     depth: current_depth,
                     direction,
                 });
@@ -865,7 +944,7 @@ impl OnDemandGraphBuilder {
                 // Recurse if within depth
                 if current_depth < max_depth {
                     self.traverse_callers(
-                        &caller_symbol,
+                        &caller,
                         max_depth,
                         current_depth + 1,
                         direction,
@@ -875,6 +954,24 @@ impl OnDemandGraphBuilder {
                 }
             }
         }
+    }
+
+    /// The declaration that holds a call.
+    ///
+    /// The site carries the identity of the declaration — its file, its
+    /// name and its line — and the file's own symbols carry the rest of
+    /// it: where it is written and what kind of declaration it is. The
+    /// declaration a call belongs to is the one its identity names, not
+    /// the first one that carries the name.
+    fn declaration_holding(&self, site: &CallSite) -> Option<Symbol> {
+        let symbols = self
+            .file_cache
+            .get(site.origin_file.as_str())
+            .map(|(symbols, _)| symbols)?;
+        symbols
+            .iter()
+            .find(|symbol| symbol.fully_qualified_name() == site.source.as_str())
+            .cloned()
     }
 
     /// Creates a unique key for a symbol
@@ -893,10 +990,14 @@ impl OnDemandGraphBuilder {
     ) {
         // Look for direct calls from source to target
         for source_loc in source_locs {
-            let relationships = self.get_file_relationships(&source_loc.file);
-            for (caller, callee_name) in relationships {
+            let calls = self.get_file_calls(&source_loc.file);
+            for site in calls {
+                let Some(caller) = self.declaration_holding(site) else {
+                    continue;
+                };
                 if caller.name().to_lowercase() == source_name.to_lowercase()
-                    && callee_name.to_lowercase() == target_name.to_lowercase()
+                    && site.target.to_lowercase() == target_name.to_lowercase()
+                    && self.owns_call(site.type_qualifier.as_deref())
                 {
                     // Add edge to graph
                     let source_id = SymbolId::new(source_name);
@@ -938,11 +1039,22 @@ impl OnDemandGraphBuilder {
 
             // Find callees of current
             for loc in self.index.read().unwrap().find_symbol(&current_name) {
-                let relationships = self.get_file_relationships(&loc.file);
-                for (caller, callee_name) in relationships {
+                let calls = self.get_file_calls(&loc.file);
+                for site in calls {
+                    let Some(caller) = self.declaration_holding(site) else {
+                        continue;
+                    };
                     if caller.name().to_lowercase() != current_name.to_lowercase() {
                         continue;
                     }
+
+                    // The judgment, here too: the call of somebody else is
+                    // not a step of the project's path.
+                    if !self.owns_call(site.type_qualifier.as_deref()) {
+                        continue;
+                    }
+
+                    let callee_name = &site.target;
 
                     if !visited.contains(&callee_name.to_lowercase()) {
                         visited.insert(callee_name.to_lowercase());
