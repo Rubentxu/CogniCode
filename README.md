@@ -158,7 +158,7 @@ in [`product/README.md`](product/README.md).
 | `trace_path` | Find execution path between two symbols (BFS). |
 | `export_mermaid` | Export call graph as Mermaid flowchart or SVG. |
 | `build_lightweight_index` | Build fast symbol-only index. |
-| `query_symbol_index` | Case-insensitive symbol lookup. |
+| `query_symbol_index` | Symbol lookup; the name is compared the way the language of each declaration reads it. |
 
 ### Graph Operations (3 tools)
 

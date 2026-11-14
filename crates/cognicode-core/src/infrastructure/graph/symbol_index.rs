@@ -103,6 +103,11 @@ impl SymbolIndex {
     /// Queries the index for symbol locations
     ///
     /// Results are cached based on the configured TTL.
+    ///
+    /// The cache is keyed by the name as it was asked: the answer depends
+    /// on the spelling —a language that tells `Ok` from `ok` answers one
+    /// and not the other— so a cache keyed by the folded name would serve
+    /// one question with the answer to another.
     pub fn query(&self, symbol_name: &str) -> Vec<SymbolLocation> {
         // Check cache first
         if let Some(cached) = self.get_cached_query(symbol_name) {
@@ -113,7 +118,7 @@ impl SymbolIndex {
         let results = self.index.find_symbol(symbol_name).to_vec();
 
         // Cache the result
-        self.cache_query_result(symbol_name.to_lowercase(), results.clone());
+        self.cache_query_result(symbol_name.to_string(), results.clone());
 
         results
     }
@@ -150,15 +155,14 @@ impl SymbolIndex {
     /// Invalidates a specific cached query result
     pub fn invalidate_symbol(&self, symbol_name: &str) {
         if let Ok(mut cache) = self.query_cache.write() {
-            cache.shift_remove(&symbol_name.to_lowercase());
+            cache.shift_remove(symbol_name);
         }
     }
 
     /// Gets a cached query result if it exists and is not expired
     fn get_cached_query(&self, symbol_name: &str) -> Option<Vec<SymbolLocation>> {
         let cache = self.query_cache.read().ok()?;
-        let key = symbol_name.to_lowercase();
-        let entry = cache.get(&key)?;
+        let entry = cache.get(symbol_name)?;
 
         if entry.created_at.elapsed() > self.config.max_age {
             return None;
@@ -291,5 +295,32 @@ mod tests {
         index.invalidate_symbol("hello");
         let results2 = index.query("hello");
         assert_eq!(results2.len(), 1);
+    }
+
+    /// TASK-262 — the cached answer is the answer to the question that
+    /// was asked.
+    ///
+    /// The cache was keyed by the folded name, and the answer stopped
+    /// depending on the folded name: the query for `Hello` cached its
+    /// answer under `hello`, and the query for `hello` got that answer
+    /// back —the declaration of `Hello` for the name `hello`.
+    #[test]
+    fn the_cached_answer_is_the_answer_to_the_name_that_was_asked() {
+        let mut index = SymbolIndex::new();
+        index.build_from_sources([("test.py", "def Hello():\n    pass\n")]);
+
+        let asked = index.query("Hello");
+        assert_eq!(
+            asked.len(),
+            1,
+            "the declaration spelled `Hello` answers to `Hello`"
+        );
+
+        let other = index.query("hello");
+        assert!(
+            other.is_empty(),
+            "Python tells `Hello` from `hello`: the cached answer to `Hello` \
+             must not answer `hello`"
+        );
     }
 }
