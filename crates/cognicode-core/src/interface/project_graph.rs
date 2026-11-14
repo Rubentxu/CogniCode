@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use crate::application::analysis_basis::GraphSource;
 use crate::application::services::analysis_service::AnalysisService;
-use crate::application::services::analyze::Coverage;
+use crate::application::services::analyze::{Coverage, CoverageFacts};
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::value_objects::file_manifest::FileManifest;
 
@@ -112,6 +112,18 @@ pub fn service_with_graph(dir: &Path) -> Result<(AnalysisService, ProjectGraph),
     ))
 }
 
+/// How many bytes a warning about an incomplete build may occupy.
+///
+/// The warning is a summary: the count it publishes is exact and the
+/// sample it shows is bounded. A warning that lists every hole of a
+/// build is not a warning — on this repository it was 5 526 492
+/// characters in a single line, and the error the person had to read sat
+/// on the line after it.
+///
+/// The cap lives here, in the one place that writes these lines, so that
+/// the second command that wants to warn does not invent its own.
+pub const MAX_WARNING_BYTES: usize = 4 * 1024;
+
 /// Says what the build could not cover.
 ///
 /// The service answers with three coverages: the files the walk could not
@@ -120,55 +132,157 @@ pub fn service_with_graph(dir: &Path) -> Result<(AnalysisService, ProjectGraph),
 /// hides the other tells half the truth, so every command says all of
 /// them, in the same words the MCP says them.
 pub fn warn_incomplete(built: &ProjectGraph) {
-    let facts = built.coverage.facts();
+    for warning in incomplete_warnings(&built.coverage.facts()) {
+        eprintln!("{warning}");
+    }
+}
+
+/// The words every warning about an incomplete build opens with.
+const WARNING_PREFIX: &str = "Warning: graph is PARTIAL: ";
+
+/// The mark that says a name was cut to fit in the line.
+const CUT: char = '…';
+
+/// The warnings of a build that did not cover the tree, one line each.
+///
+/// The lines are a function of the facts and of nothing else: the words,
+/// the counts and the sample are decided here, and the caller only
+/// prints them. That is what makes them checkable — a warning that
+/// nobody can read is a warning that nobody checks.
+pub fn incomplete_warnings(facts: &CoverageFacts) -> Vec<String> {
+    let mut warnings = Vec::new();
     if !facts.skipped.is_empty() {
-        eprintln!(
-            "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-            facts.skipped.len(),
-            facts
-                .skipped
-                .iter()
-                .map(|f| f.path.clone())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let holes = facts
+            .skipped
+            .iter()
+            .map(|skipped| skipped.path.clone())
+            .collect::<Vec<_>>();
+        warnings.push(summary_of_holes("file(s) skipped", &holes));
     }
     if !facts.pending.is_empty() {
-        eprintln!(
-            "Warning: graph is PARTIAL: {} reference(s) without a declaration ({})",
-            facts.pending.len(),
-            facts
-                .pending
-                .iter()
-                .map(|reference| {
-                    format!(
-                        "{}:{} {}",
-                        reference.origin_file,
-                        reference.origin_line.unwrap_or_default(),
-                        reference.target
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let holes = facts
+            .pending
+            .iter()
+            .map(|reference| {
+                format!(
+                    "{}:{} {}",
+                    reference.origin_file,
+                    reference.origin_line.unwrap_or_default(),
+                    reference.target
+                )
+            })
+            .collect::<Vec<_>>();
+        warnings.push(summary_of_holes(
+            "reference(s) without a declaration",
+            &holes,
+        ));
     }
     if !facts.rejected.is_empty() {
-        eprintln!(
-            "Warning: graph is PARTIAL: {} relation(s) refused by the repository ({})",
-            facts.rejected.len(),
-            facts
-                .rejected
-                .iter()
-                .map(|rejection| {
-                    format!(
-                        "{} -> {} ({})",
-                        rejection.source.as_str(),
-                        rejection.target.as_str(),
-                        rejection.reason
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        let holes = facts
+            .rejected
+            .iter()
+            .map(|rejection| {
+                format!(
+                    "{} -> {} ({})",
+                    rejection.source.as_str(),
+                    rejection.target.as_str(),
+                    rejection.reason
+                )
+            })
+            .collect::<Vec<_>>();
+        warnings.push(summary_of_holes(
+            "relation(s) refused by the repository",
+            &holes,
+        ));
     }
+    warnings
+}
+
+/// Builds the warning about one kind of hole.
+///
+/// The count is exact and the sample is bounded by `MAX_WARNING_BYTES`:
+/// a warning that says "some of them" sends the person back to the same
+/// place to count them again, and a warning that lists every hole of a
+/// build is a dump — on this repository it was 5 526 492 characters in
+/// one line, and the error the person had to read sat on the line after
+/// it.
+///
+/// The sample is cut at the last hole that fits, and the line says how
+/// many were left out. When not even one hole fits, that one is cut
+/// short and marked as cut: a warning that shows nothing of what it
+/// counted says less than it knows.
+fn summary_of_holes(label: &str, holes: &[String]) -> String {
+    if holes.is_empty() {
+        return format!("{WARNING_PREFIX}0 {label}");
+    }
+    let head = format!("{WARNING_PREFIX}{} {label} (", holes.len());
+    // The closing bracket and the words that say what was left out.
+    let close = 1;
+    let tail_len = |shown: usize| -> usize {
+        if shown == holes.len() {
+            0
+        } else {
+            ", and ".len() + digits(holes.len() - shown)
+        }
+    };
+    // The length of the sample of `shown` holes: the names and the
+    // separator that goes between them.
+    let mut lengths = Vec::with_capacity(holes.len() + 1);
+    let mut sum = 0usize;
+    lengths.push(0);
+    for hole in holes {
+        sum += hole.len();
+        lengths.push(sum);
+    }
+    let sample_len = |shown: usize| -> usize {
+        if shown == 0 {
+            0
+        } else {
+            lengths[shown] + 2 * (shown - 1)
+        }
+    };
+    // The biggest sample that fits in the cap.
+    let mut shown = 0usize;
+    for candidate in 0..=holes.len() {
+        let total = head.len() + sample_len(candidate) + tail_len(candidate) + close;
+        if total <= MAX_WARNING_BYTES {
+            shown = candidate;
+        }
+    }
+    let (sample, shown) = if shown == 0 {
+        // Not even one hole fits: the first one is cut to fit, and the
+        // line says that it was cut.
+        let room = MAX_WARNING_BYTES
+            .saturating_sub(head.len() + tail_len(1) + close)
+            .saturating_sub(CUT.len_utf8());
+        let cut = cut_to_fit(&holes[0], room);
+        (format!("{cut}{CUT}"), 1)
+    } else {
+        (holes[..shown].join(", "), shown)
+    };
+    let tail = if shown == holes.len() {
+        String::new()
+    } else {
+        format!(", and {} more", holes.len() - shown)
+    };
+    format!("{head}{sample}{tail})")
+}
+
+/// Cuts a name to the bytes that fit, on a character boundary.
+fn cut_to_fit(name: &str, room: usize) -> &str {
+    let mut end = name.len().min(room);
+    while end > 0 && !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    &name[..end]
+}
+
+/// How many digits a number is written with.
+fn digits(mut number: usize) -> usize {
+    let mut count = 1;
+    while number >= 10 {
+        number /= 10;
+        count += 1;
+    }
+    count
 }
