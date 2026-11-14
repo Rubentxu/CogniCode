@@ -84,14 +84,15 @@ pub struct DeclaredFile {
     pub path: String,
     /// The hash of the bytes the build read.
     pub hash: [u8; 32],
-    /// What the file declares, by lowercased name: the identity of every
-    /// declaration that name has in this file.
+    /// What the file declares, by name: the identity of every declaration
+    /// that name has in this file.
     ///
-    /// Lowercased because that is how the index keys them: a call is
-    /// resolved by the name it looks for, and that name is compared
-    /// against the name the file declares. A name can have more than one
-    /// declaration in a file — two locals called `x`, a function and a
-    /// type — so the identity of each one is kept, not just the name.
+    /// The name is the one the declaration was written with, because that
+    /// is how a call is resolved: the fold is the language's property, and
+    /// a language that does not fold tells two declarations whose names
+    /// differ only in the case apart. A name can have more than one
+    /// declaration in a file —two locals called `x`, a function and a
+    /// type— so the identity of each one is kept, not just the name.
     pub declarations: BTreeMap<String, BTreeSet<SymbolId>>,
 }
 
@@ -107,7 +108,7 @@ impl DeclaredFile {
         let mut declarations: BTreeMap<String, BTreeSet<SymbolId>> = BTreeMap::new();
         for symbol in symbols {
             declarations
-                .entry(symbol.name().to_lowercase())
+                .entry(symbol.name().to_string())
                 .or_default()
                 .insert(SymbolId::new(symbol.fully_qualified_name()));
         }
@@ -327,7 +328,7 @@ impl ReuseLedger {
         let (caller_file, name, type_qualifier, _path_head, _receiver) = question;
         let qualifier_touched = type_qualifier
             .as_deref()
-            .is_some_and(|qualifier| changes.touches(&qualifier.to_lowercase()));
+            .is_some_and(|qualifier| changes.touches(qualifier));
         if changes.touches(name) || qualifier_touched || changes.changed(caller_file) {
             return None;
         }
@@ -406,7 +407,7 @@ pub fn resolve(
     for site in calls {
         let question: Question = (
             site.origin_file.clone(),
-            site.target.to_lowercase(),
+            site.target.clone(),
             site.type_qualifier.clone(),
             site.path_head.clone(),
             site.receiver.clone(),
@@ -458,11 +459,11 @@ pub fn resolve(
 /// — and the answer carries which one it was. The reason comes from the
 /// resolution itself, so no route decides it on its own.
 fn look_up(index: &GlobalSymbolIndex, question: &Question) -> Answer {
-    let (caller_file, name_lower, type_qualifier, path_head, receiver) = question;
+    let (caller_file, name, type_qualifier, path_head, receiver) = question;
     let caller_path = std::path::Path::new(caller_file);
     match index
         .resolve_call(
-            name_lower,
+            name,
             type_qualifier.as_deref(),
             path_head.as_deref(),
             Some(caller_path),

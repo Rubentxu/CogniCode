@@ -14,6 +14,7 @@
 use std::path::Path;
 
 use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::value_objects::Language;
 use crate::domain::value_objects::pending_reference::readings;
 use crate::domain::value_objects::{
     DependencyType, PendingClass, PendingReference, TargetResolution,
@@ -69,9 +70,11 @@ pub fn resolve_pending_references(
         }
         let origin = Path::new(&reference.origin_file);
         let module = origin.parent().unwrap_or(origin);
+        // The reference is written in the writer's language, and that
+        // language says whether the spelling folds.
+        let folds_case = Language::folds_case_in(Some(origin));
         let mut resolution = None;
         for reading in readings(&reference.target) {
-            let key = reading.to_lowercase();
             // The declarations of the module that writes the reference are
             // the only candidates: infrastructure code is scoped by
             // directory, and a module does not see the declarations of
@@ -79,14 +82,14 @@ pub fn resolve_pending_references(
             // declaration of a module that the writer cannot see does not
             // satisfy the reference: it would be an edge that nothing
             // proves, and it would hide the hole.
-            let in_module = index.candidates_in_module(&key, module);
+            let in_module = index.candidates_in_module(&reading, module, folds_case);
             if in_module.len() == 1 {
                 resolution = Some(TargetResolution::Resolved(in_module[0].clone()));
                 break;
             }
             if in_module.len() > 1 {
                 resolution = Some(TargetResolution::Ambiguous {
-                    name: key,
+                    name: reading,
                     candidates: in_module,
                 });
                 break;

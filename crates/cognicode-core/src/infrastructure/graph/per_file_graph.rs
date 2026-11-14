@@ -114,6 +114,31 @@ impl GlobalSymbolIndex {
         self.by_id.insert(symbol_id, (file, name.to_string()));
     }
 
+    /// The candidates of a name, as the language that wrote it reads it.
+    ///
+    /// The index keys the declarations by the folded name, but the fold is
+    /// the language's property and not the index's: a language that tells
+    /// `Describe` from `describe` only ever considers the declaration
+    /// spelled the way the name was spelled. A language that folds keeps
+    /// the whole bucket, which is what it has always answered.
+    fn candidates_spelled_as(&self, name: &str, folds_case: bool) -> Vec<SymbolId> {
+        let Some(bucket) = self.by_name.get(&name.to_lowercase()) else {
+            return Vec::new();
+        };
+        if folds_case {
+            return bucket.clone();
+        }
+        bucket
+            .iter()
+            .filter(|id| {
+                self.by_id
+                    .get(*id)
+                    .is_some_and(|(_, declared)| declared == name)
+            })
+            .cloned()
+            .collect()
+    }
+
     /// The candidates of a name that the module of `directory` can see.
     ///
     /// Infrastructure code is scoped by directory, and a module sees only
@@ -127,11 +152,13 @@ impl GlobalSymbolIndex {
     /// modules that happen to declare the same name are two different
     /// things, and a reference that names one of them does not name the
     /// other.
-    pub fn candidates_in_module(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
-        let Some(candidates) = self.by_name.get(name_lower) else {
-            return Vec::new();
-        };
-        candidates
+    pub fn candidates_in_module(
+        &self,
+        name: &str,
+        directory: &Path,
+        folds_case: bool,
+    ) -> Vec<SymbolId> {
+        self.candidates_spelled_as(name, folds_case)
             .iter()
             .filter(|id| {
                 self.by_id
@@ -146,17 +173,20 @@ impl GlobalSymbolIndex {
     /// Resolves a callee name to a target, preferring the caller-file
     /// symbol when ambiguity exists.
     ///
+    /// The name is the one the call was written with, and the language of
+    /// the file that wrote it says whether that spelling folds: a call
+    /// written in a language that tells `Describe` from `describe` names
+    /// one of them, not both.
+    ///
     /// Only [`TargetResolution::Resolved`] names a target. Every other
     /// outcome means the caller MUST drop the edge — an ambiguous call
     /// is never wired to a homonym — but each says a different thing
     /// about why, and that difference is what lets a consumer report a
     /// gap instead of silently shrinking the graph.
-    pub fn resolve(&self, name_lower: &str, caller_file: Option<&Path>) -> TargetResolution {
-        let Some(candidates) = self.by_name.get(name_lower) else {
-            return TargetResolution::Unresolved(name_lower.to_string());
-        };
+    pub fn resolve(&self, name: &str, caller_file: Option<&Path>) -> TargetResolution {
+        let candidates = self.candidates_spelled_as(name, Language::folds_case_in(caller_file));
         if candidates.is_empty() {
-            return TargetResolution::Unresolved(name_lower.to_string());
+            return TargetResolution::Unresolved(name.to_string());
         }
         if candidates.len() == 1 {
             return TargetResolution::Resolved(candidates[0].clone());
@@ -166,7 +196,7 @@ impl GlobalSymbolIndex {
         // "the name exists, the target cannot be proven" — so they all
         // return the one construction that says it.
         let ambiguous = TargetResolution::Ambiguous {
-            name: name_lower.to_string(),
+            name: name.to_string(),
             candidates: candidates.clone(),
         };
 
@@ -216,20 +246,12 @@ impl GlobalSymbolIndex {
 
     /// Whether the project declares a symbol spelled exactly `name`.
     ///
-    /// The index is keyed by the lowercase name, so a lookup by that key
-    /// cannot tell `Duration` from a function the project calls `duration`.
     /// The spelling is the evidence that a capitalised qualifier names a
-    /// type the project owns, and the declaration keeps it.
-    pub fn declares(&self, name: &str) -> bool {
-        self.by_name
-            .get(&name.to_lowercase())
-            .is_some_and(|candidates| {
-                candidates.iter().any(|id| {
-                    self.by_id
-                        .get(id)
-                        .is_some_and(|(_, declared)| declared == name)
-                })
-            })
+    /// type the project owns, and the declaration keeps it —unless the
+    /// language that wrote the name folds its case, and then the name is
+    /// one name whatever it is spelled.
+    pub fn declares(&self, name: &str, folds_case: bool) -> bool {
+        !self.candidates_spelled_as(name, folds_case).is_empty()
     }
 
     /// Whether a call is the project's to begin with.
@@ -289,16 +311,16 @@ impl GlobalSymbolIndex {
     /// route that resolves a call site asks here.
     pub fn resolve_call(
         &self,
-        name_lower: &str,
+        name: &str,
         type_qualifier: Option<&str>,
         path_head: Option<&str>,
         caller_file: Option<&Path>,
         receiver: Option<&Receiver>,
     ) -> TargetResolution {
         if !self.owns_call(type_qualifier, path_head, caller_file, receiver) {
-            return TargetResolution::Unresolved(name_lower.to_string());
+            return TargetResolution::Unresolved(name.to_string());
         }
-        self.resolve(name_lower, caller_file)
+        self.resolve(name, caller_file)
     }
 
     /// Returns the candidate `SymbolId`s for a given name (used by callers
@@ -440,12 +462,15 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
 /// that judges a call is written once.
 trait Declares {
     /// Whether the scope declares a name, spelled exactly this way.
-    fn declares(&self, name: &str) -> bool;
+    ///
+    /// The spelling is the scope's to judge, and `folds_case` says whether
+    /// the language that wrote the name folds it.
+    fn declares(&self, name: &str, folds_case: bool) -> bool;
 }
 
 impl Declares for GlobalSymbolIndex {
-    fn declares(&self, name: &str) -> bool {
-        GlobalSymbolIndex::declares(self, name)
+    fn declares(&self, name: &str, folds_case: bool) -> bool {
+        GlobalSymbolIndex::declares(self, name, folds_case)
     }
 }
 
@@ -458,16 +483,18 @@ struct FileScope<'a> {
 }
 
 impl Declares for FileScope<'_> {
-    fn declares(&self, name: &str) -> bool {
-        self.local
-            .get(&name.to_lowercase())
-            .is_some_and(|candidates| {
-                candidates.iter().any(|id| {
-                    self.graph
-                        .get_symbol(id)
-                        .is_some_and(|symbol| symbol.name() == name)
-                })
-            })
+    fn declares(&self, name: &str, folds_case: bool) -> bool {
+        let Some(candidates) = self.local.get(&name.to_lowercase()) else {
+            return false;
+        };
+        if folds_case {
+            return !candidates.is_empty();
+        }
+        candidates.iter().any(|id| {
+            self.graph
+                .get_symbol(id)
+                .is_some_and(|symbol| symbol.name() == name)
+        })
     }
 }
 
@@ -496,7 +523,10 @@ fn call_is_owned<S: Declares + ?Sized>(
     path_head: Option<&str>,
     receiver: Option<&Receiver>,
 ) -> bool {
-    if type_qualifier.is_some_and(|qualifier| !scope.declares(qualifier)) {
+    // The name the call writes is read in the language the call is written
+    // in, and that language says whether the spelling folds.
+    let folds_case = Language::folds_case_in(caller_file);
+    if type_qualifier.is_some_and(|qualifier| !scope.declares(qualifier, folds_case)) {
         return false;
     }
     if path_head.is_some_and(|head| manifests.is_external_crate(head, caller_file)) {
@@ -546,7 +576,6 @@ fn resolve_call_within_file(
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
 ) -> TargetResolution {
-    let name_lower = site.target.to_lowercase();
     let scope = FileScope { local, graph };
     if !call_is_owned(
         &scope,
@@ -556,9 +585,14 @@ fn resolve_call_within_file(
         site.path_head.as_deref(),
         site.receiver.as_ref(),
     ) {
-        return TargetResolution::Unresolved(name_lower);
+        return TargetResolution::Unresolved(site.target.clone());
     }
-    resolve_within_file(&name_lower, local)
+    resolve_within_file(
+        &site.target,
+        local,
+        graph,
+        Language::folds_case_in(Some(Path::new(&site.origin_file))),
+    )
 }
 
 /// The answer the file itself gives about a name.
@@ -569,19 +603,39 @@ fn resolve_call_within_file(
 /// declare names nothing here. The motive is the same one the
 /// project-wide resolver gives, because it comes from the same place:
 /// `TargetResolution::outcome`.
+///
+/// The name is the one the call was written with, and the language of the
+/// file says whether that spelling folds.
 fn resolve_within_file(
-    name_lower: &str,
+    name: &str,
     local: &HashMap<String, Vec<SymbolId>>,
+    graph: &CallGraph,
+    folds_case: bool,
 ) -> TargetResolution {
-    match local
-        .get(name_lower)
-        .map(|candidates| candidates.as_slice())
-    {
-        None => TargetResolution::Unresolved(name_lower.to_string()),
-        Some([only]) => TargetResolution::Resolved(only.clone()),
-        Some(candidates) => TargetResolution::Ambiguous {
-            name: name_lower.to_string(),
-            candidates: candidates.to_vec(),
+    let candidates: Vec<SymbolId> = match local.get(&name.to_lowercase()) {
+        None => Vec::new(),
+        Some(bucket) => {
+            if folds_case {
+                bucket.clone()
+            } else {
+                bucket
+                    .iter()
+                    .filter(|id| {
+                        graph
+                            .get_symbol(id)
+                            .is_some_and(|symbol| symbol.name() == name)
+                    })
+                    .cloned()
+                    .collect()
+            }
+        }
+    };
+    match candidates.as_slice() {
+        [] => TargetResolution::Unresolved(name.to_string()),
+        [only] => TargetResolution::Resolved(only.clone()),
+        many => TargetResolution::Ambiguous {
+            name: name.to_string(),
+            candidates: many.to_vec(),
         },
     }
 }
@@ -1154,7 +1208,6 @@ impl PerFileGraphCache {
         let mut pending: Vec<PendingReference> = Vec::new();
 
         for site in calls {
-            let name_lower = site.target.to_lowercase();
             // With a project-wide index the scope is the project; without
             // one the file IS the scope, and the file's own multimap
             // answers — a name declared once names its declaration, a
@@ -1165,7 +1218,7 @@ impl PerFileGraphCache {
             let receiver = site.receiver.as_ref();
             let resolution = match global_index {
                 Some(index) => {
-                    index.resolve_call(&name_lower, qualifier, head, Some(caller_path), receiver)
+                    index.resolve_call(&site.target, qualifier, head, Some(caller_path), receiver)
                 }
                 None => {
                     let mut packages = self.packages.lock().unwrap();
@@ -1212,10 +1265,14 @@ impl PerFileGraphCache {
             for (source_id, parent_name, line) in
                 parser.find_supertype_sites_in_tree(&tree, &source, file_path, walker)
             {
-                let name_lower = parent_name.to_lowercase();
                 let resolution = match global_index {
-                    Some(index) => index.resolve(&name_lower, Some(caller_path)),
-                    None => resolve_within_file(&name_lower, &name_to_symbol),
+                    Some(index) => index.resolve(&parent_name, Some(caller_path)),
+                    None => resolve_within_file(
+                        &parent_name,
+                        &name_to_symbol,
+                        &graph,
+                        language.folds_case(),
+                    ),
                 };
                 match resolution.outcome() {
                     Ok(parent_id) if parent_id == source_id => {}
@@ -2362,6 +2419,40 @@ mod global_index_tests {
         assert!(!idx.is_empty());
         assert_eq!(idx.len(), 1);
         assert_eq!(idx.candidates("foo").len(), 1);
+    }
+
+    /// The fold is the language's property, not the index's.
+    ///
+    /// A language that tells `Describe` from `describe` only considers the
+    /// declaration spelled the way the name was spelled; a language that
+    /// does not keeps the whole bucket, which is what it has always
+    /// answered.
+    #[test]
+    fn the_candidates_of_a_name_are_decided_by_the_language_that_wrote_it() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(
+            sid("src/lib.rs:Describe:1"),
+            PathBuf::from("src/lib.rs"),
+            "Describe",
+        );
+        idx.insert(
+            sid("src/lib.rs:describe:5"),
+            PathBuf::from("src/lib.rs"),
+            "describe",
+        );
+
+        let rust = idx.resolve("describe", Some(&PathBuf::from("src/lib.rs")));
+        assert_eq!(
+            rust,
+            TargetResolution::Resolved(sid("src/lib.rs:describe:5")),
+            "a language that tells the case apart names one declaration: {rust:?}"
+        );
+
+        let php = idx.resolve("describe", Some(&PathBuf::from("script.php")));
+        assert!(
+            matches!(php, TargetResolution::Ambiguous { .. }),
+            "a language that folds names both: {php:?}"
+        );
     }
 
     /// Rule: 0 candidates → the name exists nowhere in the project.
