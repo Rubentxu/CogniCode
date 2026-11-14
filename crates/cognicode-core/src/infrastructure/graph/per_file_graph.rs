@@ -16,7 +16,7 @@ use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
 };
 use crate::infrastructure::parser::{Language, TreeSitterParser};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -262,43 +262,8 @@ impl GlobalSymbolIndex {
         path_head: Option<&str>,
         caller_file: Option<&Path>,
     ) -> bool {
-        if type_qualifier.is_some_and(|qualifier| !self.declares(qualifier)) {
-            return false;
-        }
-        if path_head.is_some_and(|head| self.is_external_crate(head, caller_file)) {
-            return false;
-        }
-        true
-    }
-
-    /// Whether the crate a path starts at is one the project pulls from
-    /// outside itself.
-    ///
-    /// The package that writes the call is the one that says: a call in
-    /// `crates/core` is judged by what `crates/core` declares, and not by
-    /// what another package of the workspace declares.
-    ///
-    /// A file that belongs to no package, and a package whose manifest
-    /// cannot be read, is a package that says nothing: the call is not
-    /// judged, and the edge it may hold is kept. So is a file no manifest
-    /// governs: a `Cargo.toml` speaks about the Rust files of its package.
-    fn is_external_crate(&self, head: &str, caller_file: Option<&Path>) -> bool {
-        let Some(file) = caller_file else {
-            return false;
-        };
-        if !package::is_governed_by_a_manifest(file) {
-            return false;
-        }
-        let Some(directory) = file.parent() else {
-            return false;
-        };
-        self.external_crates_of(directory).contains(head)
-    }
-
-    /// The crates the package of a directory pulls from outside the project.
-    fn external_crates_of(&self, directory: &Path) -> Arc<HashSet<String>> {
         let mut packages = self.packages.lock().unwrap();
-        packages.external_crates_of(directory)
+        call_is_owned(self, &mut packages, caller_file, type_qualifier, path_head)
     }
 
     /// Resolves a call site's callee, judging its qualifier first.
@@ -459,6 +424,77 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
     }
 }
 
+/// What a scope knows about the names it declares.
+///
+/// The scope is the project when there is an index and the file when there
+/// is not: that is the whole difference between the routes, and the rule
+/// that judges a call is written once.
+trait Declares {
+    /// Whether the scope declares a name, spelled exactly this way.
+    fn declares(&self, name: &str) -> bool;
+}
+
+impl Declares for GlobalSymbolIndex {
+    fn declares(&self, name: &str) -> bool {
+        GlobalSymbolIndex::declares(self, name)
+    }
+}
+
+/// The declarations of one file, as a scope.
+struct FileScope<'a> {
+    /// The symbols the file declares, by lowercase name.
+    local: &'a HashMap<String, Vec<SymbolId>>,
+    /// The graph the file's symbols live in.
+    graph: &'a CallGraph,
+}
+
+impl Declares for FileScope<'_> {
+    fn declares(&self, name: &str) -> bool {
+        self.local
+            .get(&name.to_lowercase())
+            .is_some_and(|candidates| {
+                candidates.iter().any(|id| {
+                    self.graph
+                        .get_symbol(id)
+                        .is_some_and(|symbol| symbol.name() == name)
+                })
+            })
+    }
+}
+
+/// The rule that judges a call, written once.
+///
+/// Two facts say it, and both are asked here so that no route decides them
+/// on its own:
+///
+/// - A call written `Duration::from_millis(10)` names a method of
+///   `Duration`. When the scope declares no `Duration`, that method is not
+///   the scope's, and joining it to the scope's own `from_millis` would
+///   publish the standard library's call count as the project's.
+/// - A call written `serde_json::to_value(1)` names a function of the crate
+///   the package pulls. When the package declares that crate from a
+///   registry, the call is not the project's, and joining it to the
+///   project's own `to_value` would publish a dependency's call count as the
+///   project's.
+///
+/// The scope is the only thing that differs between the routes: the project
+/// when there is an index, the file when there is not.
+fn call_is_owned<S: Declares + ?Sized>(
+    scope: &S,
+    manifests: &mut package::Manifests,
+    caller_file: Option<&Path>,
+    type_qualifier: Option<&str>,
+    path_head: Option<&str>,
+) -> bool {
+    if type_qualifier.is_some_and(|qualifier| !scope.declares(qualifier)) {
+        return false;
+    }
+    if path_head.is_some_and(|head| manifests.is_external_crate(head, caller_file)) {
+        return false;
+    }
+    true
+}
+
 /// A call site judged against the file as the whole scope.
 ///
 /// The type qualifier is checked against the declarations of the file the
@@ -469,29 +505,20 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
 /// it: against the crates the file's own package pulls from outside the
 /// project. A call through one of them is not the project's, and the file
 /// that writes it is the only one that says which package it belongs to.
+///
+/// The rule itself is [`call_is_owned`]: this route and the project-wide one
+/// ask the same question, and the scope is the only thing that differs.
 fn resolve_call_within_file(
     name_lower: &str,
     type_qualifier: Option<&str>,
     path_head: Option<&str>,
-    external_crates: &HashSet<String>,
+    manifests: &mut package::Manifests,
+    caller_file: Option<&Path>,
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
 ) -> TargetResolution {
-    if let Some(qualifier) = type_qualifier {
-        let declared = local
-            .get(&qualifier.to_lowercase())
-            .is_some_and(|candidates| {
-                candidates.iter().any(|id| {
-                    graph
-                        .get_symbol(id)
-                        .is_some_and(|symbol| symbol.name() == qualifier)
-                })
-            });
-        if !declared {
-            return TargetResolution::Unresolved(name_lower.to_string());
-        }
-    }
-    if path_head.is_some_and(|head| external_crates.contains(head)) {
+    let scope = FileScope { local, graph };
+    if !call_is_owned(&scope, manifests, caller_file, type_qualifier, path_head) {
         return TargetResolution::Unresolved(name_lower.to_string());
     }
     resolve_within_file(name_lower, local)
@@ -572,6 +599,13 @@ pub struct PerFileGraphCache {
     cache: RwLock<HashMap<String, FileGraphCacheEntry>>,
     /// Project directory for relative paths
     project_dir: Option<String>,
+    /// What the manifests of the project declare, read once each.
+    ///
+    /// The route that builds a file without a project-wide index still has
+    /// to judge the crates the file's package pulls, and the manifest of a
+    /// package is one reading: reading it again for every file of the
+    /// package is the cost this cache takes away.
+    packages: Mutex<package::Manifests>,
 }
 
 impl PerFileGraphCache {
@@ -580,6 +614,7 @@ impl PerFileGraphCache {
         Self {
             cache: RwLock::new(HashMap::new()),
             project_dir: None,
+            packages: Mutex::new(package::Manifests::default()),
         }
     }
 
@@ -588,6 +623,7 @@ impl PerFileGraphCache {
         Self {
             cache: RwLock::new(HashMap::new()),
             project_dir: Some(project_dir.into()),
+            packages: Mutex::new(package::Manifests::default()),
         }
     }
 
@@ -1014,20 +1050,11 @@ impl PerFileGraphCache {
         // The crates the file's own package pulls from outside the project:
         // a call written through one of them is not the project's, and the
         // package that writes the call is the one that says. The manifest
-        // is read once for the file, and only when the file names a crate.
-        // The rule is the one the index applies, and it asks the same
-        // question: only a file a manifest governs is judged by one.
-        let external_crates = if global_index.is_none()
-            && calls.iter().any(|call| call.path_head.is_some())
-            && package::is_governed_by_a_manifest(Path::new(file_path))
-        {
-            let directory = Path::new(file_path)
-                .parent()
-                .unwrap_or_else(|| Path::new(""));
-            package::external_crates_of(directory)
-        } else {
-            HashSet::new()
-        };
+        // is read once for the package and kept, and only a file a manifest
+        // governs is judged by one.
+        //
+        // The rule is the one the index applies, and it is asked in the same
+        // place: `call_is_owned` reads the two facts, whatever the scope is.
 
         let mut graph = CallGraph::new();
         // H4.3 — multimap keyed by lowercase name. A single-symbol
@@ -1100,14 +1127,18 @@ impl PerFileGraphCache {
             let head = site.path_head.as_deref();
             let resolution = match global_index {
                 Some(index) => index.resolve_call(&name_lower, qualifier, head, Some(caller_path)),
-                None => resolve_call_within_file(
-                    &name_lower,
-                    qualifier,
-                    head,
-                    &external_crates,
-                    &name_to_symbol,
-                    &graph,
-                ),
+                None => {
+                    let mut packages = self.packages.lock().unwrap();
+                    resolve_call_within_file(
+                        &name_lower,
+                        qualifier,
+                        head,
+                        &mut packages,
+                        Some(caller_path),
+                        &name_to_symbol,
+                        &graph,
+                    )
+                }
             };
 
             match resolution.outcome() {
@@ -1211,6 +1242,7 @@ impl Clone for PerFileGraphCache {
         Self {
             cache: RwLock::new(HashMap::new()), // Don't clone cache
             project_dir: self.project_dir.clone(),
+            packages: Mutex::new(package::Manifests::default()), // The manifests are read again
         }
     }
 }
@@ -2488,5 +2520,121 @@ mod partial_parse_tests {
             }
             BuildStatus::Complete => panic!("a file with syntax errors was called complete"),
         }
+    }
+}
+
+#[cfg(test)]
+mod crate_path_rule_tests {
+    //! The rule that judges a call through a crate path is written once, and
+    //! the manifest it asks is read once per package.
+    //!
+    //! Two routes judge a call: the project-wide one, which has an index of
+    //! the project's declarations, and the per-file one, which has the file
+    //! as its whole scope. They used to write the rule between them, and the
+    //! per-file one read the manifest of the package again for every file.
+
+    use super::*;
+
+    /// A package that pulls `serde_json` from a registry, and two files that
+    /// call through it.
+    fn package_with_crate_path_calls() -> (tempfile::TempDir, Vec<PathBuf>) {
+        let dir = tempfile::tempdir().expect("a temporary package");
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\n\n[dependencies]\nserde_json = \"1\"\n",
+        )
+        .expect("the manifest is written");
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).expect("the source directory is created");
+        let files = ["lib.rs", "other.rs"].map(|name| {
+            let path = src.join(name);
+            std::fs::write(
+                &path,
+                "pub fn to_value() -> String {\n    String::new()\n}\n\n\
+                 pub fn from_the_crate() -> String {\n    \
+                 serde_json::to_value(1).to_string()\n}\n",
+            )
+            .expect("the source is written");
+            path
+        });
+        (dir, files.to_vec())
+    }
+
+    /// The names of the symbols that call the declarations of `name`.
+    fn callers_of(graph: &CallGraph, name: &str) -> Vec<String> {
+        let mut callers: Vec<String> = Vec::new();
+        for (id, symbol) in graph.symbol_ids() {
+            if symbol.name() != name {
+                continue;
+            }
+            for caller in graph.callers(id) {
+                callers.push(
+                    graph
+                        .get_symbol(&caller)
+                        .map(|symbol| symbol.name().to_string())
+                        .unwrap_or_else(|| caller.as_str().to_string()),
+                );
+            }
+        }
+        callers.sort();
+        callers
+    }
+
+    /// The manifest of a package is read once and kept: the second file of
+    /// the package answers like the first, even when the manifest changed
+    /// in between.
+    #[test]
+    fn the_per_file_route_keeps_the_manifest_of_the_package() {
+        let (dir, files) = package_with_crate_path_calls();
+        let cache = PerFileGraphCache::new();
+
+        let (first, _pending) = cache.get_or_build(&files[0]).expect("the file is built");
+        assert_eq!(
+            callers_of(&first, "to_value"),
+            Vec::<String>::new(),
+            "the package pulls `serde_json` from a registry: `serde_json::to_value` is not a \
+             call to the project's own `to_value`"
+        );
+
+        // The manifest stops declaring the crate.
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\n",
+        )
+        .expect("the manifest is written");
+
+        let (second, _pending) = cache.get_or_build(&files[1]).expect("the file is built");
+        assert_eq!(
+            callers_of(&second, "to_value"),
+            Vec::<String>::new(),
+            "the manifest of a package is read once and kept: the second file of the package \
+             answers like the first"
+        );
+    }
+
+    /// The two routes judge the crate path the same way: the rule is one,
+    /// and the scope is the only thing that differs.
+    #[test]
+    fn the_two_routes_judge_the_crate_path_the_same_way() {
+        let (_dir, files) = package_with_crate_path_calls();
+
+        let service = crate::application::services::analysis_service::AnalysisService::new();
+        service
+            .build_project_graph(_dir.path())
+            .expect("the project graph is built");
+        let project = service.get_project_graph().clone();
+        assert_eq!(
+            callers_of(&project, "to_value"),
+            Vec::<String>::new(),
+            "the project route: the package pulls `serde_json` from a registry"
+        );
+
+        let cache = PerFileGraphCache::new();
+        let (per_file, _pending) = cache.get_or_build(&files[0]).expect("the file is built");
+        assert_eq!(
+            callers_of(&per_file, "to_value"),
+            Vec::<String>::new(),
+            "the per-file route answers the same"
+        );
     }
 }
