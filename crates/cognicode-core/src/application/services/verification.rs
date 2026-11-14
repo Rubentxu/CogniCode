@@ -61,13 +61,25 @@ use std::time::{Duration, Instant};
 /// dispatch window is derived from, so the window covers the work instead
 /// of cutting it.
 ///
-/// Forty-five seconds is below the ceiling the server publishes (sixty),
-/// and leaves that ceiling room to answer with the result of the work that
-/// did fit.
-pub const VERIFICATION_BUDGET: Duration = Duration::from_secs(45);
+/// Forty seconds, plus the timeout of the candidate that was already in
+/// flight when the budget ran out, is the longest the work can take
+/// (`worst_case`). The window of the dispatch is derived from that worst
+/// case, and the worst case is below the ceiling the server publishes
+/// (sixty), with room for the answer to travel back.
+pub const VERIFICATION_BUDGET: Duration = Duration::from_secs(40);
 
 /// The timeout of a single candidate.
 pub const CANDIDATE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The longest the work of the verification can take.
+///
+/// The budget stops the verification from starting a new candidate, and
+/// the candidate that was in flight when the budget ran out can still
+/// spend its own timeout. The window of the dispatch has to cover this,
+/// or the caller gets a timeout instead of the answer.
+pub fn worst_case() -> Duration {
+    VERIFICATION_BUDGET + CANDIDATE_TIMEOUT
+}
 
 /// A candidate: the file it was found in, and the matches it holds.
 #[derive(Debug, Clone)]
@@ -425,14 +437,14 @@ mod tests {
         );
     }
 
-    /// The budget of the product is below the ceiling the server
-    /// publishes, so the window derived from it fits under that ceiling.
+    /// A candidate cannot cost more than the whole budget.
+    ///
+    /// The budget is what bounds the work, and a candidate that costs
+    /// more than the budget would break the bound it is under. The
+    /// ceiling the server publishes is the server's business: the
+    /// contract that ties the two is there, where the ceiling lives.
     #[test]
-    fn the_budget_of_the_product_fits_under_the_published_ceiling() {
-        assert!(
-            VERIFICATION_BUDGET <= Duration::from_secs(60),
-            "the budget is below the ceiling: {VERIFICATION_BUDGET:?}"
-        );
+    fn a_candidate_cannot_cost_more_than_the_budget() {
         assert!(
             CANDIDATE_TIMEOUT <= VERIFICATION_BUDGET,
             "a candidate cannot cost more than the whole budget: {CANDIDATE_TIMEOUT:?}"

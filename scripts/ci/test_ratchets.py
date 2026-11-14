@@ -18,7 +18,9 @@ catches up on merge and the next PR measures against the smaller value. Both
 fail closed: if the base cannot be resolved they fail instead of passing
 vacuously.
 
-Production code is the code before the first column-0 `#[cfg(test)]`. Files
+Production code is the code before the test module. The boundary is the
+`#[cfg(test)]` that opens a module; a `#[cfg(test)]` on anything else (an
+import, a helper) is not one, because the code after it still ships. Files
 named `*_tests.rs` or `tests.rs` are test code and are skipped; files under
 `tests/` are not measured at all.
 
@@ -118,8 +120,8 @@ fresh for a check that read SHA-256.
 A production file may not use `DefaultHasher`, `RandomState` or `blake3` more times than it
 did at the base commit, and the owner itself is the only place a hasher is
 chosen. Comments are blanked before counting, so a line that explains why a
-hasher was retired is not a use of it; code after the first column-0
-`#[cfg(test)]` is not production. A hash that never leaves the process and is
+hasher was retired is not a use of it; code after the test module is not
+production. A hash that never leaves the process and is
 not a digest of content (the FNV-1a of the per-file graph cache) is not
 covered; neither are the hand-rolled FNV-1a digests of the evidence
 subsystems (`portable_execution::paths::content_digest`, the self-hosting
@@ -151,8 +153,8 @@ Two measures, both per production file and both against the base:
   times than at the base, and each remaining list is named in
   `REGISTERED_EXCLUSION_LISTS` with the reason it differs.
 
-Comments are blanked before counting and code after the first column-0
-`#[cfg(test)]` is not production, as in the digest ratchet. What this does NOT
+Comments are blanked before counting and code after the test module is not
+production, as in the digest ratchet. What this does NOT
 see: a traversal through a crate this file does not name (`glob`, a shell-out),
 and a traversal reached through a re-export under another name. It stops the
 common regression, a new `read_dir` loop written because it was the shortest
@@ -235,23 +237,59 @@ def resolve_base() -> str | None:
 LIMIT = 2000
 CFG_TEST = re.compile(r"^#\[cfg\(test\)\]")
 DECL = re.compile(r"^\s*pub (?:struct|enum|trait) ([A-Z][A-Za-z0-9_]*)")
+# The attributes that may sit between a `#[cfg(test)]` and the module it opens.
+ATTRIBUTE = re.compile(r"^\s*#\[")
+# A module declaration, with or without visibility.
+TEST_MODULE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\b")
 
-def production_lines(text: str) -> int:
-    """Lines before the first column-0 `#[cfg(test)]`; all lines if none."""
+
+def source_lines(text: str) -> list[str]:
+    """The lines of a source file, without the empty one the text ends with."""
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    for number, line in enumerate(lines):
-        if CFG_TEST.match(line):
-            return number
+    return lines
+
+
+def production_boundary(lines: list[str]) -> int:
+    """The index of the line that opens the test module; the end if there is none.
+
+    A `#[cfg(test)]` is the boundary only when it opens a module. A test-only
+    import or a test-only helper does not start one: the code that follows it
+    still ships, and a ratchet that stops there measures a file that is not
+    the file it was asked about — a 2 100-line file counted as 38 lines is a
+    file the size ratchet stops watching and a walk the traversal ratchet
+    stops seeing.
+    """
+    for index, line in enumerate(lines):
+        if not CFG_TEST.match(line):
+            continue
+        if TEST_MODULE.match(line[line.index("]") + 1 :]):
+            return index
+        probe = index + 1
+        while probe < len(lines):
+            candidate = lines[probe].strip()
+            if candidate == "" or candidate.startswith("//"):
+                probe += 1
+                continue
+            if ATTRIBUTE.match(lines[probe]):
+                probe += 1
+                continue
+            if TEST_MODULE.match(lines[probe]):
+                return index
+            break
     return len(lines)
+
+
+def production_lines(text: str) -> int:
+    """Lines before the test module starts; all lines if it never starts."""
+    return production_boundary(source_lines(text))
 
 
 def public_names(text: str) -> Counter:
     counts: Counter = Counter()
-    for line in text.split("\n"):
-        if CFG_TEST.match(line):
-            break
+    lines = source_lines(text)
+    for line in lines[: production_boundary(lines)]:
         match = DECL.match(line)
         if match:
             counts[match.group(1)] += 1
@@ -367,11 +405,27 @@ def test_the_base_is_resolvable() -> None:
 # --- file size ---------------------------------------------------------------
 
 
-def test_file_size_counting_stops_at_the_first_cfg_test() -> None:
-    check(production_lines("a\nb\n#[cfg(test)]\nmod t {}\n") == 2, "stops at cfg(test)")
-    check(production_lines("a\nb\nc\n") == 3, "counts all lines without cfg(test)")
+def test_file_size_counting_stops_at_the_test_module() -> None:
+    check(production_lines("a\nb\n#[cfg(test)]\nmod t {}\n") == 2, "stops at the test module")
+    check(production_lines("a\nb\nc\n") == 3, "counts all lines without a test module")
     check(production_lines("a\n    #[cfg(test)]\n") == 2, "indented cfg(test) is not a module boundary")
     check(production_lines("") == 0, "empty file is zero lines")
+    check(
+        production_lines("a\n#[cfg(test)]\nuse x;\nb\n") == 4,
+        "a test-only import is not a module boundary: the code after it still ships",
+    )
+    check(
+        production_lines('a\n#[cfg(test)]\n#[path = "x.rs"]\nmod t {}\n') == 1,
+        "the test module is the boundary even with a path attribute",
+    )
+    check(
+        production_lines("a\n#[cfg(test)] mod t {}\n") == 1,
+        "a test module written on the attribute's line is the boundary",
+    )
+    check(
+        production_lines("a\n#[cfg(test)]\nfn helper() {}\nb\n") == 4,
+        "a test-only helper is not a module boundary: the code after it still ships",
+    )
 
 
 def test_a_moved_file_is_measured_against_the_path_it_came_from() -> None:
@@ -407,8 +461,12 @@ def test_no_file_grew_past_its_base_or_crossed_the_limit() -> None:
 
 
 def test_homonym_declarations_are_counted() -> None:
-    sample = "pub struct A;\npub(crate) struct B;\n    pub enum C {}\n#[cfg(test)]\npub struct D;\n"
-    check(dict(public_names(sample)) == {"A": 1, "C": 1}, "counts pub only, stops at cfg(test)")
+    sample = "pub struct A;\npub(crate) struct B;\n    pub enum C {}\n#[cfg(test)]\nmod t { pub struct D; }\n"
+    check(dict(public_names(sample)) == {"A": 1, "C": 1}, "counts pub only, stops at the test module")
+    check(
+        dict(public_names("#[cfg(test)]\npub struct D;\n")) == {"D": 1},
+        "a type that is not behind a test module is production code, and is counted",
+    )
 
 
 def test_homonym_scan_found_sources() -> None:
@@ -1158,7 +1216,7 @@ COMPETING_HASHER = re.compile(r"\bDefaultHasher\b|\bRandomState\b|\bblake3\b")
 def production_matches(text: str, pattern: re.Pattern[str]) -> int:
     """Matches of `pattern` in the production half of `text`.
 
-    Production is what precedes the first column-0 `#[cfg(test)]`. Comments are
+    Production is what precedes the test module. Comments are
     blanked first (with the one scanner of the repo), so documentation that
     names a retired call is not a use of it.
     """

@@ -13,21 +13,21 @@
 //! it.
 //!
 //! This module is the bridge. It names the tool of the wire and answers
-//! with the budget of the application, so the server gives that tool a
-//! window that covers its work instead of cutting it. The two read the
-//! same number, so the window and the work cannot disagree about the same
-//! call.
+//! with the longest the work of that tool may take, so the server gives
+//! it a window that covers its work instead of cutting it. The two read
+//! the same number, so the window and the work cannot disagree about the
+//! same call.
 
-use crate::application::services::verification::VERIFICATION_BUDGET;
+use crate::application::services::verification;
 use std::time::Duration;
 
-/// The budget of the work of a tool, when the tool carries one.
+/// The longest the work of a tool may take, when the tool carries a bound.
 ///
 /// The tools whose work the window of their category already covers answer
 /// with nothing.
 pub fn for_tool(tool_name: &str) -> Option<Duration> {
     match tool_name {
-        "retrieve_and_verify" => Some(VERIFICATION_BUDGET),
+        "retrieve_and_verify" => Some(verification::worst_case()),
         _ => None,
     }
 }
@@ -36,22 +36,22 @@ pub fn for_tool(tool_name: &str) -> Option<Duration> {
 mod tests {
     use super::*;
 
-    /// The tool that compiles what it retrieves declares the budget of
-    /// that work.
+    /// The tool that compiles what it retrieves declares the longest its
+    /// work may take.
     ///
-    /// The budget is the number the application declared, not a second
-    /// copy of it: the window of the dispatch is derived from the same
-    /// number the work stops at.
+    /// The number is the one the application declared, not a second copy
+    /// of it: the window of the dispatch is derived from the same bound
+    /// the work stops at.
     #[test]
-    fn the_tool_that_compiles_declares_the_budget_of_that_work() {
+    fn the_tool_that_compiles_declares_the_longest_its_work_may_take() {
         assert_eq!(
             for_tool("retrieve_and_verify"),
-            Some(VERIFICATION_BUDGET),
-            "the budget of the verification is the one the work declares"
+            Some(verification::worst_case()),
+            "the longest the verification may take is the one the work declares"
         );
     }
 
-    /// A tool that carries no budget answers with nothing, so the window
+    /// A tool that carries no bound answers with nothing, so the window
     /// of its category covers its work.
     #[test]
     fn a_tool_without_work_budget_answers_with_nothing() {

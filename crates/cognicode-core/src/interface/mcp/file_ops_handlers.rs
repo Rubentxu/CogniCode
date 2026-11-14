@@ -327,7 +327,7 @@ pub async fn handle_list_files(
 /// Combines lexical search with sandboxed rustc verification:
 /// - Uses existing search_content for retrieval (respects .gitignore)
 /// - Verifies each .rs candidate via `rustc --edition 2021 --crate-type lib`
-/// - Per-candidate timeout: 10s | Total budget: 45s
+/// - Per-candidate timeout: 10s | Total budget: 40s
 /// - The walk of the tree happens off the runtime that serves the call
 /// - Returns verified/rejected/skipped status per match; a candidate the
 ///   budget did not reach comes out `skipped`, with the reason that names

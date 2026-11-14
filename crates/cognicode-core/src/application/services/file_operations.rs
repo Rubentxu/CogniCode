@@ -36,8 +36,6 @@ use crate::application::services::verification::{
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::CodeVerifier;
-#[cfg(test)]
-use crate::domain::traits::code_verifier::CompilationResult;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::file_time::measured_seconds;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -1914,6 +1912,7 @@ impl FileOperationsService {
         Option<String>,
     )> {
         use crate::application::dto::VerificationStatus as Vs;
+        use crate::domain::traits::code_verifier::CompilationResult;
 
         let result = self.code_verifier.verify(file_path)?;
         Ok(match result {
@@ -1946,6 +1945,7 @@ impl FileOperationsService {
         Option<String>,
     )> {
         use crate::application::dto::VerificationStatus as Vs;
+        use crate::domain::traits::code_verifier::CompilationResult;
 
         let result = self
             .code_verifier
