@@ -22,6 +22,8 @@ pub mod graph_queries;
 pub mod impact_analysis;
 pub mod impact_of;
 pub mod lsp_proxy_service;
+// El glob que nombra quien llama, y los caminos que selecciona.
+pub(crate) mod path_glob;
 pub mod refactor_service;
 pub mod relation_candidates;
 // Lo que un recorrido no pudo leer, publicado como hueco (TASK-258).
@@ -29,7 +31,7 @@ pub(crate) mod unread_entries;
 // La busqueda de usos de un simbolo y lo que cubrio.
 pub mod usage_search;
 // La verificacion de los candidatos recuperados y el presupuesto que la acota.
-pub mod verification;
+pub(crate) mod verification;
 // El recorrido del árbol que hacen la búsqueda de contenido y la lista
 // de ficheros, y el hilo en el que ocurren.
 pub(crate) mod workspace_walk;

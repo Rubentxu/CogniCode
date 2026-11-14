@@ -24,6 +24,11 @@
 //! caller is answered with an error and the walk keeps reading files
 //! until it ends. The deadline bounds the wait of the caller, not the
 //! work.
+//!
+//! The retrieval of the candidates is the exception, and it is the
+//! exception because its work has a bound of its own: the walk it does
+//! stops when the budget of the call is reached, and the answer says that
+//! it stopped (`application/services/verification.rs` owns that bound).
 
 use crate::application::dto::{
     ListFilesRequest, ListFilesResult, RetrieveAndVerifyRequest, RetrieveAndVerifyResult,
@@ -31,9 +36,8 @@ use crate::application::dto::{
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::services::file_operations::FileOperationsService;
-use crate::application::services::verification::VERIFICATION_BUDGET;
+use crate::application::services::verification::{Bound, VERIFICATION_BUDGET};
 use std::sync::Arc;
-use std::time::Instant;
 
 impl FileOperationsService {
     /// The content search, off the runtime.
@@ -63,15 +67,18 @@ impl FileOperationsService {
         self: &Arc<Self>,
         input: RetrieveAndVerifyRequest,
     ) -> AppResult<RetrieveAndVerifyResult> {
-        let started = Instant::now();
+        let bound = Bound::starting_now(VERIFICATION_BUDGET);
         let service = Arc::clone(self);
-        let retrieval = tokio::task::spawn_blocking(move || service.retrieve_candidates(&input))
-            .await
-            .map_err(|e| {
-                AppError::InternalError(format!("the retrieval of the candidates panicked: {e}"))
-            })??;
+        let walk_bound = bound.clone();
+        let retrieval = tokio::task::spawn_blocking(move || {
+            service.retrieve_candidates(&input, Some(walk_bound))
+        })
+        .await
+        .map_err(|e| {
+            AppError::InternalError(format!("the retrieval of the candidates panicked: {e}"))
+        })??;
         Ok(self
-            .verify_retrieval(retrieval, VERIFICATION_BUDGET, started)
+            .verify_retrieval(retrieval, VERIFICATION_BUDGET, &bound)
             .await)
     }
 
