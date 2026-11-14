@@ -15,6 +15,14 @@
 //! - `FileManifest` / `IncrementalScanner` (gated behind `persistence`):
 //!   mtime + SHA-256 content-hash tracking for incremental graph rescans.
 //! - `SnapshotProvider`: Domain port for versioned graph snapshots (ADR-035).
+//!
+//! What a package declares about the crates it pulls is not published: the
+//! manifest is the judge of a call written through a crate, and the judge
+//! lives inside the crate that asks it.
+//!
+//! ```compile_fail
+//! use cognicode_core::infrastructure::graph::package::Manifests;
+//! ```
 
 pub mod analytics;
 mod call_graph_projection;
@@ -28,7 +36,7 @@ mod lightweight_index;
 mod on_demand_graph;
 /// What a package declares about the crates it pulls: the manifest is the
 /// only place that says which crate of a path belongs to the project.
-pub mod package;
+mod package;
 // F2.W7: promoted from private so `AnalysisService::build_project_graph`
 // (the path the real `cognicode-mcp` binary exercises) can use
 // `GlobalSymbolIndex` for scope-aware resolution. The public surface
