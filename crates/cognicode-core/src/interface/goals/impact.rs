@@ -16,7 +16,9 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::application::services::analysis_service::AnalysisService;
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
+use crate::interface::goals::common::{GoalBasis, graph_basis};
 use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -45,6 +47,21 @@ pub struct GoalImpact {
     pub files: Vec<String>,
     /// El riesgo que el dueño le da al cambio.
     pub risk: String,
+    /// What the graph this answer was computed over covers: the files the
+    /// walk could not read, the references without a declaration and the
+    /// relations the repository refused.
+    ///
+    /// An impact over a tree that was not read whole is an impact nobody can
+    /// trust: a dependent that lives in a file the walk could not read is
+    /// not in the answer, and the consumer needs the holes next to the
+    /// verdict to know that.
+    pub coverage: CoverageInfo,
+    /// What the graph was built from, when the load kept it.
+    ///
+    /// `None` when the load kept no manifest: there is no digest to
+    /// publish, and an empty one would read as a measured identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
 }
 
 /// La respuesta del goal `impact` para ese símbolo.
@@ -77,6 +94,8 @@ pub fn impact(workspace: &Path, symbol: &str) -> Result<GoalImpact, String> {
         symbols: impact.symbols,
         files: impact.files,
         risk,
+        coverage: CoverageInfo::of(&built.coverage),
+        basis: graph_basis(workspace, &built),
     })
 }
 

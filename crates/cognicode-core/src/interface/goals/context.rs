@@ -10,6 +10,12 @@
 //! pudieron leer. Las referencias que el grafo no pudo atar y las relaciones
 //! que el repositorio rechazó las mide el grafo, y este goal no lo
 //! construye.
+//!
+//! Y por lo mismo no publica frescura. La frescura es el digest del
+//! manifiesto que conserva la carga del grafo; un goal que no carga el
+//! grafo no tiene manifiesto, así que no tiene digest que publicar. Un
+//! digest inventado sería una identidad que nadie midió, y esta respuesta
+//! se publica sin fechar.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,7 +24,7 @@ use std::path::Path;
 use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
-use crate::interface::goals::common::coverage_of;
+use crate::interface::goals::common::coverage_of_inventory;
 use crate::interface::workspace::detect_languages;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -69,7 +75,7 @@ pub fn context(input: &ContextInput, workspace: &Path) -> GoalContext {
         .map(|language| language.name().to_string())
         .collect();
     let coverage = if input.include_coverage {
-        Some(coverage_of(workspace))
+        Some(coverage_of_inventory(&inventory))
     } else {
         None
     };

@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::graph_snapshot::source_digest;
 use crate::application::services::analyze::{Coverage, CoverageFacts};
-use crate::infrastructure::graph::source_files::inventory;
+use crate::infrastructure::graph::source_files::{SourceInventory, inventory};
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::project_graph::ProjectGraph;
 
@@ -104,8 +104,17 @@ pub fn coverage_line(coverage: &CoverageInfo) -> String {
 /// [`crate::interface::coverage::CoverageInfo`]. Aquí sólo se junta lo que
 /// el inventario leyó con lo que el dueño sabe decir de eso.
 pub fn coverage_of(workspace: &Path) -> CoverageInfo {
+    coverage_of_inventory(&inventory(workspace))
+}
+
+/// La cobertura de una lectura que ya recorrió el árbol.
+///
+/// El recorrido es la mitad cara de la lectura: un goal que ya tiene el
+/// inventario no vuelve a recorrer el árbol para saber lo que no pudo leer.
+/// La palabra de la cobertura la sigue diciendo el mismo dueño.
+pub fn coverage_of_inventory(inventory: &SourceInventory) -> CoverageInfo {
     let facts = CoverageFacts {
-        skipped: inventory(workspace).coverage_holes(),
+        skipped: inventory.coverage_holes(),
         pending: Vec::new(),
         rejected: Vec::new(),
     };

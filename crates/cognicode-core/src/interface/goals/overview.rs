@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
-use crate::interface::goals::common::coverage_of;
+use crate::interface::goals::common::{GoalBasis, graph_basis};
 use crate::interface::project_graph::service_with_graph;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -40,8 +40,23 @@ pub struct GoalOverview {
     pub files: usize,
     /// Los símbolos por lenguaje, ordenados por nombre.
     pub languages: Vec<LanguageCount>,
-    /// La cobertura de la lectura del workspace.
+    /// What the graph these counts describe covers: the files the walk
+    /// could not read, the references without a declaration and the relations
+    /// the repository refused.
+    ///
+    /// The counts above are the graph's, so this is the graph's coverage and
+    /// not the coverage of another reading of the tree: an answer that
+    /// counted one tree and reported the holes of another speaks of two
+    /// trees at once.
     pub coverage: CoverageInfo,
+    /// What the graph was built from, when the load kept it.
+    ///
+    /// The counts of this answer are the graph's, so the consumer needs to
+    /// know which tree they describe: `None` when the load kept no
+    /// manifest, because there is no digest to publish and an empty one
+    /// would read as a measured identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
 }
 
 /// Cuántos símbolos hay en un lenguaje.
@@ -55,7 +70,7 @@ pub struct LanguageCount {
 
 /// La respuesta del goal `overview` para ese workspace.
 pub fn overview(workspace: &Path) -> Result<GoalOverview, String> {
-    let (service, _built) = service_with_graph(workspace)?;
+    let (service, built) = service_with_graph(workspace)?;
     let stats = service.get_graph_stats();
 
     let mut languages: Vec<LanguageCount> = stats
@@ -81,7 +96,8 @@ pub fn overview(workspace: &Path) -> Result<GoalOverview, String> {
         edges: stats.edge_count,
         files: stats.file_count,
         languages,
-        coverage: coverage_of(workspace),
+        coverage: CoverageInfo::of(&built.coverage),
+        basis: graph_basis(workspace, &built),
     })
 }
 
