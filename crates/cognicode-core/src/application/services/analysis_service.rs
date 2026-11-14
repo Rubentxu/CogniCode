@@ -649,21 +649,17 @@ impl AnalysisService {
             .source_files()
             .map(|file| file.path.clone())
             .collect();
-        // K0 honest gap: a real source in a language we know about but
-        // have not yet wired (Kotlin). The H1.1 envelope requires it to
-        // surface in `skipped` so the consumer can see the K0 bridge, not
-        // a silent "no findings".
-        let k0_skipped: Vec<PfgSkippedFile> = inventory.known_gaps();
-        // What the walk declined (a symlink) and what it could not do (a
-        // directory it could not read) is a hole in the coverage, not a
-        // file left out on purpose: dropping it would return `Complete`,
-        // the same lie the walk was fixed to stop telling.
-        let walk_skipped: Vec<PfgSkippedFile> = inventory
-            .declined
-            .iter()
-            .chain(inventory.errors.iter())
-            .cloned()
-            .collect();
+        // The holes of the tree are the inventory's, and the inventory is
+        // the one that decides which of them there are: a source in a
+        // language we know about but have not yet wired (Kotlin), what the
+        // walk declined and did not cover anyway, and what it could not do
+        // (a directory it could not read). Dropping them would return
+        // `Complete`, the same lie the walk was fixed to stop telling.
+        //
+        // The list is asked of its owner instead of composed here: a route
+        // that composes the holes on its own is a second answer waiting to
+        // drift apart from the first.
+        let tree_holes: Vec<PfgSkippedFile> = inventory.coverage_holes();
 
         let file_path_refs: Vec<&Path> = file_paths.iter().map(|p| p.as_path()).collect();
         let cache_report = cache.merge_with_report(&file_path_refs);
@@ -679,8 +675,7 @@ impl AnalysisService {
                 rejected,
             } => (cache_report.graph, skipped, pending, rejected),
         };
-        all_skipped.extend(k0_skipped);
-        all_skipped.extend(walk_skipped);
+        all_skipped.extend(tree_holes);
         // `GraphCoverageMetrics` is the numeric projection of the same
         // coverage fact carried by `BuildStatus`. The per-file route has no
         // separate cache lifetime here, so every non-skipped analyzed file is
