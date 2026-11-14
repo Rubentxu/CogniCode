@@ -2194,6 +2194,32 @@ mod tests {
         assert_eq!(timeout_for_category(""), Duration::from_secs(30));
     }
 
+    /// The dispatch deadline of a tool has to cover the work the tool
+    /// does on its own.
+    ///
+    /// The usage search reads the tree and has a budget. A deadline
+    /// shorter than that budget throws the answer away: the search
+    /// would finish — and its answer be `partial`, with the reason —
+    /// after the deadline had already eaten it. The deadline is
+    /// chosen by the category the catalogue declares, and the budget
+    /// is the search's own; the two have to be read together.
+    #[test]
+    fn the_dispatch_deadline_of_find_usages_covers_its_search_budget() {
+        let category = tool_category_map()
+            .get("find_usages")
+            .expect("find_usages declares a category");
+        let deadline = timeout_for_category(category);
+        let budget = cognicode_core::application::services::usage_search::USAGE_SEARCH_BUDGET;
+        let search_budget = budget
+            .max_elapsed
+            .expect("the usage search declares a time budget");
+        assert!(
+            deadline >= search_budget,
+            "the dispatch deadline of find_usages ({deadline:?}) is shorter than its search \
+             budget ({search_budget:?}): the answer would be lost"
+        );
+    }
+
     #[tokio::test]
     async fn test_timeout_fires_when_handler_takes_longer() {
         // M3.2: A handler that exceeds the category timeout must be

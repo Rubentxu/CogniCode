@@ -2612,7 +2612,7 @@
       "name": "find_usages",
       "title": "Find all usages of a symbol across the project",
       "description": "Find all usages of a symbol across the project. The positions it publishes are 1-indexed: the line and the column a person reads.",
-      "category": "search",
+      "category": "navigation",
       "authority": "read",
       "stability": "stable",
       "precision_floor": "ast-heuristic",
@@ -2650,15 +2650,15 @@
         "network": null
       },
       "requirements_status": "not_declared",
-      "estimated_latency_ms": 40,
+      "estimated_latency_ms": 300,
       "public_profiles": [
         "core",
         "reviewer"
       ],
       "runtime_metadata": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 40,
+        "category": "navigation",
+        "estimated_latency_ms": 300,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
@@ -2673,7 +2673,8 @@
       ],
       "limitations": [
         "AST-based; no LSP server required but no LSP precision",
-        "A file the search could not read is named in `coverage.skipped_files` and the answer is `partial`, never `complete`"
+        "A file the search could not read is named in `coverage.skipped_files` and the answer is `partial`, never `complete`",
+        "The search has a budget (10 s, 50000 files); when it is exhausted the answer is `partial`, says how many files it left out in `omitted` and why it stopped in `truncation_reason`"
       ]
     },
     {
