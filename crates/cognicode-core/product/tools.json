@@ -2213,7 +2213,7 @@
     {
       "name": "find",
       "title": "Dónde está un símbolo",
-      "description": "Resuelve un nombre de símbolo a los sitios donde está declarado, con su fichero y su línea. Es la pregunta que se hace un homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, `cognicode find --symbol helper --format json`.",
+      "description": "Resuelve un nombre de símbolo a los sitios donde está declarado, con su fichero y su línea. El nombre se compara como lo lee el lenguaje de cada declaración: en un lenguaje que distingue mayúsculas, `Ok` y `ok` son dos nombres, y en uno que las pliega —PHP, PowerShell y Fortran— son el mismo. La respuesta dice con qué comparación encontró cada declaración. Es la pregunta que se hace un homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, `cognicode find --symbol helper --format json`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",
@@ -7963,8 +7963,8 @@
     },
     {
       "name": "query_symbol_index",
-      "title": "Query the symbol index to find locations of a symbol by name (case-insensitive)",
-      "description": "Query the symbol index to find locations of a symbol by name (case-insensitive). The positions it publishes are 1-indexed: the line and the column a person reads.",
+      "title": "Query the symbol index to find locations of a symbol by name",
+      "description": "Query the symbol index to find locations of a symbol by name. The name is compared the way the language of each declaration reads it: a language that tells `Ok` from `ok` answers only with the declaration spelled the way the name is spelled, and a language that folds the case —PHP, PowerShell and Fortran— answers with every declaration of the folded name. The positions it publishes are 1-indexed: the line and the column a person reads.",
       "category": "search",
       "authority": "read",
       "stability": "stable",
@@ -7979,7 +7979,7 @@
             ]
           },
           "symbol_name": {
-            "description": "Symbol name to query (case-insensitive)",
+            "description": "Symbol name to query (compared the way the language of the declaration reads it)",
             "type": "string"
           }
         },

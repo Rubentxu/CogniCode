@@ -59,6 +59,13 @@ pub struct PublishedPosition {
 /// Una localización como la publica el producto.
 #[derive(Debug, Clone, Serialize)]
 pub struct PublishedLocation {
+    /// The name the declaration was written with.
+    ///
+    /// The name travels with the place because the place does not say
+    /// which declaration it is: a declaration spelled `ok` and one spelled
+    /// `Ok` are at different lines, and a consumer that cannot see the
+    /// spelling cannot tell them apart.
+    pub name: String,
     pub file: String,
     /// Line number (1-indexed): the line a person reads.
     pub line: u32,
@@ -81,6 +88,7 @@ pub struct PublishedOutlineNode {
 impl From<&SymbolLocation> for PublishedLocation {
     fn from(location: &SymbolLocation) -> Self {
         Self {
+            name: location.name.clone(),
             file: location.file.clone(),
             line: published_line(location.line),
             column: published_column(location.column),

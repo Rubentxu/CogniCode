@@ -717,6 +717,21 @@ impl Language {
             .is_some_and(|language| language.folds_case())
     }
 
+    /// Whether a declaration spelled `declared` answers to a name spelled
+    /// `name`, the way this language reads the two.
+    ///
+    /// This is the rule every surface that looks a name up has to read
+    /// the same way: the language that wrote the declaration says whether
+    /// the spelling matters, and the index that holds the declaration does
+    /// not get to decide on its own.
+    pub fn answers_to(self, declared: &str, name: &str) -> bool {
+        if self.folds_case() {
+            declared.to_lowercase() == name.to_lowercase()
+        } else {
+            declared == name
+        }
+    }
+
     /// Whether a type must be named in the file that uses it.
     ///
     /// A language where a type is named before it is used lets the file say

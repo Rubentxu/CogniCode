@@ -102,6 +102,7 @@ fn json_index_query_shape() {
         symbol: "main".to_string(),
         path: PathBuf::from("/tmp/proj"),
         locations: vec![PublishedLocation {
+            name: "main".to_string(),
             file: "/tmp/proj/src/main.rs".to_string(),
             line: 1,
             column: 1,

@@ -15,6 +15,14 @@ use std::path::Path;
 /// Represents a location of a symbol in source code
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SymbolLocation {
+    /// The name the declaration was written with.
+    ///
+    /// The name is part of what a location is: the lookup compares it
+    /// with the name that was searched, and a declaration spelled `ok` is
+    /// not the declaration spelled `Ok` in a language that tells them
+    /// apart. A location that did not carry its name could not answer
+    /// that question.
+    pub name: String,
     /// Path to the source file
     pub file: String,
     /// Line number (0-indexed)
@@ -27,8 +35,15 @@ pub struct SymbolLocation {
 
 impl SymbolLocation {
     /// Creates a new SymbolLocation
-    pub fn new(file: impl Into<String>, line: u32, column: u32, symbol_kind: SymbolKind) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        file: impl Into<String>,
+        line: u32,
+        column: u32,
+        symbol_kind: SymbolKind,
+    ) -> Self {
         Self {
+            name: name.into(),
             file: file.into(),
             line,
             column,
@@ -36,13 +51,31 @@ impl SymbolLocation {
         }
     }
 
-    /// Creates a SymbolLocation from a Location and SymbolKind
-    pub fn from_location(location: &Location, symbol_kind: SymbolKind) -> Self {
+    /// Creates a SymbolLocation from the name a declaration was written
+    /// with, a Location and a SymbolKind
+    pub fn of(name: &str, location: &Location, symbol_kind: SymbolKind) -> Self {
         Self {
+            name: name.to_string(),
             file: location.file().to_string(),
             line: location.line(),
             column: location.column(),
             symbol_kind,
+        }
+    }
+
+    /// Whether this declaration answers to a name, as the language that
+    /// wrote it reads the two.
+    ///
+    /// The language of the file that holds the declaration is the one
+    /// that says whether the spelling matters: a language that folds the
+    /// case answers with the declaration however it is spelled, and a
+    /// language that tells the case apart —and a file whose language the
+    /// product does not know— answers only with the declaration spelled
+    /// the way the name is spelled.
+    pub fn answers_to(&self, name: &str) -> bool {
+        match Language::from_path(Path::new(&self.file)) {
+            Some(language) => language.answers_to(&self.name, name),
+            None => self.name == name,
         }
     }
 
@@ -166,7 +199,8 @@ impl LightweightIndex {
             if let Ok(symbols) = ts_parser.find_all_symbols_with_path(&source, &file_path) {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
-                    let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
+                    let location =
+                        SymbolLocation::of(symbol.name(), symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(&file_path)
                         && file_name_set.insert(name_lower.clone())
@@ -212,7 +246,8 @@ impl LightweightIndex {
             if let Ok(symbols) = ts_parser.find_all_symbols_with_path(source, file_path) {
                 for symbol in symbols {
                     let name_lower = symbol.name().to_lowercase();
-                    let location = SymbolLocation::from_location(symbol.location(), *symbol.kind());
+                    let location =
+                        SymbolLocation::of(symbol.name(), symbol.location(), *symbol.kind());
 
                     if let Some(file_names) = self.file_index.get_mut(file_path)
                         && !file_names.contains(&name_lower)
@@ -252,7 +287,15 @@ impl LightweightIndex {
         }
     }
 
-    /// Finds all locations for a symbol by name (case-insensitive).
+    /// Finds all locations for a symbol by name.
+    ///
+    /// The name is compared the way the language of each declaration
+    /// reads it: a language that tells `Describe` from `describe` answers
+    /// only with the declaration spelled the way the name was spelled, and
+    /// a language that folds the case answers with every declaration of
+    /// the folded name. The fold is the language's property, not the
+    /// index's.
+    ///
     /// Returns all symbols if name is empty.
     pub fn find_symbol(&self, name: &str) -> Vec<SymbolLocation> {
         let name_lower = name.to_lowercase();
@@ -266,7 +309,13 @@ impl LightweightIndex {
         } else {
             self.index
                 .get(&name_lower)
-                .map(|v| v.to_vec())
+                .map(|locations| {
+                    locations
+                        .iter()
+                        .filter(|location| location.answers_to(name))
+                        .cloned()
+                        .collect()
+                })
                 .unwrap_or_default()
         }
     }
@@ -325,8 +374,12 @@ impl LightweightIndex {
     }
 
     /// Inserts a symbol location into the index
-    pub fn insert(&mut self, name: impl Into<String>, location: SymbolLocation) {
-        let name_lower = name.into().to_lowercase();
+    ///
+    /// The bucket is the folded name of the declaration, and the
+    /// declaration carries its own name: the two come from the same
+    /// place, so they cannot disagree about how a symbol is spelled.
+    pub fn insert(&mut self, location: SymbolLocation) {
+        let name_lower = location.name.to_lowercase();
         let file_path = location.file.clone();
         self.index
             .entry(name_lower.clone())
@@ -379,14 +432,47 @@ mod tests {
         assert!(index.find_symbol("nonexistent").is_empty());
     }
 
+    /// TASK-262 — the comparison is the language's, not the index's.
+    ///
+    /// Python tells `Hello` from `hello`, so the index answers with the
+    /// declaration spelled the way the name was spelled and with nothing
+    /// else. A language that folds the case —PHP— answers with every
+    /// declaration of the folded name, which is what it always answered.
+    ///
+    /// The old test pinned the fold as the index's own property: it asked
+    /// for `hello` in a Python file and expected the declaration of
+    /// `Hello`. That was the defect, not the contract.
     #[test]
-    fn test_lightweight_index_case_insensitive() {
+    fn the_index_compares_the_names_the_way_the_language_does() {
         let mut index = LightweightIndex::new();
         index.build_from_sources([("test.py", "def Hello():\n    pass\n")]);
 
-        assert!(!index.find_symbol("hello").is_empty());
-        assert!(!index.find_symbol("HELLO").is_empty());
         assert!(!index.find_symbol("Hello").is_empty());
+        assert!(
+            index.find_symbol("hello").is_empty(),
+            "Python tells `Hello` from `hello`: the index must not fold the case"
+        );
+        assert!(
+            index.find_symbol("HELLO").is_empty(),
+            "Python tells `Hello` from `HELLO`: the index must not fold the case"
+        );
+
+        let mut php = LightweightIndex::new();
+        php.build_from_sources([(
+            "test.php",
+            "<?php\nfunction Hello() { return 1; }\nfunction hello() { return 2; }\n",
+        )]);
+
+        assert_eq!(
+            php.find_symbol("hello").len(),
+            2,
+            "PHP folds the case: both declarations answer to the folded name"
+        );
+        assert_eq!(
+            php.find_symbol("Hello").len(),
+            2,
+            "PHP folds the case: both declarations answer to the folded name"
+        );
     }
 
     #[test]

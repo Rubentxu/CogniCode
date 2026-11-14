@@ -33,6 +33,7 @@ fn index_result_query_with_locations_serializes_with_kind_query() {
         symbol: "main".to_string(),
         path: PathBuf::from("/tmp/proj"),
         locations: vec![PublishedLocation {
+            name: "main".to_string(),
             file: "/tmp/proj/src/main.rs".to_string(),
             line: 1,
             column: 1,
@@ -43,6 +44,7 @@ fn index_result_query_with_locations_serializes_with_kind_query() {
     assert_eq!(json["kind"], "query", "wire format must have kind=query");
     assert_eq!(json["symbol"], "main");
     assert_eq!(json["path"], "/tmp/proj");
+    assert_eq!(json["locations"][0]["name"], "main");
     assert_eq!(json["locations"][0]["file"], "/tmp/proj/src/main.rs");
     assert_eq!(json["locations"][0]["line"], 1);
     assert_eq!(json["locations"][0]["column"], 1);

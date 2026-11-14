@@ -245,9 +245,12 @@ pub const FIND: GoalSpec = GoalSpec {
     name: "find",
     title: "Dónde está un símbolo",
     description: "Resuelve un nombre de símbolo a los sitios donde está declarado, \
-con su fichero y su línea. Es la pregunta que se hace un homónimo: el mismo \
-nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, \
-`cognicode find --symbol helper --format json`.",
+con su fichero y su línea. El nombre se compara como lo lee el lenguaje de cada \
+declaración: en un lenguaje que distingue mayúsculas, `Ok` y `ok` son dos nombres, \
+y en uno que las pliega —PHP, PowerShell y Fortran— son el mismo. La respuesta dice \
+con qué comparación encontró cada declaración. Es la pregunta que se hace un \
+homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find \
+--symbol helper`, `cognicode find --symbol helper --format json`.",
     examples: &[
         "cognicode find --symbol helper",
         "cognicode find --symbol helper --format json",

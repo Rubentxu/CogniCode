@@ -876,7 +876,7 @@ pub struct BuildIndexOutput {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QuerySymbolInput {
-    /// Symbol name to query (case-insensitive)
+    /// Symbol name to query (compared the way the language of the declaration reads it)
     pub symbol_name: String,
 
     /// Directory to search in (default: current working directory)

@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::domain::value_objects::NameComparison;
 use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
@@ -39,6 +40,16 @@ pub struct GoalFind {
     pub symbol: String,
     /// Los sitios donde el nombre está declarado.
     pub locations: Vec<FoundSymbol>,
+    /// Cómo se comparó el nombre buscado con las declaraciones que
+    /// responde.
+    ///
+    /// La comparación es del lenguaje de cada declaración: un lenguaje que
+    /// distingue mayúsculas sólo contesta con la declaración escrita
+    /// como el nombre buscado, y uno que las pliega contesta con todas
+    /// las declaraciones del nombre plegado. Sin esta palabra, un recuento
+    /// de declaraciones se lee como el recuento del nombre buscado, y no
+    /// lo es.
+    pub comparison: NameComparison,
     /// What the graph this answer was computed over covers. An empty list
     /// over a tree with unread files is not the same answer as an empty
     /// list over a tree that was read whole.
@@ -51,7 +62,11 @@ pub struct GoalFind {
 /// Un sitio donde el nombre está declarado.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FoundSymbol {
-    /// El nombre del símbolo.
+    /// El nombre con el que el símbolo está declarado.
+    ///
+    /// Es el nombre de la declaración, no el que se buscó: en un lenguaje
+    /// que pliega la grafía, `ok` responde a `Ok`, y publicar el nombre
+    /// buscado sería publicar una declaración que no está ahí.
     pub name: String,
     /// El tipo del símbolo, con el nombre que le da el dominio.
     pub kind: String,
@@ -71,13 +86,15 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
         .locations
         .into_iter()
         .map(|location| FoundSymbol {
-            name: symbol.to_string(),
+            name: location.name.clone(),
             kind: location.symbol_kind.to_string(),
             file: location.file.clone(),
             line: location.line + 1,
             column: location.column + 1,
         })
         .collect();
+
+    let comparison = NameComparison::of(symbol, locations.iter().map(|l| l.name.as_str()));
 
     let summary = if locations.is_empty() {
         let mut text = format!("`{symbol}` is not in the project's symbols.");
@@ -93,6 +110,7 @@ pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
         goal: "find".to_string(),
         symbol: symbol.to_string(),
         locations,
+        comparison,
         coverage: CoverageInfo::of(&built.coverage),
         basis: graph_basis(workspace, &built),
     })
@@ -139,6 +157,7 @@ pub fn render(answer: &Value) -> String {
     let mut text = String::new();
     text.push_str(&found.summary);
     text.push('\n');
+    text.push_str(&format!("  comparison: {}\n", found.comparison.as_str()));
     for location in &found.locations {
         text.push_str(&format!(
             "  {}:{}:{} {} ({})\n",

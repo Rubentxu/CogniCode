@@ -416,7 +416,7 @@ pub enum IndexCommand {
     },
     /// Query the index for a symbol
     Query {
-        /// Symbol name to query
+        /// Symbol name to query (the language of the declaration decides the comparison)
         symbol: String,
         /// Directory to search in
         #[arg(default_value = ".")]

@@ -114,8 +114,8 @@ pub fn present_index_result(result: &IndexResult, w: &mut dyn Write) -> std::io:
             for loc in locations {
                 writeln!(
                     w,
-                    "  {}:{}:{} ({:?})",
-                    loc.file, loc.line, loc.column, loc.symbol_kind
+                    "  {}:{}:{} {} ({:?})",
+                    loc.file, loc.line, loc.column, loc.name, loc.symbol_kind
                 )?;
             }
         }
