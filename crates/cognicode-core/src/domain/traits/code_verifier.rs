@@ -48,7 +48,8 @@ pub enum CompilationResult {
     },
     /// File failed to compile
     Rejected {
-        /// Error message from the compiler (truncated to 200 chars)
+        /// Error message from the compiler, cut to 200 bytes at a character
+        /// boundary and marked when it was cut
         error: String,
     },
     /// File was skipped (e.g., not a supported language)
