@@ -83,6 +83,13 @@ pub(crate) struct Occurrence {
     pub column: u32,
     /// The line of code the identifier is on.
     pub context: String,
+    /// Whether this occurrence is the name a declaration declares.
+    ///
+    /// The reader of the file knows it: it is the node the declaration
+    /// writes its name in. The search does not guess it from the text
+    /// around the occurrence —a line that says `fn` is not a
+    /// declaration, and a name that nothing declares is not one either—.
+    pub is_declaration: bool,
 }
 
 /// What reading one file said about an identifier.
@@ -140,21 +147,20 @@ impl AnalysisService {
             };
 
             for occ in occurrences {
-                let has_def_keyword = occ.context.contains("def ")
-                    || occ.context.contains("class ")
-                    || occ.context.contains("struct ")
-                    || occ.context.contains("fn ")
-                    || occ.context.contains("function ")
-                    || occ.context.contains("const ")
-                    || occ.context.contains("let ");
+                // Whether this occurrence is the declaration is the
+                // reader's answer, not a guess about the words around it:
+                // the first occurrence that mentions `fn` is not the
+                // declaration, it is the first line that happens to say
+                // `fn`.
+                let declares = occ.is_declaration;
 
                 let is_definition = if params.first_only_definition {
-                    has_def_keyword && !seen_first_definition
+                    declares && !seen_first_definition
                 } else {
-                    has_def_keyword
+                    declares
                 };
 
-                if has_def_keyword && !seen_first_definition {
+                if declares && !seen_first_definition {
                     seen_first_definition = true;
                 }
 

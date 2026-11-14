@@ -390,6 +390,7 @@ impl AnalysisService {
                 line: occurrence.line,
                 column: occurrence.column,
                 context: occurrence.context,
+                is_declaration: occurrence.is_declaration,
             })
             .collect();
         Ok(FileOccurrences {

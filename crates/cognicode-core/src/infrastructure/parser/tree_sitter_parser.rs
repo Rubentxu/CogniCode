@@ -34,6 +34,13 @@ pub struct IdentifierOccurrence {
     pub length: u32,
     /// Context (the line of code)
     pub context: String,
+    /// Whether this occurrence is the name a declaration declares.
+    ///
+    /// The answer is the syntax's, not a guess about the text around it: an
+    /// occurrence is a declaration when it is the node a declaration writes
+    /// its name in. A line that mentions `fn` is not a declaration, and a
+    /// name that nothing declares is not one either.
+    pub is_declaration: bool,
 }
 
 /// The one thing about a `Language` that is genuinely an adapter concern.
@@ -193,59 +200,13 @@ impl TreeSitterParser {
     ) -> ParseResult<Vec<Symbol>> {
         let mut symbols = Vec::new();
 
-        let language = self.language;
-        let class_type = self.language.class_node_type();
-
         let mut stack = Vec::new();
         stack.push(tree.root_node());
 
         while let Some(current) = stack.pop() {
             let kind = current.kind();
 
-            // The seam. A language that declares its sets is read by them:
-            // the single kind per category would lose every kind the
-            // language declares beyond the first, and Kotlin declares
-            // several in three categories. The other languages keep the
-            // kind they were read by, so this unit does not change what
-            // fifteen languages publish.
-            let declared = self.language.symbols();
-            let by_sets = self.language.reads_declared_symbol_sets();
-
-            let is_function = language.is_function_kind(kind);
-            let is_class = if by_sets {
-                declared.class_types.contains(&kind)
-            } else {
-                // Rust declares its types in four nodes, and the single
-                // `class_node_type` names only the first: an `enum` or a
-                // `trait` would be in the file and not in the symbols,
-                // and `find` would answer "not there" for a type that is.
-                kind == class_type
-                    || (self.language == Language::Rust
-                        && matches!(kind, "enum_item" | "trait_item" | "union_item"))
-            };
-
-            // Rust treats `let`/`const`/`static` as variable-shaped
-            // symbols. The single-value API on Language returns only
-            // `let_declaration`, so we broaden the check only for Rust and
-            // keep other languages on their declared kind.
-            let is_variable = if by_sets {
-                declared.variable_types.contains(&kind)
-            } else {
-                match self.language {
-                    Language::Rust => {
-                        matches!(kind, "let_declaration" | "const_item" | "static_item")
-                    }
-                    _ => kind == self.language.variable_node_type(),
-                }
-            };
-
-            // The package a file belongs to is a declaration like any
-            // other: a language that says which node declares one
-            // publishes it, and a language that says nothing is not
-            // missing anything.
-            let is_package = self.language.package_types().contains(&kind);
-
-            if (is_function || is_class || is_variable || is_package)
+            if self.declares_symbol(kind)
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
@@ -269,6 +230,57 @@ impl TreeSitterParser {
         }
 
         Ok(symbols)
+    }
+
+    /// Whether a node of this kind declares a symbol.
+    ///
+    /// The rule is the one the symbol index applies, and it lives here so
+    /// the index and the occurrence search cannot disagree about it: a node
+    /// the index reads as a declaration is a declaration, and one it does
+    /// not read is not.
+    ///
+    /// The seam. A language that declares its sets is read by them: the
+    /// single kind per category would lose every kind the language
+    /// declares beyond the first, and Kotlin declares several in three
+    /// categories. The other languages keep the kind they were read by, so
+    /// this rule does not change what fifteen languages publish.
+    fn declares_symbol(&self, kind: &str) -> bool {
+        let language = self.language;
+        let declared = language.symbols();
+        let by_sets = language.reads_declared_symbol_sets();
+
+        let is_function = language.is_function_kind(kind);
+        let is_class = if by_sets {
+            declared.class_types.contains(&kind)
+        } else {
+            // Rust declares its types in four nodes, and the single
+            // `class_node_type` names only the first: an `enum` or a
+            // `trait` would be in the file and not in the symbols,
+            // and `find` would answer "not there" for a type that is.
+            kind == language.class_node_type()
+                || (language == Language::Rust
+                    && matches!(kind, "enum_item" | "trait_item" | "union_item"))
+        };
+
+        // Rust treats `let`/`const`/`static` as variable-shaped symbols.
+        // The single-value API on Language returns only `let_declaration`,
+        // so we broaden the check only for Rust and keep other languages on
+        // their declared kind.
+        let is_variable = if by_sets {
+            declared.variable_types.contains(&kind)
+        } else {
+            match language {
+                Language::Rust => matches!(kind, "let_declaration" | "const_item" | "static_item"),
+                _ => kind == language.variable_node_type(),
+            }
+        };
+
+        // The package a file belongs to is a declaration like any other: a
+        // language that says which node declares one publishes it, and a
+        // language that says nothing is not missing anything.
+        let is_package = language.package_types().contains(&kind);
+
+        is_function || is_class || is_variable || is_package
     }
 
     /// The synthetic symbol that owns the calls a script writes outside any
@@ -1146,9 +1158,19 @@ impl TreeSitterParser {
         stack.push(node);
         let rule = self.language.name_rule();
         let declared = rule != crate::domain::value_objects::NameRule::DEFAULT;
+        // Where the declarations of this file write their names. The walk
+        // visits a node before its children, so a declaration is known
+        // before the name it declares is reached.
+        let mut declarations: HashSet<(u32, u32)> = HashSet::new();
 
         while let Some(current) = stack.pop() {
             let kind = current.kind();
+            if self.declares_symbol(kind)
+                && let Some(name) = naming::declaration_name_node(&current, &rule)
+            {
+                let position = name.start_position();
+                declarations.insert((position.row as u32, position.column as u32));
+            }
             if (kind == "identifier"
                 || kind == "type_identifier"
                 || (declared && rule.kinds.contains(&kind)))
@@ -1163,6 +1185,7 @@ impl TreeSitterParser {
                     column: start.column as u32,
                     length: (end.column - start.column) as u32,
                     context,
+                    is_declaration: declarations.contains(&(start.row as u32, start.column as u32)),
                 });
             }
 
