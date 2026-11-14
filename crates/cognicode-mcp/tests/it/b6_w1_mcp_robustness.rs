@@ -686,8 +686,8 @@ fn master_catalogue() -> (BTreeSet<String>, BTreeSet<String>) {
 /// deadline can fire. The budget of that walk is the window of the `file`
 /// category, and this test is the evidence that the window covers the
 /// walk: the answer of a walk that takes longer than the narrowest window
-/// the product has — 500 ms, the window of a query over the symbol index
-/// — is its result, not a timeout that replaced it.
+/// the product has — 500 ms, the window of the `search` category — is its
+/// result, not a timeout that replaced it.
 ///
 /// So this test pins three properties:
 ///

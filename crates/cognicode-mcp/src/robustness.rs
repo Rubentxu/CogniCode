@@ -26,9 +26,10 @@
 //!
 //! Bilingual doc comments (English / Spanish) per AGENTS.md.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub use cognicode_core::infrastructure::process_memory::read_peak_memory_bytes;
 
@@ -58,10 +59,11 @@ pub struct ServerLimits {
     /// Maximum child calls one composite tool may fan out to (used by
     /// `graph_analyze` / `codebase_map` style tools).
     pub max_fanout: usize,
-    /// Per-tool dispatch timeout in milliseconds. Today this is selected
-    /// per-category (graph=60s, navigation=45s, search=500ms, default=30s)
-    /// in `timeout_for_category`; this field is the upper bound the
-    /// category lookup is allowed to choose.
+    /// Per-tool dispatch timeout in milliseconds. The window of a tool
+    /// is the one its category declares (graph=60s, navigation=45s,
+    /// search=500ms, default=30s) in `timeout_for_category`, raised to
+    /// the window of the graph for a tool that needs the graph; this
+    /// field is the upper bound the window is allowed to choose.
     pub request_timeout_ms: u64,
     /// Grace period (ms) the server allows a cancelled tool to wind
     /// down cleanly before its worker is forcibly torn down.
@@ -82,7 +84,7 @@ impl Default for ServerLimits {
             max_response_bytes: 4 * 1024 * 1024,
             // Composite tools fan out to <8 children today.
             max_fanout: 16,
-            // Hard ceiling; per-category is shorter (500ms..60s).
+            // Hard ceiling; the windows run from 500ms to the graph's 60s.
             request_timeout_ms: 60_000,
             // 2s is enough for a tokio worker to drop its locks and exit.
             cancel_grace_ms: 2_000,
@@ -97,6 +99,73 @@ impl Default for ServerLimits {
 /// and the operator updates the function — not the constant and the test.
 pub fn default_limits() -> ServerLimits {
     ServerLimits::default()
+}
+
+/// The window the build of the graph needs.
+///
+/// The build is the work of the `graph` category, and the window of
+/// that category is this one: it is twice the thirty seconds that the
+/// build of this repository measures, and it is the ceiling the server
+/// publishes (`request_timeout_ms`).
+pub const GRAPH_WINDOW: Duration = Duration::from_secs(60);
+
+/// M3.2: The dispatch window of a category.
+///
+/// Categories with heavy graph algorithms (PageRank, IDF, communities)
+/// get 60s; LSP-backed navigation gets 45s; a query over the symbol
+/// index gets 500ms; a walk of the tree, like the content search, is
+/// the work of the `file` category, which gets 30s.
+pub fn timeout_for_category(category: &str) -> Duration {
+    match category {
+        "graph" => GRAPH_WINDOW,
+        "navigation" => Duration::from_secs(45),
+        "search" => Duration::from_millis(500),
+        _ => Duration::from_secs(30),
+    }
+}
+
+/// M3.2: The dispatch window of a tool.
+///
+/// The category says what kind of work the tool is, and the window has
+/// to cover that work. A tool that needs the graph gets the window of
+/// the graph: the build of the graph is part of its work, and a
+/// deadline shorter than the build answers the caller with a timeout
+/// while the graph is built anyway — the work is done and thrown away.
+///
+/// The requirement is the one the catalogue declares
+/// (`runtime_metadata.requires_graph`), the same declaration the wire
+/// publishes, so the window and the metadata cannot disagree about the
+/// same tool.
+pub fn timeout_for_tool(tool_name: &str, category: &str) -> Duration {
+    let window = timeout_for_category(category);
+    if tool_requires_graph(tool_name) {
+        window.max(GRAPH_WINDOW)
+    } else {
+        window
+    }
+}
+
+/// Whether the catalogue declares that the tool needs the graph.
+///
+/// The oracle is the catalogue, the same one the wire publishes: a tool
+/// that needs the graph and does not say so gets a window that cuts
+/// its own work.
+fn tool_requires_graph(tool_name: &str) -> bool {
+    static MAP: OnceLock<HashMap<String, bool>> = OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        cognicode_core::interface::catalog::load_tool_catalog_active()
+            .into_iter()
+            .map(|descriptor| {
+                let needs = descriptor
+                    .runtime_metadata
+                    .get("requires_graph")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false);
+                (descriptor.name, needs)
+            })
+            .collect()
+    });
+    map.get(tool_name).copied().unwrap_or(false)
 }
 
 /// B6.W1 — Snapshot of process-local diagnostic state.
@@ -248,6 +317,73 @@ pub fn collect_diagnostics() -> ServerDiagnostics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// M3.2 — The window of each category is what the product gives it.
+    #[test]
+    fn the_window_of_each_category_is_the_one_the_product_gives_it() {
+        // graph analytics is allowed the longest window (60s)
+        assert_eq!(timeout_for_category("graph"), GRAPH_WINDOW);
+        // LSP navigation is allowed 45s
+        assert_eq!(timeout_for_category("navigation"), Duration::from_secs(45));
+        // a query over the symbol index answers from an index that is
+        // already built, so it is given the narrowest window
+        assert_eq!(timeout_for_category("search"), Duration::from_millis(500));
+        // file operations default to 30s: that is the window of a walk
+        // of the tree, like the content search
+        assert_eq!(timeout_for_category("file"), Duration::from_secs(30));
+        // composite/quality/refactor/aix are also 30s
+        assert_eq!(timeout_for_category("composite"), Duration::from_secs(30));
+        assert_eq!(timeout_for_category("quality"), Duration::from_secs(30));
+        assert_eq!(timeout_for_category("refactor"), Duration::from_secs(30));
+        assert_eq!(timeout_for_category("aix"), Duration::from_secs(30));
+    }
+
+    /// An unknown category falls through to the default, so a window is
+    /// never lost by a typo.
+    #[test]
+    fn an_unknown_category_falls_through_to_the_default_window() {
+        assert_eq!(
+            timeout_for_category("unknown_category"),
+            Duration::from_secs(30)
+        );
+        assert_eq!(timeout_for_category(""), Duration::from_secs(30));
+    }
+
+    /// The window of every tool that needs the graph covers the build
+    /// of the graph.
+    ///
+    /// The build is part of the work of a tool that needs the graph,
+    /// and the window of that build is the one of the `graph` category.
+    /// A window shorter than the build answers the caller with a
+    /// timeout while the graph is built anyway: the work is done and
+    /// thrown away.
+    ///
+    /// The requirement and the window are read from the same
+    /// declaration, so this contract watches the two together: a tool
+    /// that says it needs the graph and does not get the window of the
+    /// build is the defect.
+    #[test]
+    fn the_window_of_every_tool_that_needs_the_graph_covers_the_build() {
+        for descriptor in cognicode_core::interface::catalog::load_tool_catalog_active() {
+            let needs = descriptor
+                .runtime_metadata
+                .get("requires_graph")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            if !needs {
+                continue;
+            }
+            let window = timeout_for_tool(&descriptor.name, &descriptor.category);
+            assert!(
+                window >= GRAPH_WINDOW,
+                "{} needs the graph and its category ({}) gives it {window:?}: the build of the \
+                 graph does not fit in that window, so the answer would be replaced by a timeout \
+                 while the graph is built anyway",
+                descriptor.name,
+                descriptor.category
+            );
+        }
+    }
 
     /// The published limits are sane. The exact numbers are tuned, not
     /// sacred, but every field has to be positive and the byte/time
