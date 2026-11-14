@@ -26,6 +26,9 @@ pub mod generic_graph_projection;
 pub mod graph_cache;
 mod lightweight_index;
 mod on_demand_graph;
+/// What a package declares about the crates it pulls: the manifest is the
+/// only place that says which crate of a path belongs to the project.
+pub mod package;
 // F2.W7: promoted from private so `AnalysisService::build_project_graph`
 // (the path the real `cognicode-mcp` binary exercises) can use
 // `GlobalSymbolIndex` for scope-aware resolution. The public surface

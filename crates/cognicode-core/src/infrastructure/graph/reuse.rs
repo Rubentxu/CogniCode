@@ -142,9 +142,9 @@ impl Changes {
 }
 
 /// What a call asks: the file it is written in, the lowercased name it
-/// calls, and the type that qualifies it when the call states one the
-/// resolver judges.
-type Question = (String, String, Option<String>);
+/// calls, the type that qualifies it when the call states one the
+/// resolver judges, and the crate or module its path starts at.
+type Question = (String, String, Option<String>, Option<String>);
 
 /// What the last build knew about each file, and what it resolved.
 #[derive(Debug, Default)]
@@ -229,11 +229,19 @@ impl ReuseLedger {
     ///
     /// `None` means the answer has to be computed again.
     fn kept(&self, question: &Question, changes: &Changes) -> Option<Answer> {
-        let (caller_file, name, type_qualifier) = question;
+        let (caller_file, name, type_qualifier, path_head) = question;
         let qualifier_touched = type_qualifier
             .as_deref()
             .is_some_and(|qualifier| changes.touches(&qualifier.to_lowercase()));
         if changes.touches(name) || qualifier_touched || changes.changed(caller_file) {
+            return None;
+        }
+        // An answer about a call written through a crate path depends on
+        // what the caller's package declares, and the ledger does not track
+        // the manifest: a dependency added or removed between two builds
+        // would leave the answer of the last one in place. Those calls are
+        // answered again.
+        if path_head.is_some() {
             return None;
         }
         self.outcomes.get(question).cloned()
@@ -304,6 +312,7 @@ pub fn resolve(
             site.origin_file.clone(),
             site.target.to_lowercase(),
             site.type_qualifier.clone(),
+            site.path_head.clone(),
         );
         let answer = match ledger.kept(&question, changes) {
             Some(answer) => {
@@ -352,10 +361,15 @@ pub fn resolve(
 /// — and the answer carries which one it was. The reason comes from the
 /// resolution itself, so no route decides it on its own.
 fn look_up(index: &GlobalSymbolIndex, question: &Question) -> Answer {
-    let (caller_file, name_lower, type_qualifier) = question;
+    let (caller_file, name_lower, type_qualifier, path_head) = question;
     let caller_path = std::path::Path::new(caller_file);
     match index
-        .resolve_call(name_lower, type_qualifier.as_deref(), Some(caller_path))
+        .resolve_call(
+            name_lower,
+            type_qualifier.as_deref(),
+            path_head.as_deref(),
+            Some(caller_path),
+        )
         .outcome()
     {
         Ok(target) => Answer::Found(target),
