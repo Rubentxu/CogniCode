@@ -903,14 +903,14 @@ pub fn receivers_in(root: Node, source: &[u8], import_types: &[&str]) -> Receive
     while let Some(node) = stack.pop() {
         match node.kind() {
             "impl_item" => {
-                if let Some(type_node) = node.child_by_field_name("type") {
-                    if let Some((name, _)) = type_and_origin(&node_text(&type_node, source)) {
-                        receivers.impls.push(ImplType {
-                            start: node.start_position().row + 1,
-                            end: node.end_position().row + 1,
-                            name,
-                        });
-                    }
+                if let Some(type_node) = node.child_by_field_name("type")
+                    && let Some((name, _)) = type_and_origin(&node_text(&type_node, source))
+                {
+                    receivers.impls.push(ImplType {
+                        start: node.start_position().row + 1,
+                        end: node.end_position().row + 1,
+                        name,
+                    });
                 }
             }
             "struct_item" | "enum_item" | "trait_item" | "union_item" | "type_item" => {

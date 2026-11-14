@@ -8,8 +8,8 @@ use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
 use crate::domain::value_objects::{
-    DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation, TargetResolution,
-    WalkDecision,
+    CallSite, DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation,
+    TargetResolution, WalkDecision,
 };
 use crate::infrastructure::graph::package;
 use crate::infrastructure::graph::semantic_layer::{
@@ -536,28 +536,29 @@ fn call_is_owned<S: Declares + ?Sized>(
 ///
 /// The rule itself is [`call_is_owned`]: this route and the project-wide one
 /// ask the same question, and the scope is the only thing that differs.
+///
+/// The call is judged as the reader stated it: the [`CallSite`] already
+/// says the name, the qualifier, the head of the path and the receiver, so
+/// the route does not take them apart and hand them over one by one.
 fn resolve_call_within_file(
-    name_lower: &str,
-    type_qualifier: Option<&str>,
-    path_head: Option<&str>,
+    site: &CallSite,
     manifests: &mut package::Manifests,
-    caller_file: Option<&Path>,
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
-    receiver: Option<&Receiver>,
 ) -> TargetResolution {
+    let name_lower = site.target.to_lowercase();
     let scope = FileScope { local, graph };
     if !call_is_owned(
         &scope,
         manifests,
-        caller_file,
-        type_qualifier,
-        path_head,
-        receiver,
+        Some(Path::new(&site.origin_file)),
+        site.type_qualifier.as_deref(),
+        site.path_head.as_deref(),
+        site.receiver.as_ref(),
     ) {
-        return TargetResolution::Unresolved(name_lower.to_string());
+        return TargetResolution::Unresolved(name_lower);
     }
-    resolve_within_file(name_lower, local)
+    resolve_within_file(&name_lower, local)
 }
 
 /// The answer the file itself gives about a name.
@@ -1168,16 +1169,7 @@ impl PerFileGraphCache {
                 }
                 None => {
                     let mut packages = self.packages.lock().unwrap();
-                    resolve_call_within_file(
-                        &name_lower,
-                        qualifier,
-                        head,
-                        &mut packages,
-                        Some(caller_path),
-                        &name_to_symbol,
-                        &graph,
-                        receiver,
-                    )
+                    resolve_call_within_file(&site, &mut packages, &name_to_symbol, &graph)
                 }
             };
 
