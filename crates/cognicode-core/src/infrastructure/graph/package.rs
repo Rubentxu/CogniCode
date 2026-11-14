@@ -22,6 +22,7 @@
 //! a path outside the workspace names a crate that lives elsewhere, however
 //! it is declared.
 
+use crate::domain::findings::digest::sha256_raw;
 use crate::domain::value_objects::Language;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -122,6 +123,70 @@ pub fn is_governed_by_a_manifest(file: &Path) -> bool {
     Language::Rust.extensions().contains(&extension)
 }
 
+/// The file that is a manifest, and the hash of its bytes.
+///
+/// The hash says whether the manifest is the same one another build read: it
+/// is the same rule the source files follow, over the same bytes. A manifest
+/// that changed is a manifest that says something else, and what it says is
+/// what the answer to a call written through a crate depends on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestFile {
+    /// The path of the manifest, as the build spells it.
+    pub path: PathBuf,
+    /// The hash of the bytes of the manifest.
+    pub hash: [u8; 32],
+}
+
+/// The manifests that govern the files of a package: the manifest of the
+/// package, and the manifest of the workspace that package inherits from.
+///
+/// What a package pulls from outside the project is declared by its own
+/// manifest, and the dependencies it inherits are declared by the manifest of
+/// the workspace. So both are what decides the answer, and both are hashed:
+/// a workspace that changes the path of an inherited dependency changes the
+/// answer of every package that inherits it, without changing a byte of
+/// theirs.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GoverningManifests {
+    /// The manifests that govern the files, by path.
+    pub manifests: Vec<ManifestFile>,
+}
+
+/// The manifests that govern the files of a package, and the hash of their
+/// bytes.
+///
+/// `None` when the manifest cannot be read: a manifest nobody can read says
+/// nothing, and a hash of nothing would be a hash of the absence of a
+/// manifest.
+///
+/// The manifest of the package and the manifest of the workspace that
+/// inherits from it are two readings of two files, and a project has one
+/// package per directory and one workspace for all of them: the caller that
+/// reads the manifest of every directory of a project reads the manifest of
+/// every package of it twice.
+pub fn governing_manifests_of(manifest: &Path) -> Option<GoverningManifests> {
+    let mut manifests = vec![manifest_with_hash(manifest)?];
+    if let Some(workspace) = workspace_of(manifest).0
+        && workspace != manifest
+    {
+        manifests.push(manifest_with_hash(&workspace)?);
+    }
+    Some(GoverningManifests { manifests })
+}
+
+/// A manifest, and the hash of its bytes.
+///
+/// `None` when the manifest cannot be read: a manifest nobody can read says
+/// nothing, and a hash of nothing would be a hash of the absence of a
+/// manifest.
+fn manifest_with_hash(manifest: &Path) -> Option<ManifestFile> {
+    let bytes = std::fs::read(manifest).ok()?;
+    Some(ManifestFile {
+        path: manifest.to_path_buf(),
+        hash: sha256_raw(&bytes),
+    })
+}
+
 /// The crates a package pulls from outside the project.
 ///
 /// The names are the ones a path spells: a dependency declared as
@@ -136,7 +201,10 @@ pub fn external_crates(manifest: &Path) -> HashSet<String> {
     let Ok(parsed) = text.parse::<toml::Value>() else {
         return HashSet::new();
     };
-    let (root, workspace) = workspace_of(manifest);
+    let (workspace_manifest, workspace) = workspace_of(manifest);
+    let root = workspace_manifest
+        .as_ref()
+        .and_then(|manifest| manifest.parent().map(Path::to_path_buf));
     let directory = manifest.parent();
     let mut names = HashSet::new();
     for table in dependency_tables(&parsed) {
@@ -270,6 +338,10 @@ fn normalized(path: &Path) -> PathBuf {
 /// A package that inherits a dependency does not say where it comes from;
 /// the workspace does, and that is what tells a sibling crate from a crate
 /// pulled from a registry.
+///
+/// The first value is the manifest of the workspace, not its directory: the
+/// manifest is the file whose bytes decide what the packages that inherit
+/// from it pull.
 fn workspace_of(manifest: &Path) -> (Option<PathBuf>, toml::Table) {
     let mut directory = manifest.parent();
     while let Some(current) = directory {
@@ -284,7 +356,7 @@ fn workspace_of(manifest: &Path) -> (Option<PathBuf>, toml::Table) {
                 .and_then(toml::Value::as_table)
                 .cloned()
                 .unwrap_or_default();
-            return (Some(current.to_path_buf()), dependencies);
+            return (Some(path), dependencies);
         }
         directory = current.parent();
     }

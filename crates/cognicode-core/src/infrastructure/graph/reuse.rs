@@ -48,6 +48,17 @@
 //! ledger remembers, and a change that declares or drops the type touches
 //! the answers of every call written through it.
 //!
+//! A call written through a crate (`serde_json::to_value`) is judged against
+//! what the package of the caller declares, and so is a call written on a
+//! value whose type belongs to a crate. The ledger does not read the
+//! manifest to judge the call — the resolver does, and it is the only place
+//! that does — but it has to know that the answer depended on it: a
+//! dependency added or removed between two builds changes the answer of
+//! every call written through that crate. So the ledger tracks the manifest
+//! that governs each file, hashed the same way the bytes of a source file
+//! are, and a manifest that changed invalidates the answers of the files it
+//! governs.
+//!
 //! The ledger remembers two things between builds: what the last build
 //! knew about each file (its content hash and the identity of every
 //! declaration it made), and what it resolved for each (caller file, called
@@ -56,12 +67,14 @@
 //! never a mixture of two.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::value_objects::{
     CallSite, DependencyType, PendingClass, PendingReference, Receiver,
 };
+use crate::infrastructure::graph::package::{self, GoverningManifests};
 use crate::infrastructure::graph::per_file_graph::GlobalSymbolIndex;
 
 /// What one build knows about one file.
@@ -129,6 +142,9 @@ pub struct Changes {
     names: BTreeSet<String>,
     /// The files whose bytes changed, appeared or disappeared.
     changed_files: HashSet<String>,
+    /// The files whose governing manifest changed: the manifest appeared,
+    /// disappeared, or says something else now.
+    changed_governing: HashSet<String>,
 }
 
 impl Changes {
@@ -140,6 +156,16 @@ impl Changes {
     /// Whether the change altered the content of this file.
     fn changed(&self, path: &str) -> bool {
         self.changed_files.contains(path)
+    }
+
+    /// Whether the manifest that governs this file changed.
+    ///
+    /// The answer to a call can depend on what the package of the caller
+    /// declares: a call written through a crate, and a call written on a
+    /// value whose type belongs to one. So a manifest that changed can have
+    /// altered the answer of every call of the files it governs.
+    fn governing_changed(&self, path: &str) -> bool {
+        self.changed_governing.contains(path)
     }
 }
 
@@ -162,6 +188,14 @@ pub struct ReuseLedger {
     files: HashMap<String, Remembered>,
     /// The answers of the last build, by what each call asked.
     outcomes: HashMap<Question, Answer>,
+    /// The manifests that governed each file in the last build.
+    ///
+    /// The answer to a call written through a crate depends on what the
+    /// package of the caller declares, and the manifest is the only place
+    /// that says it. The ledger hashes the manifest the same way it hashes
+    /// the bytes of a source file, so it can tell whether the manifest it
+    /// reads now is the one it read then.
+    governing: HashMap<String, Option<GoverningManifests>>,
 }
 
 /// What the ledger remembers about one file.
@@ -180,10 +214,46 @@ impl ReuseLedger {
     }
 
     /// What changed since the build this ledger describes.
-    pub fn changes(&self, files: &[DeclaredFile]) -> Changes {
+    ///
+    /// The manifests that govern the files are resolved here — one walk per
+    /// directory, one reading per package — and hashed: the ledger has to
+    /// know whether the manifest it reads now is the one it read then,
+    /// because the answer to a call written through a crate depends on what
+    /// the manifest says.
+    pub fn changes(&mut self, files: &[DeclaredFile]) -> Changes {
         let current: HashSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
 
         let mut changes = Changes::default();
+
+        // The manifest that governs each file: one walk per directory, and
+        // one reading per package. A project has one package per directory
+        // and one manifest per package, so reading the manifest of every
+        // directory reads the manifest of every package twice.
+        let mut directories: HashMap<PathBuf, Option<PathBuf>> = HashMap::new();
+        let mut packages: HashMap<PathBuf, Option<GoverningManifests>> = HashMap::new();
+        let governing: Vec<(String, Option<GoverningManifests>)> = files
+            .iter()
+            .map(|file| {
+                let path = Path::new(&file.path);
+                let directory = path.parent().map(Path::to_path_buf).unwrap_or_default();
+                let found = if !package::is_governed_by_a_manifest(path) {
+                    None
+                } else {
+                    let manifest = directories
+                        .entry(directory.clone())
+                        .or_insert_with(|| package::manifest_of(&directory))
+                        .clone();
+                    match manifest {
+                        Some(manifest) => packages
+                            .entry(manifest.clone())
+                            .or_insert_with(|| package::governing_manifests_of(&manifest))
+                            .clone(),
+                        None => None,
+                    }
+                };
+                (file.path.clone(), found)
+            })
+            .collect();
 
         for file in files {
             match self.files.get(&file.path) {
@@ -231,6 +301,22 @@ impl ReuseLedger {
             }
         }
 
+        // The manifest that governs a file changed: the answers of that
+        // file can depend on what its package declares. Only the files of
+        // that package are affected: the manifest of one package says
+        // nothing about the calls of another.
+        for (path, manifest) in &governing {
+            if self.governing.get(path) != Some(manifest) {
+                changes.changed_governing.insert(path.clone());
+            }
+        }
+
+        // The manifests this build read are the ones the next build
+        // compares against.
+        for (path, manifest) in governing {
+            self.governing.insert(path, manifest);
+        }
+
         changes
     }
 
@@ -238,19 +324,20 @@ impl ReuseLedger {
     ///
     /// `None` means the answer has to be computed again.
     fn kept(&self, question: &Question, changes: &Changes) -> Option<Answer> {
-        let (caller_file, name, type_qualifier, path_head, _receiver) = question;
+        let (caller_file, name, type_qualifier, _path_head, _receiver) = question;
         let qualifier_touched = type_qualifier
             .as_deref()
             .is_some_and(|qualifier| changes.touches(&qualifier.to_lowercase()));
         if changes.touches(name) || qualifier_touched || changes.changed(caller_file) {
             return None;
         }
-        // An answer about a call written through a crate path depends on
-        // what the caller's package declares, and the ledger does not track
-        // the manifest: a dependency added or removed between two builds
-        // would leave the answer of the last one in place. Those calls are
-        // answered again.
-        if path_head.is_some() {
+        // The answer to a call can depend on what the package of the caller
+        // declares: a call written through a crate path, and a call written
+        // on a value whose type belongs to a crate. The ledger does not read
+        // the manifest to judge the call, so it does not know which answers
+        // depend on it; a manifest that changed therefore invalidates the
+        // answers of the files it governs — and only of those.
+        if changes.governing_changed(caller_file) {
             return None;
         }
         self.outcomes.get(question).cloned()
