@@ -8,7 +8,14 @@ use crate::interface::mcp::security::SecurityError;
 use thiserror::Error;
 
 /// What the text channel says when a call outlives its budget.
-const TIMEOUT_DETAIL: &str = "timeout";
+///
+/// The refusal names the deadline and says what happened to the work: the
+/// deadline drops the dispatch, and the work that had started is NOT
+/// cancelled —a task of the blocking pool cannot be aborted—, so it
+/// finishes and its result is discarded. A caller that retries has to
+/// know that the first attempt may still be running.
+const TIMEOUT_DETAIL: &str = "timeout: the call was cut by the dispatch deadline; the work it \
+                               started was not cancelled and its result is discarded";
 
 /// What the text channel says when the rate limiter refuses a call.
 const RATE_LIMITED_DETAIL: &str = "rate_limit_exceeded";
@@ -365,7 +372,16 @@ mod tests {
 
     #[test]
     fn the_server_refusals_say_what_they_always_said() {
-        assert_eq!(InterfaceError::Timeout.to_string(), "internal: timeout");
+        // El plazo dice algo más que antes: la llamada se cortó y el
+        // trabajo que había empezado NO se cancela (una tarea del pool de
+        // bloqueo no se aborta), así que su resultado se tira. El llamante
+        // tiene derecho a saberlo: si reintenta, el intento anterior puede
+        // seguir corriendo.
+        assert_eq!(
+            InterfaceError::Timeout.to_string(),
+            "internal: timeout: the call was cut by the dispatch deadline; the work it started was \
+             not cancelled and its result is discarded"
+        );
         assert_eq!(
             InterfaceError::RateLimited.to_string(),
             "internal: rate_limit_exceeded"
@@ -438,7 +454,11 @@ mod tests {
     #[test]
     fn the_server_refusals_cross_to_the_handler_error_with_their_words() {
         for (error, words) in [
-            (InterfaceError::Timeout, "timeout"),
+            (
+                InterfaceError::Timeout,
+                "timeout: the call was cut by the dispatch deadline; the work it started was not \
+                 cancelled and its result is discarded",
+            ),
             (InterfaceError::RateLimited, "rate_limit_exceeded"),
         ] {
             match HandlerError::from(error) {
