@@ -7065,7 +7065,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.103.1",
+        "latency_basis": "measured 2026-11-14 over this repository (3 057 files): the walk of the tree takes 645 ms; the ceiling is 1 000 ms to cover a slower machine"
       },
       "limitations": [
         ".gitignore aware; honors workspace root",
@@ -8930,7 +8931,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.103.1",
+        "latency_basis": "measured 2026-11-14 over this repository (3 057 files read): the walk of the tree takes 645 ms; the ceiling is 1 000 ms to cover a slower machine"
       },
       "intent_tags": [
         "Locate",
