@@ -183,6 +183,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# La regla de "el codigo de produccion de un fichero" tiene un solo dueno:
+# `scripts/ci/production_lines.py`. Este fichero la mide; el contrato de la
+# escritura condicional la mide tambien, y los dos tienen que medir lo mismo.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from production_lines import (  # noqa: E402
+    production_boundary,
+    production_lines,
+    source_lines,
+)
+
 # --- shared ------------------------------------------------------------------
 
 failures: list[str] = []
@@ -235,55 +245,7 @@ def resolve_base() -> str | None:
 # --- Part I: file size and public-type homonyms --------------------------------
 
 LIMIT = 2000
-CFG_TEST = re.compile(r"^#\[cfg\(test\)\]")
 DECL = re.compile(r"^\s*pub (?:struct|enum|trait) ([A-Z][A-Za-z0-9_]*)")
-# The attributes that may sit between a `#[cfg(test)]` and the module it opens.
-ATTRIBUTE = re.compile(r"^\s*#\[")
-# A module declaration, with or without visibility.
-TEST_MODULE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\b")
-
-
-def source_lines(text: str) -> list[str]:
-    """The lines of a source file, without the empty one the text ends with."""
-    lines = text.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    return lines
-
-
-def production_boundary(lines: list[str]) -> int:
-    """The index of the line that opens the test module; the end if there is none.
-
-    A `#[cfg(test)]` is the boundary only when it opens a module. A test-only
-    import or a test-only helper does not start one: the code that follows it
-    still ships, and a ratchet that stops there measures a file that is not
-    the file it was asked about — a 2 100-line file counted as 38 lines is a
-    file the size ratchet stops watching and a walk the traversal ratchet
-    stops seeing.
-    """
-    for index, line in enumerate(lines):
-        if not CFG_TEST.match(line):
-            continue
-        if TEST_MODULE.match(line[line.index("]") + 1 :]):
-            return index
-        probe = index + 1
-        while probe < len(lines):
-            candidate = lines[probe].strip()
-            if candidate == "" or candidate.startswith("//"):
-                probe += 1
-                continue
-            if ATTRIBUTE.match(lines[probe]):
-                probe += 1
-                continue
-            if TEST_MODULE.match(lines[probe]):
-                return index
-            break
-    return len(lines)
-
-
-def production_lines(text: str) -> int:
-    """Lines before the test module starts; all lines if it never starts."""
-    return production_boundary(source_lines(text))
 
 
 def public_names(text: str) -> Counter:
