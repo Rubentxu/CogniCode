@@ -264,6 +264,22 @@ regla sobre dónde viven los tests.
    con los números en `scripts/mutants-budget.sh` y el contrato
    `scripts/ci/test_gate_contracts.py`).
 
+**La auditoría de aliasing estricto de las gramáticas.** El escáner de
+tree-sitter-haskell 0.23.1 tenía UB de aliasing estricto: las macros de `array.h`
+castean el array tipado a un `Array*` genérico, y gcc 16 lo compila mal a -O2/-O3; el
+resultado es la corrupción del heap y un `SIGABRT` (rc=134) que no dice nada del
+análisis. Un aviso de gcc no es prueba de un fallo: sólo haskell ha abortado, y las
+demás gramáticas del workspace dan el mismo aviso sin que se sepa si abortan.
+`scripts/audit-grammar-aliasing.sh` mide eso: compila un driver mínimo con cada
+gramática del `Cargo.lock` (tree-sitter 0.27.1 + la gramática), lo corre N parseos
+sobre un fichero real de ese lenguaje y compara la misma compilación con y sin
+`-fno-strict-aliasing`; un árbol distinto delata que la UB cambió la salida, y un
+aborted delata que corrompió la memoria. Un «no aborta» sólo vale si el método sabe
+abortar, así que el script trae un **control positivo** (tree-sitter-haskell 0.23.1, que
+se sabe rota) y `--control` lo compila y lo corre. Vive fuera de la suite (compila
+varios minutos), usa su propio directorio de destino bajo `/tmp`, y no lee ni modifica
+`~/.cargo/config.toml`.
+
 **Comandos sueltos** (el gate los agrupa):
 
 | Qué | Comando |
