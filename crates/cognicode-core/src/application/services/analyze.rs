@@ -649,6 +649,11 @@ pub(crate) fn skip_reason_text(
         // it is published as it is: a prefix would say the same thing
         // twice.
         crate::infrastructure::graph::per_file_graph::SkipReason::Budget(d) => d.clone(),
+        // The manifest's own text already says what happened and names the
+        // package: a prefix would say the same thing twice.
+        crate::infrastructure::graph::per_file_graph::SkipReason::Manifest { package, hole } => {
+            hole.detail(package)
+        }
         crate::infrastructure::graph::per_file_graph::SkipReason::Other(d) => {
             format!("other: {d}")
         }

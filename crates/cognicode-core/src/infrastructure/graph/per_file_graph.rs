@@ -11,11 +11,13 @@ use crate::domain::value_objects::{
     CallSite, DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation,
     TargetResolution, WalkDecision,
 };
+use crate::infrastructure::graph::ManifestHole;
 use crate::infrastructure::graph::package;
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
 };
 use crate::infrastructure::parser::{Language, TreeSitterParser};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -968,6 +970,31 @@ impl PerFileGraphCache {
                 .map(|(source_id, target_id, kind)| (source_id.clone(), target_id.clone(), *kind)),
         ));
 
+        // The manifests that could not be judged are holes of this
+        // coverage: the call written through a crate the package pulls was
+        // not judged, and the edge it may hold stays in the graph. The two
+        // routes that judge keep their own reading of the manifests, so the
+        // list is asked of both and joined by the manifest it names: one
+        // manifest, one hole.
+        let mut manifest_holes: BTreeMap<PathBuf, ManifestHole> = BTreeMap::new();
+        for (manifest, hole) in self.packages.lock().unwrap().holes() {
+            manifest_holes.insert(manifest.clone(), hole.clone());
+        }
+        for (manifest, hole) in global_index.packages.lock().unwrap().holes() {
+            manifest_holes
+                .entry(manifest.clone())
+                .or_insert_with(|| hole.clone());
+        }
+        for (manifest, hole) in manifest_holes {
+            skipped.push(SkippedFile {
+                path: manifest.to_string_lossy().into_owned(),
+                reason: SkipReason::Manifest {
+                    package: package_of(&manifest, self.project_dir.as_deref()),
+                    hole,
+                },
+            });
+        }
+
         let status = if skipped.is_empty() && resolution.pending.is_empty() && rejected.is_empty() {
             BuildStatus::Complete
         } else {
@@ -1424,8 +1451,49 @@ pub enum SkipReason {
     /// far the search got and which bound stopped it, so that a
     /// consumer knows the answer is about a part of the tree.
     Budget(String),
+    /// The manifest of a package could not be judged: it could not be
+    /// read, or its text is not a manifest.
+    ///
+    /// A manifest that says nothing and a manifest that could not be read
+    /// answer the same thing —no crate from outside the project— and they
+    /// are not the same answer. The second one leaves a hole in the
+    /// coverage: the judgment of the crate-path rule did not run for that
+    /// package, so the call written through a crate the package pulls was
+    /// not judged and the edge it may hold stays in the graph. A build
+    /// that cannot say that reports `Complete` over an answer it does not
+    /// have.
+    Manifest {
+        /// The package whose manifest could not be judged.
+        package: String,
+        /// What happened to the manifest.
+        hole: ManifestHole,
+    },
     /// Any other I/O error not covered above.
     Other(String),
+}
+
+impl SkipReason {
+    /// The KIND of the skip, as the wire publishes it.
+    ///
+    /// The word is the vocabulary of the consumer: it says what KIND of
+    /// hole this is, without the consumer having to read the prose of the
+    /// message to find out. It lives here, next to the variants it names,
+    /// because a second copy of this list is a second answer waiting to
+    /// drift from the first —and the drift would land in the published
+    /// coverage, which is the one place a consumer looks to know what the
+    /// product did not read.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SkipReason::Read(_) => "read",
+            SkipReason::Parse(_) => "parse",
+            SkipReason::UnsupportedExtension(_) => "unsupported_extension",
+            SkipReason::Symlink { .. } => "symlink",
+            SkipReason::Walk(_) => "walk",
+            SkipReason::Budget(_) => "budget",
+            SkipReason::Manifest { .. } => "manifest",
+            SkipReason::Other(_) => "other",
+        }
+    }
 }
 
 /// A single file that the per-file strategy could not include in the
@@ -1642,6 +1710,19 @@ impl FileDisposition {
             SkipReason::Budget(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
+            // A manifest that could not be judged is a hole of the coverage:
+            // the judgment of the crate-path rule did not run for that
+            // package. The manifest was not read, or was read and is not a
+            // manifest — and both leave the answer incomplete, so both
+            // affect `BuildStatus`.
+            SkipReason::Manifest { package, hole } => match hole {
+                ManifestHole::Unreadable(_) => FileDisposition::ReadFailed {
+                    reason: hole.detail(package),
+                },
+                ManifestHole::Unparseable(_) => FileDisposition::ParseFailed {
+                    reason: hole.detail(package),
+                },
+            },
             SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
@@ -1814,6 +1895,29 @@ pub enum BuildStatus {
 pub struct BuildReport {
     pub graph: CallGraph,
     pub status: BuildStatus,
+}
+
+/// The package a manifest belongs to, as the coverage names it.
+///
+/// The package is the directory that holds the manifest, said relative to
+/// the project when it is inside it: `pkg` or `crates/core` name the
+/// package better than the absolute path they come from, and a hole that
+/// names a package is one the reader can go and look at.
+fn package_of(manifest: &Path, project_dir: Option<&str>) -> String {
+    let Some(directory) = manifest.parent() else {
+        return manifest.to_string_lossy().into_owned();
+    };
+    let Some(project) = project_dir.map(Path::new) else {
+        return directory.to_string_lossy().into_owned();
+    };
+    match directory.strip_prefix(project) {
+        Ok(relative) if !relative.as_os_str().is_empty() => relative.to_string_lossy().into_owned(),
+        Ok(_) => project
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| directory.to_string_lossy().into_owned()),
+        Err(_) => directory.to_string_lossy().into_owned(),
+    }
 }
 
 /// Maps a `std::io::Error` to a [`SkipReason`].

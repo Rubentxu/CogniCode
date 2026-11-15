@@ -43,6 +43,13 @@ pub struct Manifests {
     by_directory: HashMap<PathBuf, Arc<HashSet<String>>>,
     /// The crates each manifest declares.
     by_manifest: HashMap<PathBuf, Arc<HashSet<String>>>,
+    /// The manifests that could not be judged, and why.
+    ///
+    /// A manifest that could not be read answers exactly what a manifest
+    /// that declares nothing answers, and the two are not the same answer:
+    /// the first one is a hole of the coverage, because the judgment of
+    /// the crate-path rule could not be made for that package.
+    holes: Vec<(PathBuf, ManifestHole)>,
 }
 
 impl Manifests {
@@ -62,7 +69,18 @@ impl Manifests {
                 match known {
                     Some(crates) => crates,
                     None => {
-                        let crates = Arc::new(external_crates(&manifest));
+                        // A manifest that could not be judged says nothing
+                        // about the crates of the package, and the hole it
+                        // leaves is kept: the judgment of the crate-path rule
+                        // could not be made for that package, and the edge it
+                        // may hold stays in the graph.
+                        let crates = match external_crates(&manifest) {
+                            Ok(crates) => Arc::new(crates),
+                            Err(hole) => {
+                                self.holes.push((manifest.clone(), hole));
+                                Arc::new(HashSet::new())
+                            }
+                        };
                         self.by_manifest.insert(manifest.clone(), crates.clone());
                         crates
                     }
@@ -106,6 +124,48 @@ impl Manifests {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn manifests_read(&self) -> usize {
         self.by_manifest.len()
+    }
+
+    /// The manifests that could not be judged, and why.
+    ///
+    /// The list is asked of the owner of the reading, so the routes that
+    /// judge do not compose it on their own: two answers waiting to drift
+    /// apart is what this project calls a hole in the hole.
+    pub fn holes(&self) -> &[(PathBuf, ManifestHole)] {
+        &self.holes
+    }
+}
+
+/// Why a manifest could not be judged.
+///
+/// A manifest that cannot be read and a manifest whose text is not a
+/// manifest are two different failures, and the coverage says which: the
+/// first one is a file that could not be read, the second one is a file that
+/// was read and is not what it says to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestHole {
+    /// The manifest could not be read.
+    Unreadable(String),
+    /// The manifest was read, but its text is not a manifest.
+    Unparseable(String),
+}
+
+impl ManifestHole {
+    /// The sentence that says what happened, naming the package.
+    ///
+    /// The package is named here because the manifest that could not be read
+    /// is the only thing that says which package it belongs to, and a
+    /// coverage that counts a hole without naming what is missing is a
+    /// count the reader cannot act on.
+    pub fn detail(&self, package: &str) -> String {
+        match self {
+            ManifestHole::Unreadable(reason) => {
+                format!("the manifest of the package `{package}` could not be read: {reason}")
+            }
+            ManifestHole::Unparseable(reason) => {
+                format!("the manifest of the package `{package}` is not a manifest: {reason}")
+            }
+        }
     }
 }
 
@@ -194,12 +254,26 @@ fn manifest_with_hash(manifest: &Path) -> Option<ManifestFile> {
 /// the name the manifest gives it, and it is the name a path spells unless
 /// the dependency renames its library (`[lib] name = "…"`), which the
 /// manifest of the caller does not say.
-pub fn external_crates(manifest: &Path) -> HashSet<String> {
-    let Some(text) = read_manifest(manifest) else {
-        return HashSet::new();
+///
+/// A manifest that cannot be read, or whose text is not a manifest, is not
+/// an answer: it is the hole that says the judgment could not be made, and
+/// it comes back as such instead of as a list of no crates — which is what a
+/// manifest that declares nothing answers.
+pub fn external_crates(manifest: &Path) -> Result<HashSet<String>, ManifestHole> {
+    let text = match read_manifest(manifest) {
+        Ok(text) => text,
+        Err(error) => {
+            return Err(ManifestHole::Unreadable(format!(
+                "{}: {error}",
+                manifest.display()
+            )));
+        }
     };
     let Ok(parsed) = text.parse::<toml::Value>() else {
-        return HashSet::new();
+        return Err(ManifestHole::Unparseable(format!(
+            "{} is not a manifest",
+            manifest.display()
+        )));
     };
     let (workspace_manifest, workspace) = workspace_of(manifest);
     let root = workspace_manifest
@@ -215,7 +289,7 @@ pub fn external_crates(manifest: &Path) -> HashSet<String> {
             names.insert(name.replace('-', "_"));
         }
     }
-    names
+    Ok(names)
 }
 
 /// Every table of a manifest that declares dependencies.
@@ -347,7 +421,7 @@ fn workspace_of(manifest: &Path) -> (Option<PathBuf>, toml::Table) {
     while let Some(current) = directory {
         let path = current.join("Cargo.toml");
         if path.is_file()
-            && let Some(text) = read_manifest(&path)
+            && let Ok(text) = read_manifest(&path)
             && let Ok(parsed) = text.parse::<toml::Value>()
             && let Some(workspace) = parsed.get("workspace").and_then(toml::Value::as_table)
         {
@@ -364,13 +438,13 @@ fn workspace_of(manifest: &Path) -> (Option<PathBuf>, toml::Table) {
 }
 
 /// The text of a manifest, when it can be read.
-fn read_manifest(manifest: &Path) -> Option<String> {
-    std::fs::read_to_string(manifest).ok()
+fn read_manifest(manifest: &Path) -> Result<String, std::io::Error> {
+    std::fs::read_to_string(manifest)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Manifests, external_crates, is_governed_by_a_manifest, manifest_of};
+    use super::{ManifestHole, Manifests, external_crates, is_governed_by_a_manifest, manifest_of};
     use std::path::{Path, PathBuf};
 
     /// A package with the given manifest, and the path of its source file.
@@ -390,7 +464,7 @@ mod tests {
             package("[package]\nname = \"thing\"\n\n[dependencies]\nserde_json = \"1\"\n");
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             crates.contains("serde_json"),
@@ -405,7 +479,7 @@ mod tests {
         );
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             !crates.contains("graph_algos"),
@@ -437,7 +511,7 @@ mod tests {
 
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             crates.contains("serde_json"),
@@ -460,7 +534,7 @@ mod tests {
         );
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             crates.contains("serde_json"),
@@ -500,7 +574,7 @@ mod tests {
 
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             crates.contains("serde_json"),
@@ -531,7 +605,7 @@ mod tests {
 
         let manifest = manifest_of(file.parent().expect("the file is in a directory"))
             .expect("the package has a manifest");
-        let crates = external_crates(&manifest);
+        let crates = external_crates(&manifest).expect("the manifest can be read");
 
         assert!(
             !crates.contains("graph_algos"),
@@ -601,6 +675,61 @@ mod tests {
         assert!(
             manifests.external_crates_of(dir.path()).is_empty(),
             "a directory that belongs to no package is governed by no manifest"
+        );
+    }
+
+    /// A manifest that cannot be judged is a hole, not a list of crates.
+    ///
+    /// The two answers look the same —no crate from outside— and they are
+    /// not the same answer: one is what the manifest says, and the other is
+    /// what nobody could know. The second one has to be counted, because the
+    /// judgment of the crate-path rule does not run for that package.
+    #[test]
+    fn a_manifest_that_cannot_be_judged_is_a_hole() {
+        let dir = tempfile::tempdir().expect("a temporary project");
+        let package = dir.path().join("pkg");
+        std::fs::create_dir_all(package.join("src")).expect("the source directory is created");
+        let file = package.join("src/lib.rs");
+        std::fs::write(&file, "pub fn run() {}\n").expect("the source is written");
+        let manifest = package.join("Cargo.toml");
+        std::fs::write(&manifest, "[package\nname = \"thing\"\n").expect("the manifest is written");
+
+        let mut manifests = Manifests::default();
+        let crates = manifests.external_crates_of(&package.join("src"));
+
+        assert!(
+            crates.is_empty(),
+            "a manifest that could not be judged declares no crate from outside: {crates:?}"
+        );
+        let holes = manifests.holes();
+        assert_eq!(holes.len(), 1, "the hole is counted: {holes:?}");
+        assert!(
+            holes[0].0.ends_with("pkg/Cargo.toml"),
+            "the hole names the manifest: {holes:?}"
+        );
+        assert!(
+            matches!(holes[0].1, ManifestHole::Unparseable(_)),
+            "the manifest was read and was not a manifest: {holes:?}"
+        );
+    }
+
+    /// A manifest that can be read is not a hole.
+    #[test]
+    fn a_manifest_that_can_be_read_is_not_a_hole() {
+        let (_dir, file) =
+            package("[package]\nname = \"thing\"\n\n[dependencies]\nserde_json = \"1\"\n");
+        let directory = file
+            .parent()
+            .expect("the file is in a directory")
+            .to_path_buf();
+        let mut manifests = Manifests::default();
+
+        manifests.external_crates_of(&directory);
+
+        assert!(
+            manifests.holes().is_empty(),
+            "the manifest was read and there is no hole: {:?}",
+            manifests.holes()
         );
     }
 }

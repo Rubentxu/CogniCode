@@ -366,6 +366,7 @@ fn reason_text(reason: &SkipReason) -> String {
         | SkipReason::Budget(message)
         | SkipReason::Other(message) => message.clone(),
         SkipReason::Symlink { target } => target.clone(),
+        SkipReason::Manifest { package, hole } => hole.detail(package),
     }
 }
 

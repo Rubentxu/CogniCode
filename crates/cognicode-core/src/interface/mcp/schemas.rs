@@ -1119,6 +1119,16 @@ pub enum SkippedReasonKind {
     /// read this as a mystery. The addition is additive: no value a
     /// consumer already handles disappears.
     Budget,
+    /// The manifest of a package could not be judged: it could not be
+    /// read, or its text is not a manifest.
+    ///
+    /// Its own tag rather than `Read`/`Parse` because those name a
+    /// *source file* that could not be read or parsed, and this one names
+    /// a *manifest*: the judgment of the crate-path rule could not be made
+    /// for that package, so the call written through a crate the package
+    /// pulls was not judged. The addition is additive: no value a consumer
+    /// already handles disappears.
+    Manifest,
     Other,
 }
 
@@ -1148,6 +1158,7 @@ impl SkippedFileInfo {
             ),
             R::Walk(d) => (SkippedReasonKind::Walk, d),
             R::Budget(d) => (SkippedReasonKind::Budget, d),
+            R::Manifest { package, hole } => (SkippedReasonKind::Manifest, hole.detail(&package)),
             R::Other(d) => (SkippedReasonKind::Other, d),
         };
         Self {

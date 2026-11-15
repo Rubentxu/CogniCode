@@ -997,29 +997,21 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 fn skipped_file_dto(
     sf: &crate::infrastructure::graph::per_file_graph::SkippedFile,
 ) -> SkippedFileDto {
+    use crate::infrastructure::graph::per_file_graph::SkipReason as Skip;
     SkippedFileDto {
         path: sf.path.clone(),
-        reason_kind: match &sf.reason {
-            crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
-            crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
-            crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => {
-                "unsupported_extension"
-            }
-            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
-            crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
-            crate::infrastructure::graph::per_file_graph::SkipReason::Budget(_) => "budget",
-            crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
-        },
+        // The KIND of the skip is the domain's word, not the interface's:
+        // `SkipReason::kind()` is its only owner.
+        reason_kind: sf.reason.kind(),
         reason: match &sf.reason {
-            crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
-            | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
-            | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
-            | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
-            | crate::infrastructure::graph::per_file_graph::SkipReason::Budget(s)
-            | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
-            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
-                format!("symlink to {target}, not followed")
-            }
+            Skip::Read(s)
+            | Skip::Parse(s)
+            | Skip::UnsupportedExtension(s)
+            | Skip::Walk(s)
+            | Skip::Budget(s)
+            | Skip::Other(s) => s.clone(),
+            Skip::Symlink { target } => format!("symlink to {target}, not followed"),
+            Skip::Manifest { package, hole } => hole.detail(package),
         },
     }
 }
