@@ -1593,12 +1593,23 @@ impl FileOperationsService {
         }
 
         // Build walker with gitignore awareness
+        //
+        // `require_git(false)`: the `.gitignore` of a project is the
+        // project's own declaration of what is out of bounds, and
+        // whether somebody has run `git init` is not the project's
+        // business. `ignore` applies the git rules only inside a
+        // repository by default, so a tree that nobody has committed
+        // yet was read whole. The law lives in
+        // `infrastructure::walk_policy`; the application cannot name
+        // that module (CR-06), so the setting whose default is the
+        // wrong way round is written here.
         let mut walker = WalkBuilder::new(&search_path);
         walker
             .hidden(true)
             .git_ignore(true)
             .git_global(true)
-            .parents(true);
+            .parents(true)
+            .require_git(false);
 
         let mut matches = Vec::new();
         let mut files_scanned = 0;
@@ -1791,12 +1802,23 @@ impl FileOperationsService {
         let mut unread = Vec::new();
 
         // Build walker with gitignore awareness
+        //
+        // `require_git(false)`: the `.gitignore` of a project is the
+        // project's own declaration of what is out of bounds, and
+        // whether somebody has run `git init` is not the project's
+        // business. `ignore` applies the git rules only inside a
+        // repository by default, so a tree that nobody has committed
+        // yet was read whole. The law lives in
+        // `infrastructure::walk_policy`; the application cannot name
+        // that module (CR-06), so the setting whose default is the
+        // wrong way round is written here.
         let mut walker = WalkBuilder::new(&search_path);
         walker
             .hidden(true)
             .git_ignore(true)
             .git_global(true)
-            .parents(true);
+            .parents(true)
+            .require_git(false);
 
         // Apply max_depth if specified
         if let Some(depth) = max_depth {
@@ -2599,6 +2621,115 @@ mod tests {
             entry.size, 4,
             "the listing publishes the size the file system reports, not the length of a \
              decoded content"
+        );
+    }
+
+    /// The listing honours the `.gitignore` of a project that is not a
+    /// repository yet.
+    ///
+    /// The `.gitignore` is the project's own declaration of what is out
+    /// of bounds, and whether somebody has run `git init` is not the
+    /// project's business. The walk used to read the tree whole unless
+    /// the tree happened to be a repository: the same tree was read
+    /// whole or read as the project wrote it, depending on a fact that
+    /// has nothing to do with the project.
+    ///
+    /// The law lives in `infrastructure::walk_policy`, and the
+    /// application cannot name that module (CR-06), so the walk repeats
+    /// here the one setting whose default is the wrong way round.
+    #[test]
+    fn the_listing_honours_the_gitignore_of_a_project_that_is_not_a_repository() {
+        let temp_dir = TempDir::new().unwrap();
+        // No `.git` directory: this tree is not a repository.
+        fs::write(
+            temp_dir.path().join(".gitignore"),
+            "ignored_by_the_project.txt\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("ignored_by_the_project.txt"),
+            "out of bounds\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("kept_by_the_project.txt"),
+            "in bounds\n",
+        )
+        .unwrap();
+
+        let service = test_service_in_temp_dir(&temp_dir);
+        let result = service.list_files(ListFilesRequest {
+            path: None,
+            glob: None,
+            offset: None,
+            limit: None,
+            recursive: None,
+            max_depth: None,
+        });
+
+        let output = result.expect("the listing succeeds");
+        let paths: Vec<&str> = output.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(
+            !paths
+                .iter()
+                .any(|p| p.ends_with("ignored_by_the_project.txt")),
+            "the listing read a file the project declared out of bounds: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("kept_by_the_project.txt")),
+            "the listing did not read the file the project kept: {paths:?}"
+        );
+    }
+
+    /// The content search honours the `.gitignore` of a project that is
+    /// not a repository yet.
+    ///
+    /// The search reads the files it finds, so honouring the
+    /// `.gitignore` is not a matter of skipping a name: it is the
+    /// difference between reading a file the project left out of bounds
+    /// and not reading it.
+    #[test]
+    fn the_content_search_honours_the_gitignore_of_a_project_that_is_not_a_repository() {
+        let temp_dir = TempDir::new().unwrap();
+        // No `.git` directory: this tree is not a repository.
+        fs::write(
+            temp_dir.path().join(".gitignore"),
+            "ignored_by_the_project.txt\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("ignored_by_the_project.txt"),
+            "the marker\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("kept_by_the_project.txt"),
+            "the marker\n",
+        )
+        .unwrap();
+
+        let service = test_service_in_temp_dir(&temp_dir);
+        let result = service.search_content(SearchContentRequest {
+            pattern: "the marker".to_string(),
+            path: None,
+            file_glob: None,
+            regex: Some(false),
+            case_insensitive: Some(false),
+            max_results: Some(50),
+            context_lines: Some(0),
+        });
+
+        let output = result.expect("the search succeeds");
+        let files: Vec<&str> = output.matches.iter().map(|m| m.file.as_str()).collect();
+        assert!(
+            files.iter().any(|f| f.ends_with("kept_by_the_project.txt")),
+            "the search did not read the file the project kept: {files:?}"
+        );
+        assert!(
+            !files
+                .iter()
+                .any(|f| f.ends_with("ignored_by_the_project.txt")),
+            "the search read a file the project declared out of bounds: {files:?}"
         );
     }
 

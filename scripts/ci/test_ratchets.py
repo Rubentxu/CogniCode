@@ -1347,13 +1347,17 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
     "crates/cognicode-core/src/application/ingest/scan.rs":
         "the ingest scan: its rules (`workspace_rules`) are shared with the watcher "
         "so both agree on the same places, and its noise list is deliberately "
-        "broader than the walk filter",
+        "broader than the walk filter. The rules carry the law's "
+        "`require_git(false)`: the `.gitignore` of a project is honoured whether "
+        "or not the project is a repository",
     "crates/cognicode-core/src/application/services/file_operations.rs":
         "the content-search and directory-listing tools walk the path the caller "
         "names with gitignore awareness and a depth bound; their output is a "
         "published contract, not the project's file set. Measured in "
         "`each_reader_of_the_tree_says_which_files_it_reads`: it lists non-source "
-        "files and `build/`, which the inventory prunes by design",
+        "files and `build/`, which the inventory prunes by design. The walk "
+        "repeats the law's `require_git(false)` in its own builder, because the "
+        "application cannot name the infrastructure module that owns it (CR-06)",
     "crates/cognicode-core/src/assurance_export/workspace_extractor.rs":
         "the assurance export walks Rust files sorted by path with its own skip "
         "list; the export digest is computed over what it reads. Measured in "

@@ -504,6 +504,31 @@ mod tests {
     }
 
     #[test]
+    fn the_ingest_scan_honours_the_gitignore_of_a_project_that_is_not_a_repository() {
+        let dir = TempDir::new().expect("create temp dir");
+        // No `.git` directory: this tree is not a repository.
+        fs::write(dir.path().join(".gitignore"), "ignored_by_the_project.rs\n").unwrap();
+        fs::write(
+            dir.path().join("ignored_by_the_project.rs"),
+            "fn hidden() {}",
+        )
+        .unwrap();
+        fs::write(dir.path().join("kept_by_the_project.rs"), "fn kept() {}").unwrap();
+
+        let files = walk_files(dir.path());
+        assert!(
+            !files
+                .iter()
+                .any(|p| p.ends_with("ignored_by_the_project.rs")),
+            "the scan read a file the project declared out of bounds: {files:?}"
+        );
+        assert!(
+            files.iter().any(|p| p.ends_with("kept_by_the_project.rs")),
+            "the scan did not read the file the project kept: {files:?}"
+        );
+    }
+
+    #[test]
     fn test_hash_file_known_value() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("f.txt");
