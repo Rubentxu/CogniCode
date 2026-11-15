@@ -7,6 +7,7 @@
 use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
+use crate::domain::value_objects::pending_reference::ScopeAnswer;
 use crate::domain::value_objects::{
     DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation, TargetResolution,
     WalkDecision,
@@ -22,6 +23,7 @@ use crate::infrastructure::graph::semantic_layer::{
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -1139,8 +1141,37 @@ impl PerFileGraphCache {
                 Err(class) => {
                     // The refusal leaves a reference behind when it is a
                     // hole in what the graph knows. Whether it is one is
-                    // the domain's rule, and it lives in one place.
-                    if let Some(reference) = PendingReference::of_call(&site, class) {
+                    // the domain's rule, and it lives in one place; what
+                    // the scope could say about the call is the route's,
+                    // and the route that knows the scope is the one that
+                    // says it.
+                    let answer = match global_index {
+                        // The project holds every declaration it has: a
+                        // call it refuses names a declaration the project
+                        // does not have anywhere, and the graph says
+                        // nothing about the world outside the project.
+                        Some(_) => ScopeAnswer::Foreign,
+                        // The file IS the scope, and the file cannot prove
+                        // that a call written through a type it does not
+                        // declare is somebody else's: the type may live in
+                        // another file of the project. When the file
+                        // declares the name the call names, the call may
+                        // be the file's own, and the refusal is a hole.
+                        None => {
+                            if file_declares(
+                                &site.target,
+                                &name_to_symbol,
+                                &graph,
+                                &impl_owners,
+                                language.folds_case(),
+                            ) {
+                                ScopeAnswer::PossiblyTheScope
+                            } else {
+                                ScopeAnswer::Foreign
+                            }
+                        }
+                    };
+                    if let Some(reference) = PendingReference::of_call(&site, class, answer) {
                         pending.push(reference);
                     }
                 }
@@ -1223,6 +1254,42 @@ impl Clone for PerFileGraphCache {
             packages: Mutex::new(package::Manifests::default()), // The manifests are read again
         }
     }
+}
+
+/// Whether the file declares the name a call names.
+///
+/// The name the call names is the last segment of the path it is written
+/// through: `render` in `Widget::render(w)`. The file declares it when
+/// it has a symbol of that name, or when one of its `impl`s has an item
+/// of that name — the method of a trait the file implements is the
+/// file's own, even when the type the impl is about lives in another
+/// file of the project.
+///
+/// The spelling is the language's: a language that tells `Describe` from
+/// `describe` only counts the declaration spelled the way the call spells
+/// it.
+fn file_declares(
+    name: &str,
+    local: &HashMap<String, Vec<SymbolId>>,
+    graph: &CallGraph,
+    impl_owners: &HashMap<String, HashSet<String>>,
+    folds_case: bool,
+) -> bool {
+    if local.get(&name.to_lowercase()).is_some_and(|candidates| {
+        candidates.iter().any(|id| {
+            graph
+                .get_symbol(id)
+                .is_some_and(|symbol| Language::answers_to_in(symbol.name(), name, folds_case))
+        })
+    }) {
+        return true;
+    }
+    // The name may be an item of one of the file's `impl`s: the trait
+    // method an impl writes is the file's own, and the file may not hold
+    // it as a symbol of its own.
+    impl_owners
+        .keys()
+        .any(|item| Language::answers_to_in(item, name, folds_case))
 }
 
 /// Filesystem fingerprint for cache invalidation.

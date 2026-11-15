@@ -71,6 +71,7 @@ use std::path::{Path, PathBuf};
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::value_objects::pending_reference::ScopeAnswer;
 use crate::domain::value_objects::{
     CallSite, DependencyType, PendingClass, PendingReference, Receiver,
 };
@@ -442,7 +443,15 @@ pub fn resolve(
                 // domain's rule, and it lives in one place: this module
                 // does not decide it, it only carries what the decision
                 // says.
-                if let Some(reference) = PendingReference::of_call(site, class) {
+                //
+                // The scope here is the project: it holds every
+                // declaration the project has, so a call it refuses names
+                // a declaration the project does not have anywhere. The
+                // call may live outside the project, and the graph says
+                // nothing about the world outside it.
+                if let Some(reference) =
+                    PendingReference::of_call(site, class, ScopeAnswer::Foreign)
+                {
                     resolution.pending.push(reference);
                 }
             }

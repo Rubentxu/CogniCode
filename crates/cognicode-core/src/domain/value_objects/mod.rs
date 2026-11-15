@@ -57,7 +57,7 @@ pub use location::{
 pub use mermaid_format::MermaidFormat;
 pub use name_comparison::NameComparison;
 pub use node_kind::NodeKind;
-pub use pending_reference::{PendingClass, PendingReference};
+pub use pending_reference::{PendingClass, PendingReference, ScopeAnswer};
 pub use provenance::Provenance;
 pub use rejected_relation::RejectedRelation;
 pub use revision_id::{ParseRevisionIdError, RevisionId};
