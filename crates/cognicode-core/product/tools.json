@@ -161,7 +161,8 @@
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -1024,7 +1025,8 @@
         "symbol"
       ],
       "limitations": [
-        "El goal tiene autoridad de escritura sobre el workspace: es el único que puede llegar a escribir, y por eso no se anuncia en el modo de sólo lectura. Hoy calcula el cambio y lo publica; aplicarlo es una acción aparte."
+        "El goal tiene autoridad de escritura sobre el workspace: es el único que puede llegar a escribir, y por eso no se anuncia en el modo de sólo lectura. Hoy calcula el cambio y lo publica; aplicarlo es una acción aparte.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -2258,7 +2260,8 @@
         "symbol"
       ],
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -2439,7 +2442,8 @@
         "symbol"
       ],
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -2530,7 +2534,8 @@
       },
       "precision_floor": "ast-heuristic",
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -8237,7 +8242,8 @@
         "name"
       ],
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {
@@ -9522,7 +9528,8 @@
         "symbol"
       ],
       "limitations": [
-        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {

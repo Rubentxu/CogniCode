@@ -139,6 +139,37 @@ fn the_published_input_schema_is_the_derived_one() {
     );
 }
 
+/// Las limitaciones del maestro son las que deriva la declaración.
+///
+/// Las limitaciones son lo que un cliente lee **antes** de llamar: si el
+/// maestro dice una cosa y la declaración otra, el cliente recibe una
+/// promesa que el runtime no cumple. El texto tiene un dueño —la
+/// declaración— y el maestro es su espejo.
+///
+/// El check es para todos los goals, no para uno: un goal que necesita el
+/// grafo lo dice en sus limitaciones —y el maestro tiene que decirlo
+/// también—.
+#[test]
+fn the_published_limitations_are_the_derived_ones() {
+    for goal in goals::registry() {
+        let published = entry_of(goal.name)
+            .get("limitations")
+            .cloned()
+            .expect("the goal publishes its limitations");
+        let derived = goals::tools_json_entry(goal)
+            .get("limitations")
+            .cloned()
+            .expect("the derived entry declares its limitations");
+
+        assert_eq!(
+            published, derived,
+            "the catalogue publishes other limitations than the declaration derives for the goal \
+             `{}`",
+            goal.name
+        );
+    }
+}
+
 /// El goal **no** publica `outputSchema`, y el maestro tampoco.
 ///
 /// TASK-84: medido el 2026-11-07 sobre este árbol, la lista del perfil por
