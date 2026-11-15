@@ -11,6 +11,7 @@ mod a013_lifecycle_gate_contract;
 mod a014_capabilities_json;
 mod a015_licenses_gate;
 mod a015_onboarding_gate;
+mod a_goal_declares_the_graph_it_needs;
 mod a_goal_is_declared_once;
 mod a_hateoas_envelope;
 mod action_register_identity_contract;

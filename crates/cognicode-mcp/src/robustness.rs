@@ -406,6 +406,35 @@ mod tests {
         }
     }
 
+    /// The window of every goal that builds the graph covers the build.
+    ///
+    /// A goal whose work includes the build of the graph answers with the
+    /// window of its category —the `goal` category is not in the ladder, so
+    /// it falls to the default of 30 s— unless it declares that it needs
+    /// the graph. The build is the most expensive thing a goal does, and on
+    /// a big tree it does not fit in 30 s: the caller would get a timeout
+    /// while the graph was built anyway.
+    ///
+    /// The declaration and the work are measured together (a cold call per
+    /// goal, with its own cache), so a goal that builds the graph and does
+    /// not declare it is caught there; this contract watches the other half:
+    /// the declaration that exists has to reach the window.
+    #[test]
+    fn the_window_of_every_goal_that_needs_the_graph_covers_the_build() {
+        for goal in cognicode_core::interface::goals::registry() {
+            if !goal.requires_graph {
+                continue;
+            }
+            let window = timeout_for_tool(goal.name, "goal");
+            assert!(
+                window >= GRAPH_WINDOW,
+                "the goal `{}` builds the graph and its window is {window:?}: the build does not \
+                 fit in it, so the caller gets a timeout while the graph is built anyway",
+                goal.name
+            );
+        }
+    }
+
     /// The window of the tool that populates the semantic index covers
     /// the population.
     ///

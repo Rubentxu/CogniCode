@@ -139,7 +139,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -154,7 +154,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -998,7 +998,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -1013,7 +1013,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": true,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -2233,7 +2233,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -2248,7 +2248,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -2414,7 +2414,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -2429,7 +2429,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -2508,7 +2508,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -2523,7 +2523,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -8212,7 +8212,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -8227,7 +8227,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -9497,7 +9497,7 @@
       "output_schema": null,
       "requirements": {
         "cache": null,
-        "graph": false,
+        "graph": true,
         "network": null,
         "persistence": false
       },
@@ -9512,7 +9512,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
