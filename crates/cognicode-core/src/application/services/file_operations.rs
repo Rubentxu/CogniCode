@@ -31,7 +31,7 @@ use crate::application::services::atomic_file_writer::AtomicFileWriter;
 use crate::application::services::content_search::find_matches_in_content;
 use crate::application::services::path_glob::path_matches_glob;
 use crate::application::services::unread_entries::{
-    declined_symlink, read_failure, walk_cut, walk_failure,
+    budget_cut, declined_symlink, read_failure, walk_failure,
 };
 use crate::application::services::verification::Bound;
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
@@ -1603,9 +1603,23 @@ impl FileOperationsService {
         let mut matches = Vec::new();
         let mut files_scanned = 0;
         let mut unread = Vec::new();
+        // Whether the limit stopped the walk, and why it stopped it. The
+        // walk that stops early did not cover the tree, and an answer that
+        // says it did is the lie this product does not tell: the tree may
+        // hold more matches, and the caller cannot know.
+        let mut truncation: Option<String> = None;
+        // One owner for the wording of the cut: the two places that stop
+        // the walk publish the same sentence, so the answer names the same
+        // limit wherever the walk was stopped.
+        let truncation_reason = || {
+            format!(
+                "the search stopped at max_results={max_results}: the tree may hold more matches"
+            )
+        };
 
         for result in walker.build() {
             if matches.len() >= max_results {
+                truncation = Some(truncation_reason());
                 break;
             }
 
@@ -1616,7 +1630,7 @@ impl FileOperationsService {
             if let Some(bound) = &bound
                 && bound.reached()
             {
-                unread.push(walk_cut(bound.detail()));
+                unread.push(budget_cut(bound.detail()));
                 break;
             }
 
@@ -1675,6 +1689,7 @@ impl FileOperationsService {
 
             for (line_num, col, text, context) in search_matches {
                 if matches.len() >= max_results {
+                    truncation = Some(truncation_reason());
                     break;
                 }
                 matches.push(ContentMatch {
@@ -1688,6 +1703,14 @@ impl FileOperationsService {
         }
 
         let total = matches.len();
+
+        // The limit stopped the walk: the answer is about a part of the
+        // tree, and it says so. The hole is what turns the coverage from
+        // "complete" into "partial" — a search that stopped early did not
+        // cover the tree it was asked about.
+        if let Some(reason) = &truncation {
+            unread.push(budget_cut(reason));
+        }
 
         Ok(SearchContentResult {
             matches,

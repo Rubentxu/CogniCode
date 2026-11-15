@@ -1,10 +1,11 @@
 //! What a walk over the tree could not read, as the holes a result publishes.
 //!
-//! Three things leave a hole in a content search or a listing: the walk fails
-//! on an entry, the entry cannot be opened or measured, or the entry is a
-//! symlink and the operation declines it. Each is a fact the operation keeps
-//! instead of a bare `continue`; the interface turns the facts into the
-//! coverage every other answer publishes.
+//! Four things leave a hole in a content search or a listing: the walk fails
+//! on an entry, the entry cannot be opened or measured, the entry is a
+//! symlink and the operation declines it, or the work stopped at a bound it
+//! declares. Each is a fact the operation keeps instead of a bare
+//! `continue`; the interface turns the facts into the coverage every other
+//! answer publishes.
 
 use crate::application::dto::{UnreadEntry, UnreadKind};
 use std::path::Path;
@@ -47,10 +48,10 @@ pub(super) fn read_failure(path: &Path, error: &std::io::Error) -> UnreadEntry {
 /// entry, the bound does. The walk that was cut did not fail — it was
 /// stopped — and the detail says which bound reached it, so the answer
 /// does not publish a walk that read the whole tree when it did not.
-pub(super) fn walk_cut(detail: &str) -> UnreadEntry {
+pub(super) fn budget_cut(detail: &str) -> UnreadEntry {
     UnreadEntry {
         path: "<walk>".to_string(),
-        kind: UnreadKind::Walk,
+        kind: UnreadKind::Budget,
         detail: detail.to_string(),
     }
 }

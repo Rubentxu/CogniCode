@@ -128,6 +128,13 @@ pub enum UnreadKind {
     /// whether the target lies inside the workspace or outside it. The
     /// `detail` is where the link pointed.
     Symlink,
+    /// The work stopped at a bound it declares: the budget of the call, or
+    /// the limit of matches the caller asked for.
+    ///
+    /// The walk did not fail — it was stopped — and the `detail` says which
+    /// bound reached it, so the answer does not publish a walk that read
+    /// the whole tree when it did not.
+    Budget,
 }
 
 /// An entry of the tree an operation could not read, and why.
