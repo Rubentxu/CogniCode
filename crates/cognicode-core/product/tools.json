@@ -521,7 +521,7 @@
             "oneOf": [
               {
                 "const": "unresolved",
-                "description": "No declaration carries the name.",
+                "description": "The far end could not be identified: either no declaration\ncarries the name, or the declaration that carries it could not be\ntied to the call.\n\nThe two are the same answer for the consumer — the reference does\nnot name a declaration — and they are the same answer for the\nwire: the class of a reference is what a consumer reads, and the\nshape of this enum does not change to tell them apart.",
                 "type": "string"
               },
               {
@@ -562,7 +562,7 @@
               },
               "reason": {
                 "$ref": "#/$defs/PendingReason",
-                "description": "Why the far end could not be identified: `unresolved` when no\ndeclaration carries the name, `ambiguous` when several do."
+                "description": "Why the far end could not be identified: `unresolved` when the far\nend could not be identified — no declaration carries the name, or\nthe declaration that carries it could not be tied to the call —\nand `ambiguous` when several declarations carry the name."
               },
               "target": {
                 "description": "The name the reference names.",
