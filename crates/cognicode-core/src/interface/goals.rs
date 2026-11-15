@@ -612,8 +612,12 @@ fn required_args(goal: &GoalSpec) -> Vec<String> {
 /// `tools/list` tiene que saber, **antes** de llamar, que la llamada toca
 /// el workspace. Un goal que sólo lee dice lo otro: que su respuesta no
 /// añade un cálculo al que el dueño ya hacía.
+///
+/// Y un goal que necesita el grafo tiene que decir que lo necesita: la
+/// limitación es lo que un cliente lee **antes** de llamar, y sin ella
+/// llama a un goal que todavía no puede responder.
 fn limitations(goal: &GoalSpec) -> Vec<String> {
-    if goal.authority == GoalAuthority::Mutating {
+    let mut limitations = if goal.authority == GoalAuthority::Mutating {
         vec![
             "El goal tiene autoridad de escritura sobre el workspace: es el único \
              que puede llegar a escribir, y por eso no se anuncia en el modo de \
@@ -627,7 +631,15 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
              añade un cálculo nuevo."
                 .to_string(),
         ]
+    };
+    if goal.requires_graph {
+        limitations.push(
+            "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` \
+             lo tenga construido y al día."
+                .to_string(),
+        );
     }
+    limitations
 }
 
 /// Los nombres de los argumentos que el llamante tiene que mandar.
