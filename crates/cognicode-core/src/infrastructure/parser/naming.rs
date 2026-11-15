@@ -539,9 +539,23 @@ fn written_segments(path: &str) -> Vec<&str> {
 
 /// The names the items of an impl block declare.
 ///
-/// Only the methods: a call names a function, and a name that is not a
-/// function cannot be what a call names. A function nested in a method is
-/// not an item of the impl either, so the walk stops at the method it finds.
+/// The map this feeds answers one question —«¿es el fichero el dueño de este
+/// nombre?»— y la respuesta se pide con el nombre de una LLAMADA. Por eso
+/// el mapa recoge los MÉTODOS y nada más:
+///
+/// - un `const` asociado no se llama: `Widget::MAX` no es una llamada, y un
+///   `const` en el mapa haría que el fichero se declarara dueño de un
+///   nombre que ninguna llamada nombra;
+/// - un `type` asociado es un CALIFICADOR (`Widget::Output::from(..)`), no
+///   un callee: lo que la llamada nombra es `from`, y `from` no es un ítem
+///   del `impl`.
+///
+/// La cobertura del mapa es, por tanto, la de los ítems que una llamada puede
+/// nombrar, y no la de todos los ítems que un `impl` declara. Es una
+/// cobertura parcial a propósito, y esta es la razón.
+///
+/// Una función anidada en un método no es un ítem del `impl` tampoco, así que
+/// el recorrido se detiene en el método que encuentra.
 fn impl_items_of(node: &Node, source: &[u8]) -> Vec<String> {
     let mut names = Vec::new();
     let Some(body) = node.child_by_field_name("body") else {
@@ -2125,6 +2139,26 @@ fn run() { to_value(&1); }
         assert!(
             owners.is_empty(),
             "an impl written inside a function body is at the level of no module"
+        );
+    }
+
+    #[test]
+    fn the_map_of_owners_covers_the_items_a_call_can_name() {
+        let owners = owners_in(
+            "impl Widget {\n    pub const MAX: u64 = 1;\n    pub type Output = u64;\n    pub fn new() \
+             -> u64 { 0 }\n}\n",
+        );
+        assert_eq!(
+            owners
+                .get("new")
+                .map(|owners| owners.iter().cloned().collect::<Vec<_>>()),
+            Some(vec!["Widget".to_string()]),
+            "the method is an item a call can name: the file owns the calls written through it"
+        );
+        assert!(
+            !owners.contains_key("MAX") && !owners.contains_key("Output"),
+            "the associated const and the associated type are not items a call can name: the \
+             map covers what a call names, not everything the impl declares ({owners:?})"
         );
     }
 
