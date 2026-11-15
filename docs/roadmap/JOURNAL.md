@@ -39711,3 +39711,94 @@ lenguaje (`eae50faa`) y la definición de un símbolo es el sitio donde se decla
   aciertos de `sccache` a la vista), no la duración total de la corrida.
 
 **La base del bloque 5 es `c6285a4a`.**
+
+## Recibo de bloque 5 — PASS, base `c6285a4a` (2026-11-15)
+
+**Estado: PASS** sobre `2960249e`, con un rojo de instrumentación corregido en el mismo
+cierre. La primera corrida del bloque encontró el paso unitario en rojo: tres contratos
+de la paridad de la superficie MCP. La causa no era el producto, sino el instrumento —el
+oráculo que lee el despacho para saber qué herramienta se despacha seguía leyendo el
+fichero donde el despacho vivió hasta TASK-311—. La corrección (TASK-314, #893,
+`2960249e`) va en este mismo cierre, y el gate se volvió a correr entero sobre la punta
+corregida: verde.
+
+**Base y árbol verificados.** Base: `c6285a4a` (#880), la punta del bloque 4 —el commit
+documental que regeneró el snapshot operativo—. El gate se midió sobre `2960249e` (la
+punta del bloque 5), con la base `c6285a4a`. La base del bloque 6 es `2960249e`.
+
+**Las tareas.** El contador de `AGENTS.md` da **11** sobre `c6285a4a..main`: las diez
+tareas del bloque —TASK-298 (#885, `0076a700`), TASK-301 (#889, `804c02a2`), TASK-302
+(#886, `af1857f4`), TASK-303 (#882, `225115c4` y #883, `0848f18d`), TASK-306 (#884,
+`ee73aa08`), TASK-308 (#888, `d7edd2e4`), TASK-311 (#891, `d1009b48`), TASK-312 (#887,
+`61b76d9c`), TASK-313 (#890, `c92fcda9`) y TASK-264 (#892, `b95dd50b`)— y la corrección
+del rojo de este cierre (TASK-314, #893, `2960249e`). El contador da 11 y no 10 porque la
+corrección es código y no lleva el prefijo `docs(...)` que el contador descarta: es la
+corrección de un rojo del lote, no una tarea del lote, y `AGENTS.md` la manda al bloque
+siguiente. Queda fuera del contador, por su prefijo `docs(...)`: el recibo del bloque 4
+(TASK-310, #881, `daf3fbd3`).
+
+**El radio que el gate midió.** Base `c6285a4af2d1`; tocados `cognicode-cli`,
+`cognicode-core` y `cognicode-mcp`; radio de tests `cognicode`, `cognicode-cli`,
+`cognicode-core`, `cognicode-ladybug`, `cognicode-mcp` y `cognicode-sandbox`; radio de
+mutantes vacío y modo `diff`; calendario **omitido**: 256 fusiones desde el marcador
+`fb526521db6e` con periodo 50 (255 en la primera corrida), y nada de lo que decide el
+veredicto de un mutante cambió desde `a42fb659a8ce` —el crate del calendario,
+`cognicode-graph-algos`, sin cambios, y tampoco `.cargo/`, `rust-toolchain.toml`,
+`scripts/mutants-budget.sh`, `scripts/mem-capped-runner.sh` ni el `Cargo.toml` raíz por
+su significado—. El turno no se pagó y el ancla sigue siendo la medición real de
+`a42fb659` (627 mutantes, 618 atrapados, 9 inviables, 0 supervivientes), que es la
+última línea «Medición del calendario» del Journal. **No se escribe línea de calendario.**
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1a | `GATE_BASE=c6285a4a bash scripts/test-gate.sh` | `b95dd50b` | **1** | unitarios 41,9 s; integración 15,1 s; target caliente | **unitarios 4073: 4070 verdes, 3 rojos**; integración 1714: 1714 verdes, 2 omitidos; mutantes: no medidos, con el motivo en el log |
+| 1b | `GATE_BASE=c6285a4a bash scripts/test-gate.sh` | `2960249e` | 0 | unitarios 24,3 s; integración 13,9 s; target caliente | unitarios 4073: 4073 verdes, 0 omitidos; integración 1714: 1714 verdes, 2 omitidos; mutantes: no medidos, con el motivo en el log; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `2960249e` | 0 | 11,30 s | 88 ficheros, 950 tests |
+| 3 | `bash scripts/ci/run-all-contracts.sh` | `2960249e` | 0 | — | 39 suites (33 de CI + 6 de producto), 485 casos, 0 fallos; testigo del árbol limpio |
+| 4 | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `2960249e` | 0 | clippy 12,1 s | sin avisos |
+
+**El rojo y su corrección.** Los tres rojos eran `every_advertised_tool_has_a_dispatch_arm`,
+`the_dispatch_oracle_reads_a_real_match_block` y `every_stable_tool_is_served_by_the_server`,
+y los tres decían lo mismo: «`match tool_name` is not in rmcp_adapter.rs». No era un
+defecto del producto: TASK-311 (#891) movió el despacho a su propio módulo
+(`crates/cognicode-mcp/src/dispatch.rs`) y el oráculo —que existe precisamente para leer
+el despacho real en vez de una lista de nombres— siguió leyendo el fichero viejo, que ya
+no contenía el `match`. El instrumento medía nada, y lo decía con un pánico: el contrato
+anti-vacuo que ya existía (`the_dispatch_oracle_reads_a_real_match_block`, que exige ver el
+`ToolNotFound` de cierre y al menos 50 brazos) hizo su trabajo. La corrección (TASK-314,
+#893) no apunta el oráculo a otro fichero a mano —eso sería un puntero nuevo que se
+pudre—: el módulo que es dueño del despacho publica su propio texto
+(`crate::dispatch::SOURCE`) y el oráculo se lo pide a su dueño, así que el nombre del
+fichero vive en un solo sitio, el que lo contiene. RED: 5 verdes y 3 rojos en
+`cargo test -p cognicode-mcp --lib tool_surface_parity`; GREEN: 8 verdes.
+
+**Lo que este bloque cambió, medido.**
+
+El hilo del bloque es que el runtime que sirve el MCP no se quede bloqueado por el trabajo
+de una herramienta, y que lo que se publica sea verdad: el índice semántico se puebla
+fuera del runtime (`0076a700`), la verificación y el presupuesto salen del runtime y la
+ventana los cubre (`225115c4`, `0848f18d`), las rutas públicas no ocupan el runtime que
+las sirve (`ee73aa08`) y el plazo del despacho corta una llamada real diciendo qué pasó
+con el trabajo que se quedó fuera (`d1009b48`). La verdad del análisis: el camino de
+análisis comparte el grafo en vez de copiarlo (`804c02a2`) y la búsqueda que se corta en
+`max_results` dice lo que no cubrió (`af1857f4`). Los goals declaran el grafo que
+construyen (`d7edd2e4`) y el que necesitan (`c92fcda9`). El contrato mide lo que mide el
+ratchet (`61b76d9c`), los tests dejan de dormir para que cambie el mtime (`b95dd50b`), y
+el oráculo de la superficie lee el despacho a su dueño (`2960249e`).
+
+**NOT_RUN.**
+
+- **Mutantes (paso 3 del gate).** El lote tocó `cognicode-cli`, `cognicode-core` y
+  `cognicode-mcp`, y ninguno es asequible de mutar por coste; el crate del calendario
+  (`cognicode-graph-algos`) no estaba en su turno por la razón escrita arriba. El gate lo
+  dijo en su log, y eso no es que la mutación se midiera y no encontrara nada.
+- **El tiempo de pared del gate no está registrado:** el log conserva sus componentes
+  (unitarios, integración) y el tipo de la compilación (target caliente, con la tasa de
+  aciertos de `sccache` a la vista), no la duración total de la corrida.
+- **La duración de la suite de contratos tampoco:** el runner imprime el recuento de
+  casos por suite, no el tiempo que tardó. La celda va con «—» y no con un número
+  inventado.
+
+**La base del bloque 6 es `2960249e`.**
