@@ -26,6 +26,9 @@
 
 pub mod analytics;
 mod call_graph_projection;
+/// Who owns a call, and the scope that answers it: the rule is written once
+/// and the scope is the only thing that differs between the routes.
+mod call_ownership;
 pub mod checkpoint;
 // E37 design D5 — fact-derived generic graph projection, dual-gated (the
 // port consumes evidence-kernel facts and emits multimodal graph types).
