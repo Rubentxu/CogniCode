@@ -1058,6 +1058,14 @@ fn simple_function() {
         // fact about the `match tool_name` block, so the block is what gets read.
         // That deletes ~100 lines of list maintenance and removes a third source
         // of truth, rather than adding a guard on top of one.
+        //
+        // Where the text comes from is the same rule applied once more: the
+        // dispatch lives in its own module, and that module publishes its own
+        // text (`crate::dispatch::SOURCE`). The oracle asks its owner instead of
+        // naming a file from here, so the name of the file lives in exactly one
+        // place — the one that contains it. When the dispatch moved, an oracle
+        // that named the old file kept measuring nothing and said so only
+        // because the anti-vacuity contract below was there to notice.
 
         /// The text of the `match tool_name { … }` block inside
         /// `call_tool_handler`, braces matched and string/char literals skipped.
@@ -1071,7 +1079,7 @@ fn simple_function() {
         fn dispatch_block(source: &str, header: &str) -> String {
             let start = source.find(header).unwrap_or_else(|| {
                 panic!(
-                    "`{header}` is not in rmcp_adapter.rs. This oracle reads the real \
+                    "`{header}` is not in the dispatch. This oracle reads the real \
                      dispatch and has no list to fall back to; if the match was \
                      renamed, rename it here too."
                 )
@@ -1156,7 +1164,7 @@ fn simple_function() {
         /// Every dispatch arm of `call_tool_handler`: tool name -> the
         /// `feature` its `#[cfg(…)]` gates it by, or `None` when unconditional.
         fn dispatch_arms() -> std::collections::BTreeMap<String, Option<String>> {
-            let source = include_str!("rmcp_adapter.rs");
+            let source = crate::dispatch::SOURCE;
             let block = dispatch_block(source, "match tool_name");
             let mut arms = std::collections::BTreeMap::new();
             let mut gate: Option<String> = None;
@@ -1204,7 +1212,7 @@ fn simple_function() {
         /// presence is the proof that the block ends where this says it does.
         #[test]
         fn the_dispatch_oracle_reads_a_real_match_block() {
-            let source = include_str!("rmcp_adapter.rs");
+            let source = crate::dispatch::SOURCE;
             let block = dispatch_block(source, "match tool_name");
             // The extracted block ends with the match's own `}`; the arm before
             // it is the `ToolNotFound` fallthrough. Both facts together are the
