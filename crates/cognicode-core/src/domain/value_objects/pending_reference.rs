@@ -32,6 +32,36 @@ pub enum PendingClass {
     },
 }
 
+/// What the scope could say about a refused call.
+///
+/// The two scopes that build a graph know different things, and whether a
+/// refusal is a hole depends on what each of them could prove:
+///
+/// - The project scope holds every declaration the project has. A call
+///   it refuses names a declaration the project does not have anywhere:
+///   the qualifier is a type the project does not declare, or no
+///   declaration carries the name. Such a call may live outside the
+///   project — a function of another crate, a module of Ansible — and the
+///   graph says nothing about the world outside it.
+/// - The file scope holds only the declarations of the file. A type the
+///   file does not declare may live in another file of the project, so
+///   the file cannot prove that a call written through it is somebody
+///   else's. When the file declares the name the call names, the call
+///   may be the file's own: that is a hole in what the graph knows.
+///
+/// The scope answers what it could prove, and the domain applies the
+/// rule: the answer travels with the refusal because the two scopes do
+/// not know the same thing. One rule, one place, so that two routes
+/// cannot disagree about which refusals are worth reporting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeAnswer {
+    /// The scope proved the call names somebody else's declaration.
+    Foreign,
+    /// The scope declares the name the call names and could not tie the
+    /// call to that declaration.
+    PossiblyTheScope,
+}
+
 /// A reference whose far end is not identified.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingReference {
@@ -54,33 +84,54 @@ impl PendingReference {
     /// hole in what the graph knows.
     ///
     /// One rule, stated once, and it is the rule the domain already
-    /// speaks in prose: a call whose name the project declares, several
-    /// times or in a way the project cannot tell apart, is a hole. The
+    /// speaks in prose: a call whose name the scope declares, several
+    /// times or in a way the scope cannot tell apart, is a hole. The
     /// graph does not carry that relation, so the consumer has to hear
     /// about it instead of reading a graph that is missing something as a
     /// graph that has nothing.
     ///
-    /// A call whose name the project does not declare at all is not a hole:
-    /// what the code calls may live outside the project — a function of
-    /// another crate, a module of Ansible — and the graph says nothing
-    /// about the world outside it. That call leaves no reference behind,
-    /// and the number of them is not a hole either.
+    /// What the scope could prove decides the rest, and the two scopes
+    /// prove different things:
     ///
-    /// `None` is that second case, and it is a decision rather than an
+    /// - A call the scope proved to be somebody else's is not a hole:
+    ///   what the code calls may live outside the scope — a function of
+    ///   another crate, a module of Ansible — and the graph says nothing
+    ///   about the world outside it. That call leaves no reference
+    ///   behind, and the number of them is not a hole either.
+    /// - A call the scope could not prove to be somebody else's, and
+    ///   whose name the scope declares, may be the scope's own: the type
+    ///   the call is written through may live in another file of the
+    ///   project, and the scope cannot tell that from a type of somebody
+    ///   else. That call is a hole, and it leaves a reference behind with
+    ///   the class [`PendingClass::Unresolved`].
+    ///
+    /// `None` is the first case, and it is a decision rather than an
     /// oversight: the rule lives in one place so that the routes cannot
     /// disagree about which refusals are worth reporting.
-    pub fn of_call(site: &CallSite, class: PendingClass) -> Option<PendingReference> {
-        match class {
-            PendingClass::Unresolved => None,
-            PendingClass::Ambiguous { candidates } => Some(PendingReference {
-                origin_file: site.origin_file.clone(),
-                origin_line: Some(site.line),
-                source: site.source.clone(),
-                target: site.target.clone(),
-                kind: DependencyType::Calls,
-                class: PendingClass::Ambiguous { candidates },
-            }),
-        }
+    pub fn of_call(
+        site: &CallSite,
+        class: PendingClass,
+        answer: ScopeAnswer,
+    ) -> Option<PendingReference> {
+        let class = match class {
+            // The scope holds the name and cannot say which declaration
+            // the call means: a hole, whatever the scope could prove.
+            PendingClass::Ambiguous { candidates } => PendingClass::Ambiguous { candidates },
+            // The scope could not identify the far end. Whether that is a
+            // hole is what the scope's answer says.
+            PendingClass::Unresolved => match answer {
+                ScopeAnswer::Foreign => return None,
+                ScopeAnswer::PossiblyTheScope => PendingClass::Unresolved,
+            },
+        };
+        Some(PendingReference {
+            origin_file: site.origin_file.clone(),
+            origin_line: Some(site.line),
+            source: site.source.clone(),
+            target: site.target.clone(),
+            kind: DependencyType::Calls,
+            class,
+        })
     }
 }
 
@@ -105,6 +156,70 @@ pub fn readings(name: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A call site, as the reader saw it.
+    fn site(target: &str) -> CallSite {
+        CallSite {
+            source: SymbolId::new("src/a.rs:caller:3"),
+            origin_file: "src/a.rs".to_string(),
+            line: 3,
+            target: target.to_string(),
+            type_qualifier: None,
+            qualifier_path: None,
+            path_head: None,
+            receiver: None,
+        }
+    }
+
+    /// The scope proved the call names somebody else's declaration: the
+    /// call leaves no reference behind.
+    #[test]
+    fn a_call_the_scope_proved_foreign_leaves_no_reference_behind() {
+        assert!(
+            PendingReference::of_call(
+                &site("render"),
+                PendingClass::Unresolved,
+                ScopeAnswer::Foreign,
+            )
+            .is_none(),
+            "what the code calls may live outside the scope: the graph says nothing about the \
+             world outside it"
+        );
+    }
+
+    /// The scope declares the name and could not tie the call to that
+    /// declaration: the refusal is a hole, and it leaves a reference
+    /// behind that says which call it is.
+    #[test]
+    fn a_call_the_scope_could_not_tie_leaves_a_reference_behind() {
+        let reference = PendingReference::of_call(
+            &site("render"),
+            PendingClass::Unresolved,
+            ScopeAnswer::PossiblyTheScope,
+        )
+        .expect("the call may be the scope's own: the hole has to be named");
+
+        assert_eq!(reference.class, PendingClass::Unresolved);
+        assert_eq!(reference.target, "render");
+        assert_eq!(reference.origin_file, "src/a.rs");
+        assert_eq!(reference.origin_line, Some(3));
+        assert_eq!(reference.kind, DependencyType::Calls);
+    }
+
+    /// A name the scope declares several times is a hole whatever the
+    /// scope could prove: the scope holds the name and cannot say which
+    /// declaration the call means.
+    #[test]
+    fn an_ambiguous_call_leaves_a_reference_behind() {
+        let reference = PendingReference::of_call(
+            &site("render"),
+            PendingClass::Ambiguous { candidates: 2 },
+            ScopeAnswer::Foreign,
+        )
+        .expect("the scope holds the name and cannot tell the declarations apart");
+
+        assert_eq!(reference.class, PendingClass::Ambiguous { candidates: 2 });
+    }
 
     #[test]
     fn a_name_that_names_a_path_is_read_from_the_longest_reading() {
