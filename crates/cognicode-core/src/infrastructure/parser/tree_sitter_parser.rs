@@ -858,15 +858,24 @@ impl TreeSitterParser {
                     }
                     _ => None,
                 };
+                let type_qualifier = call
+                    .callee
+                    .type_qualifier
+                    .filter(|qualifier| !bound.contains(qualifier));
+                // The path of the qualifier travels with the qualifier: a
+                // qualifier the file binds itself is dropped, and the call
+                // keeps the bare-name answer it had — and the path with it.
+                let qualifier_path = match call.callee.qualifier_path {
+                    Some(path) if type_qualifier.is_some() => Some(path),
+                    _ => None,
+                };
                 CallSite {
                     source: SymbolId::new(call.caller.fully_qualified_name()),
                     origin_file: file_path.to_string(),
                     line: call.line,
                     target: call.callee.name,
-                    type_qualifier: call
-                        .callee
-                        .type_qualifier
-                        .filter(|qualifier| !bound.contains(qualifier)),
+                    type_qualifier,
+                    qualifier_path,
                     path_head,
                     receiver,
                 }
@@ -1042,11 +1051,20 @@ impl TreeSitterParser {
         } else {
             None
         };
+        // The path of the qualifier, as the call is written: it is what
+        // tells two types of the same name apart, and it is `Some` exactly
+        // when the qualifier is.
+        let qualifier_path = if self.language.spells_types_with_capitals() {
+            naming::qualifier_path_of(&text)
+        } else {
+            None
+        };
         let path_head = naming::path_head_of(&text);
         let receiver = naming::receiver_of(&text).map(str::to_string);
         Some(Callee {
             name,
             type_qualifier,
+            qualifier_path,
             path_head,
             receiver,
         })
@@ -1202,11 +1220,15 @@ impl TreeSitterParser {
 /// The name of the symbol that owns a script's top-level calls.
 pub const SCRIPT_SYMBOL: &str = "<script>";
 
-/// What one call expression calls: the name, the type that qualifies it, the
-/// crate or module its path starts at, and the value it is written on.
+/// What one call expression calls: the name, the type that qualifies it,
+/// the path of that type, the crate or module its path starts at, and the
+/// value it is written on.
 struct Callee {
     name: String,
     type_qualifier: Option<String>,
+    /// The path of the qualifier, as the call is written: `b::Widget` in
+    /// `b::Widget::new(7)`.
+    qualifier_path: Option<String>,
     path_head: Option<String>,
     /// The value the call is written on, when it is written on one.
     receiver: Option<String>,
