@@ -182,6 +182,20 @@ pub struct GoalSpec {
     pub minimum_phase: GoalPhase,
     /// Quién responde por el goal.
     pub owner: &'static str,
+    /// Si el trabajo del goal incluye el grafo del workspace.
+    ///
+    /// La declaración decide la ventana del despacho: una herramienta que
+    /// declara `requires_graph` recibe la ventana del grafo, porque su
+    /// trabajo incluye construirlo. Un goal que construye el grafo y dice
+    /// que no lo necesita recibe el plazo por defecto, y ese plazo depende
+    /// del tamaño del árbol —en este repositorio el grafo tarda 28 s en
+    /// construirse, y el plazo por defecto son 30 s.
+    ///
+    /// La verdad la tiene el trabajo del goal, no la declaración: lo que
+    /// hace cada goal se mide (una llamada en frío por goal, con su caché
+    /// propia) en `a_goal_declares_the_graph_it_needs`, y esta declaración
+    /// tiene que coincidir con esa medida.
+    pub requires_graph: bool,
     /// Los nombres legados que este goal sustituye.
     ///
     /// El goal no borra un nombre publicado: lo declara su sustituto, y el
@@ -218,6 +232,7 @@ para saber si el workspace está donde cree. Ejemplos: `cognicode status`, \
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Discover,
     owner: "interface::goals::status",
+    requires_graph: false,
     replaces: &[],
     run: status::run,
     render: status::render,
@@ -235,6 +250,7 @@ json`.",
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Discover,
     owner: "interface::goals::context",
+    requires_graph: false,
     replaces: &["list_files"],
     run: context::run,
     render: context::render,
@@ -260,6 +276,7 @@ homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode fin
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Index,
     owner: "interface::goals::find",
+    requires_graph: true,
     replaces: &["query_symbol_index", "find_references"],
     run: find::run,
     render: find::render,
@@ -280,6 +297,7 @@ No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: \
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Discover,
     owner: "interface::goals::inspect",
+    requires_graph: false,
     replaces: &["get_file_symbols", "get_symbol_code"],
     run: inspect::run,
     render: inspect::render,
@@ -299,6 +317,7 @@ a quién llama y a qué distancia. Ejemplos: `cognicode trace --symbol helper`, 
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Link,
     owner: "interface::goals::trace",
+    requires_graph: true,
     replaces: &["get_call_hierarchy", "trace_path"],
     run: trace::run,
     render: trace::render,
@@ -318,6 +337,7 @@ con qué riesgo. Es la pregunta que se hace antes de tocar nada. Ejemplos: \
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
     owner: "interface::goals::impact",
+    requires_graph: true,
     replaces: &["analyze_impact"],
     run: impact::run,
     render: impact::render,
@@ -334,6 +354,7 @@ cuántas aristas, cuántos ficheros y en qué lenguajes. Ejemplos: \
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
     owner: "interface::goals::overview",
+    requires_graph: true,
     replaces: &["project_overview", "codebase_map"],
     run: overview::run,
     render: overview::render,
@@ -350,6 +371,7 @@ usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit \
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
     owner: "interface::goals::audit",
+    requires_graph: true,
     replaces: &["detect_god_functions", "solid_audit"],
     run: audit::run,
     render: audit::render,
@@ -370,6 +392,7 @@ helper --new-name helper2`.",
     authority: GoalAuthority::Mutating,
     minimum_phase: GoalPhase::Analyze,
     owner: "interface::goals::change",
+    requires_graph: true,
     replaces: &["safe_refactor"],
     run: change::run,
     render: change::render,
@@ -402,6 +425,7 @@ costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, \
     // cuatro fases, y el último de ellos no responde antes de `analyze`.
     minimum_phase: GoalPhase::Analyze,
     owner: "interface::goals::recipe",
+    requires_graph: true,
     replaces: &[],
     run: recipe::run,
     render: recipe::render,
@@ -521,7 +545,7 @@ pub fn tools_json_entry(goal: &GoalSpec) -> Value {
         "stability": "stable",
         "estimated_latency_ms": 30,
         "requirements": {
-            "graph": false,
+            "graph": goal.requires_graph,
             "persistence": false,
             "cache": null,
             "network": null
@@ -531,7 +555,7 @@ pub fn tools_json_entry(goal: &GoalSpec) -> Value {
         "runtime_metadata": {
             "stability": "stable",
             "category": "goal",
-            "requires_graph": false,
+            "requires_graph": goal.requires_graph,
             "requires_persistence": false,
             "estimated_latency_ms": 30,
             "authority": goal.authority.as_str(),

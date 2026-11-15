@@ -86,7 +86,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -843,7 +843,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": true,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -1887,7 +1887,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -2013,7 +2013,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -2083,7 +2083,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -7007,7 +7007,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
@@ -8067,7 +8067,7 @@
         "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.103.1"
