@@ -255,8 +255,6 @@ impl FileManifest {
 mod tests {
     use super::*;
     use std::fs;
-    use std::thread;
-    use std::time::Duration;
 
     fn create_temp_file(dir: &Path, name: &str, content: &[u8]) -> PathBuf {
         let path = dir.join(name);
@@ -372,10 +370,11 @@ mod tests {
         manifest.apply_delta(dir.path(), &[PathBuf::from("a.rs")]);
 
         // Modify file
-        create_temp_file(dir.path(), "a.rs", b"fn main() { println!(\"hello\"); }");
+        let modified = create_temp_file(dir.path(), "a.rs", b"fn main() { println!(\"hello\"); }");
 
-        // Wait briefly to ensure mtime changes (filesystem mtime resolution)
-        thread::sleep(Duration::from_millis(20));
+        // The manifest compares the time it recorded with the one on
+        // disk; a test does not wait for the clock to make them differ.
+        crate::test_support::bump_mtime(&modified);
 
         let delta = manifest.compute_delta(dir.path(), &[PathBuf::from("a.rs")]);
         assert_eq!(delta.changed.len(), 1);
@@ -418,8 +417,8 @@ mod tests {
         );
 
         // Modify a.rs, leave b.rs, delete c.rs, add d.rs
-        thread::sleep(Duration::from_millis(20));
-        create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        let modified = create_temp_file(dir.path(), "a.rs", b"fn a() { 1 }");
+        crate::test_support::bump_mtime(&modified);
         fs::remove_file(dir.path().join("c.rs")).unwrap();
         create_temp_file(dir.path(), "d.rs", b"fn d() {}");
 
@@ -550,9 +549,11 @@ mod tests {
             .content_hash
             .clone();
 
-        // Change content; sleep so mtime resolution advances.
-        thread::sleep(Duration::from_millis(20));
+        // Change the content. The size does not change, so the time has
+        // to: the manifest's fast path compares both, and different
+        // bytes with the same size are invisible to it.
         fs::write(&path_a, b"v2").unwrap();
+        crate::test_support::bump_mtime(&path_a);
 
         let delta = manifest.compute_delta(dir.path(), &[PathBuf::from("a.rs")]);
         assert_eq!(delta.changed.len(), 1);
@@ -616,8 +617,10 @@ mod tests {
         manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
         set_mode(&path, 0o644);
 
-        thread::sleep(Duration::from_millis(20));
         fs::write(&path, b"fn a() { different() }").unwrap();
+        // The manifest compares the time it recorded with the one on
+        // disk; a test does not wait for the clock to make them differ.
+        crate::test_support::bump_mtime(&path);
         set_mode(&path, 0o000);
 
         let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
@@ -643,8 +646,10 @@ mod tests {
         manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
         let before = manifest.get(&rel).unwrap().content_hash.clone();
 
-        thread::sleep(Duration::from_millis(20));
         fs::write(&path, b"fn a() { different() }").unwrap();
+        // The manifest compares the time it recorded with the one on
+        // disk; a test does not wait for the clock to make them differ.
+        crate::test_support::bump_mtime(&path);
         set_mode(&path, 0o000);
 
         let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
@@ -685,8 +690,8 @@ mod tests {
         manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
         let before = manifest.get(&rel).unwrap().content_hash.clone();
 
-        thread::sleep(Duration::from_millis(20));
         fs::write(&path, b"fn a() { other() }").unwrap();
+        crate::test_support::bump_mtime(&path);
 
         let delta = manifest.compute_delta(dir.path(), std::slice::from_ref(&rel));
         assert_eq!(delta.changed, vec![rel.clone()]);
@@ -704,8 +709,11 @@ mod tests {
         let mut manifest = FileManifest::new();
         manifest.apply_delta(dir.path(), std::slice::from_ref(&rel));
 
-        thread::sleep(Duration::from_millis(20));
         fs::write(&path, b"fn a() { 2 }").unwrap();
+        // The size does not change, so the time has to: the manifest's
+        // fast path compares both, and different bytes with the same
+        // size are invisible to it.
+        crate::test_support::bump_mtime(&path);
         assert_eq!(
             fs::metadata(&path).unwrap().len(),
             manifest.get(&rel).unwrap().size

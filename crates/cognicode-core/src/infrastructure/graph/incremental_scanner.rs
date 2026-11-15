@@ -121,8 +121,6 @@ impl IncrementalScanner {
 mod tests {
     use super::*;
     use std::fs;
-    use std::thread;
-    use std::time::Duration;
 
     fn write(dir: &std::path::Path, name: &str, content: &[u8]) -> PathBuf {
         let path = dir.join(name);
@@ -180,8 +178,10 @@ mod tests {
         let mut scanner = IncrementalScanner::new(dir.path().to_path_buf());
         scanner.scan(&[PathBuf::from("a.rs")]);
 
-        thread::sleep(Duration::from_millis(20));
-        write(dir.path(), "a.rs", b"fn a() { 1 }");
+        let modified = write(dir.path(), "a.rs", b"fn a() { 1 }");
+        // The manifest compares the time it recorded with the one on
+        // disk; a test does not wait for the clock to make them differ.
+        crate::test_support::bump_mtime(&modified);
 
         let (delta, result) = scanner.scan(&[PathBuf::from("a.rs")]);
         assert_eq!(result.files_processed, 1);
@@ -242,9 +242,9 @@ mod tests {
             PathBuf::from("c.rs"),
         ]);
 
-        thread::sleep(Duration::from_millis(20));
         // Modify a, leave b, delete c, add d
-        write(dir.path(), "a.rs", b"fn a() { 1 }");
+        let modified = write(dir.path(), "a.rs", b"fn a() { 1 }");
+        crate::test_support::bump_mtime(&modified);
         fs::remove_file(dir.path().join("c.rs")).unwrap();
         write(dir.path(), "d.rs", b"fn d() {}");
 

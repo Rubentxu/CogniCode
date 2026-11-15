@@ -25,6 +25,12 @@ pub mod product;
 pub mod refactor;
 pub mod schemas;
 
+// Helpers for the tests of this crate: things a test needs that the
+// product does not have. They live here so that the tests of four
+// modules share one way of doing them.
+#[cfg(test)]
+pub(crate) mod test_support;
+
 // Re-export the main facade
 pub use application::dto;
 pub use application::workspace_session::{WorkspaceError, WorkspaceResult, WorkspaceSession};

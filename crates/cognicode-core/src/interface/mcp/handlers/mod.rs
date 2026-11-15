@@ -7453,10 +7453,11 @@ mod tests {
                 "corpus must produce at least the initial symbol"
             );
 
-            // Make staleness detection reliable: bump mtime well
-            // past any timestamp granularity of the manifest.
-            std::thread::sleep(std::time::Duration::from_millis(1100));
             std::fs::write(&file, "fn new_renamed_symbol() {}\nfn extra() {}\n").unwrap();
+            // Make staleness detection reliable: the manifest recorded a
+            // time and the disk has another one. A test does not wait for
+            // the clock to make them differ.
+            crate::test_support::bump_mtime(&file);
 
             // Second build must NOT serve the stale cache.
             let second = handle_build_graph(&ctx, mk_input()).await.unwrap();
@@ -7481,7 +7482,8 @@ mod tests {
             let first = handle_build_graph(&ctx, mk_input()).await.unwrap();
             assert!(first.symbols_found >= 1);
 
-            std::thread::sleep(std::time::Duration::from_millis(1100));
+            // The deletion is detected by the absence of the file, not
+            // by its modification time: there is no clock to wait for.
             std::fs::remove_file(&file).unwrap();
 
             let second = handle_build_graph(&ctx, mk_input()).await.unwrap();
@@ -7527,12 +7529,12 @@ mod tests {
             );
 
             // A source change must still invalidate the in-session cache.
-            std::thread::sleep(std::time::Duration::from_millis(1100));
-            std::fs::write(
-                tempdir.path().join("stable.rs"),
-                "fn stable() {}\nfn evolved() {}\n",
-            )
-            .unwrap();
+            let stable = tempdir.path().join("stable.rs");
+            std::fs::write(&stable, "fn stable() {}\nfn evolved() {}\n").unwrap();
+            // The cache compares the time it recorded with the one on
+            // disk; a test does not wait for the clock to make them
+            // differ.
+            crate::test_support::bump_mtime(&stable);
             let third = handle_build_graph(&ctx, mk_input()).await.unwrap();
             assert!(
                 third.message.contains("built"),
