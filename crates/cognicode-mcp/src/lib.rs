@@ -18,6 +18,7 @@
 pub mod auth;
 pub mod cancellation;
 pub mod capabilities;
+mod dispatch;
 pub mod exposure;
 pub mod input_contracts;
 pub mod link_trace;
