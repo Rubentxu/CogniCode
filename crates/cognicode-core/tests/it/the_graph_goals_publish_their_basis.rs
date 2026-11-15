@@ -18,6 +18,16 @@
 //! before the claim: a tree with a declined symlink must read `partial`, so
 //! the channel is not simply always `complete`, and an edited file must change
 //! the digest, so the freshness is not a constant.
+//!
+//! ## Lo que cambió (TASK-293)
+//!
+//! Antes, una construcción parcial no conservaba su manifiesto y la respuesta
+//! salía sin digest: «una construcción que no leyó el árbol entero no declara
+//! la identidad de un árbol que no describió». El digest no describe la
+//! completitud del grafo: describe los ficheros leídos, y un manifiesto que
+//! nombra una llamada suelta sigue siendo el manifiesto de un árbol. La
+//! cobertura es la que dice qué quedó fuera, y una respuesta que no se puede
+//! fechar no se puede comparar con otra.
 
 use cognicode_core::interface::goals::{AUDIT, FIND, GoalEnvironment, GoalSpec};
 use cognicode_core::interface::hateoas::{HandleContext, envelope_for};
@@ -132,11 +142,23 @@ fn a_declined_symlink_makes_the_goal_partial_and_names_the_file() {
                 .contains("link.rs"),
             "`{name}` names the file it left out: {envelope}"
         );
-        // A build that did not read the whole tree keeps no manifest, so the
-        // answer does not claim the identity of a tree it did not describe.
+        // A build that did not read the whole tree still says WHICH TREE it
+        // read: the digest describes the files that were read, not the
+        // completeness of the graph. What was left out of it is the
+        // coverage's word, and a response that cannot be dated cannot be
+        // compared with another one. The MCP has always published that
+        // digest for the same tree; the goals were the ones that dropped
+        // it.
+        let freshness = &envelope["basis"]["freshness"];
         assert!(
-            envelope["basis"]["freshness"].is_null(),
-            "`{name}` published a digest for a tree it read only in part: {envelope}"
+            freshness.is_object(),
+            "`{name}` published no digest for a tree it read in part: {envelope}"
+        );
+        assert!(
+            freshness["snapshot"]
+                .as_str()
+                .is_some_and(|digest| !digest.is_empty()),
+            "`{name}` publishes the digest of the sources it read: {envelope}"
         );
     }
 }
