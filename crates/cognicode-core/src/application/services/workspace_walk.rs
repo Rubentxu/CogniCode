@@ -3,9 +3,11 @@
 //! ## The defect
 //!
 //! `handle_search_content` and `handle_list_files` called the
-//! application synchronously: a walk of the tree and a read of every
-//! file of it, inside an `async` handler, on the thread of the runtime
-//! that serves it. While the walk ran, the runtime answered nobody
+//! application synchronously: a walk of the tree —and, for the content
+//! search, a read of every file of it— inside an `async` handler, on
+//! the thread of the runtime that serves it. The listing collects the
+//! entries of the tree; the content search is the one that reads the
+//! files. While the walk ran, the runtime answered nobody
 //! else — not even a call that needs no disk — and the deadline that
 //! was supposed to cut the call short could not fire: a deadline is
 //! observed when the future is polled again, and the poll was inside

@@ -1089,19 +1089,19 @@ mod tests {
         );
     }
 
-    /// The dispatch deadline of a tool that walks the workspace covers
-    /// the walk.
+    /// The two tools that walk the workspace declare the same category.
     ///
-    /// `search_content` walks the workspace and reads every file of it:
-    /// that is the same walk `list_files` does, and the product gives
-    /// that walk the window of the `file` category. The window of the
-    /// `search` category is the narrowest the product has, and the walk
-    /// of the whole tree does not fit in it. A deadline shorter than the
-    /// walk throws the answer away: the walk finishes after the
-    /// deadline that was supposed to replace it, and the work that was
-    /// done is lost.
+    /// `search_content` walks the workspace and reads every file of it;
+    /// `list_files` walks it and collects its entries — it does not read
+    /// the files. Both are the same walk of the tree, so both are
+    /// budgeted in the same window: a deadline that covers one has to
+    /// cover the other.
+    ///
+    /// What this contract watches is the declaration of the catalogue,
+    /// not the work: the duration of a walk is not known before the
+    /// walk runs.
     #[test]
-    fn the_dispatch_deadline_of_the_content_search_covers_the_walk_of_the_workspace() {
+    fn the_two_workspace_walks_declare_the_same_category() {
         let search = tool_category_map()
             .get("search_content")
             .expect("search_content declares a category");
@@ -1112,6 +1112,28 @@ mod tests {
             search, walk,
             "the two tools walk the same tree, so they declare the same category"
         );
+    }
+
+    /// The content search is not given the narrowest window the product
+    /// has.
+    ///
+    /// The window of the `search` category is 500 ms, the narrowest the
+    /// product publishes, and it fits a query over the symbol index.
+    /// The walk of the workspace does not fit in it: MEASURED on
+    /// 2026-11-14 over this repository, the walk of the whole tree
+    /// reads 3 057 files and takes 645 ms. A deadline of 500 ms would
+    /// cut the answer of a walk that finishes after it — the work would
+    /// be done and thrown away.
+    ///
+    /// What this contract compares is the window the category gets, not
+    /// the duration of the walk. The duration is a property of the
+    /// tree, not of the category, and measuring it on every run of the
+    /// suite would make the suite pay for a number it does not need.
+    #[test]
+    fn the_content_search_is_not_given_the_narrowest_window_of_the_product() {
+        let search = tool_category_map()
+            .get("search_content")
+            .expect("search_content declares a category");
         assert!(
             crate::robustness::timeout_for_tool("search_content", search)
                 > crate::robustness::timeout_for_category("search"),
@@ -1121,22 +1143,23 @@ mod tests {
         );
     }
 
-    /// The dispatch deadline of every tool covers the latency that the
-    /// catalogue declares for it.
+    /// The window of every tool covers the latency the catalogue
+    /// declares for it.
     ///
-    /// Two numbers are published for every tool: the latency it
-    /// expects to take and the window it is given. A window shorter
-    /// than the latency throws the answer away, and whoever reads the
-    /// catalogue reads the two together.
+    /// Two numbers are published for every tool: the latency the
+    /// catalogue declares and the window the dispatch gives it. A
+    /// window shorter than the declared latency throws the answer away,
+    /// and whoever reads the catalogue reads the two together.
     ///
-    /// The guard bites on the tools whose declared latency is wide. The
-    /// latencies of the catalogue are nominal estimates — the content
-    /// search declares 40 ms and the walk of this repository measures
-    /// 645 ms — so most of them sit far below every window, and
-    /// making those numbers honest is the catalogue's own work. What
-    /// this guard watches is the day one of them crosses a window.
+    /// What this contract compares is the number the catalogue declares,
+    /// not the time the work takes: the declared latencies are
+    /// estimates — the content search declares 40 ms and the walk of
+    /// this repository measures 645 ms — so most of them sit far below
+    /// every window, and making those numbers honest is the catalogue's
+    /// own work. This guard goes red the day one of them crosses a
+    /// window.
     #[test]
-    fn the_dispatch_deadline_of_every_tool_covers_the_latency_it_declares() {
+    fn the_declared_latency_of_every_tool_fits_in_its_window() {
         for descriptor in cognicode_core::interface::catalog::load_tool_catalog() {
             let deadline =
                 crate::robustness::timeout_for_tool(&descriptor.name, &descriptor.category);

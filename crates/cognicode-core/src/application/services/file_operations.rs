@@ -2554,6 +2554,54 @@ mod tests {
         assert_eq!(output.total, 10);
     }
 
+    /// The listing of the tree does not read the files it lists.
+    ///
+    /// The listing collects the entries of the tree and their metadata;
+    /// the content search is the one that reads the files. A tree with
+    /// a file the product cannot decode is listed without trouble,
+    /// because the listing never decodes what it lists — and it reports
+    /// the size the file system publishes, which is metadata, not
+    /// content.
+    ///
+    /// The doc of the module that moves the walks off the runtime says
+    /// the same thing, and this is what keeps it true.
+    #[test]
+    fn the_listing_of_the_tree_does_not_read_the_files_it_lists() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("binary.bin");
+        // Bytes that are not text: a reader of this file has to decide
+        // what to do with them, and the listing never gets there.
+        fs::write(&path, [0xff, 0xfe, 0x00, 0x01]).unwrap();
+
+        let service = test_service_in_temp_dir(&temp_dir);
+        let result = service.list_files(ListFilesRequest {
+            path: None,
+            glob: None,
+            offset: None,
+            limit: None,
+            recursive: None,
+            max_depth: None,
+        });
+
+        let output = result.expect("the listing of a tree with a binary file succeeds");
+        assert_eq!(
+            output.unread.len(),
+            0,
+            "the listing read a file it was not asked to read: {:?}",
+            output.unread
+        );
+        let entry = output
+            .files
+            .iter()
+            .find(|entry| entry.path.ends_with("binary.bin"))
+            .expect("the listing contains the file it walked to");
+        assert_eq!(
+            entry.size, 4,
+            "the listing publishes the size the file system reports, not the length of a \
+             decoded content"
+        );
+    }
+
     #[test]
     fn test_list_files_glob_filter() {
         let temp_dir = TempDir::new().unwrap();
