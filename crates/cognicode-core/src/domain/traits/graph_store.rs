@@ -45,6 +45,21 @@ pub trait GraphStore: Send + Sync {
     /// Load the call graph from the store
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError>;
 
+    /// The call graph of the store, shared instead of copied.
+    ///
+    /// `load_graph` hands back an owned graph, so whoever asks for it
+    /// pays for a copy of the whole graph —and a copy of a big graph is
+    /// expensive on the thread that serves the request. This method hands
+    /// back a pointer to the graph the store already holds, so reading it
+    /// costs nothing.
+    ///
+    /// The default implementation copies, because a store that keeps the
+    /// graph serialized has nothing else to hand back. A store that holds
+    /// the graph in memory overrides it, and then nobody pays for a copy.
+    fn load_graph_shared(&self) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        Ok(self.load_graph()?.map(Arc::new))
+    }
+
     /// Save the file manifest
     fn save_manifest(&self, manifest: &FileManifest) -> Result<(), StoreError>;
 

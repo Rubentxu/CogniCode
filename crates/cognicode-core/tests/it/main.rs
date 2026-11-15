@@ -153,6 +153,7 @@ mod source_scan;
 mod symbol_index_follows_the_graph_and_directory;
 mod t1_1b_symbolkind_wire_format;
 mod the_analysed_tree_keeps_no_state;
+mod the_analysis_path_does_not_copy_the_graph;
 mod the_analyzer_is_identified_by_its_source;
 mod the_broken_file_is_not_published;
 mod the_callflow_of_a_real_project_shows_the_relations;

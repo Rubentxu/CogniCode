@@ -57,16 +57,28 @@ impl GraphStore for CachedGraphStore {
     /// Returns `None` if the cache holds an empty graph so callers can
     /// prompt the user to run `build_graph` first (matches legacy
     /// behaviour).
+    ///
+    /// The owned graph is a copy of the whole graph (5-10 MB for 29K
+    /// symbols). A reader that only reads should ask for the shared one
+    /// instead: [`GraphStore::load_graph_shared`].
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
+        Ok(self
+            .load_graph_shared()?
+            .map(|arc_graph| (*arc_graph).clone()))
+    }
+
+    /// Hands over the graph the cache holds, without copying it.
+    ///
+    /// The cache owns the graph behind an `Arc`, so the reader can hold
+    /// the very pointer the cache holds: the copy that the owned
+    /// accessor has to make —the whole graph, megabytes, on the thread
+    /// that serves the call— is not paid any more.
+    fn load_graph_shared(&self) -> Result<Option<Arc<CallGraph>>, StoreError> {
         let arc_graph = SharedGraph::get(self.cache.as_ref());
         if arc_graph.symbol_count() == 0 && arc_graph.edge_count() == 0 {
             Ok(None)
         } else {
-            // Dereference the Arc to get an owned CallGraph.
-            // This clones the full graph (5-10 MB for 29K symbols) but
-            // avoids the bincode encode/decode roundtrip and Mutex
-            // contention of the legacy InMemoryGraphStore path.
-            Ok(Some((*arc_graph).clone()))
+            Ok(Some(arc_graph))
         }
     }
 
@@ -162,6 +174,22 @@ mod tests {
         cache.set(graph.clone());
         let loaded = store.load_graph().unwrap().unwrap();
         assert_eq!(loaded.symbol_count(), graph.symbol_count());
+    }
+
+    #[test]
+    fn cached_graph_store_hands_the_graph_over_without_copying_it() {
+        let cache = Arc::new(GraphCache::new());
+        let store = CachedGraphStore::new(cache.clone());
+        cache.set(build_small_graph());
+
+        let shared = store.load_graph_shared().unwrap().unwrap();
+
+        // The very pointer the cache holds: nobody cloned the graph.
+        assert!(
+            Arc::ptr_eq(&shared, &SharedGraph::get(cache.as_ref())),
+            "the shared graph is a copy of the one the cache holds: the copy of the whole graph \
+             is paid by the thread that serves the call"
+        );
     }
 
     #[test]

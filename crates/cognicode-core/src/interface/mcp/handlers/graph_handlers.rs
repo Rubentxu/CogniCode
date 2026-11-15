@@ -30,9 +30,14 @@ use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 /// say that the tool failed and the metrics can count it as one. The
 /// message and the kind of error live here so that every handler says
 /// the same thing about the same failure.
-fn analytics_graph(ctx: &HandlerContext) -> Result<CallGraph, HandlerError> {
+///
+/// The graph is SHARED, not copied: the handler that serves the call
+/// holds a pointer to the graph the store already has, instead of
+/// cloning the whole graph (megabytes) on the thread that has to answer
+/// the other calls meanwhile.
+fn analytics_graph(ctx: &HandlerContext) -> Result<Arc<CallGraph>, HandlerError> {
     ctx.get_graph_store()
-        .load_graph()
+        .load_graph_shared()
         .map_err(|e| HandlerError::Internal(format!("Failed to load graph: {}", e)))?
         .ok_or_else(|| {
             HandlerError::NotFound("No call graph available. Run build_graph first.".into())
@@ -48,7 +53,7 @@ fn analytics_graph(ctx: &HandlerContext) -> Result<CallGraph, HandlerError> {
 /// that knows how to analyse it.
 fn analytics_graph_with_projection(
     ctx: &HandlerContext,
-) -> Result<(CallGraph, Arc<dyn CallGraphProjectionPort>), HandlerError> {
+) -> Result<(Arc<CallGraph>, Arc<dyn CallGraphProjectionPort>), HandlerError> {
     let graph = analytics_graph(ctx)?;
     let projection = crate::infrastructure::graph::project_call_graph(&graph);
     Ok((graph, projection))

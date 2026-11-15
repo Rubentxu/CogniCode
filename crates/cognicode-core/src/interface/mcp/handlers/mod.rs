@@ -3133,7 +3133,7 @@ pub async fn handle_solid_audit(ctx: &HandlerContext) -> HandlerResult<SolidRepo
     // Load graph from graph store (as per task requirement)
     let graph = ctx
         .get_graph_store()
-        .load_graph()
+        .load_graph_shared()
         .map_err(|e| HandlerError::Internal(format!("Failed to load graph: {}", e)))?
         .ok_or_else(|| {
             HandlerError::NotFound("No call graph available. Run build_graph first.".into())
