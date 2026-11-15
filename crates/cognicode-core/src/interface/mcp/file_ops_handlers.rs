@@ -374,7 +374,7 @@ pub async fn handle_retrieve_and_verify(
     // The walk of the tree runs off the runtime that serves the call, and
     // the verification is bounded by the budget of the tool.
     let dto_result = service
-        .retrieve_and_verify_off_the_runtime(dto_input)
+        .retrieve_and_verify(dto_input)
         .await
         .map_err(HandlerError::App)?;
 

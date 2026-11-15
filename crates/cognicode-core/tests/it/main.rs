@@ -176,6 +176,7 @@ mod the_ledger_knows_what_the_manifest_says;
 mod the_partial_warning_is_a_summary;
 mod the_product_observes_one_set_of_files;
 mod the_product_publishes_the_name_a_symbol_carries;
+mod the_public_routes_do_not_hold_the_runtime;
 #[cfg(feature = "persistence")]
 mod the_reparse_says_what_it_cost;
 mod the_same_project_gives_the_same_communities;
