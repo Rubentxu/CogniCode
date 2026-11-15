@@ -652,13 +652,40 @@ class SdkSurfaceContract(unittest.TestCase):
         self.assertNotIn(RELEASE_ORDER[0] + " ", done.stdout.split("PENDING", 1)[1])
         self.assertFalse(cargo_ran, "--check must never run cargo")
 
+    def _machine_free_env(self):
+        """The environment of a fixture that does not answer to the machine.
+
+        The fixture's commits are test data: they live in a temporary
+        directory and they exist to exercise the release scripts. The
+        machine's git configuration is not part of what they are testing,
+        and on a machine that has one it decides whether the fixture can
+        commit at all — a machine whose `git` is a wrapper that signs by
+        the remote the repository has, and whose hooks belong to a project
+        with a contract of its own.
+
+        So the fixture neutralises it, the way the runner already does: the
+        global and system configuration are not read, and the wrapper
+        delegates to the real git — the way out it names itself
+        (`RANDOM_GIT_COMMITTER_DISABLED=1`).
+
+        What is left is git, and the identity the fixture declares: a
+        fixture's commit is signed by `FIXTURE_NAME` and `FIXTURE_EMAIL`,
+        because the machine's policy is not what decides whether this
+        contract passes.
+        """
+        env = dict(os.environ)
+        env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+        env["GIT_CONFIG_SYSTEM"] = "/dev/null"
+        env["RANDOM_GIT_COMMITTER_DISABLED"] = "1"
+        return env
+
     def test_auto_release_sees_a_version_bump_merged_after_the_checkout_was_made(self):
         """The timer's checkout is cloned once; a later bump on main must still be seen."""
         script_dir = ROOT / "scripts" / "distribution"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             ident = [FIXTURE_NAME, FIXTURE_EMAIL]
-            genv = dict(os.environ)
+            genv = self._machine_free_env()
 
             def git(cwd, *args):
                 done = subprocess.run(["git", "-c", f"user.name={ident[0]}", "-c", f"user.email={ident[1]}", *args],
@@ -706,7 +733,7 @@ class SdkSurfaceContract(unittest.TestCase):
         """A repo with the release script, a bare remote, and fake cargo/gh/runners."""
         script_dir = ROOT / "scripts" / "distribution"
         ident = [FIXTURE_NAME, FIXTURE_EMAIL]
-        genv = dict(os.environ)
+        genv = self._machine_free_env()
 
         def git(cwd, *args, check=True):
             done = subprocess.run(["git", "-c", f"user.name={ident[0]}", "-c", f"user.email={ident[1]}", *args],
