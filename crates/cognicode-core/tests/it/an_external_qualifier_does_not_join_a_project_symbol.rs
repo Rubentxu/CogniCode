@@ -665,11 +665,15 @@ pub fn make() -> Widget {
 /// The control: a qualifier the file does not own still does not join.
 ///
 /// The file implements a trait for a type that is not the project's — the
-/// standard library's `Duration` — and it declares a `from_millis` of its
-/// own. The call `Duration::from_millis(10)` names the standard library's,
-/// and the file's `from_millis` is not it: the judgment has to keep it out,
-/// and an impl that mentions a type is not enough to make that type the
-/// file's.
+/// standard library's `Duration` — and the trait declares a `from_millis`
+/// of its own. The call `Duration::from_millis(10)` names the standard
+/// library's associated function, because an inherent function of a type
+/// wins over a trait's, and the file's trait method is not it.
+///
+/// The control discriminates the rule it guards: the file DOES declare a
+/// `from_millis` (the trait's), so the call would join it if the judgment
+/// accepted the qualifier. It does not, because the owner of a trait impl is
+/// the trait and not the type.
 #[test]
 fn an_impl_for_a_type_the_project_does_not_own_still_does_not_join() {
     let other = "\
@@ -681,10 +685,10 @@ pub trait Describe {
     }
 }
 
-impl Describe for Duration {}
-
-pub fn from_millis() -> u64 {
-    10
+impl Describe for Duration {
+    fn from_millis(&self) -> u64 {
+        0
+    }
 }
 
 pub fn wait() {
@@ -700,7 +704,7 @@ pub fn wait() {
     assert_eq!(
         callers_of(&graph, "from_millis"),
         Vec::<String>::new(),
-        "the call names the standard library's `from_millis`: the file's own is not it"
+        "the call names the standard library's `from_millis`: the file's trait method is not it"
     );
 }
 

@@ -991,14 +991,20 @@ impl PerFileGraphCache {
         // the file does not declare `Widget`, and the call is read as
         // somebody else's — while the route with the project index keeps it,
         // because the project declares the type.
-        let impl_owners = if calls.iter().any(|call| call.type_qualifier.is_some()) {
-            crate::infrastructure::parser::naming::impl_item_owners_in(
-                tree.root_node(),
-                source.as_bytes(),
-            )
-        } else {
-            HashMap::new()
-        };
+        //
+        // Only the route that judges the file asks for it. With a project
+        // index the scope is the project, and the project knows what every
+        // file declares: walking the tree again to find an answer nobody
+        // reads is a cost every file of the project would pay.
+        let impl_owners =
+            if global_index.is_none() && calls.iter().any(|call| call.type_qualifier.is_some()) {
+                crate::infrastructure::parser::naming::impl_item_owners_in(
+                    tree.root_node(),
+                    source.as_bytes(),
+                )
+            } else {
+                HashMap::new()
+            };
 
         // The crates the file's own package pulls from outside the project:
         // a call written through one of them is not the project's, and the

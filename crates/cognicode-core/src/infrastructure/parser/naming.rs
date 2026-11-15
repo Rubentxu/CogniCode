@@ -293,10 +293,20 @@ pub fn type_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
 /// file does not declare `Widget` itself, because the type lives in another
 /// file and the impl is here.
 ///
-/// The owner of a trait impl is the trait and not the type: a file that
-/// implements a trait for a type owns the calls written through the TRAIT,
-/// and a call written through the type may name somebody else's method of
-/// it (`Duration::from_millis`, with `Duration` the standard library's).
+/// The owner of a trait impl is the trait and not the type, and the reason
+/// is what a call written through the type can name. `Duration::from_millis`
+/// names the standard library's own associated function, not anybody's
+/// trait method: an inherent function of a type wins over a trait's. So a
+/// file that implements a trait for a type owns the calls written through
+/// the TRAIT, and a call written through the type is left to the route that
+/// knows the type — the route that judges one file refuses it, because it
+/// cannot tell the type's own function from the trait's, and the route that
+/// judges the project keeps it, because the project declares the type.
+///
+/// The owner is a bare name, the same way the qualifier of a call is a bare
+/// name: `crate::event::Widget` is owned as `Widget`, and it is compared
+/// with `Widget`. Two types of the same name in two modules are the same
+/// name here, exactly as they are in the qualifier of a call.
 ///
 /// The shape read here is the shape of a Rust impl. A language that writes
 /// its impls differently keeps the answer it had.
