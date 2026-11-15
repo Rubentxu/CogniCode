@@ -46,7 +46,33 @@ pub struct ToolDescriptor {
     pub category: String,
     pub authority: String,
     pub stability: String,
+    /// The ceiling the product grants this tool's work.
+    ///
+    /// ONE meaning for every tool: a CEILING, not the typical duration of a
+    /// call. A typical duration depends on the size of the workspace and on
+    /// the machine that runs it, so a number published as a typical cost
+    /// would be a number the product cannot honor on the next workspace.
+    /// The ceiling is a budget, and a budget is the same on every machine:
+    /// it says how long the work may take before the dispatch gives up on
+    /// it and says what happened.
+    ///
+    /// It is also the number the dispatch's window is built from, so the
+    /// two cannot disagree about the same tool: the window has to cover
+    /// the work, or the product throws away work it did.
+    ///
+    /// What the number is made of is said by [`Self::latency_basis`]: a
+    /// measurement the product took, with its corpus and its date, or the
+    /// product's declared budget.
     pub estimated_latency_ms: u32,
+    /// Where the ceiling of this tool comes from.
+    ///
+    /// A measurement the product took — with the corpus it was taken on and
+    /// the date it was taken — or, when it is absent, the product's DECLARED
+    /// budget for that tool. The field is what keeps the two apart: a
+    /// number that says nothing about where it came from is a guess, and a
+    /// guess published as a ceiling is what this task exists to remove.
+    #[serde(default)]
+    pub latency_basis: Option<String>,
     #[serde(default)]
     pub requirements: Value,
     #[serde(default = "default_requirements_status")]
@@ -415,6 +441,7 @@ mod tests {
             authority: "read".into(),
             stability: "stable".into(),
             estimated_latency_ms: 1,
+            latency_basis: None,
             requirements: Value::Null,
             requirements_status: "satisfied".into(),
             public_profiles: vec![],
@@ -444,6 +471,7 @@ mod tests {
             authority: "read".into(),
             stability: "stable".into(),
             estimated_latency_ms: 1,
+            latency_basis: None,
             requirements: Value::Null,
             requirements_status: "satisfied".into(),
             public_profiles: vec![],
@@ -478,6 +506,7 @@ mod tests {
             authority: "read".into(),
             stability: "stable".into(),
             estimated_latency_ms: 1,
+            latency_basis: None,
             requirements: Value::Null,
             requirements_status: "satisfied".into(),
             public_profiles: vec![],
@@ -516,6 +545,7 @@ mod tests {
             authority: "read".into(),
             stability: "stable".into(),
             estimated_latency_ms: 1,
+            latency_basis: None,
             requirements: Value::Null,
             requirements_status: "satisfied".into(),
             public_profiles: vec![],

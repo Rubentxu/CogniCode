@@ -7051,7 +7051,8 @@
         "network": null
       },
       "requirements_status": "not_declared",
-      "estimated_latency_ms": 20,
+      "estimated_latency_ms": 1000,
+      "latency_basis": "measured 2026-11-14 over this repository (3 057 files): the walk of the tree takes 645 ms; the ceiling is 1 000 ms to cover a slower machine",
       "public_profiles": [
         "core",
         "reviewer"
@@ -7059,7 +7060,7 @@
       "runtime_metadata": {
         "authority": "read",
         "category": "file",
-        "estimated_latency_ms": 20,
+        "estimated_latency_ms": 1000,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
@@ -8915,7 +8916,8 @@
         "network": null
       },
       "requirements_status": "not_declared",
-      "estimated_latency_ms": 40,
+      "estimated_latency_ms": 1000,
+      "latency_basis": "measured 2026-11-14 over this repository (3 057 files read): the walk of the tree takes 645 ms; the ceiling is 1 000 ms to cover a slower machine",
       "public_profiles": [
         "core",
         "reviewer"
@@ -8923,7 +8925,7 @@
       "runtime_metadata": {
         "authority": "read",
         "category": "file",
-        "estimated_latency_ms": 40,
+        "estimated_latency_ms": 1000,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
