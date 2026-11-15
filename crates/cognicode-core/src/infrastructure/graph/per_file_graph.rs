@@ -293,6 +293,12 @@ impl GlobalSymbolIndex {
             &mut packages,
             caller_file,
             type_qualifier,
+            // The path of the qualifier: the project scope does not judge
+            // it — it knows the declarations of the project and not the
+            // path a call is written through.
+            None,
+            // The name the call names: the project index owns nothing that
+            // way.
             None,
             path_head,
             receiver,
@@ -992,10 +998,19 @@ impl PerFileGraphCache {
         // somebody else's — while the route with the project index keeps it,
         // because the project declares the type.
         //
+        // The owner keeps the path it is written with, so the ownership is
+        // the ownership of a TYPE: the file that implements `a::Widget`
+        // owns the calls written `a::Widget::new` and not the ones written
+        // `b::Widget::new`, where `b::Widget` is another type that has the
+        // same name. The path of the call's qualifier travels with the call
+        // site, and the two are compared when the call is judged.
+        //
         // Only the route that judges the file asks for it. With a project
         // index the scope is the project, and the project knows what every
         // file declares: walking the tree again to find an answer nobody
-        // reads is a cost every file of the project would pay.
+        // reads is a cost every file of the project would pay. The imports
+        // the owners are resolved through are read here and nowhere else,
+        // for the same reason.
         let impl_owners =
             if global_index.is_none() && calls.iter().any(|call| call.type_qualifier.is_some()) {
                 crate::infrastructure::parser::naming::impl_item_owners_in(

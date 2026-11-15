@@ -9,6 +9,7 @@ use super::per_file_graph::GlobalSymbolIndex;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::{CallSite, Receiver, TargetResolution};
 use crate::infrastructure::parser::Language;
+use crate::infrastructure::parser::naming;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -28,11 +29,30 @@ pub(crate) trait Declares {
     /// the call written through it. The project index owns nothing that way
     /// — it knows the declarations and nothing else — so it reads the target
     /// as nothing.
-    fn declares(&self, name: &str, target: Option<&str>, folds_case: bool) -> bool;
+    ///
+    /// The qualifier path is the path the call's qualifier is written with,
+    /// and it is what tells two types of the same name apart. The project
+    /// index does not judge it: it knows the declarations of the project and
+    /// not the path a call is written through, and a scope that judges one
+    /// name without the path of the other answers about a name and not
+    /// about the type.
+    fn declares(
+        &self,
+        name: &str,
+        target: Option<&str>,
+        qualifier_path: Option<&str>,
+        folds_case: bool,
+    ) -> bool;
 }
 
 impl Declares for GlobalSymbolIndex {
-    fn declares(&self, name: &str, _target: Option<&str>, folds_case: bool) -> bool {
+    fn declares(
+        &self,
+        name: &str,
+        _target: Option<&str>,
+        _qualifier_path: Option<&str>,
+        folds_case: bool,
+    ) -> bool {
         GlobalSymbolIndex::declares(self, name, folds_case)
     }
 }
@@ -48,11 +68,23 @@ struct FileScope<'a> {
     /// A file that implements `Widget` owns the calls written `Widget::new`,
     /// even when it does not declare `Widget`: the type lives in another
     /// file and the impl is here.
+    ///
+    /// The owner keeps the path it is written with, so the ownership is
+    /// the ownership of a TYPE and not of a name: the file that implements
+    /// `a::Widget` owns the calls written `a::Widget::new` and not the
+    /// ones written `b::Widget::new`, where `b::Widget` is another type
+    /// that happens to have the same name.
     impl_owners: &'a HashMap<String, HashSet<String>>,
 }
 
 impl Declares for FileScope<'_> {
-    fn declares(&self, name: &str, target: Option<&str>, folds_case: bool) -> bool {
+    fn declares(
+        &self,
+        name: &str,
+        target: Option<&str>,
+        qualifier_path: Option<&str>,
+        folds_case: bool,
+    ) -> bool {
         let declared = self
             .local
             .get(&name.to_lowercase())
@@ -69,11 +101,15 @@ impl Declares for FileScope<'_> {
         // The file does not declare the name, but it may own it: the name
         // the call names is an item of an impl of that name, so the call is
         // written through something the file implements.
+        //
+        // The owner answers when its path and the path of the call's
+        // qualifier are the same type: the names are equal and the modules
+        // are compatible.
         target.is_some_and(|target| {
             self.impl_owners.get(target).is_some_and(|owners| {
                 owners
                     .iter()
-                    .any(|owner| Language::answers_to_in(owner, name, folds_case))
+                    .any(|owner| naming::owner_answers_to(owner, qualifier_path, folds_case))
             })
         })
     }
@@ -96,11 +132,17 @@ impl Declares for FileScope<'_> {
 ///
 /// The scope is the only thing that differs between the routes: the project
 /// when there is an index, the file when there is not.
+///
+/// The facts of a call are distinct inputs, and the rule asks for each of
+/// them by name: the name, the qualifier, the path of the qualifier, the
+/// head of the path and the receiver.
+#[allow(clippy::too_many_arguments)] // the facts of a call, one by one
 pub(crate) fn call_is_owned<S: Declares + ?Sized>(
     scope: &S,
     manifests: &mut package::Manifests,
     caller_file: Option<&Path>,
     type_qualifier: Option<&str>,
+    qualifier_path: Option<&str>,
     target: Option<&str>,
     path_head: Option<&str>,
     receiver: Option<&Receiver>,
@@ -108,7 +150,9 @@ pub(crate) fn call_is_owned<S: Declares + ?Sized>(
     // The name the call writes is read in the language the call is written
     // in, and that language says whether the spelling folds.
     let folds_case = Language::folds_case_in(caller_file);
-    if type_qualifier.is_some_and(|qualifier| !scope.declares(qualifier, target, folds_case)) {
+    if type_qualifier
+        .is_some_and(|qualifier| !scope.declares(qualifier, target, qualifier_path, folds_case))
+    {
         return false;
     }
     if path_head.is_some_and(|head| manifests.is_external_crate(head, caller_file)) {
@@ -141,6 +185,13 @@ pub(crate) fn call_is_owned<S: Declares + ?Sized>(
 /// way [`GlobalSymbolIndex::resolve_call`] checks it against the project's:
 /// by exact spelling, and only when the call states one.
 ///
+/// The path of the qualifier travels with it, because it is what tells two
+/// types of the same name apart: a file that implements `a::Widget` owns
+/// the calls written `a::Widget::new` and not the ones written
+/// `b::Widget::new`. The route with the index does not need it: it judges
+/// against the declarations of the project, where the two types are two
+/// declarations of the same name.
+///
 /// The crate the path starts at is checked the same way the index checks
 /// it: against the crates the file's own package pulls from outside the
 /// project. A call through one of them is not the project's, and the file
@@ -169,6 +220,7 @@ pub(crate) fn resolve_call_within_file(
         manifests,
         Some(Path::new(&site.origin_file)),
         site.type_qualifier.as_deref(),
+        site.qualifier_path.as_deref(),
         Some(site.target.as_str()),
         site.path_head.as_deref(),
         site.receiver.as_ref(),
