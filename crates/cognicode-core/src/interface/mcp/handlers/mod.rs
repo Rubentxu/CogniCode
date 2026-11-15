@@ -1732,44 +1732,6 @@ fn held_coverage(ctx: &HandlerContext) -> crate::application::services::analyze:
         .unwrap_or(crate::application::services::analyze::Coverage::Unmeasured)
 }
 
-/// Ensures the semantic search index is populated, indexing the working directory on demand.
-fn ensure_semantic_indexed(ctx: &HandlerContext) -> HandlerResult<EnsureResult> {
-    if !ctx.semantic_search.index().is_empty() {
-        return Ok(EnsureResult::already_present(
-            ctx.semantic_search.index().len(),
-        ));
-    }
-    let start = std::time::Instant::now();
-    ctx.semantic_search
-        .populate_from_directory(&ctx.working_dir)
-        .map_err(HandlerError::Internal)?;
-    let elapsed = start.elapsed().as_millis() as u64;
-    Ok(EnsureResult::auto_built(
-        ctx.semantic_search.index().len(),
-        elapsed,
-    ))
-}
-
-/// Ensures the semantic search index is populated using direct service parameters.
-/// This version is used by handlers that accept SemanticSearch as a parameter.
-fn ensure_semantic_indexed_with_services(
-    semantic_search: &Arc<SemanticSearchService>,
-    working_dir: &PathBuf,
-) -> HandlerResult<EnsureResult> {
-    if !semantic_search.index().is_empty() {
-        return Ok(EnsureResult::already_present(semantic_search.index().len()));
-    }
-    let start = std::time::Instant::now();
-    semantic_search
-        .populate_from_directory(working_dir)
-        .map_err(HandlerError::Internal)?;
-    let elapsed = start.elapsed().as_millis() as u64;
-    Ok(EnsureResult::auto_built(
-        semantic_search.index().len(),
-        elapsed,
-    ))
-}
-
 /// Handler for check_architecture tool
 #[cognicode_macros::aix_tool(
     name = "check_architecture",
@@ -1912,10 +1874,12 @@ mod basis;
 mod complexity_handlers;
 pub mod goal;
 mod graph_loading;
+mod semantic_index;
 pub mod usage_search;
 pub use basis::BasisDto;
 use basis::compute_basis;
 use graph_loading::load_graph_off_the_runtime;
+use semantic_index::ensure_semantic_indexed_with_services;
 pub use usage_search::{handle_find_usages, handle_find_usages_with_context};
 /// Handler for safe_refactor tool
 // Refactor handlers module
@@ -3099,7 +3063,8 @@ pub async fn handle_semantic_search(
     }
 
     // Ensure the search index is populated before querying
-    let _ensure = ensure_semantic_indexed_with_services(&semantic_search, &working_dir)?;
+    let _ensure =
+        ensure_semantic_indexed_with_services(semantic_search.clone(), working_dir).await?;
 
     // Convert kind filters. `from_search_label` is the same table this handler
     // used to spell out inline and `WorkspaceSession` spelled out again; it
