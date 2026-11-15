@@ -21,7 +21,7 @@ use std::path::Path;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::application::graph_snapshot::source_digest;
+use crate::application::graph_snapshot::{TreeFile, build_manifest, source_digest};
 use crate::application::services::analyze::{Coverage, CoverageFacts};
 use crate::infrastructure::graph::source_files::{SourceInventory, inventory};
 use crate::interface::coverage::CoverageInfo;
@@ -42,7 +42,11 @@ pub struct GoalBasis {
     /// same contents give the same digest, and an edited file changes it.
     pub source_manifest_digest: String,
     /// Where the graph came from: `built`, `cache` or `daemon`.
-    pub graph_source: String,
+    ///
+    /// `None` when the answer did not build a graph: a goal that only read
+    /// the tree has no graph to name, and a word that named one would be a
+    /// word nobody measured.
+    pub graph_source: Option<String>,
 }
 
 /// The basis of an answer computed over `built`.
@@ -52,14 +56,45 @@ pub struct GoalBasis {
 /// separately and does not depend on this.
 pub fn graph_basis(workspace: &Path, built: &ProjectGraph) -> Option<GoalBasis> {
     let manifest = built.manifest.as_ref()?;
-    let workspace = workspace
-        .canonicalize()
-        .unwrap_or_else(|_| workspace.to_path_buf());
     Some(GoalBasis {
-        workspace: workspace.to_string_lossy().to_string(),
+        workspace: canonical_workspace(workspace),
         source_manifest_digest: source_digest(manifest),
-        graph_source: built.source.published_label().to_string(),
+        graph_source: Some(built.source.published_label().to_string()),
     })
+}
+
+/// The basis of an answer that read the tree without building the graph.
+///
+/// The digest is the one the graph route publishes, and that is the whole
+/// point of this function: the manifest is built by the same two calls in
+/// both routes —the tree state and the manifest over it— and the digest
+/// hashes the relative path and the content hash of every file, not the
+/// symbol counts the graph fills in afterwards. Two answers about the same
+/// tree therefore carry the same digest, and a client can tell whether the
+/// answer it is holding describes the tree it just read.
+///
+/// What is absent is the graph: this answer read the tree, it did not build
+/// a graph of it.
+pub fn tree_basis(workspace: &Path, files: &[TreeFile]) -> GoalBasis {
+    let manifest = build_manifest(workspace, files);
+    GoalBasis {
+        workspace: canonical_workspace(workspace),
+        source_manifest_digest: source_digest(&manifest),
+        graph_source: None,
+    }
+}
+
+/// The workspace as the basis names it: canonical, or the path it was given
+/// when the filesystem cannot say.
+///
+/// The two routes name the workspace the same way, and a digest compared
+/// across routes is only comparable when the workspace it names is the same.
+fn canonical_workspace(workspace: &Path) -> String {
+    workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf())
+        .to_string_lossy()
+        .to_string()
 }
 
 /// The line of text that says what an answer covered.
@@ -240,14 +275,43 @@ mod tests {
                 .to_string_lossy()
         );
         assert_eq!(
-            basis.graph_source,
-            built.source.published_label(),
+            basis.graph_source.as_deref(),
+            Some(built.source.published_label()),
             "the word is the one the graph's own source publishes"
         );
         assert_eq!(
             basis.source_manifest_digest,
             source_digest(built.manifest.as_ref().expect("the manifest")),
             "the digest is the one the load's manifest has"
+        );
+    }
+
+    #[test]
+    fn the_basis_of_a_tree_that_was_read_dates_it_and_names_no_graph() {
+        use crate::application::services::analysis_service::TreeState;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write");
+        let inventory = inventory(dir.path());
+        let tree = TreeState::of(&inventory);
+
+        let basis = tree_basis(dir.path(), &tree.files);
+
+        assert_eq!(
+            basis.workspace,
+            dir.path()
+                .canonicalize()
+                .expect("canonical")
+                .to_string_lossy()
+        );
+        assert_eq!(
+            basis.graph_source, None,
+            "a goal that read the tree built no graph, and names none"
+        );
+        assert_eq!(
+            basis.source_manifest_digest,
+            source_digest(&build_manifest(dir.path(), &tree.files)),
+            "the digest is the one the manifest of that tree has"
         );
     }
 

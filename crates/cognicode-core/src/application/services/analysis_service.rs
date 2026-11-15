@@ -57,6 +57,31 @@ pub struct TreeState {
     pub holes: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
 }
 
+impl TreeState {
+    /// The tree as a walk that already happened found it.
+    ///
+    /// The goals that read the tree walk it once and need two things from
+    /// it: the files the walk found and the holes it declared. This is
+    /// that walk, already paid — the reader of the tree and the reader of
+    /// its freshness are the same walk, and a second one would be paying
+    /// twice for the same tree.
+    pub fn of(inventory: &crate::infrastructure::graph::source_files::SourceInventory) -> Self {
+        Self {
+            files: inventory
+                .source_files()
+                .filter_map(|file| {
+                    Some(TreeFile {
+                        path: file.path.clone(),
+                        language: file.language?,
+                        mtime_millis: file.mtime_millis,
+                    })
+                })
+                .collect(),
+            holes: inventory.coverage_holes(),
+        }
+    }
+}
+
 /// How a build obtains the repository that holds the relations.
 ///
 /// The repository is created per build and not shared between builds: a
@@ -345,19 +370,7 @@ impl AnalysisService {
     /// application needs —the files, and the holes— and nothing else.
     pub fn tree_state(&self, project_dir: &Path) -> TreeState {
         let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
-        TreeState {
-            files: inventory
-                .source_files()
-                .filter_map(|file| {
-                    Some(TreeFile {
-                        path: file.path.clone(),
-                        language: file.language?,
-                        mtime_millis: file.mtime_millis,
-                    })
-                })
-                .collect(),
-            holes: inventory.coverage_holes(),
-        }
+        TreeState::of(&inventory)
     }
 
     /// Where an identifier occurs in one file of the tree, with the source

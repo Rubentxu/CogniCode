@@ -17,19 +17,28 @@
 //! el grafo, y este goal no lo construye: publicarlas vacías sería publicar
 //! una cuenta que nadie midió.
 //!
-//! Y por lo mismo no publica frescura. La frescura es el digest del
-//! manifiesto que conserva la carga del grafo; este goal es el primero que
-//! corre y carga lo que el llamante le da, así que no tiene manifiesto que
-//! pueda digestar. Un digest inventado sería una identidad que nadie midió,
-//! y esta respuesta se publica sin fechar.
+//! ## La frescura que sí publica
+//!
+//! La frescura no es un dato del grafo: es el digest del manifiesto de las
+//! fuentes, y el manifiesto describe el **árbol**, no el grafo. Este goal lee
+//! el árbol entero —de ahí su cobertura— así que puede publicar su digest sin
+//! construir el grafo, y publica el mismo digest que publicarían los goals
+//! que sí lo construyen: el manifiesto se construye con las mismas dos
+//! llamadas en las dos rutas y el digest no cuenta los símbolos que el grafo
+//! añade después.
+//!
+//! Lo que no publica es de dónde salió un grafo, porque aquí no hay ninguno:
+//! se lee el árbol y se fecha lo leído.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::application::services::analysis_service::TreeState;
+use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
-use crate::interface::goals::common::coverage_of;
+use crate::interface::goals::common::{GoalBasis, coverage_of_inventory, tree_basis};
 use crate::interface::goals::{GoalInfo, GoalPhase, goal_info, registry};
 use crate::interface::workspace::detect_languages;
 
@@ -79,6 +88,14 @@ pub struct GoalStatus {
     pub workspace: WorkspaceStatus,
     /// La cobertura de la lectura del workspace.
     pub coverage: CoverageInfo,
+    /// Lo que el árbol que se leyó es, y de dónde salió.
+    ///
+    /// El digest es el del manifiesto de las fuentes: el mismo árbol da el
+    /// mismo digest, y cualquier cambio lo cambia. Es el digest que
+    /// publican los goals que construyen el grafo, así que las respuestas
+    /// de unos y otros se pueden comparar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
     /// Los goals que este build ofrece.
     pub goals: Vec<GoalInfo>,
 }
@@ -106,6 +123,11 @@ pub struct WorkspaceStatus {
 /// La misma función la llaman el MCP y el CLI: el sobre que devuelve una
 /// superficie es el mismo sobre que devuelve la otra.
 pub fn status(input: &StatusInput, workspace: &Path) -> GoalStatus {
+    // Un solo recorrido, y de él sale todo lo que contesta este goal: los
+    // ficheros que leyó, los agujeros que dejó y el digest que lo fecha.
+    let inventory = inventory(workspace);
+    let tree = TreeState::of(&inventory);
+
     let languages: Vec<String> = detect_languages(workspace)
         .iter()
         .map(|language| language.name().to_string())
@@ -125,7 +147,7 @@ pub fn status(input: &StatusInput, workspace: &Path) -> GoalStatus {
         Vec::new()
     };
 
-    let coverage = coverage_of(workspace);
+    let coverage = coverage_of_inventory(&inventory);
     let version = env!("CARGO_PKG_VERSION");
     let summary = format!(
         "CogniCode {version}: {} goal(s), workspace con {} lenguaje(s) detectado(s), \
@@ -146,6 +168,7 @@ cobertura {}.",
             languages,
         },
         coverage,
+        basis: Some(tree_basis(workspace, &tree.files)),
         goals,
     }
 }
