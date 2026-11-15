@@ -13,8 +13,10 @@
 //! ```
 //!
 //! They are `async` by signature, but the work does not yield: the walk of
-//! the tree and the read of every file of it happen inside the call, on the
-//! thread of the runtime that serves it. A consumer that uses
+//! the tree happens inside the call —and, for the content search, the read
+//! of every file of it too— on the thread of the runtime that serves it.
+//! The listing collects the entries of the tree; it does not read the
+//! files. A consumer that uses
 //! `cognicode-core` as a library — the SDK, a consumer that publishes its
 //! own MCP surface — gets the same defect the product no longer has.
 //!
