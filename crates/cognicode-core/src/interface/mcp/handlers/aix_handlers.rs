@@ -24,7 +24,7 @@
 //! Plus 2 Phase 3A proactive tool handlers:
 //! suggest_context, reparse_on_edit.
 
-use super::{published_line, *};
+use super::{published_line, semantic_index::ensure_semantic_indexed, *};
 
 // The incremental reindex, and what it costs. It lives here because it
 // is the body of the `reparse_on_edit` tool, and the file it lives in
@@ -147,7 +147,7 @@ pub async fn handle_ranked_symbols(
     ctx: &HandlerContext,
     input: RankedSymbolsInput,
 ) -> HandlerResult<RankedSymbolsResult> {
-    let _ensure_sem = ensure_semantic_indexed(ctx)?;
+    let _ensure_sem = ensure_semantic_indexed(ctx).await?;
     let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();
@@ -516,7 +516,7 @@ pub async fn handle_nl_to_symbol(
     ctx: &HandlerContext,
     input: NlToSymbolInput,
 ) -> HandlerResult<NlToSymbolResult> {
-    let _ensure_sem = ensure_semantic_indexed(ctx)?;
+    let _ensure_sem = ensure_semantic_indexed(ctx).await?;
     let _ensure = ensure_graph_built(ctx).await?;
 
     let graph = ctx.analysis_service.get_project_graph();

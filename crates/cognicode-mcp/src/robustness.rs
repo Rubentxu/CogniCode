@@ -406,6 +406,32 @@ mod tests {
         }
     }
 
+    /// The window of the tool that populates the semantic index covers
+    /// the population.
+    ///
+    /// The population is a walk of the tree and an extraction of the
+    /// symbols of every file of it: the same work as the build of the
+    /// graph, and no more expensive. A window shorter than that work
+    /// answers the caller with a timeout while the index is populated
+    /// anyway — and the population cannot be aborted, so the work would
+    /// be done and thrown away.
+    ///
+    /// The tool declares that it needs the graph, and the window that
+    /// covers the build of the graph is the one that covers the
+    /// population. This contract watches that link: a tool that stopped
+    /// declaring that it needs the graph would drop to the window of its
+    /// category —half a second for the `search` one— and every call would
+    /// be cut while the index was populated.
+    #[test]
+    fn the_window_of_the_tool_that_populates_the_index_covers_the_population() {
+        let window = timeout_for_tool("nl_to_symbol", "search");
+        assert!(
+            window >= GRAPH_WINDOW,
+            "the population of the semantic index does not fit in {window:?}: the index is \
+             populated anyway and the answer is thrown away"
+        );
+    }
+
     /// The window of a tool whose work carries a bound covers the
     /// longest that work may take.
     ///
