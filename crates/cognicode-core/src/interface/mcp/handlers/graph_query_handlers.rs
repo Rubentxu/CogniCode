@@ -78,7 +78,7 @@ pub async fn handle_graph_query(
     ctx: &HandlerContext,
     input: GraphQueryInput,
 ) -> HandlerResult<GraphQueryOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         Ok(None) => {
             return Err(HandlerError::Internal(
@@ -247,7 +247,7 @@ pub async fn handle_graph_explain(
     ctx: &HandlerContext,
     input: GraphExplainInput,
 ) -> HandlerResult<GraphExplainOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         Ok(None) => return Err(HandlerError::Internal("No graph available".into())),
         Err(e) => return Err(HandlerError::Internal(format!("{e}"))),
@@ -421,7 +421,7 @@ pub async fn handle_get_type_references(
     ctx: &HandlerContext,
     input: GetTypeRefsInput,
 ) -> HandlerResult<GetTypeRefsOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -479,7 +479,7 @@ pub async fn handle_get_imports(
     ctx: &HandlerContext,
     input: GetImportsInput,
 ) -> HandlerResult<GetImportsOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -551,7 +551,7 @@ pub async fn handle_get_implementors(
     ctx: &HandlerContext,
     input: GetImplementorsInput,
 ) -> HandlerResult<GetImplementorsOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -613,7 +613,7 @@ pub async fn handle_get_members(
     ctx: &HandlerContext,
     input: GetMembersInput,
 ) -> HandlerResult<GetMembersOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -695,7 +695,7 @@ pub async fn handle_graph_query_filtered(
     ctx: &HandlerContext,
     input: GraphQueryFilteredInput,
 ) -> HandlerResult<GraphQueryFilteredOutput> {
-    let _graph = match ctx.get_graph_store().load_graph() {
+    let _graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -763,7 +763,7 @@ pub async fn handle_export_callflow(
     ctx: &HandlerContext,
     input: ExportCallflowInput,
 ) -> HandlerResult<ExportCallflowOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };

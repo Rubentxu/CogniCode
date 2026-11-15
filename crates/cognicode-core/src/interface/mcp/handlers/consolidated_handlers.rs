@@ -413,7 +413,7 @@ pub async fn handle_codebase_map(
     ctx: &HandlerContext,
     input: CodebaseMapInput,
 ) -> HandlerResult<CodebaseMapOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -597,7 +597,7 @@ pub async fn handle_review_pr(
     ctx: &HandlerContext,
     input: ReviewPrInput,
 ) -> HandlerResult<ReviewPrOutput> {
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
@@ -806,7 +806,7 @@ pub async fn handle_iac_query(
     }
 
     // Fall back to in-memory graph if IacRepository is not configured
-    let graph = match ctx.get_graph_store().load_graph() {
+    let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => {
             return Err(HandlerError::Internal(
