@@ -3,15 +3,49 @@
 //! The rule that judges a call is written once, and the only thing that
 //! differs between the routes is the scope it is judged against: the
 //! project when there is an index, the file when there is not.
+//!
+//! The judgment says WHY it refused, and not only that it refused. The two
+//! scopes know different things: the project holds every declaration it
+//! has, and the file holds only its own. A refusal the project made is a
+//! proof that the call is somebody else's, and a refusal the file made
+//! about a type it does not declare is not a proof at all: the type may
+//! live in another file of the project. A route that hears only "refused"
+//! cannot tell a hole from somebody else's call, and it counts the world
+//! outside the project as a hole.
 
 use super::package;
 use super::per_file_graph::GlobalSymbolIndex;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+use crate::domain::value_objects::pending_reference::ScopeAnswer;
 use crate::domain::value_objects::{CallSite, Receiver, TargetResolution};
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::parser::naming;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+/// What a scope could say about a call.
+///
+/// The three answers are not three ways of saying no: they say how much
+/// the scope knows, and the route that reports a refusal needs to know
+/// which one it was.
+///
+/// - The scope OWNS the call: it declares the type the call is written
+///   through, so the call may be the scope's own.
+/// - The scope COULD NOT PROVE the call is somebody else's: the type the
+///   call is written through may live in another file of the project, and
+///   the scope cannot tell that from a type of somebody else.
+/// - The scope PROVED the call is somebody else's: the crate the path
+///   starts at is outside the project, or the receiver belongs to
+///   somebody else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScopeVerdict {
+    /// The scope owns the call.
+    Owned,
+    /// The scope could not prove the call is somebody else's.
+    Undecided,
+    /// The scope proved the call is somebody else's.
+    Foreign,
+}
 
 /// What a scope knows about the names it declares.
 ///
@@ -19,7 +53,16 @@ use std::path::Path;
 /// is not: that is the whole difference between the routes, and the rule
 /// that judges a call is written once.
 pub(crate) trait Declares {
-    /// Whether the scope declares a name, spelled exactly this way.
+    /// What the scope could say about a name, spelled exactly this way.
+    ///
+    /// The answer is not a yes or a no: it says how much the scope knows.
+    /// The project holds every declaration it has, so a name it does not
+    /// declare names something outside the project, and the project PROVES
+    /// it. The file holds only the declarations of the file, so a name it
+    /// does not declare may live in another file of the project, and the
+    /// file CANNOT PROVE it. The two answers are not the same answer, and a
+    /// route that cannot tell them apart counts the world outside the
+    /// project as a hole.
     ///
     /// The spelling is the scope's to judge, and `folds_case` says whether
     /// the language that wrote the name folds it.
@@ -42,7 +85,7 @@ pub(crate) trait Declares {
         target: Option<&str>,
         qualifier_path: Option<&str>,
         folds_case: bool,
-    ) -> bool;
+    ) -> ScopeVerdict;
 }
 
 impl Declares for GlobalSymbolIndex {
@@ -52,8 +95,15 @@ impl Declares for GlobalSymbolIndex {
         _target: Option<&str>,
         _qualifier_path: Option<&str>,
         folds_case: bool,
-    ) -> bool {
-        GlobalSymbolIndex::declares(self, name, folds_case)
+    ) -> ScopeVerdict {
+        // The project holds every declaration it has: a name it does not
+        // declare names something outside the project, and the project
+        // PROVES it.
+        if GlobalSymbolIndex::declares(self, name, folds_case) {
+            ScopeVerdict::Owned
+        } else {
+            ScopeVerdict::Foreign
+        }
     }
 }
 
@@ -84,7 +134,7 @@ impl Declares for FileScope<'_> {
         target: Option<&str>,
         qualifier_path: Option<&str>,
         folds_case: bool,
-    ) -> bool {
+    ) -> ScopeVerdict {
         let declared = self
             .local
             .get(&name.to_lowercase())
@@ -96,7 +146,7 @@ impl Declares for FileScope<'_> {
                 })
             });
         if declared {
-            return true;
+            return ScopeVerdict::Owned;
         }
         // The file does not declare the name, but it may own it: the name
         // the call names is an item of an impl of that name, so the call is
@@ -105,13 +155,56 @@ impl Declares for FileScope<'_> {
         // The owner answers when its path and the path of the call's
         // qualifier are the same type: the names are equal and the modules
         // are compatible.
-        target.is_some_and(|target| {
+        let owned = target.is_some_and(|target| {
             self.impl_owners.get(target).is_some_and(|owners| {
                 owners
                     .iter()
                     .any(|owner| naming::owner_answers_to(owner, qualifier_path, folds_case))
             })
-        })
+        });
+        if owned {
+            return ScopeVerdict::Owned;
+        }
+        // The file does not declare the name, and it cannot prove the name
+        // is somebody else's: the type the call is written through may live
+        // in another file of the project.
+        ScopeVerdict::Undecided
+    }
+}
+
+impl FileScope<'_> {
+    /// Whether the file declares the name a call names.
+    ///
+    /// The name the call names is the last segment of the path it is
+    /// written through: `render` in `Widget::render(w)`. The file declares
+    /// it when it has a symbol of that name, or when one of its `impl`s has
+    /// an item of that name — the method of a trait the file implements is
+    /// the file's own, even when the type the impl is about lives in
+    /// another file of the project.
+    ///
+    /// The spelling is the language's: a language that tells `Describe` from
+    /// `describe` only counts the declaration spelled the way the call
+    /// spells it.
+    fn declares_name(&self, name: &str, folds_case: bool) -> bool {
+        if self
+            .local
+            .get(&name.to_lowercase())
+            .is_some_and(|candidates| {
+                candidates.iter().any(|id| {
+                    self.graph.get_symbol(id).is_some_and(|symbol| {
+                        Language::answers_to_in(symbol.name(), name, folds_case)
+                    })
+                })
+            })
+        {
+            return true;
+        }
+        // The name may be an item of one of the file's `impl`s: the trait
+        // method an impl writes is the file's own, and the file may not hold
+        // it as a symbol of its own.
+        self.impl_owners
+            .keys()
+            .any(|item| Language::answers_to_in(item, name, folds_case))
     }
 }
 
@@ -136,6 +229,10 @@ impl Declares for FileScope<'_> {
 /// The facts of a call are distinct inputs, and the rule asks for each of
 /// them by name: the name, the qualifier, the path of the qualifier, the
 /// head of the path and the receiver.
+///
+/// The rule answers WHY it refused, and not only that it refused: the two
+/// scopes know different things, and a route that hears only "refused"
+/// cannot tell a hole from somebody else's call.
 #[allow(clippy::too_many_arguments)] // the facts of a call, one by one
 pub(crate) fn call_is_owned<S: Declares + ?Sized>(
     scope: &S,
@@ -146,17 +243,31 @@ pub(crate) fn call_is_owned<S: Declares + ?Sized>(
     target: Option<&str>,
     path_head: Option<&str>,
     receiver: Option<&Receiver>,
-) -> bool {
+) -> ScopeVerdict {
     // The name the call writes is read in the language the call is written
     // in, and that language says whether the spelling folds.
     let folds_case = Language::folds_case_in(caller_file);
-    if type_qualifier
-        .is_some_and(|qualifier| !scope.declares(qualifier, target, qualifier_path, folds_case))
-    {
-        return false;
+
+    // What the scope could say about the QUALIFIER: the type the call is
+    // written through. A call written without one names nothing the scope
+    // could refuse.
+    let verdict = match type_qualifier {
+        Some(qualifier) => scope.declares(qualifier, target, qualifier_path, folds_case),
+        None => ScopeVerdict::Owned,
+    };
+    // The scope PROVED the qualifier is somebody else's: the call is
+    // somebody else's, whatever the rest of the code says.
+    if verdict == ScopeVerdict::Foreign {
+        return ScopeVerdict::Foreign;
     }
+
+    // The rules both scopes share. They PROVE foreignness, so they win
+    // over a qualifier the scope could not judge: a call written
+    // `serde_json::to_value(1)` names a function of a crate outside the
+    // project whatever the file declares, and a call written on a value
+    // whose type belongs to somebody else names that type's method.
     if path_head.is_some_and(|head| manifests.is_external_crate(head, caller_file)) {
-        return false;
+        return ScopeVerdict::Foreign;
     }
     // A call written on a value names a method of the receiver's type, and
     // the file said whose the receiver is. A receiver that belongs to
@@ -170,13 +281,57 @@ pub(crate) fn call_is_owned<S: Declares + ?Sized>(
     match receiver {
         Some(Receiver::Crate(crate_name)) => {
             if manifests.is_external_crate(crate_name, caller_file) {
-                return false;
+                return ScopeVerdict::Foreign;
             }
         }
-        Some(Receiver::Unbound) => return false,
+        Some(Receiver::Unbound) => return ScopeVerdict::Foreign,
         Some(Receiver::Project) | Some(Receiver::Uncertain) | None => {}
     }
-    true
+
+    // Nothing proved the call somebody else's. What is left is what the
+    // scope could say about the qualifier: it owns the call, or it could
+    // not prove the call is somebody else's.
+    verdict
+}
+
+/// The judgment of a scope about a call.
+///
+/// The judgment carries three facts, and the route that reports a refusal
+/// needs all three: what the call names (or why it names nothing), what the
+/// scope could say about the call, and whether the scope declares the name
+/// the call names.
+///
+/// The route asks the judgment; it does not derive any of it again. A
+/// route that re-derives the judgment is a second answer about the same
+/// call, and two answers about the same call are the defect this rule
+/// exists to prevent.
+pub(crate) struct CallJudgment {
+    /// What the call names, or why it names nothing.
+    pub resolution: TargetResolution,
+    /// What the scope could say about the call.
+    pub verdict: ScopeVerdict,
+    /// Whether the scope declares the name the call names.
+    pub declares_name: bool,
+}
+
+impl CallJudgment {
+    /// The answer the scope gives about a refusal.
+    ///
+    /// A call the scope PROVED is somebody else's is not a hole: what the
+    /// code calls may live outside the scope — a function of another crate,
+    /// a module of Ansible — and the graph says nothing about the world
+    /// outside it. A call the scope could not prove, and whose name the
+    /// scope declares, may be the scope's own: the type the call is
+    /// written through may live in another file of the project, and the
+    /// scope cannot tell that from a type of somebody else. That call is a
+    /// hole.
+    pub(crate) fn answer(&self) -> ScopeAnswer {
+        match self.verdict {
+            ScopeVerdict::Foreign => ScopeAnswer::Foreign,
+            _ if self.declares_name => ScopeAnswer::PossiblyTheScope,
+            _ => ScopeAnswer::Foreign,
+        }
+    }
 }
 
 /// A call site judged against the file as the whole scope.
@@ -203,19 +358,24 @@ pub(crate) fn call_is_owned<S: Declares + ?Sized>(
 /// The call is judged as the reader stated it: the [`CallSite`] already
 /// says the name, the qualifier, the head of the path and the receiver, so
 /// the route does not take them apart and hand them over one by one.
-pub(crate) fn resolve_call_within_file(
+///
+/// The judgment travels with the answer: the route that reports the
+/// refusals of this scope has to know WHY the call was refused, because a
+/// refusal the file could not prove is a hole and a refusal the file
+/// proved is somebody else's call.
+pub(crate) fn judge_call_within_file(
     site: &CallSite,
     manifests: &mut package::Manifests,
     local: &HashMap<String, Vec<SymbolId>>,
     graph: &CallGraph,
     impl_owners: &HashMap<String, HashSet<String>>,
-) -> TargetResolution {
+) -> CallJudgment {
     let scope = FileScope {
         local,
         graph,
         impl_owners,
     };
-    if !call_is_owned(
+    let verdict = call_is_owned(
         &scope,
         manifests,
         Some(Path::new(&site.origin_file)),
@@ -224,15 +384,24 @@ pub(crate) fn resolve_call_within_file(
         Some(site.target.as_str()),
         site.path_head.as_deref(),
         site.receiver.as_ref(),
-    ) {
-        return TargetResolution::Unresolved(site.target.clone());
+    );
+    let folds_case = Language::folds_case_in(Some(Path::new(&site.origin_file)));
+    let resolution = match verdict {
+        ScopeVerdict::Owned => resolve_within_file(&site.target, local, graph, folds_case),
+        _ => TargetResolution::Unresolved(site.target.clone()),
+    };
+    // The scope's answer about the name the call names. It is asked only
+    // when the call names no declaration: a call the scope tied to one of
+    // its declarations needs no answer.
+    let declares_name = match resolution.outcome() {
+        Ok(_) => true,
+        Err(_) => scope.declares_name(&site.target, folds_case),
+    };
+    CallJudgment {
+        resolution,
+        verdict,
+        declares_name,
     }
-    resolve_within_file(
-        &site.target,
-        local,
-        graph,
-        Language::folds_case_in(Some(Path::new(&site.origin_file))),
-    )
 }
 
 /// The answer the file itself gives about a name.

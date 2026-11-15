@@ -53,6 +53,31 @@
 //! The control is what makes the first measurement mean something: a rule
 //! that reported every refusal would pass the hole's measurement and
 //! count the whole world outside the project as a hole.
+//!
+//! ## The second defect: a refusal that carries its motive
+//!
+//! The hole of TASK-319 is measured, and it is measured with a rule that
+//! says "the file declares the name the call names -> the refusal is a
+//! hole". That rule is too wide, because it does not know WHY the route
+//! refused:
+//!
+//! - The file cannot prove the call is somebody else's when the call is
+//!   written through a TYPE the file does not declare: the type may live
+//!   in another file of the project. THAT is a hole.
+//! - The file CAN prove the call is somebody else's when the head of the
+//!   path is a crate outside the project: `serde_json::to_value(1)` names
+//!   a function of a crate the package pulls, and no file of the project
+//!   can change that. That is NOT a hole, and the file route used to
+//!   count it as one whenever the file happened to declare a symbol of
+//!   the same name.
+//! - The file CAN prove it too when the RECEIVER belongs to somebody
+//!   else: the file states the type of the receiver, and a type it does
+//!   not bind is the standard library's or a dependency's.
+//!
+//! Two routes, two counts about the same call: the project route proved
+//! the call was foreign and left no reference behind, and the file route
+//! left one. The motive of the refusal has to leave the judgment for the
+//! two routes to agree.
 
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
@@ -100,6 +125,53 @@ pub fn wait() -> Duration {
 }
 ";
 
+/// The manifest of the package of the fixture: it pulls `serde_json` from
+/// a registry, so the crate is outside the project.
+///
+/// The manifest is what makes the crate-path rule judgeable: a package
+/// that says nothing declares no crate from outside, and the call
+/// written through `serde_json` would not be judged at all.
+const CRATE_MANIFEST: &str = "\
+[package]
+name = \"fixture\"
+
+[dependencies]
+serde_json = \"1\"
+";
+
+/// A file that declares its OWN `to_value` and calls the crate's.
+///
+/// The file declares the name the call names, so the rule of TASK-319
+/// ("the file declares the name the call names -> the refusal is a hole")
+/// would call this a hole. The head of the path says otherwise: the call
+/// names a function of a crate outside the project, and the route can
+/// PROVE it.
+const CRATE_RS: &str = "\
+pub fn to_value(value: u64) -> u64 {
+    value
+}
+
+pub fn encode(value: u64) -> u64 {
+    serde_json::to_value(value)
+}
+";
+
+/// A file that declares its OWN `len` and calls somebody else's `len`.
+///
+/// The receiver is a value whose type the file does not bind: `Vec` is
+/// the standard library's, and the file says so by not binding it. The
+/// file declares the name the call names, and the rule of TASK-319 alone
+/// would call this a hole; the receiver says otherwise.
+const RECEIVER_RS: &str = "\
+pub fn len() -> usize {
+    0
+}
+
+pub fn run(values: &Vec<u8>) -> usize {
+    values.len()
+}
+";
+
 /// A temporary project with the given files, and the paths of the files.
 fn project(files: &[(&str, &str)]) -> (tempfile::TempDir, Vec<PathBuf>) {
     let dir = tempfile::tempdir().expect("a temporary project");
@@ -113,6 +185,15 @@ fn project(files: &[(&str, &str)]) -> (tempfile::TempDir, Vec<PathBuf>) {
             path
         })
         .collect();
+    (dir, paths)
+}
+
+/// A temporary project whose package pulls `serde_json` from outside, and
+/// the paths of the files.
+fn project_with_crate(files: &[(&str, &str)]) -> (tempfile::TempDir, Vec<PathBuf>) {
+    let (dir, paths) = project(files);
+    std::fs::write(dir.path().join("Cargo.toml"), CRATE_MANIFEST)
+        .expect("the manifest of the package is written");
     (dir, paths)
 }
 
@@ -225,6 +306,75 @@ fn a_call_the_file_never_mentions_leaves_no_reference_behind() {
         pending.is_empty(),
         "the call names something the file never declares: it is somebody else's call and not \
          a hole, so it leaves no reference behind. The pending references are {pending:?}"
+    );
+}
+
+/// A call written through a crate from outside the project is NOT a hole.
+///
+/// The file declares its own `to_value` and calls the crate's
+/// `to_value`. The head of the path is a crate outside the project, and
+/// the route can PROVE the call is not the file's: no file of the project
+/// can change what `serde_json::to_value` names. So the refusal leaves
+/// no reference behind, exactly as it does in the project route.
+///
+/// The file declares the name the call names, and that is what makes this
+/// measurement mean something: the rule of TASK-319 alone would call it a
+/// hole, and the two routes would count the same call differently.
+#[test]
+fn a_call_written_through_a_crate_from_outside_leaves_no_reference_behind() {
+    let (dir, files) = project_with_crate(&[("lib.rs", CRATE_RS)]);
+    let (graph, pending) = file_route(dir.path(), &files[0]);
+
+    assert!(
+        pending.is_empty(),
+        "the head of the path is a crate outside the project: the route can prove the call is \
+         not the file's, so the refusal leaves no reference behind. The pending references are \
+         {pending:?}"
+    );
+    assert_eq!(
+        callers_of(&graph, "to_value"),
+        Vec::<String>::new(),
+        "the call names the crate's `to_value` and not the file's own: the file route does not \
+         join it"
+    );
+
+    // The project route answers the same: the crate is outside the
+    // project, and the call is not the project's either.
+    let service = AnalysisService::new();
+    service
+        .build_project_graph(dir.path())
+        .expect("the project graph is built");
+
+    assert_eq!(
+        callers_of(&service.get_project_graph(), "to_value"),
+        Vec::<String>::new(),
+        "two routes, one answer: the project route does not join it either"
+    );
+}
+
+/// A call written on a receiver that belongs to somebody else is NOT a
+/// hole either.
+///
+/// The file declares its own `len` and calls the standard library's
+/// `len`. The receiver is the proof: the file states the type of the
+/// value the call is written on, and it does not bind that type — so the
+/// type is the standard library's, and the route can PROVE the call is
+/// not the file's.
+#[test]
+fn a_call_on_a_receiver_that_belongs_to_somebody_else_leaves_no_reference_behind() {
+    let (dir, files) = project(&[("lib.rs", RECEIVER_RS)]);
+    let (graph, pending) = file_route(dir.path(), &files[0]);
+
+    assert!(
+        pending.is_empty(),
+        "the receiver belongs to somebody else and the route can prove it: the refusal leaves \
+         no reference behind. The pending references are {pending:?}"
+    );
+    assert_eq!(
+        callers_of(&graph, "len"),
+        Vec::<String>::new(),
+        "the call names the standard library's `len` and not the file's own: the file route does \
+         not join it"
     );
 }
 

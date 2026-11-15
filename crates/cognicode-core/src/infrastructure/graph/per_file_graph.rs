@@ -7,14 +7,13 @@
 use crate::application::ingest::types::SemanticOutcome;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::file_time::epoch_seconds;
-use crate::domain::value_objects::pending_reference::ScopeAnswer;
 use crate::domain::value_objects::{
     DependencyType, PendingClass, PendingReference, Receiver, RejectedRelation, TargetResolution,
     WalkDecision,
 };
 use crate::infrastructure::graph::ManifestHole;
 use crate::infrastructure::graph::call_ownership::{
-    call_is_owned, resolve_call_within_file, resolve_within_file,
+    CallJudgment, ScopeVerdict, call_is_owned, judge_call_within_file, resolve_within_file,
 };
 use crate::infrastructure::graph::package;
 use crate::infrastructure::graph::semantic_layer::{
@@ -23,7 +22,6 @@ use crate::infrastructure::graph::semantic_layer::{
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -289,6 +287,28 @@ impl GlobalSymbolIndex {
         caller_file: Option<&Path>,
         receiver: Option<&Receiver>,
     ) -> bool {
+        // The rule answers WHY it refused, and this route only needs to
+        // know whether the call is the project's. The motive is kept for
+        // the routes that report a refusal.
+        matches!(
+            self.verdict_of_call(type_qualifier, path_head, caller_file, receiver),
+            ScopeVerdict::Owned
+        )
+    }
+
+    /// What the project could say about a call.
+    ///
+    /// The same rule [`Self::owns_call`] applies, asked for its answer
+    /// instead of for its yes or no: the project holds every declaration
+    /// it has, so a call it refuses names a declaration the project does
+    /// not have anywhere, and the project PROVES it.
+    pub(crate) fn verdict_of_call(
+        &self,
+        type_qualifier: Option<&str>,
+        path_head: Option<&str>,
+        caller_file: Option<&Path>,
+        receiver: Option<&Receiver>,
+    ) -> ScopeVerdict {
         let mut packages = self.packages.lock().unwrap();
         call_is_owned(
             self,
@@ -328,10 +348,41 @@ impl GlobalSymbolIndex {
         caller_file: Option<&Path>,
         receiver: Option<&Receiver>,
     ) -> TargetResolution {
-        if !self.owns_call(type_qualifier, path_head, caller_file, receiver) {
-            return TargetResolution::Unresolved(name.to_string());
+        self.judge_call(name, type_qualifier, path_head, caller_file, receiver)
+            .resolution
+    }
+
+    /// The judgment of the project about a call.
+    ///
+    /// The judgment carries the resolution AND the motive of the refusal:
+    /// the route that reports the refusals of this scope has to know WHY
+    /// the call was refused, and a motive derived again by the route is a
+    /// second answer about the same call.
+    pub(crate) fn judge_call(
+        &self,
+        name: &str,
+        type_qualifier: Option<&str>,
+        path_head: Option<&str>,
+        caller_file: Option<&Path>,
+        receiver: Option<&Receiver>,
+    ) -> CallJudgment {
+        let verdict = self.verdict_of_call(type_qualifier, path_head, caller_file, receiver);
+        let resolution = match verdict {
+            ScopeVerdict::Owned => self.resolve(name, caller_file),
+            _ => TargetResolution::Unresolved(name.to_string()),
+        };
+        // The project's answer about the name the call names. It is asked
+        // only when the call names no declaration: a call the project tied
+        // to one of its declarations needs no answer.
+        let declares_name = match resolution.outcome() {
+            Ok(_) => true,
+            Err(_) => self.declares(name, Language::folds_case_in(caller_file)),
+        };
+        CallJudgment {
+            resolution,
+            verdict,
+            declares_name,
         }
-        self.resolve(name, caller_file)
     }
 
     /// Returns the candidate `SymbolId`s for a given name (used by callers
@@ -1101,13 +1152,18 @@ impl PerFileGraphCache {
             let qualifier = site.type_qualifier.as_deref();
             let head = site.path_head.as_deref();
             let receiver = site.receiver.as_ref();
-            let resolution = match global_index {
+            // The judgment carries the motive of a refusal: the route
+            // reports the refusals, and a refusal the scope could not prove
+            // is a hole while a refusal the scope proved is somebody else's
+            // call. The route asks the judgment; it does not derive the
+            // motive again.
+            let judgment = match global_index {
                 Some(index) => {
-                    index.resolve_call(&site.target, qualifier, head, Some(caller_path), receiver)
+                    index.judge_call(&site.target, qualifier, head, Some(caller_path), receiver)
                 }
                 None => {
                     let mut packages = self.packages.lock().unwrap();
-                    resolve_call_within_file(
+                    judge_call_within_file(
                         &site,
                         &mut packages,
                         &name_to_symbol,
@@ -1117,7 +1173,7 @@ impl PerFileGraphCache {
                 }
             };
 
-            match resolution.outcome() {
+            match judgment.resolution.outcome() {
                 Ok(callee_id) => {
                     if graph.get_symbol(&callee_id).is_some() {
                         // The caller and the callee are symbols of this
@@ -1142,36 +1198,13 @@ impl PerFileGraphCache {
                     // The refusal leaves a reference behind when it is a
                     // hole in what the graph knows. Whether it is one is
                     // the domain's rule, and it lives in one place; what
-                    // the scope could say about the call is the route's,
-                    // and the route that knows the scope is the one that
-                    // says it.
-                    let answer = match global_index {
-                        // The project holds every declaration it has: a
-                        // call it refuses names a declaration the project
-                        // does not have anywhere, and the graph says
-                        // nothing about the world outside the project.
-                        Some(_) => ScopeAnswer::Foreign,
-                        // The file IS the scope, and the file cannot prove
-                        // that a call written through a type it does not
-                        // declare is somebody else's: the type may live in
-                        // another file of the project. When the file
-                        // declares the name the call names, the call may
-                        // be the file's own, and the refusal is a hole.
-                        None => {
-                            if file_declares(
-                                &site.target,
-                                &name_to_symbol,
-                                &graph,
-                                &impl_owners,
-                                language.folds_case(),
-                            ) {
-                                ScopeAnswer::PossiblyTheScope
-                            } else {
-                                ScopeAnswer::Foreign
-                            }
-                        }
-                    };
-                    if let Some(reference) = PendingReference::of_call(&site, class, answer) {
+                    // the scope could say about the call is the
+                    // judgment's, and the judgment travels with the
+                    // refusal because the two scopes do not know the same
+                    // thing.
+                    if let Some(reference) =
+                        PendingReference::of_call(&site, class, judgment.answer())
+                    {
                         pending.push(reference);
                     }
                 }
@@ -1254,42 +1287,6 @@ impl Clone for PerFileGraphCache {
             packages: Mutex::new(package::Manifests::default()), // The manifests are read again
         }
     }
-}
-
-/// Whether the file declares the name a call names.
-///
-/// The name the call names is the last segment of the path it is written
-/// through: `render` in `Widget::render(w)`. The file declares it when
-/// it has a symbol of that name, or when one of its `impl`s has an item
-/// of that name — the method of a trait the file implements is the
-/// file's own, even when the type the impl is about lives in another
-/// file of the project.
-///
-/// The spelling is the language's: a language that tells `Describe` from
-/// `describe` only counts the declaration spelled the way the call spells
-/// it.
-fn file_declares(
-    name: &str,
-    local: &HashMap<String, Vec<SymbolId>>,
-    graph: &CallGraph,
-    impl_owners: &HashMap<String, HashSet<String>>,
-    folds_case: bool,
-) -> bool {
-    if local.get(&name.to_lowercase()).is_some_and(|candidates| {
-        candidates.iter().any(|id| {
-            graph
-                .get_symbol(id)
-                .is_some_and(|symbol| Language::answers_to_in(symbol.name(), name, folds_case))
-        })
-    }) {
-        return true;
-    }
-    // The name may be an item of one of the file's `impl`s: the trait
-    // method an impl writes is the file's own, and the file may not hold
-    // it as a symbol of its own.
-    impl_owners
-        .keys()
-        .any(|item| Language::answers_to_in(item, name, folds_case))
 }
 
 /// Filesystem fingerprint for cache invalidation.
