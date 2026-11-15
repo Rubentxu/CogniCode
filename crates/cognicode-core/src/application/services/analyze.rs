@@ -279,6 +279,14 @@ pub fn read_coverage(unread: &[crate::application::dto::UnreadEntry]) -> Coverag
                             target: entry.detail.clone(),
                         }
                     }
+                    // The text of a bound is already a sentence about the
+                    // answer, so it is published as it is: a prefix would
+                    // say the walk failed when it was stopped.
+                    UnreadKind::Budget => {
+                        crate::infrastructure::graph::per_file_graph::SkipReason::Budget(
+                            entry.detail.clone(),
+                        )
+                    }
                 },
             },
         )
