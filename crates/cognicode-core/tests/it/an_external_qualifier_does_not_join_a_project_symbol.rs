@@ -611,6 +611,103 @@ pub fn make() -> Shape {
     );
 }
 
+/// A type the project declares in ANOTHER file, and an impl of it HERE.
+///
+/// The file writes `Widget::new(7)` and the file owns `new`: it is the
+/// method of the impl. The route without a project index judges the
+/// qualifier against the declarations of the file, and the file does not
+/// declare `Widget` — the type lives in another file — so the call was read
+/// as somebody else's and the file's own `new` lost its caller.
+///
+/// The project route answers differently: the project declares `Widget`, so
+/// the qualifier is the project's and the call is the project's. Two routes
+/// that answer differently about the same call are two graphs, and the
+/// h24 contract is exactly that.
+#[test]
+fn an_impl_of_a_type_declared_in_another_file_still_resolves() {
+    let widget = "\
+pub struct Widget(pub u64);
+";
+    let other = "\
+pub mod widget;
+use widget::Widget;
+
+impl Widget {
+    pub fn new(value: u64) -> Self {
+        Widget(value)
+    }
+}
+
+pub fn make() -> Widget {
+    Widget::new(7)
+}
+";
+    let (dir, files) = project(&[("widget.rs", widget), ("other.rs", other)]);
+
+    let cache = PerFileGraphCache::with_project_dir(dir.path().to_string_lossy().into_owned());
+    let (graph, _pending) = cache
+        .get_or_build(&files[1])
+        .expect("the file is read and its graph is built");
+    assert_eq!(
+        callers_of(&graph, "new"),
+        vec!["make".to_string()],
+        "the file implements `Widget`, so the call through it is the file's own"
+    );
+
+    let graph = per_file_route(dir.path(), &files);
+    assert_eq!(
+        callers_of(&graph, "new"),
+        vec!["make".to_string()],
+        "the project route answers the same"
+    );
+}
+
+/// The control: a qualifier the file does not own still does not join.
+///
+/// The file implements a trait for a type that is not the project's — the
+/// standard library's `Duration` — and the trait declares a `from_millis`
+/// of its own. The call `Duration::from_millis(10)` names the standard
+/// library's associated function, because an inherent function of a type
+/// wins over a trait's, and the file's trait method is not it.
+///
+/// The control discriminates the rule it guards: the file DOES declare a
+/// `from_millis` (the trait's), so the call would join it if the judgment
+/// accepted the qualifier. It does not, because the owner of a trait impl is
+/// the trait and not the type.
+#[test]
+fn an_impl_for_a_type_the_project_does_not_own_still_does_not_join() {
+    let other = "\
+use std::time::Duration;
+
+pub trait Describe {
+    fn render(&self) -> u8 {
+        1
+    }
+}
+
+impl Describe for Duration {
+    fn from_millis(&self) -> u64 {
+        0
+    }
+}
+
+pub fn wait() {
+    Duration::from_millis(10);
+}
+";
+    let (dir, files) = project(&[("other.rs", other)]);
+
+    let cache = PerFileGraphCache::with_project_dir(dir.path().to_string_lossy().into_owned());
+    let (graph, _pending) = cache
+        .get_or_build(&files[0])
+        .expect("the file is read and its graph is built");
+    assert_eq!(
+        callers_of(&graph, "from_millis"),
+        Vec::<String>::new(),
+        "the call names the standard library's `from_millis`: the file's trait method is not it"
+    );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The on-demand route.
 //

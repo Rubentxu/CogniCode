@@ -280,6 +280,103 @@ pub fn type_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
     bound
 }
 
+/// The names the impls of a file declare, and the owner each one belongs to.
+///
+/// An `impl` block declares items — methods — and an item belongs to the
+/// type or the trait the block names: `impl Widget { fn new() }` declares
+/// `new` for `Widget`, and `impl Describe for Widget { fn render() }`
+/// declares `render` for the trait `Describe`.
+///
+/// The owner is what tells a call written through a name from a call written
+/// through something else: the file that implements `Widget` owns the calls
+/// written `Widget::new`, because `new` is one of its items — even when the
+/// file does not declare `Widget` itself, because the type lives in another
+/// file and the impl is here.
+///
+/// The owner of a trait impl is the trait and not the type, and the reason
+/// is what a call written through the type can name. `Duration::from_millis`
+/// names the standard library's own associated function, not anybody's
+/// trait method: an inherent function of a type wins over a trait's. So a
+/// file that implements a trait for a type owns the calls written through
+/// the TRAIT, and a call written through the type is left to the route that
+/// knows the type — the route that judges one file refuses it, because it
+/// cannot tell the type's own function from the trait's, and the route that
+/// judges the project keeps it, because the project declares the type.
+///
+/// The owner is a bare name, the same way the qualifier of a call is a bare
+/// name: `crate::event::Widget` is owned as `Widget`, and it is compared
+/// with `Widget`. Two types of the same name in two modules are the same
+/// name here, exactly as they are in the qualifier of a call.
+///
+/// The shape read here is the shape of a Rust impl. A language that writes
+/// its impls differently keeps the answer it had.
+pub fn impl_item_owners_in(root: Node, source: &[u8]) -> HashMap<String, HashSet<String>> {
+    let mut owners: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "impl_item" {
+            let owner = impl_owner_of(&node, source);
+            if let Some(owner) = owner {
+                for item in impl_items_of(&node, source) {
+                    owners.entry(item).or_default().insert(owner.clone());
+                }
+            }
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    owners
+}
+
+/// The name the items of an impl belong to.
+///
+/// The trait of a trait impl (`impl Describe for Widget`) and the type of an
+/// inherent one (`impl Widget`). `None` when the block names neither.
+fn impl_owner_of(node: &Node, source: &[u8]) -> Option<String> {
+    if let Some(trait_node) = node.child_by_field_name("trait") {
+        return Some(owner_name(&node_text(&trait_node, source)));
+    }
+    let type_node = node.child_by_field_name("type")?;
+    Some(owner_name(&node_text(&type_node, source)))
+}
+
+/// The name a type or a trait is written with.
+///
+/// The last segment of the path (`crate::event::Widget` names `Widget`) and
+/// without the generic arguments (`Widget<u64>` names `Widget`).
+fn owner_name(raw: &str) -> String {
+    let path = without_generic_arguments(raw);
+    path.rsplit("::")
+        .next()
+        .unwrap_or(path.as_str())
+        .trim()
+        .to_string()
+}
+
+/// The names the items of an impl block declare.
+///
+/// Only the methods: a call names a function, and a name that is not a
+/// function cannot be what a call names. A function nested in a method is
+/// not an item of the impl either, so the walk stops at the method it finds.
+fn impl_items_of(node: &Node, source: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    let Some(body) = node.child_by_field_name("body") else {
+        return names;
+    };
+    let mut stack = vec![body];
+    while let Some(item) = stack.pop() {
+        if item.kind() == "function_item" {
+            if let Some(name) = item.child_by_field_name("name") {
+                names.push(node_text(&name, source));
+            }
+            continue;
+        }
+        let mut cursor = item.walk();
+        stack.extend(item.children(&mut cursor));
+    }
+    names
+}
+
 /// The names a file binds to something of its own.
 ///
 /// A module the file declares (`pub mod log;`) and a name it imports
