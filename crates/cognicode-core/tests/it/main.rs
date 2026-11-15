@@ -179,6 +179,7 @@ mod the_hole_of_the_file_route_is_visible;
 mod the_identity_the_product_writes_is_the_one_it_reads;
 mod the_impact_names_the_tests_it_reaches;
 mod the_index_reads_a_file_the_way_the_graph_does;
+mod the_latency_the_catalog_publishes_is_a_ceiling;
 mod the_ledger_knows_what_the_manifest_says;
 mod the_partial_warning_is_a_summary;
 mod the_product_observes_one_set_of_files;

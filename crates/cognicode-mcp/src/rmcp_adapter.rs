@@ -300,27 +300,34 @@ impl CogniCodeHandler {
 /// - category: "graph" | "composite" | "navigation" | "file_ops" | etc.
 /// - requires_graph: whether the tool needs a built call graph
 /// - requires_persistence: whether the tool needs PG-backed persistence
-/// - estimated_latency_ms: expected execution time in milliseconds
+/// - estimated_latency_ms: the ceiling the product grants the tool's work
+/// - latency_basis: where that ceiling comes from, when the catalogue says
+/// - authority: read | mutating | execute | network
 fn cognicode_meta(
     stability: &str,
     category: &str,
     requires_graph: bool,
     requires_persistence: bool,
     estimated_latency_ms: u32,
+    latency_basis: Option<&str>,
     authority: &str,
 ) -> Meta {
     let mut meta = Meta::new();
-    meta.insert(
-        "cognicode".to_string(),
-        serde_json::json!({
-            "stability": stability,
-            "category": category,
-            "requires_graph": requires_graph,
-            "requires_persistence": requires_persistence,
-            "estimated_latency_ms": estimated_latency_ms,
-            "authority": authority
-        }),
-    );
+    let mut cognicode = serde_json::json!({
+        "stability": stability,
+        "category": category,
+        "requires_graph": requires_graph,
+        "requires_persistence": requires_persistence,
+        "estimated_latency_ms": estimated_latency_ms,
+        "authority": authority
+    });
+    // The basis travels with the number when the catalogue declares one:
+    // a ceiling that says nothing about where it came from is a guess, and
+    // the consumer that reads the number deserves to know which one it is.
+    if let Some(basis) = latency_basis {
+        cognicode["latency_basis"] = serde_json::json!(basis);
+    }
+    meta.insert("cognicode".to_string(), cognicode);
     meta
 }
 
@@ -650,6 +657,7 @@ fn descriptor_to_tool(d: cognicode_core::interface::catalog::ToolDescriptor) -> 
         requires_graph,
         requires_persistence,
         d.estimated_latency_ms,
+        d.latency_basis.as_deref(),
         d.authority.as_str(),
     );
 
