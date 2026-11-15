@@ -21,6 +21,17 @@ use std::time::Instant;
 
 use crate::rmcp_adapter::{is_strict_rate_limit_category, lookup_category, tool_is_mutating};
 
+/// The text of this module, for the parity oracle.
+///
+/// The contract that checks "tools/list only announces what tools/call
+/// can deliver" reads the dispatch itself instead of a hand-kept list of
+/// names. The dispatch lives here, so the module that owns it publishes
+/// its own text and the oracle asks its owner where the routing table is
+/// written. A file name held in two places is a name that rots — and
+/// when it rots the oracle stops measuring without saying so.
+#[cfg(test)]
+pub(crate) const SOURCE: &str = include_str!("dispatch.rs");
+
 /// Handles the tool call by dispatching to the appropriate handler
 ///
 /// M1.1: All tool calls flow through this single instrumentation boundary.
