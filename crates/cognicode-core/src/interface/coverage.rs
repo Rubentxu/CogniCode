@@ -26,8 +26,10 @@ pub struct PendingReferenceInfo {
     pub target: String,
     /// What the reference is.
     pub kind: String,
-    /// Why the far end could not be identified: `unresolved` when no
-    /// declaration carries the name, `ambiguous` when several do.
+    /// Why the far end could not be identified: `unresolved` when the far
+    /// end could not be identified — no declaration carries the name, or
+    /// the declaration that carries it could not be tied to the call —
+    /// and `ambiguous` when several declarations carry the name.
     pub reason: PendingReason,
     /// How many declarations carry the name, when there are several.
     pub candidates: Option<usize>,
@@ -37,7 +39,14 @@ pub struct PendingReferenceInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PendingReason {
-    /// No declaration carries the name.
+    /// The far end could not be identified: either no declaration
+    /// carries the name, or the declaration that carries it could not be
+    /// tied to the call.
+    ///
+    /// The two are the same answer for the consumer — the reference does
+    /// not name a declaration — and they are the same answer for the
+    /// wire: the class of a reference is what a consumer reads, and the
+    /// shape of this enum does not change to tell them apart.
     Unresolved,
     /// More than one does, and the graph cannot prove which one.
     Ambiguous,
