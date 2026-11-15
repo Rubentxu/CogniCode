@@ -37,6 +37,15 @@ mod on_demand_graph;
 /// What a package declares about the crates it pulls: the manifest is the
 /// only place that says which crate of a path belongs to the project.
 mod package;
+/// Why a manifest could not be judged.
+///
+/// What a package DECLARES stays inside the crate: the judge is not
+/// published. What happened to the judge IS published, because a
+/// manifest that could not be read leaves a hole in the coverage and the
+/// consumer has to be able to name it. This is the same class of fact as
+/// a parse failure: the file could not be understood, and the answer is
+/// incomplete because of it.
+pub use package::ManifestHole;
 // F2.W7: promoted from private so `AnalysisService::build_project_graph`
 // (the path the real `cognicode-mcp` binary exercises) can use
 // `GlobalSymbolIndex` for scope-aware resolution. The public surface
