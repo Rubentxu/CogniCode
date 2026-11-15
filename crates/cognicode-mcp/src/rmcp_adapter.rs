@@ -324,25 +324,12 @@ fn cognicode_meta(
     meta
 }
 
-/// M3.3: Categories that use a stricter rate-limit key namespace.
-/// Each tool in these categories gets its own `strict:<tool_name>`
-/// bucket, separate from the regular `tool:<tool_name>` budget, so
-/// heavy categories (graph analytics, LSP navigation, AIX NL search)
-/// cannot exhaust the regular dispatcher budget.
-const STRICT_RATE_LIMIT_CATEGORIES: &[&str] = &["graph", "navigation", "aix"];
-
-/// Returns `true` if `category` should be rate-limited with a stricter
-/// key namespace. See [`STRICT_RATE_LIMIT_CATEGORIES`].
-pub(crate) fn is_strict_rate_limit_category(category: &str) -> bool {
-    STRICT_RATE_LIMIT_CATEGORIES.contains(&category)
-}
-
 /// M3.2 / M3.3: Lazily-built map from tool name to its
 /// `cognicode_meta.category`. Derived from [`build_all_tools`] on first
 /// access and reused for the lifetime of the process. Tools without a
 /// cognicode meta block or without a category string are absent from
 /// the map (the lookup falls back to "unknown", which gets the default
-/// 30s timeout and the non-strict key prefix).
+/// 30s timeout).
 fn tool_category_map() -> &'static HashMap<String, String> {
     use std::sync::OnceLock;
     static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
@@ -1209,33 +1196,16 @@ mod tests {
     }
 
     // ============================================================================
-    // M3.3 — Per-tool rate limit + strict category namespacing
+    // M3.3 — Per-tool rate limit
     // ============================================================================
-
-    #[test]
-    fn test_is_strict_rate_limit_category() {
-        // Categories that get their own rate-limit namespace.
-        assert!(is_strict_rate_limit_category("graph"));
-        assert!(is_strict_rate_limit_category("navigation"));
-        assert!(is_strict_rate_limit_category("aix"));
-        // Cheap categories share the regular namespace.
-        assert!(!is_strict_rate_limit_category("file"));
-        assert!(!is_strict_rate_limit_category("search"));
-        assert!(!is_strict_rate_limit_category("quality"));
-        assert!(!is_strict_rate_limit_category("refactor"));
-        assert!(!is_strict_rate_limit_category("composite"));
-        // Unknown / empty
-        assert!(!is_strict_rate_limit_category(""));
-        assert!(!is_strict_rate_limit_category("unknown"));
-    }
 
     #[test]
     fn test_tool_category_map_contains_known_tools() {
         // M3.2 / M3.3: The lazy-init map must be populated from
         // `build_all_tools()` and include a representative sample of
         // tool names mapped to their declared category. A failure
-        // here means the timeout / rate-limit routing will silently
-        // fall back to the 30s default and the non-strict key prefix.
+        // here means the timeout routing will silently fall back to
+        // the 30s default.
         let map = tool_category_map();
         assert_eq!(map.get("build_graph").map(|s| s.as_str()), Some("graph"));
         assert_eq!(
@@ -1255,26 +1225,9 @@ mod tests {
     #[test]
     fn test_lookup_category_falls_back_to_unknown() {
         // Unknown tool names must NOT panic and must return a
-        // "unknown" placeholder that maps to the default 30s timeout
-        // and the non-strict rate-limit key prefix.
+        // "unknown" placeholder that maps to the default 30s timeout.
         assert_eq!(lookup_category("definitely_not_a_real_tool"), "unknown");
         assert_eq!(lookup_category(""), "unknown");
-    }
-
-    #[test]
-    fn test_rate_limiter_dispatch_key_separation() {
-        // M3.3: Different rate-limit key namespaces (tool: vs
-        // strict:) must track tokens independently so an expensive
-        // tool cannot exhaust the regular dispatcher budget.
-        let limiter = cognicode_core::interface::mcp::security::RateLimiter::new(2, 60);
-        // Strict graph keys: 2 hits each, then exhausted.
-        assert!(limiter.check_with_key("strict:graph_pagerank"));
-        assert!(limiter.check_with_key("strict:graph_pagerank"));
-        assert!(!limiter.check_with_key("strict:graph_pagerank"));
-        // Regular file keys: untouched by the graph bucket.
-        assert!(limiter.check_with_key("tool:read_file"));
-        assert!(limiter.check_with_key("tool:read_file"));
-        assert!(!limiter.check_with_key("tool:read_file"));
     }
 
     // ============================================================================
