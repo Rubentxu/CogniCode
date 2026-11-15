@@ -11,20 +11,24 @@
 //! que el repositorio rechazó las mide el grafo, y este goal no lo
 //! construye.
 //!
-//! Y por lo mismo no publica frescura. La frescura es el digest del
-//! manifiesto que conserva la carga del grafo; un goal que no carga el
-//! grafo no tiene manifiesto, así que no tiene digest que publicar. Un
-//! digest inventado sería una identidad que nadie midió, y esta respuesta
-//! se publica sin fechar.
+//! ## La frescura que sí publica
+//!
+//! La frescura es el digest del manifiesto de las fuentes, y el manifiesto
+//! describe el **árbol**. Este goal lee el árbol entero, así que puede
+//! publicar su digest sin construir el grafo, y publica el mismo digest que
+//! publicarían los goals que sí lo construyen. Lo que no publica es de
+//! dónde salió un grafo, porque aquí no hay ninguno: se lee el árbol y se
+//! fecha lo leído.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::application::services::analysis_service::TreeState;
 use crate::infrastructure::graph::source_files::inventory;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
-use crate::interface::goals::common::coverage_of_inventory;
+use crate::interface::goals::common::{GoalBasis, coverage_of_inventory, tree_basis};
 use crate::interface::workspace::detect_languages;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -64,11 +68,22 @@ pub struct GoalContext {
     pub languages: Vec<String>,
     /// La cobertura de la lectura, cuando se pide.
     pub coverage: Option<CoverageInfo>,
+    /// Lo que el árbol que se leyó es, y de dónde salió.
+    ///
+    /// El digest es el del manifiesto de las fuentes: el mismo árbol da el
+    /// mismo digest, y cualquier cambio lo cambia. Es el digest que
+    /// publican los goals que construyen el grafo, así que las respuestas
+    /// de unos y otros se pueden comparar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GoalBasis>,
 }
 
 /// La respuesta del goal `context` para ese workspace.
 pub fn context(input: &ContextInput, workspace: &Path) -> GoalContext {
+    // Un solo recorrido, y de él sale todo lo que contesta este goal: los
+    // ficheros que leyó, los agujeros que dejó y el digest que lo fecha.
     let inventory = inventory(workspace);
+    let tree = TreeState::of(&inventory);
     let files = inventory.source_files().count();
     let languages: Vec<String> = detect_languages(workspace)
         .iter()
@@ -94,6 +109,7 @@ pub fn context(input: &ContextInput, workspace: &Path) -> GoalContext {
         files,
         languages,
         coverage,
+        basis: Some(tree_basis(workspace, &tree.files)),
     }
 }
 
