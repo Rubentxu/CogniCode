@@ -77,6 +77,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# La medida de "el codigo de produccion de un fichero" tiene un solo dueno, y
+# este contrato lo toma de ahi: una regla para la misma medida en dos sitios
+# es la segunda que se pudre.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from production_lines import production_text  # noqa: E402
+
+
 def source(relative: str) -> str:
     path = REPO_ROOT / relative
     if not path.is_file():
@@ -102,10 +109,15 @@ def production(relative: str) -> str:
 
     Los tests que viven en el mismo fichero no cuentan para estas reglas: un
     test que crea su propio fichero de trabajo no es una escritura manual.
+
+    La frontera es la que tiene un solo dueno
+    (`scripts/ci/production_lines.py`): un `#[cfg(test)]` que no abre un
+    modulo no la es, asi que un import solo de test cerca del principio del
+    fichero no puede hacer invisible el codigo que viene despues. Con la regla
+    vieja, este contrato veia un servicio sin escritura atomica y lo
+    reportaba como un servicio que no publica con el escritor atomico.
     """
-    text = source(relative)
-    marker = text.find("#[cfg(test)]")
-    return text if marker < 0 else text[:marker]
+    return production_text(source(relative))
 
 
 # ---------------------------------------------------------------------------

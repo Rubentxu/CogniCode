@@ -1,6 +1,23 @@
 [
   {
-    "name": "analyze_impact",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
     "inputSchema": {
       "properties": {
@@ -19,27 +36,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "analyze_impact"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 25,
+        "category": "aix",
+        "estimated_latency_ms": 500,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "ask_about_code",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Answer questions about code flow by tracing execution paths between symbols.",
     "inputSchema": {
       "description": "Input for ask_about_code tool",
@@ -60,39 +77,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "aix",
-        "estimated_latency_ms": 500,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "ask_about_code"
   },
   {
-    "name": "audit",
-    "description": "Mira el proyecto y dice qué encuentra: el código que no llega a usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit --format json`.",
-    "inputSchema": {
-      "description": "Input for the `audit` goal",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -102,12 +89,42 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Mira el proyecto y dice qué encuentra: el código que no llega a usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit --format json`.",
+    "inputSchema": {
+      "description": "Input for the `audit` goal",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "audit"
   },
   {
-    "name": "build_call_subgraph",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Build an on-demand call subgraph centered on a symbol. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -144,27 +161,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "build_call_subgraph"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 50,
+        "estimated_latency_ms": 300,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "build_graph",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
     "inputSchema": {
       "additionalProperties": false,
@@ -180,6 +197,7 @@
       },
       "type": "object"
     },
+    "name": "build_graph",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -664,28 +682,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 300,
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "build_lightweight_index",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, full.",
     "inputSchema": {
       "properties": {
@@ -709,27 +726,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "build_lightweight_index"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 30,
+        "estimated_latency_ms": 500,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "cfg_per_function",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Build the CFG (control flow graph) for one function given adjacency, root, and exits.",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -817,27 +834,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "cfg_per_function"
   },
   {
-    "name": "change",
+    "_meta": {
+      "cognicode": {
+        "authority": "mutating",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
     "description": "Calcula el cambio de un símbolo a otro nombre: los ficheros que tocaría, los símbolos que afecta y con qué riesgo. Es el goal que escribe, y por eso no aparece en el modo de sólo lectura. Ejemplos: `cognicode change --symbol helper --new-name helper2`.",
     "inputSchema": {
       "description": "Input for the `change` goal",
@@ -864,27 +881,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "mutating",
-        "category": "goal",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": true,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "change"
   },
   {
-    "name": "check_architecture",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -898,27 +915,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "check_architecture"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 20,
+        "category": "composite",
+        "estimated_latency_ms": 100,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "codebase_map",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
     "inputSchema": {
       "properties": {
@@ -934,6 +951,7 @@
       },
       "type": "object"
     },
+    "name": "codebase_map",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -1175,28 +1193,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 100,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "context",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Di qué hay en el workspace: los ficheros que lo componen, los lenguajes que se detectan y la cobertura de la lectura. Es el goal que se llama antes de tocar nada. Ejemplos: `cognicode context`, `cognicode context --format json`.",
     "inputSchema": {
       "description": "Input for the `context` goal",
@@ -1209,27 +1226,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "context"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "goal",
-        "estimated_latency_ms": 30,
+        "category": "quality",
+        "estimated_latency_ms": 150,
         "mutates_workspace": false,
         "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "detect_drift",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
     "inputSchema": {
       "description": "Input for detect_drift tool",
@@ -1256,27 +1273,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "detect_drift"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "quality",
-        "estimated_latency_ms": 150,
+        "estimated_latency_ms": 100,
         "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "detect_god_functions",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find overly large or complex functions (god functions) that should be refactored.",
     "inputSchema": {
       "description": "Input for detect_god_functions tool",
@@ -1302,27 +1319,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "detect_god_functions"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "quality",
-        "estimated_latency_ms": 100,
+        "estimated_latency_ms": 60,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "detect_long_parameter_lists",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find functions with too many parameters that should be consolidated into structs.",
     "inputSchema": {
       "description": "Input for detect_long_parameter_lists tool",
@@ -1336,27 +1353,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "detect_long_parameter_lists"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "quality",
-        "estimated_latency_ms": 60,
+        "category": "graph",
+        "estimated_latency_ms": 500,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "dominators_cfg",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Compute per-function dominators over a CFG adjacency slice.",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -1444,27 +1461,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "dominators_cfg"
   },
   {
-    "name": "edit_file",
+    "_meta": {
+      "cognicode": {
+        "authority": "mutating",
+        "category": "file",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
     "description": "Edit files with syntax validation.",
     "inputSchema": {
       "description": "Input for edit_file tool",
@@ -1507,27 +1524,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "mutating",
-        "category": "file",
-        "estimated_latency_ms": 20,
-        "mutates_workspace": true,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "edit_file"
   },
   {
-    "name": "export_callflow",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 60,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
     "inputSchema": {
       "properties": {
@@ -1542,6 +1559,7 @@
       },
       "type": "object"
     },
+    "name": "export_callflow",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -1787,28 +1805,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "composite",
-        "estimated_latency_ms": 60,
+        "estimated_latency_ms": 40,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "export_mermaid",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
     "inputSchema": {
       "properties": {
@@ -1861,27 +1878,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "export_mermaid"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 40,
+        "category": "goal",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "find",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Resuelve un nombre de símbolo a los sitios donde está declarado, con su fichero y su línea. El nombre se compara como lo lee el lenguaje de cada declaración: en un lenguaje que distingue mayúsculas, `Ok` y `ok` son dos nombres, y en uno que las pliega —PHP, PowerShell y Fortran— son el mismo. La respuesta dice con qué comparación encontró las declaraciones: `exact` cuando todas están escritas como el nombre buscado, y `case-insensitive` cuando alguna contesta sólo porque el lenguaje que la escribió pliega la grafía. Es la pregunta que se hace un homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode find --symbol helper`, `cognicode find --symbol helper --format json`.",
     "inputSchema": {
       "description": "Input for the `find` goal",
@@ -1896,27 +1913,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "find"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "goal",
-        "estimated_latency_ms": 30,
+        "category": "aix",
+        "estimated_latency_ms": 500,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "find_pattern_by_intent",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Match natural language intent descriptions to known code patterns.",
     "inputSchema": {
       "description": "Input for find_pattern_by_intent tool",
@@ -1937,27 +1954,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "find_pattern_by_intent"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "aix",
-        "estimated_latency_ms": 500,
+        "category": "navigation",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "find_references",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find all references to a symbol using LSP.",
     "inputSchema": {
       "description": "Input for find_references tool",
@@ -1987,27 +2004,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "find_references"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "navigation",
+        "category": "goal",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "impact",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Dice a qué símbolos y a qué ficheros afecta cambiar un símbolo, y con qué riesgo. Es la pregunta que se hace antes de tocar nada. Ejemplos: `cognicode impact --symbol helper`, `cognicode impact --symbol helper --format json`.",
     "inputSchema": {
       "description": "Input for the `impact` goal",
@@ -2022,12 +2039,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "impact"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2037,12 +2051,15 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "inspect",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs --format json`.",
     "inputSchema": {
       "description": "Input for the `inspect` goal",
@@ -2057,12 +2074,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "inspect"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2072,39 +2086,42 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "overview",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Resume el proyecto que hay en el workspace: cuántos símbolos tiene, cuántas aristas, cuántos ficheros y en qué lenguajes. Ejemplos: `cognicode overview`, `cognicode overview --format json`.",
     "inputSchema": {
       "description": "Input for the `overview` goal",
       "properties": {},
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "overview"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "goal",
-        "estimated_latency_ms": 30,
+        "category": "navigation",
+        "estimated_latency_ms": 200,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "rename_preview",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Preview the edits an LSP rename would make, without applying them.",
     "inputSchema": {
       "description": "Input for rename_preview tool",
@@ -2135,27 +2152,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "rename_preview"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "navigation",
-        "estimated_latency_ms": 200,
+        "estimated_latency_ms": 300,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "find_usages",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find all usages of a symbol across the project. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -2183,27 +2200,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "find_usages"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "navigation",
-        "estimated_latency_ms": 300,
+        "category": "composite",
+        "estimated_latency_ms": 50,
         "mutates_workspace": false,
         "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "requires_persistence": true,
+        "stability": "gated",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "generate_contract",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
     "inputSchema": {
       "description": "Input for generate_contract tool",
@@ -2223,27 +2240,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "generate_contract"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 50,
+        "category": "graph",
+        "estimated_latency_ms": 25,
         "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "gated",
-        "tool_version": "0.102.1"
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_call_hierarchy",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -2283,27 +2300,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_call_hierarchy"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 25,
+        "category": "quality",
+        "estimated_latency_ms": 20,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_complexity",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
     "inputSchema": {
       "properties": {
@@ -2324,27 +2341,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_complexity"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "quality",
-        "estimated_latency_ms": 20,
+        "category": "graph",
+        "estimated_latency_ms": 15,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_entry_points",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -2356,27 +2373,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_entry_points"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
+        "category": "file",
         "estimated_latency_ms": 15,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_file_symbols",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -2400,27 +2417,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_file_symbols"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "file",
-        "estimated_latency_ms": 15,
+        "category": "graph",
+        "estimated_latency_ms": 25,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_hot_paths",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find functions with highest fan-in (most called functions). The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -2439,27 +2456,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_hot_paths"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 25,
+        "estimated_latency_ms": 40,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_implementors",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -2473,6 +2490,7 @@
       ],
       "type": "object"
     },
+    "name": "get_implementors",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -2730,28 +2748,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 40,
+        "estimated_latency_ms": 20,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_imports",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -2765,6 +2782,7 @@
       ],
       "type": "object"
     },
+    "name": "get_imports",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -3003,28 +3021,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 20,
+        "estimated_latency_ms": 15,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_leaf_functions",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -3036,27 +3053,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_leaf_functions"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 15,
+        "estimated_latency_ms": 25,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_members",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -3070,6 +3087,7 @@
       ],
       "type": "object"
     },
+    "name": "get_members",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -3315,28 +3333,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 25,
+        "estimated_latency_ms": 20,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_per_file_graph",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Get the call graph for a specific file. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -3350,27 +3367,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_per_file_graph"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 20,
+        "category": "file",
+        "estimated_latency_ms": 10,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_symbol_code",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Get the full source code of a symbol at a given location, including docstrings.",
     "inputSchema": {
       "description": "Input for get_symbol_code tool",
@@ -3397,27 +3414,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "get_symbol_code"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "file",
-        "estimated_latency_ms": 10,
+        "category": "graph",
+        "estimated_latency_ms": 25,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "get_type_references",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -3431,6 +3448,7 @@
       ],
       "type": "object"
     },
+    "name": "get_type_references",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -3703,28 +3721,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 25,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "go_to_definition",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Navigate to the definition of a symbol using LSP.",
     "inputSchema": {
       "description": "Input for go_to_definition tool",
@@ -3750,27 +3767,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "go_to_definition"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "navigation",
-        "estimated_latency_ms": 15,
+        "category": "graph",
+        "estimated_latency_ms": 150,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_all_paths",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_all_paths` — every simple path between two symbols\nwithin a hop budget.",
@@ -3796,27 +3813,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_all_paths"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 150,
+        "estimated_latency_ms": 50,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_checkpoint",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -3838,6 +3855,7 @@
       },
       "type": "object"
     },
+    "name": "graph_checkpoint",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -4088,28 +4106,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 50,
+        "estimated_latency_ms": 250,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_communities",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_communities` — Label Propagation community detection\nover the call graph.",
@@ -4123,27 +4140,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_communities"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 250,
+        "estimated_latency_ms": 50,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_community_detail",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_community_detail` — fetch the details of a single\ncommunity detected by `graph_communities`.",
@@ -4165,12 +4182,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_community_detail"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -4180,39 +4194,42 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_condensed",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_condensed` — SCC condensation of the call graph.\nTakes no arguments; everything is inferred from the current call graph.",
       "properties": {},
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_condensed"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 50,
+        "category": "composite",
+        "estimated_latency_ms": 100,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_explain",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -4232,6 +4249,7 @@
       ],
       "type": "object"
     },
+    "name": "graph_explain",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -4542,40 +4560,9 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 100,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "graph_feedback_arcs",
-    "description": "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
-    "inputSchema": {
-      "description": "Input for `graph_feedback_arcs` — find edges whose removal makes the graph acyclic.\nTakes no arguments; everything is inferred from the current call graph.",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -4585,12 +4572,42 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+    "inputSchema": {
+      "description": "Input for `graph_feedback_arcs` — find edges whose removal makes the graph acyclic.\nTakes no arguments; everything is inferred from the current call graph.",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "graph_feedback_arcs"
   },
   {
-    "name": "graph_god_nodes",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_god_nodes` — symbols whose PageRank sits above\nthe requested percentile.",
@@ -4603,39 +4620,9 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 100,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "graph_god_nodes"
   },
   {
-    "name": "graph_insights",
-    "description": "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
-    "inputSchema": {
-      "description": "Input for `graph_insights` — unified architecture health report.\n\nCombines: god nodes, cycles, communities, surprising connections,\na 0-100 health score, and natural-language questions. The tool\nitself takes no arguments; everything is inferred from the\ncurrent call graph.",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -4645,12 +4632,42 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
+    "inputSchema": {
+      "description": "Input for `graph_insights` — unified architecture health report.\n\nCombines: god nodes, cycles, communities, surprising connections,\na 0-100 health score, and natural-language questions. The tool\nitself takes no arguments; everything is inferred from the\ncurrent call graph.",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "graph_insights"
   },
   {
-    "name": "graph_pagerank",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_pagerank` — PageRank importance scores for every\nsymbol in the call graph.",
@@ -4669,27 +4686,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_pagerank"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "graph",
-        "estimated_latency_ms": 250,
+        "estimated_latency_ms": 80,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_query",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -4715,6 +4732,7 @@
       ],
       "type": "object"
     },
+    "name": "graph_query",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -5024,13 +5042,9 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -5040,12 +5054,15 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "graph_query_filtered",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
     "inputSchema": {
       "properties": {
@@ -5107,6 +5124,7 @@
       ],
       "type": "object"
     },
+    "name": "graph_query_filtered",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -5423,40 +5441,9 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 80,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "graph_reduced",
-    "description": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
-    "inputSchema": {
-      "description": "Input for `graph_reduced` — transitive reduction of the call graph.\nTakes no arguments; everything is inferred from the current call graph.",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -5466,12 +5453,42 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+    "inputSchema": {
+      "description": "Input for `graph_reduced` — transitive reduction of the call graph.\nTakes no arguments; everything is inferred from the current call graph.",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "graph_reduced"
   },
   {
-    "name": "graph_search_idf",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_search_idf` — IDF-weighted symbol search.\n\nEach symbol name is tokenised (snake/camel/path boundaries) and\nscored against the query using the same formula as classic\ninformation retrieval: rare terms count more than common ones.\nThe 95th-percentile-degree hub bypass demotes overly-connected\n\"switchboard\" nodes.",
@@ -5492,39 +5509,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 40,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "graph_search_idf"
   },
   {
-    "name": "graph_suggest_questions",
-    "description": "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
-    "inputSchema": {
-      "description": "Input for `graph_suggest_questions` — natural-language prompts\nfor an AI agent to drive a refactoring conversation.\n\nLike `graph_insights` but only returns the `suggested_questions`\narray, so callers can ingest the questions without parsing the\nfull report.",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -5534,12 +5521,42 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
+    "inputSchema": {
+      "description": "Input for `graph_suggest_questions` — natural-language prompts\nfor an AI agent to drive a refactoring conversation.\n\nLike `graph_insights` but only returns the `suggested_questions`\narray, so callers can ingest the questions without parsing the\nfull report.",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "graph_suggest_questions"
   },
   {
-    "name": "graph_surprising_connections",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 120,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
     "inputSchema": {
       "description": "Input for `graph_surprising_connections` — find edges that cross\ncommunity boundaries (indicating unexpected coupling).",
@@ -5559,27 +5576,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "graph_surprising_connections"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 120,
+        "category": "navigation",
+        "estimated_latency_ms": 15,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "hover",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Get type information and documentation for a symbol at a position using LSP.",
     "inputSchema": {
       "description": "Input for hover tool",
@@ -5605,27 +5622,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "hover"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "navigation",
-        "estimated_latency_ms": 15,
+        "category": "infra",
+        "estimated_latency_ms": 50,
         "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "requires_graph": true,
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "iac_query",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
     "inputSchema": {
       "properties": {
@@ -5645,6 +5662,7 @@
       ],
       "type": "object"
     },
+    "name": "iac_query",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -5932,28 +5950,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "infra",
-        "estimated_latency_ms": 50,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": true,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "list_files",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "file",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "List project files with .gitignore awareness.",
     "inputSchema": {
       "description": "Input for list_files tool",
@@ -6006,39 +6023,9 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "file",
-        "estimated_latency_ms": 20,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "list_files"
   },
   {
-    "name": "list_view_specs",
-    "description": "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
-    "inputSchema": {
-      "description": "Input for list_view_specs (empty for v1).",
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -6048,12 +6035,42 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
+    "inputSchema": {
+      "description": "Input for list_view_specs (empty for v1).",
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_view_specs"
   },
   {
-    "name": "merge_graphs",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Merge per-file call graphs into a consolidated project graph. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -6070,27 +6087,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "merge_graphs"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
+        "category": "search",
         "estimated_latency_ms": 50,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "nl_to_symbol",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
     "inputSchema": {
       "description": "Input for nl_to_symbol tool",
@@ -6111,32 +6128,33 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "nl_to_symbol"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 50,
+        "category": "composite",
+        "estimated_latency_ms": 300,
         "mutates_workspace": false,
         "requires_graph": true,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "project_insights",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
     "inputSchema": {
       "properties": {},
       "type": "object"
     },
+    "name": "project_insights",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -6481,13 +6499,9 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -6497,12 +6511,15 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "project_overview",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Get a comprehensive project overview at quick, medium, or detailed levels. Quick publishes the statistics of the project; medium adds the entry points and the hot paths; detailed adds the recommendations and the context for a prompt. The default is the complete answer, and the answer says which level it carries.",
     "inputSchema": {
       "description": "The arguments of `project_overview`.",
@@ -6531,6 +6548,7 @@
       },
       "type": "object"
     },
+    "name": "project_overview",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -6824,28 +6842,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 300,
-        "mutates_workspace": false,
-        "requires_graph": true,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
     }
   },
   {
-    "name": "query_symbol_index",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Query the symbol index to find locations of a symbol by name. The name is compared the way the language of each declaration reads it: a language that tells `Ok` from `ok` answers only with the declaration spelled the way the name is spelled, and a language that folds the case —PHP, PowerShell and Fortran— answers with every declaration of the folded name. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -6866,27 +6883,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "query_symbol_index"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 30,
+        "category": "file",
+        "estimated_latency_ms": 10,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "read_file",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Smart file reader with semantic modes.",
     "inputSchema": {
       "description": "Input for read_file tool",
@@ -6946,27 +6963,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "read_file"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "file",
+        "category": "view",
         "estimated_latency_ms": 10,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "read_view_spec",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
     "inputSchema": {
       "description": "Input for read_view_spec.",
@@ -6981,27 +6998,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "read_view_spec"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "view",
-        "estimated_latency_ms": 10,
+        "category": "goal",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "recipe",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Corre una receta: varios goals en el orden de sus fases, memoizados por lo que el árbol ha cambiado, con los pasos independientes en paralelo. Con `plan: true` dice qué correría, qué está en caché y lo que costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, `cognicode recipe --name pre-change --params '{\"symbol\":\"helper\"}'`, `cognicode recipe --name onboard --plan`.",
     "inputSchema": {
       "description": "Input for the `recipe` goal",
@@ -7029,27 +7046,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "goal",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "recipe"
   },
   {
-    "name": "reparse_on_edit",
+    "_meta": {
+      "cognicode": {
+        "authority": "mutating",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
     "description": "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
     "inputSchema": {
       "description": "Input for reparse_on_edit tool (Phase 3A)",
@@ -7100,27 +7117,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "mutating",
-        "category": "graph",
-        "estimated_latency_ms": 20,
-        "mutates_workspace": true,
-        "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "reparse_on_edit"
   },
   {
-    "name": "retrieve_and_verify",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 40000,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
     "inputSchema": {
       "description": "Input for retrieve_and_verify tool",
@@ -7151,27 +7168,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "retrieve_and_verify"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 80,
+        "category": "composite",
+        "estimated_latency_ms": 200,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "review_pr",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
     "inputSchema": {
       "properties": {
@@ -7188,6 +7205,7 @@
       ],
       "type": "object"
     },
+    "name": "review_pr",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -7438,28 +7456,27 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    }
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 200,
+        "category": "refactor",
+        "estimated_latency_ms": 100,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "safe_refactor",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Perform safe refactoring with validation and preview.",
     "inputSchema": {
       "additionalProperties": false,
@@ -7490,27 +7507,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "safe_refactor"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
         "category": "refactor",
-        "estimated_latency_ms": 100,
+        "estimated_latency_ms": 50,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "safe_refactor_preview",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Read a RefactorPlan (B5.W1) from a plan file or a JSON string and produce a RefactorPreview (B5.W2): per-file unified diff, original vs new bytes, workspace state digest, and preconditions/risks summary. The function is pure: same plan + same bytes => byte-equal preview, and it NEVER mutates the workspace. B5.W3 (apply) reuses the workspace_state_digest to detect concurrent modifications between preview and apply.",
     "inputSchema": {
       "additionalProperties": false,
@@ -7535,27 +7552,27 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "safe_refactor_preview"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "refactor",
-        "estimated_latency_ms": 50,
+        "category": "file",
+        "estimated_latency_ms": 40,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "search_content",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Search file contents with .gitignore awareness.",
     "inputSchema": {
       "description": "Input for search_content tool",
@@ -7614,27 +7631,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "search_content"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "file",
-        "estimated_latency_ms": 40,
+        "category": "graph",
+        "estimated_latency_ms": 500,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "slice_backward",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Backward slice from a (variable, use_sites[]) criterion.",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -7722,12 +7739,9 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "slice_backward"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -7737,12 +7751,15 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "slice_forward",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Forward slice from a (variable, definition_site) criterion.",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -7830,27 +7847,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "slice_forward"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
+        "category": "composite",
+        "estimated_latency_ms": 200,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "smart_search",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
     "inputSchema": {
       "description": "Input for smart_search tool",
@@ -7874,27 +7891,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "smart_search"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 200,
+        "category": "goal",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "status",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Di qué ofrece este build y qué se ve del workspace: las fases del producto, los lenguajes detectados, la cobertura de la lectura y los goals con sus plantillas de argumentos. Un cliente lo llama antes de decidir; un humano lo llama para saber si el workspace está donde cree. Ejemplos: `cognicode status`, `cognicode status --format json`.",
     "inputSchema": {
       "description": "Input for the `status` goal",
@@ -7907,38 +7924,9 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "goal",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "status"
   },
   {
-    "name": "solid_audit",
-    "description": "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -7948,12 +7936,41 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "solid_audit"
   },
   {
-    "name": "taint_flow",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Forward taint analysis over a DFG (declarative Rust patterns).",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -8041,27 +8058,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "taint_flow"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
+        "category": "goal",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
         "requires_graph": false,
         "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "trace",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Sigue el grafo de llamadas alrededor de un símbolo: quién lo llama, a quién llama y a qué distancia. Ejemplos: `cognicode trace --symbol helper`, `cognicode trace --symbol helper --direction callers`.",
     "inputSchema": {
       "description": "Input for the `trace` goal",
@@ -8087,27 +8104,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "trace"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "goal",
+        "category": "graph",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": false,
+        "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "trace_path",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Find execution path between two symbols using BFS. The positions it publishes are 1-indexed: the line and the column a person reads.",
     "inputSchema": {
       "properties": {
@@ -8138,27 +8155,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "trace_path"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
+        "category": "composite",
         "estimated_latency_ms": 30,
         "mutates_workspace": false,
-        "requires_graph": true,
+        "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "validate_contract",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
     "inputSchema": {
       "description": "Input for validate_contract tool",
@@ -8186,27 +8203,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "validate_contract"
+  },
+  {
     "_meta": {
       "cognicode": {
-        "authority": "read",
-        "category": "composite",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": false,
+        "authority": "mutating",
+        "category": "file",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": true,
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "write_file",
+    },
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
     "description": "Create or overwrite files within the workspace.",
     "inputSchema": {
       "description": "Input for write_file tool",
@@ -8240,27 +8257,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "mutating",
-        "category": "file",
-        "estimated_latency_ms": 10,
-        "mutates_workspace": true,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.102.1"
-      }
-    }
+    "name": "write_file"
   },
   {
-    "name": "interproc_summary",
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Interprocedural summary: bottom-up reads/writes + fixed-point on recursive SCCs.",
     "inputSchema": {
       "description": "Wrapper shared by every M5 tool call. `algorithm_params` matches the\nconformance-corpus shape so callers can replay fixtures end-to-end.",
@@ -8348,27 +8365,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "interproc_summary"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
+        "category": "evidence",
+        "estimated_latency_ms": 30,
         "mutates_workspace": false,
         "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
+        "requires_persistence": true,
+        "stability": "stable",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "list_evidence",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "List evidence rows for a workspace, optionally filtered by kind. Mirrors the `cognicode evidence list` CLI subcommand.",
     "inputSchema": {
       "properties": {
@@ -8383,12 +8400,9 @@
       },
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "list_evidence"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -8398,12 +8412,15 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "stable",
-        "tool_version": "0.102.1"
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "search_evidence",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Full-text search across evidence titles and excerpts. Mirrors the `cognicode evidence search` CLI subcommand.",
     "inputSchema": {
       "properties": {
@@ -8425,27 +8442,27 @@
       ],
       "type": "object"
     },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
+    "name": "search_evidence"
+  },
+  {
     "_meta": {
       "cognicode": {
         "authority": "read",
-        "category": "evidence",
-        "estimated_latency_ms": 30,
+        "category": "quality",
+        "estimated_latency_ms": 120,
         "mutates_workspace": false,
         "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "stable",
-        "tool_version": "0.102.1"
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.103.1"
       }
-    }
-  },
-  {
-    "name": "explain_finding",
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
     "description": "Explain why a finding is reported. Takes the path of a source file; the findings pipeline runs over that file and the answer names each finding's kind, severity, status, message, causal chain and detector, and states whether the grounding behind it could be verified. A file with no findings says so instead of returning an empty list.",
     "inputSchema": {
       "description": "Input for `explain_finding`.",
@@ -8468,6 +8485,7 @@
       ],
       "type": "object"
     },
+    "name": "explain_finding",
     "outputSchema": {
       "$defs": {
         "Basis": {
@@ -8962,24 +8980,6 @@
       ],
       "title": "Envelope",
       "type": "object"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false
-    },
-    "_meta": {
-      "cognicode": {
-        "authority": "read",
-        "category": "quality",
-        "estimated_latency_ms": 120,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.102.1"
-      }
     }
   }
 ]
