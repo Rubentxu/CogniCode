@@ -2016,7 +2016,6 @@ mod tests {
     #[test]
     fn test_per_file_graph_cache_detects_content_change() {
         use std::io::{Seek as _, Write as _};
-        use std::time::Duration;
 
         let mut file = NamedTempFile::with_suffix(".py").unwrap();
         writeln!(file, "def original():").unwrap();
@@ -2031,12 +2030,6 @@ mod tests {
             "first parse should yield at least one symbol (sanity)"
         );
 
-        // Ensure that the subsequent write produces a clearly newer mtime:
-        // filesystems with coarse-grained mtime resolution can otherwise
-        // collapse two writes into the same mtime if they happen within
-        // the same tick.
-        std::thread::sleep(Duration::from_millis(1100));
-
         // Overwrite with different, larger content.
         {
             let mut f = file.as_file();
@@ -2048,6 +2041,12 @@ mod tests {
             writeln!(f, "    pass").unwrap();
             f.flush().unwrap();
         }
+
+        // The cache compares the time it recorded with the one on disk,
+        // and filesystems with coarse-grained mtime resolution can
+        // collapse two writes into the same tick. A test does not wait
+        // for the clock to make them differ.
+        crate::test_support::bump_mtime(file.path());
 
         // Re-build via cache.
         let (graph2, _pending) = cache.get_or_build(file.path()).unwrap();

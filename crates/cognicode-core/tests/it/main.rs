@@ -195,6 +195,7 @@ mod the_search_says_what_it_did_not_cover;
 mod the_semantic_index_does_not_hold_the_runtime;
 mod the_snapshot_carries_what_the_reader_read;
 mod the_specialized_reader_says_what_happened;
+mod the_tests_do_not_wait_for_the_clock;
 mod the_tree_has_one_file_set;
 mod the_usage_search_does_not_hold_the_runtime;
 mod the_walk_prunes_by_directory_name;
