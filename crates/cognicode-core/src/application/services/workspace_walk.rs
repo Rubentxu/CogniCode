@@ -31,13 +31,30 @@
 //! it stopped (`application/services/verification.rs` owns that bound).
 
 use crate::application::dto::{
-    ListFilesRequest, ListFilesResult, RetrieveAndVerifyRequest, RetrieveAndVerifyResult,
-    SearchContentRequest, SearchContentResult,
+    ListFilesRequest, ListFilesResult, SearchContentRequest, SearchContentResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::services::file_operations::FileOperationsService;
-use crate::application::services::verification::{Bound, VERIFICATION_BUDGET};
 use std::sync::Arc;
+
+/// Runs the work off the thread that awaits it.
+///
+/// The walk of the tree is blocking I/O: the thread that awaits the answer
+/// has other calls to serve, and the work belongs to the blocking pool of
+/// the runtime.
+///
+/// When there is no runtime to send it to — a consumer that awaits a
+/// published route with another executor — the work happens where it
+/// always happened. There is no pool to move it to, and `spawn_blocking`
+/// outside a runtime is a panic, not a slow answer.
+pub(crate) async fn off_the_runtime<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, tokio::task::JoinError> {
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle.spawn_blocking(work).await,
+        Err(_) => Ok(work()),
+    }
+}
 
 impl FileOperationsService {
     /// The content search, off the runtime.
@@ -49,37 +66,9 @@ impl FileOperationsService {
         input: SearchContentRequest,
     ) -> AppResult<SearchContentResult> {
         let service = Arc::clone(self);
-        tokio::task::spawn_blocking(move || service.search_content(input))
+        off_the_runtime(move || service.search_content(input))
             .await
             .map_err(|e| AppError::InternalError(format!("the content search panicked: {e}")))?
-    }
-
-    /// The retrieval of the candidates and their verification, off the
-    /// runtime.
-    ///
-    /// The walk of the tree is the part that occupies the runtime, and it
-    /// is the part that moves: the verification that follows waits for a
-    /// subprocess, so it yields while it waits.
-    ///
-    /// The budget starts before the walk, because the walk is part of the
-    /// work the budget bounds.
-    pub(crate) async fn retrieve_and_verify_off_the_runtime(
-        self: &Arc<Self>,
-        input: RetrieveAndVerifyRequest,
-    ) -> AppResult<RetrieveAndVerifyResult> {
-        let bound = Bound::starting_now(VERIFICATION_BUDGET);
-        let service = Arc::clone(self);
-        let walk_bound = bound.clone();
-        let retrieval = tokio::task::spawn_blocking(move || {
-            service.retrieve_candidates(&input, Some(walk_bound))
-        })
-        .await
-        .map_err(|e| {
-            AppError::InternalError(format!("the retrieval of the candidates panicked: {e}"))
-        })??;
-        Ok(self
-            .verify_retrieval(retrieval, VERIFICATION_BUDGET, &bound)
-            .await)
     }
 
     /// The listing of the tree, off the runtime.
@@ -92,10 +81,65 @@ impl FileOperationsService {
         input: ListFilesRequest,
     ) -> AppResult<ListFilesResult> {
         let service = Arc::clone(self);
-        tokio::task::spawn_blocking(move || service.list_files(input))
+        off_the_runtime(move || service.list_files(input))
             .await
             .map_err(|e| {
                 AppError::InternalError(format!("the listing of the tree panicked: {e}"))
             })?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::task::{Context, Poll};
+
+    /// Awaits a future that does not yield.
+    ///
+    /// The work of this module does not yield when there is no runtime to
+    /// send it to, and this is how a future that does not yield is
+    /// awaited: one poll, and the answer is there.
+    fn block_on_once<F: Future>(future: F) -> F::Output {
+        let mut future = Box::pin(future);
+        let waker = std::task::Waker::noop();
+        let mut context = Context::from_waker(waker);
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(value) => value,
+            Poll::Pending => panic!("the future yielded, and this waits for one that does not"),
+        }
+    }
+
+    /// With a runtime, the work runs on another thread.
+    ///
+    /// The thread that awaits the answer has other calls to serve, and the
+    /// walk of the tree is not one of them.
+    #[tokio::test(flavor = "current_thread")]
+    async fn the_work_runs_on_another_thread_when_there_is_a_runtime() {
+        let caller = std::thread::current().id();
+        let worker = off_the_runtime(|| std::thread::current().id())
+            .await
+            .expect("the work ran");
+
+        assert_ne!(
+            caller, worker,
+            "the work ran on the thread that awaits it: {caller:?}"
+        );
+    }
+
+    /// Without a runtime, the work runs here, and the answer still comes.
+    ///
+    /// A plain test has no runtime: `spawn_blocking` outside one is a
+    /// panic, and a published route that a consumer awaits with another
+    /// executor must answer all the same.
+    #[test]
+    fn the_work_runs_here_when_there_is_no_runtime_to_send_it_to() {
+        assert!(
+            tokio::runtime::Handle::try_current().is_err(),
+            "this test has no runtime, and the case it measures is that one"
+        );
+
+        let value = block_on_once(off_the_runtime(|| 7_u32)).expect("the work ran");
+        assert_eq!(value, 7, "the answer came: {value}");
     }
 }

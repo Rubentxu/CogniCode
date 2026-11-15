@@ -631,22 +631,32 @@ impl WorkspaceSession {
     }
 
     /// Search for content within files
+    ///
+    /// The walk of the tree happens off the runtime that awaits the
+    /// answer: the route is `async`, and a walk of the tree on the thread
+    /// that serves it would keep that thread from serving anybody else
+    /// while it reads every file of the tree.
     pub async fn search_content(
         &self,
         request: crate::application::dto::SearchContentRequest,
     ) -> WorkspaceResult<crate::application::dto::SearchContentResult> {
         self.file_ops
-            .search_content(request)
+            .search_content_off_the_runtime(request)
+            .await
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 
     /// List files in a directory with optional filtering
+    ///
+    /// The walk of the tree happens off the runtime that awaits the
+    /// answer, like the search's does.
     pub async fn list_files(
         &self,
         request: crate::application::dto::ListFilesRequest,
     ) -> WorkspaceResult<crate::application::dto::ListFilesResult> {
         self.file_ops
-            .list_files(request)
+            .list_files_off_the_runtime(request)
+            .await
             .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("{}", e)))
     }
 

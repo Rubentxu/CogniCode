@@ -18,11 +18,12 @@
     dead_code
 )]
 
+#[cfg(test)]
+use crate::application::dto::VerificationStatus;
 use crate::application::dto::{
     ContentMatch, EditFileRequest, EditFileResult, EditValidation, EditVerification, FileEntry,
     FileMetadata, ListFilesRequest, ListFilesResult, ReadFileRequest, ReadFileResult, ReadMode,
-    RetrieveAndVerifyRequest, RetrieveAndVerifyResult, SearchContentRequest, SearchContentResult,
-    VerificationStatus, WriteFileRequest, WriteFileResult,
+    SearchContentRequest, SearchContentResult, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
@@ -32,10 +33,7 @@ use crate::application::services::path_glob::path_matches_glob;
 use crate::application::services::unread_entries::{
     declined_symlink, read_failure, walk_cut, walk_failure,
 };
-use crate::application::services::verification::{
-    Bound, Retrieval, VERIFICATION_BUDGET, candidates_in_verification_order, skipped_candidates,
-    verify_candidates,
-};
+use crate::application::services::verification::Bound;
 use crate::application::text_boundary::{floor_char_boundary, truncate_at_boundary};
 use crate::domain::findings::sha256_hex;
 use crate::domain::traits::code_verifier::CodeVerifier;
@@ -48,7 +46,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+
+/// The retrieval of the candidates and their verification, with the budget
+/// that bounds them.
+mod retrieval;
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -284,6 +285,12 @@ fn canonicalize_for_compare(path: &str) -> String {
 /// - Tree-sitter syntax validation for edits
 /// - Support for multiple read modes (raw, outline, symbols, compressed)
 /// - Code verification delegated to CodeVerifier trait
+///
+/// Clonable because a published route that moves its work off the runtime
+/// has to own the service it moves: the closure that carries the work
+/// outlives the borrow of `&self`, and the ports it holds are shared
+/// (`Arc`), so a clone is another handle to the same collaborators.
+#[derive(Clone)]
 pub struct FileOperationsService {
     /// Workspace root for fallback path resolution
     workspace_root: String,
@@ -1914,169 +1921,14 @@ impl FileOperationsService {
             CompilationResult::Skipped { reason } => (Vs::Skipped, None, None, Some(reason)),
         })
     }
-
-    /// The retrieval of the candidates and their verification.
-    ///
-    /// The retrieval is a lexical search over the tree; the verification
-    /// compiles every Rust candidate it found, with a timeout per candidate
-    /// and a budget for the whole call.
-    ///
-    /// The walk of the tree is synchronous, so the handler that serves this
-    /// tool does not call this method: it calls
-    /// `retrieve_and_verify_off_the_runtime` (see `workspace_walk.rs`),
-    /// which runs the walk off the thread of the runtime. This method
-    /// keeps the published signature, and it is the entry point for a
-    /// consumer that calls the application directly.
-    pub async fn retrieve_and_verify(
-        &self,
-        input: RetrieveAndVerifyRequest,
-    ) -> AppResult<RetrieveAndVerifyResult> {
-        self.retrieve_and_verify_within(input, VERIFICATION_BUDGET)
-            .await
-    }
-
-    /// The same work, with the budget the caller gives it.
-    ///
-    /// The budget is a parameter of the work and not a constant inside it:
-    /// the product's own budget is the one the published entry point uses,
-    /// and a caller that needs another bound says so.
-    pub(crate) async fn retrieve_and_verify_within(
-        &self,
-        input: RetrieveAndVerifyRequest,
-        budget: Duration,
-    ) -> AppResult<RetrieveAndVerifyResult> {
-        let bound = Bound::starting_now(budget);
-        let retrieval = self.retrieve_candidates(&input, Some(bound.clone()))?;
-        Ok(self.verify_retrieval(retrieval, budget, &bound).await)
-    }
-
-    /// The retrieval of the candidates: the walk of the tree.
-    ///
-    /// Synchronous on purpose: this is the part that has to move off the
-    /// runtime, and the off-the-runtime variant moves it as a whole.
-    ///
-    /// The walk answers to the bound when there is one: it stops when the
-    /// bound is reached, and the answer says that it stopped.
-    pub(crate) fn retrieve_candidates(
-        &self,
-        input: &RetrieveAndVerifyRequest,
-        bound: Option<Bound>,
-    ) -> AppResult<Retrieval> {
-        // Validate query is not empty
-        if input.query.trim().is_empty() {
-            return Err(AppError::InvalidParameter(
-                "Empty query not allowed".to_string(),
-            ));
-        }
-
-        // Early check: the verifier's toolchain must be available before doing
-        // any verification work. This implements the spec requirement
-        // "rustc not found → error 'rustc not found'".
-        //
-        // The probe goes through the injected `code_verifier` rather than
-        // calling `which::which("rustc")` here. Two reasons, and the second
-        // one is a bug fix:
-        //
-        // 1. A hardcoded `rustc` string in the application layer duplicates the
-        //    knowledge that belongs to the adapter, so swapping the verifier
-        //    for any other backend silently kept probing for rustc.
-        // 2. Because the probe ignored the injected port, the "toolchain is
-        //    absent" path could not be exercised without mutating the
-        //    process-wide PATH. `test_retrieve_and_verify_rustc_not_found`
-        //    did exactly that, and the window it opened was visible to every
-        //    concurrently running lib test: a sibling whose verification
-        //    reached this guard got "rustc not found" back and failed for a
-        //    reason unrelated to what it was testing. That is how
-        //    `test_retrieve_and_verify_deterministic` failed in merge-gate
-        //    while passing in isolation. The port is the seam, so the test
-        //    now injects a verifier that reports the toolchain missing and
-        //    no environment is touched.
-        //
-        // The `which` lookup itself is kept inside `RustVerifier` where it
-        // belongs: it is a PATH walk, not a fork, which matters under
-        // parallel load — see M0.5 in MAINTENANCE.md, where a fork()+exec
-        // probe failed with EAGAIN and was misreported as "rustc not found".
-        if input.verify
-            && let Err(error) = self.code_verifier.toolchain_available()
-        {
-            return Err(AppError::InvalidParameter(error));
-        }
-
-        // Perform lexical search for .rs files matching the query
-        let search_input = SearchContentRequest {
-            pattern: input.query.clone(),
-            path: None,
-            file_glob: Some("*.rs".to_string()),
-            regex: Some(false), // Literal search
-            case_insensitive: Some(false),
-            max_results: Some(input.max_results as usize),
-            context_lines: Some(2),
-        };
-
-        let search_result = self.search_content_until(search_input, bound)?;
-
-        Ok(Retrieval {
-            candidates: candidates_in_verification_order(search_result.matches),
-            unread: search_result.unread,
-            verify: input.verify,
-        })
-    }
-
-    /// The verification of the retrieved candidates.
-    ///
-    /// The budget covers the whole call: the bound starts when the call
-    /// begins, so the walk that retrieved the candidates spends it too.
-    /// What the budget did not reach comes out of the answer with the
-    /// reason that names the bound that was reached.
-    pub(crate) async fn verify_retrieval(
-        &self,
-        retrieval: Retrieval,
-        budget: Duration,
-        bound: &Bound,
-    ) -> RetrieveAndVerifyResult {
-        let remaining = || bound.remaining();
-        let results = if retrieval.verify {
-            verify_candidates(
-                self.code_verifier.as_ref(),
-                &retrieval.candidates,
-                budget,
-                &remaining,
-            )
-            .await
-        } else {
-            // The verification was not asked for: every match is in the
-            // answer, and every one of them says why it was not verified.
-            skipped_candidates(&retrieval.candidates, "verify-disabled")
-        };
-
-        let mut verified_count = 0u32;
-        let mut rejected_count = 0u32;
-        let mut skipped_count = 0u32;
-        for result in &results {
-            match result.status {
-                VerificationStatus::Verified => verified_count += 1,
-                VerificationStatus::Rejected => rejected_count += 1,
-                VerificationStatus::Skipped => skipped_count += 1,
-            }
-        }
-
-        let total = results.len() as u32;
-
-        RetrieveAndVerifyResult {
-            results,
-            total,
-            verified_count,
-            rejected_count,
-            skipped_count,
-            unread: retrieval.unread,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::dto::{FileEdit, ReadMode, UnreadKind};
+    use crate::application::dto::{
+        FileEdit, ReadMode, RetrieveAndVerifyRequest, UnreadKind, VerificationStatus,
+    };
     use crate::domain::traits::code_verifier::{
         CodeVerifier, CodeVerifierError, CompilationResult,
     };
@@ -2085,6 +1937,7 @@ mod tests {
     use crate::interface::mcp::security::InputValidator;
     use serial_test::serial;
     use std::io::Write;
+    use std::time::Duration;
     use tempfile::{NamedTempFile, TempDir};
 
     fn test_service_with_workspace(path: std::path::PathBuf) -> FileOperationsService {
