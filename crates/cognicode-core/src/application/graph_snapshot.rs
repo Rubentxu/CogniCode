@@ -271,10 +271,17 @@ fn decide_the_graph(
     // later session could mistake for full coverage — rebuild-every-time
     // is the safe default.
     let build_complete = service.last_build_was_complete();
-    // The manifest the caller keeps is the one of a build that read the
-    // whole tree: a partial build has no manifest that describes the
-    // whole tree, and keeping it would let the next session serve a
-    // partial graph as if it were fresh.
+    // The manifest the caller keeps describes the TREE that was read, not
+    // the completeness of the graph: a build that left holes read the tree
+    // all the same, and its manifest says which tree it read. A response
+    // that cannot be dated cannot be compared with another one, and the
+    // answer that most needs a date is the one with holes: the consumer
+    // has to know whether it is from before or after the change.
+    //
+    // What a partial build does NOT leave behind is the durable snapshot:
+    // that one is what another session serves as the graph of the tree,
+    // and a graph that did not read the whole tree would be published with
+    // the coverage of a complete one.
     let manifest_to_keep = if build_complete {
         match snapshot_path.as_ref() {
             Some(path) => {
@@ -306,7 +313,7 @@ fn decide_the_graph(
             // A stale/partial snapshot must not survive a failed rebuild.
             let _ = std::fs::remove_file(path);
         }
-        None
+        Some(manifest)
     };
 
     Ok(loaded(
