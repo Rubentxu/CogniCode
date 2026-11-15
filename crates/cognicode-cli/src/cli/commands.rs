@@ -1079,21 +1079,17 @@ impl CommandExecutor {
                         };
                         // They go to stderr, like the pending references of
                         // the full graph do: stdout is the machine-readable
-                        // stream and its byte shape is pinned.
-                        for reference in &pending_references {
-                            // A reference without a line is not on line
-                            // zero: it is on a line the reader did not
-                            // know, and saying "0" would name a place
-                            // that does not exist.
-                            let origin = match reference.line {
-                                Some(line) => format!("{}:{}", reference.file, line),
-                                None => reference.file.clone(),
-                            };
-                            eprintln!(
-                                "  Pending: {} -> {} ({:?})",
-                                origin, reference.target, reference.reason
-                            );
-                        }
+                        // stream and its byte shape is pinned. The same
+                        // owner writes them, so the same bound applies to
+                        // them: a file that states ten thousand references
+                        // nobody declared does not write ten thousand lines
+                        // to stderr.
+                        let mut err = std::io::stderr();
+                        let _ = crate::cli::presenter_bridge::report_graph_detail(
+                            &[],
+                            &pending_references,
+                            &mut err,
+                        );
                         // T1-5.4c: text formatting is in the
                         // presenter. The function still emits
                         // the text (T1-5.5 will move it to the
