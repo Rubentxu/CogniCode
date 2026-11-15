@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-14, sobre `6ca67fde794f442a940fd6f4d66f32f006a978ad` (la
+> **Snapshot**: 2026-11-15, sobre `b9776403765321e6c0536472b4ae4140a789dac9` (la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -132,11 +132,12 @@
 > y desde entonces: la complejidad y el conteo de parámetros tienen una sola
 > medición; `reparse_on_edit` distingue un fichero borrado de uno ilegible; y el
 > servidor real exige el token en `/mcp` y `/watch`;
-> y el snapshot operativo se regenera sobre la punta: el ratchet acepta cinco
-> commits de deriva contra la base con `main`, y el SHA declarado se había
-> quedado atrás; la cabecera declara la punta real, la prosa acumula lo que
-> llegó con el commit que lo midió, y la tabla cuenta los commits de distancia
-> con una fila por unidad;
+> y el snapshot operativo se regenera sobre la punta: el ratchet acepta veinte
+> commits de deriva contra la base con `main` —la ventana se calibró al bloque
+> y no a la fusión (`7de0fe20`)—, y el SHA declarado se había quedado atrás; la
+> cabecera declara la punta real, la prosa acumula lo que llegó con el commit
+> que lo midió, y la tabla cuenta los commits de distancia con una fila por
+> unidad;
 > y la cobertura tiene un dueño: la decisión de qué estado se publica estaba
 > escrita dos veces —la CLI y el MCP—, y el presenter del MCP la escribía una
 > tercera: un outcome completo servido de la caché se publicaba como «unknown»
@@ -429,46 +430,110 @@
 > presupuesto y dice lo que no cubrió (`abcb47fa`); y el aviso de una
 > construcción parcial es un resumen acotado a 4 KiB, no un volcado de una
 > línea por agujero (`4cf1bd72`).
+> Y el quinto bloque, sobre la base `c6285a4a`, lleva otro hilo con la misma
+> raíz: el runtime que sirve el MCP no se queda bloqueado por el trabajo de una
+> herramienta —la población del índice semántico sale del runtime
+> (`0076a700`), la verificación de `retrieve_and_verify` también y con
+> presupuesto de 45 s que publica (`225115c4`, `0848f18d`), y las rutas
+> públicas de `WorkspaceSession` ya no ocupan el runtime que las sirve
+> (`ee73aa08`)—; y la ventana de despacho corta la llamada y dice qué pasó con
+> el trabajo que se quedó fuera (`d1009b48`): el rechazo ya no calla que el
+> trabajo sigue corriendo y que su resultado se tira. El camino de análisis
+> comparte el grafo en vez de copiarlo (`804c02a2`): el almacén clonaba el
+> grafo entero —su propio comentario decía «5-10 MB for 29K symbols»— en el
+> hilo del runtime. La búsqueda que se corta en `max_results` publica el
+> hueco y la cobertura deja de decir `complete` (`af1857f4`). Cada goal
+> declara el grafo que construye (`d7edd2e4`) y el que necesita (`c92fcda9`),
+> con el maestro como espejo del registro y un contrato que compara los dos
+> textos. El contrato mide lo que mide el ratchet (`61b76d9c`), los tests
+> dejan de dormir para que cambie el `mtime` (`b95dd50b`): trece tests
+> esperaban al reloj —4 × 1100 ms y 9 × 20 ms, 4,58 s por corrida—, y el
+> oráculo de la paridad de la superficie lee el despacho a su dueño
+> (`2960249e`): TASK-311 movió el despacho a su propio módulo y el oráculo
+> seguía leyendo el fichero viejo, así que medía nada.
+> El gate de ese bloque salió rojo en tres contratos de la paridad de
+> la superficie MCP, y la causa era el instrumento, no el producto; lo
+> corrigió TASK-314 (`2960249e`); repetido entero sobre la punta corregida:
+> verde, con 4 073 unitarios, 1 714 de integración (2 omitidos), 39 suites de
+> contrato con 485 casos y 950 tests de la UI; los mutantes no se midieron,
+> con el motivo escrito en su recibo: el radio quedó vacío y el crate del
+> calendario no estaba en su turno, así que no se escribe línea de ancla; su
+> recibo está en el Journal (`a07f2bff`).
+> Y el sexto bloque, sobre la base `2960249e`, lleva quince tareas con un
+> hilo: lo que el producto publica se lee como lo que es. El prefijo de
+> categoría del limitador no aislaba nada —el limitador cuenta por clave y el
+> despacho nunca consultaba el cubo global— y se borra (`523c641c`): cada
+> herramienta tiene su propio presupuesto. El volcado de detalle por stderr
+> se acota y dice lo que deja fuera (`68490568`): 4 285 666 → 33 456 bytes,
+> con el número exacto de lo omitido —«Omitted: 44821 of 44905 pending
+> references were not listed»—. Los contratos que no medían lo que prometen
+> se renombran (`105cca7a`), el `.gitignore` de un proyecto que no es
+> repositorio se honra (`d303cab7`), un manifiesto que no se pudo juzgar es un
+> agujero de la cobertura (`04a133cd`) y una construcción parcial conserva su
+> manifiesto (`fe9c1232`): `basis.freshness` pasa de nulo a un digest,
+> conservando `state: partial` y los 135 ficheros saltados y las 45 006
+> referencias sueltas. La auditoría de aliasing estricto de las gramáticas
+> mide lo que el aviso no dice (`9dc7fc04`): el control —tree-sitter-haskell
+> 0.23.1— aborta 10 de 10 con `-O3` y 0 de 10 con `-fno-strict-aliasing`, y
+> ruby, bash, yaml y python abortan 0 de 10 en las dos compilaciones.
+> El hilo del grafo: el fichero que implementa un nombre es dueño de sus
+> llamadas (`51ff54f6`), medido sobre las 15 497 llamadas con calificador de
+> este repositorio —la ruta del índice no pierde ninguna arista por un alias
+> de otro fichero, la ruta sin índice pierde 1 937 candidatas de las que 7 son
+> aristas reales, y el mismo juicio evita 1 526 aristas falsas—; el dueño de
+> un `impl` conserva el camino del módulo (`6681979e`), que se lee por
+> ámbitos, y el mapa de dueños dice lo que el código escribe (`665fc694`);
+> y el hueco de la ruta sin índice se ve en la cobertura (`e6e2140e`): una
+> llamada que el fichero declara y no puede atar deja una referencia detrás
+> con la clase `Unresolved`, y el hueco se cuenta. Los goals que leen el
+> árbol lo fechan sin construir el grafo (`5a8246e5`): el recorrido son 80 ms,
+> el manifiesto 155 ms y el grafo 11,1 s, así que la frescura sin grafo es el
+> 1,4% de lo que cuesta el grafo —y los dos digests son la misma cadena,
+> byte a byte—, con el contrato de esa frescura actualizado a la garantía
+> nueva (`a55d0c4e`). Y la latencia que el catálogo publica es un techo, no
+> un coste (`b9776403`): el catálogo declaraba 40 ms para `search_content` y
+> 20 ms para `list_files`, y las dos hacen el mismo recorrido del árbol, que
+> sobre este repositorio lee 3 057 ficheros y tarda 645 ms; ahora las dos
+> publican 1 000 ms, y el campo `latency_basis` dice de dónde sale el número.
+> Los fixtures del contrato de superficies no dependen de la máquina
+> (`566702d7`): 52 de 52, donde antes cinco estaban en rojo por la
+> configuración de git de la máquina. El gate de este bloque salió rojo en un
+> test —el contrato que fijaba la frescura de los goals que leen el árbol, que
+> la unidad anterior cambió a propósito— y lo corrigió TASK-321 (`a55d0c4e`);
+> el recibo del bloque lo escribe su cierre.
 > Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
 > (2026-11-11, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`7de0fe20d0c6bdb9c702f859e9f5315daeed854a` → `6ca67fde794f442a940fd6f4d66f32f006a978ad`)
+## Qué cambió desde el snapshot anterior (`6ca67fde794f442a940fd6f4d66f32f006a978ad` → `b9776403765321e6c0536472b4ae4140a789dac9`)
 
-Entre una punta y otra entraron **26 commits** (`git rev-list --count 7de0fe20d0c6bdb9c702f859e9f5315daeed854a..6ca67fde794f442a940fd6f4d66f32f006a978ad`).
+Entre una punta y otra entraron **30 commits** (`git rev-list --count 6ca67fde794f442a940fd6f4d66f32f006a978ad..b9776403765321e6c0536472b4ae4140a789dac9`).
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
-cuando la hay, en su recibo del `JOURNAL`.
+cuando la hay, en su recibo del `JOURNAL`. La tabla lleva las quince unidades
+del bloque 6; los quince commits anteriores —la regeneración del snapshot y el
+recibo del bloque 4, las diez tareas del bloque 5 con la corrección de su rojo,
+y el recibo del bloque 5— se cuentan en la prosa de la cabecera y tienen su
+recibo en el `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El snapshot se regenera sobre el bloque 2 | `1f42a5ee` (TASK-271, #854) | Documental: la ventana que mide la deriva del snapshot pasa a medir un bloque y no una fusión; el ratchet del snapshot queda verde. |
-| Los fixtures de contrato pueden hacer commit en cualquier máquina | `d4575908` (TASK-284, #855) | El runner neutraliza la configuración de git de la máquina: dieciséis aserciones del gate no se estaban midiendo. |
-| El recibo del bloque 2 | `f88d96b1` (TASK-281, #856) | Documental: el recibo que cierra el bloque 2, appended-only al final del Journal. |
-| La ruta bajo demanda juzga una llamada por su calificador | `45a25f4b` (TASK-279, #857) | La lectura de las llamadas de un fichero las llevaba como pares sin calificador: el juicio de «un tipo que el proyecto no declara» no se podía hacer porque el calificador se había perdido. |
-| Una llamada escrita a través de una ruta de crate ajeno no es del proyecto | `fce27230` (TASK-278, #858) | Medido sobre `crates/`: `to_value` era el tercer símbolo más llamado del proyecto, con un fan-in de **117**, y ese recuento era el de `serde_json`. |
-| El verificador corta su error en un carácter y da al hijo un entorno limpio | `9f840d1e` (TASK-259, #859) | `stderr[..200]` abortaba el proceso que sirve a cada agente conectado cuando el corte caía dentro de un carácter multibyte; y `rustc` heredaba el entorno entero del servidor. |
-| La regla de la ruta de crate lee cada dependencia y conserva los módulos propios | `b5a9e11b` (TASK-286, #860) | Los tres casos que la revisión independiente de TASK-278 encontró: la regla se juzgaba con el manifiesto equivocado en cada uno. |
-| La regla de la ruta de crate tiene un solo escritor y conserva el manifiesto | `f17f5bde` (TASK-289, #861) | Dos escritores de una regla: `GlobalSymbolIndex::owns_call` y `resolve_call_within_file`; la segunda ruta leía el manifiesto otra vez por cada fichero. |
-| El cambio no publica nada que diga que no publica | `8c6c1b97` (TASK-290, #862) | Dos contratos con un consumidor fuera del repositorio: el cambio publicaba dos cosas que el crate dice que no publica. |
-| Un nombre que el fichero importa de un crate es el nombre del crate | `100e66bf` (TASK-287, #863) | Un nombre importado de fuera se unía al símbolo propio del mismo nombre, y el grafo publicaba esa arista. |
-| Un turbofish no es un nombre | `fd4b9940` (TASK-276, #864) | `parse::<u32>` llamaba a `parse`: el nombre del calleo era el último segmento de su texto. |
-| Una llamada sobre un valor nombra un método del tipo de su receptor | `a06d5f65` (TASK-275, #865) | `values.len()` se resolvía por el nombre y no por el tipo del receptor, que es el fichero el que lo conoce. |
-| El libro mayor de reutilización sabe lo que dice el manifiesto | `bd915c6f` y `9bbcfb26` (TASK-285, #866/#867) | A/B sobre el mismo árbol: una construcción caliente re-resuelve 8.468 relaciones y pasa a 51 (**−99,4 %**), y el tiempo caliente baja de 4,94–5,01 s a 3,54–3,58 s (**−1,4 s**). |
-| Dos lints del lote corregidos hacia delante | `57916a3a` (TASK-291, #868) | RED: `cargo clippy --workspace --all-targets -- -D warnings` rc=101 (dos lints de `a06d5f65`) → GREEN rc=0 sobre el workspace entero. |
-| El recibo del bloque 3 | `2f063322` (TASK-292, #869) | Documental: el recibo que cierra el bloque 3; el título lleva el prefijo `docs(...)` y no cuenta para el contador. |
-| Un enlace que se queda dentro del workspace no es un agujero | `81885e0c` (TASK-266, #870) | RED 2 de 4, GREEN 4 de 4; con el binario, `overview` y `status` pasan de `partial` (ocho `LICENSE-*`) a `complete` con `skipped_files: []`. |
-| `impact` y `trace` dicen qué cubren y de cuándo es su respuesta | `275bf8fd` (TASK-270, #871) | El sobre salía con `state: unknown` y con la base nula, aunque la carga del grafo ya le hubiera medido las dos cosas. |
-| La definición de un símbolo es el sitio donde se declara | `2ad23efb` (TASK-261, #872) | `is_definition` era una heurística de texto: la primera línea con `fn ` era la definición, y una llamada escrita en la línea de otra función cumplía la condición antes que la declaración. |
-| La búsqueda de usos tiene presupuesto y dice lo que no cubrió | `abcb47fa` (TASK-269, #873) | Presupuesto de 10 s y 50.000 ficheros, consultado entre ficheros; al agotarlo la respuesta es `partial`, dice cuántos ficheros dejó fuera y por qué paró; el `.gitignore` del proyecto se lee tenga o no repositorio git. |
-| La búsqueda de usos no ocupa el runtime y su plazo cubre su presupuesto | `70f32659` (TASK-295, #874) | El recorrido ocupaba el hilo del runtime que sirve las llamadas y el plazo no podía cortarla: el sondeo del futuro estaba dentro de la búsqueda. |
-| Un nombre que sólo difiere en la grafía no es un homónimo | `1367bb1d` (TASK-277, #875) | `Describe` y `describe()` eran una sola clave del índice: la llamada a uno encontraba al otro y el grafo publicaba la llamada como ambigua, un hueco donde había una arista. |
-| `find` compara los nombres como los lee el lenguaje | `eae50faa` (TASK-262, #876) | Medido: `cognicode find --symbol Ok --format json` respondía con 67 declaraciones, y `doctor.rs:50` (`pub fn ok`) no era una de ellas; ahora la respuesta publica la comparación (`exact` o `case-insensitive`). |
-| Los recorridos del workspace no ocupan el runtime y su plazo los cubre | `739e7c7e` (TASK-297, #877) | Medido: 339 ms sobre `crates/` (1.150 ficheros) y 645 ms sobre el repositorio entero; mientras el recorrido corría, el runtime no atendía a nadie. |
-| El aviso de una construcción parcial es un resumen, no un volcado | `4cf1bd72` (TASK-263, #878) | El aviso escribía una línea por agujero; ahora es un resumen acotado a 4 KiB con el recuento exacto y una muestra, y el detalle sigue en el resultado estructurado. |
-| La ventana de despacho cubre el trabajo que la herramienta declara | `6ca67fde` (TASK-304, #879) | Medido con el binario release en frío: `query_symbol_index` respondía «internal: timeout» a los 0,51 s; con la ventana del grafo responde en 11,49 s, y la segunda llamada, en 0,00 s. |
-
+| El volcado de detalle por stderr se acota y dice lo que deja fuera | `68490568` (TASK-305, #895) | `cognicode --format json graph full .` escribía 4 285 666 bytes de stderr: una línea por cada referencia que nadie declaró (44 905) y otra por cada fichero que no se pudo leer. Medido sobre este repositorio con el binario debug: stderr 4 285 666 → 33 456 bytes, con los 135 ficheros listados y el documento JSON con las listas completas (135 / 44 905 / 0); lo que no cabe se cuenta con el número exacto y se dice: «Omitted: 44821 of 44905 pending references were not listed». |
+| El prefijo de categoría del limitador no aísla nada y se borra | `523c641c` (TASK-299, #896) | El limitador cuenta por clave y el despacho nunca consultaba el cubo global: el namespace `strict:` no separaba nada de nada. Se borra el mecanismo y se dice la verdad: cada herramienta tiene su propio presupuesto. |
+| Los contratos que no miden lo que prometen se renombran | `105cca7a` (TASK-307, #897) | Los restos de la revisión de TASK-297: un doc que describía `list_files` como si leyera ficheros y dos contratos cuyos nombres prometen una duración que no miden. Los tres contratos se renombran para decir lo que comprueban, y se mide que tienen dientes; un test nuevo fija que el listado del árbol no lee los ficheros que lista. |
+| El `.gitignore` de un proyecto que no es repositorio se honra | `d303cab7` (TASK-296, #898) | `list_files` y `search_content` caminaban el árbol con las reglas de git por defecto, que solo se aplican dentro de un repositorio: un proyecto que todavía no es repositorio veía sus árboles ignorados recorridos y leídos. La aplicación no puede nombrar el módulo de infraestructura que posee la ley (CR-06), así que el ajuste se replica en el recorrido con su motivo escrito. |
+| Un manifiesto que no se pudo juzgar es un agujero de la cobertura | `04a133cd` (TASK-288, #899) | Un manifiesto ilegible respondía exactamente lo que responde un manifiesto que no declara nada: ninguna crate de fuera, y el resto del análisis se presentaba como completo. Ahora el manifiesto ilegible se cuenta como un agujero más de la cobertura, con un motivo propio que nombra el paquete al que pertenece, y la palabra del motivo la publica el dominio, con un solo dueño. |
+| Una construcción parcial conserva su manifiesto | `fe9c1232` (TASK-293, #900) | La carga del grafo conservaba el manifiesto sólo cuando la construcción era completa, y una parcial perdía el digest: la base de la respuesta salía sin frescura. Medido sobre este repositorio con el mismo comando: `cognicode overview --format json` pasa de `basis.freshness: null` a un digest, conservando `state: partial` y la cobertura que nombra los 135 ficheros saltados y las 45 006 referencias sueltas. RED: 2 de los 5 tests nuevos; el control y las dos guardas pasan antes y después. |
+| La auditoría de aliasing estricto de las gramáticas | `9dc7fc04` (TASK-273, #901) | Medido (200 parseos × 10 corridas × 2 compilaciones): el control —tree-sitter-haskell 0.23.1— aborta 10/10 con `-O3` y 0/10 con `-fno-strict-aliasing`; ruby, bash, yaml y python abortan 0/10 en las dos compilaciones, con el mismo digest del árbol en cada par. Una segunda corrida con otro corpus por gramática dio el mismo veredicto. Ninguna reproduce: queda registrada como no reproducido, con las cifras, y no como sana. |
+| El fichero que implementa un nombre es dueño de sus llamadas | `51ff54f6` (TASK-280, #902) | Medido sobre las 15 497 llamadas con calificador de este repositorio: la ruta del índice no pierde ninguna arista por un alias de otro fichero, y la ruta sin índice pierde 1 937 candidatas de las que 7 son aristas reales; el mismo juicio evita 1 526 aristas falsas. La regla y su ámbito se mudan a su propio módulo, `call_ownership.rs`: `per_file_graph.rs` baja de 2 017 a 1 809 líneas de producción y el ratchet de tamaño queda verde. |
+| Los fixtures del contrato de superficies no dependen de la máquina | `566702d7` (TASK-316, #903) | En `main` (9dc7fc04) `python3 scripts/ci/test_sdk_surfaces.py` fallaba 5 de 52 tests, y el fallo no era de este árbol: era la máquina —el wrapper de git, los hooks y la política de identidades—. El fixture neutraliza ahora la configuración global y de sistema: 52/52, donde antes 5/52 estaban en rojo, y los mismos 5 en rojo en `main`. |
+| Los goals que leen el árbol lo fechan sin construir el grafo | `5a8246e5` (TASK-317, #904) | La frescura no es un dato del grafo: es el digest del manifiesto de las fuentes, y el manifiesto describe el árbol. Medido sobre este repositorio (release, 2 668 ficheros con lenguaje, 20,3 MiB): el recorrido son 80 ms, el manifiesto son 155 ms y el grafo son 11,1 s —la frescura sin grafo es el 1,4% de lo que cuesta el grafo, y de esos 155 ms sólo 28 ms son el disco—. Los dos digests son la misma cadena, byte a byte; lo que se publica sin grafo es `graph_source: null`, y `state_of` —la cobertura— no se toca. |
+| El contrato de la frescura de los goals que leen el árbol se actualiza | `a55d0c4e` (TASK-321, #905) | El gate del bloque salió rojo en `a_goal_that_does_not_load_the_graph_publishes_no_freshness`, que fijaba el contrato anterior —`status` y `context` no cargan el grafo, así que no publicaban frescura—. Lo que se retira es la afirmación vieja, no la garantía que la sostenía: ahora la afirma algo más fuerte —el digest que publica un goal sin grafo es el mismo que publica el goal que sí carga el grafo—, y ese contrato tiene un solo dueño. |
+| El dueño de un `impl` conserva el camino del módulo | `6681979e` (TASK-318, #906) | El dueño de un `impl` se reducía a su último segmento y el calificador de la llamada también es un nombre desnudo: dos tipos homónimos en dos módulos colisionaban, y la ruta sin índice unía la llamada `b::Widget::new(7)` al método de `a::Widget`. Ahora el dueño conserva el camino con el que está escrito, la llamada lleva el camino de su calificador y los dos se comparan por segmentos, con el mapa de dueños leído por ámbito. GREEN: `an_impl_owner_keeps_the_path_of_its_type` → 6/6; el contrato de TASK-280 → 21/21; los unitarios de `naming` → 57/57 (4 nuevos). |
+| El mapa de dueños de `impl` dice lo que el código escribe | `665fc694` (TASK-320, #907) | El defecto D6 —un `impl` anidado en un cuerpo de función concedía propiedad a todo el fichero— quedó resuelto por el recorrido por ámbitos de TASK-318, y este commit lo pina con un test de integración y con el motivo escrito. RED con el recorrido antiguo (`left: ["call_it"], right: []`); GREEN: 2/2; el contrato de TASK-318 → 6/6; los unitarios de `naming` → 58/58. El defecto D5 queda DECIDIDO, no implementado, y el doc lo dice con esas palabras. |
+| El hueco de la ruta sin índice se ve en la cobertura | `e6e2140e` (TASK-319, #908) | La ruta sin índice rechazaba llamadas que la ruta con índice publica, y lo peor no era el rechazo: era que no dejaba rastro. RED: las referencias pendientes del fichero eran `[]`; el control —una llamada que el fichero no nombra— y la ruta con índice pasaban antes y después. GREEN: `the_hole_of_the_file_route_is_visible` → 3/3; el contrato de TASK-280 → 21/21; los unitarios de `pending_reference` → 5/5 (tres nuevos). |
+| La latencia que el catálogo publica es un techo, no un coste | `b9776403` (TASK-300, #909) | `estimated_latency_ms` no decía qué era: el catálogo declaraba 40 ms para `search_content` y 20 ms para `list_files`, y las dos herramientas hacen el MISMO recorrido del árbol, que sobre este repositorio lee 3 057 ficheros y tarda 645 ms. El número es el techo que el producto concede al trabajo de la herramienta, y ahora significa lo mismo para todas; las dos publican 1 000 ms y `latency_basis` dice de dónde sale el número. RED: los tres tests nuevos fallaban; GREEN: `the_latency_the_catalog_publishes_is_a_ceiling` → 3/3, el contrato del plazo del despacho → verde, la paridad del catálogo → 5/5, el esquema del hilo → 11/11. |
 ## Release: la última publicada es la v0.103.1
 
 | Tag | Estado | Por qué |
@@ -647,6 +712,18 @@ código o de la máquina.
 | Unidad | Qué es | Detalle |
 |---|---|---|
 | **B3** (`C23`) | ontología y arquitectura simplificadas | `docs/adr/ADR-056-the-routes-say-the-same.md` |
+
+La fila de la tabla es lo único que este árbol deja abierto: `C23` —que la
+construcción del grafo, la caché, la resolución y las métricas dejen de vivir
+en un mismo archivo— es el único candidato de la cola de la misión
+(`goal-compass.json`), y ni el bloque 5 ni el bloque 6 lo cerraron. Lo que
+cerraron es una parte del camino que `C23` promete: la ruta sin índice ya no
+se traga el hueco que deja (`e6e2140e`). El resto de su criterio **no está
+verificado en este árbol**: que las tres rutas publiquen la misma cobertura, las
+mismas relaciones y los mismos huecos sobre el mismo corpus, con un test que lo
+compruebe, sigue pendiente, y el servicio de análisis continúa siendo un módulo
+—3 914 líneas, de las 4 369 que la auditoría del 2026-10-24 midió— sin
+partirse por responsabilidad.
 
 **El snapshot dice quién lo produjo, está cerrada.** El producto persiste un snapshot del grafo y lo vuelve a servir cuando las fuentes no han cambiado. Lo que guardaba era el grafo y el manifiesto de contenido; lo que no guardaba era quién lo había calculado. La decisión de servirlo comparaba el manifiesto con el disco y nada más, así que un binario distinto —otra versión, otro commit, otras capacidades— servía el snapshot como si fuera suyo: el consumidor recibía un grafo que había calculado otro analizador, con otra ontología y otras reglas, y nada en la respuesta lo decía. La base publicada declaraba el workspace, la configuración y las fuentes con `complete: true`: una identidad a medias.
 La identidad vive ahora en el dominio, en un valor con constructor puro: `SnapshotKey` dice qué se miró (el workspace), quién lo miró (el analizador: su versión, su commit y sus capacidades) y con qué forma se escribió (el esquema). El snapshot la guarda y se decide con ella, y la primera pregunta al cargar es sobre el productor, que no cuesta nada porque se responde sin leer el árbol. Si lo produjo otro analizador, no se sirve: el producto reconstruye y el motivo queda en el log. La base publicada gana cuatro campos que salen de la misma clave con la que se escribe el snapshot, y el catálogo publicado declara los mismos.
@@ -1073,10 +1150,17 @@ uno: el cambio de semántica está escrito en cada uno, y dos expectativas
 dormidas resultaron estar equivocadas —no el producto—: una pedía que el hueco
 nombrase un fichero que es una exclusión legítima, y otra afirmaba `Complete`
 sobre un corpus cuyo hueco real son dos llamadas ambiguas. Lo que este corte
-NO cubre, y queda declarado: la ruta semántica —la que usa un lector con
-dominio, como Terraform o Ansible— sigue sin publicar sus llamadas no
-resueltas, porque su lector no tiene índice del proyecto y no puede
-distinguir una llamada ambigua de una que vive fuera del proyecto.
+NO cubría, y que la regla del ámbito ya cuenta (TASK-319, `e6e2140e`): la ruta
+sin índice —la que usa un lector de dominio, como Terraform o Ansible— seguía
+sin publicar sus llamadas no resueltas, porque su lector no tiene índice del
+proyecto y no podía distinguir una llamada ambigua de una que vive fuera del
+proyecto. Ahora lo responde el ámbito que construye el grafo: el ámbito del
+proyecto declara que una llamada rechazada nombra algo que el proyecto no tiene
+en ninguna parte, y esa llamada no deja referencia; el ámbito del fichero sólo
+conoce sus propias declaraciones, así que cuando el fichero declara el nombre
+que la llamada nombra, la llamada puede ser suya: eso es un hueco, y deja una
+referencia detrás con la clase `Unresolved`. Lo que la ruta sin índice sigue sin
+poder decir es de quién es la llamada; lo que ya no hace es ocultarla.
 
 **Las dos superficies dicen lo mismo del mismo proyecto, está cerrada.** El
 residuo que dejó el cierre anterior lo dijo con sus palabras: «la equivalencia
@@ -1255,10 +1339,12 @@ optimización sin umbral.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 3 candidatos que
-llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
-cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
-B1 a B6), de mayor a menor prioridad. **C46, C12 y C49 salen de la cola al cerrarse.**
+Misión `cognicode` declarada (`goal-compass.json`), con **1 candidato** que
+lleva evidencia —cuatro rutas que existen— y un criterio de cierre observable.
+La cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus
+bloques B1 a B6), de mayor a menor prioridad, y hoy lleva uno solo: `C23`, el
+servicio de análisis que deja de ser un módulo de 4.100 líneas.
+**C46, C12 y C49 salen de la cola al cerrarse.**
 
 El primero que encadenaba era **C31**, y está cerrado: la autoridad con la que
 una herramienta MCP se ejecutaba la leía del catálogo que había en el disco
@@ -1323,8 +1409,58 @@ mutantes: 618 atrapados, 9 inviables y 0 supervivientes—; `npm test` y `cargo 
 + `clippy` rc=0; los contratos rc=1 por un único desfase de documentación —la
 deriva de este snapshot, 13 commits con una ventana de 5—, corregido hacia delante
 en TASK-283, que dimensiona la ventana al bloque (5 → 20 commits), y en este
-snapshot, que se regenera. Entre cierres de bloque sólo se afirma que cada tarea
-cumple su criterio, no que `main` esté verde.
+snapshot, que se regenera.
+
+El tercer bloque cierra su gate en verde sobre `57916a3a` —4.041 unitarios,
+1.657 de integración (2 omitidos) y el crate del calendario medido entero: 627
+mutantes, 618 atrapados, 9 inviables y 0 supervivientes—, con un rojo del
+clippy del workspace corregido hacia delante en el mismo cierre (TASK-291,
+`57916a3a`); su recibo está en el Journal (`2f063322`).
+
+El cuarto bloque parte de `57916a3a` y cerró con diez tareas de código; su gate
+se midió en serie sobre `6ca67fde`: rc=0 con 4.054 unitarios y 1.697 de
+integración (2 omitidos), 88 ficheros y 950 tests de la UI, y `cargo fmt` +
+`clippy` rc=0. Los contratos salieron en rojo por dos comprobaciones de
+`test_roadmap_coherence.py` —la deriva del snapshot, que a 26 commits de la
+base no cabía en la ventana de 20 que mide su edad— y se volvieron a correr
+enteros después de regenerar el snapshot (TASK-309, `c6285a4a`): 40 suites, 485
+casos, 0 fallos. Los mutantes no se midieron, con el motivo escrito en su
+recibo: el radio quedó vacío y el crate del calendario no estaba en su turno,
+así que no se escribe línea de ancla; su recibo está en el Journal (`daf3fbd3`).
+
+El quinto bloque parte de `c6285a4a` y cerró con once tareas de código —las diez
+del bloque y la corrección del rojo que lo cerró (TASK-314)—; su gate se midió
+en serie sobre `2960249e` y salió rojo en tres contratos de la paridad
+de la superficie MCP, cuya causa era el instrumento y no el producto —el oráculo
+de la paridad seguía leyendo el fichero donde el despacho vivió hasta
+TASK-311—. Corregido hacia delante en el mismo cierre, el gate entero se volvió
+a correr sobre la punta corregida: rc=0 con 4.073 unitarios y 1.714 de
+integración (2 omitidos), 39 suites de contrato con 485 casos, 950 tests de la
+UI y `cargo fmt` + `clippy` rc=0. Los mutantes no se midieron, con el motivo
+escrito en su recibo: el radio de mutación quedó vacío y el crate del
+calendario no estaba en su turno, así que no se escribe línea de ancla; su
+recibo está en el Journal (`a07f2bff`).
+
+El sexto bloque está en vuelo en este árbol: su gate salió rojo en un test —el
+contrato que fijaba la frescura de los goals que leen el árbol, que TASK-317
+cambió a propósito— y lo corrigió TASK-321 (`a55d0c4e`); el recibo del bloque
+lo escribe su cierre.
+
+Y los contratos de producto están en rojo en este árbol, y el rojo es de
+TASK-300 (`b9776403`): el campo `latency_basis` —el que dice de dónde sale el
+número de latencia— se publica en el catálogo maestro (`/tools/58` y
+`/tools/73`) y el esquema publicado no lo declara, así que la comprobación
+responde «Additional properties are not allowed ('latency_basis' was
+unexpected)»; y la captura del runtime (`product/tool-catalog-runtime.json`)
+sigue con la latencia anterior —20 ms para `list_files` y 40 ms para
+`search_content`, donde el maestro dice 1 000—. Quedan en rojo cuatro
+aserciones: `test_committed_catalog_is_self_consistent_and_schema_valid`,
+`test_every_published_document_validates`,
+`test_the_runtime_metadata_agrees_with_the_capture` y
+`test_the_committed_master_is_synchronized`. La suite entera da rc=1.
+
+Entre cierres de bloque sólo se afirma que cada tarea cumple su criterio, no
+que `main` esté verde.
 
 El gate corre sobre el árbol de trabajo, así que **no se edita código mientras
 corre**: el resultado correspondería a otro árbol. Y corre en un volumen con

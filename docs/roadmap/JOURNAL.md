@@ -39802,3 +39802,93 @@ el oráculo de la superficie lee el despacho a su dueño (`2960249e`).
   inventado.
 
 **La base del bloque 6 es `2960249e`.**
+
+## Recibo de bloque 6 — PASS, base `2960249e` (2026-11-15)
+
+**Estado: PASS** sobre `bc3e2c46`. El bloque empezó con un gate en rojo de una sola
+asertación —el contrato que fijaba la frescura de los goals que leen el árbol, que la
+unidad anterior cambió a propósito— y terminó con el gate entero en verde sobre la misma
+base. Por el camino el gate encontró tres huecos más, y los tres eran de este bloque:
+dos literales de un tipo fuera del crate que lo publica, un esquema publicado que no
+declaraba el campo nuevo y una copia del contrato de salida de una herramienta que se
+quedó vieja cuando su doc cambió. Los tres se corrigieron hacia delante, en este mismo
+cierre, y el gate se volvió a correr entero sobre la punta corregida.
+
+**Base y árbol verificados.** Base: `2960249e`, la punta del bloque 5. El gate se midió
+sobre `bc3e2c46` con la base `2960249e`. La base del bloque 7 es `bc3e2c46`.
+
+**Las tareas.** El contador de `AGENTS.md` da **15** sobre `2960249e..main`: TASK-273
+(#901, `9dc7fc04`), TASK-280 (#902, `51ff54f6`), TASK-288 (#899, `04a133cd`), TASK-293
+(#900, `fe9c1232`), TASK-296 (#898, `d303cab7`), TASK-299 (#896, `523c641c`), TASK-300
+(#909, `b9776403`), TASK-305 (#895, `68490568`), TASK-307 (#897, `105cca7a`), TASK-316
+(#903, `566702d7`), TASK-317 (#904, `5a8246e5`), TASK-318 (#906, `6681979e`), TASK-319
+(#908, `e6e2140e`), TASK-320 (#907, `665fc694`) y TASK-321 (#905, `a55d0c4e`). El
+contador da 15 y no diez porque el lote llevó más de diez tareas antes de cerrarse: la
+regla de `AGENTS.md` pide cerrar en bloques de diez, y el trabajo que ya estaba hecho no
+esperó al bloque. Quedan fuera del contador, por su prefijo `docs(...)`: el recibo del bloque 5
+(TASK-315, `a07f2bff`) y la regeneración del snapshot (este cierre).
+
+**El radio que el gate midió.** Base `2960249e91b1`; tocados `cognicode-cli`,
+`cognicode-core` y `cognicode-mcp`; radio de tests `cognicode`, `cognicode-cli`,
+`cognicode-core`, `cognicode-ladybug`, `cognicode-mcp` y `cognicode-sandbox`; radio de
+mutantes vacío y modo `diff`; calendario **omitido**: 276 fusiones desde el marcador
+`fb526521db6e` con periodo 50. El turno no se pagó y el ancla sigue siendo la medición
+real del crate del calendario. **No se escribe línea de calendario.**
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Tiempo | Recuento |
+|---|---|---|---|---|---|
+| 1 | `GATE_BASE=2960249e bash scripts/test-gate.sh` | `bc3e2c46` | 0 | unitarios 26,8 s; integración 15,4 s | unitarios 4106: 4106 verdes, 0 omitidos; integración 1741: 1741 verdes, 2 omitidos; mutantes: no medidos, con el motivo en el log; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `bc3e2c46` | 0 | 11,31 s | 950 tests |
+| 3 | `bash scripts/ci/run-all-contracts.sh` | `bc3e2c46` | 0 | — | 39 suites (33 de CI + 6 de producto), 485 casos, 0 fallos; testigo del árbol limpio |
+| 4 | `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings` | `bc3e2c46` | 0 | clippy 1 m 06 s | sin avisos |
+
+**Los rojos y sus correcciones.** El primero era del lote y ya venía corregido por
+TASK-321 (`a55d0c4e`): `a_goal_that_does_not_load_the_graph_publishes_no_freshness`
+fijaba el contrato anterior —`status` y `context` no cargan el grafo, así que no
+publicaban frescura—, y TASK-317 cambió ese contrato a propósito, con la medición detrás
+(el digest del manifiesto describe el árbol, y las dos rutas lo calculan igual, byte a
+byte). El segundo lo encontró el gate de este cierre: dos literales de `ToolDescriptor`
+fuera del crate que publica el tipo —en los tests de `skills` y en los del
+autodescubrimiento— no compilaban con el campo nuevo que TASK-300 añadió, y el radio
+del lote compila `cognicode-cli`. La lección que se repite queda escrita en el propio
+cierre: la verificación de una tarea tiene que cubrir el radio que el gate compila, no
+sólo los crates que el cambio tocó. El tercero eran los contratos del producto: el
+esquema publicado del catálogo no declaraba `latency_basis` y un esquema con
+`additionalProperties: false` rechaza lo que no declara, y la captura del runtime
+—un `tools/list` real— seguía diciendo 20 y 40 ms donde el maestro decía 1 000. La
+captura se volvió a pedir al runtime (con todas las features y con el perfil `full`,
+que con el perfil por defecto publica cinco herramientas y con la paginación del
+protocolo trae veinte por página) y el maestro se sincronizó con ella. El cuarto: el
+catálogo publica una COPIA del contrato de salida de `build_graph`, y la copia se quedó
+vieja cuando TASK-319 cambió el doc de `PendingReason::Unresolved` —el derivado lleva
+la descripción del doc, así que la copia tenía que cambiar con él—. La copia se sustituyó
+por el contrato derivado, que es lo que el contrato pide.
+
+**Lo que este bloque cambió, medido.** El hilo es que lo que el producto publica se lee
+como lo que es. El dueño de un `impl` conserva el camino del módulo y se lee por
+ámbitos: dos tipos homónimos en dos módulos ya no se confunden, y el mapa de dueños
+dice lo que el código escribe. El hueco de la ruta sin índice se ve en la cobertura: una
+llamada que el fichero declara y no puede atar deja una referencia detrás, con la clase
+`Unresolved`, y el hueco se cuenta. La latencia que el catálogo publica es un techo, no
+un coste: las dos herramientas que caminan el workspace publican 1 000 ms, un techo que
+cubre el recorrido medido (645 ms sobre 3 057 ficheros), y la base de su número dice de
+dónde sale. Los goals que leen el árbol lo fechan sin construir el grafo —el recorrido
+son 80 ms, el manifiesto 155 ms y el grafo 11,1 s—, y el contrato de esa frescura queda
+actualizado a la garantía nueva: el digest que publica un goal sin grafo es el mismo
+que publica el goal que sí lo carga.
+
+**NOT_RUN.**
+
+- **Mutantes (paso 3 del gate).** El lote tocó `cognicode-cli`, `cognicode-core` y
+  `cognicode-mcp`, y ninguno es asequible de mutar por coste; el crate del calendario
+  (`cognicode-graph-algos`) no estaba en su turno por la razón escrita arriba. El gate lo
+  dijo en su log, y eso no es que la mutación se midiera y no encontrara nada.
+- **El tiempo de pared del gate no está registrado:** el log conserva sus componentes
+  (unitarios, integración) y el tipo de la compilación, no la duración total de la corrida.
+- **La duración de la suite de contratos tampoco:** el runner imprime el recuento de
+  casos por suite, no el tiempo que tardó. La celda va con «—» y no con un número
+  inventado.
+
+**La base del bloque 7 es `bc3e2c46`.**

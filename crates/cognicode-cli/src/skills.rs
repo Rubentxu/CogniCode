@@ -267,6 +267,7 @@ mod tests {
             authority: "read".into(),
             stability: "stable".into(),
             estimated_latency_ms: 1,
+            latency_basis: None,
             requirements: serde_json::Value::Null,
             requirements_status: "satisfied".into(),
             public_profiles: vec![],
