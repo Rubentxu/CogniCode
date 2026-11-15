@@ -19,7 +19,7 @@ use opentelemetry::KeyValue;
 use rmcp::model::CallToolRequestParams;
 use std::time::Instant;
 
-use crate::rmcp_adapter::{is_strict_rate_limit_category, lookup_category, tool_is_mutating};
+use crate::rmcp_adapter::{lookup_category, tool_is_mutating};
 
 /// The text of this module, for the parity oracle.
 ///
@@ -31,6 +31,23 @@ use crate::rmcp_adapter::{is_strict_rate_limit_category, lookup_category, tool_i
 /// when it rots the oracle stops measuring without saying so.
 #[cfg(test)]
 pub(crate) const SOURCE: &str = include_str!("dispatch.rs");
+
+/// The key a tool call is charged to in the rate limiter.
+///
+/// The limiter counts by key (`RateLimiter::check_with_key`), and this
+/// path charges no other pool: the global bucket (`RateLimiter::check`)
+/// is never consulted here. The key is therefore the whole budget — the
+/// tool's name — and every tool has its own.
+///
+/// MEASURED on 2026-11-15 over this tree: the key used to carry the
+/// category's namespace (`strict:<tool>` for the graph, navigation and
+/// aix categories). A namespace separates a key from a pool it shares,
+/// and there is no shared pool here; a tool always belongs to the same
+/// category, so the two spellings of a key never coexisted and the
+/// namespace isolated nothing.
+fn rate_limit_key(tool_name: &str) -> String {
+    format!("tool:{tool_name}")
+}
 
 /// Handles the tool call by dispatching to the appropriate handler
 ///
@@ -102,19 +119,13 @@ pub async fn call_tool_handler_with_window(
     let start = Instant::now();
     let metrics = get_global_metrics();
 
-    // M3.2 / M3.3: Resolve the tool's category once. Used both for
-    // timeout selection (M3.2) and rate-limit key prefixing (M3.3).
+    // M3.2: Resolve the tool's category once. Used for timeout
+    // selection (M3.2).
     let category = lookup_category(tool_name);
 
-    // M3.3: Pre-match rate-limit check. The key is per-tool so each
-    // tool has its own 100/60s budget. Expensive categories (graph,
-    // navigation, aix) use a stricter key prefix to keep their
-    // budgets separate from the rest of the dispatcher.
-    let rate_key = if is_strict_rate_limit_category(&category) {
-        format!("strict:{}", tool_name)
-    } else {
-        format!("tool:{}", tool_name)
-    };
+    // M3.3: Pre-match rate-limit check. The key is per-tool, so each
+    // tool has its own 100/60s budget and no tool can spend another's.
+    let rate_key = rate_limit_key(tool_name);
     if !ctx.rate_limiter().check_with_key(&rate_key) {
         let err: InterfaceResult<String> = Err(InterfaceError::RateLimited);
         let status = crate::status::classify_status(tool_name, &err);
@@ -1134,4 +1145,70 @@ pub async fn call_tool_handler_with_window(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cognicode_core::interface::mcp::security::RateLimiter;
+
+    /// Every tool is charged to its own budget, and the key does not
+    /// depend on the tool's category.
+    ///
+    /// The limiter counts by key, so the key IS the budget: a tool's
+    /// traffic cannot consume another's. What a category could add to
+    /// the key is a namespace — and a namespace only separates
+    /// something from a pool it shares. There is no shared pool here:
+    /// the dispatch charges the per-key budget and never the global
+    /// bucket.
+    ///
+    /// MEASURED on 2026-11-15 over this tree: the dispatch builds the
+    /// key `strict:<tool>` for the graph, navigation and aix
+    /// categories and `tool:<tool>` for the rest. A tool always
+    /// belongs to the same category, so both spellings of a tool's key
+    /// never coexist: the namespace separated nothing.
+    #[test]
+    fn the_rate_limit_key_does_not_depend_on_the_category() {
+        // A heavy category.
+        assert_eq!(
+            rate_limit_key("graph_pagerank"),
+            "tool:graph_pagerank",
+            "the key of a tool must not depend on its category: the limiter counts by key \
+             and the dispatch charges no shared pool, so there is nothing to be separated from"
+        );
+        // A navigation category.
+        assert_eq!(
+            rate_limit_key("go_to_definition"),
+            "tool:go_to_definition",
+            "the key of a tool must not depend on its category"
+        );
+        // A cheap category.
+        assert_eq!(
+            rate_limit_key("read_file"),
+            "tool:read_file",
+            "the key of a tool must not depend on its category"
+        );
+    }
+
+    /// One tool exhausting its budget leaves the other tools alone.
+    ///
+    /// This is the guarantee the rate limiter really gives, and the
+    /// one a caller can rely on: the budget belongs to the tool, not
+    /// to the category the tool happens to belong to.
+    #[test]
+    fn a_tool_that_exhausts_its_budget_leaves_the_other_tools_alone() {
+        let limiter = RateLimiter::new(2, 60);
+
+        assert!(limiter.check_with_key(&rate_limit_key("graph_pagerank")));
+        assert!(limiter.check_with_key(&rate_limit_key("graph_pagerank")));
+        assert!(
+            !limiter.check_with_key(&rate_limit_key("graph_pagerank")),
+            "the third call of a tool with a budget of two has to be refused"
+        );
+
+        // The other tools still have their whole budget.
+        assert!(limiter.check_with_key(&rate_limit_key("read_file")));
+        assert!(limiter.check_with_key(&rate_limit_key("read_file")));
+        assert!(!limiter.check_with_key(&rate_limit_key("read_file")));
+    }
 }
