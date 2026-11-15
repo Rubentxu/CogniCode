@@ -23,11 +23,20 @@
 //! Un árbol con un hueco se publica como `partial` y nombra el fichero: una
 //! cobertura que no dice lo que dejó fuera es una cobertura que hay que
 //! poder leer como una medida.
+//!
+//! ## Los goals que leen el árbol sin cargar el grafo
+//!
+//! `status` y `context` leen el árbol y no cargan el grafo, y hasta TASK-317
+//! publicaban su respuesta sin fecha: no tenían manifiesto que digerir. Eso
+//! era verdad entonces y ya no lo es —la frescura es el digest del
+//! manifiesto de las fuentes, y el manifiesto describe el árbol—, así que el
+//! contrato de esos dos goals vive ahora en otro fichero:
+//! `the_goals_that_read_the_tree_publish_its_freshness`.
 
 #![cfg(unix)]
 
 use cognicode_core::interface::cursor::CursorContext;
-use cognicode_core::interface::goals::{context, impact, overview, status, trace};
+use cognicode_core::interface::goals::{impact, overview, trace};
 use cognicode_core::interface::hateoas::envelope_for;
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -190,43 +199,6 @@ fn overview_publishes_the_coverage_of_the_graph_it_counts() {
             .expect("the pending references are a list")
             .is_empty(),
         "la cobertura nombra la referencia que quedó suelta: {coverage:?}"
-    );
-}
-
-/// Un goal que no carga el grafo no publica una frescura que nadie midió.
-///
-/// La frescura es el digest del manifiesto que conserva la carga: un goal
-/// que no carga nada no tiene manifiesto que digerir, así que su sobre va
-/// sin digest. Un digest de mentira sería una identidad que nadie midió, y
-/// el `null` del sobre lo dice sin mentir.
-#[test]
-fn a_goal_that_does_not_load_the_graph_publishes_no_freshness() {
-    let (_tmp, root) = readable_tree();
-
-    let answer = status::status(
-        &status::StatusInput {
-            include_goals: false,
-        },
-        &root,
-    );
-    let answer = serde_json::to_value(answer).expect("the answer is JSON");
-    let envelope = envelope_of("status", &answer, &root);
-    assert!(
-        envelope.basis.freshness.is_none(),
-        "un goal que no carga el grafo no publica digest: {envelope:?}"
-    );
-
-    let answer = context::context(
-        &context::ContextInput {
-            include_coverage: true,
-        },
-        &root,
-    );
-    let answer = serde_json::to_value(answer).expect("the answer is JSON");
-    let envelope = envelope_of("context", &answer, &root);
-    assert!(
-        envelope.basis.freshness.is_none(),
-        "un goal que no carga el grafo no publica digest: {envelope:?}"
     );
 }
 
