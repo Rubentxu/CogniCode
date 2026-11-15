@@ -30,6 +30,29 @@
 //! implementation that forbade every edge written through an `impl` would
 //! pass the defect's measurement and lose every true one.
 //!
+//! ## The scope of the owner
+//!
+//! The owner is read in the module the `impl` is written in, and the
+//! imports of that module are the ones that bind its names. Three more
+//! fixtures measure it:
+//!
+//! 4. The imports of another module: a file that writes
+//!    `use crate::a::Widget;`, implements `impl Widget` and holds a module
+//!    that imports `crate::b::Widget` publishes no edge for the call
+//!    `crate::b::Widget::new(7)` —the import of the module is not the
+//!    import of the file— while the call written `Widget::new(7)` publishes
+//!    it.
+//! 5. The owner that names no module: a file whose glob import
+//!    (`use crate::a::*;`) binds nothing implements `impl Widget`, and the
+//!    call `b::Widget::new(7)` publishes no edge —an owner that names no
+//!    module cannot be proven to be the type the call names— while the call
+//!    written `Widget::new(7)` publishes it.
+//! 6. The head of the path of the owner: a file that writes
+//!    `use crate::a as aa;`, implements `impl aa::Widget` and calls
+//!    `crate::a::Widget::new(7)` publishes the edge —the owner and the call
+//!    are the same type written two ways, and the alias is resolved before
+//!    the two are compared.
+//!
 //! ## Why the route without a project index
 //!
 //! The evidence is the route that judges a call against the file's own
@@ -117,6 +140,76 @@ pub fn make() -> u64 {
 
 pub fn make_other() -> u64 {
     b::Widget::new(7).0
+}
+";
+
+/// A file whose module imports another type of the same name.
+///
+/// The import of the module belongs to the module: the owner of the
+/// `impl` at the top of the file is the `crate::a::Widget` the FILE
+/// binds the name to, and the call written through the type the module
+/// imports names another type.
+const OTHER_NESTED_MODULE_RS: &str = "\
+use crate::a::Widget;
+
+impl Widget {
+    pub fn new(value: u64) -> Self {
+        Widget(value)
+    }
+}
+
+pub fn make() -> u64 {
+    Widget::new(7).0
+}
+
+mod nested {
+    use crate::b::Widget;
+
+    pub fn f() -> u64 {
+        crate::b::Widget::new(7).0
+    }
+}
+";
+
+/// A file whose glob import binds nothing.
+///
+/// A glob says that everything of the module is in scope and not which
+/// name is which, so the owner of `impl Widget` names no module at all.
+const OTHER_GLOB_OWNER_RS: &str = "\
+use crate::a::*;
+use crate::b;
+
+impl Widget {
+    pub fn new(value: u64) -> Self {
+        Widget(value)
+    }
+}
+
+pub fn make() -> u64 {
+    Widget::new(7).0
+}
+
+pub fn make_other() -> u64 {
+    b::Widget::new(7).0
+}
+";
+
+/// A file that implements a type through an alias of its module.
+///
+/// The alias names the module it renames, and the owner is written with
+/// the alias: `aa::Widget` is the `crate::a::Widget` the file binds `aa`
+/// to.
+const OTHER_ALIASED_OWNER_RS: &str = "\
+use crate::a as aa;
+
+impl aa::Widget {
+    pub fn new(value: u64) -> Self {
+        aa::Widget(value)
+    }
+}
+
+pub fn make() -> u64 {
+    crate::a::Widget::new(7).0
 }
 ";
 
@@ -229,5 +322,67 @@ fn a_bare_owner_takes_the_path_the_file_binds_the_name_to() {
         vec!["make".to_string()],
         "the owner of `impl Widget` is the `crate::a::Widget` the file binds the name to: \
          `Widget::new(7)` names its method and `b::Widget::new(7)` names another type's"
+    );
+}
+
+/// The imports of a module belong to the module: the owner of an `impl` is
+/// read in the module the `impl` is written in, and the names of that
+/// module are the ones the owner is resolved through.
+#[test]
+fn the_imports_of_another_module_do_not_bind_the_owner_of_an_impl() {
+    let (dir, files) = project(&[
+        ("lib.rs", LIB_RS),
+        ("a.rs", A_RS),
+        ("b.rs", B_RS),
+        ("other.rs", OTHER_NESTED_MODULE_RS),
+    ]);
+    let graph = file_route(dir.path(), &files[3]);
+
+    assert_eq!(
+        callers_of(&graph, "new"),
+        vec!["make".to_string()],
+        "`crate::b::Widget::new(7)` names the method of the type the MODULE imports, and the \
+         owner of the impl at the top of the file is the `crate::a::Widget` the FILE binds \
+         the name to: `Widget::new(7)` names its method"
+    );
+}
+
+/// An owner that names no module is not proven to be the type a call names
+/// through a module.
+#[test]
+fn an_owner_that_names_no_module_does_not_answer_to_a_call_through_one() {
+    let (dir, files) = project(&[
+        ("lib.rs", LIB_RS),
+        ("a.rs", A_RS),
+        ("b.rs", B_RS),
+        ("other.rs", OTHER_GLOB_OWNER_RS),
+    ]);
+    let graph = file_route(dir.path(), &files[3]);
+
+    assert_eq!(
+        callers_of(&graph, "new"),
+        vec!["make".to_string()],
+        "the glob binds nothing, so the owner of `impl Widget` names no module: `b::Widget::new(7)` \
+         names a type the owner cannot be proven to be, and `Widget::new(7)` names none either"
+    );
+}
+
+/// The head of the path of an owner may be an alias, and the alias is the
+/// path the scope binds the name to.
+#[test]
+fn the_head_of_the_path_of_an_owner_is_the_path_the_scope_binds_it_to() {
+    let (dir, files) = project(&[
+        ("lib.rs", LIB_RS),
+        ("a.rs", A_RS),
+        ("b.rs", B_RS),
+        ("other.rs", OTHER_ALIASED_OWNER_RS),
+    ]);
+    let graph = file_route(dir.path(), &files[3]);
+
+    assert_eq!(
+        callers_of(&graph, "new"),
+        vec!["make".to_string()],
+        "`aa::Widget` and `crate::a::Widget` are the same type written two ways: the alias \
+         `aa` names the module `crate::a`, and the owner is written with it"
     );
 }

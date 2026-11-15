@@ -306,64 +306,114 @@ pub fn type_names_bound_in(root: Node, source: &[u8]) -> HashSet<String> {
 /// The owner keeps the PATH it is written with, because the path is what
 /// tells two types of the same name apart: `a::Widget` and `b::Widget` are
 /// two types, and the bare name `Widget` is what they have in common. A
-/// bare owner is the file's own name for a type, and the imports say which
-/// path that name is bound to: `use crate::a::Widget;` makes the owner of
-/// `impl Widget` the `crate::a::Widget` the file binds the name to.
+/// bare owner is the SCOPE's own name for a type, and the imports of that
+/// scope say which path that name is bound to: `use crate::a::Widget;`
+/// makes the owner of `impl Widget` the `crate::a::Widget` the scope binds
+/// the name to.
+///
+/// The scope is the module the `impl` is written in, and it is what says
+/// which imports bind the names of that `impl`: an import binds its name in
+/// the module it is written in, and a module does not inherit the imports
+/// of the module that holds it. An `impl` written inside a function body
+/// is at the level of no module at all, and it grants no ownership.
 ///
 /// The shape read here is the shape of a Rust impl. A language that writes
 /// its impls differently keeps the answer it had.
 pub fn impl_item_owners_in(root: Node, source: &[u8]) -> HashMap<String, HashSet<String>> {
     let mut owners: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "impl_item" {
-            let owner = impl_owner_of(&node, source);
-            if let Some(owner) = owner {
-                for item in impl_items_of(&node, source) {
-                    owners.entry(item).or_default().insert(owner.clone());
+    for scope in scopes_in(root) {
+        // The imports are read once per scope, before the impls of the
+        // scope: an import may be written after the impl that uses the
+        // name, and the order of the file is not the order of the meaning.
+        let bindings = scope_import_paths_in(scope, source);
+        for block in scope_impls_in(scope) {
+            let Some(owner) = impl_owner_of(&block, source) else {
+                continue;
+            };
+            let items = impl_items_of(&block, source);
+            for path in owner_paths_through(&owner, &bindings) {
+                for item in &items {
+                    owners.entry(item.clone()).or_default().insert(path.clone());
                 }
             }
         }
-        let mut cursor = node.walk();
-        stack.extend(node.children(&mut cursor));
-    }
-    // A bare owner is the file's own name for a type, and the imports are
-    // what say which path the name is bound to. The imports are read once,
-    // after the impls: an import may be written after the impl that uses
-    // the name, and the order of the file is not the order of the meaning.
-    let imports = import_paths_in(root, source);
-    for owners_of_item in owners.values_mut() {
-        *owners_of_item = owners_bound_through(owners_of_item, &imports);
     }
     owners
 }
 
-/// The owners of an item, with the bare ones resolved through the imports.
+/// The scopes of a file: the file itself and the body of every module it
+/// declares with one.
 ///
-/// A bare owner (`impl Widget`) is the file's own name for a type, and the
-/// imports say where that name comes from: `use crate::a::Widget;` binds
-/// `Widget` to `crate::a::Widget`, and the owner is that path. A file that
-/// binds the name in several ways binds it to several paths, and every one
-/// of them is a candidate: the file does not say which of them the impl is
-/// about, and a candidate that is refused is a lost edge, not an invented
-/// one.
-///
-/// An owner that is written with a path keeps it: the path is what the file
-/// says, and the imports do not get to say it again.
-fn owners_bound_through(
-    owners: &HashSet<String>,
-    imports: &HashMap<String, HashSet<String>>,
-) -> HashSet<String> {
-    let mut resolved = HashSet::new();
-    for owner in owners {
-        match imports.get(owner) {
-            Some(paths) if !owner.contains("::") => resolved.extend(paths.iter().cloned()),
-            _ => {
-                resolved.insert(owner.clone());
+/// A scope is where the names of a file are bound: the imports of the
+/// scope bind their names in it, and an `impl` written in it is read in
+/// it. A module written without a body (`mod foo;`) names a file and has
+/// no body of its own, and so it has no scope.
+fn scopes_in<'tree>(root: Node<'tree>) -> Vec<Node<'tree>> {
+    let mut scopes = vec![root];
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() != "mod_item" {
+                continue;
             }
+            let Some(body) = child.child_by_field_name("body") else {
+                continue;
+            };
+            scopes.push(body);
+            stack.push(body);
         }
     }
-    resolved
+    scopes
+}
+
+/// The `impl` blocks written in a scope.
+///
+/// Only the ones written at the level of the scope. An `impl` written
+/// inside a function body is at the level of no module, and it grants no
+/// ownership: the names it uses are bound in the body, and the body is
+/// not a scope this reader knows.
+fn scope_impls_in<'tree>(scope: Node<'tree>) -> Vec<Node<'tree>> {
+    let mut impls = Vec::new();
+    let mut cursor = scope.walk();
+    for child in scope.children(&mut cursor) {
+        if child.kind() == "impl_item" {
+            impls.push(child);
+        }
+    }
+    impls
+}
+
+/// The paths an owner is written with, once the bindings of its scope are
+/// applied.
+///
+/// A bare owner (`impl Widget`) is the scope's own name for a type, and
+/// the imports say where that name comes from: `use crate::a::Widget;`
+/// binds `Widget` to `crate::a::Widget`, and the owner is that path.
+///
+/// An owner written with a path keeps it, but its head may be an alias:
+/// `use crate::a as aa;` binds `aa` to `crate::a`, and the owner written
+/// `aa::Widget` is the `crate::a::Widget` the alias names. Only the head
+/// is rewritten: the rest of the path is what the file says.
+///
+/// A name the scope binds in several ways is bound to several paths, and
+/// every one of them is a candidate: the file does not say which of them
+/// the impl is about, and a candidate that is refused is a lost edge, not
+/// an invented one.
+fn owner_paths_through(owner: &str, bindings: &HashMap<String, HashSet<String>>) -> Vec<String> {
+    let segments = written_segments(owner);
+    let Some((head, rest)) = segments.split_first() else {
+        return vec![owner.to_string()];
+    };
+    let Some(paths) = bindings.get(*head).filter(|paths| !paths.is_empty()) else {
+        return vec![owner.to_string()];
+    };
+    if rest.is_empty() {
+        // A bare name: the binding IS the path of the type.
+        return paths.iter().cloned().collect();
+    }
+    let tail = rest.join("::");
+    paths.iter().map(|path| format!("{path}::{tail}")).collect()
 }
 
 /// The owner the items of an impl belong to, with the path it is written
@@ -414,10 +464,17 @@ fn owner_name(raw: &str) -> String {
 ///   are the same type written two ways, and `crate::xa::Widget` and
 ///   `a::Widget` are not — `xa` does not end with the segment `a`.
 ///
-/// An owner with no module is compatible with any module: the file binds
-/// the name nowhere, so it names no module and cannot contradict one. A
-/// call with no module is compatible with any owner module: the call is
-/// written `Widget::new`, and it says nothing about where the type lives.
+/// The answer is NOT symmetric when one of the two names no module:
+///
+/// - An owner that names a module answers to a call that names none: the
+///   call says nothing about where the type lives, and the owner is the
+///   file's own answer about it.
+/// - An owner that names NO module does not answer to a call that names
+///   one: the owner cannot be proven to be the type the call names, and
+///   the call names one. The owner that names no module is the file's own
+///   name for a type the file binds nowhere, and the call names a type of
+///   a module — two names that may be two types.
+/// - Two paths that name no module are the same name.
 ///
 /// A call that states no path at all answers nothing: the call's qualifier
 /// is dropped together with its path —a renamed import, a `type` alias, a
@@ -444,10 +501,15 @@ pub fn owner_answers_to(owner: &str, call_path: Option<&str>, folds_case: bool) 
 /// Whether two module paths can be the same module.
 ///
 /// One has to be the suffix of the other, compared by segments: `a` is the
-/// suffix of `crate::a`, and `a` is not the suffix of `crate::xa`. A path
-/// with no module is compatible with any other: it names no module, so it
-/// cannot contradict one.
+/// suffix of `crate::a`, and `a` is not the suffix of `crate::xa`.
+///
+/// A path that names no module is compatible with any other ONLY when the
+/// other names none either: an owner that names no module cannot be
+/// proven to be the type a call names through a module.
 fn modules_compatible(owner_module: &[&str], call_module: &[&str], folds_case: bool) -> bool {
+    if owner_module.is_empty() && !call_module.is_empty() {
+        return false;
+    }
     if owner_module.is_empty() || call_module.is_empty() {
         return true;
     }
@@ -777,7 +839,7 @@ fn collect_import(
     }
 }
 
-/// The paths the names a file binds come from.
+/// The paths the names a SCOPE binds come from.
 ///
 /// An import binds a name to a path, and the path is what the name means:
 /// `use crate::a::Widget;` binds `Widget` to `crate::a::Widget`, and
@@ -788,24 +850,23 @@ fn collect_import(
 /// A glob binds nothing: `use crate::a::*;` says that everything of the
 /// module is in scope, and it does not say which name is which.
 ///
-/// The imports are read from the whole file, not by scope: an import binds
-/// its name in the module it is written in, and a name bound anywhere in
-/// the file is taken as bound everywhere in it. That can only keep an edge,
-/// never invent one.
+/// The imports of a scope are the ones written in it: an import binds its
+/// name in the module it is written in, and a module does not inherit the
+/// imports of the module that holds it.
 ///
 /// The shape read here is the shape of a Rust import. A language that
 /// writes its imports differently keeps the answer it had.
-pub fn import_paths_in(root: Node, source: &[u8]) -> HashMap<String, HashSet<String>> {
+pub fn scope_import_paths_in(scope: Node, source: &[u8]) -> HashMap<String, HashSet<String>> {
     let mut bound: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if node.kind() == "use_declaration"
-            && let Some(argument) = node.child_by_field_name("argument")
-        {
-            collect_import_paths(&argument, source, None, &mut bound);
+    let mut cursor = scope.walk();
+    for child in scope.children(&mut cursor) {
+        if child.kind() != "use_declaration" {
+            continue;
         }
-        let mut cursor = node.walk();
-        stack.extend(node.children(&mut cursor));
+        let Some(argument) = child.child_by_field_name("argument") else {
+            continue;
+        };
+        collect_import_paths(&argument, source, None, &mut bound);
     }
     bound
 }
@@ -1464,7 +1525,7 @@ mod tests {
             .set_language(&tree_sitter_rust::LANGUAGE.into())
             .expect("the Rust grammar loads");
         let tree = parser.parse(source, None).expect("the fixture parses");
-        super::import_paths_in(tree.root_node(), source.as_bytes())
+        super::scope_import_paths_in(tree.root_node(), source.as_bytes())
     }
 
     /// The owners of the items a Rust file's impls declare.
@@ -2027,6 +2088,60 @@ fn run() { to_value(&1); }
     }
 
     #[test]
+    fn the_owner_of_an_impl_is_read_in_the_module_it_is_written_in() {
+        let owners = owners_in(
+            "use crate::a::Widget;\nimpl Widget {\n    pub fn new() -> u64 { 0 }\n}\nmod nested \
+             {\n    use crate::b::Widget;\n}\n",
+        );
+        assert_eq!(
+            owners
+                .get("new")
+                .map(|owners| owners.iter().cloned().collect::<Vec<_>>()),
+            Some(vec!["crate::a::Widget".to_string()]),
+            "the import of the module is not the import of the file"
+        );
+    }
+
+    #[test]
+    fn the_owner_of_an_impl_in_a_module_is_read_with_the_imports_of_that_module() {
+        let owners = owners_in(
+            "mod nested {\n    use crate::b::Widget;\n    impl Widget {\n        pub fn new() -> u64 { 0 \
+             }\n    }\n}\n",
+        );
+        assert_eq!(
+            owners
+                .get("new")
+                .map(|owners| owners.iter().cloned().collect::<Vec<_>>()),
+            Some(vec!["crate::b::Widget".to_string()]),
+            "the imports of the module are the ones that bind the names of its impls"
+        );
+    }
+
+    #[test]
+    fn an_impl_inside_a_function_body_grants_no_ownership() {
+        let owners = owners_in(
+            "fn make() {\n    impl Widget {\n        pub fn new() -> u64 { 0 }\n    }\n}\n",
+        );
+        assert!(
+            owners.is_empty(),
+            "an impl written inside a function body is at the level of no module"
+        );
+    }
+
+    #[test]
+    fn the_head_of_the_path_of_an_owner_is_the_path_the_scope_binds_it_to() {
+        let owners =
+            owners_in("use crate::a as aa;\nimpl aa::Widget {\n    pub fn new() -> u64 { 0 }\n}\n");
+        assert_eq!(
+            owners
+                .get("new")
+                .map(|owners| owners.iter().cloned().collect::<Vec<_>>()),
+            Some(vec!["crate::a::Widget".to_string()]),
+            "the alias names the module it renames, and the owner is written with it"
+        );
+    }
+
+    #[test]
     fn an_owner_answers_to_a_call_written_through_the_same_type() {
         assert!(
             owner_answers("a::Widget", Some("a::Widget")),
@@ -2063,10 +2178,10 @@ fn run() { to_value(&1); }
     }
 
     #[test]
-    fn an_owner_without_a_module_answers_to_any_module() {
+    fn an_owner_without_a_module_does_not_answer_to_a_call_through_one() {
         assert!(
-            owner_answers("Widget", Some("b::Widget")),
-            "the owner names no module and cannot contradict one"
+            !owner_answers("Widget", Some("b::Widget")),
+            "the owner names no module and cannot be proven to be the type the call names"
         );
     }
 
