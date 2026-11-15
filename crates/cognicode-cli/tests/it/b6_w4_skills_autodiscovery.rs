@@ -304,6 +304,7 @@ fn make_tool(name: &str, stability: &str, feature: Option<&str>) -> ToolDescript
         authority: "read".into(),
         stability: stability.into(),
         estimated_latency_ms: 1,
+        latency_basis: None,
         requirements: serde_json::Value::Null,
         requirements_status: "satisfied".into(),
         public_profiles: vec![],
