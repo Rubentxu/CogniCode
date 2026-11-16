@@ -40,6 +40,7 @@ fn partial_build() -> CommandOutput {
         }],
         pending_references: vec![],
         rejected_relations: vec![],
+        timings_ms: None,
     })
 }
 
@@ -83,6 +84,7 @@ fn a_complete_build_prints_no_next_step() {
         skipped_files: vec![],
         pending_references: vec![],
         rejected_relations: vec![],
+        timings_ms: None,
     });
 
     let text = printed(&output);

@@ -932,6 +932,7 @@ pub fn present_graph_full(
         skipped_files: _,
         pending_references: _,
         rejected_relations: _,
+        timings_ms: _,
     } = result
     {
         // Progress line (stdout in text mode; in json

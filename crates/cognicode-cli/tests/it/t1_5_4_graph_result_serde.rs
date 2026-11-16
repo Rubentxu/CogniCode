@@ -107,6 +107,7 @@ fn graph_result_full_serializes_with_status_and_skipped() {
         }],
         pending_references: vec![],
         rejected_relations: vec![],
+        timings_ms: None,
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "full");
@@ -393,5 +394,57 @@ fn graph_result_impact_serializes_risk_and_untruncated_lists() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+}
+
+/// An answer that measured no stage leaves the breakdown out of the wire:
+/// an absent `timings_ms` is "not measured", never zero.
+#[test]
+fn full_json_omits_timings_when_nothing_was_measured() {
+    let result = GraphResult::Full {
+        path: "/repo".to_string(),
+        rebuild: false,
+        elapsed_ms: 10,
+        symbols: 1,
+        dependencies: 0,
+        status: "complete".to_string(),
+        skipped_files: vec![],
+        pending_references: vec![],
+        rejected_relations: vec![],
+        timings_ms: None,
+    };
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize");
+    assert!(
+        json.get("timings_ms").is_none(),
+        "an unmeasured answer publishes no breakdown: {json}"
+    );
+}
+
+/// A measured answer publishes the breakdown beside the total, and only
+/// the stages it measured.
+#[test]
+fn full_json_publishes_the_stage_breakdown() {
+    let result = GraphResult::Full {
+        path: "/repo".to_string(),
+        rebuild: true,
+        elapsed_ms: 10,
+        symbols: 1,
+        dependencies: 0,
+        status: "complete".to_string(),
+        skipped_files: vec![],
+        pending_references: vec![],
+        rejected_relations: vec![],
+        timings_ms: Some(cognicode_core::application::graph_timings::GraphPhaseTimings {
+            parse_ms: Some(5),
+            cache_lookup_ms: Some(2),
+            ..Default::default()
+        }),
+    };
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize");
+    assert_eq!(json["timings_ms"]["parse_ms"], 5);
+    assert_eq!(json["timings_ms"]["cache_lookup_ms"], 2);
+    assert!(
+        json["timings_ms"].get("walk_ms").is_none(),
+        "a stage that did not run is absent, not zero: {json}"
     );
 }

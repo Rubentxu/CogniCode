@@ -105,6 +105,7 @@ pub fn present_graph_full(
         symbols,
         dependencies,
         status,
+        timings_ms: outcome.provenance().phase_timings,
         skipped_files,
         pending_references: pending
             .iter()
