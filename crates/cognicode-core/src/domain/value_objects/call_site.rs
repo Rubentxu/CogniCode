@@ -35,6 +35,21 @@ pub struct CallSite {
     /// through a value, or in a language whose spelling does not say which
     /// segment is a type.
     pub type_qualifier: Option<String>,
+    /// The path of the qualifier, as the call is written: `b::Widget` in
+    /// `b::Widget::new(10)`, `Widget` in `Widget::new(10)`.
+    ///
+    /// The qualifier alone names a type, and two types of the same name in
+    /// two modules are two types: `a::Widget` and `b::Widget` are not the
+    /// same one, and the bare name cannot tell them apart. The path is
+    /// what the call says about the type it is written through, and it is
+    /// what lets a file that implements `a::Widget` own the calls written
+    /// `a::Widget::new` and not the ones written `b::Widget::new`.
+    ///
+    /// `None` when the call states no path for its qualifier: when it is
+    /// written without one, and also when the qualifier itself is dropped
+    /// —a renamed import, a `type` alias, a generic parameter—, because
+    /// the call keeps the bare-name answer it had in that case.
+    pub qualifier_path: Option<String>,
     /// The head of the path the call is written through: the crate, module
     /// or package the path starts at, `serde_json` in `serde_json::to_value(1)`.
     ///

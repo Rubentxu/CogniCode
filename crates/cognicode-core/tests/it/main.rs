@@ -27,6 +27,7 @@ mod a_value_receiver_names_a_method_of_its_type;
 #[cfg(feature = "persistence")]
 mod an_edited_file_is_read_once;
 mod an_external_qualifier_does_not_join_a_project_symbol;
+mod an_impl_owner_keeps_the_path_of_its_type;
 mod an_imported_name_is_the_crates_own;
 mod an_unreadable_file_is_a_hole_on_every_route;
 mod analytics_bounded_paths;
