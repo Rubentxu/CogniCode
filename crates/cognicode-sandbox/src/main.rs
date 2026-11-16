@@ -7280,6 +7280,7 @@ scenarios:
         // not exist, which git reads as "there is no configuration".
         let run = |args: &[&str]| {
             Command::new("git")
+                .env("PATH", "/usr/bin:/bin")
                 .args(args)
                 .current_dir(&repo_dir)
                 .env("GIT_CONFIG_GLOBAL", repos_dir.join("no-git-configuration"))
@@ -7339,6 +7340,7 @@ scenarios:
         // not exist, which git reads as "there is no configuration".
         let run = |args: &[&str]| {
             Command::new("git")
+                .env("PATH", "/usr/bin:/bin")
                 .args(args)
                 .current_dir(&repo_dir)
                 .env("GIT_CONFIG_GLOBAL", repos_dir.join("no-git-configuration"))
@@ -7386,6 +7388,7 @@ scenarios:
 
         let run = |args: &[&str]| {
             Command::new("git")
+                .env("PATH", "/usr/bin:/bin")
                 .args(args)
                 .current_dir(&sneaky)
                 .env(
