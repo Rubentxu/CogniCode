@@ -71,6 +71,7 @@ where
     // so the commits carry a non-empty Author line.
     let no_configuration = tmp.join("no-git-configuration");
     let init = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(["init", "-q", "--initial-branch=main"])
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", &no_configuration)
@@ -86,6 +87,7 @@ where
         ("user.name", "qw03-test"),
     ] {
         Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
             .args(["config", k, v])
             .current_dir(tmp)
             .env("GIT_CONFIG_GLOBAL", &no_configuration)
@@ -129,6 +131,7 @@ where
     // one a global ignore tends to exclude, and forcing it is correct inside
     // a repository whose rules are its own.
     let add = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(["add", "-A", "-f"])
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))
@@ -138,6 +141,7 @@ where
     assert!(add.success(), "git add failed in {}", tmp.display());
 
     let commit = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(["commit", "-q", "-m", "chore: qw03 baseline"])
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))

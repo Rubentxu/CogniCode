@@ -350,6 +350,7 @@ fn cp5_release_tag_coherence() {
 
     let head_sha = {
         let out = Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
             .arg("rev-parse")
             .arg("HEAD")
             .current_dir(repo_root())
@@ -564,6 +565,7 @@ fn cp5_workspace_version_consistent() {
     let expected: String = match cert["head_sha"].as_str() {
         Some(stored_sha) => {
             let out = Command::new("git")
+                .env("PATH", "/usr/bin:/bin")
                 .arg("show")
                 .arg(format!("{stored_sha}:Cargo.toml"))
                 .current_dir(repo_root())
@@ -606,6 +608,7 @@ fn cp5_workspace_version_consistent() {
     // commit and would make it impossible to read after release.
     if let Some(stored_sha) = cert["head_sha"].as_str() {
         let out = Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
             .arg("cat-file")
             .arg("-e")
             .arg(stored_sha)

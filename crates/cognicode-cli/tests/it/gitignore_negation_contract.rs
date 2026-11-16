@@ -72,6 +72,7 @@ fn repo_root() -> PathBuf {
 /// about the rules and not about what happens to be tracked today.
 fn is_ignored(relative: &str) -> bool {
     let out = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .current_dir(repo_root())
         .args(["check-ignore", "-q", "--no-index", relative])
         .output()
@@ -142,6 +143,7 @@ const NOT_EXEMPT: &[&str] = &[
 #[test]
 fn no_tracked_debt_register_declares_itself_local_only() {
     let listed = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .current_dir(repo_root())
         .args(["ls-files", "docs/debts/"])
         .output()

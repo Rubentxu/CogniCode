@@ -137,6 +137,7 @@ fn stage_payloads(tag: &str, owner: &str) -> PathBuf {
 
 fn head_commit() -> String {
     let out = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(["rev-parse", "HEAD"])
         .output()
         .expect("git rev-parse");

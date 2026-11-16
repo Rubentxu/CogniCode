@@ -210,6 +210,7 @@ fn a014_capabilities_json_carries_cli_version_and_source_commit() {
     );
     // Sanity: HEAD itself matches.
     let real_head = std::process::Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .arg("rev-parse")
         .arg("HEAD")
         .current_dir(repo_root())

@@ -313,6 +313,7 @@ fn governed_files(root: &Path) -> Vec<PathBuf> {
 /// Every path a clean checkout of this repository would contain.
 fn tracked_paths(root: &Path) -> BTreeSet<String> {
     let listed = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .current_dir(root)
         .args(["ls-files", "-z"])
         .output()
