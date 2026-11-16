@@ -52,6 +52,7 @@ fn write_with_mtime(path: &Path, body: &[u8], mtime: SystemTime) {
 /// reads as "there is no configuration".
 fn git_in(cwd: &Path, args: &[&str]) {
     let status = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(args)
         .current_dir(cwd)
         .env("GIT_CONFIG_GLOBAL", cwd.join("no-git-configuration"))

@@ -79,6 +79,7 @@ fn stage_bundle(root: &Path, stage: &Path, version: &str, bundle: &str) {
 
 fn generate(stage: &Path, out: &Path, version: &str, tag: &str) -> std::process::Output {
     let head = Command::new("git")
+        .env("PATH", "/usr/bin:/bin")
         .args(["-C", repo_root().to_str().unwrap(), "rev-parse", "HEAD"])
         .output()
         .unwrap();
