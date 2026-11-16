@@ -23,11 +23,15 @@
 //!   `object`) → `Affected`.
 //! - A fact unrelated to the previous read-set that changed →
 //!   `Unaffected`.
-//! - A NEW fact that did not exist in the previous snapshot →
-//!   `Unknown`. The previous execution could not have read it; we
-//!   cannot prove an aggregate read (`"all functions"`) is unaffected,
-//!   so we conservatively mark the work as `Unknown`. This is exactly
-//!   the false-negative case the user warned about.
+//! - A NEW fact — one whose `(subject, predicate)` did not exist in
+//!   the previous snapshot → `Unknown`. The previous execution could
+//!   not have read it; we cannot prove an aggregate read
+//!   (`"all functions"`) is unaffected, so we conservatively mark the
+//!   work as `Unknown`. This is exactly the false-negative case the
+//!   user warned about. A modification (same `(subject, predicate)`,
+//!   different object) is NOT new: unrelated work stays
+//!   `Unaffected`, and the work that read it is `Affected` by the
+//!   rule above.
 //! - A TRUNCATED read-set (recorder hit its bound) → `Unknown` even
 //!   if no relevant change is observed. Lineage is incomplete.
 //!
@@ -271,12 +275,38 @@ fn decide_for_work(
         }
     }
 
-    // 4) Additions are ALWAYS `Unknown` for that work: the previous
-    //    execution could not have read what did not exist. The
-    //    disposition can only climb from `Unaffected` up to `Unknown`
-    //    here — never down to `Unaffected`.
-    if !delta.added.is_empty() {
-        for added in &delta.added {
+    // 4) A NEW `(subject, predicate)` — a fact that did not exist in
+    //    the previous snapshot — is always `Unknown`: the previous
+    //    execution could not have read what did not exist. A change
+    //    the diff already PAIRED with a removal (same subject and
+    //    predicate, different object) is NOT new: it is a
+    //    modification, rule 2 already made the work that read it
+    //    `Affected`, and the contract (module header) promises
+    //    `Unaffected` for work that did not read it. The disposition
+    //    can only climb from `Unaffected` up to `Unknown` here —
+    //    never down.
+    let changed_sp: std::collections::HashSet<(u64, String)> = delta
+        .removed
+        .iter()
+        .map(|r| {
+            (
+                r.semantic_key.subject.0,
+                r.semantic_key.predicate.to_string(),
+            )
+        })
+        .collect();
+    let new_facts: Vec<&FactChange> = delta
+        .added
+        .iter()
+        .filter(|a| {
+            !changed_sp.contains(&(
+                a.semantic_key.subject.0,
+                a.semantic_key.predicate.to_string(),
+            ))
+        })
+        .collect();
+    if !new_facts.is_empty() {
+        for added in &new_facts {
             reasons.push(SchedulingReason::ConservativeAddition {
                 added: added.semantic_key.clone(),
             });

@@ -9,3 +9,6 @@
 
 #[cfg(feature = "evidence-kernel")]
 pub mod planner;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod scm_delta;
