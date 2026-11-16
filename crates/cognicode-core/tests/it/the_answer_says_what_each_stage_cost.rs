@@ -51,7 +51,10 @@ fn a_built_graph_measures_its_stages() {
 
     assert_eq!(loaded.source, GraphSource::Built);
     let timings = loaded.timings;
-    assert!(timings.walk_ms.is_some(), "the walk is measured: {timings:?}");
+    assert!(
+        timings.walk_ms.is_some(),
+        "the walk is measured: {timings:?}"
+    );
     assert!(
         timings.parse_ms.is_some(),
         "the parse is measured: {timings:?}"
@@ -91,8 +94,8 @@ fn a_snapshot_served_graph_measures_the_lookup() {
 
     // The first session builds and persists.
     let builder = AnalysisService::new();
-    let built = load_or_build_graph(&builder, &root, Some(&cache), None, false)
-        .expect("the graph builds");
+    let built =
+        load_or_build_graph(&builder, &root, Some(&cache), None, false).expect("the graph builds");
     assert_eq!(built.source, GraphSource::Built);
 
     // A second session holds nothing: the durable snapshot serves it.
@@ -115,7 +118,7 @@ fn a_snapshot_served_graph_measures_the_lookup() {
 /// La provenance de `graph.full` publica la medida de las etapas.
 #[test]
 fn the_provenance_of_graph_full_carries_the_stage_costs() {
-    use cognicode_core::application::analysis_basis::{Analyze, AnalysisBasis, AnalysisOp};
+    use cognicode_core::application::analysis_basis::{AnalysisBasis, AnalysisOp, Analyze};
     use cognicode_core::application::services::analyze::ServiceAnalyzer;
 
     let (tmp, root) = readable_tree();
@@ -136,7 +139,10 @@ fn the_provenance_of_graph_full_carries_the_stage_costs() {
     let timings = provenance
         .phase_timings
         .expect("a built graph measures its stages");
-    assert!(timings.parse_ms.is_some(), "the parse is measured: {timings:?}");
+    assert!(
+        timings.parse_ms.is_some(),
+        "the parse is measured: {timings:?}"
+    );
 
     // The measured answer survives the wire: the MCP and the CLI read the
     // provenance from JSON, and a field that does not serialize is a

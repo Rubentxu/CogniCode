@@ -434,11 +434,13 @@ fn full_json_publishes_the_stage_breakdown() {
         skipped_files: vec![],
         pending_references: vec![],
         rejected_relations: vec![],
-        timings_ms: Some(cognicode_core::application::graph_timings::GraphPhaseTimings {
-            parse_ms: Some(5),
-            cache_lookup_ms: Some(2),
-            ..Default::default()
-        }),
+        timings_ms: Some(
+            cognicode_core::application::graph_timings::GraphPhaseTimings {
+                parse_ms: Some(5),
+                cache_lookup_ms: Some(2),
+                ..Default::default()
+            },
+        ),
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize");
     assert_eq!(json["timings_ms"]["parse_ms"], 5);
