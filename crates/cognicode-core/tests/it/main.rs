@@ -156,6 +156,9 @@ mod roadmap_claims_contract;
 mod safety_gate_tests;
 #[cfg(feature = "evidence-kernel")]
 mod scm_changeset_planning;
+
+#[cfg(feature = "evidence-kernel")]
+mod incremental_complete_snapshot;
 mod scm_revision_snapshots;
 mod scm_source_ports;
 mod security_validation_tests;

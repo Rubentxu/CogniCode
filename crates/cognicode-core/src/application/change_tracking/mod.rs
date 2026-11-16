@@ -12,3 +12,6 @@ pub mod planner;
 
 #[cfg(feature = "evidence-kernel")]
 pub mod scm_delta;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod complete_snapshot;
