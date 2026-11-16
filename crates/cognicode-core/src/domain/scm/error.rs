@@ -41,4 +41,11 @@ pub enum ScmError {
     /// Two inventory entries claimed the same path.
     #[error("duplicate inventory path {path:?}")]
     DuplicatePath { path: String },
+
+    /// The provider's own machinery failed at transport level
+    /// (program absent, unreadable output, a read over the agreed
+    /// cap). It is reported as a named failure: an adapter never
+    /// flattens its own breakdown into an empty or partial result.
+    #[error("provider failure: {detail}")]
+    ProviderFailure { detail: String },
 }
