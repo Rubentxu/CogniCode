@@ -22,26 +22,32 @@
 //!   no coverage or a truncated read-set NEVER receives `Pass`: those
 //!   arrive as [`CaptureGap`]s or as properties of the records
 //!   themselves, and each one blocks.
-//! - Evidence from two snapshots is never mixed: reused findings must
-//!   be produced in the very base snapshot the planner diffed from,
-//!   and fresh findings in the candidate itself. A record whose
-//!   provenance names another snapshot is rejected with
-//!   `SnapshotMismatch` before its findings are merged.
+//! - Evidence from two snapshots is never mixed: the plan's
+//!   `to_snapshot` must BE the candidate, reused findings must be
+//!   produced in the very base snapshot the planner diffed from, and
+//!   fresh findings in the candidate itself. Anything else is
+//!   rejected with `SnapshotMismatch` before its findings are merged.
 //! - Reuse follows CAA-07 exactly: a cached record survives only when
 //!   every identity layer survives; when the rule, capability, parser,
 //!   sanitizer or semantic layers die, the work must have a rerun
-//!   record or it is `Unresolved` — never silently skipped.
+//!   record or it is `Unresolved` — never silently skipped. Completeness
+//!   is STRICTER than reuse here on one point, deliberately: a
+//!   truncated read-set blocks even with no invalidating delta,
+//!   because an incomplete lineage cannot prove non-impact — that is
+//!   AC #2, a question the reuse owner does not answer.
+//! - A completeness-claiming mode handed a plan that named no work
+//!   gets `EmptyWorkPlan`, never a vacuous `Pass`.
 //!
-//! The reason codes are stable strings shared by every surface that
-//! renders this verdict (CLI, MCP): two surfaces reading the same
-//! [`CompleteSnapshot`] publish the same codes because the codes are
-//! minted here and nowhere else.
+//! The reason codes are minted here and nowhere else; every surface
+//! that renders this verdict (the CLI and MCP wiring is CAA-11) must
+//! publish these exact strings, so two surfaces over identical inputs
+//! cannot disagree.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::application::change_tracking::planner::{AffectedWorkPlan, WorkDisposition, WorkId};
+use crate::application::change_tracking::planner::{AffectedWorkPlan, WorkId};
 use crate::domain::evidence_kernel::ids::SnapshotId;
 use crate::domain::evidence_kernel::semantic_diff::FactDelta;
 use crate::domain::findings::detector_reuse::{
@@ -111,6 +117,10 @@ pub enum ReasonCode {
     /// The plan required rerunning this work and no fresh record was
     /// supplied.
     WorkNotRerun,
+    /// A completeness-claiming mode was handed a plan that named no
+    /// work at all: completeness over nothing is a false green, not
+    /// a proof.
+    EmptyWorkPlan,
 }
 
 impl ReasonCode {
@@ -126,6 +136,7 @@ impl ReasonCode {
             Self::ReuseInvalidated => "reuse_invalidated",
             Self::IdentityMissing => "identity_missing",
             Self::WorkNotRerun => "work_not_rerun",
+            Self::EmptyWorkPlan => "empty_work_plan",
         }
     }
 }
@@ -242,14 +253,19 @@ impl CompleteSnapshot {
 
 /// Everything the builder needs: the plan (CAA-06), the reuse index
 /// and fresh records (CAA-07), the health observed during capture.
+///
+/// Convention: the string key of each work item IS the detector id
+/// string — `WorkId` and `DetectorId` are both validated
+/// `namespace.name`, and the reuse index keys its records by the
+/// detector id of the run that produced them.
 pub struct CompleteSnapshotRequest<'a> {
     pub mode: AnalysisMode,
     pub plan: &'a AffectedWorkPlan,
     pub candidate_snapshot: SnapshotId,
-    /// The transition the plan was computed over, if any. `None`
-    /// means reuse cannot be proven against a delta: cached records
-    /// then only survive if the planner itself named no work.
-    pub delta: Option<&'a FactDelta>,
+    /// The transition the plan was computed over. Completeness is
+    /// always an assertion about a named transition, so the delta is
+    /// required, never optional.
+    pub delta: &'a FactDelta,
     pub cache: &'a DetectorReuseIndex,
     /// The identity a rerun of this work would execute under NOW,
     /// keyed by work id string. Required for every work a reuse
@@ -286,11 +302,37 @@ pub fn build_complete_snapshot(req: &CompleteSnapshotRequest<'_>) -> CompleteSna
         })
         .collect();
 
+    // A completeness claim is always about a NAMED transition ending
+    // in the candidate itself. If the plan answers a different
+    // question, no finding of it may be presented as coverage of
+    // this candidate.
+    let transition_mismatch =
+        req.mode.claims_complete_coverage() && req.plan.to_snapshot != Some(req.candidate_snapshot);
+    if transition_mismatch {
+        blocking.push(BlockingIssue {
+            work: None,
+            code: ReasonCode::SnapshotMismatch,
+            detail: format!(
+                "the plan describes a transition into {:?}, but the candidate is {}",
+                req.plan.to_snapshot.map(|s| s.0),
+                req.candidate_snapshot.0
+            ),
+        });
+    }
+    if req.mode.claims_complete_coverage() && req.plan.decisions.is_empty() {
+        blocking.push(BlockingIssue {
+            work: None,
+            code: ReasonCode::EmptyWorkPlan,
+            detail: "the plan named no work; completeness over nothing is a false green"
+                .to_string(),
+        });
+    }
+
     let mut outcomes = Vec::new();
     for decision in &req.plan.decisions {
         let key = decision.work.as_namespaced_name().as_str();
-        let fresh_required = req.mode == AnalysisMode::FullRebuild
-            || decision.disposition != WorkDisposition::Unaffected;
+        let fresh_required =
+            req.mode == AnalysisMode::FullRebuild || decision.disposition.must_rerun();
         let (resolution, mut issues) = if fresh_required {
             resolve_fresh(&decision.work, key, req)
         } else {
@@ -303,10 +345,14 @@ pub fn build_complete_snapshot(req: &CompleteSnapshotRequest<'_>) -> CompleteSna
         });
     }
 
-    let mut findings: Vec<ReboundFinding> = outcomes
-        .iter()
-        .flat_map(|o| o.resolution.findings().to_vec())
-        .collect();
+    let mut findings: Vec<ReboundFinding> = if transition_mismatch {
+        Vec::new()
+    } else {
+        outcomes
+            .iter()
+            .flat_map(|o| o.resolution.findings().to_vec())
+            .collect()
+    };
     findings.sort_by(|a, b| {
         a.semantic_fingerprint
             .as_str()
@@ -445,7 +491,7 @@ fn resolve_reuse(
     }
     let current = current.expect("checked by the IdentityMissing issue above");
 
-    match reuse_decision(record, current, req.delta) {
+    match reuse_decision(record, current, Some(req.delta)) {
         crate::domain::findings::detector_reuse::ReuseDecision::Reusable => (
             Resolution::Reused {
                 findings: rebind_candidate(record, req.candidate_snapshot),

@@ -191,11 +191,12 @@ fn build(
     gaps: &[CaptureGap],
 ) -> cognicode_core::application::change_tracking::complete_snapshot::CompleteSnapshot {
     let plan = base_plan();
+    let d = delta();
     build_complete_snapshot(&CompleteSnapshotRequest {
         mode,
         plan: &plan,
         candidate_snapshot: snap(2),
-        delta: Some(&delta()),
+        delta: &d,
         cache,
         current_identities: ids,
         reruns,
@@ -549,7 +550,7 @@ fn work_the_planner_named_unknown_without_a_rerun_is_unresolved() {
         mode: AnalysisMode::IncrementalComplete,
         plan: &plan,
         candidate_snapshot: snap(2),
-        delta: Some(&delta),
+        delta: &delta,
         cache: &cache,
         current_identities: &ids,
         reruns: &reruns,
@@ -557,4 +558,69 @@ fn work_the_planner_named_unknown_without_a_rerun_is_unresolved() {
     });
     assert_eq!(snapshot.verdict(), Verdict::NotPass);
     assert!(snapshot.reason_codes().contains(&"work_not_rerun"));
+}
+
+#[test]
+fn a_plan_for_another_transition_is_not_this_candidates_coverage() {
+    // Mid-capture change in the QUESTION itself: the plan answers
+    // 1->2 while the caller claims candidate 9. Nothing may be
+    // presented as coverage of 9.
+    let (cache, ids, reruns) = parts();
+    let plan = base_plan();
+    let d = delta();
+    let snapshot = build_complete_snapshot(&CompleteSnapshotRequest {
+        mode: AnalysisMode::IncrementalComplete,
+        plan: &plan,
+        candidate_snapshot: snap(9),
+        delta: &d,
+        cache: &cache,
+        current_identities: &ids,
+        reruns: &reruns,
+        gaps: &[],
+    });
+    assert_eq!(snapshot.verdict(), Verdict::NotPass);
+    assert!(snapshot.reason_codes().contains(&"snapshot_mismatch"));
+    assert!(
+        snapshot.findings.is_empty(),
+        "a snapshot of candidate 9 must not publish findings of transition 1->2"
+    );
+}
+
+#[test]
+fn completeness_over_an_empty_plan_is_a_false_green_not_a_pass() {
+    let empty = AffectedWorkPlan {
+        from_snapshot: Some(snap(1)),
+        to_snapshot: Some(snap(2)),
+        decisions: vec![],
+    };
+    let d = delta();
+    let ids = BTreeMap::new();
+    let reruns = BTreeMap::new();
+    let cache = DetectorReuseIndex::empty();
+    for mode in [AnalysisMode::IncrementalComplete, AnalysisMode::FullRebuild] {
+        let snapshot = build_complete_snapshot(&CompleteSnapshotRequest {
+            mode,
+            plan: &empty,
+            candidate_snapshot: snap(2),
+            delta: &d,
+            cache: &cache,
+            current_identities: &ids,
+            reruns: &reruns,
+            gaps: &[],
+        });
+        assert_eq!(snapshot.verdict(), Verdict::NotPass);
+        assert!(snapshot.reason_codes().contains(&"empty_work_plan"));
+    }
+    // A scoped mode over no work is honest about being scoped.
+    let focused = build_complete_snapshot(&CompleteSnapshotRequest {
+        mode: AnalysisMode::Focused,
+        plan: &empty,
+        candidate_snapshot: snap(2),
+        delta: &d,
+        cache: &cache,
+        current_identities: &ids,
+        reruns: &reruns,
+        gaps: &[],
+    });
+    assert_eq!(focused.verdict(), Verdict::Scoped);
 }
