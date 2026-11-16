@@ -20,8 +20,8 @@ use std::sync::{Arc, Mutex};
 use cognicode_core::application::change_tracking::planner::WorkId;
 use cognicode_core::application::change_tracking::scheduling::Coordinator;
 use cognicode_core::application::change_tracking::scheduling::{
-    CheckOutput, ConsumerClass, CostEstimator, CostMetrics, DaemonProbe, ObjectId, QueuePolicy,
-    RevisionTag, Route, RunOutcome, RunStatus, ScheduleRequest, WorkKey,
+    CheckOutput, Computed, ConsumerClass, CostEstimator, CostMetrics, DaemonProbe, ObjectId,
+    QueuePolicy, RevisionTag, Route, RunOutcome, RunStatus, ScheduleRequest, WorkKey,
 };
 use cognicode_core::domain::budgets::BudgetDeclaration;
 use cognicode_core::domain::evidence_kernel::ids::SnapshotId;
@@ -95,7 +95,10 @@ fn ac1_same_identity_shares_one_physical_computation() {
                         .expect("hold lock")
                         .recv()
                         .expect("leader released");
-                    Ok(CheckOutput::Pass(vec!["finding-1"]))
+                    Ok(Computed {
+                        output: CheckOutput::Pass(vec!["finding-1"]),
+                        measured_units: 1,
+                    })
                 },
             )
         }));
@@ -146,7 +149,10 @@ fn ac2_cancelling_agent_revision_spares_ci_and_shared_objects() {
                 while !flag.load(Ordering::SeqCst) {
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 }
-                Ok(CheckOutput::Pass("agent stale"))
+                Ok(Computed {
+                    output: CheckOutput::Pass("agent stale"),
+                    measured_units: 1,
+                })
             },
         )
     });
@@ -156,7 +162,12 @@ fn ac2_cancelling_agent_revision_spares_ci_and_shared_objects() {
     let ci_outcome = subject.run(
         &request("detect.sqli", ConsumerClass::Ci, "ci-rev", true, 1),
         DaemonProbe::ABSENT,
-        |_| Ok(CheckOutput::Pass("ci result")),
+        |_| {
+            Ok(Computed {
+                output: CheckOutput::Pass("ci result"),
+                measured_units: 1,
+            })
+        },
     );
 
     let report = subject.cancel_revision(&agent_rev);
@@ -212,12 +223,15 @@ fn ac3_required_over_budget_returns_inconclusive_with_explicit_measured_metrics(
             key: key("detect.xss", 7),
             revision: RevisionTag::new("rev-a"),
             required: true,
-            direct_units: measured,
+            direct_units: 2,
         },
         DaemonProbe::ABSENT,
         |_| {
             ran.store(true, Ordering::SeqCst);
-            Ok(CheckOutput::Pass(()))
+            Ok(Computed {
+                output: CheckOutput::Pass("computed"),
+                measured_units: 1,
+            })
         },
     );
     match outcome.status {
@@ -261,7 +275,12 @@ fn ac4_warm_daemon_is_preferred_and_absent_daemon_never_passes_nor_blocks() {
     let warm = warm_subject.run(
         &request("detect.xss", ConsumerClass::Ci, "rev-a", true, 9),
         DaemonProbe::warm(3),
-        |_| Ok(CheckOutput::Pass("from warm index")),
+        |_| {
+            Ok(Computed {
+                output: CheckOutput::Pass("from warm index"),
+                measured_units: 1,
+            })
+        },
     );
     assert_eq!(warm.route, Route::Daemon);
     assert_eq!(warm.status, RunStatus::Pass("from warm index"));
@@ -278,7 +297,12 @@ fn ac4_warm_daemon_is_preferred_and_absent_daemon_never_passes_nor_blocks() {
     let cold: RunOutcome<&str> = cold_subject.run(
         &request("detect.xss", ConsumerClass::Ci, "rev-a", true, 9),
         DaemonProbe::ABSENT,
-        |_| Ok(CheckOutput::Pass("must not run")),
+        |_| {
+            Ok(Computed {
+                output: CheckOutput::Pass("must not run"),
+                measured_units: 1,
+            })
+        },
     );
     assert!(
         started.elapsed() < std::time::Duration::from_secs(1),
@@ -295,7 +319,12 @@ fn ac4_warm_daemon_is_preferred_and_absent_daemon_never_passes_nor_blocks() {
     let chosen = expensive.run(
         &request("detect.xss", ConsumerClass::Ci, "rev-a", true, 9),
         DaemonProbe::warm(12),
-        |_| Ok(CheckOutput::Pass("direct")),
+        |_| {
+            Ok(Computed {
+                output: CheckOutput::Pass("direct"),
+                measured_units: 1,
+            })
+        },
     );
     assert_eq!(chosen.route, Route::Direct);
 }
@@ -320,7 +349,10 @@ fn admission_is_bounded_and_guarantees_ci_capacity_under_agent_flood() {
                     .expect("hold lock")
                     .recv()
                     .expect("flood released");
-                Ok(CheckOutput::Pass("flood"))
+                Ok(Computed {
+                    output: CheckOutput::Pass("flood"),
+                    measured_units: 1,
+                })
             },
         )
     });
@@ -338,7 +370,12 @@ fn admission_is_bounded_and_guarantees_ci_capacity_under_agent_flood() {
     let ci = subject.run(
         &request("detect.ci", ConsumerClass::Ci, "rev-ci", true, 1),
         DaemonProbe::ABSENT,
-        |_| Ok(CheckOutput::Pass("ci admitted")),
+        |_| {
+            Ok(Computed {
+                output: CheckOutput::Pass("ci admitted"),
+                measured_units: 1,
+            })
+        },
     );
     assert_eq!(ci.status, RunStatus::Pass("ci admitted"));
 

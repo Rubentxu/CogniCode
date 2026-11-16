@@ -10,8 +10,9 @@
 //! - **Bounded, fair queue**: [`QueuePolicy`] caps concurrent
 //!   runs per consumer class and reserves CI capacity so a flood
 //!   of agent requests can never starve CI.
-//! - **Measure-based estimates**: [`CostEstimator`] averages
-//!   observed unit costs; the budget check rides the domain
+//! - **Measure-based estimates**: [`CostEstimator`] averages the
+//!   most recent [`Computed::measured_units`] reports; the budget
+//!   check rides the domain
 //!   [`BudgetAuthorizer`] and refuses over-budget work honestly
 //!   (`Deferred` / `Inconclusive`, never a fabricated `Pass`).
 //! - **Safe cancellation**: [`Coordinator::cancel_revision`]
@@ -117,13 +118,17 @@ impl ObjectId {
     }
 }
 
-/// Measure-based cost estimator: integer mean of observed unit
-/// costs per `WorkId`. Cold work has no estimate; callers supply a
-/// conservative default.
+/// Measure-based cost estimator: integer mean of the most recent
+/// [`ESTIMATOR_WINDOW`] observed unit costs per `WorkId`. Cold work
+/// has no estimate; callers supply a conservative default.
 #[derive(Debug, Default)]
 pub struct CostEstimator {
     samples: Mutex<BTreeMap<String, Vec<u64>>>,
 }
+
+/// Sliding window cap so long-lived daemons do not grow samples
+/// without bound.
+const ESTIMATOR_WINDOW: usize = 16;
 
 impl CostEstimator {
     #[must_use]
@@ -134,10 +139,12 @@ impl CostEstimator {
     /// Record one measured cost for a work item.
     pub fn observe(&self, work: &WorkId, units: u64) {
         let mut samples = self.samples.lock().expect("estimator lock");
-        samples
+        let values = samples
             .entry(work.as_namespaced_name().as_str().to_string())
-            .or_default()
-            .push(units);
+            .or_default();
+        values.push(units);
+        let excess = values.len().saturating_sub(ESTIMATOR_WINDOW);
+        values.drain(..excess);
     }
 
     /// Mean of the observed samples, or `None` when cold.
@@ -285,6 +292,22 @@ pub enum CheckOutput<R> {
     NotPass,
 }
 
+/// What a computation reports: its verdict plus the units it
+/// ACTUALLY consumed. The measured units feed [`CostEstimator`], so
+/// future estimates come from observations, not from the request's
+/// own claim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Computed<R> {
+    pub output: CheckOutput<R>,
+    pub measured_units: u64,
+}
+
+/// Why admission refused a leader before any compute ran.
+enum Refusal {
+    QueueFull,
+    Budget { attempted: u64, remaining: u64 },
+}
+
 /// Terminal status of one scheduling attempt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunStatus<R> {
@@ -320,7 +343,7 @@ pub struct CancelReport {
 }
 
 struct Flight<R> {
-    done: Mutex<Option<Result<CheckOutput<R>, String>>>,
+    done: Mutex<Option<Result<Computed<R>, String>>>,
     cv: Condvar,
 }
 
@@ -435,14 +458,17 @@ impl Coordinator {
 
     /// Cancel a candidate revision: flips its in-flight flags and
     /// releases only objects no other live revision still pins.
+    ///
+    /// A released object means "no registered pin remains" — a
+    /// cancelled computation may still be unwinding, so callers
+    /// that physically evict artifacts should wait for that run's
+    /// [`RunStatus::Cancelled`] outcome first.
     pub fn cancel_revision(&self, revision: &RevisionTag) -> CancelReport {
         let mut inner = self.inner.lock().expect("coordinator lock");
         let flags = inner.handles.remove(revision).unwrap_or_default();
         for flag in &flags {
             flag.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        self.cancelled
-            .fetch_add(flags.len() as u64, std::sync::atomic::Ordering::SeqCst);
         let mut released: Vec<ObjectId> = Vec::new();
         for (object, revs) in inner.object_refs.iter_mut() {
             if revs.remove(revision) && revs.is_empty() {
@@ -483,15 +509,27 @@ impl Coordinator {
     /// Schedule `req`: join an in-flight computation for the same
     /// [`WorkKey`], or — when admitted and within budget — run
     /// `compute` as the physical leader.
+    ///
+    /// Budget units are RESERVED atomically with admission (the
+    /// check and the commit share one budget lock), so concurrent
+    /// leaders can never overspend the declared ceiling together.
+    /// A panicking computation is isolated: joiners receive
+    /// `ComputeFailed`, never a stranded wait.
     pub fn run<R, F>(&self, req: &ScheduleRequest, daemon: DaemonProbe, compute: F) -> RunOutcome<R>
     where
         R: Clone + Send + Sync + 'static,
-        F: FnOnce(&CancellationFlag) -> Result<CheckOutput<R>, String>,
+        F: FnOnce(&CancellationFlag) -> Result<Computed<R>, String>,
     {
-        let cmp = compare_routes(daemon, req.direct_units);
+        // Estimates are measure-based: observed costs outrank the
+        // caller's cold hint for the direct route.
+        let direct = self
+            .estimator
+            .estimate(&req.key.work)
+            .unwrap_or(req.direct_units);
+        let cmp = compare_routes(daemon, direct);
         let cost = match cmp.choice {
-            Route::Daemon => cmp.daemon_units.unwrap_or(req.direct_units),
-            Route::Direct => req.direct_units,
+            Route::Daemon => cmp.daemon_units.unwrap_or(direct),
+            Route::Direct => direct,
         };
         let key = req.key.canonical();
 
@@ -505,31 +543,26 @@ impl Coordinator {
                     Decision::Join(flight, flag, remaining)
                 } else {
                     // Same key but a different payload type is a
-                    // caller contract violation; run as a fresh
-                    // leader rather than cross-casting the flight.
-                    self.lead_or_refused(&mut inner, req, &key, cost)
+                    // caller contract violation; lead without
+                    // stealing the live flight's registration.
+                    debug_assert!(false, "WorkKey reused across payload types");
+                    self.lead_or_refused(&mut inner, req, &key, cost, false)
                 }
             } else {
-                self.lead_or_refused(&mut inner, req, &key, cost)
+                self.lead_or_refused(&mut inner, req, &key, cost, true)
             }
         };
 
         match decision {
             Decision::Join(flight, flag, remaining) => {
                 self.joined.fetch_add(1, Ordering::SeqCst);
-                let stored = {
-                    let mut guard = flight.done.lock().expect("flight lock");
-                    while guard.is_none() {
-                        guard = flight.cv.wait(guard).expect("flight condvar");
-                    }
-                    guard.clone()
-                };
+                let stored = self.await_flight(&flight, &flag);
                 self.retire_flag(&req.revision, &flag);
-                let status = if flag.load(Ordering::SeqCst) {
-                    RunStatus::Cancelled
-                } else {
-                    mirror_status(stored.expect("leader published before notify"))
+                let status = match stored {
+                    Some(output) if !flag.load(Ordering::SeqCst) => mirror_status(output),
+                    _ => RunStatus::Cancelled,
                 };
+                self.count_cancelled_run(&status);
                 RunOutcome {
                     status,
                     route: cmp.choice,
@@ -538,12 +571,20 @@ impl Coordinator {
                 }
             }
             Decision::Lead(flag, flight) => {
-                let output = compute(&flag);
+                let published =
+                    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| compute(&flag)))
+                    {
+                        Ok(result) => result,
+                        Err(payload) => Err(panic_note(&payload)),
+                    };
                 self.computations.fetch_add(1, Ordering::SeqCst);
-                self.estimator.observe(&req.key.work, cost);
+                if let Ok(computed) = &published {
+                    self.estimator
+                        .observe(&req.key.work, computed.measured_units);
+                }
                 {
                     let mut guard = flight.done.lock().expect("flight lock");
-                    *guard = Some(output);
+                    *guard = Some(published);
                     flight.cv.notify_all();
                 }
                 let stored = flight.done.lock().expect("flight lock").clone();
@@ -558,12 +599,16 @@ impl Coordinator {
                     self.release_slot(&mut inner, req.consumer);
                     remove_flag(&mut inner, &req.revision, &flag);
                 }
-                self.commit_spend(cost);
+                // The reservation was committed at admission; the
+                // spend is real even for Cancelled runs (work
+                // physically happened), and failed computes keep
+                // their reservation as the honest physical cost.
                 let status = if flag.load(Ordering::SeqCst) {
                     RunStatus::Cancelled
                 } else {
                     mirror_status(stored.expect("flight published above"))
                 };
+                self.count_cancelled_run(&status);
                 RunOutcome {
                     status,
                     route: cmp.choice,
@@ -580,22 +625,49 @@ impl Coordinator {
         }
     }
 
+    /// Wait for the leader's verdict, shedding within one poll
+    /// window when this request's revision gets cancelled.
+    fn await_flight<R: Clone>(
+        &self,
+        flight: &Arc<Flight<R>>,
+        flag: &CancellationFlag,
+    ) -> Option<Result<Computed<R>, String>> {
+        let mut guard = flight.done.lock().expect("flight lock");
+        loop {
+            if guard.is_some() || flag.load(Ordering::SeqCst) {
+                return guard.clone();
+            }
+            let (next, _timeout) = flight
+                .cv
+                .wait_timeout(guard, std::time::Duration::from_millis(100))
+                .expect("flight condvar");
+            guard = next;
+        }
+    }
+
+    fn count_cancelled_run<R>(&self, status: &RunStatus<R>) {
+        if matches!(status, RunStatus::Cancelled) {
+            self.cancelled.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     fn budget_remaining(&self, amount: u64) -> u64 {
         self.budget.lock().expect("budget lock").remaining(amount)
     }
 
-    /// Admission + budget for a leader, under the caller's inner
-    /// lock. Returns the flag and flight when the run may proceed.
+    /// Admission + budget reservation for a leader, under the
+    /// caller's inner lock.
     fn lead_or_refused<R: Send + Sync + 'static>(
         &self,
         inner: &mut MutexGuard<'_, Inner>,
         req: &ScheduleRequest,
         key: &str,
         cost: u64,
+        register: bool,
     ) -> Decision<R> {
-        match self.start_lead(inner, req, key, cost) {
-            Some((flag, flight)) => Decision::Lead(flag, flight),
-            None => Decision::Refused(self.refused_status(req, cost), cost),
+        match self.start_lead(inner, req, key, cost, register) {
+            Ok((flag, flight)) => Decision::Lead(flag, flight),
+            Err(refusal) => Decision::Refused(status_for_refusal(req, refusal), cost),
         }
     }
 
@@ -605,21 +677,34 @@ impl Coordinator {
         req: &ScheduleRequest,
         key: &str,
         cost: u64,
-    ) -> Option<(CancellationFlag, Arc<Flight<R>>)> {
+        register: bool,
+    ) -> Result<(CancellationFlag, Arc<Flight<R>>), Refusal> {
         if !self
             .policy
             .admits(req.consumer, inner.agent_active, inner.ci_active)
         {
-            return None;
+            return Err(Refusal::QueueFull);
         }
-        let check = {
-            let budget = self.budget.lock().expect("budget lock");
-            budget
+        // Check and reserve atomically: one budget lock hold covers
+        // both, so concurrent leaders cannot overspend together.
+        {
+            let mut budget = self.budget.lock().expect("budget lock");
+            match budget
                 .authorizer
                 .check(&budget.state, BudgetKind::EffectCount, cost)
-        };
-        if check.is_err() {
-            return None;
+            {
+                Ok(_) => {
+                    let authorizer = budget.authorizer.clone();
+                    authorizer.commit(&mut budget.state, BudgetKind::EffectCount, cost);
+                    budget.spent += cost;
+                }
+                Err(exhausted) => {
+                    return Err(Refusal::Budget {
+                        attempted: cost,
+                        remaining: exhausted.remaining,
+                    });
+                }
+            }
         }
         match req.consumer {
             ConsumerClass::Agent => inner.agent_active += 1,
@@ -630,29 +715,13 @@ impl Coordinator {
             done: Mutex::new(None),
             cv: Condvar::new(),
         });
-        inner.inflight.insert(
-            key.to_string(),
-            Arc::clone(&flight) as Arc<dyn Any + Send + Sync>,
-        );
-        Some((flag, flight))
-    }
-
-    fn refused_status<R>(&self, req: &ScheduleRequest, cost: u64) -> RunStatus<R> {
-        let exhausted = {
-            let budget = self.budget.lock().expect("budget lock");
-            budget
-                .authorizer
-                .check(&budget.state, BudgetKind::EffectCount, cost)
-                .err()
-        };
-        match (req.required, exhausted) {
-            (true, Some(ex)) => RunStatus::Inconclusive(InconclusiveReason::BudgetExhausted {
-                attempted: cost,
-                remaining: ex.remaining,
-            }),
-            (true, None) => RunStatus::Inconclusive(InconclusiveReason::QueueFull),
-            (false, _) => RunStatus::Deferred,
+        if register {
+            inner.inflight.insert(
+                key.to_string(),
+                Arc::clone(&flight) as Arc<dyn Any + Send + Sync>,
+            );
         }
+        Ok((flag, flight))
     }
 
     fn release_slot(&self, inner: &mut Inner, class: ConsumerClass) {
@@ -665,13 +734,6 @@ impl Coordinator {
     fn retire_flag(&self, revision: &RevisionTag, flag: &CancellationFlag) {
         let mut inner = self.inner.lock().expect("coordinator lock");
         remove_flag(&mut inner, revision, flag);
-    }
-
-    fn commit_spend(&self, cost: u64) {
-        let mut budget = self.budget.lock().expect("budget lock");
-        let authorizer = budget.authorizer.clone();
-        authorizer.commit(&mut budget.state, BudgetKind::EffectCount, cost);
-        budget.spent += cost;
     }
 }
 
@@ -694,11 +756,44 @@ fn remove_flag(inner: &mut Inner, revision: &RevisionTag, flag: &CancellationFla
     }
 }
 
-fn mirror_status<R>(output: Result<CheckOutput<R>, String>) -> RunStatus<R> {
+fn mirror_status<R>(output: Result<Computed<R>, String>) -> RunStatus<R> {
     match output {
-        Ok(CheckOutput::Pass(value)) => RunStatus::Pass(value),
-        Ok(CheckOutput::NotPass) => RunStatus::NotPass,
+        Ok(Computed {
+            output: CheckOutput::Pass(value),
+            ..
+        }) => RunStatus::Pass(value),
+        Ok(Computed {
+            output: CheckOutput::NotPass,
+            ..
+        }) => RunStatus::NotPass,
         Err(reason) => RunStatus::Inconclusive(InconclusiveReason::ComputeFailed(reason)),
+    }
+}
+
+fn status_for_refusal<R>(req: &ScheduleRequest, refusal: Refusal) -> RunStatus<R> {
+    match (req.required, refusal) {
+        (
+            true,
+            Refusal::Budget {
+                attempted,
+                remaining,
+            },
+        ) => RunStatus::Inconclusive(InconclusiveReason::BudgetExhausted {
+            attempted,
+            remaining,
+        }),
+        (true, Refusal::QueueFull) => RunStatus::Inconclusive(InconclusiveReason::QueueFull),
+        (false, _) => RunStatus::Deferred,
+    }
+}
+
+fn panic_note(payload: &Box<dyn Any + Send>) -> String {
+    if let Some(text) = payload.downcast_ref::<&str>() {
+        (*text).to_string()
+    } else if let Some(text) = payload.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        "computation panicked".to_string()
     }
 }
 
@@ -819,7 +914,10 @@ mod tests {
             DaemonProbe::ABSENT,
             |_| {
                 ran.store(true, Ordering::SeqCst);
-                Ok(CheckOutput::Pass(()))
+                Ok(Computed {
+                    output: CheckOutput::Pass(()),
+                    measured_units: 1,
+                })
             },
         );
         assert_eq!(
@@ -840,7 +938,7 @@ mod tests {
         let outcome = subject.run(
             &request("detect.xss", ConsumerClass::Agent, false, 15),
             DaemonProbe::ABSENT,
-            |_| -> Result<CheckOutput<()>, String> { panic!("deferred work must not compute") },
+            |_| -> Result<Computed<()>, String> { panic!("deferred work must not compute") },
         );
         assert_eq!(outcome.status, RunStatus::Deferred);
     }
@@ -851,7 +949,12 @@ mod tests {
         let outcome = subject.run(
             &request("detect.xss", ConsumerClass::Ci, true, 9),
             DaemonProbe::warm(3),
-            |_| Ok(CheckOutput::Pass(42)),
+            |_| {
+                Ok(Computed {
+                    output: CheckOutput::Pass(42),
+                    measured_units: 3,
+                })
+            },
         );
         assert_eq!(outcome.route, Route::Daemon);
         assert_eq!(outcome.status, RunStatus::Pass(42));
@@ -866,7 +969,7 @@ mod tests {
         let outcome = subject.run(
             &request("detect.xss", ConsumerClass::Ci, true, 1),
             DaemonProbe::ABSENT,
-            |_| -> Result<CheckOutput<()>, String> { Err("parser exploded".to_string()) },
+            |_| -> Result<Computed<()>, String> { Err("parser exploded".to_string()) },
         );
         assert!(matches!(
             outcome.status,
@@ -898,7 +1001,10 @@ mod tests {
                             .expect("hold lock")
                             .recv()
                             .expect("release leader");
-                        Ok(CheckOutput::Pass("findings"))
+                        Ok(Computed {
+                            output: CheckOutput::Pass("findings"),
+                            measured_units: 1,
+                        })
                     },
                 )
             }));
@@ -934,5 +1040,127 @@ mod tests {
         let report = subject.cancel_revision(&agent_rev);
         assert_eq!(report.released_objects, vec![agent_only]);
         assert_eq!(subject.object_revisions(&shared), vec![ci_rev]);
+    }
+
+    fn wait_until(deadline_ms: u64, mut cond: impl FnMut() -> bool) -> bool {
+        let started = std::time::Instant::now();
+        while !cond() {
+            if started.elapsed() > std::time::Duration::from_millis(deadline_ms) {
+                return false;
+            }
+            std::thread::yield_now();
+        }
+        true
+    }
+
+    #[test]
+    fn leader_panic_fails_joiners_instead_of_stranding_them() {
+        let subject = Arc::new(coordinator(4, 1, None));
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let (panic_go_tx, panic_go_rx) = std::sync::mpsc::channel::<()>();
+        let leader_subject = Arc::clone(&subject);
+        let leader = std::thread::spawn(move || {
+            leader_subject.run(
+                &request("detect.xss", ConsumerClass::Ci, true, 1),
+                DaemonProbe::ABSENT,
+                |_| -> Result<Computed<()>, String> {
+                    started_tx.send(()).expect("leader running");
+                    panic_go_rx.recv().expect("joiner arrived");
+                    panic!("leader exploded")
+                },
+            )
+        });
+        started_rx.recv().expect("leader started");
+        let joiner_subject = Arc::clone(&subject);
+        let joiner = std::thread::spawn(move || {
+            joiner_subject.run(
+                &request("detect.xss", ConsumerClass::Ci, true, 1),
+                DaemonProbe::ABSENT,
+                |_| {
+                    Ok(Computed {
+                        output: CheckOutput::Pass(()),
+                        measured_units: 1,
+                    })
+                },
+            )
+        });
+        assert!(
+            wait_until(2_000, || subject.metrics().requests_joined == 1),
+            "joiner must register before the panic is released"
+        );
+        panic_go_tx.send(()).expect("release panic");
+        let leader_outcome = leader.join().expect("leader thread");
+        let joiner = joiner.join().expect("joiner thread");
+        assert!(joiner.joined);
+        assert!(matches!(
+            joiner.status,
+            RunStatus::Inconclusive(InconclusiveReason::ComputeFailed(_))
+        ));
+        assert!(matches!(
+            leader_outcome.status,
+            RunStatus::Inconclusive(InconclusiveReason::ComputeFailed(_))
+        ));
+        // Inflight and slot are cleaned: a later request leads again.
+        let third = subject.run(
+            &request("detect.xss", ConsumerClass::Ci, true, 1),
+            DaemonProbe::ABSENT,
+            |_| {
+                Ok(Computed {
+                    output: CheckOutput::Pass(()),
+                    measured_units: 1,
+                })
+            },
+        );
+        assert_eq!(third.status, RunStatus::Pass(()));
+    }
+
+    #[test]
+    fn budget_reservation_is_atomic_across_concurrent_leaders() {
+        // Ceiling 10: two concurrent leaders of 6 cannot both spend.
+        let subject = Arc::new(coordinator(4, 1, Some(10)));
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let held_subject = Arc::clone(&subject);
+        let held = std::thread::spawn(move || {
+            held_subject.run(
+                &request("detect.held", ConsumerClass::Ci, true, 6),
+                DaemonProbe::ABSENT,
+                |_| {
+                    started_tx.send(()).expect("held leader running");
+                    release_rx.recv().expect("held released");
+                    Ok(Computed {
+                        output: CheckOutput::Pass(()),
+                        measured_units: 6,
+                    })
+                },
+            )
+        });
+        started_rx.recv().expect("held leader reserved 6");
+        let second: RunOutcome<()> = subject.run(
+            &request("detect.second", ConsumerClass::Ci, true, 6),
+            DaemonProbe::ABSENT,
+            |_| {
+                Ok(Computed {
+                    output: CheckOutput::Pass(()),
+                    measured_units: 6,
+                })
+            },
+        );
+        assert!(
+            matches!(
+                second.status,
+                RunStatus::Inconclusive(InconclusiveReason::BudgetExhausted {
+                    attempted: 6,
+                    remaining: 4,
+                })
+            ),
+            "concurrent leaders must not overspend the ceiling together"
+        );
+        release_tx.send(()).expect("release held leader");
+        let held_outcome = held.join().expect("held thread");
+        assert_eq!(held_outcome.status, RunStatus::Pass(()));
+        let metrics = subject.metrics();
+        assert_eq!(metrics.spent_units, 6, "only the reserved leader spent");
+        assert_eq!(metrics.physical_computations, 1);
     }
 }
