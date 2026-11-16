@@ -26,7 +26,7 @@ use cognicode_core::assurance_export::{
 };
 
 /// Construye un envelope minimo valido para tests.
-fn sample_envelope() -> EvidenceExport {
+pub fn sample_envelope() -> EvidenceExport {
     let mut completeness: BTreeMap<String, CapabilityCompleteness> = BTreeMap::new();
     completeness.insert("entities".into(), CapabilityCompleteness::Complete);
     completeness.insert(
