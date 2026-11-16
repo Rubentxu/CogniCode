@@ -3334,9 +3334,12 @@ fn hook_verdict(
         },
         HookEvent::PrePush => {
             // git feeds `<local_ref> <local_oid> <remote_ref> <remote_oid>`
-            // per pushed ref on stdin. Deletions (zero local oid) and new
-            // remote branches (zero remote oid) carry no recorded ancestry
-            // to gate; refs with ancestry are checked end to end.
+            // per pushed ref on stdin. Deletions (zero local oid) carry
+            // nothing this push adds. New remote refs (zero remote oid)
+            // have no base to diff against, but the pushed tip must
+            // still be a recorded revision — an unresolvable tip is
+            // Inconclusive, never a silent skip. Refs with ancestry are
+            // checked end to end: an unrecorded rewind fails closed.
             let mut stdin = String::new();
             if std::io::Read::read_to_string(&mut std::io::stdin(), &mut stdin).is_err() {
                 return Verdict::Inconclusive("cannot read pre-push stdin".to_string());
@@ -3347,15 +3350,18 @@ fn hook_verdict(
                     return Verdict::Inconclusive(format!("malformed pre-push line {line:?}"));
                 }
                 let is_zero = |oid: &str| oid.chars().all(|c| c == '0');
-                if is_zero(fields[1]) || is_zero(fields[3]) {
+                if is_zero(fields[1]) {
+                    continue;
+                }
+                let head = match adapter.resolve(&source, fields[1]) {
+                    Ok(head) => head,
+                    Err(error) => return Verdict::Inconclusive(error.to_string()),
+                };
+                if is_zero(fields[3]) {
                     continue;
                 }
                 let base = match adapter.resolve(&source, fields[3]) {
                     Ok(base) => base,
-                    Err(error) => return Verdict::Inconclusive(error.to_string()),
-                };
-                let head = match adapter.resolve(&source, fields[1]) {
-                    Ok(head) => head,
                     Err(error) => return Verdict::Inconclusive(error.to_string()),
                 };
                 match adapter.changes_between(&base, &head) {

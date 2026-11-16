@@ -35,6 +35,7 @@ mod find_usages_says_what_it_could_not_read;
 mod gitignore_negation_contract;
 mod graph_cli_mcp_equivalence;
 mod graph_impact_absent_symbol;
+mod hooks_pre_push_gate;
 mod json_stdout_is_one_document;
 mod one_answer_one_document;
 mod one_published_line_base;

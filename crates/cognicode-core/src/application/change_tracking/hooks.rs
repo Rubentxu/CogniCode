@@ -1,11 +1,13 @@
-//! CAA-10 — opt-in Git hooks as thin clients of the coordinator.
+//! CAA-10 — opt-in Git hooks as thin clients of the change reader.
 //!
 //! Hook scripts are disposable shims: they exec the CogniCode binary,
-//! which reads the exact staged index (CAA-03 adapter) and consults the
-//! cost-aware coordinator (CAA-09) instead of re-scanning the tree.
+//! whose gate verdicts read the exact staged index and the recorded
+//! push ranges (CAA-03 adapter) — the same modules the cost-aware
+//! coordinator (CAA-09) schedules — instead of re-scanning the tree.
 //! Installation is opt-in and reversible; a managed script is identified
-//! by [`MANAGED_MARKER`] so foreign hooks and `core.hooksPath` targets
-//! are never overwritten, only honoured or left alone.
+//! by declaring [`MANAGED_MARKER`] in its opening comment, so foreign
+//! hooks and `core.hooksPath` targets are never overwritten, only
+//! honoured or left alone.
 //!
 //! Trust boundary: scripts embed the absolute path of the binary chosen
 //! by the person who ran `hooks install` — never repository content —
@@ -64,6 +66,8 @@ pub enum HookError {
     GitResolution { reason: String },
     #[error("io error at {path}: {reason}")]
     Io { path: String, reason: String },
+    #[error("the binary path cannot be embedded in a POSIX shim: {reason}")]
+    UnsafeProgramPath { reason: String },
 }
 
 /// Renders the managed shim. `program` is the absolute path to the
@@ -87,7 +91,7 @@ pub enum SlotState {
 fn slot_at(path: &Path) -> Result<SlotState, HookError> {
     match std::fs::read(path) {
         Ok(bytes) => {
-            if String::from_utf8_lossy(&bytes).contains(MANAGED_MARKER) {
+            if is_managed_content(&String::from_utf8_lossy(&bytes)) {
                 Ok(SlotState::Managed)
             } else {
                 Ok(SlotState::Foreign)
@@ -96,6 +100,17 @@ fn slot_at(path: &Path) -> Result<SlotState, HookError> {
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(SlotState::Absent),
         Err(error) => Err(io_error(path, &error)),
     }
+}
+
+/// A script is ours only if it DECLARES itself as ours: the marker
+/// must sit in a shebang-adjacent comment (the first two lines), the
+/// way [`render_script`] writes it. A foreign hook that merely mentions
+/// the marker deeper in its body stays foreign and is never claimed.
+fn is_managed_content(text: &str) -> bool {
+    text.lines().take(2).any(|line| {
+        let line = line.trim_start();
+        line.starts_with('#') && line.contains(MANAGED_MARKER)
+    })
 }
 
 fn io_error(path: &Path, error: &std::io::Error) -> HookError {
@@ -123,6 +138,14 @@ pub struct UninstallReport {
 /// Installs managed scripts into `dir`, creating it when missing.
 /// Managed slots are rewritten (idempotent); foreign slots are kept.
 pub fn install(dir: &Path, program: &Path) -> Result<InstallReport, HookError> {
+    // The shim embeds `program` inside single quotes; a path carrying
+    // one would produce a broken (or worse, reinterpretable) script.
+    // Fail the install explicitly instead of writing that script.
+    if program.to_string_lossy().contains('\'') {
+        return Err(HookError::UnsafeProgramPath {
+            reason: format!("path {} contains a single quote", program.display()),
+        });
+    }
     std::fs::create_dir_all(dir).map_err(|error| io_error(dir, &error))?;
     let mut report = InstallReport::default();
     for event in HookEvent::ALL {
@@ -377,6 +400,37 @@ mod tests {
         assert_eq!(report.foreign_kept, vec![HookEvent::PreCommit]);
         assert!(foreign.exists());
         assert!(!dir.join("pre-push").exists());
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn install_refuses_a_program_path_that_cannot_be_quoted() {
+        let dir = std::env::temp_dir().join(format!("cgh028-quote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let error = install(&dir, Path::new("/opt/we're/cognicode")).expect_err("quote breaks sh");
+        assert!(matches!(error, HookError::UnsafeProgramPath { .. }));
+        assert!(!dir.exists(), "the refusal installs nothing");
+    }
+
+    #[test]
+    fn a_foreign_script_mentioning_the_marker_stays_foreign() {
+        let dir = std::env::temp_dir().join(format!("cgh028-claim-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        // Third-party text that merely mentions the marker, below the
+        // declaration zone: it never opts the script into being ours.
+        let pre_commit = dir.join("pre-commit");
+        let body = format!(
+            "#!/bin/sh\nexit 0\n\n# warn users: {} scripts are managed\necho ok\n",
+            MANAGED_MARKER
+        );
+        std::fs::write(&pre_commit, &body).expect("foreign mentioning");
+        let report = install(&dir, Path::new("/bin/cognicode")).expect("install");
+        assert_eq!(report.foreign_kept, vec![HookEvent::PreCommit]);
+        assert_eq!(std::fs::read_to_string(&pre_commit).expect("read"), body);
+        let report = uninstall(&dir).expect("uninstall");
+        assert!(!report.removed.contains(&HookEvent::PreCommit));
+        assert!(pre_commit.exists());
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 
