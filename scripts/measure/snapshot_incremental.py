@@ -110,6 +110,7 @@ def run_scanner(workspace: Path, timeout: float) -> dict[str, object]:
     return {"status": "PASS", "evidence": result}
 
 
+def measure(binary: Path, samples: int, timeout: float) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory(prefix="cognicode-h5-") as root:
         root_path = Path(root)
