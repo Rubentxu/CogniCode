@@ -65,6 +65,7 @@ mod callgraph_projection_orientation;
 mod checkpoint_integration;
 mod context_semantics;
 mod core_declares_only_the_dependencies_it_uses;
+mod cost_aware_scheduling;
 mod cp5_tie_break;
 mod cu1_w2_facade_contract;
 mod cu1_w2_service_analyzer_contract;
