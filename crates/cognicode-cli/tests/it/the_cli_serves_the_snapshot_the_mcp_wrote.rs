@@ -78,12 +78,14 @@ fn workspace_with_root() -> (tempfile::TempDir, PathBuf, PathBuf) {
 /// The answer without the time it took.
 ///
 /// The elapsed time is the ONE thing that has to differ: the second run
-/// did less work. Everything else — the symbols, the relations, the
+/// did less work. `timings_ms` is that same clock seen per stage, so it
+/// goes with it. Everything else — the symbols, the relations, the
 /// verdict — is the same answer, and a consumer that reads the document
 /// cannot tell which of the two runs produced it.
 fn without_the_clock(mut answer: Value) -> Value {
     if let Some(object) = answer.as_object_mut() {
         object.remove("elapsed_ms");
+        object.remove("timings_ms");
     }
     answer
 }

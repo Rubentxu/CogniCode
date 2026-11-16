@@ -227,6 +227,12 @@ fn parse_name_status_z(stdout: &[u8]) -> Result<DiffEvidence, ScmError> {
             evidence.unmerged_paths.push(take_path(&mut index)?);
             continue;
         }
+        // Against an unmerged index, plain `git diff --cached` names
+        // the path with the single letter U instead of a pair.
+        if status == "U" {
+            evidence.unmerged_paths.push(take_path(&mut index)?);
+            continue;
+        }
         let letter = status.as_bytes().first().copied().unwrap_or(b'?');
         match letter {
             b'R' | b'C' => {

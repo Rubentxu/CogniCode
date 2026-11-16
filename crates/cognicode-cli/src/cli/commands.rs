@@ -297,6 +297,32 @@ pub enum CliCommand {
         /// Parsed best-effort into an `Intent`; never panics.
         intent_args: Vec<String>,
     },
+    /// CAA-10 — opt-in Git hooks as thin clients of the coordinator.
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommand,
+    },
+}
+
+/// Subcommands of `cognicode hooks`. The installed scripts are shims
+/// that exec `hooks run <event>`; gate events exit non-zero to block
+/// the operation, observe events always exit zero.
+#[derive(clap::Subcommand, Debug)]
+pub enum HooksCommand {
+    /// Install the managed hook scripts into the effective hooks directory
+    Install,
+    /// Remove the managed scripts only, keeping third-party hooks untouched
+    Uninstall,
+    /// Show per-event slot ownership: managed, absent or foreign
+    Status,
+    /// Internal entry point invoked by the managed shim
+    Run {
+        /// Git event name, e.g. pre-commit
+        event: String,
+        /// Arguments git passes through (not interpreted yet)
+        #[arg(allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 /// Subcomandos de `cognicode export`. v1 solo expone `assurance`; el
@@ -853,6 +879,7 @@ impl CommandExecutor {
                 let effective = if *json { "json" } else { format.as_str() };
                 Ok(Self::execute_capabilities(effective).await?)
             }
+            Some(CliCommand::Hooks { command }) => Self::execute_hooks(command),
             None => {
                 info!("CogniCode CLI initialized");
                 // The help, if no command was given — the tree with the
@@ -3188,4 +3215,167 @@ fn project_graph_of(
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     cognicode_core::interface::project_graph::warn_incomplete(&built);
     Ok(built)
+}
+
+impl CommandExecutor {
+    /// CAA-10 / CGH-028 — opt-in Git hooks as thin coordinator clients.
+    fn execute_hooks(command: &HooksCommand) -> Result<CommandOutput, Box<dyn std::error::Error>> {
+        use cognicode_core::application::change_tracking::hooks as git_hooks;
+        let repo = std::env::current_dir()?;
+        let runner = git_hooks::SystemGit::new();
+        match command {
+            HooksCommand::Install => {
+                let dir = git_hooks::resolve_hooks_dir(&runner, &repo)?;
+                let report = git_hooks::install(&dir, &std::env::current_exe()?)?;
+                let mut text = format!("cognicode hooks managed from {}\n", dir.display());
+                text.push_str(&format!(
+                    "installed: {} | refreshed: {} | foreign kept: {}\n",
+                    report.installed.len(),
+                    report.refreshed.len(),
+                    report.foreign_kept.len()
+                ));
+                for event in &report.foreign_kept {
+                    text.push_str(&format!(
+                        "kept third-party {}: not overwritten\n",
+                        event.git_name()
+                    ));
+                }
+                text.push_str(&format!(
+                    "constraints: core.hooksPath is honoured, never rewritten; worktrees \
+                     share the common hooks directory; only scripts marked \
+                     `{}` are managed; rerun install after upgrading the binary; \
+                     `cognicode hooks uninstall` reverses exactly this.\n",
+                    git_hooks::MANAGED_MARKER
+                ));
+                Ok(CommandOutput::Rendered {
+                    text,
+                    exit_code: None,
+                })
+            }
+            HooksCommand::Uninstall => {
+                let dir = git_hooks::resolve_hooks_dir(&runner, &repo)?;
+                let report = git_hooks::uninstall(&dir)?;
+                Ok(CommandOutput::Rendered {
+                    text: format!(
+                        "removed: {} | foreign kept: {}\n",
+                        report.removed.len(),
+                        report.foreign_kept.len()
+                    ),
+                    exit_code: None,
+                })
+            }
+            HooksCommand::Status => {
+                let dir = git_hooks::resolve_hooks_dir(&runner, &repo)?;
+                let mut text = String::new();
+                for (event, state) in git_hooks::status(&dir)? {
+                    text.push_str(&format!("{}: {:?}\n", event.git_name(), state));
+                }
+                Ok(CommandOutput::Rendered {
+                    text,
+                    exit_code: None,
+                })
+            }
+            HooksCommand::Run { event, .. } => {
+                let Some(event) = git_hooks::HookEvent::from_git_name(event) else {
+                    // An unrecognized event must never break the git
+                    // operation that triggered it.
+                    return Ok(CommandOutput::Rendered {
+                        text: format!(
+                            "cognicode hooks: unrecognized event {event:?}; proceeding\n"
+                        ),
+                        exit_code: None,
+                    });
+                };
+                let verdict = hook_verdict(event, &repo);
+                let decision = git_hooks::decide(event, &verdict);
+                let exit_code = decision.exit_code();
+                match decision {
+                    git_hooks::HookDecision::Proceed => Ok(CommandOutput::Rendered {
+                        text: String::new(),
+                        exit_code: None,
+                    }),
+                    git_hooks::HookDecision::Block { reasons } => Ok(CommandOutput::Rendered {
+                        text: reasons
+                            .iter()
+                            .map(|reason| format!("cognicode {}: {reason}\n", event.git_name()))
+                            .collect(),
+                        exit_code: Some(exit_code),
+                    }),
+                }
+            }
+        }
+    }
+}
+
+/// The gate analysis a hook event needs, computed from Git truth only.
+/// Failures of the read itself become `Inconclusive`, which gates treat
+/// as refusal (fail closed) and observe events ignore.
+fn hook_verdict(
+    event: cognicode_core::application::change_tracking::hooks::HookEvent,
+    repo: &std::path::Path,
+) -> cognicode_core::application::change_tracking::hooks::Verdict {
+    use cognicode_core::application::change_tracking::hooks::{
+        HookEvent, Verdict, verdict_from_staged,
+    };
+    use cognicode_core::domain::scm::{ChangeReader, RevisionReader, SourceRef, WorkingCopyReader};
+    use cognicode_core::infrastructure::git::GitScmAdapter;
+    if !event.is_gate() {
+        return Verdict::Pass;
+    }
+    let source = match SourceRef::new("git", "cognicode-hooks") {
+        Ok(source) => source,
+        Err(error) => return Verdict::Inconclusive(error.to_string()),
+    };
+    let adapter = GitScmAdapter::new(repo);
+    match event {
+        HookEvent::PreCommit => match adapter.staged_changes(&source) {
+            Ok(staged) => verdict_from_staged(&staged),
+            Err(error) => Verdict::Inconclusive(error.to_string()),
+        },
+        HookEvent::PrePush => {
+            // git feeds `<local_ref> <local_oid> <remote_ref> <remote_oid>`
+            // per pushed ref on stdin. Deletions (zero local oid) carry
+            // nothing this push adds. New remote refs (zero remote oid)
+            // have no base to diff against, but the pushed tip must
+            // still be a recorded revision — an unresolvable tip is
+            // Inconclusive, never a silent skip. Refs with ancestry are
+            // checked end to end: an unrecorded rewind fails closed.
+            let mut stdin = String::new();
+            if std::io::Read::read_to_string(&mut std::io::stdin(), &mut stdin).is_err() {
+                return Verdict::Inconclusive("cannot read pre-push stdin".to_string());
+            }
+            for line in stdin.lines().filter(|line| !line.trim().is_empty()) {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if fields.len() != 4 {
+                    return Verdict::Inconclusive(format!("malformed pre-push line {line:?}"));
+                }
+                let is_zero = |oid: &str| oid.chars().all(|c| c == '0');
+                if is_zero(fields[1]) {
+                    continue;
+                }
+                let head = match adapter.resolve(&source, fields[1]) {
+                    Ok(head) => head,
+                    Err(error) => return Verdict::Inconclusive(error.to_string()),
+                };
+                if is_zero(fields[3]) {
+                    continue;
+                }
+                let base = match adapter.resolve(&source, fields[3]) {
+                    Ok(base) => base,
+                    Err(error) => return Verdict::Inconclusive(error.to_string()),
+                };
+                match adapter.changes_between(&base, &head) {
+                    Ok(changes) => {
+                        let verdict = verdict_from_staged(&changes);
+                        if verdict != Verdict::Pass {
+                            return verdict;
+                        }
+                    }
+                    Err(error) => return Verdict::Inconclusive(error.to_string()),
+                }
+            }
+            Verdict::Pass
+        }
+        _ => Verdict::Pass,
+    }
 }
