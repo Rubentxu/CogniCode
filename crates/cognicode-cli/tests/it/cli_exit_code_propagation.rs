@@ -355,8 +355,8 @@ fn every_dispatch_arm_is_accounted_for() {
     let compiled = arms.iter().filter(|a| !gated.contains(&a.as_str())).count();
 
     assert_eq!(
-        compiled, 12,
-        "se esperaban 12 brazos CliCommand compilados en el build por defecto; \
+        compiled, 13,
+        "se esperaban 13 brazos CliCommand compilados en el build por defecto; \
          se encontraron {arms:?}. Si has añadido uno, clasifícalo aquí o exímelo \
          con un motivo. Variantes añadidas desde el pin a 9: `Identity` (B1.W2, \
          commit 336e743, lectura-only Ok(CommandOutput::Other) — propaga \
@@ -364,7 +364,10 @@ fn every_dispatch_arm_is_accounted_for() {
          dispatch entre v0.101.9 y v0.101.10, y `Intent` (B3.W2, commit \
          e6860cf9, scaffold propuesto — se llamaba `Inspect` hasta que el goal \
          `inspect` tomó ese nombre en TASK-84; propaga Ok(CommandOutput::Other) \
-         y emite PROPOSED y el aviso de deprecación a stderr). Verifica con `grep Some\\ \
+         y emite PROPOSED y el aviso de deprecación a stderr), y `Hooks` (CAA-10/CGH-028, \
+         delega en execute_hooks: los errores viajan como Err del brazo y el exit code del \
+         gate viaja como dato en CommandOutput::Rendered, nunca matando el proceso desde la \
+         lib). Verifica con `grep Some\\ \
          (CliCommand:: crates/cognicode-cli/src/cli/commands.rs`."
     );
     assert!(

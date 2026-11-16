@@ -18,3 +18,6 @@ pub mod scm_delta;
 
 #[cfg(feature = "evidence-kernel")]
 pub mod complete_snapshot;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod hooks;

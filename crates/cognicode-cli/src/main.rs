@@ -3,7 +3,7 @@
 //! This binary provides the command-line interface for CogniCode.
 
 use cognicode_cli::cli::CommandExecutor;
-use cognicode_cli::cli::commands::CliCommand;
+use cognicode_cli::cli::commands::{CliCommand, HooksCommand};
 use cognicode_cli::cli::{ParsedCli, parse_cli};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
@@ -59,7 +59,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &cli.command,
         Some(CliCommand::Capabilities { format, json }) if *json || format == "json"
     );
-    let max_level = if json_capabilities {
+    // CAA-10: `hooks run` is the managed shim's internal entry point.
+    // Its only channel to the user is the block reason it prints, so
+    // startup tracing must stay silent on every git operation.
+    let hooks_run = matches!(
+        &cli.command,
+        Some(CliCommand::Hooks {
+            command: HooksCommand::Run { .. }
+        })
+    );
+    let max_level = if json_capabilities || hooks_run {
         tracing_subscriber::filter::LevelFilter::OFF
     } else if cli.verbose {
         tracing_subscriber::filter::LevelFilter::DEBUG

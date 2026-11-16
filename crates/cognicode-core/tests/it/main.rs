@@ -87,6 +87,7 @@ mod findings_axiom_import_e2e;
 mod findings_canonical_grounding_e2e;
 mod findings_dataflow_e2e;
 mod findings_graph_e2e;
+mod git_hooks;
 mod git_scm_adapter;
 mod goals_and_hateoas_do_not_import_mcp;
 mod goals_and_mcp_do_not_import_cli;
