@@ -76,6 +76,8 @@ pub mod investigation;
 pub mod investigation_store;
 pub mod plan;
 pub mod ports;
+/// SCM-neutral source identity and provider ports (CAA-02).
+pub mod scm;
 pub mod services;
 pub mod symbol_identity;
 pub mod traits;
