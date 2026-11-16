@@ -255,6 +255,7 @@ mod tests {
         // git reads as "there is no configuration".
         let no_configuration = repo.join("no-git-configuration");
         let output = Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
             .args(args)
             .current_dir(repo)
             .env("GIT_CONFIG_GLOBAL", &no_configuration)
@@ -362,6 +363,7 @@ mod tests {
         // walks UP from -C; a degenerate TMPDIR inside a repo would make
         // this test meaningless, so fail loudly instead of lying).
         let probe = Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
             .args(["rev-parse", "--is-inside-work-tree"])
             .current_dir(dir.path())
             .output()
