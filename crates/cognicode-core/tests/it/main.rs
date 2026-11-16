@@ -153,6 +153,7 @@ mod refactor_impact_uses_the_analysis_graph;
 mod refactor_integration_tests;
 mod roadmap_claims_contract;
 mod safety_gate_tests;
+mod scm_revision_snapshots;
 mod scm_source_ports;
 mod security_validation_tests;
 mod semantic_reader_owns_its_language;
