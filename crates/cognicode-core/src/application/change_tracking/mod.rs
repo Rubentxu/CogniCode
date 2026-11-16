@@ -11,6 +11,9 @@
 pub mod planner;
 
 #[cfg(feature = "evidence-kernel")]
+pub mod scheduling;
+
+#[cfg(feature = "evidence-kernel")]
 pub mod scm_delta;
 
 #[cfg(feature = "evidence-kernel")]
