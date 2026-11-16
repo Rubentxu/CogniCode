@@ -225,6 +225,7 @@ fn json_graph_full_shape() {
         skipped_files: vec![],
         pending_references: vec![],
         rejected_relations: vec![],
+        timings_ms: None,
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "full");

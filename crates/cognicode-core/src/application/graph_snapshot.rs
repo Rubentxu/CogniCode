@@ -97,6 +97,11 @@ pub struct LoadedGraph {
     /// alike are two rules, and the second one goes stale while the first
     /// one is kept.
     pub coverage: crate::application::services::analyze::Coverage,
+    /// What each stage that produced this answer cost.
+    ///
+    /// The stages that did not run are not measured: their fields are
+    /// absent, which is "not measured on this route", never zero.
+    pub timings: crate::application::graph_timings::GraphPhaseTimings,
 }
 
 /// The answer, with the coverage it was measured with.
@@ -113,6 +118,7 @@ fn loaded(
     manifest: Option<FileManifest>,
     source: GraphSource,
     tree: TreeState,
+    timings: crate::application::graph_timings::GraphPhaseTimings,
 ) -> LoadedGraph {
     let coverage = crate::application::services::analyze::coverage_verdict(
         source,
@@ -127,6 +133,7 @@ fn loaded(
         source,
         tree,
         coverage,
+        timings,
     }
 }
 
@@ -175,6 +182,10 @@ fn decide_the_graph(
     force_rebuild: bool,
 ) -> AppResult<LoadedGraph> {
     let snapshot_path = cache_root.map(|root| graph_cache::snapshot_path(root, project_dir));
+    // The cache lookup is timed from the moment the decision starts: what
+    // it costs to serve a snapshot is the deserialization plus the walk
+    // that decided it could be served, and the two are the cache route.
+    let lookup_started = std::time::Instant::now();
 
     if !force_rebuild {
         // The session holds a graph already: it is the answer, as long as
@@ -198,6 +209,9 @@ fn decide_the_graph(
                             GraphSource::Cache
                         },
                         tree,
+                        // Served from the graph this session already
+                        // holds: no stage ran now, so none is measured.
+                        crate::application::graph_timings::GraphPhaseTimings::default(),
                     ));
                 }
             }
@@ -206,6 +220,7 @@ fn decide_the_graph(
         } else if let Some(path) = snapshot_path.as_ref().filter(|path| path.exists())
             && let Some((key, graph, manifest)) = load_durable_snapshot(path)
         {
+            let cache_lookup_ms = lookup_started.elapsed().as_millis() as u64;
             // The session holds nothing: the durable snapshot may still
             // hold what another session calculated over the same tree.
             //
@@ -238,6 +253,10 @@ fn decide_the_graph(
                             GraphSource::Cache
                         },
                         tree,
+                        crate::application::graph_timings::GraphPhaseTimings {
+                            cache_lookup_ms: Some(cache_lookup_ms),
+                            ..Default::default()
+                        },
                     ));
                 }
             } else {
@@ -265,6 +284,12 @@ fn decide_the_graph(
     let tree = service.tree_state(project_dir);
     let manifest = build_manifest(project_dir, &tree.files);
     service.build_project_graph(project_dir)?;
+    // The stages of THIS build, taken so that the next reading cannot be
+    // attributed to it. A route that did not record stages leaves the
+    // timings absent, which is what an unmeasured stage means.
+    let mut timings = service
+        .take_build_timings()
+        .unwrap_or_default();
 
     // Only persist a snapshot when the build is Complete. A Partial build
     // (unreadable/failed files) must not leave behind a snapshot that a
@@ -295,9 +320,12 @@ fn decide_the_graph(
                     SNAPSHOT_SCHEMA,
                 );
                 let graph = service.get_project_graph();
+                let serialize_started = std::time::Instant::now();
                 if let Err(e) = save_durable_snapshot(path, &key, &graph, &manifest) {
                     tracing::warn!("durable snapshot save failed: {}", e);
                 }
+                timings.snapshot_serialize_ms =
+                    Some(serialize_started.elapsed().as_millis() as u64);
                 Some(manifest)
             }
             None => {
@@ -322,6 +350,7 @@ fn decide_the_graph(
         manifest_to_keep,
         GraphSource::Built,
         tree,
+        timings,
     ))
 }
 

@@ -51,6 +51,10 @@ pub mod graph_cache;
 // whether it is served or calculated again. It lives in the application
 // layer so that the MCP and the CLI share it.
 pub mod graph_snapshot;
+// The cost of each stage of a graph answer, measured by the product: a
+// baseline that cannot tell a cache hit from a cold parse cannot be
+// compared with another one.
+pub mod graph_timings;
 // TASK-92 (slice 1) — the port that lets something that is watching the
 // tree say that a manifest still describes it, so the product does not
 // have to read the content of every file to find out.

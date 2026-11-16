@@ -532,6 +532,14 @@ pub enum GraphResult {
         /// named next to the count: otherwise the count reads as "every
         /// relation the build found".
         rejected_relations: Vec<cognicode_core::interface::coverage::RejectedRelationInfo>,
+        /// What each stage that produced this answer cost, when the
+        /// product measured stages.
+        ///
+        /// Absent when nothing was measured: an absent measurement is
+        /// "not measured", never zero. `elapsed_ms` is the whole answer;
+        /// this is the breakdown a baseline compares stage by stage.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timings_ms: Option<cognicode_core::application::graph_timings::GraphPhaseTimings>,
     },
     /// `cognicode graph hot-paths [--limit N] [--min-fan-in N] <path>`
     HotPaths {

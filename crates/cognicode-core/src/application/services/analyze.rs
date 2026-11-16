@@ -378,14 +378,15 @@ impl Analyze for ServiceAnalyzer {
         // graph served from the snapshot are the same answer only when the
         // tree did not change, and the consumer is the one who has to know
         // that the product checked.
-        let (mut outcome, source) = match op.clone() {
+        let (mut outcome, source, phase_timings) = match op.clone() {
             AnalysisOp::GraphFull { path, rebuild } => self.graph_full(&path, rebuild),
-            AnalysisOp::GraphComplexity { path } => (self.graph_complexity(&path), None),
+            AnalysisOp::GraphComplexity { path } => (self.graph_complexity(&path), None, None),
             other => (
                 AnalysisOutcome::unsupported(&format!(
                     "op `{}` aún no está cableada al adaptador de producción (CU-1.2 cubre graph.full y graph.complexity)",
                     other.operation_id()
                 )),
+                None,
                 None,
             ),
         };
@@ -395,6 +396,9 @@ impl Analyze for ServiceAnalyzer {
                 .with_elapsed_ms(started.elapsed().as_millis());
         if let Some(source) = source {
             provenance = provenance.with_graph_source(source);
+        }
+        if let Some(timings) = phase_timings {
+            provenance = provenance.with_phase_timings(timings);
         }
 
         outcome = outcome.with_provenance(provenance);
@@ -418,7 +422,11 @@ impl ServiceAnalyzer {
         &self,
         path: &std::path::Path,
         rebuild: bool,
-    ) -> (AnalysisOutcome<AnalysisValue>, Option<GraphSource>) {
+    ) -> (
+        AnalysisOutcome<AnalysisValue>,
+        Option<GraphSource>,
+        Option<crate::application::graph_timings::GraphPhaseTimings>,
+    ) {
         use crate::application::analysis_basis::GraphValue;
 
         let loaded = match crate::application::graph_snapshot::load_or_build_graph(
@@ -436,10 +444,12 @@ impl ServiceAnalyzer {
                         path.display()
                     ))),
                     None,
+                    None,
                 );
             }
         };
         let source = Some(loaded.source);
+        let timings = loaded.timings;
 
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
         // BuildReport compartido, no la mera existencia de símbolos.
@@ -478,18 +488,23 @@ impl ServiceAnalyzer {
             rejected_relations: facts.rejected,
         });
 
+        let measured = if timings.is_empty() {
+            None
+        } else {
+            Some(timings)
+        };
         match coverage {
             // El build "exitoso" con cero símbolos es ausencia de
             // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
-            Coverage::NoMaterial(_) => (no_material_outcome(path), None),
-            Coverage::Complete => (AnalysisOutcome::complete(value), source),
+            Coverage::NoMaterial(_) => (no_material_outcome(path), None, measured),
+            Coverage::Complete => (AnalysisOutcome::complete(value), source, measured),
             // No hay reporte: no se midio nada. Eso no es lo mismo que
             // medir y no encontrar nada, asi que la respuesta no dice
             // "complete": dice "unknown", y el consumidor lo sabe.
-            Coverage::Unmeasured => (AnalysisOutcome::unknown_with(value), source),
+            Coverage::Unmeasured => (AnalysisOutcome::unknown_with(value), source, measured),
             Coverage::Partial(facts) => {
                 let gaps = coverage_gaps(&facts.skipped, &facts.pending, &facts.rejected);
-                (AnalysisOutcome::partial(value, gaps), source)
+                (AnalysisOutcome::partial(value, gaps), source, measured)
             }
         }
     }

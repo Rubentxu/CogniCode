@@ -470,6 +470,14 @@ pub struct AnalysisProvenance {
     /// quien tiene que saber que el producto lo comprobo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph_source: Option<GraphSource>,
+    /// What each stage that produced the answer cost, when the
+    /// operation measured stages.
+    ///
+    /// Absent in the operations that do not produce a graph, and in the
+    /// routes that measured nothing: an absent measurement is "not
+    /// measured", never zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_timings: Option<crate::application::graph_timings::GraphPhaseTimings>,
 }
 
 /// De donde salio un grafo.
@@ -527,6 +535,7 @@ impl AnalysisProvenance {
             capability: Some(capability.to_string()),
             elapsed_ms: 0,
             graph_source: None,
+            phase_timings: None,
         }
     }
 
@@ -538,6 +547,15 @@ impl AnalysisProvenance {
     /// Dice de donde salio el grafo que esta respuesta publica.
     pub fn with_graph_source(mut self, source: GraphSource) -> Self {
         self.graph_source = Some(source);
+        self
+    }
+
+    /// Says what each stage that produced the answer cost.
+    pub fn with_phase_timings(
+        mut self,
+        timings: crate::application::graph_timings::GraphPhaseTimings,
+    ) -> Self {
+        self.phase_timings = Some(timings);
         self
     }
 }

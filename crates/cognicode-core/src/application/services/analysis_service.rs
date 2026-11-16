@@ -148,6 +148,10 @@ pub struct AnalysisService {
     /// `build_project_graph_filtered` / `build_graph_per_file` /
     /// `build_graph_with_strategy` call.
     last_build_report: Mutex<Option<crate::infrastructure::graph::per_file_graph::BuildReport>>,
+    /// What each stage of the last filtered build cost. Taken (cleared)
+    /// by whoever publishes the build, so a reading is never attributed
+    /// to a build that did not produce it.
+    build_timings: Mutex<Option<crate::application::graph_timings::GraphPhaseTimings>>,
     /// The coverage of the graph the service holds.
     ///
     /// The report says what a BUILD proved; this says what the graph the
@@ -264,6 +268,7 @@ impl AnalysisService {
             file_cache: FileFactsCache::default(),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
+            build_timings: Mutex::new(None),
             last_coverage: Mutex::new(None),
             reparse_costs: Mutex::new(Default::default()),
             reuse: ReuseState::default(),
@@ -568,6 +573,17 @@ impl AnalysisService {
         ))
     }
 
+    /// What each stage of the last filtered build cost, taken once.
+    ///
+    /// Taking clears it: a stage reading kept from an earlier build would
+    /// be attributed to this one, and an answer that cannot be dated
+    /// cannot be compared with another one.
+    pub fn take_build_timings(
+        &self,
+    ) -> Option<crate::application::graph_timings::GraphPhaseTimings> {
+        self.build_timings.lock().unwrap().take()
+    }
+
     pub fn build_project_graph(&self, project_dir: &Path) -> AppResult<()> {
         info!("Building project graph for directory: {:?}", project_dir);
 
@@ -791,6 +807,7 @@ impl AnalysisService {
             )));
         }
 
+        let build_started = std::time::Instant::now();
         let mut store = (self.repository_factory)();
         // The resolver keeps the multiconset of the homonyms and only
         // resolves when a rule demonstrates it, so a call is never
@@ -855,6 +872,8 @@ impl AnalysisService {
                 seen_files
             );
         }
+
+        let walk_done = std::time::Instant::now();
 
         // The skips are collected from the parallel pass, so they live
         // behind a lock.
@@ -976,6 +995,8 @@ impl AnalysisService {
             );
         }
 
+        let parse_done = std::time::Instant::now();
+
         let mut all_calls: Vec<crate::domain::value_objects::CallSite> = Vec::new();
         // What each file declares, for the ledger that decides what the
         // next build can keep.
@@ -1040,6 +1061,8 @@ impl AnalysisService {
             // the line is what lets a refusal be pointed at.
             all_calls.extend(facts.calls.iter().cloned());
         }
+
+        let ingest_done = std::time::Instant::now();
 
         // The relations whose ends are already identified go in now
         // that every symbol of every file is in the store.
@@ -1113,6 +1136,8 @@ impl AnalysisService {
             rejected.len()
         );
 
+        let resolve_done = std::time::Instant::now();
+
         // The status carries the three coverages: the files the walk could
         // not process, the references it could not tie to a declaration,
         // and the relations the store refused.
@@ -1156,6 +1181,22 @@ impl AnalysisService {
             unresolved_edges,
             lang_counts
         );
+
+        let ms = |from: std::time::Instant, to: std::time::Instant| {
+            to.duration_since(from).as_millis() as u64
+        };
+        *self.build_timings.lock().unwrap() =
+            Some(crate::application::graph_timings::GraphPhaseTimings {
+                walk_ms: Some(ms(build_started, walk_done)),
+                parse_ms: Some(ms(walk_done, parse_done)),
+                ingest_ms: Some(ms(parse_done, ingest_done)),
+                resolve_ms: Some(ms(ingest_done, resolve_done)),
+                build_ms: Some(ms(build_started, resolve_done)),
+                files_parsed: Some(parsed_files),
+                files_cached: Some(cached_files),
+                cache_lookup_ms: None,
+                snapshot_serialize_ms: None,
+            });
 
         Ok(crate::infrastructure::graph::per_file_graph::BuildReport {
             graph: call_graph,
