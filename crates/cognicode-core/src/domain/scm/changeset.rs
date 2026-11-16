@@ -242,6 +242,19 @@ impl ChangeSet {
         folded
     }
 
+    /// Forces one path to the conservative `Unknown` verdict: an
+    /// existing entry has its kind replaced (digests kept), and a path
+    /// the derivation never noticed gains an `Unknown` entry. Evidence
+    /// the provider cannot classify must trigger reanalysis, never
+    /// silence.
+    pub fn mark_unknown(&mut self, path: PathKey) {
+        if let Some(change) = self.changes.iter_mut().find(|c| c.path == path) {
+            change.kind = ChangeKind::Unknown;
+        } else {
+            self.changes.push(Change::unknown(path));
+        }
+    }
+
     /// Marks each evidenced `(source, clone)` copy pair as `Copied`.
     /// The clone must be an `Added` path whose content already lives
     /// unchanged in the base inventory; otherwise the pair is

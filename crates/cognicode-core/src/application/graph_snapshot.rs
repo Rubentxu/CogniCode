@@ -287,9 +287,7 @@ fn decide_the_graph(
     // The stages of THIS build, taken so that the next reading cannot be
     // attributed to it. A route that did not record stages leaves the
     // timings absent, which is what an unmeasured stage means.
-    let mut timings = service
-        .take_build_timings()
-        .unwrap_or_default();
+    let mut timings = service.take_build_timings().unwrap_or_default();
 
     // Only persist a snapshot when the build is Complete. A Partial build
     // (unreadable/failed files) must not leave behind a snapshot that a
