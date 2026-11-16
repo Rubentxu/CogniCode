@@ -51,6 +51,12 @@ pub mod graph_cache;
 // whether it is served or calculated again. It lives in the application
 // layer so that the MCP and the CLI share it.
 pub mod graph_snapshot;
+// The same derived work addressed by revision, so a divergent
+// commit reopens as what it was and two branches share extraction by
+// content. Lives beside the latest-tree snapshot because the two are
+// the same question — what did we already derive — asked over a
+// different key.
+pub mod revision_snapshots;
 // The cost of each stage of a graph answer, measured by the product: a
 // baseline that cannot tell a cache hit from a cold parse cannot be
 // compared with another one.
