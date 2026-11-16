@@ -25,6 +25,7 @@ pub mod ast_backend;
 pub mod binding;
 pub mod dataflow_input;
 pub mod detector_ir;
+pub mod detector_reuse;
 pub mod digest;
 pub mod execution;
 pub mod finding;
