@@ -40,6 +40,7 @@ mod architecture_drift_e2e;
 mod architecture_e77_1_wu0_gap_characterization_e2e;
 mod architecture_e77_1_wu3_canonical_grounding_e2e;
 mod architecture_self_host_e2e;
+mod assurance_cbor_golden;
 mod assurance_export_roundtrip;
 mod b2_w1_analysis_outcome_contract;
 mod b2_w4_export_invariants;
