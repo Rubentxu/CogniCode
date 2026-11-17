@@ -63,6 +63,10 @@ pub struct ChartModel {
     pub dependencies: Vec<ChartDependency>,
     /// Files below `templates/`.
     pub templates: Vec<TemplateModel>,
+    /// Directories below `templates/` the reader did not read, so the model
+    /// may describe less than the chart holds.
+    #[serde(default)]
+    pub unread_template_dirs: Vec<String>,
 }
 
 /// A value a template reads that is not set.
@@ -98,6 +102,11 @@ pub enum PartialReason {
         /// What the construct is.
         construct: String,
     },
+    /// A directory below `templates/` was not read.
+    TemplatesNotRead {
+        /// The directory.
+        path: String,
+    },
     /// A declared dependency is not vendored under `charts/`.
     DependencyMissing {
         /// The dependency name.
@@ -123,6 +132,9 @@ impl PartialReason {
                 template,
                 construct,
             } => format!("{template} {construct}"),
+            Self::TemplatesNotRead { path } => {
+                format!("`{path}` was not read, so templates inside it are not modeled")
+            }
             Self::DependencyMissing { name } => {
                 format!("dependency `{name}` is not vendored under charts/")
             }
@@ -165,6 +177,9 @@ impl ChartModel {
                 reasons.push(PartialReason::SchemaRequiredMissing { path: path.clone() });
             }
         }
+        for path in &self.unread_template_dirs {
+            reasons.push(PartialReason::TemplatesNotRead { path: path.clone() });
+        }
         for dependency in self.dependencies.iter().filter(|d| !d.vendored) {
             reasons.push(PartialReason::DependencyMissing {
                 name: dependency.name.clone(),
@@ -204,6 +219,7 @@ mod tests {
             schema: None,
             dependencies: Vec::new(),
             templates,
+            unread_template_dirs: vec![],
         }
     }
 

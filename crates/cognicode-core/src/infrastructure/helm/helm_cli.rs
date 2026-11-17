@@ -163,6 +163,7 @@ mod tests {
             schema: None,
             dependencies: vec![],
             templates: vec![],
+            unread_template_dirs: vec![],
         }
     }
 

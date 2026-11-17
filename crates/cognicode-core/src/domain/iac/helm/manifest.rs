@@ -27,7 +27,7 @@ pub struct ObjectOrigin {
 
 /// Identity of an object across two renders.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct ObjectId {
+pub struct ManifestObjectId {
     /// Kubernetes `kind`.
     pub kind: String,
     /// `metadata.namespace`, when set.
@@ -36,7 +36,7 @@ pub struct ObjectId {
     pub name: String,
 }
 
-impl std::fmt::Display for ObjectId {
+impl std::fmt::Display for ManifestObjectId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.namespace {
             Some(ns) => write!(f, "{}/{ns}/{}", self.kind, self.name),
@@ -227,7 +227,7 @@ pub enum ObjectFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManifestObject {
     /// Identity.
-    pub id: ObjectId,
+    pub id: ManifestObjectId,
     /// `apiVersion`.
     pub api_version: String,
     /// Provenance.
@@ -338,7 +338,7 @@ fn object_from(value: &Value, origin: ObjectOrigin) -> Result<ManifestObject, St
         .and_then(Value::as_str)
         .map(str::to_string);
     Ok(ManifestObject {
-        id: ObjectId {
+        id: ManifestObjectId {
             kind: kind.to_string(),
             namespace,
             name: name.to_string(),

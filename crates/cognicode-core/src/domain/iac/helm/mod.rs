@@ -11,14 +11,14 @@
 //!
 //! The official engine is an optional adapter behind [`ChartRenderer`]. The
 //! analysis core works with none installed ([`NoRenderer`]); it then reports
-//! [`RenderStatus::NotRendered`], [`Coverage::Unknown`] and every check as
+//! [`RenderStatus::NotRendered`], [`RenderCoverage::Unknown`] and every check as
 //! unknown rather than a clean result.
 //!
 //! ## Honesty contract
 //!
 //! - No object exists without a real render. An unrendered chart yields no
 //!   objects, no findings and no negative verdicts.
-//! - A render is [`Coverage::Complete`] only when the chart and values leave
+//! - A render is [`RenderCoverage::Complete`] only when the chart and values leave
 //!   nothing the analysis knows to be undecided (unset values outside
 //!   conditions, schema requirements, missing dependencies, cluster lookups,
 //!   randomness). Otherwise it is partial and every "nothing found" becomes
@@ -36,15 +36,15 @@ mod template;
 mod values;
 
 pub use analysis::{
-    ChartAnalysis, ChartDelta, CheckResult, CheckVerdict, ComparedDelta, Coverage, FactChange,
-    ObjectChange, analyze_chart, compare,
+    ChartAnalysis, ChartDelta, CheckResult, CheckVerdict, ComparedDelta, ManifestFactChange,
+    ObjectChange, RenderCoverage, analyze_chart, compare,
 };
 pub use chart::{ChartDependency, ChartModel, PartialReason, ValueGap, ValuesSchema};
 pub use checks::{HelmCheck, HelmFinding, check_manifest};
 pub use manifest::{
-    ContainerFacts, ExposureFacts, ImageRef, ManifestModel, ManifestObject, ObjectFacts, ObjectId,
-    ObjectOrigin, PodFacts, PublishedPort, RbacFacts, RbacRule, RbacSubject, RenderedDocument,
-    SkippedDocument, WorkloadFacts,
+    ContainerFacts, ExposureFacts, ImageRef, ManifestModel, ManifestObject, ManifestObjectId,
+    ObjectFacts, ObjectOrigin, PodFacts, PublishedPort, RbacFacts, RbacRule, RbacSubject,
+    RenderedDocument, SkippedDocument, WorkloadFacts,
 };
 pub use render::{
     ChartRenderer, NoRenderer, NotRenderedCause, RenderRequest, RenderResponse, RenderStatus,

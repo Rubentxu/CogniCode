@@ -7,14 +7,14 @@ use serde_json::Value;
 
 use super::chart::{ChartModel, PartialReason};
 use super::checks::{HelmCheck, HelmFinding, check_manifest};
-use super::manifest::{ManifestModel, ObjectId};
+use super::manifest::{ManifestModel, ManifestObjectId};
 use super::render::{ChartRenderer, NotRenderedCause, RenderRequest, RenderResponse, RenderStatus};
 use super::values::{effective_values, values_digest};
 
 /// How much of the chart the result covers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "coverage", rename_all = "snake_case")]
-pub enum Coverage {
+pub enum RenderCoverage {
     /// Rendered, and nothing the analysis knows of leaves a part undecided.
     Complete,
     /// Rendered, but part of the chart or values is undecided.
@@ -72,8 +72,8 @@ pub struct ChartAnalysis {
     pub values_digest: String,
     /// Whether a render exists.
     pub render: RenderStatus,
-    /// Coverage of the result.
-    pub coverage: Coverage,
+    /// RenderCoverage of the result.
+    pub coverage: RenderCoverage,
     /// The concrete objects; `None` exactly when nothing was rendered.
     pub manifest: Option<ManifestModel>,
     /// One result per check.
@@ -132,9 +132,9 @@ pub fn analyze_chart(
         ),
     };
     let coverage = match (&manifest, reasons.is_empty()) {
-        (None, _) => Coverage::Unknown { reasons },
-        (Some(_), true) => Coverage::Complete,
-        (Some(_), false) => Coverage::Partial { reasons },
+        (None, _) => RenderCoverage::Unknown { reasons },
+        (Some(_), true) => RenderCoverage::Complete,
+        (Some(_), false) => RenderCoverage::Partial { reasons },
     };
     let results = results_for(&render, &coverage, manifest.as_ref());
     let limits = limits_for(manifest.as_ref());
@@ -152,7 +152,7 @@ pub fn analyze_chart(
 
 fn results_for(
     render: &RenderStatus,
-    coverage: &Coverage,
+    coverage: &RenderCoverage,
     manifest: Option<&ManifestModel>,
 ) -> Vec<CheckResult> {
     let findings = manifest.map(check_manifest).unwrap_or_default();
@@ -176,7 +176,7 @@ fn results_for(
 
 fn verdict_for(
     render: &RenderStatus,
-    coverage: &Coverage,
+    coverage: &RenderCoverage,
     manifest: Option<&ManifestModel>,
     findings: &[HelmFinding],
 ) -> CheckVerdict {
@@ -192,15 +192,15 @@ fn verdict_for(
                 describe(cause)
             )],
         },
-        (_, Coverage::Partial { reasons } | Coverage::Unknown { reasons }, _) => {
+        (_, RenderCoverage::Partial { reasons } | RenderCoverage::Unknown { reasons }, _) => {
             CheckVerdict::Unknown {
                 reasons: reasons.iter().map(PartialReason::describe).collect(),
             }
         }
-        (_, Coverage::Complete, Some(manifest)) => CheckVerdict::NotObserved {
+        (_, RenderCoverage::Complete, Some(manifest)) => CheckVerdict::NotObserved {
             within: format!("{} rendered object(s)", manifest.objects.len()),
         },
-        (_, Coverage::Complete, None) => CheckVerdict::Unknown {
+        (_, RenderCoverage::Complete, None) => CheckVerdict::Unknown {
             reasons: vec!["no manifest available".to_string()],
         },
     }
@@ -239,7 +239,7 @@ fn limits_for(manifest: Option<&ManifestModel>) -> Vec<String> {
 
 /// One changed fact of an object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FactChange {
+pub struct ManifestFactChange {
     /// The fact path (`containers[app].privileged`).
     pub path: String,
     /// Value before; `None` when the fact did not exist.
@@ -252,18 +252,18 @@ pub struct FactChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObjectChange {
     /// The object.
-    pub object: ObjectId,
+    pub object: ManifestObjectId,
     /// Changed facts.
-    pub changes: Vec<FactChange>,
+    pub changes: Vec<ManifestFactChange>,
 }
 
 /// The difference between two renders.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComparedDelta {
     /// Objects only in the second render.
-    pub added: Vec<ObjectId>,
+    pub added: Vec<ManifestObjectId>,
     /// Objects only in the first render.
-    pub removed: Vec<ObjectId>,
+    pub removed: Vec<ManifestObjectId>,
     /// Objects in both whose facts differ.
     pub changed: Vec<ObjectChange>,
     /// Findings only in the second render.
@@ -306,12 +306,12 @@ pub fn compare(before: &ChartAnalysis, after: &ChartAnalysis) -> ChartDelta {
                 .to_string(),
         };
     };
-    let old_objects: BTreeMap<&ObjectId, BTreeMap<String, String>> = old
+    let old_objects: BTreeMap<&ManifestObjectId, BTreeMap<String, String>> = old
         .objects
         .iter()
         .map(|o| (&o.id, o.fact_lines()))
         .collect();
-    let new_objects: BTreeMap<&ObjectId, BTreeMap<String, String>> = new
+    let new_objects: BTreeMap<&ManifestObjectId, BTreeMap<String, String>> = new
         .objects
         .iter()
         .map(|o| (&o.id, o.fact_lines()))
@@ -359,12 +359,12 @@ pub fn compare(before: &ChartAnalysis, after: &ChartAnalysis) -> ChartDelta {
 fn fact_changes(
     before: &BTreeMap<String, String>,
     after: &BTreeMap<String, String>,
-) -> Vec<FactChange> {
+) -> Vec<ManifestFactChange> {
     let paths: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
     paths
         .into_iter()
         .filter(|path| before.get(*path) != after.get(*path))
-        .map(|path| FactChange {
+        .map(|path| ManifestFactChange {
             path: path.clone(),
             before: before.get(path).cloned(),
             after: after.get(path).cloned(),
@@ -375,7 +375,7 @@ fn fact_changes(
 fn caveats(before: &ChartAnalysis, after: &ChartAnalysis) -> Vec<String> {
     [("before", before), ("after", after)]
         .into_iter()
-        .filter(|(_, side)| side.coverage != Coverage::Complete)
+        .filter(|(_, side)| side.coverage != RenderCoverage::Complete)
         .map(|(name, _)| {
             format!("the {name} render has partial coverage: the delta covers only what rendered")
         })
@@ -408,6 +408,7 @@ mod tests {
             schema: None,
             dependencies: vec![],
             templates: vec![TemplateModel::analyze("templates/d.yaml", source)],
+            unread_template_dirs: vec![],
         }
     }
 
@@ -427,7 +428,7 @@ mod tests {
         let analysis = analyze_chart(&chart("i: {{ .Values.image }}"), &[], "r", &NoRenderer);
         assert!(!analysis.render.is_rendered());
         assert!(analysis.manifest.is_none());
-        assert!(matches!(analysis.coverage, Coverage::Unknown { .. }));
+        assert!(matches!(analysis.coverage, RenderCoverage::Unknown { .. }));
         assert_eq!(analysis.findings().count(), 0);
         assert!(
             analysis
@@ -457,7 +458,7 @@ mod tests {
             "r",
             &Fixed(docs(false)),
         );
-        assert_eq!(analysis.coverage, Coverage::Complete);
+        assert_eq!(analysis.coverage, RenderCoverage::Complete);
         let verdict = &analysis
             .result(HelmCheck::PrivilegedContainer)
             .unwrap()
@@ -471,7 +472,7 @@ mod tests {
     fn a_partial_render_turns_a_negative_into_unknown_but_keeps_real_findings() {
         let partial = chart("i: {{ .Values.missing }}");
         let analysis = analyze_chart(&partial, &[], "r", &Fixed(docs(true)));
-        assert!(matches!(analysis.coverage, Coverage::Partial { .. }));
+        assert!(matches!(analysis.coverage, RenderCoverage::Partial { .. }));
         assert!(matches!(
             analysis
                 .result(HelmCheck::PrivilegedContainer)

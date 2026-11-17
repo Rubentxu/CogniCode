@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::manifest::{
-    ContainerFacts, ExposureFacts, ManifestModel, ManifestObject, ObjectFacts, ObjectId,
+    ContainerFacts, ExposureFacts, ManifestModel, ManifestObject, ManifestObjectId, ObjectFacts,
     ObjectOrigin, RbacFacts, WorkloadFacts,
 };
 use crate::domain::findings::FindingSeverity;
@@ -68,7 +68,7 @@ pub struct HelmFinding {
     /// Severity of this finding.
     pub severity: FindingSeverity,
     /// The object.
-    pub object: ObjectId,
+    pub object: ManifestObjectId,
     /// Field path inside the object (`containers[app].securityContext`).
     pub location: String,
     /// What the fact is.
@@ -80,7 +80,7 @@ pub struct HelmFinding {
 impl HelmFinding {
     /// Identity of a finding across two renders: same check, same object, same
     /// place. Detail and origin may legitimately differ.
-    pub fn key(&self) -> (HelmCheck, ObjectId, String) {
+    pub fn key(&self) -> (HelmCheck, ManifestObjectId, String) {
         (self.check, self.object.clone(), self.location.clone())
     }
 }

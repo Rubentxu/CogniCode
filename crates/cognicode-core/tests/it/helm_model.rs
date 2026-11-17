@@ -9,9 +9,9 @@
 use std::path::Path;
 
 use cognicode_core::domain::iac::helm::{
-    ChartAnalysis, ChartDelta, ChartRenderer, CheckVerdict, Coverage, HelmCheck, NoRenderer,
-    NotRenderedCause, PartialReason, RenderRequest, RenderResponse, RenderStatus, analyze_chart,
-    compare,
+    ChartAnalysis, ChartDelta, ChartRenderer, CheckVerdict, HelmCheck, NoRenderer,
+    NotRenderedCause, PartialReason, RenderCoverage, RenderRequest, RenderResponse, RenderStatus,
+    analyze_chart, compare,
 };
 use cognicode_core::infrastructure::helm::{
     HelmCli, parse_rendered_stream, read_chart, read_values_file,
@@ -195,7 +195,7 @@ fn a_chart_that_was_not_rendered_has_no_objects_and_no_clean_verdicts() {
     ));
     assert!(analysis.manifest.is_none(), "no manifest is invented");
     assert_eq!(analysis.findings().count(), 0);
-    assert!(matches!(analysis.coverage, Coverage::Unknown { .. }));
+    assert!(matches!(analysis.coverage, RenderCoverage::Unknown { .. }));
     for check in HelmCheck::ALL {
         assert!(
             matches!(verdict(&analysis, check), CheckVerdict::Unknown { .. }),
@@ -224,7 +224,7 @@ fn partial_values_make_a_render_partial_and_negatives_unknown() {
         &HandAuthoredRender,
     );
 
-    let Coverage::Partial { reasons } = &analysis.coverage else {
+    let RenderCoverage::Partial { reasons } = &analysis.coverage else {
         panic!("expected partial coverage, got {:?}", analysis.coverage);
     };
     assert!(
@@ -260,7 +260,7 @@ fn a_chart_with_a_missing_dependency_and_required_value_is_not_complete() {
         "rel",
         &HandAuthoredRender,
     );
-    let Coverage::Partial { reasons } = &analysis.coverage else {
+    let RenderCoverage::Partial { reasons } = &analysis.coverage else {
         panic!("expected partial coverage, got {:?}", analysis.coverage);
     };
     assert!(reasons.iter().any(|r| matches!(

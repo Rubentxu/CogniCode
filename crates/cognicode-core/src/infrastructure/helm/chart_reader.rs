@@ -8,6 +8,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::domain::iac::helm::{ChartDependency, ChartModel, TemplateModel, ValuesSchema};
+use crate::domain::value_objects::WalkFilter;
+use crate::infrastructure::graph::source_files::real_files;
 
 /// Largest file the reader accepts, so a hostile chart cannot exhaust memory.
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
@@ -66,6 +68,7 @@ pub fn read_chart(root: &Path) -> Result<ChartModel, ChartReadError> {
         None => None,
     };
     let templates = read_templates(root, &mut digest)?;
+    let unread_template_dirs = pruned_template_dirs(root);
     Ok(ChartModel {
         name,
         version,
@@ -81,6 +84,7 @@ pub fn read_chart(root: &Path) -> Result<ChartModel, ChartReadError> {
         schema,
         dependencies: dependencies(&chart, root),
         templates,
+        unread_template_dirs,
     })
 }
 
@@ -216,21 +220,27 @@ fn dependencies(chart: &Value, root: &Path) -> Vec<ChartDependency> {
 }
 
 fn is_vendored(root: &Path, name: &str) -> bool {
-    let Ok(entries) = fs::read_dir(root.join("charts")) else {
-        return false;
-    };
-    entries.flatten().any(|entry| {
-        let file = entry.file_name().to_string_lossy().to_string();
-        file == name || (file.starts_with(&format!("{name}-")) && file.ends_with(".tgz"))
+    let charts = root.join("charts");
+    if fs::symlink_metadata(charts.join(name).join("Chart.yaml")).is_ok_and(|m| m.is_file()) {
+        return true;
+    }
+    let archive_prefix = format!("{name}-");
+    real_files(&charts).any(|file| {
+        file.parent() == Some(charts.as_path())
+            && file.extension().is_some_and(|e| e == "tgz")
+            && file
+                .file_name()
+                .and_then(|f| f.to_str())
+                .is_some_and(|f| f.starts_with(&archive_prefix))
     })
 }
 
 fn read_templates(root: &Path, digest: &mut Sha256) -> Result<Vec<TemplateModel>, ChartReadError> {
-    let mut files = Vec::new();
-    collect_files(&root.join("templates"), &mut files)?;
+    let templates = root.join("templates");
+    let mut files: Vec<PathBuf> = real_files(&templates).collect();
     if files.len() > MAX_TEMPLATES {
         return Err(ChartReadError::TooLarge {
-            path: root.join("templates"),
+            path: templates,
             message: format!("{} files, limit {MAX_TEMPLATES}", files.len()),
         });
     }
@@ -249,22 +259,24 @@ fn read_templates(root: &Path, digest: &mut Sha256) -> Result<Vec<TemplateModel>
         .collect()
 }
 
-fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), ChartReadError> {
-    let entries = match fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(io_error(dir, &error)),
-    };
-    for entry in entries {
-        let path = entry.map_err(|e| io_error(dir, &e))?.path();
-        let meta = fs::symlink_metadata(&path).map_err(|e| io_error(&path, &e))?;
-        if meta.is_dir() {
-            collect_files(&path, out)?;
-        } else if meta.is_file() {
-            out.push(path);
-        }
-    }
-    Ok(())
+/// Directories directly under `templates/` that the project walk policy
+/// prunes (`secrets`, `vendor`, `env`, ...). The reader does not read them,
+/// and says so rather than analysing a chart with a part missing in silence.
+/// Deeper pruned directories are not detected.
+fn pruned_template_dirs(root: &Path) -> Vec<String> {
+    let filter = WalkFilter::default();
+    let mut found: Vec<String> = filter
+        .security_blocklist()
+        .iter()
+        .chain(filter.performance_skips())
+        .filter(|name| {
+            fs::symlink_metadata(root.join("templates").join(name)).is_ok_and(|m| m.is_dir())
+        })
+        .map(|name| format!("templates/{name}"))
+        .collect();
+    found.sort();
+    found.dedup();
+    found
 }
 
 #[cfg(test)]
@@ -359,6 +371,23 @@ mod tests {
             read_chart(dir.path()),
             Err(ChartReadError::TooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn a_templates_directory_the_walk_policy_prunes_is_declared_not_silently_dropped() {
+        let dir = sample();
+        write(dir.path(), "templates/secrets/token.yaml", "kind: Secret");
+        let chart = read_chart(dir.path()).unwrap();
+        assert!(!chart.templates.iter().any(|t| t.path.contains("secrets")));
+        assert_eq!(
+            chart.unread_template_dirs,
+            vec!["templates/secrets".to_string()]
+        );
+        let reasons = chart.partial_reasons(&chart.default_values);
+        assert!(reasons.iter().any(|r| matches!(
+            r,
+            crate::domain::iac::helm::PartialReason::TemplatesNotRead { path } if path == "templates/secrets"
+        )));
     }
 
     #[cfg(unix)]
