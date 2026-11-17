@@ -66,6 +66,38 @@ fn workspace() -> (tempfile::TempDir, PathBuf, PathBuf) {
     (root, workspace, cache)
 }
 
+/// Un historial de dos commits en el workspace.
+///
+/// `compare` lee revisiones de Git: sobre un directorio sin historial no hay
+/// nada que comparar, y su fallo no diría nada de si construye el grafo.
+fn commit_two_revisions(workspace: &Path) {
+    let git = |args: &[&str]| {
+        let no_configuration = workspace.join("no-git-configuration");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(workspace)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .output()
+            .expect("git is installed");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "CogniCode tests"]);
+    git(&["config", "user.email", "tests@example.invalid"]);
+    git(&["add", "lib.rs"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    std::fs::write(workspace.join("lib.rs"), format!("{SOURCE}// changed\n"))
+        .expect("the candidate source is written");
+    git(&["add", "lib.rs"]);
+    git(&["commit", "--quiet", "-m", "candidate"]);
+}
+
 // ---------------------------------------------------------------------------
 // La llamada en frío.
 // ---------------------------------------------------------------------------
@@ -84,6 +116,8 @@ fn arguments_of(goal: &GoalSpec) -> Vec<String> {
             "symbol" => "alpha",
             "file" => "lib.rs",
             "new_name" => "gamma",
+            "base_ref" => "HEAD~1",
+            "head_ref" => "HEAD",
             other => panic!(
                 "the fixture does not know what to answer to the argument `{other}` of the goal \
                  `{}`",
@@ -219,6 +253,9 @@ fn catalogue_requires_graph(name: &str) -> bool {
 fn every_goal_declares_the_graph_it_builds() {
     for goal in goals::registry() {
         let (root, workspace, _cache) = workspace();
+        if goal.name == "compare" {
+            commit_two_revisions(&workspace);
+        }
         let calls = calls_of(goal, &workspace);
 
         let mut built = false;
