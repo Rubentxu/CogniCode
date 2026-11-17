@@ -35,12 +35,16 @@ pub const IAC_PUBLIC_EXPOSURE_SUBJECT: &str = "security.iac.public_exposure";
 pub const IAC_ENCRYPTION_SUBJECT: &str = "security.iac.encryption";
 /// Subject carried by a verifiable excessive-permission misconfiguration.
 pub const IAC_PERMISSIONS_SUBJECT: &str = "security.iac.permissions";
+/// Subject carried by a verifiable workload-hardening gap.
+pub const IAC_WORKLOAD_HARDENING_SUBJECT: &str = "security.iac.workload_hardening";
 /// The finding kind of the public-exposure detector.
 pub const IAC_PUBLIC_EXPOSURE_KIND: &str = "security.iac_public_exposure";
 /// The finding kind of the missing-encryption detector.
 pub const IAC_ENCRYPTION_KIND: &str = "security.iac_missing_encryption";
 /// The finding kind of the excessive-permission detector.
 pub const IAC_PERMISSIONS_KIND: &str = "security.iac_excessive_permissions";
+/// The finding kind of the workload-hardening detector.
+pub const IAC_WORKLOAD_HARDENING_KIND: &str = "security.iac_workload_hardening";
 
 /// A structural family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -57,16 +61,21 @@ pub enum StructuralFamily {
     InfraEncryption,
     /// Infrastructure access granted beyond need (CWE-732).
     InfraPermissions,
+    /// A workload that omits hardening a runtime would otherwise give it:
+    /// running as root, privilege escalation left open, an image reference
+    /// that can change. A risk marker, not a weakness by itself.
+    InfraWorkloadHardening,
 }
 
 impl StructuralFamily {
     /// Every structural family, in a stable order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::HardcodedSecret,
         Self::UnsafeCode,
         Self::InfraPublicExposure,
         Self::InfraEncryption,
         Self::InfraPermissions,
+        Self::InfraWorkloadHardening,
     ];
 
     /// Whether the family reads infrastructure configuration rather than
@@ -74,16 +83,19 @@ impl StructuralFamily {
     pub fn is_infrastructure(self) -> bool {
         matches!(
             self,
-            Self::InfraPublicExposure | Self::InfraEncryption | Self::InfraPermissions
+            Self::InfraPublicExposure
+                | Self::InfraEncryption
+                | Self::InfraPermissions
+                | Self::InfraWorkloadHardening
         )
     }
 
-    /// The CWE the family maps to, when it maps to one. `unsafe` maps to none:
-    /// it is not a weakness by itself.
+    /// The CWE the family maps to, when it maps to one. `unsafe` and workload
+    /// hardening map to none: they are not weaknesses by themselves.
     pub fn cwe(self) -> Option<&'static str> {
         match self {
             Self::HardcodedSecret => Some("CWE-798"),
-            Self::UnsafeCode => None,
+            Self::UnsafeCode | Self::InfraWorkloadHardening => None,
             Self::InfraPublicExposure => Some("CWE-284"),
             Self::InfraEncryption => Some("CWE-311"),
             Self::InfraPermissions => Some("CWE-732"),
@@ -98,6 +110,7 @@ impl StructuralFamily {
             Self::InfraPublicExposure => IAC_PUBLIC_EXPOSURE_SUBJECT,
             Self::InfraEncryption => IAC_ENCRYPTION_SUBJECT,
             Self::InfraPermissions => IAC_PERMISSIONS_SUBJECT,
+            Self::InfraWorkloadHardening => IAC_WORKLOAD_HARDENING_SUBJECT,
         }
     }
 
@@ -109,6 +122,7 @@ impl StructuralFamily {
             Self::InfraPublicExposure => IAC_PUBLIC_EXPOSURE_KIND,
             Self::InfraEncryption => IAC_ENCRYPTION_KIND,
             Self::InfraPermissions => IAC_PERMISSIONS_KIND,
+            Self::InfraWorkloadHardening => IAC_WORKLOAD_HARDENING_KIND,
         }
     }
 
@@ -122,6 +136,9 @@ impl StructuralFamily {
                 DetectorFindingPolicy::new(FindingSeverity::Critical, RiskLevel::High)
             }
             Self::UnsafeCode => DetectorFindingPolicy::new(FindingSeverity::Info, RiskLevel::Low),
+            Self::InfraWorkloadHardening => {
+                DetectorFindingPolicy::new(FindingSeverity::Warning, RiskLevel::Medium)
+            }
             Self::InfraPublicExposure | Self::InfraPermissions => {
                 DetectorFindingPolicy::new(FindingSeverity::Critical, RiskLevel::High)
             }
@@ -144,9 +161,11 @@ impl StructuralFamily {
                     | SourceLanguage::Terraform
             ),
             Self::UnsafeCode => language == SourceLanguage::Rust,
-            Self::InfraPublicExposure | Self::InfraEncryption | Self::InfraPermissions => {
-                language == SourceLanguage::Terraform
+            Self::InfraPublicExposure | Self::InfraPermissions => {
+                matches!(language, SourceLanguage::Terraform | SourceLanguage::Helm)
             }
+            Self::InfraEncryption => language == SourceLanguage::Terraform,
+            Self::InfraWorkloadHardening => language == SourceLanguage::Helm,
         }
     }
 
@@ -622,21 +641,43 @@ mod tests {
     }
 
     #[test]
-    fn infrastructure_families_are_modeled_for_terraform_only_and_secrets_join_them() {
+    fn infrastructure_families_are_modeled_only_for_the_languages_that_have_checks() {
+        let supported = |family: StructuralFamily| -> Vec<SourceLanguage> {
+            SourceLanguage::ALL
+                .into_iter()
+                .filter(|l| family.supports(*l))
+                .collect()
+        };
+        use SourceLanguage::{Helm, Terraform};
+        assert_eq!(
+            supported(StructuralFamily::InfraPublicExposure),
+            [Terraform, Helm]
+        );
+        assert_eq!(
+            supported(StructuralFamily::InfraPermissions),
+            [Terraform, Helm]
+        );
+        assert_eq!(supported(StructuralFamily::InfraEncryption), [Terraform]);
+        assert_eq!(supported(StructuralFamily::InfraWorkloadHardening), [Helm]);
         for family in StructuralFamily::ALL
             .into_iter()
             .filter(|f| f.is_infrastructure())
         {
-            for language in SourceLanguage::ALL {
-                assert_eq!(
-                    family.supports(language),
-                    language == SourceLanguage::Terraform,
-                    "{family:?} {language:?}"
-                );
-            }
-            assert!(family.cwe().is_some());
+            assert!(!family.supports(SourceLanguage::Rust), "{family:?}");
         }
-        assert!(StructuralFamily::HardcodedSecret.supports(SourceLanguage::Terraform));
-        assert!(!StructuralFamily::UnsafeCode.supports(SourceLanguage::Terraform));
+        assert!(StructuralFamily::HardcodedSecret.supports(Terraform));
+        assert!(!StructuralFamily::HardcodedSecret.supports(Helm));
+        assert!(!StructuralFamily::UnsafeCode.supports(Terraform));
+    }
+
+    #[test]
+    fn workload_hardening_is_a_medium_risk_without_a_cwe() {
+        let family = StructuralFamily::InfraWorkloadHardening;
+        assert_eq!(family.cwe(), None);
+        assert_eq!(
+            family.policy(),
+            DetectorFindingPolicy::new(FindingSeverity::Warning, RiskLevel::Medium)
+        );
+        assert_eq!(family.detector().validate(), Ok(()));
     }
 }

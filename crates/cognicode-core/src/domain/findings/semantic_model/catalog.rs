@@ -29,17 +29,22 @@ pub enum SourceLanguage {
     /// the infrastructure families; it has no API adapter because it has no
     /// source-to-sink flow.
     Terraform,
+    /// Helm charts: analysed through the Kubernetes objects a real render
+    /// produced, never through template text. Without a render nothing about
+    /// the chart is decided.
+    Helm,
 }
 
 impl SourceLanguage {
     /// Every language the catalog names, modeled or not, in a stable order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Rust,
         Self::Java,
         Self::Kotlin,
         Self::Go,
         Self::Python,
         Self::Terraform,
+        Self::Helm,
     ];
 
     /// Stable lowercase name for reports.
@@ -51,6 +56,7 @@ impl SourceLanguage {
             Self::Go => "go",
             Self::Python => "python",
             Self::Terraform => "terraform",
+            Self::Helm => "helm",
         }
     }
 

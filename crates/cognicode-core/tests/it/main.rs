@@ -119,6 +119,7 @@ mod h25_file_operations_effect_order;
 mod h28_refused_writes_leave_nothing_and_edits_are_simultaneous;
 mod h43_no_invented_local_homonym_edges;
 mod helm_model;
+mod helm_pack;
 mod iac_query_answers_with_the_edge_it_has;
 mod iac_query_speaks_the_domain_vocabulary;
 mod inherits_edges_without_lsp;

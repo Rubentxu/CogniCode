@@ -854,32 +854,31 @@ fn the_matrix_agrees_with_what_the_runs_actually_do() {
     }
 }
 
-const INFRASTRUCTURE: [StructuralFamily; 3] = [
+const INFRASTRUCTURE: [StructuralFamily; 4] = [
     StructuralFamily::InfraPublicExposure,
     StructuralFamily::InfraEncryption,
     StructuralFamily::InfraPermissions,
+    StructuralFamily::InfraWorkloadHardening,
 ];
 
 #[test]
-fn infrastructure_families_are_modeled_for_terraform_only() {
+fn infrastructure_families_are_modeled_only_for_the_languages_with_checks() {
     let m = matrix();
     for family in INFRASTRUCTURE {
-        let family = SecurityFamily::of_structural(family);
-        assert!(
-            matches!(
-                m.get(SourceLanguage::Terraform, family).unwrap().support,
+        let security_family = SecurityFamily::of_structural(family);
+        for language in SourceLanguage::ALL {
+            let expected = family.supports(language);
+            let supported = matches!(
+                m.get(language, security_family).unwrap().support,
                 Support::Supported { .. }
-            ),
-            "{family:?}"
-        );
-        for language in MODELED {
-            assert!(
-                matches!(
-                    m.get(language, family).unwrap().support,
-                    Support::Unsupported { .. }
-                ),
-                "{language:?} {family:?} must not claim a model it does not have"
             );
+            assert_eq!(
+                supported, expected,
+                "{language:?} {security_family:?} must not claim a model it does not have"
+            );
+        }
+        for language in MODELED {
+            assert!(!family.supports(language), "{language:?} {family:?}");
         }
     }
     for weakness in Weakness::ALL {
@@ -1001,5 +1000,5 @@ fn the_matrix_is_publishable_json_and_round_trips() {
     let json = serde_json::to_string(&m).expect("serializes");
     let back: CapabilityMatrix = serde_json::from_str(&json).expect("deserializes");
     assert_eq!(back, m);
-    assert!(json.contains("\"pack_version\":\"1.1.0\""));
+    assert!(json.contains("\"pack_version\":\"1.2.0\""));
 }

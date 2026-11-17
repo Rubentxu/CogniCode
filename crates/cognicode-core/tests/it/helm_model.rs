@@ -18,13 +18,13 @@ use cognicode_core::infrastructure::helm::{
 };
 use serde_json::{Value, json};
 
-fn write(root: &Path, relative: &str, text: &str) {
+pub(crate) fn write(root: &Path, relative: &str, text: &str) {
     let path = root.join(relative);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
 }
 
-fn demo_chart() -> tempfile::TempDir {
+pub(crate) fn demo_chart() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     write(
@@ -95,7 +95,7 @@ spec:
 
 /// Test double: hand-authored `helm template` output, chosen by the values
 /// layers it is given. It stands in for the engine and nothing more.
-struct HandAuthoredRender;
+pub(crate) struct HandAuthoredRender;
 
 impl ChartRenderer for HandAuthoredRender {
     fn render(&self, request: &RenderRequest<'_>) -> RenderResponse {
@@ -112,6 +112,27 @@ fn analyze(overrides: &[Value]) -> ChartAnalysis {
     let dir = demo_chart();
     let chart = read_chart(dir.path()).unwrap();
     analyze_chart(&chart, overrides, "rel", &HandAuthoredRender)
+}
+
+/// The real Helm engine, or `None` after saying why it did not run.
+///
+/// A machine without `helm` skips the faithful-render lane loudly. A lane
+/// that is supposed to have it sets `COGNICODE_REQUIRE_HELM`, and then its
+/// absence fails the test instead of passing by omission.
+pub(crate) fn real_helm() -> Option<HelmCli> {
+    let cli = HelmCli::from_path();
+    if cli.is_available() {
+        return Some(cli);
+    }
+    assert!(
+        std::env::var_os("COGNICODE_REQUIRE_HELM").is_none(),
+        "COGNICODE_REQUIRE_HELM is set but `helm` is not installed"
+    );
+    eprintln!(
+        "SKIPPED: `helm` is not installed on this machine; the faithful render was not \
+         exercised and only the hand-authored renderer double ran"
+    );
+    None
 }
 
 fn verdict(analysis: &ChartAnalysis, check: HelmCheck) -> CheckVerdict {
@@ -310,14 +331,9 @@ fn the_values_file_a_caller_passes_changes_the_digest_that_names_the_render() {
 
 #[test]
 fn the_real_engine_renders_the_chart_when_it_is_installed() {
-    let cli = HelmCli::from_path();
-    if !cli.is_available() {
-        eprintln!(
-            "SKIPPED: `helm` is not installed on this machine; the faithful render was not \
-             exercised and only the hand-authored renderer double ran"
-        );
+    let Some(cli) = real_helm() else {
         return;
-    }
+    };
     let dir = demo_chart();
     let chart = read_chart(dir.path()).unwrap();
     let analysis = analyze_chart(&chart, &[], "rel", &cli);

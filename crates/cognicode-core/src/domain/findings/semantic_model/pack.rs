@@ -22,7 +22,7 @@ use crate::domain::findings::{BackendRegistry, DetectorIr, EvidenceClass, Findin
 
 /// Version of the pack: its detectors, catalog tables and limits. Bump it when
 /// any of them changes what a result means.
-pub const PACK_VERSION: &str = "1.1.0";
+pub const PACK_VERSION: &str = "1.2.0";
 
 /// What a finding of a family claims.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,11 +83,13 @@ pub enum SecurityFamily {
     InfraEncryption,
     /// CWE-732 in infrastructure configuration.
     InfraPermissions,
+    /// A workload that omits available hardening. A risk marker with no CWE.
+    InfraWorkloadHardening,
 }
 
 impl SecurityFamily {
     /// Every family, in a stable order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::SqlInjection,
         Self::CommandInjection,
         Self::PathTraversal,
@@ -96,6 +98,7 @@ impl SecurityFamily {
         Self::InfraPublicExposure,
         Self::InfraEncryption,
         Self::InfraPermissions,
+        Self::InfraWorkloadHardening,
     ];
 
     /// The family of a taint weakness.
@@ -115,6 +118,7 @@ impl SecurityFamily {
             StructuralFamily::InfraPublicExposure => Self::InfraPublicExposure,
             StructuralFamily::InfraEncryption => Self::InfraEncryption,
             StructuralFamily::InfraPermissions => Self::InfraPermissions,
+            StructuralFamily::InfraWorkloadHardening => Self::InfraWorkloadHardening,
         }
     }
 
@@ -128,7 +132,8 @@ impl SecurityFamily {
             | Self::UnsafeCode
             | Self::InfraPublicExposure
             | Self::InfraEncryption
-            | Self::InfraPermissions => None,
+            | Self::InfraPermissions
+            | Self::InfraWorkloadHardening => None,
         }
     }
 
@@ -140,6 +145,7 @@ impl SecurityFamily {
             Self::InfraPublicExposure => Some(StructuralFamily::InfraPublicExposure),
             Self::InfraEncryption => Some(StructuralFamily::InfraEncryption),
             Self::InfraPermissions => Some(StructuralFamily::InfraPermissions),
+            Self::InfraWorkloadHardening => Some(StructuralFamily::InfraWorkloadHardening),
             Self::SqlInjection | Self::CommandInjection | Self::PathTraversal => None,
         }
     }
@@ -165,7 +171,7 @@ impl SecurityFamily {
     /// Whether findings are vulnerabilities or risks.
     pub fn nature(self) -> FindingNature {
         match self {
-            Self::UnsafeCode => FindingNature::Risk,
+            Self::UnsafeCode | Self::InfraWorkloadHardening => FindingNature::Risk,
             _ => FindingNature::Vulnerability,
         }
     }
@@ -174,7 +180,7 @@ impl SecurityFamily {
     ///
     /// Taint families need a dataflow path (class B); secrets and
     /// infrastructure misconfigurations are construct matches over known
-    /// values (class C); `unsafe` never blocks.
+    /// values (class C); `unsafe` and workload hardening never block.
     pub fn blocking(self) -> BlockingLevel {
         match self {
             Self::SqlInjection | Self::CommandInjection | Self::PathTraversal => {
@@ -190,7 +196,7 @@ impl SecurityFamily {
                 min_evidence_class: EvidenceClass::C,
                 min_risk: RiskLevel::High,
             },
-            Self::UnsafeCode => BlockingLevel::AdvisoryOnly,
+            Self::UnsafeCode | Self::InfraWorkloadHardening => BlockingLevel::AdvisoryOnly,
         }
     }
 
@@ -413,6 +419,10 @@ fn support(
 }
 
 fn limits(language: SourceLanguage, family: SecurityFamily) -> Vec<String> {
+    if language == SourceLanguage::Helm && family.structural().is_some_and(|s| s.supports(language))
+    {
+        return helm_limits(family);
+    }
     let mut limits = Vec::new();
     match family {
         SecurityFamily::SqlInjection => {
@@ -461,6 +471,9 @@ fn limits(language: SourceLanguage, family: SecurityFamily) -> Vec<String> {
                     .into(),
             );
         }
+        SecurityFamily::InfraWorkloadHardening => {
+            limits.push("modeled only for objects rendered from a Helm chart".into());
+        }
     }
     if matches!(
         family,
@@ -493,6 +506,29 @@ fn limits(language: SourceLanguage, family: SecurityFamily) -> Vec<String> {
     limits
 }
 
+/// Limits of the Helm cells. A chart is a template, not configuration: the
+/// verdict is about the objects a real render produced, and the text says so.
+fn helm_limits(family: SecurityFamily) -> Vec<String> {
+    let scope = match family {
+        SecurityFamily::InfraPublicExposure => {
+            "Services of type LoadBalancer or NodePort only; Ingress, gateway and network-policy reachability are not analysed"
+        }
+        SecurityFamily::InfraPermissions => {
+            "privileged containers, host namespaces and host paths, and wildcard RBAC rules only; admission policies are not judged"
+        }
+        SecurityFamily::InfraWorkloadHardening => {
+            "containers that may run as root, leave privilege escalation open or use a mutable image reference; advisory, it never blocks"
+        }
+        _ => "no Helm check exists for this family",
+    };
+    vec![
+        scope.to_string(),
+        "objects exist only when a real `helm template` render produced them; template text is never pattern-matched, and without a renderer every result is Unknown".to_string(),
+        "a render that is partial, or that omits a template, leaves its checks Unknown; a negative result names what was not rendered".to_string(),
+        "only the default chart values are rendered; other values files, subcharts that are not vendored and cluster state are not analysed. Findings point at the rendered object, not at a template line".to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -523,13 +559,19 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_is_a_risk_that_can_never_block_and_the_rest_are_vulnerabilities() {
-        assert_eq!(SecurityFamily::UnsafeCode.nature(), FindingNature::Risk);
-        assert_eq!(SecurityFamily::UnsafeCode.blocking().gate(), None);
-        assert_eq!(SecurityFamily::UnsafeCode.cwe(), None);
+    fn risk_families_can_never_block_and_the_rest_are_vulnerabilities() {
+        let risks = [
+            SecurityFamily::UnsafeCode,
+            SecurityFamily::InfraWorkloadHardening,
+        ];
+        for family in risks {
+            assert_eq!(family.nature(), FindingNature::Risk);
+            assert_eq!(family.blocking().gate(), None);
+            assert_eq!(family.cwe(), None);
+        }
         for family in SecurityFamily::ALL
             .into_iter()
-            .filter(|f| *f != SecurityFamily::UnsafeCode)
+            .filter(|f| !risks.contains(f))
         {
             assert_eq!(family.nature(), FindingNature::Vulnerability);
             assert!(family.blocking().gate().is_some());
