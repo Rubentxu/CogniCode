@@ -13,6 +13,7 @@
 //!    work; running it on the async worker made the deadline unobservable.
 
 use crate::common::McpSession;
+use cognicode_core::application::revision_snapshots::RevisionSnapshotStore;
 use cognicode_core::interface::mcp::error::{ErrorKind, InterfaceError};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_mcp::rmcp_adapter::call_tool_handler_with_window;
@@ -57,8 +58,21 @@ fn repository_with_two_commits() -> (tempfile::TempDir, String) {
     (directory, base)
 }
 
+/// `compare` through a server with a cache of its own.
 async fn compare_over_the_wire(workspace: &Path, base: &str, head: &str) -> Value {
-    let mut session = McpSession::spawn(workspace).await.expect("spawn");
+    let session = McpSession::spawn(workspace).await.expect("spawn");
+    ask_compare(session, base, head).await
+}
+
+/// `compare` through a server that keeps what it derives in `cache`.
+async fn compare_over_the_wire_in(workspace: &Path, cache: &Path, base: &str, head: &str) -> Value {
+    let session = McpSession::spawn_with_cache(workspace, cache)
+        .await
+        .expect("spawn");
+    ask_compare(session, base, head).await
+}
+
+async fn ask_compare(mut session: McpSession, base: &str, head: &str) -> Value {
     let response = session
         .request(
             "tools/call",
@@ -80,8 +94,9 @@ fn text(response: &Value) -> String {
 #[tokio::test]
 async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     let (repository, base) = repository_with_two_commits();
+    let cache = tempfile::tempdir().expect("cache");
 
-    let response = compare_over_the_wire(repository.path(), &base, "HEAD").await;
+    let response = compare_over_the_wire_in(repository.path(), cache.path(), &base, "HEAD").await;
 
     assert_eq!(
         response["result"]["isError"].as_bool(),
@@ -108,6 +123,29 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     );
     assert_eq!(answer["work_reuse"]["affected"], 1);
     assert_eq!(answer["work_reuse"]["unaffected"], 0);
+    // What the answer says it persisted is on disk, in the cache the server
+    // was given and nowhere else.
+    assert_eq!(answer["revision_facts"]["persisted"], true, "{answer}");
+    let canonical = repository.path().canonicalize().expect("canonical root");
+    let snapshots = RevisionSnapshotStore::for_workspace(cache.path(), &canonical);
+    assert_eq!(
+        snapshot_files(snapshots.root()),
+        2,
+        "one snapshot per compared revision"
+    );
+}
+
+/// The `.snap` files directly under `dir`: the revision snapshots, apart
+/// from the per-file fact objects that live in a subdirectory.
+fn snapshot_files(dir: &Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "snap"))
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 #[tokio::test]

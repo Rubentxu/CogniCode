@@ -577,3 +577,61 @@ fn unknown_provider_is_refused_by_name() {
         "got {error:?}"
     );
 }
+
+// ----- the batch reader never leaves its git process behind -----------
+
+/// A git stand-in: every command goes to the real binary except the
+/// `cat-file --batch` stream, which records its pid, answers with
+/// `reply` and then stays alive for a long time.
+#[cfg(unix)]
+fn lingering_batch_git(dir: &Path, reply: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let pid_file = dir.join("batch.pid");
+    let program = dir.join("lingering-git");
+    let script = format!(
+        "#!/bin/sh\n\
+         if [ \"$3\" = \"cat-file\" ] && [ \"$4\" = \"--batch\" ]; then\n\
+         echo $$ > '{pid}'\n\
+         echo '{reply}'\n\
+         exec sleep 60\n\
+         fi\n\
+         exec /usr/bin/git \"$@\"\n",
+        pid = pid_file.display(),
+    );
+    fs::write(&program, script).expect("write the git stand-in");
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).expect("make it executable");
+    (program, pid_file)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_batch_that_fails_midway_leaves_no_git_process_behind() {
+    let (repo, _sha) = repo_with_baseline();
+    let wrong_object = format!("{} blob 3", "0".repeat(40));
+    for (shape, reply) in [
+        ("malformed header", "this is not a cat-file header"),
+        ("answer for another object", wrong_object.as_str()),
+    ] {
+        let tools = tempfile::tempdir().expect("tools dir");
+        let (program, pid_file) = lingering_batch_git(tools.path(), reply);
+        let adapter =
+            GitScmAdapter::with_git_program(repo.path(), program.to_str().expect("utf-8"));
+        let head = GitScmAdapter::new(repo.path())
+            .resolve(&source(), "HEAD")
+            .expect("HEAD resolves");
+
+        let answers = adapter.contents(&head, &[key("a.txt")], 1_000);
+
+        assert!(
+            matches!(answers.as_slice(), [Err(ScmError::ProviderFailure { .. })]),
+            "{shape}: the broken stream is a named failure, got {answers:?}"
+        );
+        let pid = fs::read_to_string(&pid_file)
+            .unwrap_or_else(|e| panic!("{shape}: the batch process never started: {e}"));
+        let pid = pid.trim();
+        assert!(
+            !Path::new("/proc").join(pid).exists(),
+            "{shape}: git cat-file (pid {pid}) must be killed and reaped, not left running"
+        );
+    }
+}
