@@ -45,7 +45,7 @@ fn php_corpus(root: &Path) {
 
 /// The answer of the goal, and the text it renders.
 fn answer_of(root: &Path, symbol: &str) -> (GoalFind, String) {
-    let answer = find(root, symbol).expect("the goal answers");
+    let answer = find(root, None, symbol).expect("the goal answers");
     let text = render(&serde_json::to_value(&answer).expect("the answer is serialisable"));
     (answer, text)
 }

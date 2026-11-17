@@ -44,6 +44,53 @@ pub fn binary_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cognicode-mcp"))
 }
 
+/// Points the server that `cmd` will spawn at a cache of its own and
+/// returns the directory that holds it.
+///
+/// The product keeps what it derives from a workspace in the cache it reads
+/// from `XDG_CACHE_HOME`. A harness that spawns the real binary and leaves
+/// that variable alone writes into the cache of whoever runs the suite, and
+/// reads whatever another run left there. The caller keeps the returned
+/// directory alive for as long as the child runs; dropping it removes the
+/// cache.
+pub fn pin_cache(cmd: &mut std::process::Command) -> tempfile::TempDir {
+    let cache = tempfile::tempdir().expect("a temporary cache for the server");
+    cmd.env("XDG_CACHE_HOME", cache.path());
+    cache
+}
+
+/// A spawned server together with the cache it was pinned to, so the cache
+/// lives exactly as long as the process that writes into it.
+///
+/// It dereferences to the child, so a helper that reads or reaps a child
+/// takes this type where it took the child.
+pub struct WithOwnCache<C> {
+    child: C,
+    _cache: tempfile::TempDir,
+}
+
+impl<C> WithOwnCache<C> {
+    pub fn new(child: C, cache: tempfile::TempDir) -> Self {
+        Self {
+            child,
+            _cache: cache,
+        }
+    }
+}
+
+impl<C> std::ops::Deref for WithOwnCache<C> {
+    type Target = C;
+    fn deref(&self) -> &C {
+        &self.child
+    }
+}
+
+impl<C> std::ops::DerefMut for WithOwnCache<C> {
+    fn deref_mut(&mut self) -> &mut C {
+        &mut self.child
+    }
+}
+
 pub struct McpSession {
     child: Child,
     stdin: tokio::process::ChildStdin,
@@ -339,6 +386,7 @@ impl McpSession {
         // that variable — finds no catalogue at all. Removing it here makes
         // the child indistinguishable from a published binary.
         cmd.env_remove("CARGO_MANIFEST_DIR");
+        let cache = pin_cache(cmd.as_std_mut());
         if let Some(dir) = process_cwd {
             cmd.current_dir(dir);
         }
@@ -354,7 +402,7 @@ impl McpSession {
             stdin,
             stdout: BufReader::new(stdout),
             next_id: 1,
-            _own_cache: None,
+            _own_cache: Some(cache),
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"a013","version":"0"}}})).await?;
         let line = s.read_line_within("la respuesta a initialize").await?;

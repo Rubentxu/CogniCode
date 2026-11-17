@@ -71,8 +71,9 @@ const O_NONBLOCK: i32 = 2048;
 // ---------------------------------------------------------------------------
 
 /// Spawn the MCP binary under test.
-fn spawn_binary(cwd: &Path, read_only: bool) -> Child {
+fn spawn_binary(cwd: &Path, read_only: bool) -> common::WithOwnCache<Child> {
     let mut cmd = Command::new(common::binary_path());
+    let cache = common::pin_cache(&mut cmd);
     cmd.arg("--cwd").arg(cwd);
     if read_only {
         cmd.arg("--read-only");
@@ -80,7 +81,7 @@ fn spawn_binary(cwd: &Path, read_only: bool) -> Child {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    cmd.spawn().expect("spawn cognicode-mcp")
+    common::WithOwnCache::new(cmd.spawn().expect("spawn cognicode-mcp"), cache)
 }
 
 /// Send a JSON-RPC frame (one line, newline appended).
@@ -183,7 +184,7 @@ fn rpc_recv_by_id(child: &mut Child, expected_id: i64, timeout_ms: u64) -> (Opti
 }
 
 /// Reap the child: close stdin, drain stderr, wait, assert no panic.
-fn wait_clean(mut child: Child) -> (ExitStatus, String) {
+fn wait_clean(mut child: common::WithOwnCache<Child>) -> (ExitStatus, String) {
     drop(child.stdin.take());
     let mut stderr_buf = String::new();
     if let Some(mut err) = child.stderr.take() {

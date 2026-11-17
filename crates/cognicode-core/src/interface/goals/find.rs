@@ -82,8 +82,8 @@ pub struct FoundSymbol {
 }
 
 /// La respuesta del goal `find` para ese símbolo.
-pub fn find(workspace: &Path, symbol: &str) -> Result<GoalFind, String> {
-    let (service, built) = service_with_graph(workspace)?;
+pub fn find(workspace: &Path, cache_root: Option<&Path>, symbol: &str) -> Result<GoalFind, String> {
+    let (service, built) = service_with_graph(workspace, cache_root)?;
     let locations: Vec<FoundSymbol> = service
         .find_symbol(symbol, workspace)
         .locations
@@ -148,7 +148,7 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     let input: FindInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `find` are not valid: {error}"))?;
-    let answer = find(workspace, &input.symbol)?;
+    let answer = find(workspace, ctx.cache_root, &input.symbol)?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `find` is not serialisable: {error}"))
 }
@@ -180,7 +180,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
 
-        let answer = find(dir.path(), "nowhere").expect("the goal answers");
+        let answer = find(dir.path(), None, "nowhere").expect("the goal answers");
 
         assert!(answer.locations.is_empty());
         assert!(answer.summary.contains("not in the project's symbols"));
@@ -196,7 +196,7 @@ mod tests {
         .expect("write");
 
         for name in ["SurfaceProfile", "Cfg"] {
-            let answer = find(dir.path(), name).expect("the goal answers");
+            let answer = find(dir.path(), None, name).expect("the goal answers");
             assert!(
                 !answer.locations.is_empty(),
                 "`{name}` is declared in lib.rs but find says: {}",
@@ -214,7 +214,7 @@ mod tests {
         )
         .expect("write");
 
-        let answer = find(dir.path(), "nowhere").expect("the goal answers");
+        let answer = find(dir.path(), None, "nowhere").expect("the goal answers");
 
         assert!(answer.locations.is_empty());
         assert!(
@@ -229,7 +229,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("k.kt"), "class K\n").expect("write");
 
-        let answer = find(dir.path(), "nowhere").expect("the goal answers");
+        let answer = find(dir.path(), None, "nowhere").expect("the goal answers");
 
         assert!(
             !answer.summary.contains("not indexed"),
@@ -243,7 +243,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn helper() {}\nfn main() {}").expect("write");
 
-        let answer = find(dir.path(), "helper").expect("the goal answers");
+        let answer = find(dir.path(), None, "helper").expect("the goal answers");
 
         assert_eq!(answer.locations.len(), 1);
         assert!(answer.locations[0].file.ends_with("main.rs"));

@@ -69,8 +69,8 @@ pub struct LanguageCount {
 }
 
 /// La respuesta del goal `overview` para ese workspace.
-pub fn overview(workspace: &Path) -> Result<GoalOverview, String> {
-    let (service, built) = service_with_graph(workspace)?;
+pub fn overview(workspace: &Path, cache_root: Option<&Path>) -> Result<GoalOverview, String> {
+    let (service, built) = service_with_graph(workspace, cache_root)?;
     let stats = service.get_graph_stats();
 
     let mut languages: Vec<LanguageCount> = stats
@@ -106,7 +106,7 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     serde_json::from_value::<OverviewInput>(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `overview` are not valid: {error}"))?;
-    let answer = overview(workspace)?;
+    let answer = overview(workspace, ctx.cache_root)?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `overview` is not serialisable: {error}"))
 }
@@ -140,7 +140,7 @@ mod tests {
         )
         .expect("write");
 
-        let answer = overview(dir.path()).expect("the goal answers");
+        let answer = overview(dir.path(), None).expect("the goal answers");
 
         assert_eq!(answer.goal, "overview");
         assert_eq!(answer.symbols, 2);
@@ -150,13 +150,30 @@ mod tests {
     }
 
     #[test]
+    fn a_goal_keeps_its_snapshot_in_the_cache_it_was_given() {
+        use crate::application::graph_cache::snapshot_path;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
+        let cache = tempfile::tempdir().expect("tempdir");
+        let environment = GoalEnvironment::new(dir.path(), Some(cache.path()));
+
+        run(&environment, &serde_json::json!({})).expect("the goal answers");
+
+        assert!(
+            snapshot_path(cache.path(), dir.path()).exists(),
+            "the snapshot of the goal is in the cache it was given"
+        );
+    }
+
+    #[test]
     fn the_languages_come_in_the_same_order_every_time() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
         std::fs::write(dir.path().join("app.py"), "def main():\n    pass\n").expect("write");
 
-        let first = overview(dir.path()).expect("the goal answers");
-        let second = overview(dir.path()).expect("the goal answers");
+        let first = overview(dir.path(), None).expect("the goal answers");
+        let second = overview(dir.path(), None).expect("the goal answers");
 
         let names = |overview: &GoalOverview| {
             overview

@@ -120,7 +120,7 @@ fn envelope_of(
 fn impact_publishes_what_it_covered() {
     let (_tmp, root) = readable_tree();
 
-    let answer = impact::impact(&root, "helper").expect("the goal answers");
+    let answer = impact::impact(&root, None, "helper").expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("impact", &answer, &root);
 
@@ -143,7 +143,7 @@ fn impact_publishes_what_it_covered() {
 fn trace_publishes_what_it_covered() {
     let (_tmp, root) = readable_tree();
 
-    let answer = trace::trace(&root, "helper", "both", 1).expect("the goal answers");
+    let answer = trace::trace(&root, None, "helper", "both", 1).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("trace", &answer, &root);
 
@@ -166,7 +166,7 @@ fn trace_publishes_what_it_covered() {
 fn overview_publishes_when_its_answer_was_computed() {
     let (_tmp, root) = readable_tree();
 
-    let answer = overview::overview(&root).expect("the goal answers");
+    let answer = overview::overview(&root, None).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("overview", &answer, &root);
 
@@ -185,7 +185,7 @@ fn overview_publishes_when_its_answer_was_computed() {
 fn overview_publishes_the_coverage_of_the_graph_it_counts() {
     let (_tmp, root) = tree_with_an_ambiguous_call();
 
-    let answer = overview::overview(&root).expect("the goal answers");
+    let answer = overview::overview(&root, None).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
 
     let coverage = &answer["coverage"];
@@ -210,7 +210,7 @@ fn overview_publishes_the_coverage_of_the_graph_it_counts() {
 fn a_tree_with_a_hole_is_published_as_partial() {
     let (_tmp, root) = tree_with_a_hole();
 
-    let answer = impact::impact(&root, "helper").expect("the goal answers");
+    let answer = impact::impact(&root, None, "helper").expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("impact", &answer, &root);
 

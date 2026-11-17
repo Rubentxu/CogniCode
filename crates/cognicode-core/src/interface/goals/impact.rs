@@ -65,8 +65,12 @@ pub struct GoalImpact {
 }
 
 /// La respuesta del goal `impact` para ese símbolo.
-pub fn impact(workspace: &Path, symbol: &str) -> Result<GoalImpact, String> {
-    let (_service, built) = service_with_graph(workspace)?;
+pub fn impact(
+    workspace: &Path,
+    cache_root: Option<&Path>,
+    symbol: &str,
+) -> Result<GoalImpact, String> {
+    let (_service, built) = service_with_graph(workspace, cache_root)?;
     // The refusal names the symbol, and for a homonym it names the
     // candidates: the caller writes the identity it means and asks again.
     let impact =
@@ -104,7 +108,7 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     let input: ImpactInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `impact` are not valid: {error}"))?;
-    let answer = impact(workspace, &input.symbol)?;
+    let answer = impact(workspace, ctx.cache_root, &input.symbol)?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `impact` is not serialisable: {error}"))
 }
@@ -131,7 +135,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
 
-        let answer = impact(dir.path(), "nowhere");
+        let answer = impact(dir.path(), None, "nowhere");
 
         assert!(
             answer.is_err(),
