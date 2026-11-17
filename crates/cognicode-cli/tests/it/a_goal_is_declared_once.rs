@@ -376,3 +376,100 @@ async fn the_goal_answers_by_its_name() {
         "the answer arrives with no summary: {answer}"
     );
 }
+
+#[tokio::test]
+async fn compare_is_the_same_cli_and_mcp_contract_and_does_not_claim_impact() {
+    let goal = goals::find("compare").expect("the registry declares compare");
+    let workspace = tempfile::tempdir().expect("temporary Git repository");
+    let git = |args: &[&str]| {
+        let no_configuration = workspace.path().join("no-git-configuration");
+        let output = std::process::Command::new("git")
+            .env("PATH", "/usr/bin:/bin")
+            .arg("-C")
+            .arg(workspace.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .output()
+            .expect("git is installed");
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "CogniCode tests"]);
+    git(&["config", "user.email", "tests@example.invalid"]);
+    git(&["symbolic-ref", "HEAD", "refs/heads/main"]);
+    std::fs::write(workspace.path().join("src.rs"), "fn base() {}\n").expect("write base");
+    git(&["add", "src.rs"]);
+    let base_tree = String::from_utf8(git(&["write-tree"])).expect("base tree is UTF-8");
+    let base = String::from_utf8(git(&["commit-tree", base_tree.trim(), "-m", "base"]))
+        .expect("base revision is UTF-8");
+    git(&["update-ref", "refs/heads/main", base.trim()]);
+    std::fs::write(workspace.path().join("src.rs"), "fn candidate() {}\n")
+        .expect("write candidate");
+    git(&["add", "src.rs"]);
+    let candidate_tree = String::from_utf8(git(&["write-tree"])).expect("candidate tree is UTF-8");
+    let candidate = String::from_utf8(git(&[
+        "commit-tree",
+        candidate_tree.trim(),
+        "-p",
+        base.trim(),
+        "-m",
+        "candidate",
+    ]))
+    .expect("candidate revision is UTF-8");
+    git(&["update-ref", "refs/heads/main", candidate.trim()]);
+    std::fs::write(workspace.path().join("staged.rs"), "fn staged() {}\n").expect("write staged");
+    git(&["add", "staged.rs"]);
+    std::fs::write(workspace.path().join("src.rs"), "fn dirty() {}\n").expect("write dirty");
+    std::fs::write(workspace.path().join("untracked.rs"), "fn untracked() {}\n")
+        .expect("write untracked");
+
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
+        .try_get_matches_from(["compare", "--base-ref", base.trim(), "--head-ref", "HEAD"])
+        .expect("the CLI parses both revisions");
+    let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)
+        .await
+        .expect("the CLI goal answers");
+    let CommandOutput::Rendered { text, .. } = output else {
+        panic!("compare returns its shared goal envelope");
+    };
+    let cli_envelope: Value = serde_json::from_str(&text).expect("CLI envelope is JSON");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(workspace.path().to_path_buf())
+        .build();
+    let mcp_answer = handle_goal(
+        &ctx,
+        goal,
+        serde_json::json!({"base_ref": base.trim(), "head_ref": "HEAD"}),
+    )
+    .await
+    .expect("the MCP goal answers");
+
+    assert_eq!(cli_envelope.get("result"), Some(&mcp_answer));
+    assert_eq!(mcp_answer["coverage"]["changed_paths"], 1);
+    assert_eq!(mcp_answer["coverage"]["analysis"], "not_evaluated");
+    assert_eq!(mcp_answer["impact_status"], "not_evaluated");
+    assert_eq!(mcp_answer["work_reuse_status"], "not_evaluated");
+    assert!(
+        mcp_answer["work_reuse_reason"]
+            .as_str()
+            .is_some_and(|reason| { reason.contains("prior execution read-sets") })
+    );
+    assert_eq!(mcp_answer["changes"][0]["path"], "src.rs");
+    assert_eq!(
+        mcp_answer["working_copy"]["staged_changes"][0]["path"],
+        "staged.rs"
+    );
+    let dirty_paths = mcp_answer["working_copy"]["dirty_paths"]
+        .as_array()
+        .expect("working-tree paths are published");
+    assert!(dirty_paths.iter().any(|path| path == "src.rs"));
+    assert!(dirty_paths.iter().any(|path| path == "untracked.rs"));
+}

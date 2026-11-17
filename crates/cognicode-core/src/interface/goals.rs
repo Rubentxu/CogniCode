@@ -377,6 +377,21 @@ usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit \
     render: audit::render,
 };
 
+/// El goal `compare`: qué cambió entre dos revisiones.
+pub const COMPARE: GoalSpec = GoalSpec {
+    name: "compare",
+    title: "Qué cambió entre dos revisiones",
+    description: "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+    examples: &["cognicode compare --base-ref main --head-ref HEAD"],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::compare",
+    requires_graph: false,
+    replaces: &[],
+    run: compare::run,
+    render: compare::render,
+};
+
 /// El goal `change`: el cambio que se va a hacer.
 pub const CHANGE: GoalSpec = GoalSpec {
     name: "change",
@@ -432,8 +447,8 @@ costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, \
 };
 
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 10] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, CHANGE, RECIPE,
+static REGISTRY: [GoalSpec; 11] = [
+    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, CHANGE, RECIPE,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -460,6 +475,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "impact" => crate::interface::schema::schema_of::<impact::ImpactInput>(),
         "overview" => crate::interface::schema::schema_of::<overview::OverviewInput>(),
         "audit" => crate::interface::schema::schema_of::<audit::AuditInput>(),
+        "compare" => crate::interface::schema::schema_of::<compare::CompareInput>(),
         "change" => crate::interface::schema::schema_of::<change::ChangeInput>(),
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         _ => Map::new(),
@@ -625,6 +641,11 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
              acción aparte."
                 .to_string(),
         ]
+    } else if goal.name == "compare" {
+        vec![
+            "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents or evaluate semantic impact and prior-work reuse without revision facts and execution read-sets."
+                .to_string(),
+        ]
     } else {
         vec![
             "El goal se monta sobre el dueño que ya calcula esto: su respuesta no \
@@ -690,6 +711,7 @@ pub struct GoalInfo {
 pub mod audit;
 pub mod change;
 pub mod common;
+pub mod compare;
 pub mod context;
 pub mod find;
 pub mod impact;
@@ -722,5 +744,20 @@ mod tests {
             assert!(!phase.as_str().is_empty());
             assert!(!phase.description().is_empty());
         }
+    }
+
+    #[test]
+    fn compare_goal_is_declared_as_a_read_only_revision_comparison() {
+        let goal = find("compare").expect("the registry declares the compare goal");
+        let schema = input_schema(goal);
+        let properties = schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .expect("compare publishes input properties");
+
+        assert_eq!(goal.authority, GoalAuthority::Read);
+        assert!(!goal.requires_graph);
+        assert!(properties.contains_key("base_ref"));
+        assert!(properties.contains_key("head_ref"));
     }
 }
