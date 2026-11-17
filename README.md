@@ -500,7 +500,7 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 ## Versioning
 
 - **Current release:** `v0.105.0` — cut from this tree as `v0.105.0`
-  (`main` at `793033d4`). A minor release: the release publishes a
+  (`main` at `3c96a90d`). A minor release: the release publishes a
   **standalone lane** (musl, statically linked, no glibc dependency)
   alongside the native one, the binary assets were generated with the
   release factory from the same tree, and a Linux x86_64 host installs the
