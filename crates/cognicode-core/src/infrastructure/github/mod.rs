@@ -22,6 +22,8 @@ pub mod mock_client;
 #[cfg(feature = "multimodal")]
 pub mod octocrab_client;
 pub mod review_adapter;
+#[cfg(test)]
+mod review_conformance_tests;
 
 #[cfg(feature = "multimodal")]
 pub use client::{GitHubClient, GitHubError, IssueState, RawIssue};

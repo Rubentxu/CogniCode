@@ -21,6 +21,10 @@ mod report;
 mod target;
 
 #[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
+#[cfg(test)]
+pub(crate) mod conformance_tests;
+#[cfg(any(test, feature = "test-support"))]
 pub mod fake;
 
 pub use error::ForgeError;

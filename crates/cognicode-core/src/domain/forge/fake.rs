@@ -4,13 +4,15 @@
 //! The fake follows the port contracts exactly (unknown pull request,
 //! declared capabilities, receipts naming the recorded revision), so a
 //! passing review over it says something about the use case and not
-//! about the fake. It is compiled for unit tests and under the
-//! `test-support` feature.
+//! about the fake. [`FakeForgeHarness`] lets the conformance suites of
+//! [`super::conformance`] drive it. It is compiled for unit tests and
+//! under the `test-support` feature.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use crate::domain::scm::RevisionHandle;
+use crate::domain::scm::{RevisionHandle, SourceRef};
 
+use super::conformance::{ForgeFixture, ForgeHarness, ForgeScenario, ProvisionedForge, Shared};
 use super::error::ForgeError;
 use super::grant::ExecutionGrant;
 use super::identity::{MergeBase, MergePreview, PullRequestId, PullRequestState};
@@ -26,9 +28,27 @@ use super::target::EvaluationTarget;
 pub struct FakeForge {
     capabilities: ForgeCapabilities,
     state: Mutex<PullRequestState>,
-    merge_base: MergeBase,
-    merge_candidate: MergePreview,
+    merge_base: Mutex<MergeBase>,
+    merge_candidate: Mutex<ComputedCandidate>,
     published: Mutex<Vec<CheckReport>>,
+}
+
+/// A merge preview and the two tips it was computed for: a candidate is
+/// a function of both, so it answers for no other pair.
+struct ComputedCandidate {
+    preview: MergePreview,
+    head: RevisionHandle,
+    base_tip: RevisionHandle,
+}
+
+impl ComputedCandidate {
+    fn for_state(preview: MergePreview, state: &PullRequestState) -> Self {
+        Self {
+            preview,
+            head: state.head.clone(),
+            base_tip: state.base_tip.clone(),
+        }
+    }
 }
 
 impl FakeForge {
@@ -42,9 +62,12 @@ impl FakeForge {
                 merge_base: true,
                 merge_candidate: true,
             },
+            merge_candidate: Mutex::new(ComputedCandidate::for_state(
+                MergePreview::Pending,
+                &state,
+            )),
             state: Mutex::new(state),
-            merge_base,
-            merge_candidate: MergePreview::Pending,
+            merge_base: Mutex::new(merge_base),
             published: Mutex::new(Vec::new()),
         }
     }
@@ -54,14 +77,31 @@ impl FakeForge {
         self
     }
 
-    pub fn with_merge_base(mut self, merge_base: MergeBase) -> Self {
-        self.merge_base = merge_base;
+    pub fn with_merge_base(self, merge_base: MergeBase) -> Self {
+        self.set_merge_base(merge_base);
         self
     }
 
-    pub fn with_merge_candidate(mut self, candidate: MergePreview) -> Self {
-        self.merge_candidate = candidate;
+    /// The merge preview of the pull request as it is now.
+    pub fn with_merge_candidate(self, candidate: MergePreview) -> Self {
+        self.set_merge_candidate(candidate);
         self
+    }
+
+    /// Replaces the merge-base the forge reports.
+    pub fn set_merge_base(&self, merge_base: MergeBase) {
+        *self.merge_base.lock().expect("fake forge merge-base lock") = merge_base;
+    }
+
+    /// Records `candidate` as the merge preview of the pull request as
+    /// it is NOW. If either tip moves afterwards the forge answers
+    /// `Pending` until a new candidate is recorded.
+    pub fn set_merge_candidate(&self, candidate: MergePreview) {
+        let computed = ComputedCandidate::for_state(candidate, &self.current());
+        *self
+            .merge_candidate
+            .lock()
+            .expect("fake forge candidate lock") = computed;
     }
 
     /// Replaces the pull request the forge reports from now on.
@@ -100,16 +140,32 @@ impl ReviewReader for FakeForge {
                 capability: "merge_base",
             });
         }
-        Ok(self.merge_base.clone())
+        Ok(self
+            .merge_base
+            .lock()
+            .expect("fake forge merge-base lock")
+            .clone())
     }
 
-    fn merge_candidate(&self, _state: &PullRequestState) -> Result<MergePreview, ForgeError> {
+    fn merge_candidate(&self, state: &PullRequestState) -> Result<MergePreview, ForgeError> {
         if !self.capabilities.merge_candidate {
             return Err(ForgeError::CapabilityUnsupported {
                 capability: "merge_candidate",
             });
         }
-        Ok(self.merge_candidate.clone())
+        let current = self.current();
+        let computed = self
+            .merge_candidate
+            .lock()
+            .expect("fake forge candidate lock");
+        let asked_is_current = state.head == current.head && state.base_tip == current.base_tip;
+        let computed_is_current =
+            computed.head == current.head && computed.base_tip == current.base_tip;
+        if asked_is_current && computed_is_current {
+            Ok(computed.preview.clone())
+        } else {
+            Ok(MergePreview::Pending)
+        }
     }
 }
 
@@ -121,6 +177,67 @@ impl CheckPublisher for FakeForge {
             attached_to: report.attached_to().clone(),
             reference: format!("fake-check-{}", log.len()),
         })
+    }
+}
+
+/// Builds a [`FakeForge`] for the conformance suites, declaring
+/// whichever capabilities the run needs.
+pub struct FakeForgeHarness {
+    capabilities: ForgeCapabilities,
+}
+
+impl FakeForgeHarness {
+    pub fn new(capabilities: ForgeCapabilities) -> Self {
+        Self { capabilities }
+    }
+}
+
+/// The events of a [`ForgeScenario`] as edits of one [`FakeForge`].
+struct FakeScenario {
+    forge: Arc<FakeForge>,
+    candidate: RevisionHandle,
+}
+
+impl ForgeScenario for FakeScenario {
+    fn move_head(&self, to: &RevisionHandle) {
+        let mut state = self.forge.current();
+        state.head = to.clone();
+        self.forge.set_state(state);
+    }
+
+    fn compute_candidate(&self) {
+        self.forge
+            .set_merge_candidate(MergePreview::Ready(self.candidate.clone()));
+    }
+
+    fn conflict(&self) {
+        self.forge.set_merge_candidate(MergePreview::Conflicting);
+    }
+
+    fn unrelate_histories(&self) {
+        self.forge.set_merge_base(MergeBase::Absent);
+    }
+}
+
+impl ForgeHarness for FakeForgeHarness {
+    fn source(&self) -> SourceRef {
+        SourceRef::new("fake", "acme/widgets").expect("a fixed source")
+    }
+
+    fn provision(&self, fixture: &ForgeFixture) -> ProvisionedForge {
+        let forge = Arc::new(
+            FakeForge::new(fixture.pull_request.clone())
+                .with_capabilities(self.capabilities)
+                .with_merge_base(MergeBase::Found(fixture.merge_base.clone())),
+        );
+        ProvisionedForge {
+            reader: Arc::new(Shared(Arc::clone(&forge))),
+            publisher: Arc::new(Shared(Arc::clone(&forge))),
+            scenario: Arc::new(FakeScenario {
+                forge,
+                candidate: fixture.candidate.clone(),
+            }),
+        }
     }
 }
 
