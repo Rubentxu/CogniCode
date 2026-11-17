@@ -61,5 +61,6 @@ mod the_intent_command_survives_arbitrary_input;
 mod the_published_coverage_has_one_owner;
 mod the_questions_say_their_coverage;
 mod the_recipe_executor;
+mod the_security_goal_is_one_report_on_both_surfaces;
 mod the_terminal_and_the_wire_name_the_same_next_step;
 mod unresolved_references_are_facts;
