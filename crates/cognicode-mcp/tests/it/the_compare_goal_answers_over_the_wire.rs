@@ -123,6 +123,10 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     );
     assert_eq!(answer["work_reuse"]["affected"], 1);
     assert_eq!(answer["work_reuse"]["unaffected"], 0);
+    // The renamed function the detector read forces a re-run on the head, and
+    // the answer says so instead of presenting the base findings as current.
+    assert_eq!(answer["head_findings"]["reuse"], "rerun", "{answer}");
+    assert_eq!(answer["head_findings"]["findings"][0]["file"], "src.rs");
     // What the answer says it persisted is on disk, in the cache the server
     // was given and nowhere else.
     assert_eq!(answer["revision_facts"]["persisted"], true, "{answer}");

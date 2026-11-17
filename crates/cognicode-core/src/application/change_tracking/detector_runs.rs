@@ -372,6 +372,34 @@ pub fn ensure_run_in_cache(
     )
 }
 
+/// [`detect_with_reuse`] over the read-set the store under `cache_root`
+/// keeps for the base revision of `repository`: the one entry point the goals
+/// use to publish the head findings.
+///
+/// Without a cache, or without a record for this base, there is no prior
+/// read-set and the detector runs again.
+///
+/// # Errors
+/// The plan could not be computed or the re-run failed.
+pub fn detect_in_cache(
+    cache_root: Option<&Path>,
+    repository: &Path,
+    base: &ProducedRevision,
+    head: &ProducedRevision,
+    changes: &ChangeSet,
+    sink: &mut dyn EvidenceSink,
+) -> Result<Detection, DetectorRunError> {
+    let workspace = WorkspaceId::try_new(workspace_key(repository))
+        .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
+    let detector = detector_id()?;
+    let index =
+        cache_root.and_then(|root| DetectorReuseStore::for_workspace(root, repository).load());
+    let prior = index
+        .as_ref()
+        .and_then(|index| index.record_for(detector.as_str(), base.facts.snapshot));
+    detect_with_reuse(prior, base, head, changes, &workspace, sink)
+}
+
 /// Whether the findings of a detection came from a prior run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reuse {
