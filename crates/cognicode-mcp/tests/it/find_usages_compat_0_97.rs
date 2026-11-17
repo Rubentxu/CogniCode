@@ -99,7 +99,9 @@ async fn run_jsonrpc_session(
     requests: &[serde_json::Value],
     expected_ids: &[u64],
 ) -> Result<std::collections::HashMap<u64, serde_json::Value>, String> {
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    let _cache = crate::common::pin_cache(command.as_std_mut());
+    let mut child = command
         .arg("--cwd")
         .arg(cwd)
         .stdin(Stdio::piped())

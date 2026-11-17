@@ -30,7 +30,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-use crate::common::{binary_path, release_dir};
+use crate::common::{WithOwnCache, binary_path, pin_cache, release_dir};
 
 /// Page size the stdio server uses for `tools/list` pagination. It is
 /// a private constant in `rmcp_adapter::list_tools`; restating it here
@@ -77,9 +77,11 @@ fn is_executable(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Spawn `cognicode-mcp` rooted at `cwd` and return the child handle.
-fn spawn_binary(cwd: &Path) -> Child {
+/// Spawn `cognicode-mcp` rooted at `cwd` and return the child handle, which
+/// keeps the cache the server writes into until it is dropped.
+fn spawn_binary(cwd: &Path) -> WithOwnCache<Child> {
     let mut cmd = Command::new(binary_path());
+    let cache = pin_cache(&mut cmd);
     cmd.arg("--cwd").arg(cwd);
     // TASK-84: the `full` surface is asked for explicitly. This suite
     // measures the pagination of `tools/list` and dispatches tools; the
@@ -90,7 +92,7 @@ fn spawn_binary(cwd: &Path) -> Child {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    cmd.spawn().expect("spawn cognicode-mcp")
+    WithOwnCache::new(cmd.spawn().expect("spawn cognicode-mcp"), cache)
 }
 
 /// Send a JSON-RPC request (one frame, newline-terminated) and flush.
@@ -286,7 +288,7 @@ fn write_marker(root: &Path, marker: &str) {
 }
 
 /// Send `shutdown` (graceful close) and reap the child.
-fn shutdown_and_reap(mut child: Child) -> std::io::Result<std::process::ExitStatus> {
+fn shutdown_and_reap(mut child: WithOwnCache<Child>) -> std::io::Result<std::process::ExitStatus> {
     rpc_send(&mut child, -1, "shutdown", json!({}));
     // Close stdin so the stdio transport exits cleanly even if the
     // server is waiting for more frames.
@@ -1326,11 +1328,13 @@ fn release_binary_stdio_round_trip_smoke() {
     );
 
     let workspace = TempDir::new().expect("tempdir");
-    let mut child = std::process::Command::new(&release_path)
+    let mut command = Command::new(&release_path);
+    let _cache = pin_cache(&mut command);
+    let mut child = command
         .current_dir(workspace.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()
         .expect("spawn release binary");
 

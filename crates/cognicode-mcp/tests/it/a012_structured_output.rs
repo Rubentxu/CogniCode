@@ -204,8 +204,9 @@ fn read_only_tools_carry_their_contracts() {
 
 // --- Black-box level: the wire must agree with the contract ---
 
-fn spawn_server(read_only: bool) -> Child {
+fn spawn_server(read_only: bool) -> common::WithOwnCache<Child> {
     let mut cmd = Command::new(binary_path());
+    let cache = common::pin_cache(cmd.as_std_mut());
     // The MCP binary is subcommand-free: its only input flag is `--cwd`, and
     // the read-only posture is selected the same way A-010 selects it. Using
     // a fixture workspace keeps the tool calls hermetic and fast.
@@ -225,7 +226,7 @@ fn spawn_server(read_only: bool) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    cmd.spawn().expect("mcp server must start")
+    common::WithOwnCache::new(cmd.spawn().expect("mcp server must start"), cache)
 }
 
 /// Sends the requests and returns the responses that carry an `id`.
@@ -234,7 +235,7 @@ fn spawn_server(read_only: bool) -> Child {
 /// so counting lines and indexing would silently shift every answer by one.
 /// A server that leaks non-JSON on stdout is a contract violation worth
 /// failing on, so nothing is skipped silently.
-async fn rpc(mut child: Child, requests: &[&str]) -> Vec<Value> {
+async fn rpc(mut child: common::WithOwnCache<Child>, requests: &[&str]) -> Vec<Value> {
     let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
     let mut stdin = child.stdin.take().expect("stdin");
     let mut out = Vec::new();
