@@ -29,4 +29,7 @@ pub mod helm_templates;
 pub mod revision_facts;
 
 #[cfg(feature = "evidence-kernel")]
+mod terraform_buckets;
+
+#[cfg(feature = "evidence-kernel")]
 pub mod detector_runs;

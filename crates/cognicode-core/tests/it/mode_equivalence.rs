@@ -18,6 +18,7 @@
 
 mod bench;
 mod harness;
+mod isolated;
 mod oracle;
 
 use cognicode_core::application::change_tracking::complete_snapshot::Verdict;
@@ -224,9 +225,64 @@ fn a_planner_that_skips_required_reruns_is_caught() {
     );
 }
 
+/// The Terraform part is edited three ways and a production detector reads
+/// its facts in every one: agreement between the modes is about findings
+/// inside the edited part, not about an empty answer. The malformed edit
+/// breaks one module and leaves another whole, so the detector still speaks
+/// about what it could read.
+#[test]
+fn every_terraform_scenario_has_findings_inside_the_edited_part() {
+    let corpus = corpus_root();
+    for scenario in scenarios(&corpus)
+        .into_iter()
+        .filter(|s| s.part == "terraform")
+    {
+        for projection in Projection::ALL {
+            let result = evaluate(&corpus, &scenario, projection);
+            assert!(
+                result.divergences.is_empty(),
+                "{}: {:?}",
+                result.scenario,
+                result.divergences
+            );
+            assert!(
+                !result.vacuous(),
+                "{}: no finding lands in the edited part, so agreement proves nothing",
+                result.scenario
+            );
+        }
+    }
+}
+
+/// A detector whose result is dropped on the incremental side must make the
+/// certification fail: the comparison is not satisfied by silence.
+#[test]
+fn an_incremental_side_that_drops_a_detector_result_is_caught() {
+    let corpus = corpus_root();
+    for class in EditClass::ALL {
+        let scenario = scenarios(&corpus)
+            .into_iter()
+            .find(|s| s.part == "terraform" && s.class == class)
+            .expect("the terraform scenario exists");
+        let result = evaluate_with_fault(
+            &corpus,
+            &scenario,
+            Projection::Rendered,
+            Fault::DropDetectorFindings,
+        );
+        let certification = certify(vec![result]);
+        assert!(
+            !certification.certified,
+            "terraform/{}: a dropped detector result went unnoticed:\n{}",
+            class.dir(),
+            certification.render()
+        );
+    }
+}
+
 #[test]
 fn the_benchmark_reports_every_phase_and_agrees_across_modes() {
-    let report = bench::report(&corpus_root(), 2, Some("rust"));
+    let report = bench::report(&corpus_root(), 2, Some("rust"), false);
     let scenarios = report["scenarios"].as_array().expect("scenarios");
     assert_eq!(scenarios.len(), 3, "simple, semantic and malformed");
     for scenario in scenarios {
@@ -253,6 +309,44 @@ fn the_benchmark_reports_every_phase_and_agrees_across_modes() {
     assert!(report["not_evaluated"]["compilation_time"].is_string());
 }
 
+/// What one isolated process runs: the pipeline `MODE_BENCH_ISOLATED` names,
+/// reported on one marked line. Spawned by the benchmark, not run by hand.
+#[test]
+#[ignore = "entry point of the isolated-process memory measurement"]
+fn bench_isolated_pipeline() {
+    let selected = std::env::var(isolated::SELECTOR_ENV).expect("MODE_BENCH_ISOLATED is set");
+    let runs = std::env::var("MODE_BENCH_RUNS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let report = isolated::measure_selected(&corpus_root(), &selected, runs);
+    println!("{}", isolated::render(&report));
+}
+
+/// Every pipeline of a scenario reports a peak of its own, taken in a fresh
+/// process, and a selector that names nothing is not reported as a number.
+#[test]
+fn each_pipeline_reports_the_peak_memory_of_a_process_of_its_own() {
+    let report = bench::report(&corpus_root(), 1, Some("rust"), true);
+    for scenario in report["scenarios"].as_array().expect("scenarios") {
+        let pipelines = scenario["pipelines"].as_object().expect("pipelines");
+        assert_eq!(pipelines.len(), 4, "two modes crossed with two caches");
+        for (name, pipeline) in pipelines {
+            let memory = &pipeline["memory"];
+            assert!(memory["peak_kib"].as_u64() > Some(0), "{name}: {memory}");
+            assert!(
+                memory["peak_kib"].as_u64() >= memory["rss_after_setup_kib"].as_u64(),
+                "{name}: {memory}"
+            );
+            assert_eq!(memory["pipeline"], name.as_str(), "{memory}");
+        }
+    }
+    assert!(report["not_evaluated"]["peak_memory_per_pipeline"].is_null());
+
+    let refused = isolated::spawn("no/such#full_rebuild.cold", 1);
+    assert!(refused.is_err(), "{refused:?}");
+}
+
 /// Writes the benchmark report. Run on demand:
 /// `MODE_BENCH_RUNS=30 MODE_BENCH_OUT=report.json cargo test -p cognicode-core
 /// --test it mode_equivalence::bench_report -- --ignored --exact --nocapture`.
@@ -263,7 +357,8 @@ fn bench_report() {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(20);
-    let report = bench::report(&corpus_root(), runs, None);
+    let isolate = std::env::var("MODE_BENCH_ISOLATE").is_ok_and(|value| value == "1");
+    let report = bench::report(&corpus_root(), runs, None, isolate);
     let text = serde_json::to_string_pretty(&report).expect("serialize report");
     if let Ok(path) = std::env::var("MODE_BENCH_OUT") {
         std::fs::write(&path, &text).expect("write report");
