@@ -428,6 +428,17 @@ pub async fn handle_graph_surprising_connections(
 // Phase 6: IDF-weighted Search & Unified Insights
 // ============================================================================
 
+impl HandlerContext {
+    /// What the ranking-statistics cache of this context has built, served
+    /// and evicted so far: one build per snapshot, however many
+    /// `graph_search_idf` calls it answers.
+    pub fn ranking_cache_counters(
+        &self,
+    ) -> crate::infrastructure::graph::analytics::ranking_stats::RankingCacheCounters {
+        self.ranking_stats.counters()
+    }
+}
+
 /// Handler for graph_search_idf tool — IDF-weighted symbol search.
 #[cognicode_macros::aix_tool(
     name = "graph_search_idf",
@@ -444,11 +455,12 @@ pub async fn handle_graph_search_idf(
     } else {
         input.max_results as usize
     };
-    let results = crate::infrastructure::graph::analytics::search_ranker::SearchRanker::search(
-        &graph,
-        &input.query,
-        max_results,
-    );
+    // The statistics belong to the snapshot, not to the call: the first
+    // query of a snapshot builds them and the rest read them.
+    let results = ctx
+        .ranking_stats
+        .stats_for(&graph)
+        .rank(&input.query, max_results);
     let payload = serde_json::json!({
         "algorithm": "idf_search",
         "query": input.query,

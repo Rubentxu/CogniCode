@@ -75,6 +75,7 @@ use crate::infrastructure::graph::{
     TraversalDirection,
 };
 use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
+pub use crate::interface::mcp::file_ops_handlers::*;
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
     // Existing schemas
@@ -208,8 +209,6 @@ use crate::interface::mcp::schemas::{ReparseOnEditInput, ReparseOnEditOutput};
 use crate::interface::mcp::security::{InputValidator, RateLimiter};
 use crate::interface::symbol_identity::{default_provider_for_tool, precision_floor_for_tool};
 use schemars::JsonSchema;
-// Re-export file operations handlers
-pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::domain::traits::GraphStore;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
@@ -313,6 +312,8 @@ pub struct HandlerContext {
     /// environment says nothing about where a cache is, and the product
     /// then keeps no state at all instead of guessing a place.
     cache_root: Option<PathBuf>,
+    /// Ranking statistics per snapshot, shared by every clone of the context.
+    ranking_stats: Arc<crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -863,6 +864,7 @@ impl HandlerContextBuilder {
             // keeps no state rather than writing into a directory
             // nobody chose.
             cache_root: self.cache_root,
+            ranking_stats: Arc::default(),
         }
     }
 }
@@ -1873,8 +1875,6 @@ use basis::compute_basis;
 use graph_loading::load_graph_off_the_runtime;
 use semantic_index::ensure_semantic_indexed_with_services;
 pub use usage_search::{handle_find_usages, handle_find_usages_with_context};
-/// Handler for safe_refactor tool
-// Refactor handlers module
 pub mod refactor_handlers;
 
 /// Handler for get_complexity tool

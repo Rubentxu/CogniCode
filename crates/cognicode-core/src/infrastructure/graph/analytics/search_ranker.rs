@@ -4,11 +4,9 @@
 //! then ranks search results by IDF score (rare terms = higher value).
 //! Includes hub bypass to ignore overly-connected nodes.
 
-use petgraph::Direction;
-use std::collections::HashMap;
-
 use crate::domain::aggregates::{CallGraph, SymbolId};
-use crate::infrastructure::graph::CallGraphProjection;
+
+use super::ranking_stats::RankingStats;
 
 /// A scored search result.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -75,175 +73,30 @@ impl SearchRanker {
         tokens
     }
 
-    /// Compute IDF scores for all terms in the graph.
-    /// `IDF(term) = log(1 + N / (1 + docs_containing_term))`
-    ///
-    /// The `+1` smoothing prevents division by zero for terms that
-    /// appear in *every* document (df == N). It also matches the
-    /// sklearn "smooth=True" convention so the output is comparable
-    /// to standard TF-IDF pipelines.
-    fn compute_idf(graph: &CallGraph) -> HashMap<String, f64> {
-        let n = graph.symbol_count() as f64;
-        if n == 0.0 {
-            return HashMap::new();
-        }
-
-        let mut doc_freq: HashMap<String, usize> = HashMap::new();
-
-        for (_, symbol) in graph.symbol_ids() {
-            let mut seen_terms: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            let tokens = Self::tokenize(symbol.name());
-            for token in tokens {
-                if seen_terms.insert(token.clone()) {
-                    *doc_freq.entry(token).or_insert(0) += 1;
-                }
-            }
-            // Also index the full name as a single token so that
-            // queries for compound names like "authenticate_user"
-            // match a symbol named exactly that.
-            let full = symbol.name().to_lowercase();
-            if seen_terms.insert(full.clone()) {
-                *doc_freq.entry(full).or_insert(0) += 1;
-            }
-        }
-
-        doc_freq
-            .into_iter()
-            .map(|(term, df)| {
-                let idf = (1.0 + n / (1.0 + df as f64)).ln();
-                (term, idf)
-            })
-            .collect()
-    }
-
     /// Search symbols ranked by IDF scores.
     ///
-    /// Returns up to `max_results` entries, sorted by score descending.
+    /// Returns up to `max_results` entries, sorted by score descending;
+    /// equal scores come out in symbol id order.
+    ///
+    /// This reads the whole graph on every call. A caller that answers more
+    /// than one query over the same snapshot builds a [`RankingStats`] once
+    /// (or takes it from a
+    /// [`RankingStatsCache`](super::ranking_stats::RankingStatsCache)) and
+    /// asks it to [`rank`](RankingStats::rank): the result is the same, bit
+    /// for bit.
+    ///
+    /// `IDF(term) = log(1 + N / (1 + docs_containing_term))`; the `+1`
+    /// smoothing keeps terms that appear in every document finite and
+    /// matches the sklearn `smooth_idf` convention.
     ///
     /// Edge cases:
     /// - Empty graph -> empty vec.
     /// - Query that matches nothing -> empty vec.
     /// - Query that matches every symbol -> at least one entry
     ///   (the highest-scoring one).
-    /// - A `CallGraph` whose symbols have empty names is filtered
-    ///   out by the `score > 0` invariant.
+    /// - Symbols with empty names never match.
     pub fn search(graph: &CallGraph, query: &str, max_results: usize) -> Vec<ScoredSymbol> {
-        if graph.symbol_count() == 0 {
-            return Vec::new();
-        }
-
-        let idf = Self::compute_idf(graph);
-        let projection = CallGraphProjection::from_call_graph(graph);
-        let g = projection.graph();
-
-        // Compute degree percentiles for hub bypass.
-        // The hub bypass uses the 95th percentile of the *total*
-        // degree (in + out) so that very chatty "switchboard" nodes
-        // get demoted regardless of direction. `usize::MAX` is used
-        // as the bypass threshold for a single-node graph so the
-        // single node is never bypassed (it has nothing to compete
-        // with anyway).
-        let degrees: Vec<usize> = g
-            .node_indices()
-            .map(|ni| {
-                g.edges_directed(ni, Direction::Outgoing).count()
-                    + g.edges_directed(ni, Direction::Incoming).count()
-            })
-            .collect();
-
-        let p95_degree = if degrees.is_empty() {
-            usize::MAX
-        } else {
-            let mut sorted = degrees.clone();
-            sorted.sort();
-            let idx = ((sorted.len() as f64 * 0.95) as usize).min(sorted.len().saturating_sub(1));
-            sorted[idx]
-        };
-
-        let query_lower = query.to_lowercase();
-        let query_tokens = Self::tokenize(query);
-
-        let mut scored: Vec<ScoredSymbol> = Vec::new();
-
-        for ni in g.node_indices() {
-            let symbol_id = &g[ni];
-
-            // Find symbol name and file. The projection's
-            // `symbol_lookup` is the source of truth (it mirrors
-            // the source `CallGraph`).
-            let (name, file) = if let Some(sym) = graph.get_symbol(symbol_id) {
-                (sym.name().to_string(), sym.location().file().to_string())
-            } else {
-                // Fallback: extract from SymbolId string
-                let parts: Vec<&str> = symbol_id.as_str().splitn(3, ':').collect();
-                let n = parts.get(1).unwrap_or(&"").to_string();
-                let f = parts.first().unwrap_or(&"").to_string();
-                (n, f)
-            };
-
-            if name.is_empty() {
-                continue;
-            }
-
-            let name_lower = name.to_lowercase();
-            let name_tokens = Self::tokenize(&name);
-
-            // Compute score
-            let mut score = 0.0f64;
-
-            // Exact full name match
-            if name_lower == query_lower {
-                score += idf.get(&query_lower).unwrap_or(&1.0) * 1000.0;
-            }
-            // Full name contains query
-            else if !query_lower.is_empty() && name_lower.contains(&query_lower) {
-                score += idf.get(&query_lower).unwrap_or(&1.0) * 100.0;
-            }
-
-            // Token-level matching
-            for qt in &query_tokens {
-                for nt in &name_tokens {
-                    let token_idf = idf.get(nt).unwrap_or(&1.0);
-                    if nt == qt {
-                        score += token_idf * 100.0; // Exact token match
-                    } else if nt.starts_with(qt) {
-                        score += token_idf * 10.0; // Prefix match
-                    } else if nt.contains(qt) {
-                        score += token_idf * 1.0; // Substring match
-                    }
-                }
-            }
-
-            if score <= 0.0 {
-                continue;
-            }
-
-            // Hub bypass: demote overly-connected nodes
-            let degree = g.edges_directed(ni, Direction::Outgoing).count()
-                + g.edges_directed(ni, Direction::Incoming).count();
-
-            if degree > p95_degree {
-                score *= 0.1;
-            }
-
-            scored.push(ScoredSymbol {
-                symbol_id: symbol_id.clone(),
-                name,
-                file,
-                idf_score: score,
-                degree,
-            });
-        }
-
-        // Sort by score descending
-        scored.sort_by(|a, b| {
-            b.idf_score
-                .partial_cmp(&a.idf_score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        scored.truncate(max_results);
-        scored
+        RankingStats::build(graph).rank(query, max_results)
     }
 }
 
