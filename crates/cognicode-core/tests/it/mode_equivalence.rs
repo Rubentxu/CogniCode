@@ -62,25 +62,15 @@ fn corpus_is_certified() {
     );
 }
 
-/// Malformed edits that still receive `Pass` in both modes: the extractor
-/// tolerates the syntax errors and reports no gap, so nothing blocks. This
-/// pins the behavior as measured; when a scenario stops being listed the
-/// defect is fixed and the entry must go.
-const MALFORMED_EDITS_THAT_STILL_PASS: [&str; 5] = [
-    "cross/malformed [clean]",
-    "go/malformed [clean]",
-    "java/malformed [clean]",
-    "kotlin/malformed [clean]",
-    "rust/malformed [clean]",
-];
-
+/// Unparsable input must never yield `Pass`: the extractor reports each
+/// broken file as a gap, so the verdict of a malformed edit blocks in both
+/// modes, in every language of the corpus.
 #[test]
-fn malformed_edits_that_still_receive_pass_are_pinned() {
-    let mut actual = certification().false_passes();
-    actual.sort();
-    assert_eq!(
-        actual, MALFORMED_EDITS_THAT_STILL_PASS,
-        "the set of malformed edits that receive Pass changed; update the pin only if the change is intended"
+fn no_malformed_edit_receives_pass() {
+    let false_passes = certification().false_passes();
+    assert!(
+        false_passes.is_empty(),
+        "malformed edits received Pass: {false_passes:?}"
     );
 }
 

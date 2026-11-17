@@ -78,6 +78,107 @@ pub fn extract_file_with_outcome(
     source: &str,
     content_hash: &str,
 ) -> (ExtractionResult, HandlerOutcome) {
+    let (result, outcome, _) = extract_file_checked(config, path, source, content_hash);
+    (result, outcome)
+}
+
+/// Where a parsed file stopped being valid syntax.
+///
+/// Tree-sitter never refuses a file: it recovers around what it cannot
+/// parse and hands back a tree with `ERROR` or `MISSING` nodes, and the
+/// walker then reads whatever declarations survived. A consumer that needs
+/// the reading to be whole must ask for the fault, because the result alone
+/// looks like any other.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SyntaxFault {
+    /// 1-based line of the first error node.
+    pub line: u32,
+    /// 1-based column of the first error node.
+    pub column: u32,
+    /// What the parser expected and did not find, when it inserted a
+    /// `MISSING` node; `None` for an `ERROR` node, which holds input the
+    /// grammar could not place.
+    pub missing: Option<String>,
+}
+
+impl SyntaxFault {
+    /// A stable, one-line rendering for answers.
+    pub fn describe(&self) -> String {
+        match &self.missing {
+            Some(token) => format!(
+                "syntax error at line {}, column {}: missing `{token}`",
+                self.line, self.column
+            ),
+            None => format!(
+                "syntax error at line {}, column {}: unexpected input",
+                self.line, self.column
+            ),
+        }
+    }
+}
+
+/// Whether a node is damage the grammar reports, not a recovery artifact.
+///
+/// An `ERROR` node holds input the grammar could not place. A `MISSING` node
+/// is a token the grammar inserted to recover; when the token is hidden (its
+/// name starts with `_`, like the zero-width `_automatic_semicolon` a
+/// scanner emits) the author never wrote it, and some grammars insert it
+/// into valid source, so it is not a fault of the file.
+fn is_syntax_damage(node: Node) -> bool {
+    node.is_error() || (node.is_missing() && !node.kind().starts_with('_'))
+}
+
+/// The first damaged spot of a tree: the innermost `ERROR` or visible
+/// `MISSING` node that closes first in document order.
+///
+/// Pure: it reads the tree and nothing else. It enters only the subtrees
+/// that tree-sitter flags as containing an error, so a clean file costs one
+/// flag read. It reports the innermost node because when recovery fails at
+/// the top the whole file is one `ERROR` node, and its own start says
+/// nothing about where the grammar actually gave up.
+pub(crate) fn first_syntax_fault(root: Node) -> Option<SyntaxFault> {
+    // Post-order over the flagged subtrees, with an explicit stack: a
+    // deeply nested file must not cost the process its call stack.
+    let mut pending = vec![(root, false)];
+    while let Some((node, children_done)) = pending.pop() {
+        if !node.has_error() {
+            continue;
+        }
+        if children_done {
+            if is_syntax_damage(node) {
+                return Some(fault_at(node));
+            }
+            continue;
+        }
+        pending.push((node, true));
+        let mut cursor = node.walk();
+        let flagged: Vec<Node> = node.children(&mut cursor).filter(Node::has_error).collect();
+        pending.extend(flagged.into_iter().rev().map(|child| (child, false)));
+    }
+    None
+}
+
+fn fault_at(node: Node) -> SyntaxFault {
+    let position = node.start_position();
+    SyntaxFault {
+        line: (position.row + 1) as u32,
+        column: (position.column + 1) as u32,
+        missing: node.is_missing().then(|| node.kind().to_string()),
+    }
+}
+
+/// [`extract_file_with_outcome`], and the syntax fault of the file when its
+/// tree has one.
+///
+/// The result is the generic reading of whatever survived the fault. A
+/// caller that cannot accept a reading of a damaged file refuses it on the
+/// fault; the callers that tolerate it ignore the third element.
+pub(crate) fn extract_file_checked(
+    config: &LanguageConfig,
+    path: &Path,
+    source: &str,
+    content_hash: &str,
+) -> (ExtractionResult, HandlerOutcome, Option<SyntaxFault>) {
     let mut parser = Parser::new();
     let ts_lang = (config.ts_language)();
     if let Err(err) = parser.set_language(&ts_lang) {
@@ -94,6 +195,7 @@ pub fn extract_file_with_outcome(
                 "tree-sitter language init failed for {:?}: {err}",
                 config.language
             )),
+            None,
         );
     }
 
@@ -108,11 +210,13 @@ pub fn extract_file_with_outcome(
                     cause.clone(),
                 ),
                 HandlerOutcome::Failed(cause),
+                None,
             );
         }
     };
 
     let root = tree.root_node();
+    let fault = first_syntax_fault(root);
     let source_bytes = source.as_bytes();
     let source_path_str = path.to_string_lossy().into_owned();
 
@@ -337,13 +441,13 @@ pub fn extract_file_with_outcome(
     // If a semantic handler is configured (e.g., Ansible, Terraform),
     // run it to enrich the result with domain-specific nodes and edges.
     let Some(handler) = config.semantic_handler else {
-        return (result, HandlerOutcome::Absent);
+        return (result, HandlerOutcome::Absent, fault);
     };
     let source_path_str = path.to_string_lossy();
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         handler(&source_path_str, content_hash, source, &tree, &result)
     })) {
-        Ok(enriched) => (enriched, HandlerOutcome::Ran),
+        Ok(enriched) => (enriched, HandlerOutcome::Ran, fault),
         Err(fell_over) => {
             // The reader fell over. The file keeps the reading the generic
             // pass gave it —a reader that fails does not cost the file its
@@ -353,7 +457,7 @@ pub fn extract_file_with_outcome(
             let cause = cause_of(fell_over);
             let mut degraded = result.clone();
             degraded.error = Some(cause.clone());
-            (degraded, HandlerOutcome::Failed(cause))
+            (degraded, HandlerOutcome::Failed(cause), fault)
         }
     }
 }
@@ -1298,5 +1402,78 @@ static MY_STATIC: u32 = 0;
             1,
             "a file without a reader of its own is read once"
         );
+    }
+
+    fn fault_of(source: &str) -> Option<SyntaxFault> {
+        let (_, _, fault) = extract_file_checked(
+            &crate::infrastructure::parser::language_config::RUST_CONFIG,
+            std::path::Path::new("lib.rs"),
+            source,
+            "hash",
+        );
+        fault
+    }
+
+    #[test]
+    fn well_formed_source_has_no_syntax_fault() {
+        assert_eq!(
+            fault_of("pub fn a() {}\nstruct B { x: u8 }\nimpl B { fn c(&self) {} }\n"),
+            None
+        );
+        assert_eq!(fault_of(""), None);
+    }
+
+    #[test]
+    fn a_fault_is_reported_where_the_grammar_gave_up_not_at_the_top_of_the_file() {
+        let fault = fault_of("pub fn kept() {}\npub fn lost( {{{\n").expect("a fault");
+        assert_eq!(fault.line, 2, "{fault:?}");
+        assert!(fault.column >= 1, "{fault:?}");
+        assert!(
+            fault
+                .describe()
+                .starts_with("syntax error at line 2, column")
+        );
+    }
+
+    #[test]
+    fn input_the_grammar_cannot_place_is_an_unexpected_input_fault() {
+        let fault = fault_of("fn f() {\n    let x = 1;\n    @@@\n}\n").expect("a fault");
+        assert_eq!((fault.line, fault.missing.clone()), (3, None), "{fault:?}");
+        assert!(fault.describe().ends_with("unexpected input"));
+    }
+
+    #[test]
+    fn a_hidden_token_the_scanner_inserts_into_valid_source_is_not_a_fault() {
+        let (_, _, fault) = extract_file_checked(
+            &crate::infrastructure::parser::language_config::KOTLIN_CONFIG,
+            std::path::Path::new("Good.kt"),
+            "package demo\nclass Good { fun run() {} }\n",
+            "hash",
+        );
+        assert_eq!(fault, None);
+    }
+
+    #[test]
+    fn a_missing_node_names_the_token_the_grammar_expected() {
+        let fault = fault_of("fn f() { let x = 1 }\n").expect("a fault");
+        assert_eq!(fault.missing.as_deref(), Some(";"), "{fault:?}");
+        assert!(
+            fault.describe().contains("missing `;`"),
+            "{}",
+            fault.describe()
+        );
+    }
+
+    #[test]
+    fn the_checked_extraction_keeps_the_reading_of_the_damaged_file() {
+        let (result, outcome, fault) = extract_file_checked(
+            &crate::infrastructure::parser::language_config::RUST_CONFIG,
+            std::path::Path::new("lib.rs"),
+            "pub fn kept() {}\npub fn lost( {{{\n",
+            "hash",
+        );
+        assert!(result.is_ok(), "the generic reading still succeeds");
+        assert!(matches!(outcome, HandlerOutcome::Absent));
+        assert!(fault.is_some());
     }
 }

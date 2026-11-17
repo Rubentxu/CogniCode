@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::application::fact_bridge::FactBatchBuilder;
-use crate::application::ingest::extractor::{HandlerOutcome, extract_file_with_outcome};
+use crate::application::ingest::extractor::{HandlerOutcome, SyntaxFault, extract_file_checked};
 use crate::application::revision_snapshots::{
     ExtractionObject, ProducerVersions, RevisionSnapshot,
 };
@@ -66,7 +66,7 @@ use super::scm_delta::{
 /// key and of the producer identity of every persisted snapshot: a change
 /// to how facts are assembled must bump it, and nothing written before
 /// is served afterwards.
-pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v1";
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v2";
 
 /// Paths read per batched content request: bounds peak memory (about
 /// this many files of at most `max_file_bytes` each) while keeping the
@@ -131,6 +131,10 @@ pub enum GapReason {
     TooLarge { bytes: usize, limit: usize },
     /// The extractor failed on this file.
     ExtractionFailed(String),
+    /// The file does not parse cleanly: the grammar recovered around the
+    /// fault, so the declarations read from it are an unknown share of what
+    /// the file declares, and no consumer may take them for the whole.
+    SyntaxError(SyntaxFault),
     /// The revision has more analyzable files than the run may read.
     FileLimitReached { limit: usize },
 }
@@ -145,6 +149,7 @@ impl GapReason {
                 format!("file of {bytes} bytes exceeds the {limit} byte bound")
             }
             Self::ExtractionFailed(why) => format!("extraction failed: {why}"),
+            Self::SyntaxError(fault) => fault.describe(),
             Self::FileLimitReached { limit } => {
                 format!("revision exceeds the {limit} analyzable file bound")
             }
@@ -486,13 +491,16 @@ fn extract_one(
         }
     };
     let source = String::from_utf8(bytes).map_err(|_| GapReason::NotText)?;
-    let (result, outcome) =
-        extract_file_with_outcome(config, Path::new(path.as_str()), &source, content_hex);
+    let (result, outcome, fault) =
+        extract_file_checked(config, Path::new(path.as_str()), &source, content_hex);
     if let Some(error) = result.error {
         return Err(GapReason::ExtractionFailed(error));
     }
     if let HandlerOutcome::Failed(cause) = outcome {
         return Err(GapReason::ExtractionFailed(cause));
+    }
+    if let Some(fault) = fault {
+        return Err(GapReason::SyntaxError(fault));
     }
     // The snapshot id of a per-file batch is a placeholder: the facts are
     // re-pinned to the revision when they are assembled.
@@ -1296,6 +1304,133 @@ mod tests {
         assert_eq!(impact.status, ImpactStatus::Partial);
         assert_eq!(impact.gap_paths, vec![path("src/bad.rs")]);
         assert!(impact.facts_added > 0 && impact.facts_removed > 0);
+    }
+
+    /// Source that tree-sitter recovers from silently: each file declares
+    /// something the broken syntax then hides from the extractor.
+    const BROKEN_SOURCES: [(&str, &[u8]); 4] = [
+        ("src/broken.rs", b"pub fn kept() {}\npub fn lost( {{{\n"),
+        (
+            "src/Broken.java",
+            b"class Broken { void lost( { }\nclass Other {\n",
+        ),
+        ("src/broken.kt", b"fun lost( { \nclass Other {\n"),
+        ("src/broken.go", b"package demo\nfunc Lost( {{{\n"),
+    ];
+
+    #[test]
+    fn a_syntax_error_is_a_gap_in_every_language_and_never_partial_facts() {
+        for (file, source) in BROKEN_SOURCES {
+            let fake = provider(&[("main", &[], &[("src/ok.rs", GAMMA), (file, source)])]);
+
+            let cold = produce(&fake, "main", None);
+
+            assert!(!cold.coverage.is_complete(), "{file} must be a gap");
+            let [gap] = cold.coverage.gaps.as_slice() else {
+                panic!("{file}: exactly one gap expected: {:?}", cold.coverage.gaps);
+            };
+            assert_eq!(gap.path, path(file));
+            assert!(
+                gap.reason.describe().contains("syntax error at line"),
+                "{file}: {}",
+                gap.reason.describe()
+            );
+            assert_eq!(paths_of(&cold), ["src/ok.rs"], "{file} publishes no facts");
+            assert_eq!(cold.snapshot.coverage, "partial: 1 file(s) without facts");
+        }
+    }
+
+    #[test]
+    fn a_syntax_error_is_a_gap_when_the_store_is_warm_too() {
+        let (file, source) = BROKEN_SOURCES[0];
+        let fake = provider(&[("main", &[], &[("src/ok.rs", GAMMA), (file, source)])]);
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _warm = produce(&fake, "main", Some(&objects));
+
+        let incremental = produce(&fake, "main", Some(&objects));
+        let rebuilt = produce(&fake, "main", None);
+
+        assert_eq!(incremental.coverage.gaps, rebuilt.coverage.gaps);
+        assert_eq!(incremental.coverage.gaps.len(), 1);
+        assert_eq!(
+            work_of(&incremental),
+            (0, 1),
+            "the clean file is reused; the broken one is never stored"
+        );
+        assert_eq!(incremental.snapshot, rebuilt.snapshot);
+    }
+
+    #[test]
+    fn well_formed_files_stay_gap_free() {
+        let fake = provider(&[(
+            "main",
+            &[],
+            &[
+                ("src/a.rs", ALPHA_V1),
+                (
+                    "src/Good.java",
+                    b"package demo;\npublic class Good { void run() { } }\n",
+                ),
+                (
+                    "src/good.kt",
+                    b"package demo\nclass Good { fun run() {} }\n",
+                ),
+                ("src/good.go", b"package demo\nfunc Run() {}\n"),
+            ],
+        )]);
+
+        let produced = produce(&fake, "main", None);
+
+        assert!(produced.coverage.is_complete(), "{:?}", produced.coverage);
+        assert_eq!(produced.coverage.analyzable_files, 4);
+    }
+
+    #[test]
+    fn an_object_stored_by_the_previous_producer_is_never_served() {
+        // Before syntax errors were gaps, a broken file was stored with the
+        // facts of its damaged tree. Those objects sit under the previous
+        // producer's key and must stay unreachable, or a warm store keeps
+        // vouching for them.
+        let (file, source) = BROKEN_SOURCES[0];
+        let fake = provider(&[("main", &[], &[(file, source)])]);
+        let content = fake
+            .inventory(&revision(&fake, "main"))
+            .expect("inventory")
+            .entries()
+            .iter()
+            .find(|entry| entry.path == path(file))
+            .map(|entry| entry.content.as_hex().to_string())
+            .expect("the broken file is tracked");
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let mut hasher = Sha256::new();
+        hasher.update(b"cognicode.revision-facts/v1");
+        hasher.update([0]);
+        hasher.update(file.as_bytes());
+        hasher.update([0]);
+        hasher.update(content.as_bytes());
+        let stale = ObjectFile {
+            schema: OBJECT_SCHEMA.to_string(),
+            path: file.to_string(),
+            content,
+            artifact: artifact_of(&[]).expect("artifact"),
+            facts: Vec::new(),
+        };
+        std::fs::write(
+            dir.path()
+                .join(format!("{}.facts.json", hex(&hasher.finalize()))),
+            serde_json::to_vec(&stale).expect("json"),
+        )
+        .expect("plant the stale object");
+
+        let produced = produce(&fake, "main", Some(&objects));
+
+        assert_eq!(
+            produced.coverage.reused_files, 0,
+            "the stale object is a miss"
+        );
+        assert_eq!(produced.coverage.gaps.len(), 1);
     }
 
     #[test]
