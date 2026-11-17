@@ -249,7 +249,7 @@ fn project(repo: &Path, projection: Projection) {
 fn copy_overlay(overlay: &Path, repo: &Path) {
     for entry in fs::read_dir(overlay).expect("read overlay") {
         let entry = entry.expect("overlay entry");
-        if entry.file_name() == "DELETE" {
+        if entry.file_name() == "DELETE" || entry.file_name() == "ORACLE" {
             continue;
         }
         let target = repo.join(entry.file_name());
@@ -293,7 +293,7 @@ pub fn produce(fixture: &Fixture) -> Produced {
     }
 }
 
-fn workspace() -> WorkspaceId {
+pub fn workspace() -> WorkspaceId {
     WorkspaceId::try_new("mode-equivalence").expect("workspace")
 }
 
@@ -375,7 +375,7 @@ impl ScenarioResult {
     }
 }
 
-fn identities() -> BTreeMap<String, DetectorRunIdentity> {
+pub fn identities() -> BTreeMap<String, DetectorRunIdentity> {
     ProductionDetector::ALL
         .into_iter()
         .map(|detector| {
@@ -385,7 +385,7 @@ fn identities() -> BTreeMap<String, DetectorRunIdentity> {
         .collect()
 }
 
-fn gaps_of(head: &ProducedRevision) -> Vec<CaptureGap> {
+pub fn gaps_of(head: &ProducedRevision) -> Vec<CaptureGap> {
     head.coverage
         .gaps
         .iter()
@@ -396,7 +396,10 @@ fn gaps_of(head: &ProducedRevision) -> Vec<CaptureGap> {
         .collect()
 }
 
-fn fresh_record(detector: ProductionDetector, revision: &ProducedRevision) -> DetectorRunRecord {
+pub fn fresh_record(
+    detector: ProductionDetector,
+    revision: &ProducedRevision,
+) -> DetectorRunRecord {
     run_detector(
         detector,
         &revision.facts,

@@ -14,7 +14,9 @@
 //! `corpus_is_certified` is the loud one: any divergence between the modes
 //! fails it and prints the table that says where.
 
+mod bench;
 mod harness;
+mod oracle;
 
 use harness::{
     Certification, EditClass, Fault, PARTS, Projection, certify, corpus_root, evaluate,
@@ -101,4 +103,51 @@ fn a_planner_that_skips_required_reruns_is_caught() {
         "an incremental side that skips planned reruns must not be certified:\n{}",
         certification.render()
     );
+}
+
+#[test]
+fn the_benchmark_reports_every_phase_and_agrees_across_modes() {
+    let report = bench::report(&corpus_root(), 2, Some("rust"));
+    let scenarios = report["scenarios"].as_array().expect("scenarios");
+    assert_eq!(scenarios.len(), 3, "simple, semantic and malformed");
+    for scenario in scenarios {
+        assert_eq!(
+            scenario["modes_agree_on_verdict_and_findings"], true,
+            "{scenario}"
+        );
+        for pipeline in scenario["pipelines"]
+            .as_object()
+            .expect("pipelines")
+            .values()
+        {
+            for phase in ["facts", "plan", "detect", "snapshot", "total"] {
+                assert!(pipeline["phases"][phase]["p50_ms"].is_number(), "{phase}");
+            }
+            assert!(pipeline["time_to_first_feedback"]["p95_ms"].is_number());
+        }
+        let warm = &scenario["pipelines"]["incremental_complete.warm"]["cache"];
+        assert!(
+            warm["fact_files_reused"].as_u64() > Some(0),
+            "a warm store must serve unchanged files: {warm}"
+        );
+    }
+    assert!(report["not_evaluated"]["compilation_time"].is_string());
+}
+
+/// Writes the benchmark report. Run on demand:
+/// `MODE_BENCH_RUNS=30 MODE_BENCH_OUT=report.json cargo test -p cognicode-core
+/// --test it mode_equivalence::bench_report -- --ignored --exact --nocapture`.
+#[test]
+#[ignore = "benchmark: run on demand"]
+fn bench_report() {
+    let runs = std::env::var("MODE_BENCH_RUNS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(20);
+    let report = bench::report(&corpus_root(), runs, None);
+    let text = serde_json::to_string_pretty(&report).expect("serialize report");
+    if let Ok(path) = std::env::var("MODE_BENCH_OUT") {
+        std::fs::write(&path, &text).expect("write report");
+    }
+    println!("{text}");
 }

@@ -1,22 +1,22 @@
-pub struct Circle {
+pub struct Disc {
     pub radius: f64,
 }
 
-pub enum Kind {
+pub enum Form {
     Round,
     Square,
 }
 
-pub trait Area {
+pub trait Measure {
     fn area(&self) -> f64;
 }
 
-impl Area for Circle {
+impl Measure for Disc {
     fn area(&self) -> f64 {
         3.14159 * self.radius * self.radius
     }
 }
 
-pub fn unit_circle() -> Circle {
-    Circle { radius: 1.0 }
+pub fn unit_disc() -> Disc {
+    Disc { radius: 1.0 }
 }

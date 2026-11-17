@@ -1,0 +1,34 @@
+# Hand-labelled definitions of the base corpus, one per line: path|name|bucket.
+#
+# A function is a callable declared WITH a body: a function, a method or a
+# constructor. A signature without a body (an interface or trait member) is
+# not a function definition. A type is a struct, class, enum, trait or
+# interface. Packages, variables, fields and Terraform or Helm constructs are
+# not labelled: the production detectors read only functions and types.
+go/greeter.go|Greet|function
+go/greeter.go|Say|function
+go/greeter.go|Shout|function
+go/greeter.go|Greeter|type
+go/shape.go|Area|function
+go/shape.go|Shape|type
+go/shape.go|Circle|type
+java/src/main/java/demo/Greeter.java|Greeter|type
+java/src/main/java/demo/Greeter.java|Greeter|function
+java/src/main/java/demo/Greeter.java|greet|function
+java/src/main/java/demo/Greeter.java|shout|function
+java/src/main/java/demo/Shape.java|Shape|type
+kotlin/src/main/kotlin/demo/Greeter.kt|Greeter|type
+kotlin/src/main/kotlin/demo/Greeter.kt|greet|function
+kotlin/src/main/kotlin/demo/Greeter.kt|shout|function
+kotlin/src/main/kotlin/demo/Greeter.kt|total|function
+kotlin/src/main/kotlin/demo/Shape.kt|Shape|type
+kotlin/src/main/kotlin/demo/Shape.kt|Circle|type
+kotlin/src/main/kotlin/demo/Shape.kt|area|function
+rust/src/lib.rs|greet|function
+rust/src/lib.rs|shout|function
+rust/src/lib.rs|total|function
+rust/src/shapes.rs|Circle|type
+rust/src/shapes.rs|Kind|type
+rust/src/shapes.rs|Area|type
+rust/src/shapes.rs|area|function
+rust/src/shapes.rs|unit_circle|function
