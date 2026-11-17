@@ -523,8 +523,9 @@ fn coverage_line(coverage: &crate::interface::coverage::CoverageInfo) -> String 
 ///
 /// The hot symbols are the owner's answer to "which symbols have the most
 /// callers" (the same one `get_hot_paths` gives), cut to
-/// [`MAP_HOT_SYMBOLS`]. The coverage is the one measured when the graph was
-/// loaded; a graph nobody measured says `unknown`, never `complete`.
+/// [`MAP_HOT_SYMBOLS`]. The coverage is the one measured for the graph that
+/// was read, not the last one anybody measured; a graph nobody measured says
+/// `unknown`, never `complete`.
 ///
 /// # Errors
 ///
@@ -533,9 +534,19 @@ pub async fn handle_codebase_map(
     ctx: &HandlerContext,
     input: CodebaseMapInput,
 ) -> HandlerResult<CodebaseMapOutput> {
+    let service = ctx.analysis_service();
+    let revision_before = service.current_graph_revision();
     let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
+    };
+    let revision_after = service.current_graph_revision();
+    // A route that replaced the graph in between leaves nobody able to say
+    // which graph was read, so nothing is claimed about its coverage.
+    let measure = if revision_before == revision_after {
+        service.graph_measures().of(revision_after, &graph)
+    } else {
+        None
     };
     let counts = MapCounts {
         symbols: graph.symbol_count(),
@@ -558,7 +569,10 @@ pub async fn handle_codebase_map(
             fan_out: row.fan_out,
         })
         .collect();
-    let coverage = crate::interface::coverage::CoverageInfo::of(&super::held_coverage(ctx));
+    let coverage = match &measure {
+        Some(measure) => crate::interface::coverage::CoverageInfo::of(&measure.coverage),
+        None => crate::interface::coverage::CoverageInfo::unmeasured(),
+    };
 
     let map = render_map(input.format, &counts, &hot_symbols, &coverage);
     let token_estimate = map.len() / 4;
@@ -1855,6 +1869,25 @@ mod tests {
         (ctx, temp_dir)
     }
 
+    /// Records `coverage` as the measure of `graph`, the way a build does.
+    fn measure_held_graph(
+        ctx: &HandlerContext,
+        graph: &CallGraph,
+        coverage: crate::application::services::analyze::Coverage,
+    ) {
+        let service = ctx.analysis_service();
+        service
+            .graph_measures()
+            .record(crate::application::graph_measure::GraphMeasure::new(
+                service.current_graph_revision(),
+                graph,
+                coverage,
+                crate::application::analysis_basis::GraphSource::Built,
+                "/workspace".to_string(),
+                None,
+            ));
+    }
+
     async fn map_of(ctx: &HandlerContext, format: MapFormat) -> CodebaseMapOutput {
         handle_codebase_map(ctx, CodebaseMapInput { format })
             .await
@@ -1974,16 +2007,20 @@ mod tests {
         use crate::application::services::analyze::{Coverage, CoverageFacts};
         use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
 
-        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
-        ctx.analysis_service
-            .set_last_coverage(Coverage::Partial(CoverageFacts {
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &graph,
+            Coverage::Partial(CoverageFacts {
                 skipped: vec![SkippedFile {
                     path: "vendored/x.rs".to_string(),
                     reason: SkipReason::Read("permission denied".to_string()),
                 }],
                 pending: Vec::new(),
                 rejected: Vec::new(),
-            }));
+            }),
+        );
         let out = map_of(&ctx, MapFormat::Detailed).await;
         assert_eq!(out.coverage.status, "partial");
         assert_eq!(out.coverage.skipped_files.len(), 1);
@@ -1997,11 +2034,68 @@ mod tests {
     /// A graph that was measured complete says so.
     #[tokio::test]
     async fn a_complete_coverage_is_published_as_complete() {
-        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
-        ctx.analysis_service
-            .set_last_coverage(crate::application::services::analyze::Coverage::Complete);
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &graph,
+            crate::application::services::analyze::Coverage::Complete,
+        );
         let out = map_of(&ctx, MapFormat::Compact).await;
         assert_eq!(out.coverage.status, "complete");
         assert!(out.map.contains("Coverage: complete"), "{}", out.map);
+    }
+
+    /// A coverage measured for some other graph is not this graph's.
+    #[tokio::test]
+    async fn a_coverage_measured_for_another_graph_is_not_published() {
+        let other = graph_without_edges();
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &other,
+            crate::application::services::analyze::Coverage::Complete,
+        );
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(out.coverage.status, "unknown");
+    }
+
+    /// A graph with no symbols is mapped as empty, not as an error.
+    #[tokio::test]
+    async fn a_graph_with_no_symbols_has_an_empty_map() {
+        let (ctx, _dir) = ctx_holding(&CallGraph::new());
+        let out = map_of(&ctx, MapFormat::Detailed).await;
+        assert!(out.hot_symbols.is_empty());
+        assert!(out.map.contains("0 symbols"), "{}", out.map);
+    }
+
+    /// Without a graph the tool refuses; it does not invent a map.
+    #[tokio::test]
+    async fn without_a_graph_there_is_no_map() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_graph_store(InMemoryGraphStore::new())
+            .build();
+        let err = handle_codebase_map(
+            &ctx,
+            CodebaseMapInput {
+                format: MapFormat::Compact,
+            },
+        )
+        .await
+        .expect_err("a map needs a graph");
+        assert!(err.to_string().contains("No graph available"), "{err}");
+    }
+
+    /// The same graph gives the same hot symbols, in the same order.
+    #[tokio::test]
+    async fn the_hot_symbols_come_out_in_the_same_order_every_time() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        let first = map_of(&ctx, MapFormat::Detailed).await;
+        let second = map_of(&ctx, MapFormat::Detailed).await;
+        assert_eq!(first.hot_symbols, second.hot_symbols);
+        assert_eq!(first.map, second.map);
     }
 }
