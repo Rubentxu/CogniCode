@@ -166,6 +166,7 @@ mod scm_revision_snapshots;
 mod scm_source_ports;
 mod security_validation_tests;
 mod semantic_reader_owns_its_language;
+mod semantic_sast_cwe89;
 mod source_scan;
 mod symbol_index_follows_the_graph_and_directory;
 mod t1_1b_symbolkind_wire_format;

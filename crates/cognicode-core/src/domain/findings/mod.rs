@@ -16,6 +16,8 @@
 //!   fail-loud validator.
 //! - [`finding`] — [`Finding`], [`EvidenceClass`], [`RiskLevel`],
 //!   [`FindingStatus`], [`FindingOrigin`], [`FindingGate`].
+//! - [`semantic_model`] — source/sink/sanitizer API models, per-language
+//!   adapters and the shared CWE-89 detector over the existing IR.
 //! - [`quality_projection`] — lift legacy `QualityIssue` rows into
 //!   [`Finding`] (conservative, non-blocking).
 
@@ -38,6 +40,7 @@ pub mod ports;
 pub mod projection;
 pub mod quality_projection;
 pub mod scope;
+pub mod semantic_model;
 pub mod verifier;
 
 pub use crate::domain::kernel_ids::{EntityId, EvidenceId, FactId};
