@@ -26,6 +26,7 @@ use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::domain::scm::{
     BlobRead, ChangeKind, ChangeReader, ChangeSet, ContentDigest, InventoryEntry, PathKey,
@@ -107,6 +108,7 @@ pub(crate) fn read_bounded(
 }
 
 /// One tracked `(path, oid, kind)` row, owning its bytes.
+#[derive(Debug)]
 struct OwnedRow {
     path: Vec<u8>,
     oid: String,
@@ -287,6 +289,24 @@ pub struct MergeCandidate {
 pub struct GitScmAdapter {
     repo_root: PathBuf,
     git_program: OsString,
+    /// The listing of the last immutable revision read, so reading N
+    /// files of one revision lists its tree once. Shared by clones,
+    /// which read the same repository through the same program.
+    listing: Arc<Mutex<Option<CachedListing>>>,
+}
+
+/// The rows of one tree object id.
+#[derive(Debug)]
+struct CachedListing {
+    object_id: String,
+    rows: Arc<Vec<OwnedRow>>,
+}
+
+/// Whether a tree-ish is a full object id. Only an id names bytes that
+/// can never change; a branch, `HEAD` or any other name can move
+/// underneath a cached listing.
+fn is_object_id(treeish: &str) -> bool {
+    matches!(treeish.len(), 40 | 64) && treeish.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 impl GitScmAdapter {
@@ -295,6 +315,7 @@ impl GitScmAdapter {
         Self {
             repo_root: repo_root.into(),
             git_program: OsString::from("git"),
+            listing: Arc::default(),
         }
     }
 
@@ -304,6 +325,7 @@ impl GitScmAdapter {
         Self {
             repo_root: repo_root.into(),
             git_program: OsString::from(program),
+            listing: Arc::default(),
         }
     }
 
@@ -383,15 +405,32 @@ impl GitScmAdapter {
         Ok(sha)
     }
 
-    /// The tracked rows of one tree-ish (commit or tree SHA).
-    fn tracked_rows(&self, treeish: &str) -> Result<Vec<OwnedRow>, ScmError> {
+    /// The tracked rows of one tree-ish (commit or tree SHA). The rows of
+    /// the last object id listed are kept: a failed listing is never
+    /// cached, and a tree-ish that is not an object id is always listed
+    /// afresh.
+    fn tracked_rows(&self, treeish: &str) -> Result<Arc<Vec<OwnedRow>>, ScmError> {
+        let cacheable = is_object_id(treeish);
+        if cacheable {
+            let cached = self.listing.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(hit) = cached.as_ref().filter(|hit| hit.object_id == treeish) {
+                return Ok(Arc::clone(&hit.rows));
+            }
+        }
         let run = self.run(&["ls-tree", "-r", "-z", "--full-name", treeish], LIST_CAP)?;
         if run.code != 0 {
             return Err(ScmError::ContentUnavailable {
                 path: treeish.to_string(),
             });
         }
-        parse_ls_tree_z(&run.stdout)
+        let rows = Arc::new(parse_ls_tree_z(&run.stdout)?);
+        if cacheable {
+            *self.listing.lock().unwrap_or_else(PoisonError::into_inner) = Some(CachedListing {
+                object_id: treeish.to_string(),
+                rows: Arc::clone(&rows),
+            });
+        }
+        Ok(rows)
     }
 
     /// Digests every blob of a listing through ONE `cat-file --batch`
@@ -860,7 +899,7 @@ impl RevisionReader for GitScmAdapter {
         };
         let mut oid_of: std::collections::HashMap<PathKey, &OwnedRow> =
             std::collections::HashMap::with_capacity(rows.len());
-        for row in &rows {
+        for row in rows.iter() {
             if let Ok(key) = path_key_from_bytes(&row.path) {
                 oid_of.insert(key, row);
             }
