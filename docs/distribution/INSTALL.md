@@ -76,7 +76,7 @@ cogh rollback                 # revierte la última transición registrada, si e
 cogh install mcp-server --version latest --profile reviewer --ide opencode
 
 # Retira una versión instalada y su integración IDE de forma explícita:
-cogh uninstall mcp-server --version v0.105.0 --ide opencode
+cogh uninstall mcp-server --version v0.106.0 --ide opencode
 ```
 
 `cogh update --profile core` es un cambio deliberado de perfil y retirará
@@ -136,7 +136,7 @@ The four `library` crates declared in
 in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
 [`SDK_RELEASE.md`](SDK_RELEASE.md).
 
-The four crates are published on crates.io at version `0.105.0`, and a clean
+The four crates are published on crates.io at version `0.106.0`, and a clean
 consumer project that depends on those exact versions builds and runs. You can
 repeat that check with
 `bash scripts/distribution/verify-sdk-consumer.sh --confirm-published`.
@@ -146,10 +146,10 @@ Add the crates in publication order, dependencies first
 `cognicode-graph-wasm` depends on `cognicode-graph-algos`):
 
 ```bash
-cargo add cognicode-graph-algos@=0.105.0
-cargo add cognicode-macros@=0.105.0
-cargo add cognicode-core@=0.105.0
-cargo add cognicode-graph-wasm@=0.105.0
+cargo add cognicode-graph-algos@=0.106.0
+cargo add cognicode-macros@=0.106.0
+cargo add cognicode-core@=0.106.0
+cargo add cognicode-graph-wasm@=0.106.0
 ```
 
 Add only the crates your project uses; the order matters for publishing, not
@@ -224,7 +224,7 @@ absolute path as `command`.
 
 This section is written in English; the rest of this guide is in Spanish.
 
-A release `v0.105.0` publishes the files below, named by the functions of
+A release `v0.106.0` publishes the files below, named by the functions of
 `crates/cognicode-cli/src/cmd/release_contract.rs`. Two certified platforms are
 published: `x86_64-unknown-linux-gnu` (the native lane) and
 `x86_64-unknown-linux-musl` (the standalone lane, statically linked and
@@ -234,25 +234,25 @@ as unsupported.
 
 Binaries, one tarball per component and platform:
 
-- `cogh-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-mcp-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
-- `cogh-0.105.0-x86_64-unknown-linux-musl.tar.gz`
-- `cognicode-0.105.0-x86_64-unknown-linux-musl.tar.gz`
-- `cognicode-mcp-0.105.0-x86_64-unknown-linux-musl.tar.gz`
+- `cogh-0.106.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-0.106.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-mcp-0.106.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cogh-0.106.0-x86_64-unknown-linux-musl.tar.gz`
+- `cognicode-0.106.0-x86_64-unknown-linux-musl.tar.gz`
+- `cognicode-mcp-0.106.0-x86_64-unknown-linux-musl.tar.gz`
 
 Skill bundles, platform-independent (they are skills, not executables):
 
-- `cognicode-0.105.0.tar.gz`
-- `cognicode-mcp-0.105.0.tar.gz`
+- `cognicode-0.106.0.tar.gz`
+- `cognicode-mcp-0.106.0.tar.gz`
 
 Manifests and checksums:
 
-- `bundle-0.105.0-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
+- `bundle-0.106.0-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
   `cogh` resolves.
-- `bundle-0.105.0-x86_64-unknown-linux-musl.yaml`: the same manifest for the
+- `bundle-0.106.0-x86_64-unknown-linux-musl.yaml`: the same manifest for the
   standalone lane.
-- `release-inventory-0.105.0.json`: the inventory of the release.
+- `release-inventory-0.106.0.json`: the inventory of the release.
 - `SHA256SUMS`: the checksum of every file above.
 
 `explorer-api` and `explorer-mcp` are not published, and neither is the
@@ -260,7 +260,7 @@ Manifests and checksums:
 
 Verify integrity after downloading every file you need into one empty
 directory (the URL base is
-`https://github.com/Rubentxu/CogniCode/releases/download/v0.105.0/`):
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.106.0/`):
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
@@ -269,7 +269,9 @@ sha256sum --check --ignore-missing SHA256SUMS
 `--ignore-missing` lets you check only the files you downloaded; a file that is
 present and does not match still fails the command.
 
-Limitation: these names are derived from the release contract in this tree and
+Limitation: the `v0.106.0` assets have not been compared with a published
+release yet; everything measured below was measured on `v0.105.0`. These names
+are derived from the release contract in this tree and
 were compared, on November 9, 2026, with the asset list that
 `gh release view v0.105.0` reports: all eight match and the release is not a
 draft. On November 11, 2026 the x86_64 Linux assets of `v0.105.0` were
@@ -292,7 +294,7 @@ This section is written in English. It records what was run on November 9,
 directory.
 
 `mise` installs from the GitHub release with its `github:` backend, with no
-plugin. A bare `github:Rubentxu/CogniCode@0.105.0` picks the first matching
+plugin. A bare `github:Rubentxu/CogniCode@0.106.0` picks the first matching
 asset, which is the `cognicode` tarball. To get another binary, name its asset
 in a `mise.toml`:
 
@@ -338,8 +340,8 @@ published repository and not from a local copy:
 
 ```sh
 asdf plugin add cogh https://github.com/Rubentxu/asdf-cogh.git
-asdf install cogh 0.105.0
-"$(asdf where cogh 0.105.0)/bin/cogh" --version   # cogh 0.105.0
+asdf install cogh 0.106.0
+"$(asdf where cogh 0.106.0)/bin/cogh" --version   # cogh 0.106.0
 ```
 
 `asdf install` verified the tarball against `SHA256SUMS` ("La suma coincide")

@@ -505,8 +505,8 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
   security pack for Rust, Java, Kotlin, Go, Terraform and Helm, and the mode
   equivalence harness. The binary assets are generated with the release
   factory from the same tree. The four SDK library crates remain published on
-  crates.io at `0.103.1`; publishing them at `0.106.0` is a separate
-  operation this release does not perform. The previous published release is
+  crates.io at `0.103.1`; they are published at `0.106.0` by the SDK
+  release procedure, a separate operation after the tag. The previous published release is
   [`v0.105.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.105.0);
   the full release before it is
   [`v0.103.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.1).

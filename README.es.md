@@ -500,7 +500,8 @@ trazado de rutas de ejecución** y mucho más.
   Terraform y Helm, y el arnés de equivalencia entre modos. Los assets
   binarios se generan con la release factory desde el mismo árbol. Los cuatro
   crates de librería del SDK siguen publicados en crates.io en `0.103.1`;
-  publicarlos en `0.106.0` es una operación aparte que esta release no hace.
+  se publican en `0.106.0` con el procedimiento de release del SDK, una
+  operación aparte posterior al tag.
   La release publicada anterior es
   [`v0.105.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.105.0);
   la completa anterior a ella es
