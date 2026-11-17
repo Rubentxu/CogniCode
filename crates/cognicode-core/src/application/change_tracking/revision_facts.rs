@@ -42,6 +42,7 @@ use sha2::{Digest, Sha256};
 
 use crate::application::fact_bridge::FactBatchBuilder;
 use crate::application::ingest::extractor::{HandlerOutcome, SyntaxFault, extract_file_checked};
+use crate::application::ingest::independent_syntax::is_independently_well_formed;
 use crate::application::revision_snapshots::{
     ExtractionObject, ProducerVersions, RevisionSnapshot,
 };
@@ -54,6 +55,7 @@ use crate::domain::readset::{ReadSet, ReadSetConfig};
 use crate::domain::scm::{
     BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceRevision,
 };
+use crate::domain::value_objects::Language;
 
 use crate::application::ingest::extractor::{SourceLanguage, language_for_extension};
 
@@ -66,7 +68,7 @@ use super::scm_delta::{
 /// key and of the producer identity of every persisted snapshot: a change
 /// to how facts are assembled must bump it, and nothing written before
 /// is served afterwards.
-pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v3";
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v4";
 
 /// Paths read per batched content request: bounds peak memory (about
 /// this many files of at most `max_file_bytes` each) while keeping the
@@ -135,6 +137,11 @@ pub enum GapReason {
     /// fault, so the declarations read from it are an unknown share of what
     /// the file declares, and no consumer may take them for the whole.
     SyntaxError(SyntaxFault),
+    /// The file is well-formed — an independent parser accepted it — but the
+    /// bundled grammar cannot read it. The fault is the grammar's, the
+    /// declarations read from the file are still an unknown share of what it
+    /// declares, and no consumer may take them for the whole.
+    GrammarLimit(SyntaxFault),
     /// The revision has more analyzable files than the run may read.
     FileLimitReached { limit: usize },
 }
@@ -150,6 +157,10 @@ impl GapReason {
             }
             Self::ExtractionFailed(why) => format!("extraction failed: {why}"),
             Self::SyntaxError(fault) => fault.describe(),
+            Self::GrammarLimit(fault) => format!(
+                "the bundled grammar cannot read this well-formed file (stopped at line {}, column {})",
+                fault.line, fault.column
+            ),
             Self::FileLimitReached { limit } => {
                 format!("revision exceeds the {limit} analyzable file bound")
             }
@@ -500,13 +511,23 @@ fn extract_one(
         return Err(GapReason::ExtractionFailed(cause));
     }
     if let Some(fault) = fault {
-        return Err(GapReason::SyntaxError(fault));
+        return Err(gap_for_fault(config.language, &source, fault));
     }
     // The snapshot id of a per-file batch is a placeholder: the facts are
     // re-pinned to the revision when they are assembled.
     let mut builder = FactBatchBuilder::new(SnapshotId::new(1));
     builder.add_extraction(&result);
     Ok(builder.finish_stable())
+}
+
+/// The gap a damaged tree becomes: a grammar limit when an independent reader
+/// accepts the file, a syntax error otherwise. Either way the file has no facts.
+fn gap_for_fault(language: Language, source: &str, fault: SyntaxFault) -> GapReason {
+    if is_independently_well_formed(language, source) {
+        GapReason::GrammarLimit(fault)
+    } else {
+        GapReason::SyntaxError(fault)
+    }
 }
 
 /// Merges per-file facts into the facts of one snapshot: pinned to the
@@ -1340,6 +1361,80 @@ mod tests {
         }
     }
 
+    /// Valid Rust that the bundled grammar still cannot read: rustc and an
+    /// independent parser accept every one of them.
+    const VALID_RUST_THE_GRAMMAR_CANNOT_READ: [(&str, &[u8]); 4] = [
+        (
+            "src/unit_bound.rs",
+            b"pub fn kept() {}\npub fn run<T>() where (): Marker<T> {}\n",
+        ),
+        (
+            "src/negative_const.rs",
+            b"pub fn kept() {}\npub type Hours = Ranged<-25, 25>;\n",
+        ),
+        (
+            "src/attribute_on_field_pattern.rs",
+            b"pub fn kept() {}\npub fn f(w: W) { match w { W { #[cfg(test)] a: _, .. } => {} } }\n",
+        ),
+        (
+            "src/safe_foreign_item.rs",
+            b"pub fn kept() {}\nunsafe extern \"C\" { pub safe fn abs(input: i32) -> i32; }\n",
+        ),
+    ];
+
+    #[test]
+    fn valid_rust_the_grammar_cannot_read_is_a_grammar_limit_and_never_partial_facts() {
+        for (file, source) in VALID_RUST_THE_GRAMMAR_CANNOT_READ {
+            let fake = provider(&[("main", &[], &[("src/ok.rs", GAMMA), (file, source)])]);
+
+            let cold = produce(&fake, "main", None);
+
+            let [gap] = cold.coverage.gaps.as_slice() else {
+                panic!("{file}: exactly one gap expected: {:?}", cold.coverage.gaps);
+            };
+            assert_eq!(gap.path, path(file));
+            assert!(
+                matches!(gap.reason, GapReason::GrammarLimit(_)),
+                "{file}: {:?}",
+                gap.reason
+            );
+            assert!(
+                gap.reason.describe().contains("grammar"),
+                "{file}: {}",
+                gap.reason.describe()
+            );
+            assert_eq!(paths_of(&cold), ["src/ok.rs"], "{file} publishes no facts");
+            assert!(!cold.coverage.is_complete(), "{file} is not a Pass");
+        }
+    }
+
+    #[test]
+    fn broken_sources_stay_syntax_errors_in_every_language() {
+        for (file, source) in BROKEN_SOURCES {
+            let fake = provider(&[("main", &[], &[(file, source)])]);
+
+            let cold = produce(&fake, "main", None);
+
+            assert!(
+                matches!(cold.coverage.gaps[0].reason, GapReason::SyntaxError(_)),
+                "{file}: {:?}",
+                cold.coverage.gaps[0].reason
+            );
+        }
+    }
+
+    #[test]
+    fn raw_references_and_unsafe_extern_blocks_are_read_without_a_gap() {
+        let source: &[u8] = b"pub fn address(value: &mut u32) -> *mut u32 { &raw mut *value }\n\
+unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
+        let fake = provider(&[("main", &[], &[("src/modern.rs", source)])]);
+
+        let cold = produce(&fake, "main", None);
+
+        assert!(cold.coverage.is_complete(), "{:?}", cold.coverage.gaps);
+        assert_eq!(paths_of(&cold), ["src/modern.rs"]);
+    }
+
     #[test]
     fn a_syntax_error_is_a_gap_when_the_store_is_warm_too() {
         let (file, source) = BROKEN_SOURCES[0];
@@ -1446,6 +1541,29 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         plant_object_of(
             "cognicode.revision-facts/v2",
+            dir.path(),
+            "src/ok.rs",
+            GAMMA,
+        );
+
+        let produced = produce(&fake, "main", Some(&FactObjectStore::new(dir.path())));
+
+        assert_eq!(
+            produced.coverage.reused_files, 0,
+            "the stale object is a miss"
+        );
+        assert_eq!(produced.coverage.parsed_files, 1);
+    }
+
+    #[test]
+    fn an_object_stored_before_the_grammar_update_is_never_served() {
+        // Facts extracted before the Rust grammar was updated, and before a
+        // grammar limit had a cause of its own, describe the same bytes
+        // differently. They sit under the previous producer's key.
+        let fake = provider(&[("main", &[], &[("src/ok.rs", GAMMA)])]);
+        let dir = tempfile::tempdir().expect("dir");
+        plant_object_of(
+            "cognicode.revision-facts/v3",
             dir.path(),
             "src/ok.rs",
             GAMMA,
