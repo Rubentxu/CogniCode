@@ -14,10 +14,10 @@
 use cognicode_core::application::findings::{PackRun, RunAuthority, RunContext, SecurityPack};
 use cognicode_core::domain::execution::CorrelationId;
 use cognicode_core::domain::findings::semantic_model::{
-    BlockingLevel, CallArg, CapabilityMatrix, FindingNature, JvmContext, Observation,
-    ObservationKind, ObservedCall, ObservedFunction, ObservedUnit, PackVerdict, SecurityFamily,
-    SourceLanguage, StructuralFact, StructuralFamily, StructuralObservation, Support,
-    UnsafeConstruct, Weakness,
+    AnalysisReach, BlockingLevel, CallArg, CapabilityMatrix, FindingNature, JvmContext,
+    Observation, ObservationKind, ObservedCall, ObservedFunction, ObservedUnit, PackVerdict,
+    SecurityFamily, SourceLanguage, StructuralFact, StructuralFamily, StructuralObservation,
+    Support, UnsafeConstruct, Weakness, cwe89_sql_injection, taint_detector,
 };
 use cognicode_core::domain::findings::{
     AnalysisScope, EvidenceClass, FindingGate, FindingSeverity, FindingVerifier, GroundingRef,
@@ -816,6 +816,43 @@ fn jvm_cells_state_that_context_is_optional_and_no_scanner_is_required() {
     }
     let go = m.get(Go, SecurityFamily::SqlInjection).unwrap();
     assert!(go.limits.iter().all(|l| !l.contains("JVM")));
+}
+
+#[test]
+fn the_sql_injection_intent_is_authored_once_and_modeled_per_language() {
+    let m = matrix();
+    let authored = cwe89_sql_injection(AnalysisReach::Intraprocedural)
+        .logic_digest()
+        .as_str()
+        .to_string();
+
+    for language in MODELED {
+        let cell = m.get(language, SecurityFamily::SqlInjection).unwrap();
+        let Support::Supported {
+            logic_digest,
+            models,
+            ..
+        } = &cell.support
+        else {
+            panic!("{language:?} must model SQL injection");
+        };
+        assert_eq!(
+            logic_digest, &authored,
+            "{language:?} runs the one SQL injection detector, not a copy of it"
+        );
+        let models = models.expect("taint families publish model counts");
+        assert!(
+            models.sources > 0 && models.sinks > 0 && models.sanitizers > 0,
+            "{language:?} carries its own source, sink and sanitizer models"
+        );
+    }
+
+    let other = taint_detector(Weakness::CommandInjection, AnalysisReach::Intraprocedural);
+    assert_ne!(
+        other.logic_digest().as_str(),
+        authored,
+        "the digest identifies the intent: another weakness is another detector"
+    );
 }
 
 #[test]
