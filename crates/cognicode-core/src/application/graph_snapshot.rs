@@ -24,6 +24,7 @@
 use crate::application::analysis_basis::GraphSource;
 use crate::application::error::AppResult;
 use crate::application::graph_cache;
+use crate::application::graph_measure::GraphMeasure;
 use crate::application::services::analysis_service::{AnalysisService, TreeState};
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::findings::digest::{DigestStream, sha256_hex};
@@ -107,9 +108,9 @@ pub struct LoadedGraph {
 /// The answer, with the coverage it was measured with.
 ///
 /// The coverage is decided by [`coverage_verdict`] —the one owner of that
-/// decision— and the service remembers it, because the next question of
-/// the same session is answered with the graph that is already held, and
-/// that graph was measured when it was loaded.
+/// decision— and the caller hands it to the service, because the next
+/// question of the same session is answered with the graph that is already
+/// held, and that graph was measured when it was loaded.
 ///
 /// [`coverage_verdict`]: crate::application::services::analyze::coverage_verdict
 fn loaded(
@@ -126,7 +127,6 @@ fn loaded(
         &tree.holes,
         crate::application::services::analyze::holds_material(graph.symbol_count()),
     );
-    service.set_last_coverage(coverage.clone());
     LoadedGraph {
         graph,
         manifest,
@@ -135,6 +135,31 @@ fn loaded(
         coverage,
         timings,
     }
+}
+
+/// Ties the coverage of a read to the revision of the graph it measured.
+///
+/// `dated_by` is the manifest of the graph the session already held, for
+/// the route that serves it without reading the tree again: the answer
+/// carries no manifest of its own, and the session's is the one that dates
+/// it.
+///
+/// A reader that takes the graph afterwards publishes this coverage and
+/// this origin only if the graph it took is the one measured here.
+fn remember_the_measure(
+    service: &AnalysisService,
+    project_dir: &Path,
+    graph: &LoadedGraph,
+    dated_by: Option<&FileManifest>,
+) {
+    service.graph_measures().record(GraphMeasure::new(
+        service.current_graph_revision(),
+        &graph.graph,
+        graph.coverage.clone(),
+        graph.source,
+        canonical_workspace(project_dir),
+        graph.manifest.as_ref().or(dated_by).map(source_digest),
+    ));
 }
 
 /// The graph of `project_dir`, served from the snapshot when it can be and
@@ -199,7 +224,7 @@ fn decide_the_graph(
                 let tree = service.tree_state(project_dir);
                 let vouched = vouched_for(service, manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(manifest, project_dir, &tree.files) {
-                    return Ok(loaded(
+                    let served = loaded(
                         service,
                         service.get_project_graph(),
                         None,
@@ -212,7 +237,9 @@ fn decide_the_graph(
                         // Served from the graph this session already
                         // holds: no stage ran now, so none is measured.
                         crate::application::graph_timings::GraphPhaseTimings::default(),
-                    ));
+                    );
+                    remember_the_measure(service, project_dir, &served, Some(manifest));
+                    return Ok(served);
                 }
             }
             // The session's graph is stale, or nothing says what it read:
@@ -243,7 +270,7 @@ fn decide_the_graph(
                 let vouched = vouched_for(service, &manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(&manifest, project_dir, &tree.files) {
                     service.graph_cache().replace(graph.clone());
-                    return Ok(loaded(
+                    let served = loaded(
                         service,
                         Arc::new(graph),
                         Some(manifest),
@@ -257,7 +284,9 @@ fn decide_the_graph(
                             cache_lookup_ms: Some(cache_lookup_ms),
                             ..Default::default()
                         },
-                    ));
+                    );
+                    remember_the_measure(service, project_dir, &served, None);
+                    return Ok(served);
                 }
             } else {
                 tracing::warn!(
@@ -342,14 +371,16 @@ fn decide_the_graph(
         Some(manifest)
     };
 
-    Ok(loaded(
+    let built = loaded(
         service,
         service.get_project_graph(),
         manifest_to_keep,
         GraphSource::Built,
         tree,
         timings,
-    ))
+    );
+    remember_the_measure(service, project_dir, &built, None);
+    Ok(built)
 }
 
 /// Whether somebody who is watching the tree says that `manifest` still
