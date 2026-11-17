@@ -10,6 +10,61 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.105.0] — 2026-11-17
+
+**Minor: la release publica un lane *standalone* (musl estático) que corre en
+cualquier Linux x86_64, y el instalador lo prefiere al nativo.**
+
+**Distribución.** El target musl se compila **estático**
+(`-C target-feature=+crt-static`): el artefacto no lleva glibc enlazada y
+por tanto corre en cualquier Linux x86_64, sea cual sea la glibc de la
+máquina. Es la respuesta directa al caso real de un consumidor con glibc
+2.39 (Ubuntu 24.04) frente a un binario compilado contra glibc 2.44.
+
+- El lane `linux-x86-64-musl` pasa a ser **Tier 1** y se publica junto al
+  nativo: `cogh`, `cognicode` y `cognicode-mcp` se emiten para las dos
+  plataformas, con su bundle manifest, su entrada en el inventario y su
+  `SHA256SUMS`.
+- Un host Linux x86_64 **prefiere el lane standalone**: el resolver prueba
+  `linux-x86-64-musl` antes que `linux-x86-64` y cae al nativo cuando la
+  release no publica el standalone.
+- `install.sh` (el canal Layer 0, el que usa todo consumidor) **instala el lane
+  standalone** en Linux x86_64. Antes pedía el triple nativo a pelo, con lo
+  cual un consumidor con glibc 2.39 recibía un binario que no arranca en su
+  máquina. Ahora elige el primer candidato que aparece en el `SHA256SUMS`
+  publicado —el standalone, y el nativo de respaldo para las releases
+  antiguas— y la elección es un hecho sobre la release, no una suposición.
+- Un binario compilado contra musl **se reconoce a sí mismo** como el lane
+  standalone (`cfg(target_env = "musl")`), así que el canal que instala es
+  el canal que publica.
+- La receta de build (`just build-standalone`) usa el toolchain **fijado**
+  (`rust-toolchain.toml`), no `stable`: añadir el target a `stable` publicaba
+  un lane que el toolchain fijado no podía compilar.
+
+**Contrato.** `Platform` gana la variante `LinuxX86_64Musl`; `ALL_PLATFORMS`
+pasa a seis plataformas y `TIER1_PLATFORMS` a dos. Los nombres de artefacto
+siguen siendo **derivados** (`{componente}-{versión}-{platform_token}.tar.gz`),
+así que el lane nuevo no introduce ni una segunda copia del mapa de
+plataformas.
+
+**Build.** Los binarios con código C (`ring`) necesitan un compilador musl en
+la máquina de build: la receta lo fija (`CC_x86_64_unknown_linux_musl`), porque
+`cc-rs` no lo encuentra solo al compilar desde un host glibc.
+
+**La matriz de plataformas del producto.** El conjunto que la release publica
+se lee de `product/platforms.json` (los `support_level: certified`), así que
+publicar el lane standalone obligaba a certificarlo ahí. Al hacerlo, el
+generador de la matriz emitía la plataforma **dos veces** —una como publicada y
+otra como la entrada `experimental` de reserva—: ahora salta la reserva
+cuando la plataforma ya está publicada, y dos contratos nuevos vigilan que la
+matriz certifique toda plataforma de Tier 1 y que no declare dos veces la
+misma plataforma. La evidencia de las plataformas publicadas se deriva de la
+propia matriz, en vez de repetir una frase sobre un fichero que ya no existe.
+
+**Nota de versión.** El corte es **v0.105.0**: el 0.104.0 ya estaba consumido
+por el tag que `cognicode-guard` consume por git, y publicar una release con
+ese nombre habría tenido que mover ese tag.
+
 ## [v0.103.1] — 2026-11-11
 
 **Patch: fixes de la auditoría del 2026-11-10 y descomisión del Explorer

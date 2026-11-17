@@ -59,7 +59,13 @@ fn tag() -> String {
     workspace_tag()
 }
 
-const TIER1_PLATFORMS: &[&str] = &["x86_64-unknown-linux-gnu"];
+/// The Tier-1 platforms the release publishes, as target triples.
+///
+/// Two lanes on Linux x86_64: the native one (`x86_64-unknown-linux-gnu`) and
+/// the standalone one (`x86_64-unknown-linux-musl`), which is statically
+/// linked and therefore runnable on any Linux x86_64. aarch64 stays out of
+/// Tier 1 until TF-7 provisions its runner.
+const TIER1_PLATFORMS: &[&str] = &["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"];
 const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
 
@@ -131,6 +137,22 @@ fn run_flatten(staging: &Path) {
         "flatten script failed for staging={}",
         staging.display()
     );
+}
+
+/// Run the flatten script and RETURN its exit status, for the cases that
+/// expect it to refuse. Same script, same arguments as `run_flatten`.
+fn try_flatten(staging: &Path) -> std::process::ExitStatus {
+    let script = repo_root().join("scripts/ci/stage-platform-payloads.sh");
+    assert!(
+        script.exists(),
+        "flatten script missing at {}",
+        script.display()
+    );
+    Command::new("bash")
+        .arg(&script)
+        .arg(staging)
+        .status()
+        .unwrap()
 }
 
 /// Run `cognicode-release generate` for one platform. Returns the
@@ -401,23 +423,56 @@ fn prf_f6_w2_duplicate_payload_across_lanes_is_rejected() {
 }
 
 /// F6.W2 / test 5: wrong-platform payload is rejected. A lane
-/// claiming to be `x86_64` ships an `aarch64` payload. The flatten
-/// script must not silently accept it; generate/verify must fail.
+/// claiming to be the native one ships a payload named with the other
+/// lane's triple. The flatten script must not silently accept it;
+/// generate/verify must fail.
 ///
-/// RETIRED 2026-10-17: this test exercised the dual-platform cross-lane
-/// mismatch (x86_64 lane carrying an aarch64-named payload). It is N/A
-/// while TIER1_PLATFORMS is restricted to x86_64 only. When TF-7 ships
-/// the aarch64 lane, restore this test alongside the second TIER1 element.
-/// Per `decision-frameworks.md` R5, the "wrong-platform" property is
-/// still guaranteed by the lane-name↔filename consistency check inside
-/// `stage-platform-payloads.sh` (lines 230-271, see also MEDIDO 2026-09-30
-/// in the script comment), so retiring the explicit test is a coverage
-/// reduction, not a guarantee loss — but a replacement test for the
-/// x86_64-only world is owed before this PR can be closed.
+/// RESTORED 2026-11-17: the retirement (2026-10-17) said the test was N/A
+/// while TIER1_PLATFORMS was x86_64-only, because a single Tier-1 platform
+/// has no other lane to be confused with. It has one now: the native lane
+/// and the standalone lane. The property under test is the same one the
+/// retired body measured —a lane that carries another lane's payload must be
+/// refused, not resolved by a glob that happens to match— expressed with the
+/// two lanes that exist today. The aarch64 version of it returns with TF-7.
 #[test]
 fn prf_f6_w2_wrong_platform_payload_is_rejected() {
-    // RETIRED — see function-level comment. The original test body is
-    // intentionally removed to keep the suite green while TIER1 is
-    // x86_64-only; restoring it requires also restoring the aarch64
-    // lane (TF-7) and the second TIER1_PLATFORMS element.
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-wrongplat-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    // A lane that CLAIMS the native triple and ships the standalone
+    // lane's payloads. The script resolves the lane to the native triple
+    // and then looks for payloads named with that triple; finding none is
+    // a refusal, not a silent substitution.
+    let lane = staging.join("payloads-x86_64-unknown-linux-gnu");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    fs::create_dir_all(lane.join("crates")).unwrap();
+    for comp in PLATFORM_COMPONENTS {
+        fs::write(
+            lane.join("dist").join(format!(
+                "{comp}-{}-x86_64-unknown-linux-musl.tar.gz",
+                version()
+            )),
+            b"swapped payload\n",
+        )
+        .unwrap();
+        fs::write(
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+
+    let status = try_flatten(&staging);
+    assert!(
+        !status.success(),
+        "flatten must reject a lane whose payloads belong to another platform"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
 }

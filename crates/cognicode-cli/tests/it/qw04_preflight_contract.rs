@@ -174,17 +174,67 @@ fn qw04_preflight_script_fails_when_required_tool_is_missing() {
     ));
     fs::create_dir_all(&tmp).expect("mkdir tmp");
 
-    // 3. Construir PATH sin cargo_dir, prependiendo el tmp vacío.
+    // 3. Construir PATH sin NINGÚN cargo, prependiendo el tmp vacío.
+    //
+    //    Se quitan TODOS los directorios del PATH que tienen un `cargo`, no
+    //    sólo el del primero: una máquina puede tener más de uno (el shim de
+    //    rustup y el de una herramienta de build, por ejemplo), y quitar sólo
+    //    el primero deja el tool disponible. El script entonces hace su
+    //    trabajo entero —clonar, compilar, medir— en vez de fallar por la
+    //    herramienta que falta, y el test se queda sin medir lo que dice
+    //    medir: un test que no falla por lo que dice fallar es un test que
+    //    no mide.
+    //
+    //    Quitar el directorio entero dejaría sin `git` a un PATH donde vive
+    //    el front-end de git al lado del de cargo, y entonces el script
+    //    fallaría por la herramienta equivocada. Por eso cada directorio con
+    //    cargo se sustituye por una SOMBRA: los mismos enlaces, sin el
+    //    `cargo`.
+    //
+    //    Y en la sombra, el `git` es el GIT REAL, no el front-end: un
+    //    front-end busca el git real en el PATH saltándose su propio
+    //    directorio, y con dos sombras que se apuntan entre sí cada una
+    //    encuentra a la otra y se endless. El git real se reconoce porque
+    //    es un binario y un front-end es un script.
     let real_path = std::env::var_os("PATH").unwrap_or_default();
+    let real_git = find_real_git(&real_path);
     let mut stripped = std::ffi::OsString::new();
+    let mut shadow_index = 0usize;
+    let mut seen: Vec<std::path::PathBuf> = Vec::new();
     for component in std::env::split_paths(&real_path) {
-        if component == cargo_dir {
+        // A PATH with the same directory twice is a machine's accident, not
+        // a contract: two shadows of the same directory are two front-ends
+        // pointing at each other.
+        if seen.iter().any(|s| s == &component) {
             continue;
+        }
+        seen.push(component.clone());
+        let mut entry = component.clone();
+        if component.join("cargo").is_file() {
+            let shadow = tmp.join(format!("shadow-{shadow_index}"));
+            shadow_index += 1;
+            fs::create_dir_all(&shadow).expect("mkdir shadow");
+            if let Ok(entries) = fs::read_dir(&component) {
+                for candidate in entries.flatten() {
+                    let name = candidate.file_name();
+                    if name == "cargo" {
+                        continue;
+                    }
+                    if name == "git" {
+                        if let Some(real) = real_git.as_ref() {
+                            let _ = std::os::unix::fs::symlink(real, shadow.join(&name));
+                        }
+                        continue;
+                    }
+                    let _ = std::os::unix::fs::symlink(candidate.path(), shadow.join(&name));
+                }
+            }
+            entry = shadow;
         }
         if !stripped.is_empty() {
             stripped.push(":");
         }
-        stripped.push(component);
+        stripped.push(entry);
     }
     let mut path_minus_cargo = std::ffi::OsString::from(&tmp);
     path_minus_cargo.push(":");
@@ -219,6 +269,29 @@ fn qw04_preflight_script_fails_when_required_tool_is_missing() {
     );
 
     fs::remove_dir_all(&tmp).ok();
+}
+
+/// The real `git` on a PATH: the first one that is a binary and not a
+/// front-end script.
+///
+/// A front-end that guards the commits of the operator is a script that
+/// looks for the real git in the PATH, skipping its own directory. A shadow
+/// that carries a copy of the front-end would make two front-ends point at
+/// each other, and each would spawn the other forever.
+fn find_real_git(path: &std::ffi::OsStr) -> Option<PathBuf> {
+    for component in std::env::split_paths(path) {
+        let candidate = component.join("git");
+        if !candidate.is_file() {
+            continue;
+        }
+        let is_script = fs::read(&candidate)
+            .map(|bytes| bytes.starts_with(b"#!"))
+            .unwrap_or(false);
+        if !is_script {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 use std::os::unix::fs::PermissionsExt;

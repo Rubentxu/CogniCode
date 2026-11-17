@@ -47,10 +47,19 @@ SBOM_RESIDUE = "crates/cognicode-cli/cogh-x86_64-unknown-linux-gnu.cdx.json"
 
 # A git that does not carry the operator's rules: the fixture is a repository
 # of its own, and the verdict must be the same on every machine.
+#
+# The HOME is part of that isolation. A git front-end that guards the
+# commits of the operator reads its rules from `$HOME/.config`, and a
+# repository it cannot classify refuses to sign its commits -- so a fixture
+# that inherits the HOME inherits a verdict that has nothing to do with the
+# tree it is watching. With a HOME of its own, the front-end finds no rules
+# and the fixture measures the tree, on every machine.
+FIXTURE_HOME = tempfile.mkdtemp(prefix="cognicode-fixture-home-")
 ISOLATED_GIT = {
     **os.environ,
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_SYSTEM": "/dev/null",
+    "HOME": FIXTURE_HOME,
 }
 
 failures: list[str] = []

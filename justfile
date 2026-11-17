@@ -41,17 +41,77 @@ build-wasm:
     @echo "🔨 Building Explorer frontend..."
     cd {{ EXPLORER_UI_DIR }} && npm ci && npm run build
 
-# Build musl binary with version
-build-musl:
+# Build the standalone lane: statically linked against musl, so the artifact
+# runs on any Linux x86_64 whatever glibc the host carries.
+#
+# The artifacts are named by the release contract:
+#   {component}-{version}-{platform_token}.tar.gz
+# and each one holds a single `bin/{component}`, which is the layout the
+# installer expects.
+build-standalone:
     #!/usr/bin/env bash
     set -euo pipefail
-    VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
-    rustup target add x86_64-unknown-linux-musl --toolchain stable
-    bld rust cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
+    VERSION={{ version }}
+    TOKEN=x86_64-unknown-linux-musl
+    # The pinned toolchain (rust-toolchain.toml) is the one that must carry
+    # the target: adding it to `stable` builds a lane the pinned toolchain
+    # cannot build, because cargo follows the pin.
+    TOOLCHAIN=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml | head -1)
+    rustup target add "${TOKEN}" --toolchain "${TOOLCHAIN}"
+    # The crates with C code (ring) need a musl C compiler; cc-rs cannot
+    # find one by itself when the build host is a glibc one.
+    export CC_x86_64_unknown_linux_musl="${CC_x86_64_unknown_linux_musl:-musl-gcc}"
+    OUT=$(scripts/ci/target-dir.sh)/${TOKEN}/release
+    bld rust cargo build --release --target "${TOKEN}" -p cognicode-cli --bin cogh --bin cognicode
+    bld rust cargo build --release --target "${TOKEN}" -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
     mkdir -p dist
-    tar -czf dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
-        -C target/x86_64-unknown-linux-musl/release/ cognicode-mcp cognicode-mcp-server
-    echo "✅ Built dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+    pkg=$(mktemp -d)
+    for c in cogh cognicode cognicode-mcp; do
+      mkdir -p "${pkg}/bin"
+      cp "${OUT}/${c}" "${pkg}/bin/${c}"
+      tar -czf "dist/${c}-${VERSION}-${TOKEN}.tar.gz" -C "${pkg}" bin
+      rm -rf "${pkg}/bin"
+    done
+    rm -rf "${pkg}"
+    echo "✅ Built the standalone lane (${TOKEN}) in dist/"
+
+# Alias kept for the recipes that used to call it.
+build-musl: build-standalone
+
+# Build the native lane (dynamically linked against the host glibc) and
+# package it with the same contract names the standalone lane uses.
+#
+# The native lane IS the host lane, so it is built without an explicit
+# `--target`: the artifacts land in `<target-dir>/release/`, which is also
+# where the release tests and `cargo run --release --bin cognicode-release`
+# look for them. The host triple is read from the toolchain rather than
+# assumed, and a host that is not the published native lane fails loud
+# instead of publishing assets under a token nobody can install.
+# Build the native lane (dynamically linked against the host glibc)
+build-native:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION={{ version }}
+    TOKEN=$(rustc -vV | sed -n 's/^host: //p' | head -1)
+    if [[ "${TOKEN}" != "x86_64-unknown-linux-gnu" ]]; then
+      echo "error: this host builds '${TOKEN}', and the published native lane is" >&2
+      echo "       'x86_64-unknown-linux-gnu'. Build the release on an x86_64" >&2
+      echo "       host, or extend the release contract first." >&2
+      exit 1
+    fi
+    OUT=$(scripts/ci/target-dir.sh)/release
+    bld rust cargo build --release -p cognicode-cli --bin cogh --bin cognicode
+    bld rust cargo build --release -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
+    mkdir -p dist
+    pkg=$(mktemp -d)
+    for c in cogh cognicode cognicode-mcp; do
+      mkdir -p "${pkg}/bin"
+      cp "${OUT}/${c}" "${pkg}/bin/${c}"
+      tar -czf "dist/${c}-${VERSION}-${TOKEN}.tar.gz" -C "${pkg}" bin
+      rm -rf "${pkg}/bin"
+    done
+    rm -rf "${pkg}"
+    echo "✅ Built the native lane (${TOKEN}) in dist/"
 
 # Build skill bundle tar.gz artifacts
 bundle-skills:
@@ -525,13 +585,68 @@ bundle-musl: build-musl
         -C target/x86_64-unknown-linux-musl/release/cognicode-mcp \
         --strip-components=3 .
 
+# Build every published lane and stage the release.
+#
+# `dist/release/` is EXACTLY what the release publishes: the payloads the
+# contract declares, the bundle manifest of each Tier-1 platform, the
+# inventory and SHA256SUMS.
+#
+# The staging directory is built from the CONTRACT, not from a glob over
+# `dist/`. The glob would also stage the skill bundles the contract does not
+# publish (`cognicode-agent-hardness`, `cognicode-developer`,
+# `cognicode-pr-review` live in `skills/` and are not part of the published
+# surface), and the factory would read them as component payloads. A release
+# that ships what it did not declare is a release nobody can verify.
+release-stage:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    VERSION={{ version }}
+    TAG=v${VERSION}
+    COMMIT=$(git rev-parse HEAD)
+    just build-native
+    just build-standalone
+    just bundle-skills
+    bld rust cargo build --release --bin cognicode-release
+    REL=$(scripts/ci/target-dir.sh)/release/cognicode-release
+    STAGING=$(mktemp -d)
+    OUT=$(mktemp -d)
+    trap 'rm -rf "${STAGING}" "${OUT}"' EXIT
+    # The component payloads of every Tier-1 platform, named by the contract.
+    for token in $("${REL}" platforms); do
+      for name in $("${REL}" plan --platform "${token}" --version "${VERSION}"); do
+        cp "dist/${name}" "${STAGING}/"
+      done
+    done
+    # The skill bundles the contract publishes.
+    for id in $("${REL}" skills --published); do
+      cp "dist/${id}-${VERSION}.tar.gz" "${STAGING}/"
+    done
+    "${REL}" generate \
+        --staging "${STAGING}" --out "${OUT}" \
+        --version "${VERSION}" --tag "${TAG}" --source-commit "${COMMIT}"
+    "${REL}" verify \
+        --staging "${STAGING}" --version "${VERSION}" --tag "${TAG}"
+    rm -rf dist/release
+    mkdir -p dist/release
+    cp "${OUT}"/* dist/release/
+    echo "✅ Release staged in dist/release/ (${TAG})"
+    ls -1 dist/release/
+
 # ─── Release ──────────────────────────────────────────────────────────────────
 
-# Create a draft GitHub release
+# Create a draft GitHub release with every staged artifact.
+#
+# The assets come from `dist/release/`, which is exactly what the contract
+# declares: uploading a glob over `dist/` would publish the skill bundles
+# that the release does not declare.
 release-draft tag="{{version}}":
+    #!/usr/bin/env bash
+    set -euo pipefail
     gh release create "{{ tag }}" --draft || true
-    test -f dist/cognicode-{{version}}-x86_64-unknown-linux-musl.tar.gz && \
-        gh release upload "{{ tag }}" dist/cognicode-{{version}}-x86_64-unknown-linux-musl.tar.gz || true
+    for f in dist/release/*; do
+    [ -f "$f" ] || continue
+    gh release upload "{{ tag }}" "$f" || true
+    done
 
 # Publish an existing draft release
 release-publish tag="{{version}}":

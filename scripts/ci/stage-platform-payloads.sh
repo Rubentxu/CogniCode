@@ -85,6 +85,7 @@ fi
 # short identifier like `linux-x86-64`).
 declare -A PLATFORM_SHORT_TO_TRIPLE=(
   ["linux-x86-64"]="x86_64-unknown-linux-gnu"
+  ["linux-x86-64-musl"]="x86_64-unknown-linux-musl"
   ["linux-aarch64"]="aarch64-unknown-linux-gnu"
 )
 # TIER1_TRIPLES can be overridden by the calling pipeline to match its
@@ -101,7 +102,7 @@ declare -A PLATFORM_SHORT_TO_TRIPLE=(
 # but TIER1_TRIPLES still required both.
 # 2026-10-17: defaulted to x86_64-only to match the release-candidate
 # pipeline's actual publishable lane. Restored to both when TF-7 ships.
-TIER1_TRIPLES=(x86_64-unknown-linux-gnu)
+TIER1_TRIPLES=(x86_64-unknown-linux-gnu x86_64-unknown-linux-musl)
 if [[ -n "${TIER1_TRIPLES_OVERRIDE:-}" ]]; then
   # shellcheck disable=SC2206  # word splitting is intentional
   TIER1_TRIPLES=( ${TIER1_TRIPLES_OVERRIDE} )

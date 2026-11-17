@@ -70,12 +70,22 @@ where
     // git reads as "there is no configuration". The author is set explicitly
     // so the commits carry a non-empty Author line.
     let no_configuration = tmp.join("no-git-configuration");
+    // The HOME is isolated too, and for the same reason: a git front-end
+    // that guards the commits of the operator reads its rules from
+    // `$HOME/.config`, and a repository it cannot classify refuses to sign
+    // its commits -- so a fixture that inherits the HOME inherits a verdict
+    // that has nothing to do with the guard under test. With a HOME of its
+    // own, the front-end finds no rules and the fixture measures the guard.
+    let fixture_home = tmp.join("fixture-home");
+    fs::create_dir_all(&fixture_home).expect("mkdir fixture home");
     let init = Command::new("git")
         .env("PATH", "/usr/bin:/bin")
         .args(["init", "-q", "--initial-branch=main"])
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", &no_configuration)
         .env("GIT_CONFIG_SYSTEM", &no_configuration)
+        .env("HOME", &fixture_home)
+        .env("XDG_CONFIG_HOME", &fixture_home)
         .env("GIT_AUTHOR_NAME", "qw03-test")
         .env("GIT_AUTHOR_EMAIL", "qw03-test@cognicode.local")
         .status()
@@ -92,6 +102,8 @@ where
             .current_dir(tmp)
             .env("GIT_CONFIG_GLOBAL", &no_configuration)
             .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .env("HOME", &fixture_home)
+            .env("XDG_CONFIG_HOME", &fixture_home)
             .status()
             .expect("git config");
     }
@@ -136,6 +148,8 @@ where
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))
         .env("GIT_CONFIG_SYSTEM", tmp.join("no-git-configuration"))
+        .env("HOME", &fixture_home)
+        .env("XDG_CONFIG_HOME", &fixture_home)
         .status()
         .expect("git add");
     assert!(add.success(), "git add failed in {}", tmp.display());
@@ -146,6 +160,8 @@ where
         .current_dir(tmp)
         .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))
         .env("GIT_CONFIG_SYSTEM", tmp.join("no-git-configuration"))
+        .env("HOME", &fixture_home)
+        .env("XDG_CONFIG_HOME", &fixture_home)
         .envs([
             ("GIT_AUTHOR_NAME", "qw03-test"),
             ("GIT_AUTHOR_EMAIL", "qw03-test@cognicode.local"),

@@ -113,10 +113,19 @@ failures: list[str] = []
 
 # A git that does not carry the operator's rules: the fixture is a repository
 # of its own, and the verdict must be the same on every machine.
+#
+# The HOME is part of that isolation. A git front-end that guards the
+# commits of the operator reads its rules from `$HOME/.config`, and a
+# repository it cannot classify refuses to sign its commits -- so a fixture
+# that inherits the HOME inherits a verdict that has nothing to do with the
+# radius. With a HOME of its own, the front-end finds no rules and the
+# fixture measures the repository, on every machine.
+FIXTURE_HOME = tempfile.mkdtemp(prefix="cognicode-fixture-home-")
 ISOLATED_GIT = {
     **os.environ,
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_SYSTEM": "/dev/null",
+    "HOME": FIXTURE_HOME,
 }
 
 # The identity the fixture's commits carry. It is declared HERE, in the call,
@@ -502,6 +511,32 @@ GOOD_RUSTC = "1.96.0 (ac68faa20 2026-05-25)"
 WORKSPACE_ROOT = '[workspace]\nmembers = ["alpha", "beta", "gamma"]\nresolver = "2"\n'
 
 
+def _real_tool(tool: str) -> str:
+    """The tool of this machine as a binary, not as a front-end that shadows it.
+
+    A front-end (a script that guards the operator) looks for the real tool in
+    the PATH, skipping only its own directory. A shim that hands the turn to
+    the front-end therefore makes the two point at each other: the front-end
+    finds the shim, the shim finds the front-end, and the call never answers.
+    The real tool is the first one of the PATH that is not a script; when every
+    candidate is a script, the one of the PATH is used, because on such a
+    machine the shim is the only way to reach the tool.
+    """
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        candidate = Path(directory) / tool
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            head = candidate.read_bytes()[:2]
+        except OSError:
+            continue
+        if head != b"#!":
+            return str(candidate)
+    found = shutil.which(tool)
+    assert found, f"{tool} is not on the PATH of this machine"
+    return found
+
+
 def _tools(
     where: Path,
     *,
@@ -529,8 +564,7 @@ def _tools(
     }
     where.mkdir(parents=True, exist_ok=True)
     for tool, body in bodies.items():
-        real = shutil.which(tool)
-        assert real, f"{tool} is not on the PATH of this machine"
+        real = _real_tool(tool)
         shim = where / tool
         shim.write_text(f'#!/bin/bash\n{body}\nexec "{real}" "$@"\n', encoding="utf-8")
         shim.chmod(0o755)

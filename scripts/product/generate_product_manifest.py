@@ -103,6 +103,35 @@ def certified_platforms(root: Path) -> list[str]:
     return release_lane.release_targets(root)
 
 
+def certified_platform_evidence(root: Path) -> dict[str, str]:
+    """Why each certified platform is certified, read from the matrix.
+
+    The evidence used to be a fixed sentence about a Kotlin pipeline that no
+    longer exists, and it said the same thing of every platform — including
+    the standalone lane, whose whole claim is that the artifact carries no
+    glibc dependency. The matrix already carries the evidence of each
+    platform; reading it here keeps one copy of the fact and lets the
+    manifest say what is actually true of each lane.
+    """
+    path = root / release_lane.PLATFORMS_MATRIX
+    try:
+        matrix = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{release_lane.PLATFORMS_MATRIX} is unreadable: {exc}") from exc
+    evidence: dict[str, str] = {}
+    for entry in matrix.get("platforms", []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("support_level") != release_lane.PUBLISHED_LEVEL:
+            continue
+        target = entry.get("target")
+        lines = entry.get("evidence")
+        if not isinstance(target, str) or not isinstance(lines, list):
+            continue
+        evidence[target] = "; ".join(str(line) for line in lines)
+    return evidence
+
+
 def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
     version = workspace_version(root)
     languages = [
@@ -113,11 +142,15 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
         }
         for name in parser_languages(root)
     ]
+    platform_evidence = certified_platform_evidence(root)
     platforms = [
         {
             "target": target,
             "support_level": "certified",
-            "evidence": "cargo build lane in release-candidate.pipeline.kts",
+            "evidence": platform_evidence.get(
+                target,
+                f"Publishable platform declared in {release_lane.PLATFORMS_MATRIX}",
+            ),
         }
         for target in certified_platforms(root)
     ]

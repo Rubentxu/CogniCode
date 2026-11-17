@@ -56,7 +56,7 @@ def test_generation_and_classification() -> None:
     assert {
         item["target"] for item in platforms["platforms"] if item["support_level"] == "certified"
     } == set(release_lane.release_targets(ROOT))
-    assert any(item["target"] == "x86_64-unknown-linux-musl" and item["support_level"] == "experimental" for item in platforms["platforms"])
+    assert any(item["target"] == "x86_64-unknown-linux-musl" and item["support_level"] == "certified" for item in platforms["platforms"])
     assert sum(item["support_level"] == "unsupported" for item in platforms["platforms"]) == 3
 
 

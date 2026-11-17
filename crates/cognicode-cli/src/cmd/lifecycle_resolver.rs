@@ -35,7 +35,8 @@ use serde::{Deserialize, Serialize};
 use crate::bundle_manifest::Platform;
 use crate::error::InstallerError;
 use crate::release_contract::{
-    RELEASE_DOWNLOAD_BASE, RELEASE_REPO, TIER1_PLATFORMS, bundle_manifest_filename, platform_token,
+    RELEASE_DOWNLOAD_BASE, RELEASE_REPO, TIER1_PLATFORMS, bundle_manifest_filename,
+    platform_candidates, platform_token,
 };
 use cognicode_core::application::text_boundary::truncate_at_boundary;
 
@@ -218,17 +219,26 @@ pub fn resolve_release(req: &ResolveRequest) -> Result<ResolvedRelease, Installe
     let version = strip_v_prefix(&release.tag_name);
 
     // REQ-LR-04
-    let expected_asset = bundle_manifest_filename(&version, req.host_platform);
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == expected_asset)
-        .ok_or_else(|| {
-            let names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
-            InstallerError::NoMatchingManifest(req.host_platform, names)
-        })?;
+    //
+    // The standalone lane is preferred over the native one: the standalone
+    // artifacts are statically linked and carry no glibc dependency, so they
+    // are the ones a Linux x86_64 host should install. The native lane stays
+    // the fallback for a release that does not publish the standalone one.
+    let candidates = platform_candidates(req.host_platform);
+    let mut selected: Option<(&GhAsset, Platform)> = None;
+    for platform in &candidates {
+        let expected_asset = bundle_manifest_filename(&version, *platform);
+        if let Some(asset) = release.assets.iter().find(|a| a.name == expected_asset) {
+            selected = Some((asset, *platform));
+            break;
+        }
+    }
+    let (asset, selected_platform) = selected.ok_or_else(|| {
+        let names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+        InstallerError::NoMatchingManifest(req.host_platform, names)
+    })?;
 
-    let platform_token = platform_token(req.host_platform).to_string();
+    let platform_token = platform_token(selected_platform).to_string();
     let manifest_url = if let Some(base) = &req.base_url {
         rewrite_url(base, &asset.browser_download_url)
     } else {

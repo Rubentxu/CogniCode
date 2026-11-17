@@ -30,6 +30,18 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_NAME = "fixture"
 FIXTURE_EMAIL = "fixture@example.invalid"
 
+# A HOME of its own for the fixtures.
+#
+# The machine's git can be a front-end (a script) that guards the commits of
+# the operator: it reads its rules from `$HOME/.config` and REFUSES to sign a
+# commit in a repository it cannot classify -- one without a remote, which is
+# what a fixture is before it is pushed. The fixture would then be measuring
+# the policy of the machine instead of the release scripts, and the verdict
+# would differ on every machine. With a HOME of its own, the front-end finds
+# no rules, hands the turn to the real git, and the fixture measures the
+# scripts.
+FIXTURE_HOME = tempfile.mkdtemp(prefix="cognicode-fixture-home-")
+
 RELEASE_ORDER = [
     "cognicode-graph-algos",
     "cognicode-macros",
@@ -666,7 +678,11 @@ class SdkSurfaceContract(unittest.TestCase):
         So the fixture neutralises it, the way the runner already does: the
         global and system configuration are not read, and the wrapper
         delegates to the real git — the way out it names itself
-        (`RANDOM_GIT_COMMITTER_DISABLED=1`).
+        (`RANDOM_GIT_COMMITTER_DISABLED=1`). A front-end that reads its rules
+        from `$HOME/.config` and refuses to sign a commit in a repository it
+        cannot classify is neutralised the same way: the fixture gets a HOME
+        of its own, so the front-end finds no rules and the fixture measures
+        the release scripts.
 
         What is left is git, and the identity the fixture declares: a
         fixture's commit is signed by `FIXTURE_NAME` and `FIXTURE_EMAIL`,
@@ -677,6 +693,7 @@ class SdkSurfaceContract(unittest.TestCase):
         env["GIT_CONFIG_GLOBAL"] = "/dev/null"
         env["GIT_CONFIG_SYSTEM"] = "/dev/null"
         env["RANDOM_GIT_COMMITTER_DISABLED"] = "1"
+        env["HOME"] = FIXTURE_HOME
         return env
 
     def test_auto_release_sees_a_version_bump_merged_after_the_checkout_was_made(self):

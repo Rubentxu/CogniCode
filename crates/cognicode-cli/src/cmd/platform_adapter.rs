@@ -335,7 +335,14 @@ pub fn detect_host_platform() -> Platform {
 fn detect_linux_subarch() -> Platform {
     match std::env::consts::ARCH {
         "aarch64" => Platform::LinuxAarch64,
+        // The standalone build is statically linked against musl, so it runs
+        // on any Linux x86_64 whatever glibc the host carries. A host that
+        // runs the standalone build belongs to the standalone lane: it must
+        // resolve the standalone artifacts, not the native ones.
+        #[cfg(target_env = "musl")]
+        _ => Platform::LinuxX86_64Musl,
         // x86_64 is the only other architecture in the release matrix.
+        #[cfg(not(target_env = "musl"))]
         _ => Platform::LinuxX86_64,
     }
 }
@@ -351,7 +358,9 @@ fn detect_macos_subarch() -> Platform {
 /// Build the [`PlatformAdapter`] for the current host.
 pub fn current_adapter() -> Box<dyn PlatformAdapter> {
     match detect_host_platform() {
-        Platform::LinuxX86_64 | Platform::LinuxAarch64 => Box::new(LinuxAdapter),
+        Platform::LinuxX86_64 | Platform::LinuxX86_64Musl | Platform::LinuxAarch64 => {
+            Box::new(LinuxAdapter)
+        }
         Platform::MacOsX86_64 | Platform::MacOsAarch64 => Box::new(MacOsAdapter),
         Platform::WindowsX86_64 => Box::new(WindowsAdapter),
     }
@@ -403,12 +412,13 @@ mod tests {
     #[test]
     fn detect_host_platform_returns_supported_triple() {
         let p = detect_host_platform();
-        // Must be one of the five release-matrix variants. Any other
+        // Must be one of the six release-matrix variants. Any other
         // value would be a host we have not contracted for.
         assert!(
             matches!(
                 p,
                 Platform::LinuxX86_64
+                    | Platform::LinuxX86_64Musl
                     | Platform::LinuxAarch64
                     | Platform::MacOsX86_64
                     | Platform::MacOsAarch64

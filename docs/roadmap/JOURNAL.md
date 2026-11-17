@@ -39892,3 +39892,106 @@ que publica el goal que sí lo carga.
   inventado.
 
 **La base del bloque 7 es `bc3e2c46`.**
+---
+
+## Release v0.105.0 — lane standalone publicado (2026-11-17)
+
+**Cambio.** La release publica un **lane standalone** junto al nativo: el target
+`x86_64-unknown-linux-musl` compilado **estático** (`-C target-feature=+crt-static`), de
+modo que el artefacto no lleva glibc enlazada y corre en cualquier Linux x86_64 sea
+cual sea la glibc de la máquina. El lane `linux-x86-64-musl` pasa a ser **Tier 1**:
+`Platform` gana la variante `LinuxX86_64Musl`, `ALL_PLATFORMS` pasa a seis plataformas y
+`TIER1_PLATFORMS` a dos, y los nombres de artefacto siguen siendo **derivados**
+(`{componente}-{versión}-{platform_token}.tar.gz`), así que el lane nuevo no introduce
+ni una segunda copia del mapa de plataformas.
+
+El resolver (`lifecycle_resolver`) prueba el lane standalone antes que el nativo y cae
+al nativo cuando la release no publica el standalone. Un binario compilado contra musl
+**se reconoce a sí mismo** como el lane standalone (`cfg(target_env = "musl")`), así que
+el canal que instala es el canal que publica.
+
+`install.sh` —el canal Layer 0, el que usa todo consumidor— **instala el lane
+standalone** en Linux x86_64. Antes pedía el triple nativo a pelo, con lo cual un
+consumidor con glibc 2.39 recibía un binario que no arranca en su máquina. Ahora elige
+el primer candidato que aparece en el `SHA256SUMS` publicado —el standalone, y el nativo
+de respaldo para las releases antiguas—, y la elección es un hecho sobre la release y
+no una suposición.
+
+**Por qué el flag estaba invertido.** La configuración del target musl tenía
+`-C target-feature=-crt-static`, que produce un binario que necesita el cargador de musl
+instalado en el destino: es decir, uno que no corre en una distro glibc normal. El lane
+«musl» existía en el árbol y nunca se publicó. Los binarios con código C (`ring`)
+necesitan además un compilador musl en la máquina de build, y `cc-rs` no lo encuentra
+solo al compilar desde un host glibc: la receta lo fija (`CC_x86_64_unknown_linux_musl`).
+La receta usa además el toolchain **fijado** (`rust-toolchain.toml`), no `stable`:
+añadir el target a `stable` publicaba un lane que el toolchain fijado no podía compilar.
+
+**Por qué el número de versión.** La release es **v0.105.0** y no v0.104.0: el
+número 0.104.0 ya estaba **consumido**. El PR #925 («chore(release): bump the SDK to
+0.104.0») lo subió en `main` para desbloquear `cognicode-guard` y dejó la etiqueta
+`v0.104.0` pusheada sobre ese commit, porque el guard consume el SDK **por etiqueta
+git**. Publicar una release con ese nombre habría tenido que **mover** la etiqueta a
+otro commit —reescribir un pin que otro repositorio consume—, así que el corte
+standalone toma el número siguiente. La etiqueta `v0.104.0` y su commit quedan
+intactos: el guard no se entera.
+
+**La matriz de plataformas.** Publicar el lane standalone obliga a que la matriz del
+producto lo certifique, porque el conjunto publicado de la release se lee de
+`product/platforms.json` (los `support_level: certified`). Al certificarlo, el
+generador de la matriz **emitía la plataforma dos veces** —una como publicada y otra
+como la entrada `experimental` de reserva—, y la matriz acababa con dos afirmaciones
+sobre la misma plataforma. El generador ahora salta la entrada de reserva cuando la
+plataforma ya está publicada, y dos contratos nuevos vigilan la cadena entera: «la
+matriz certifica toda plataforma de Tier 1» y «la matriz no declara dos veces la misma
+plataforma». La evidencia de las plataformas publicadas también se deriva de la matriz
+(antes era una frase fija sobre `release-candidate.pipeline.kts`, un fichero que ya no
+existe).
+
+**Medido.**
+
+- **El caso real, medido en la máquina destino.** Los binarios estáticos construidos en
+  esta máquina (glibc 2.44) se copiaron **sin recompilar** a un Ubuntu 24.04 con glibc
+  2.39: `cogh --version` responde `cogh 0.105.0`, `cognicode-mcp --version` responde
+  `cognicode-mcp 0.105.0`, y el servidor MCP responde el handshake `initialize` con
+  `serverInfo {name: cognicode, version: 0.105.0}`. `file` los describe como
+  `static-pie linked` y `ldd` no lista ninguna dependencia dinámica.
+- **Contrato de la ruta de release** (`scripts/ci/test_release_path_contracts.py`):
+  37 casos en verde. Los nuevos son «el instalador prefiere el lane standalone», «la
+  matriz certifica toda plataforma de Tier 1» y «la matriz no declara dos veces la
+  misma plataforma».
+- **Matrices de producto** (`test_product_manifest.py`, `test_product_support_matrix.py`):
+  14 casos en verde, con el generador de la matriz y el manifiesto del producto
+  regenerados desde el árbol.
+- **Staging de los dos lanes**: el contrato de aplanado publica las dos plataformas de
+  Tier 1, y el caso «falta una plataforma de Tier 1» —retirado en 2026-10-17 porque con
+  una sola plataforma de Tier 1 publicar solo esa era el estado completo— vuelve a estar
+  activo y en verde.
+- **Resolución de release**: `cognicode-release platforms` publica los dos triples de
+  Tier 1, y `scripts/check-release-matrix.sh` da `RESULT: OK` con las dos plataformas
+  publicadas y con lane.
+
+**Operador.** Los assets de la release son los seis tarballs de binarios (tres
+componentes × dos lanes), los dos bundles de skills, un manifiesto por plataforma, el
+inventario y `SHA256SUMS`.
+
+**NOT_RUN.**
+
+- **Los cuatro crates del SDK** (`cognicode-core`, `cognicode-graph-algos`,
+  `cognicode-macros`, `cognicode-graph-wasm`) siguen publicados en crates.io en
+  **0.103.1**. Publicarlos en 0.105.0 es una operación aparte, sobre un canal
+  irreversible, y esta release no la hace.
+- **Atestación de procedencia**: la release sale sin ella, igual que las anteriores, y
+  por la misma razón: no hay clave de firma de release en esta máquina. Lo que sí se
+  arregló es la herramienta: `cosign` 3.1.3 queda instalado y verificado contra la
+  suma declarada (`scripts/ci/install-cosign.sh`), así que el contrato de generación
+  de procedencia pasa sus 15 casos en vez de fallar por falta de binario.
+- **Rojos que eran de la máquina, y ya no lo son.** El contrato del guard de binarios
+  (`qw03`, 5 casos) y el del preflight (`qw04`, 18 casos) fallaban al crear un repo
+  temporal y hacer `git commit`: la política `git-control` de esta máquina no admite
+  `commit` en un repositorio sin remoto. Se probó que eran anteriores a este árbol
+  (fallan igual sobre un worktree prístino de `origin/main`) y se arreglaron aislando
+  el entorno del fixture —su `HOME`, su configuración global de git y un `PATH` en el
+  que el `git` real es el único que no es un shim—, para que el contrato mida el árbol
+  y no la política de la máquina. El rojo del contrato del witness del árbol era de
+  otra cosa: `AGENTS.md` se editó **mientras** la suite corría, así que el testigo
+  vio un cambio que nadie había hecho durante los tests.

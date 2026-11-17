@@ -80,6 +80,9 @@ fn default_bundle_kind() -> String {
 #[serde(rename_all = "kebab-case")]
 pub enum Platform {
     LinuxX86_64,
+    /// The standalone build: statically linked against musl, so it runs on
+    /// every Linux x86_64 regardless of the host's glibc version.
+    LinuxX86_64Musl,
     LinuxAarch64,
     MacOsX86_64,
     MacOsAarch64,
@@ -90,6 +93,7 @@ impl std::fmt::Display for Platform {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Platform::LinuxX86_64 => "linux-x86-64",
+            Platform::LinuxX86_64Musl => "linux-x86-64-musl",
             Platform::LinuxAarch64 => "linux-aarch64",
             Platform::MacOsX86_64 => "mac-os-x86-64",
             Platform::MacOsAarch64 => "mac-os-aarch64",

@@ -14,8 +14,10 @@ bajo `versions/<v>/skills/<bundle-id>` y los integra sin sobrescribir otros
 bundles de OpenCode. Los binarios de `explorer-api`/`explorer-mcp` y las
 plataformas Windows/macOS **no** forman parte de esta superficie estable:
 no anunciarlos como instalables mediante `cogh` hasta publicar y certificar
-sus artefactos y perfiles. Linux x86_64 GNU es la matriz publicada.
-Las variantes `aarch64` y `musl` son experimentales y no se publican (`product/platforms.json`).
+sus artefactos y perfiles. Linux x86_64 es la matriz publicada, en dos lanes:
+el nativo (GNU) y el *standalone* (musl, enlazado estáticamente, sin
+dependencia de glibc). La variante `aarch64` es experimental y no se publica
+(`product/platforms.json`).
 
 Los bundles de skills de esta release son únicamente los dos que `cogh`
 instala (`cognicode` y `cognicode-mcp`). No existe una skill de auditoría
@@ -44,6 +46,15 @@ cognicode --version
 cognicode-mcp --version
 ```
 
+`install.sh` instala el lane **standalone** (`linux-x86-64-musl`): el binario
+va enlazado estáticamente contra musl y por tanto no lleva ninguna dependencia
+de glibc, así que funciona en cualquier Linux x86_64 sea cual sea la glibc de
+la máquina (2.39 en Ubuntu 24.04, 2.44 en Fedora 42). El lane nativo
+(`linux-x86-64`) queda como respaldo para las releases que no publiquen el
+standalone; el instalador lo elige por el `SHA256SUMS` publicado, que es lo que
+la release contiene de verdad. El `cogh` que se instala así reconoce su propio
+lane y resuelve los artefactos standalone cuando la release los publica.
+
 `cogh install mcp-server --ide opencode` selecciona el perfil `reviewer`
 cuando se omite `--profile`. `cogh install mcp-server` sin IDE mantiene el
 perfil ligero `core`. `core` **no** incluye el daemon MCP y es incorrecto
@@ -65,7 +76,7 @@ cogh rollback                 # revierte la última transición registrada, si e
 cogh install mcp-server --version latest --profile reviewer --ide opencode
 
 # Retira una versión instalada y su integración IDE de forma explícita:
-cogh uninstall mcp-server --version v0.103.1 --ide opencode
+cogh uninstall mcp-server --version v0.105.0 --ide opencode
 ```
 
 `cogh update --profile core` es un cambio deliberado de perfil y retirará
@@ -213,27 +224,35 @@ absolute path as `command`.
 
 This section is written in English; the rest of this guide is in Spanish.
 
-A release `v0.103.1` publishes the files below, named by the functions of
-`crates/cognicode-cli/src/cmd/release_contract.rs`. Only the certified platform
-`x86_64-unknown-linux-gnu` is published; `product/platforms.json` marks
-`aarch64` and `musl` as experimental and macOS and Windows as unsupported.
+A release `v0.105.0` publishes the files below, named by the functions of
+`crates/cognicode-cli/src/cmd/release_contract.rs`. Two certified platforms are
+published: `x86_64-unknown-linux-gnu` (the native lane) and
+`x86_64-unknown-linux-musl` (the standalone lane, statically linked and
+therefore runnable on any Linux x86_64 whatever its glibc);
+`product/platforms.json` marks `aarch64` as experimental and macOS and Windows
+as unsupported.
 
 Binaries, one tarball per component and platform:
 
-- `cogh-0.103.1-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-0.103.1-x86_64-unknown-linux-gnu.tar.gz`
-- `cognicode-mcp-0.103.1-x86_64-unknown-linux-gnu.tar.gz`
+- `cogh-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cognicode-mcp-0.105.0-x86_64-unknown-linux-gnu.tar.gz`
+- `cogh-0.105.0-x86_64-unknown-linux-musl.tar.gz`
+- `cognicode-0.105.0-x86_64-unknown-linux-musl.tar.gz`
+- `cognicode-mcp-0.105.0-x86_64-unknown-linux-musl.tar.gz`
 
 Skill bundles, platform-independent (they are skills, not executables):
 
-- `cognicode-0.103.1.tar.gz`
-- `cognicode-mcp-0.103.1.tar.gz`
+- `cognicode-0.105.0.tar.gz`
+- `cognicode-mcp-0.105.0.tar.gz`
 
 Manifests and checksums:
 
-- `bundle-0.103.1-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
+- `bundle-0.105.0-x86_64-unknown-linux-gnu.yaml`: the platform manifest that
   `cogh` resolves.
-- `release-inventory-0.103.1.json`: the inventory of the release.
+- `bundle-0.105.0-x86_64-unknown-linux-musl.yaml`: the same manifest for the
+  standalone lane.
+- `release-inventory-0.105.0.json`: the inventory of the release.
 - `SHA256SUMS`: the checksum of every file above.
 
 `explorer-api` and `explorer-mcp` are not published, and neither is the
@@ -273,7 +292,7 @@ This section is written in English. It records what was run on November 9,
 directory.
 
 `mise` installs from the GitHub release with its `github:` backend, with no
-plugin. A bare `github:Rubentxu/CogniCode@0.103.1` picks the first matching
+plugin. A bare `github:Rubentxu/CogniCode@0.105.0` picks the first matching
 asset, which is the `cognicode` tarball. To get another binary, name its asset
 in a `mise.toml`:
 
@@ -283,6 +302,14 @@ version = "0.103.0"
 asset_pattern = "cogh-*-x86_64-unknown-linux-gnu.tar.gz"
 bin = "cogh"
 ```
+
+Since v0.105.0 the release publishes **two** Linux x86_64 lanes, so the
+`asset_pattern` is what decides which one mise installs:
+`cogh-*-x86_64-unknown-linux-musl.tar.gz` selects the standalone build
+(statically linked, no glibc dependency) and
+`cogh-*-x86_64-unknown-linux-gnu.tar.gz` the native one. A pattern that
+matches both —`cogh-*`— leaves the choice to mise, which picks the first
+asset it finds.
 
 With `cognicode-mcp-*-x86_64-unknown-linux-gnu.tar.gz` and `bin = "cognicode-mcp"`
 the same recipe installed `cognicode-mcp`. In each case the binary in the
