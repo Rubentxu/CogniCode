@@ -6,10 +6,10 @@
 //!   revisions stay [`RevisionHandle`](crate::domain::scm::RevisionHandle)s;
 //!   this module adds the review around them (pull request, merge
 //!   candidate, check).
-//! * Nothing here performs I/O. [`target`] and [`grant`] are pure; the
+//! * Nothing here performs I/O. `target` and [`grant`](crate::domain::forge::grant) are pure; the
 //!   ports are satisfied by adapters (`infrastructure::github`) and by
-//!   the conforming fake in [`fake`].
-//! * Policy is not here. The [`PullRequestEvaluator`] seam is what the
+//!   the conforming fake in `fake`.
+//! * Policy is not here. The [`PullRequestEvaluator`](crate::domain::forge::PullRequestEvaluator) seam is what the
 //!   policy side implements; this module only guarantees the evidence it
 //!   receives and the revision a result is published on.
 

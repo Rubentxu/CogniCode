@@ -226,7 +226,7 @@ pub fn budget_hole(
 /// say, so what it did not cover is exactly the holes of the walk plus the
 /// files it opened and could not read or parse. It is measured the same
 /// way every other answer is —no hole, `Complete`; some, `Partial`; no
-/// material, `NoMaterial`— and by the same rule, [`settle`], so a route
+/// material, `NoMaterial`— and by the same rule, `settle`, so a route
 /// that reads the tree cannot say `Complete` over a hole the graph would
 /// have named.
 pub fn scan_coverage(

@@ -16,7 +16,7 @@
 //!
 //! The fact of one file depends on that file's bytes and path alone:
 //! every object of a bridge fact is text and every subject is named by
-//! [`stable_entity_id`], so a batch of two files is the union of the two
+//! [`stable_entity_id`](crate::application::fact_bridge::batch_builder::stable_entity_id), so a batch of two files is the union of the two
 //! batches of one. Per-file facts are therefore content-addressed
 //! objects ([`FactObjectStore`]): a revision that shares bytes with an
 //! earlier one, on any branch, reuses them instead of parsing again, and
