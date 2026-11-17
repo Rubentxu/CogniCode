@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::application::change_tracking::detector_runs::{
-    Reuse, detect_in_cache, detector_id, ensure_run_in_cache,
+    ProductionDetector, Reuse, detect_in_cache, detector_id, ensure_runs_in_cache,
 };
 use crate::application::change_tracking::planner::WorkDisposition;
 use crate::application::change_tracking::revision_facts::{
@@ -184,7 +184,7 @@ pub struct CompareHeadFinding {
     pub evidence_revision: String,
 }
 
-/// The detector's findings on the candidate revision, and whether they were
+/// One detector's findings on the candidate revision, and whether they were
 /// reused from the base revision's run or produced again.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CompareHeadFindings {
@@ -241,9 +241,11 @@ pub struct GoalCompare {
     /// The reuse verdicts, from the read-set the production detector run
     /// wrote for the base revision.
     pub work_reuse: Option<CompareWorkReuse>,
-    /// The detector's findings on the candidate revision with their reuse
-    /// state; absent when the revision facts could not be assembled.
-    pub head_findings: Option<CompareHeadFindings>,
+    /// The findings on the candidate revision with their reuse state, one
+    /// entry per production detector that writes a read-set; absent when the
+    /// revision facts could not be assembled. A detector without an entry
+    /// writes no read-set, so its absence is not a clean result.
+    pub head_findings: Option<Vec<CompareHeadFindings>>,
 }
 
 const FACTS_UNAVAILABLE: &str = "revision facts could not be assembled";
@@ -307,10 +309,17 @@ fn disposition_word(disposition: WorkDisposition) -> &'static str {
     }
 }
 
-/// The detector's findings on the candidate, with the reuse state exactly as
+fn detector_name(detector: ProductionDetector) -> String {
+    detector_id(detector)
+        .map(|id| id.as_str().to_string())
+        .unwrap_or_default()
+}
+
+/// `detector`'s findings on the candidate, with the reuse state exactly as
 /// `detect_with_reuse` proved it. A detection that could not be made is
 /// `not_evaluated` with its reason and no findings, never an empty clean list.
-fn head_findings(
+fn head_findings_of(
+    detector: ProductionDetector,
     workspace: &Path,
     cache_root: Option<&Path>,
     base: &ProducedRevision,
@@ -318,10 +327,9 @@ fn head_findings(
     change_set: &ChangeSet,
 ) -> CompareHeadFindings {
     let coverage = side_coverage(candidate).coverage;
-    let detector = detector_id()
-        .map(|id| id.as_str().to_string())
-        .unwrap_or_default();
+    let name = detector_name(detector);
     match detect_in_cache(
+        detector,
         cache_root,
         workspace,
         base,
@@ -358,7 +366,7 @@ fn head_findings(
                 })
                 .collect();
             CompareHeadFindings {
-                detector,
+                detector: name,
                 reuse: reuse.to_string(),
                 reason,
                 coverage,
@@ -366,13 +374,30 @@ fn head_findings(
             }
         }
         Err(error) => CompareHeadFindings {
-            detector,
+            detector: name,
             reuse: "not_evaluated".to_string(),
             reason: format!("the detector could not run: {error}"),
             coverage,
             findings: Vec::new(),
         },
     }
+}
+
+/// Every detector's findings on the candidate, in the order the detectors
+/// write their read-sets.
+fn head_findings(
+    workspace: &Path,
+    cache_root: Option<&Path>,
+    base: &ProducedRevision,
+    candidate: &ProducedRevision,
+    change_set: &ChangeSet,
+) -> Vec<CompareHeadFindings> {
+    ProductionDetector::ALL
+        .into_iter()
+        .map(|detector| {
+            head_findings_of(detector, workspace, cache_root, base, candidate, change_set)
+        })
+        .collect()
 }
 
 /// What the revision facts and prior read-sets support, as the wire states it.
@@ -384,7 +409,7 @@ struct Semantics {
     revision_facts: Option<CompareRevisionFacts>,
     impact: Option<CompareImpact>,
     work_reuse: Option<CompareWorkReuse>,
-    head_findings: Option<CompareHeadFindings>,
+    head_findings: Option<Vec<CompareHeadFindings>>,
 }
 
 impl Semantics {
@@ -451,9 +476,16 @@ fn semantics(
     // writing it here is what turns `not_evaluated` into a real verdict. A
     // failed write only leaves the answer `not_evaluated`.
     let writer_note = cache_root.and_then(|root| {
-        ensure_run_in_cache(root, workspace, &base, &mut InMemoryEvidenceStore::new())
-            .err()
-            .map(|error| error.to_string())
+        let failures: Vec<String> =
+            ensure_runs_in_cache(root, workspace, &base, &mut InMemoryEvidenceStore::new())
+                .into_iter()
+                .filter_map(|(detector, written)| {
+                    written
+                        .err()
+                        .map(|error| format!("{}: {error}", detector_name(detector)))
+                })
+                .collect();
+        (!failures.is_empty()).then(|| failures.join("; "))
     });
     let index =
         cache_root.and_then(|root| DetectorReuseStore::for_workspace(root, workspace).load());
@@ -647,7 +679,7 @@ pub fn render(answer: &Value) -> String {
     for change in compared.changes {
         text.push_str(&format!("  {} {}\n", change.kind, change.path));
     }
-    if let Some(head) = &compared.head_findings {
+    for head in compared.head_findings.iter().flatten() {
         text.push_str(&format!(
             "Head findings of {}: {} ({}, {}): {}\n",
             head.detector,
@@ -786,6 +818,20 @@ mod tests {
         directory
     }
 
+    const FUNCTION_DETECTOR: &str = "structure.function_definition";
+    const TYPE_DETECTOR: &str = "structure.type_definition";
+
+    fn head_of(answer: &GoalCompare, detector: &str) -> CompareHeadFindings {
+        answer
+            .head_findings
+            .as_ref()
+            .expect("head findings are published")
+            .iter()
+            .find(|head| head.detector == detector)
+            .unwrap_or_else(|| panic!("no head findings for {detector}"))
+            .clone()
+    }
+
     #[test]
     fn a_body_edit_leaves_the_detector_unaffected_so_its_work_is_reusable() {
         let directory = repository();
@@ -802,8 +848,15 @@ mod tests {
             answer.work_reuse_reason
         );
         let reuse = answer.work_reuse.expect("a verdict per detector");
-        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 1, 0));
-        assert_eq!(reuse.works[0].disposition, "unaffected");
+        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 2, 0));
+        assert!(
+            reuse
+                .works
+                .iter()
+                .all(|work| work.disposition == "unaffected"),
+            "one verdict per detector that wrote a read-set: {:?}",
+            reuse.works
+        );
     }
 
     #[test]
@@ -820,8 +873,8 @@ mod tests {
         let reuse = answer.work_reuse.expect("a verdict per detector");
         assert_eq!(
             (reuse.unaffected, reuse.unknown),
-            (0, 1),
-            "an aggregate read over all functions cannot prove the new one unread"
+            (0, 2),
+            "an aggregate read over all definitions cannot prove the new one unread"
         );
     }
 
@@ -835,7 +888,7 @@ mod tests {
 
         let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
 
-        let head = answer.head_findings.expect("head findings are published");
+        let head = head_of(&answer, FUNCTION_DETECTOR);
         assert_eq!(head.reuse, "reused", "{}", head.reason);
         assert_eq!(head.coverage, "full");
         assert_eq!(head.findings.len(), 1);
@@ -854,7 +907,7 @@ mod tests {
 
         let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
 
-        let head = answer.head_findings.expect("head findings are published");
+        let head = head_of(&answer, FUNCTION_DETECTOR);
         assert_eq!(head.reuse, "rerun");
         assert!(
             head.reason.contains("touches a fact the detector read"),
@@ -878,7 +931,7 @@ mod tests {
 
         let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
 
-        let head = answer.head_findings.expect("head findings are published");
+        let head = head_of(&answer, FUNCTION_DETECTOR);
         assert_eq!(head.reuse, "rerun", "{}", head.reason);
         assert!(head.reason.contains("not proven"), "{}", head.reason);
         let files: Vec<&str> = head.findings.iter().map(|f| f.file.as_str()).collect();
@@ -894,7 +947,7 @@ mod tests {
 
         let answer = compare(root, &base, "HEAD").expect("compare");
 
-        let head = answer.head_findings.expect("head findings are published");
+        let head = head_of(&answer, FUNCTION_DETECTOR);
         assert_eq!(head.reuse, "rerun");
         assert!(head.reason.contains("no prior read-set"), "{}", head.reason);
         assert_eq!(head.findings.len(), 1);
@@ -911,7 +964,7 @@ mod tests {
 
         let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
 
-        let head = answer.head_findings.expect("head findings are published");
+        let head = head_of(&answer, FUNCTION_DETECTOR);
         assert_eq!(head.coverage, "partial");
         assert_eq!(head.reuse, "rerun", "{}", head.reason);
     }
@@ -928,9 +981,91 @@ mod tests {
         let text = render(&serde_json::to_value(answer).expect("serialise"));
 
         assert!(
-            text.contains("Head findings of") && text.contains("1 (reused, full)"),
+            text.contains("Head findings of structure.function_definition: 1 (reused, full)")
+                && text.contains("Head findings of structure.type_definition: 0 (reused, full)"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn head_findings_carry_one_entry_per_detector_that_writes_a_read_set() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let detectors: Vec<String> = answer
+            .head_findings
+            .as_ref()
+            .expect("head findings are published")
+            .iter()
+            .map(|head| head.detector.clone())
+            .collect();
+        assert_eq!(detectors, [FUNCTION_DETECTOR, TYPE_DETECTOR]);
+        let types = head_of(&answer, TYPE_DETECTOR);
+        assert_eq!(types.reuse, "reused", "{}", types.reason);
+        assert!(types.findings.is_empty(), "the repository defines no type");
+    }
+
+    #[test]
+    fn removing_a_type_reruns_only_the_type_detector_and_removing_a_function_only_the_function_one()
+    {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "function");
+        let base = commit_file(root, "t.rs", "pub struct Point { x: i32 }\n", "type");
+        let head = commit_file(root, "t.rs", "// nothing defined here\n", "type removed");
+
+        let answer = compare_with(root, Some(cache.path()), &base, &head).expect("compare");
+
+        let types = head_of(&answer, TYPE_DETECTOR);
+        let functions = head_of(&answer, FUNCTION_DETECTOR);
+        assert_eq!(types.reuse, "rerun", "{}", types.reason);
+        assert!(
+            types.reason.contains("touches a fact the detector read"),
+            "{}",
+            types.reason
+        );
+        assert!(types.findings.is_empty(), "Point is gone");
+        assert_eq!(functions.reuse, "reused", "{}", functions.reason);
+        assert_eq!(functions.findings.len(), 1);
+        assert_eq!(
+            functions.findings[0].evidence_revision,
+            answer.base.revision
+        );
+
+        let base = head;
+        let head = commit_file(
+            root,
+            "a.rs",
+            "// nothing defined here\n",
+            "function removed",
+        );
+        let answer = compare_with(root, Some(cache.path()), &base, &head).expect("compare");
+
+        assert_eq!(head_of(&answer, TYPE_DETECTOR).reuse, "reused");
+        assert_eq!(head_of(&answer, FUNCTION_DETECTOR).reuse, "rerun");
+    }
+
+    #[test]
+    fn without_a_cache_every_detector_reruns_because_no_read_set_exists() {
+        let directory = repository();
+        let root = directory.path();
+        let base = commit_file(root, "t.rs", "pub struct Point;\n", "base");
+        commit_file(root, "t.rs", "pub struct Point { x: i32 }\n", "head");
+
+        let answer = compare(root, &base, "HEAD").expect("compare");
+
+        for detector in [FUNCTION_DETECTOR, TYPE_DETECTOR] {
+            let head = head_of(&answer, detector);
+            assert_eq!(head.reuse, "rerun", "{detector}");
+            assert!(head.reason.contains("no prior read-set"), "{}", head.reason);
+        }
+        assert_eq!(head_of(&answer, TYPE_DETECTOR).findings.len(), 1);
     }
 
     #[test]
