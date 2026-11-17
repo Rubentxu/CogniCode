@@ -854,11 +854,152 @@ fn the_matrix_agrees_with_what_the_runs_actually_do() {
     }
 }
 
+const INFRASTRUCTURE: [StructuralFamily; 3] = [
+    StructuralFamily::InfraPublicExposure,
+    StructuralFamily::InfraEncryption,
+    StructuralFamily::InfraPermissions,
+];
+
+#[test]
+fn infrastructure_families_are_modeled_for_terraform_only() {
+    let m = matrix();
+    for family in INFRASTRUCTURE {
+        let family = SecurityFamily::of_structural(family);
+        assert!(
+            matches!(
+                m.get(SourceLanguage::Terraform, family).unwrap().support,
+                Support::Supported { .. }
+            ),
+            "{family:?}"
+        );
+        for language in MODELED {
+            assert!(
+                matches!(
+                    m.get(language, family).unwrap().support,
+                    Support::Unsupported { .. }
+                ),
+                "{language:?} {family:?} must not claim a model it does not have"
+            );
+        }
+    }
+    for weakness in Weakness::ALL {
+        assert!(
+            matches!(
+                m.get(
+                    SourceLanguage::Terraform,
+                    SecurityFamily::of_weakness(weakness)
+                )
+                .unwrap()
+                .support,
+                Support::Unsupported { .. }
+            ),
+            "{weakness:?}"
+        );
+    }
+}
+
+#[test]
+fn an_infrastructure_family_over_a_program_language_is_unsupported_never_clean() {
+    for family in INFRASTRUCTURE {
+        let (run, _) = structural(family, &unit(Rust, vec![]), promoted());
+        assert!(
+            matches!(run.verdict, PackVerdict::Unsupported { .. }),
+            "{family:?}"
+        );
+        assert!(run.findings.is_empty());
+    }
+}
+
+fn misconfiguration(
+    line: u32,
+    family: StructuralFamily,
+    with_grounding: bool,
+) -> StructuralObservation {
+    StructuralObservation {
+        line,
+        grounding: with_grounding.then(|| {
+            GroundingRef::entity(
+                EntityId::new(u64::from(line)),
+                FactId::new(600 + u64::from(line)),
+            )
+        }),
+        fact: StructuralFact::Misconfiguration {
+            family,
+            check: "storage_encrypted".to_string(),
+            resource: "aws_db_instance.main".to_string(),
+            attribute: "storage_encrypted".to_string(),
+            detail: "`storage_encrypted` is explicitly false".to_string(),
+        },
+    }
+}
+
+fn unknown_value(line: u32, family: StructuralFamily) -> StructuralObservation {
+    StructuralObservation {
+        line,
+        grounding: None,
+        fact: StructuralFact::UnknownValue {
+            family,
+            resource: "aws_db_instance.main".to_string(),
+            attribute: "storage_encrypted".to_string(),
+            causes: vec!["unbound variable var.encrypt".to_string()],
+        },
+    }
+}
+
+#[test]
+fn a_verified_terraform_misconfiguration_blocks_only_when_promoted_and_grounded() {
+    let family = StructuralFamily::InfraEncryption;
+    let unit_of = |grounded| {
+        unit(
+            SourceLanguage::Terraform,
+            vec![misconfiguration(7, family, grounded)],
+        )
+    };
+    let (blocked, store) = structural(family, &unit_of(true), promoted());
+    assert_eq!(blocked.blocking, 1);
+    assert_eq!(blocked.findings[0].evidence_class, EvidenceClass::C);
+    assert!(
+        !FindingVerifier::new(&store).can_block(
+            &blocked.findings[0],
+            &FindingGate::new(EvidenceClass::B, RiskLevel::High)
+        ),
+        "structural evidence never satisfies a stronger class"
+    );
+
+    let (candidate, _) = structural(family, &unit_of(true), RunAuthority::Candidate);
+    assert_eq!((candidate.findings.len(), candidate.blocking), (1, 0));
+    let (floating, _) = structural(family, &unit_of(false), promoted());
+    assert_eq!((floating.findings.len(), floating.blocking), (1, 0));
+}
+
+#[test]
+fn an_unknown_terraform_value_never_becomes_a_finding_nor_a_clean_verdict() {
+    let family = StructuralFamily::InfraEncryption;
+    let (run, _) = structural(
+        family,
+        &unit(SourceLanguage::Terraform, vec![unknown_value(7, family)]),
+        promoted(),
+    );
+    assert!(run.findings.is_empty());
+    assert_eq!(run.blocking, 0);
+    assert!(matches!(run.verdict, PackVerdict::Unknown { .. }));
+
+    let (other_family, _) = structural(
+        StructuralFamily::InfraPermissions,
+        &unit(SourceLanguage::Terraform, vec![unknown_value(7, family)]),
+        promoted(),
+    );
+    assert!(
+        matches!(other_family.verdict, PackVerdict::NotObserved { .. }),
+        "an unknown of one family says nothing about another"
+    );
+}
+
 #[test]
 fn the_matrix_is_publishable_json_and_round_trips() {
     let m = matrix();
     let json = serde_json::to_string(&m).expect("serializes");
     let back: CapabilityMatrix = serde_json::from_str(&json).expect("deserializes");
     assert_eq!(back, m);
-    assert!(json.contains("\"pack_version\":\"1.0.0\""));
+    assert!(json.contains("\"pack_version\":\"1.1.0\""));
 }

@@ -20,6 +20,7 @@ use crate::domain::findings::semantic_model::{
     AnalysisReach, CapabilityMatrix, Classification, FindingNature, ObservedFunction, ObservedUnit,
     PACK_VERSION, PackVerdict, SastVerdict, SecurityFamily, SemanticModelCatalog,
     StructuralClassification, StructuralFamily, Weakness, assess, classify_structural,
+    unresolved_checks,
 };
 use crate::domain::findings::{
     AdmissionError, AdmissionSource, AnalysisInput, AnalysisScope, AstBackend, BackendRegistry,
@@ -236,17 +237,35 @@ impl SecurityPack {
             dataflow: None,
         };
         let executed = self.execute(pack_family, &permit, &input, context, store)?;
+        let unresolved = unresolved_checks(family, unit);
+        let mut diagnostics = Vec::new();
         let verdict = if executed.findings.is_empty() {
-            PackVerdict::NotObserved {
-                within: "constructs of the family in the analysed unit".to_string(),
+            if unresolved.is_empty() {
+                PackVerdict::NotObserved {
+                    within: "constructs of the family in the analysed unit".to_string(),
+                }
+            } else {
+                // Nothing was verified, but checks that could not decide
+                // remain: the unit is not shown clean.
+                PackVerdict::Unknown { unresolved }
             }
         } else {
+            if !unresolved.is_empty() {
+                diagnostics.push(DetectorDiagnostic {
+                    code: "sast.unresolved_checks".to_string(),
+                    message: format!(
+                        "{} further check(s) could not decide: {}",
+                        unresolved.len(),
+                        unresolved.join(" | ")
+                    ),
+                });
+            }
             PackVerdict::Found {
                 nature: pack_family.nature(),
                 findings: executed.findings.len(),
             }
         };
-        Ok(executed.into_run(pack_family, verdict, Vec::new()))
+        Ok(executed.into_run(pack_family, verdict, diagnostics))
     }
 
     fn execute<S>(

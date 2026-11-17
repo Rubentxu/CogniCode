@@ -28,3 +28,4 @@ pub use type_ref_walkers::{
 };
 pub mod ansible_handler;
 pub mod terraform_handler;
+pub mod terraform_reader;

@@ -25,11 +25,22 @@ pub enum SourceLanguage {
     /// Python: recognised as a language but carrying no adapter, so every
     /// analysis of it is reported as unsupported.
     Python,
+    /// Terraform (HCL): analysed statically from the configuration text by
+    /// the infrastructure families; it has no API adapter because it has no
+    /// source-to-sink flow.
+    Terraform,
 }
 
 impl SourceLanguage {
     /// Every language the catalog names, modeled or not, in a stable order.
-    pub const ALL: [Self; 5] = [Self::Rust, Self::Java, Self::Kotlin, Self::Go, Self::Python];
+    pub const ALL: [Self; 6] = [
+        Self::Rust,
+        Self::Java,
+        Self::Kotlin,
+        Self::Go,
+        Self::Python,
+        Self::Terraform,
+    ];
 
     /// Stable lowercase name for reports.
     pub fn name(self) -> &'static str {
@@ -39,6 +50,7 @@ impl SourceLanguage {
             Self::Kotlin => "kotlin",
             Self::Go => "go",
             Self::Python => "python",
+            Self::Terraform => "terraform",
         }
     }
 
