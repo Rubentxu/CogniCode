@@ -1058,6 +1058,33 @@ mod tests {
     }
 
     #[test]
+    fn a_record_made_by_the_previous_facts_producer_is_never_reused() {
+        // Before syntax errors became gaps, a damaged file contributed the
+        // declarations that survived the fault, and a detector recorded its
+        // findings over them. That record names the previous producer in its
+        // parser layer, and it must not survive the change.
+        let fake = fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "body-edit");
+        let mut prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        prior.identity.parser = DetectorDigest::from_content("cognicode.revision-facts/v1");
+
+        let detection = fresh_detect(
+            Some(&prior),
+            &base,
+            &head,
+            &between(&fake, &base, &head),
+            &workspace(),
+        )
+        .expect("detection");
+
+        let Reuse::Rerun { reason } = detection.reuse else {
+            panic!("a record under the previous facts producer must not be reused");
+        };
+        assert!(reason.contains("parser"), "{reason}");
+    }
+
+    #[test]
     fn a_missing_foreign_or_truncated_read_set_is_never_reused() {
         let fake = fake();
         let base = produce(&fake, "main");
