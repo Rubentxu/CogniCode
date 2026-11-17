@@ -264,7 +264,7 @@ pub(crate) fn extract_file_checked(
         {
             let (symbol_node, symbol_id) = make_symbol_node(
                 &name,
-                SymbolKind::Function,
+                naming::callable_kind(config.language, &node),
                 &source_path_str,
                 // 1-based fact-side line (E38.1 CP-1): `start.row + 1` feeds
                 // `SymbolFqn::from_fact_side` inside `make_symbol_node`.
@@ -312,7 +312,7 @@ pub(crate) fn extract_file_checked(
 
         // ── Class/type nodes ───────────────────────────────────────────
         if symbols.class_types.contains(&node_type) {
-            let kind = classify_class_type(node_type);
+            let kind = classify_class_type(&node);
             if let Some(name) =
                 naming::declaration_name(&node, source_bytes, &name_rule, symbols.class_types)
             {
@@ -620,16 +620,23 @@ fn extract_calls_from_node(
     }
 }
 
-/// Map a tree-sitter class-like node type to a `SymbolKind`.
-fn classify_class_type(node_type: &str) -> SymbolKind {
-    match node_type {
+/// Map a tree-sitter class-like node to a `SymbolKind`.
+///
+/// A Go `type_spec` is a struct, an interface or a defined type depending on
+/// the kind of the type it binds.
+fn classify_class_type(node: &Node) -> SymbolKind {
+    match node.kind() {
         "struct_item" | "struct_declaration" => SymbolKind::Struct,
         "enum_item" | "enum_declaration" => SymbolKind::Enum,
         "trait_item" | "interface_declaration" => SymbolKind::Trait,
         "impl_item" => SymbolKind::Class, // Rust impl maps to Class
         "union_item" => SymbolKind::Class,
         "class_declaration" | "class_definition" => SymbolKind::Class,
-        "type_declaration" => SymbolKind::TypeAlias,
+        "type_spec" => match node.child_by_field_name("type").map(|t| t.kind()) {
+            Some("struct_type") => SymbolKind::Struct,
+            Some("interface_type") => SymbolKind::Trait,
+            _ => SymbolKind::TypeAlias,
+        },
         _ => SymbolKind::Class,
     }
 }
@@ -1069,6 +1076,134 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    /// The `(label, kind)` of every symbol a file declares, without the file
+    /// node. The order is the extractor's traversal order, which tests must
+    /// not rely on: compare through `kinds_of`.
+    fn declared(
+        cfg: &crate::infrastructure::parser::language_config::LanguageConfig,
+        path: &str,
+        source: &str,
+    ) -> Vec<(String, SymbolKind)> {
+        let result = extract_file(cfg, std::path::Path::new(path), source, "hash");
+        assert!(result.is_ok(), "extract_file failed: {:?}", result.error);
+        result
+            .nodes
+            .iter()
+            .filter_map(|n| match n.kind {
+                NodeKind::Symbol(SymbolKind::File) => None,
+                NodeKind::Symbol(kind) => Some((n.label.clone(), kind)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The kinds the symbols named `name` were given, sorted by name so that
+    /// expectations do not depend on traversal order.
+    fn kinds_of(declared: &[(String, SymbolKind)], name: &str) -> Vec<SymbolKind> {
+        let mut kinds: Vec<SymbolKind> = declared
+            .iter()
+            .filter(|(label, _)| label == name)
+            .map(|(_, kind)| *kind)
+            .collect();
+        kinds.sort_by_key(|kind| format!("{kind:?}"));
+        kinds
+    }
+
+    #[test]
+    fn go_struct_and_interface_declarations_are_types() {
+        let source = "package demo\n\
+                      type Shape interface {\n\tArea() float64\n}\n\
+                      type Circle struct {\n\tRadius float64\n}\n\
+                      func (c Circle) Area() float64 { return c.Radius }\n";
+        let found = declared(
+            &crate::infrastructure::parser::language_config::GO_CONFIG,
+            "/tmp/shape.go",
+            source,
+        );
+        assert_eq!(kinds_of(&found, "Shape"), vec![SymbolKind::Trait]);
+        assert_eq!(kinds_of(&found, "Circle"), vec![SymbolKind::Struct]);
+        assert_eq!(kinds_of(&found, "Area"), vec![SymbolKind::Function]);
+    }
+
+    #[test]
+    fn go_grouped_type_declarations_name_every_spec() {
+        let source = "package demo\n\
+                      type (\n\tA struct{}\n\tB interface{}\n\tC int\n)\n";
+        let found = declared(
+            &crate::infrastructure::parser::language_config::GO_CONFIG,
+            "/tmp/group.go",
+            source,
+        );
+        assert_eq!(kinds_of(&found, "A"), vec![SymbolKind::Struct]);
+        assert_eq!(kinds_of(&found, "B"), vec![SymbolKind::Trait]);
+        assert_eq!(kinds_of(&found, "C"), vec![SymbolKind::TypeAlias]);
+    }
+
+    #[test]
+    fn go_struct_fields_still_reference_their_types() {
+        let source = "package demo\ntype Config struct {\n\tpool DbPool\n}\n";
+        let result = extract_file(
+            &crate::infrastructure::parser::language_config::GO_CONFIG,
+            std::path::Path::new("/tmp/config.go"),
+            source,
+            "hash",
+        );
+        assert!(
+            result
+                .edges
+                .iter()
+                .any(|e| matches!(&e.target_ref, TargetRef::Unresolved(n) if n == "DbPool")),
+            "the struct keeps its reference to DbPool: {:?}",
+            result.edges
+        );
+    }
+
+    #[test]
+    fn java_interface_and_abstract_methods_are_signatures_not_functions() {
+        let source = "package demo;\n\
+                      public interface Shape {\n    double area();\n    default double twice() { return 2 * area(); }\n}\n\
+                      abstract class Base {\n    Base() {}\n    abstract void run();\n    void go() { run(); }\n}\n";
+        let found = declared(
+            &crate::infrastructure::parser::language_config::JAVA_CONFIG,
+            "/tmp/Shape.java",
+            source,
+        );
+        assert_eq!(kinds_of(&found, "area"), vec![SymbolKind::Method]);
+        assert_eq!(kinds_of(&found, "run"), vec![SymbolKind::Method]);
+        assert_eq!(kinds_of(&found, "twice"), vec![SymbolKind::Function]);
+        assert_eq!(kinds_of(&found, "go"), vec![SymbolKind::Function]);
+        assert_eq!(
+            kinds_of(&found, "Base"),
+            vec![SymbolKind::Class, SymbolKind::Function],
+            "the class and its constructor"
+        );
+    }
+
+    #[test]
+    fn kotlin_interface_and_abstract_functions_are_signatures_not_functions() {
+        let source = "package demo\n\
+                      interface Shape {\n    fun area(): Double\n    fun twice(): Double = 2 * area()\n}\n\
+                      abstract class Base {\n    abstract fun run()\n    fun go() { run() }\n    constructor(x: Int) : this()\n}\n\
+                      data class Circle(val radius: Double) : Shape {\n    override fun area(): Double = radius\n}\n";
+        let found = declared(
+            &crate::infrastructure::parser::language_config::KOTLIN_CONFIG,
+            "/tmp/Shape.kt",
+            source,
+        );
+        assert_eq!(
+            kinds_of(&found, "area"),
+            vec![SymbolKind::Function, SymbolKind::Method],
+            "the implementation is a function, the interface signature a method"
+        );
+        assert_eq!(kinds_of(&found, "run"), vec![SymbolKind::Method]);
+        assert_eq!(kinds_of(&found, "twice"), vec![SymbolKind::Function]);
+        assert_eq!(kinds_of(&found, "go"), vec![SymbolKind::Function]);
+        assert!(
+            kinds_of(&found, "Base").contains(&SymbolKind::Function),
+            "a secondary constructor stays a function: {found:?}"
+        );
     }
 
     #[test]

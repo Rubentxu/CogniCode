@@ -23,7 +23,7 @@ mod oracle;
 use cognicode_core::application::change_tracking::complete_snapshot::Verdict;
 use harness::{
     Certification, EditClass, Fault, PARTS, Projection, ScenarioResult, certify, corpus_root,
-    evaluate, evaluate_with_fault, scenarios,
+    evaluate, evaluate_with_fault, materialize, produce, scenarios,
 };
 
 fn helm_scenario(class: EditClass, projection: Projection) -> ScenarioResult {
@@ -167,6 +167,40 @@ fn helm_chart_rendered_by_the_real_engine_reaches_pass() {
     assert_ne!(broken.incremental_verdict, Verdict::Pass);
     assert_ne!(broken.full_verdict, Verdict::Pass);
     assert!(!broken.head_gaps.is_empty());
+}
+
+/// The extraction reads exactly the definitions the hand-labelled oracle
+/// expects, in every scenario whose edit leaves the file parsable: no
+/// definition is missing and none is invented. A malformed edit is left out
+/// because what a damaged file yields is the grammar's recovery, not a
+/// definition reading.
+#[test]
+fn the_extraction_matches_the_oracle_in_every_well_formed_scenario() {
+    let corpus = corpus_root();
+    let mut mismatches = Vec::new();
+    for scenario in scenarios(&corpus)
+        .into_iter()
+        .filter(|s| s.class != EditClass::Malformed)
+    {
+        let produced = produce(&materialize(&corpus, &scenario, Projection::Rendered));
+        let score = oracle::score(
+            &oracle::expected(&corpus, &scenario),
+            &oracle::observed(&produced.head),
+        );
+        if !score.false_positives.is_empty() || !score.false_negatives.is_empty() {
+            mismatches.push(format!(
+                "{}: invented {:?}, missing {:?}",
+                scenario.name(Projection::Rendered),
+                score.false_positives,
+                score.false_negatives
+            ));
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "the extraction disagrees with the oracle:\n{}",
+        mismatches.join("\n")
+    );
 }
 
 #[test]
