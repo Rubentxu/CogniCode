@@ -9,7 +9,7 @@
 //!
 //! Until now the promise had no enforcement behind it. The read-only
 //! machinery existed and was tested (`--read-only` on `cognicode-mcp`, and
-//! the filtering in [`crate::interface::mcp::rmcp_adapter`]), but nothing
+//! the filtering in `cognicode_mcp::rmcp_adapter`), but nothing
 //! connected the *profile* to it: `--read-only` is a flag a human types,
 //! while a profile is something an installer resolves. `with_read_only` had
 //! no caller at all.

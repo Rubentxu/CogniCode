@@ -6,12 +6,12 @@
 //! content of a revision is, and what changed between two revisions.
 //!
 //! Deliberate boundaries:
-//! * [`RevisionHandle`] is an OPAQUE provider string. It is NOT the
+//! * [`RevisionHandle`](crate::domain::scm::RevisionHandle) is an OPAQUE provider string. It is NOT the
 //!   canonical numeric `RevisionId` of `domain::value_objects` and it
 //!   is NOT a `SnapshotId`: those stay the internal identity of the
 //!   analysis kernel, and adapters map opaque handles onto them
 //!   (CAA-03/CAA-04), never the other way round.
-//! * [`ContentDigest`] — a SHA-256 over canonical bytes — is the
+//! * [`ContentDigest`](crate::domain::scm::ContentDigest) — a SHA-256 over canonical bytes — is the
 //!   content identity that lets parsed artifacts be REUSED across
 //!   different revision handles with identical trees. Semantic
 //!   dependencies decide everything beyond that; this module never
@@ -22,7 +22,7 @@
 //!
 //! Fail-closed rule, shared by every type: construction validates
 //! (non-empty identities, well-formed digests, safe relative paths)
-//! and ports answer with named [`error::ScmError`] variants instead
+//! and ports answer with named [`ScmError`](crate::domain::scm::ScmError) variants instead
 //! of invented data.
 
 mod changeset;

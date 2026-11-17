@@ -1217,7 +1217,7 @@ pub enum MergeCoverage {
 
 impl MergeCoverage {
     /// La única puerta a `Complete` y a `NoMaterial`: el veredicto del
-    /// dueño ([`coverage_verdict`]). El que publica una cobertura no
+    /// dueño ([`coverage_verdict`](crate::application::services::analyze::coverage_verdict)). El que publica una cobertura no
     /// fabrica la palabra — la pide, y los agujeros que lista son los
     /// que el veredicto midió (TASK-222).
     pub fn from_verdict(verdict: crate::application::services::analyze::Coverage) -> Self {
