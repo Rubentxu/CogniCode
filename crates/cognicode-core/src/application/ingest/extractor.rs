@@ -173,7 +173,7 @@ fn fault_at(node: Node) -> SyntaxFault {
 /// The result is the generic reading of whatever survived the fault. A
 /// caller that cannot accept a reading of a damaged file refuses it on the
 /// fault; the callers that tolerate it ignore the third element.
-pub(crate) fn extract_file_checked(
+pub fn extract_file_checked(
     config: &LanguageConfig,
     path: &Path,
     source: &str,
