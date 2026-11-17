@@ -18,6 +18,7 @@ exclude = [
     "/tests/",
     "/testdata/ana02_corpus/",
     "/testdata/identity_corpus/",
+    "/testdata/mode_equivalence/",
     "/testdata/u10_compat_corpus/",
 ]
 
