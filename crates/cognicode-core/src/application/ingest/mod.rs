@@ -10,6 +10,7 @@ pub mod analyzer;
 pub mod edge_diff;
 pub mod extract_stage;
 pub mod extractor;
+pub mod independent_syntax;
 pub mod observation;
 pub mod refresh;
 pub mod scan;
