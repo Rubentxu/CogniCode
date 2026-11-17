@@ -78,7 +78,8 @@ pub use rule::{
 pub use structural::{
     HARDCODED_SECRET_KIND, HARDCODED_SECRET_SUBJECT, IAC_ENCRYPTION_KIND, IAC_ENCRYPTION_SUBJECT,
     IAC_PERMISSIONS_KIND, IAC_PERMISSIONS_SUBJECT, IAC_PUBLIC_EXPOSURE_KIND,
-    IAC_PUBLIC_EXPOSURE_SUBJECT, ObservedUnit, StructuralClassification, StructuralFact,
-    StructuralFamily, StructuralObservation, UNSAFE_CODE_KIND, UNSAFE_CODE_SUBJECT,
-    UnsafeConstruct, classify_structural, is_hardcoded_secret, unresolved_checks,
+    IAC_PUBLIC_EXPOSURE_SUBJECT, IAC_WORKLOAD_HARDENING_KIND, IAC_WORKLOAD_HARDENING_SUBJECT,
+    ObservedUnit, StructuralClassification, StructuralFact, StructuralFamily,
+    StructuralObservation, UNSAFE_CODE_KIND, UNSAFE_CODE_SUBJECT, UnsafeConstruct,
+    classify_structural, is_hardcoded_secret, unresolved_checks,
 };
