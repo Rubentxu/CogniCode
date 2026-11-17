@@ -1329,6 +1329,13 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
         "per revision, not a project tree",
     "crates/cognicode-sandbox/src/main.rs":
         "reads and copies the sandbox's own work and results directories: not the analysed project",
+    "crates/cognicode-core/src/infrastructure/terraform_project.rs":
+        "lists the immediate entries of one Terraform module directory at a time, "
+        "and of the root for its variable files: Terraform reads a directory "
+        "regardless of `.gitignore` and of directory names such as `env`, `build` "
+        "or `vendor`, which the inventory prunes by design, and module "
+        "confinement (symlink escapes refused, each refusal listed as unread) is "
+        "decided here, not by a tree walk",
     # -- evidence and documentation corpora: a directory the caller names for a
     # -- purpose of its own, not the source files of the project.
     "crates/cognicode-core/src/application/self_hosting/acceptance.rs":

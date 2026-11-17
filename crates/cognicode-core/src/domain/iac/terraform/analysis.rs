@@ -400,6 +400,61 @@ mod tests {
     }
 
     #[test]
+    fn an_unopened_module_never_repeats_the_credentials_of_its_source() {
+        let secret_sources = [
+            "git::https://deploy:s3cr3t@example.com/org/net.git?ref=v1",
+            "https://token-only@example.com/net.zip",
+            "s3::https://s3.amazonaws.com/b/net.zip?aws_access_key_id=AKIAFAKE&aws_access_key_secret=hunter2&version=3",
+        ];
+        for source in secret_sources {
+            let mut root = TfModule::default();
+            root.calls.insert(
+                "net".into(),
+                TfModuleCall {
+                    name: "net".into(),
+                    source: source.into(),
+                    args: vec![],
+                    file: "main.tf".into(),
+                    line: 1,
+                },
+            );
+            let project = TfProject {
+                modules: BTreeMap::from([(String::new(), root)]),
+                ..Default::default()
+            };
+            let analysis = TfAnalysis::run(&project, "", Bindings::none());
+            let explanation = analysis
+                .explain(&NodeAddr::new("module.net"))
+                .expect("the call is a node");
+            let shown = format!(
+                "{:?} {:?} {}",
+                analysis.coverage().unresolved_modules,
+                explanation.causes,
+                explanation
+                    .causes
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            for secret in ["s3cr3t", "token-only", "AKIAFAKE", "hunter2"] {
+                assert!(
+                    !shown.contains(secret),
+                    "`{secret}` leaked from `{source}`: {shown}"
+                );
+            }
+            assert!(shown.contains("example.com") || shown.contains("amazonaws.com"));
+        }
+        let plain = "terraform-aws-modules/vpc/aws";
+        assert_eq!(super::super::value::redact_source(plain), plain);
+        assert_eq!(
+            super::super::value::redact_source("git::https://example.com/o/r.git?ref=v1.2"),
+            "git::https://example.com/o/r.git?ref=v1.2",
+            "a source with nothing to hide is shown as written"
+        );
+    }
+
+    #[test]
     fn explain_gives_the_value_the_flow_and_the_causes() {
         let analysis = TfAnalysis::run(&project(), "", Bindings::none());
         let explanation = analysis
