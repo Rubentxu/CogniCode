@@ -16,6 +16,7 @@ pub mod findings;
 pub mod git;
 pub mod github;
 pub mod graph;
+pub mod helm;
 // M7 — in-memory append-only Intelligence Event Log (reference oracle).
 pub mod intelligence_log;
 pub mod lsp;

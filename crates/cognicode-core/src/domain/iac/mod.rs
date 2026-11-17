@@ -3,4 +3,5 @@
 //! The adapters that read files live under `infrastructure`; what a
 //! configuration *means* lives here.
 
+pub mod helm;
 pub mod terraform;
