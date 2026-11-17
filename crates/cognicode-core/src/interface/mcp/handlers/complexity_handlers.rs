@@ -14,6 +14,7 @@ pub(super) fn calculate_function_complexity(
         )))
     })?;
     crate::infrastructure::complexity::function_metrics(
+        parser.language(),
         &tree,
         source,
         function_name,

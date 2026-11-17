@@ -528,26 +528,31 @@ fn simple_function() {
 
         // One implementation (`infrastructure::complexity::function_metrics`):
         // the CLI/rig port and the MCP handler must report the same numbers.
+        // Rust, Java, Kotlin and Go are measured by the native metrics engine;
+        // the other languages keep the generic decision-point walk.
 
         #[tokio::test]
         async fn a_single_branch_is_measured_the_same_by_both() {
             let (port, mcp) = both("rust", "a.rs", RUST_IF, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (2, 2, 4, 1, 1));
+            // Cognitive: the `if` alone is one step.
+            assert_eq!(port, (2, 1, 4, 1, 1));
         }
 
         #[tokio::test]
         async fn short_circuit_operators_count_on_both_paths() {
             let (port, mcp) = both("rust", "b.rs", RUST_AND, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (3, 4, 4, 2, 1), "`&&` is a decision");
+            // Cognitive: the `if` plus one for the run of `&&`.
+            assert_eq!(port, (3, 2, 4, 2, 1), "`&&` is a decision");
         }
 
         #[tokio::test]
         async fn nesting_depth_grows_on_both_paths() {
             let (port, mcp) = both("rust", "c.rs", RUST_NESTED, "f").await;
             assert_eq!(port, mcp);
-            assert_eq!(port, (3, 6, 6, 1, 2), "one level per nested branch");
+            // Cognitive: `if` 1, plus `while` 1 weighed by one level of nesting.
+            assert_eq!(port, (3, 3, 6, 1, 2), "one level per nested branch");
         }
 
         #[tokio::test]
