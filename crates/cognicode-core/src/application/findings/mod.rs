@@ -12,6 +12,7 @@ pub mod grounded_finding_flow;
 #[cfg(feature = "evidence-kernel")]
 pub mod kernel_bridge;
 pub mod m5_dataflow_backend;
+pub mod security_pack;
 pub mod taint_runner;
 
 pub use axiom_migration::{
@@ -22,4 +23,5 @@ pub use axiom_migration::{
 #[cfg(feature = "evidence-kernel")]
 pub use kernel_bridge::{CanonicalEvidenceWriter, KernelEvidenceReadModel};
 pub use m5_dataflow_backend::M5DataflowBackend;
+pub use security_pack::{PackError, PackRun, RunAuthority, RunContext, SecurityPack};
 pub use taint_runner::TaintFlowRunner;
