@@ -7,6 +7,7 @@
 //! value when the configuration itself determines it.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 
 use super::value::{TfValue, UnknownCause};
 
@@ -343,16 +344,19 @@ fn declare<V>(
     value: V,
     place: impl FnOnce(&V) -> (String, u32),
 ) {
-    if map.contains_key(&key) {
-        let (file, line) = place(&value);
-        duplicates.push(TfDuplicate {
-            kind,
-            name: key,
-            file,
-            line,
-        });
-    } else {
-        map.insert(key, value);
+    match map.entry(key) {
+        Entry::Occupied(taken) => {
+            let (file, line) = place(&value);
+            duplicates.push(TfDuplicate {
+                kind,
+                name: taken.key().clone(),
+                file,
+                line,
+            });
+        }
+        Entry::Vacant(free) => {
+            free.insert(value);
+        }
     }
 }
 
