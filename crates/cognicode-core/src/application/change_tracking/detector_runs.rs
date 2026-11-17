@@ -387,6 +387,7 @@ pub fn detect_in_cache(
     base: &ProducedRevision,
     head: &ProducedRevision,
     changes: &ChangeSet,
+    sink: &mut dyn EvidenceSink,
 ) -> Result<Detection, DetectorRunError> {
     let workspace = WorkspaceId::try_new(workspace_key(repository))
         .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
@@ -396,7 +397,7 @@ pub fn detect_in_cache(
     let prior = index
         .as_ref()
         .and_then(|index| index.record_for(detector.as_str(), base.facts.snapshot));
-    detect_with_reuse(prior, base, head, changes, &workspace)
+    detect_with_reuse(prior, base, head, changes, &workspace, sink)
 }
 
 /// Whether the findings of a detection came from a prior run.

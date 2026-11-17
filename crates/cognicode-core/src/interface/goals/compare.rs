@@ -321,7 +321,14 @@ fn head_findings(
     let detector = detector_id()
         .map(|id| id.as_str().to_string())
         .unwrap_or_default();
-    match detect_in_cache(cache_root, workspace, base, candidate, change_set) {
+    match detect_in_cache(
+        cache_root,
+        workspace,
+        base,
+        candidate,
+        change_set,
+        &mut InMemoryEvidenceStore::new(),
+    ) {
         Ok(detection) => {
             let (reuse, reason) = match &detection.reuse {
                 Reuse::Reused { .. } => (
