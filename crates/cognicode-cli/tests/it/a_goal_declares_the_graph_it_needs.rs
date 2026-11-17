@@ -50,7 +50,8 @@ const CATALOG: &str = concat!(
 const SOURCE: &str = "pub fn alpha() -> u32 { beta() + 1 }\npub fn beta() -> u32 { 2 }\n";
 
 /// Las ediciones candidatas de `preflight`: `lib.rs` con otro cuerpo.
-const EDITS: &str = r#"{"lib.rs":"pub fn alpha() -> u32 { beta() + 2 }\npub fn beta() -> u32 { 2 }\n"}"#;
+const EDITS: &str =
+    r#"{"lib.rs":"pub fn alpha() -> u32 { beta() + 2 }\npub fn beta() -> u32 { 2 }\n"}"#;
 
 // ---------------------------------------------------------------------------
 // Fixture: un workspace y una caché que no son de nadie más.
