@@ -23,4 +23,4 @@ pub use ir::{
 };
 pub use observe::{observed_units, structural_family};
 pub use rules::{CheckResult, MODELED_TYPES, Outcome, RiskFamily, assess, is_absent, is_modeled};
-pub use value::{TfValue, UnknownCause};
+pub use value::{TfValue, UnknownCause, redact_source};

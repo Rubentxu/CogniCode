@@ -19,7 +19,7 @@ use super::ir::{
     Reference, TfBlock, TfBody, TfExpr, TfModule, TfModuleCall, TfProject, TfResource,
     resolve_local_source,
 };
-use super::value::UnknownCause;
+use super::value::{UnknownCause, redact_source};
 
 /// The most module instances the graph builds. A project that fans out past
 /// it keeps the remaining calls as unresolved modules instead of growing
@@ -138,7 +138,7 @@ pub struct ResourceInstance {
 pub struct UnresolvedModule {
     /// Address of the call.
     pub address: NodeAddr,
-    /// The `source` as written.
+    /// The `source` as written, with URL credentials removed.
     pub source: String,
 }
 
@@ -645,12 +645,12 @@ impl Builder<'_> {
             None => {
                 self.graph.unresolved.push(UnresolvedModule {
                     address: addr.clone(),
-                    source: call.source.clone(),
+                    source: redact_source(&call.source),
                 });
                 Def::Hole {
                     cause: UnknownCause::UnresolvedModule {
                         address: addr.as_str().to_string(),
-                        source: call.source.clone(),
+                        source: redact_source(&call.source),
                     },
                     args: call.args.iter().map(|a| a.expr.clone()).collect(),
                 }
