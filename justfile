@@ -34,7 +34,7 @@ default:
 # in Rubentxu/cognicode-explorer (see docs/distribution/EXPLORER_HANDOFF.md).
 build:
     @echo "🔨 Building the workspace..."
-    cargo build --workspace
+    bld rust cargo build --workspace
 
 # Build only the Explorer frontend
 build-wasm:
@@ -47,7 +47,7 @@ build-musl:
     set -euo pipefail
     VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "//' | sed 's/"//')
     rustup target add x86_64-unknown-linux-musl --toolchain stable
-    cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
+    bld rust cargo build --release --target x86_64-unknown-linux-musl -p cognicode-mcp --bin cognicode-mcp --bin cognicode-mcp-server
     mkdir -p dist
     tar -czf dist/cognicode-${VERSION}-x86_64-unknown-linux-musl.tar.gz \
         -C target/x86_64-unknown-linux-musl/release/ cognicode-mcp cognicode-mcp-server
@@ -76,7 +76,7 @@ bundle-skills:
 # Build in release mode
 build-release:
     @echo "🔨 Building the workspace (release)..."
-    cargo build --workspace --release
+    bld rust cargo build --workspace --release
 
 # Clean build artifacts
 clean:
@@ -90,12 +90,12 @@ clean:
 # Check compilation (fast, no binary output)
 check:
     @echo "✅ Checking compilation..."
-    cargo check --workspace
+    bld rust cargo check --workspace
 
 # Run clippy lints
 lint:
     @echo "🔍 Running clippy..."
-    cargo clippy --workspace --all-targets -- -D warnings
+    bld rust cargo clippy --workspace --all-targets -- -D warnings
 
 # Format code
 fmt:
@@ -124,12 +124,12 @@ test: test-unit test-integration
 # Run all unit tests
 test-unit:
     @echo "🧪 Running unit tests..."
-    cargo test --workspace --lib
+    bld rust cargo test --workspace --lib
 
 # Run all integration tests (with mocks)
 test-integration:
     @echo "🧪 Running integration tests..."
-    cargo test --workspace --tests
+    bld rust cargo test --workspace --tests
 
 # The gate: unit tests + integration tests + mutants. All three, or it is red.
 gate:
@@ -171,13 +171,13 @@ harness-ab *ARGS:
 # Run ignored tests (flaky, slow, requires external tools)
 test-ignored:
     @echo "🧪 Running ignored tests (single-threaded)..."
-    cargo test --workspace -- --include-ignored --test-threads=1 || \
-    cargo test --workspace -- --ignored --test-threads=1
+    bld rust cargo test --workspace -- --include-ignored --test-threads=1 || \
+    bld rust cargo test --workspace -- --ignored --test-threads=1
 
 # Run all lifecycle tests (single-threaded to avoid lock contention)
 test-lifecycle:
     @echo "🧪 Running lifecycle tests..."
-    cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1
+    bld rust cargo test -p cognicode-cli --bin cogh lifecycle -- --test-threads=1
 
 # ─── Docs ──────────────────────────────────────────────────────────────────────
 
@@ -300,7 +300,7 @@ perf:
 
 # Run the raw Criterion benchmarks with bencher output (no budget check)
 perf-bench:
-    cargo bench -p cognicode-core --bench graph_benchmarks -- --output-format bencher
+    bld rust cargo bench -p cognicode-core --bench graph_benchmarks -- --output-format bencher
 
 # ─── LSI M0 evidence (E36) ───────────────────────────────────────────────────
 
@@ -344,7 +344,7 @@ lsi-baseline mode="capture" threshold="":
 lsi-equivalence:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test it --features evidence-kernel -- equivalence_harness:: --nocapture
+    bld rust cargo test -p cognicode-core --test it --features evidence-kernel -- equivalence_harness:: --nocapture
 
 # LSI M3 identity benchmark (E38): tiered continuity matcher over the
 # lsi-identity ground-truth fixtures plus the workspace isolation suite.
@@ -355,7 +355,7 @@ lsi-equivalence:
 lsi-identity:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test it --test identity_benchmark --features evidence-kernel -- workspace_isolation:: --nocapture
+    bld rust cargo test -p cognicode-core --test it --test identity_benchmark --features evidence-kernel -- workspace_isolation:: --nocapture
 
 # LSI M4 semantic provider conformance (E39): declared per-tier precision
 # targets over sandbox/fixtures/lsi-providers (Rust/TS serverless S0/S1,
@@ -365,9 +365,9 @@ lsi-identity:
 lsi-providers:
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo test -p cognicode-core --test it -- provider_conformance:: --nocapture
-    cargo test -p cognicode-core --test it --features evidence-kernel -- cp5_tie_break:: --nocapture
-    cargo test -p cognicode-core --lib fact_bridge --features evidence-kernel
+    bld rust cargo test -p cognicode-core --test it -- provider_conformance:: --nocapture
+    bld rust cargo test -p cognicode-core --test it --features evidence-kernel -- cp5_tie_break:: --nocapture
+    bld rust cargo test -p cognicode-core --lib fact_bridge --features evidence-kernel
 
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 
@@ -454,9 +454,9 @@ sandbox-results:
 
 # E29 S1 spike — build + run + test LadybugDB lbug 0.19.0 (prebuilt static lib, no cmake needed)
 spike-ladybug:
-    cargo build --release --manifest-path crates/spike-ladybug/Cargo.toml
+    bld rust cargo build --release --manifest-path crates/spike-ladybug/Cargo.toml
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s1_bootstrap
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
 
 # E29 S1 spike — clean cache + build artifacts (forces fresh prebuilt download)
 spike-ladybug-clean:
@@ -467,7 +467,7 @@ spike-ladybug-s2:
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_schema_create
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_copy_from
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s2_query_validation
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --tests
 
 # E29 S2 spike — clean S2 .lbdb artifacts
 spike-ladybug-s2-clean:
@@ -477,8 +477,8 @@ spike-ladybug-s2-clean:
 spike-ladybug-s3:
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s3_lock_holder -- --mode=rw --path=/tmp/s3_e2e.lbdb --hold-secs=1
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s3_concurrency
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_concurrency
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_multi_process
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_concurrency
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s3_multi_process
 
 # E29 S3 spike — clean S3 .lbdb artifacts
 spike-ladybug-s3-clean:
@@ -487,7 +487,7 @@ spike-ladybug-s3-clean:
 # E29 S4 spike — run all S4 examples and tests end-to-end
 spike-ladybug-s4:
     cargo run --manifest-path crates/spike-ladybug/Cargo.toml --example s4_writer -- --mode=clean --path=/tmp/s4_e2e.lbdb --rows=1000
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s4_crash_recovery
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s4_crash_recovery
 
 # E29 S4 spike — clean S4 .lbdb artifacts
 spike-ladybug-s4-clean:
@@ -502,7 +502,7 @@ spike-ladybug-s5:
         --pg-url=postgres://cognicode:cognicode@localhost:5432/cognicode \
         --rows=10000
     @echo "=== S5: Running full latency benchmarks ==="
-    cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s5_latency -- --nocapture
+    bld rust cargo test --manifest-path crates/spike-ladybug/Cargo.toml --test s5_latency -- --nocapture
 
 # E29 S5 spike — clean S5 artifacts
 spike-ladybug-s5-clean:
