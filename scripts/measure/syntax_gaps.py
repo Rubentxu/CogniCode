@@ -30,6 +30,8 @@ import sys
 
 EXTENSIONS = (".rs", ".java", ".kt", ".kts", ".go")
 LANGUAGE_FILTER = {"Rust", "Java", "Kotlin", "Go"}
+LISTING_DEADLINE_SECONDS = 120
+EXAMPLE_DEADLINE_SECONDS = 900
 
 
 def corpus_files(kind: str, root: str) -> list[str]:
@@ -38,6 +40,7 @@ def corpus_files(kind: str, root: str) -> list[str]:
             ["git", "-C", root, "ls-files", "-z"],
             check=True,
             capture_output=True,
+            timeout=LISTING_DEADLINE_SECONDS,
         ).stdout.decode()
         return [
             os.path.join(root, rel)
@@ -56,6 +59,7 @@ def run_example(binary: str, paths: list[str]) -> list[list[str]]:
         input="\n".join(paths).encode(),
         capture_output=True,
         check=True,
+        timeout=EXAMPLE_DEADLINE_SECONDS,
     )
     return [line.split("\t") for line in proc.stdout.decode().splitlines()]
 
