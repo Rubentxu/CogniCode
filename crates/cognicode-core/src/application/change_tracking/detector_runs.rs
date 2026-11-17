@@ -1,18 +1,27 @@
-//! Production detector runs over revision facts (CGH-044, CAA-11c): the
-//! writer of read-sets that [`assess_reuse`] consumes.
+//! Production detector runs over revision facts: the writer of read-sets
+//! that [`assess_reuse`] consumes.
 //!
 //! ## What runs
 //!
-//! The function-definition detector (the IR the grounded finding flow
-//! already defines) runs through the real seam: `DetectorAdmission` ->
-//! `ExecutionPermit` -> `DetectorExecutor` -> `AstBackend`. Its AST view is
-//! projected from the revision's own facts, so a run reads exactly the
-//! `core:defines` facts of kind `Function` and nothing else.
+//! Two detectors, listed by [`ProductionDetector`], run through the real
+//! seam: `DetectorAdmission` -> `ExecutionPermit` -> `DetectorExecutor` ->
+//! `AstBackend`. Each projects its AST view from the revision's own facts,
+//! so a run reads exactly the `core:defines` facts its detector is about
+//! and nothing else:
+//!
+//! - the function-definition detector (the IR the grounded finding flow
+//!   already defines) reads the definitions of kind `Function`;
+//! - the type-definition detector reads the definitions of kind `Struct`,
+//!   `Class`, `Enum` and `Trait`.
+//!
+//! The other detectors the platform ships read source text, not revision
+//! facts, so a facts read-set recorded for them would claim something the
+//! detector never did. They write none, and nothing here reuses them.
 //!
 //! ## What is recorded
 //!
 //! One [`DetectorRunRecord`] per run, on the existing
-//! [`DetectorReuseStore`]:
+//! [`DetectorReuseStore`] under the detector's own id:
 //!
 //! - the **read-set**: the ids of the facts the projection handed the
 //!   detector, never a guess about what it might have touched;
@@ -46,7 +55,7 @@ use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
 use crate::domain::execution::{ActorRef, CorrelationId};
 use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission, ExecutionPermit};
 use crate::domain::findings::ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
-use crate::domain::findings::detector_ir::SubjectPattern;
+use crate::domain::findings::detector_ir::{DetectorIr, DetectorStep, SubjectPattern};
 use crate::domain::findings::detector_reuse::{
     CachedFinding, DetectorReuseIndex, DetectorRunIdentity, DetectorRunRecord, InvalidationLevel,
     OutputLocation, ReboundFinding, ReuseDecision, cache_observation, rebind_candidate,
@@ -60,7 +69,9 @@ use crate::domain::findings::guard_transfer::to_guard_observation;
 use crate::domain::findings::ports::EvidenceSink;
 use crate::domain::findings::projection::project_finding;
 use crate::domain::findings::scope::AnalysisScope;
-use crate::domain::findings::{AnalysisCapability, DetectorDigest, DetectorId};
+use crate::domain::findings::{
+    AnalysisCapability, DetectorAuthority, DetectorDigest, DetectorId, FindingKind,
+};
 use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::scm::ChangeSet;
 use crate::domain::value_objects::WorkspaceId;
@@ -69,14 +80,87 @@ use super::planner::WorkDisposition;
 use super::revision_facts::{ProducedRevision, assess_reuse, producer_versions};
 use super::scm_delta::RevisionFacts;
 
-/// The version stamped on the detector this module runs.
-pub const DETECTOR_VERSION: &str = "cgh-044-1.0.0";
-
 const DEFINES: &str = "core:defines";
 const FUNCTION_KIND: &str = "kind=Function";
+const TYPE_KINDS: [&str; 4] = ["kind=Struct", "kind=Class", "kind=Enum", "kind=Trait"];
+
+const TYPE_DEFINITION_SUBJECT: &str = "syntax.type_definition";
+const TYPE_DEFINITION_ID: &str = "structure.type_definition";
+
+/// A detector that reads revision facts and records what it read.
+///
+/// Each one is its own detector: its own id, version, capability request
+/// and read-set. Only what differs between them lives here: the IR, which
+/// definitions the projection hands over, and how a construct is worded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProductionDetector {
+    /// Every function definition.
+    FunctionDefinition,
+    /// Every struct, class, enum and trait definition.
+    TypeDefinition,
+}
+
+impl ProductionDetector {
+    /// Every detector that writes a read-set, in the order they are recorded.
+    pub const ALL: [Self; 2] = [Self::FunctionDefinition, Self::TypeDefinition];
+
+    fn ir(self) -> Result<DetectorIr, String> {
+        match self {
+            Self::FunctionDefinition => function_definition_detector_ir(),
+            Self::TypeDefinition => type_definition_detector_ir(),
+        }
+    }
+
+    fn version(self) -> &'static str {
+        match self {
+            Self::FunctionDefinition => "cgh-044-1.0.0",
+            Self::TypeDefinition => "1.0.0",
+        }
+    }
+
+    fn subject(self) -> &'static str {
+        match self {
+            Self::FunctionDefinition => SUBJECT_FUNCTION_DEFINITION,
+            Self::TypeDefinition => TYPE_DEFINITION_SUBJECT,
+        }
+    }
+
+    fn noun(self) -> &'static str {
+        match self {
+            Self::FunctionDefinition => "function",
+            Self::TypeDefinition => "type",
+        }
+    }
+
+    /// Whether a `core:defines` fact with this kind detail is read.
+    fn reads_kind(self, detail: Option<&str>) -> bool {
+        match self {
+            Self::FunctionDefinition => detail == Some(FUNCTION_KIND),
+            Self::TypeDefinition => detail.is_some_and(|kind| TYPE_KINDS.contains(&kind)),
+        }
+    }
+}
+
+fn type_definition_detector_ir() -> Result<DetectorIr, String> {
+    Ok(DetectorIr {
+        id: DetectorId::new(TYPE_DEFINITION_ID).map_err(|e| e.to_string())?,
+        name: TYPE_DEFINITION_ID.to_string(),
+        policy: Default::default(),
+        requires: [AnalysisCapability::AstPattern].into_iter().collect(),
+        authority: DetectorAuthority::Candidate,
+        steps: vec![
+            DetectorStep::Match {
+                subject: SubjectPattern::new(TYPE_DEFINITION_SUBJECT).map_err(|e| e.to_string())?,
+            },
+            DetectorStep::Produce {
+                kind: FindingKind::new(TYPE_DEFINITION_ID).map_err(|e| e.to_string())?,
+            },
+        ],
+    })
+}
 
 /// Why a detector run could not be produced.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum DetectorRunError {
     /// The detector definition or its admission failed.
     #[error("detector admission failed: {0}")]
@@ -95,8 +179,8 @@ pub enum DetectorRunError {
     Persist(String),
 }
 
-/// One function-definition fact the detector reads.
-struct FunctionRead {
+/// One definition fact a detector reads.
+struct DefinitionRead {
     path: String,
     fqn: String,
     line: u32,
@@ -104,13 +188,17 @@ struct FunctionRead {
     construct: AstConstruct,
 }
 
-/// The pure projection of a revision's facts into what the detector reads:
-/// every `core:defines` fact of kind `Function`, grounded on its own fact.
+/// The pure projection of a revision's facts into what `detector` reads:
+/// the `core:defines` facts of the kinds it is about, each grounded on its
+/// own fact.
 ///
 /// Units follow path order and constructs follow fact order, so the same
 /// facts always project to the same view.
-fn function_reads(facts: &RevisionFacts) -> Result<Vec<FunctionRead>, DetectorRunError> {
-    let subject = SubjectPattern::new(SUBJECT_FUNCTION_DEFINITION)
+fn definition_reads(
+    detector: ProductionDetector,
+    facts: &RevisionFacts,
+) -> Result<Vec<DefinitionRead>, DetectorRunError> {
+    let subject = SubjectPattern::new(detector.subject())
         .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
     let by_id: BTreeMap<FactId, &Fact> = facts.facts.iter().map(|f| (f.id, f)).collect();
     let mut reads = Vec::new();
@@ -121,7 +209,7 @@ fn function_reads(facts: &RevisionFacts) -> Result<Vec<FunctionRead>, DetectorRu
                 continue;
             };
             if fact.predicate.as_str() != DEFINES
-                || fact.provenance.detail.as_deref() != Some(FUNCTION_KIND)
+                || !detector.reads_kind(fact.provenance.detail.as_deref())
             {
                 continue;
             }
@@ -131,7 +219,7 @@ fn function_reads(facts: &RevisionFacts) -> Result<Vec<FunctionRead>, DetectorRu
                 .next()
                 .and_then(|tail| tail.parse::<u32>().ok())
                 .unwrap_or(0);
-            reads.push(FunctionRead {
+            reads.push(DefinitionRead {
                 path: path.as_str().to_string(),
                 fqn: fqn.clone(),
                 line,
@@ -139,7 +227,7 @@ fn function_reads(facts: &RevisionFacts) -> Result<Vec<FunctionRead>, DetectorRu
                 construct: AstConstruct {
                     subject: subject.clone(),
                     line,
-                    detail: format!("function `{fqn}`"),
+                    detail: format!("{} `{fqn}`", detector.noun()),
                     grounding: Some(GroundingRef::entity(fact.subject, fact.id)),
                 },
             });
@@ -148,7 +236,7 @@ fn function_reads(facts: &RevisionFacts) -> Result<Vec<FunctionRead>, DetectorRu
     Ok(reads)
 }
 
-fn ast_view(reads: &[FunctionRead]) -> AstInput {
+fn ast_view(reads: &[DefinitionRead]) -> AstInput {
     let mut units: BTreeMap<&str, Vec<AstConstruct>> = BTreeMap::new();
     for read in reads {
         units
@@ -173,9 +261,9 @@ fn registry() -> BackendRegistry {
     registry
 }
 
-fn permit() -> Result<ExecutionPermit, DetectorRunError> {
-    let ir = function_definition_detector_ir().map_err(DetectorRunError::Admission)?;
-    DetectorAdmission::admit(ir, DETECTOR_VERSION, AdmissionSource::Builtin)
+fn permit(detector: ProductionDetector) -> Result<ExecutionPermit, DetectorRunError> {
+    let ir = detector.ir().map_err(DetectorRunError::Admission)?;
+    DetectorAdmission::admit(ir, detector.version(), AdmissionSource::Builtin)
         .map_err(|error| DetectorRunError::Admission(error.to_string()))
 }
 
@@ -212,24 +300,26 @@ fn identity_of(
     })
 }
 
-/// The identity a run executed now would carry.
+/// The identity a run of `detector` executed now would carry.
 ///
 /// # Errors
 /// The detector could not be admitted or no backend serves it.
-pub fn current_identity() -> Result<DetectorRunIdentity, DetectorRunError> {
-    identity_of(&permit()?, &registry())
+pub fn current_identity(
+    detector: ProductionDetector,
+) -> Result<DetectorRunIdentity, DetectorRunError> {
+    identity_of(&permit(detector)?, &registry())
 }
 
-/// The id under which this detector's records are kept.
+/// The id under which `detector`'s records are kept.
 ///
 /// # Errors
 /// The detector definition is invalid.
-pub fn detector_id() -> Result<DetectorId, DetectorRunError> {
-    Ok(current_identity()?.detector_id)
+pub fn detector_id(detector: ProductionDetector) -> Result<DetectorId, DetectorRunError> {
+    Ok(current_identity(detector)?.detector_id)
 }
 
-/// Runs the detector over `facts` through the real executor and records
-/// what it read and under which capability.
+/// Runs `detector` over `facts` through the real executor and records what
+/// it read and under which capability.
 ///
 /// `sink` receives the run's evidence. Evidence ids are allocated by the
 /// sink, so a caller that wants reproducible ids passes a fresh one per run.
@@ -238,14 +328,15 @@ pub fn detector_id() -> Result<DetectorId, DetectorRunError> {
 /// Admission, execution or finding/construct arity failed. A failed run
 /// records nothing: there is no half-written read-set.
 pub fn run_detector(
+    detector: ProductionDetector,
     facts: &RevisionFacts,
     workspace: &WorkspaceId,
     sink: &mut dyn EvidenceSink,
 ) -> Result<DetectorRunRecord, DetectorRunError> {
-    let permit = permit()?;
+    let permit = permit(detector)?;
     let registry = registry();
     let identity = identity_of(&permit, &registry)?;
-    let reads = function_reads(facts)?;
+    let reads = definition_reads(detector, facts)?;
 
     let scope = AnalysisScope::new(workspace.clone(), facts.snapshot);
     let input = AnalysisInput {
@@ -269,8 +360,8 @@ pub fn run_detector(
     // The backend emits one match per construct, in construct order. The
     // AST view lists constructs by unit, so the matches follow the same
     // order and the pairing below is positional.
-    let in_view: Vec<&FunctionRead> = {
-        let mut ordered: Vec<&FunctionRead> = reads.iter().collect();
+    let in_view: Vec<&DefinitionRead> = {
+        let mut ordered: Vec<&DefinitionRead> = reads.iter().collect();
         ordered.sort_by(|a, b| a.path.cmp(&b.path));
         ordered
     };
@@ -321,7 +412,7 @@ pub enum RunWritten {
     Written,
 }
 
-/// Makes sure the store holds a current run of the detector for `produced`:
+/// Makes sure the store holds a current run of `detector` for `produced`:
 /// keeps the existing record when it is for this very snapshot under the
 /// identity a run would carry now, and runs and writes otherwise. The
 /// records kept for other snapshots are left as they were. `sink` is only
@@ -330,12 +421,13 @@ pub enum RunWritten {
 /// # Errors
 /// The run or the write failed; the previous record is left as it was.
 pub fn ensure_run(
+    detector: ProductionDetector,
     store: &DetectorReuseStore,
     produced: &ProducedRevision,
     workspace: &WorkspaceId,
     sink: &mut dyn EvidenceSink,
 ) -> Result<RunWritten, DetectorRunError> {
-    let identity = current_identity()?;
+    let identity = current_identity(detector)?;
     let current = store.load().is_some_and(|index| {
         index
             .record_for(identity.detector_id.as_str(), produced.facts.snapshot)
@@ -344,37 +436,42 @@ pub fn ensure_run(
     if current {
         return Ok(RunWritten::AlreadyRecorded);
     }
-    let record = run_detector(&produced.facts, workspace, sink)?;
+    let record = run_detector(detector, &produced.facts, workspace, sink)?;
     store
         .record(record)
         .map_err(|error| DetectorRunError::Persist(error.to_string()))?;
     Ok(RunWritten::Written)
 }
 
-/// [`ensure_run`] against the store `cache_root` keeps for the repository at
-/// `repository`: the one entry point the goals use to write a read-set.
+/// [`ensure_run`] for every [`ProductionDetector`] against the store
+/// `cache_root` keeps for the repository at `repository`: the one entry point
+/// the goals use to write read-sets.
 ///
-/// # Errors
-/// The run or the write failed; the previous record is left as it was.
-pub fn ensure_run_in_cache(
+/// Each detector is written on its own: one that fails leaves its previous
+/// record as it was and does not stop the others.
+pub fn ensure_runs_in_cache(
     cache_root: &Path,
     repository: &Path,
     produced: &ProducedRevision,
     sink: &mut dyn EvidenceSink,
-) -> Result<RunWritten, DetectorRunError> {
+) -> Vec<(ProductionDetector, Result<RunWritten, DetectorRunError>)> {
     let workspace = WorkspaceId::try_new(workspace_key(repository))
-        .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
-    ensure_run(
-        &DetectorReuseStore::for_workspace(cache_root, repository),
-        produced,
-        &workspace,
-        sink,
-    )
+        .map_err(|error| DetectorRunError::Admission(error.to_string()));
+    let store = DetectorReuseStore::for_workspace(cache_root, repository);
+    ProductionDetector::ALL
+        .into_iter()
+        .map(|detector| {
+            let written = workspace
+                .clone()
+                .and_then(|workspace| ensure_run(detector, &store, produced, &workspace, sink));
+            (detector, written)
+        })
+        .collect()
 }
 
-/// [`detect_with_reuse`] over the read-set the store under `cache_root`
-/// keeps for the base revision of `repository`: the one entry point the goals
-/// use to publish the head findings.
+/// [`detect_with_reuse`] of `detector` over the read-set the store under
+/// `cache_root` keeps for the base revision of `repository`: the one entry
+/// point the goals use to publish the head findings.
 ///
 /// Without a cache, or without a record for this base, there is no prior
 /// read-set and the detector runs again.
@@ -382,6 +479,7 @@ pub fn ensure_run_in_cache(
 /// # Errors
 /// The plan could not be computed or the re-run failed.
 pub fn detect_in_cache(
+    detector: ProductionDetector,
     cache_root: Option<&Path>,
     repository: &Path,
     base: &ProducedRevision,
@@ -391,13 +489,13 @@ pub fn detect_in_cache(
 ) -> Result<Detection, DetectorRunError> {
     let workspace = WorkspaceId::try_new(workspace_key(repository))
         .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
-    let detector = detector_id()?;
+    let id = detector_id(detector)?;
     let index =
         cache_root.and_then(|root| DetectorReuseStore::for_workspace(root, repository).load());
     let prior = index
         .as_ref()
-        .and_then(|index| index.record_for(detector.as_str(), base.facts.snapshot));
-    detect_with_reuse(prior, base, head, changes, &workspace, sink)
+        .and_then(|index| index.record_for(id.as_str(), base.facts.snapshot));
+    detect_with_reuse(detector, prior, base, head, changes, &workspace, sink)
 }
 
 /// Whether the findings of a detection came from a prior run.
@@ -419,12 +517,13 @@ pub struct Detection {
 }
 
 fn rerun(
+    detector: ProductionDetector,
     head: &ProducedRevision,
     workspace: &WorkspaceId,
     sink: &mut dyn EvidenceSink,
     reason: impl Into<String>,
 ) -> Result<Detection, DetectorRunError> {
-    let record = run_detector(&head.facts, workspace, sink)?;
+    let record = run_detector(detector, &head.facts, workspace, sink)?;
     let findings = record
         .findings
         .iter()
@@ -453,7 +552,7 @@ fn levels_word(levels: &[InvalidationLevel]) -> String {
         .join(", ")
 }
 
-/// The detector's findings on `head`, reusing `prior` when it is proven safe
+/// `detector`'s findings on `head`, reusing `prior` when it is proven safe
 /// and running the detector again otherwise.
 ///
 /// `prior` is the record of a run on `base`. Reuse is decided by layers
@@ -464,6 +563,7 @@ fn levels_word(levels: &[InvalidationLevel]) -> String {
 /// # Errors
 /// The plan could not be computed or the re-run failed.
 pub fn detect_with_reuse(
+    detector: ProductionDetector,
     prior: Option<&DetectorRunRecord>,
     base: &ProducedRevision,
     head: &ProducedRevision,
@@ -472,10 +572,17 @@ pub fn detect_with_reuse(
     sink: &mut dyn EvidenceSink,
 ) -> Result<Detection, DetectorRunError> {
     let Some(prior) = prior else {
-        return rerun(head, workspace, sink, "no prior read-set is recorded");
+        return rerun(
+            detector,
+            head,
+            workspace,
+            sink,
+            "no prior read-set is recorded",
+        );
     };
     if prior.produced_snapshot != base.facts.snapshot {
         return rerun(
+            detector,
             head,
             workspace,
             sink,
@@ -483,11 +590,18 @@ pub fn detect_with_reuse(
         );
     }
     if prior.observed_truncated {
-        return rerun(head, workspace, sink, "the prior read-set is truncated");
+        return rerun(
+            detector,
+            head,
+            workspace,
+            sink,
+            "the prior read-set is truncated",
+        );
     }
-    let current = current_identity()?;
+    let current = current_identity(detector)?;
     if let ReuseDecision::Invalidated { levels } = reuse_decision(prior, &current, None) {
         return rerun(
+            detector,
             head,
             workspace,
             sink,
@@ -514,12 +628,14 @@ pub fn detect_with_reuse(
             fresh: None,
         }),
         Some(WorkDisposition::Affected) => rerun(
+            detector,
             head,
             workspace,
             sink,
             "a change touches a fact the detector read",
         ),
         Some(WorkDisposition::Unknown) | None => rerun(
+            detector,
             head,
             workspace,
             sink,
@@ -549,6 +665,9 @@ mod tests {
     const ALPHA_RENAMED: &[u8] = b"pub fn alpha_two() { first(); }\n";
     const BETA: &[u8] = b"pub fn beta() { helper(); }\n";
     const GAMMA: &[u8] = b"pub fn gamma() {}\n";
+    const POINT: &[u8] = b"pub struct Point { x: i32 }\n";
+    const POINT_RENAMED: &[u8] = b"pub struct Shape { x: i32 }\n";
+    const NOTHING: &[u8] = b"// nothing defined here\n";
 
     /// Binds each item to the fact it names, with ids numbered from one, as
     /// the production sink does; a run only reads the bindings back.
@@ -579,11 +698,21 @@ mod tests {
         }
     }
 
+    const FUNCTIONS: ProductionDetector = ProductionDetector::FunctionDefinition;
+    const TYPES: ProductionDetector = ProductionDetector::TypeDefinition;
+
     fn fresh_run(
         facts: &RevisionFacts,
         workspace: &WorkspaceId,
     ) -> Result<DetectorRunRecord, DetectorRunError> {
-        run_detector(facts, workspace, &mut TestSink::default())
+        run_detector(FUNCTIONS, facts, workspace, &mut TestSink::default())
+    }
+
+    fn fresh_run_of(
+        detector: ProductionDetector,
+        facts: &RevisionFacts,
+    ) -> Result<DetectorRunRecord, DetectorRunError> {
+        run_detector(detector, facts, &workspace(), &mut TestSink::default())
     }
 
     fn fresh_ensure(
@@ -591,7 +720,31 @@ mod tests {
         produced: &ProducedRevision,
         workspace: &WorkspaceId,
     ) -> Result<RunWritten, DetectorRunError> {
-        ensure_run(store, produced, workspace, &mut TestSink::default())
+        ensure_run(
+            FUNCTIONS,
+            store,
+            produced,
+            workspace,
+            &mut TestSink::default(),
+        )
+    }
+
+    fn fresh_detect_of(
+        detector: ProductionDetector,
+        prior: Option<&DetectorRunRecord>,
+        base: &ProducedRevision,
+        head: &ProducedRevision,
+        changes: &ChangeSet,
+    ) -> Result<Detection, DetectorRunError> {
+        detect_with_reuse(
+            detector,
+            prior,
+            base,
+            head,
+            changes,
+            &workspace(),
+            &mut TestSink::default(),
+        )
     }
 
     fn fresh_detect(
@@ -602,6 +755,7 @@ mod tests {
         workspace: &WorkspaceId,
     ) -> Result<Detection, DetectorRunError> {
         detect_with_reuse(
+            FUNCTIONS,
             prior,
             base,
             head,
@@ -612,7 +766,21 @@ mod tests {
     }
 
     fn fresh_rerun(head: &ProducedRevision, reason: &str) -> Result<Detection, DetectorRunError> {
-        rerun(head, &workspace(), &mut TestSink::default(), reason)
+        fresh_rerun_of(FUNCTIONS, head, reason)
+    }
+
+    fn fresh_rerun_of(
+        detector: ProductionDetector,
+        head: &ProducedRevision,
+        reason: &str,
+    ) -> Result<Detection, DetectorRunError> {
+        rerun(
+            detector,
+            head,
+            &workspace(),
+            &mut TestSink::default(),
+            reason,
+        )
     }
 
     fn workspace() -> WorkspaceId {
@@ -620,12 +788,40 @@ mod tests {
     }
 
     fn fake() -> FakeSource {
-        let base: &[(&str, &[u8])] = &[("src/a.rs", ALPHA_V1), ("src/b.rs", BETA)];
-        let body_edit: &[(&str, &[u8])] = &[("src/a.rs", ALPHA_BODY_EDIT), ("src/b.rs", BETA)];
-        let renamed: &[(&str, &[u8])] = &[("src/a.rs", ALPHA_RENAMED), ("src/b.rs", BETA)];
+        let base: &[(&str, &[u8])] = &[
+            ("src/a.rs", ALPHA_V1),
+            ("src/b.rs", BETA),
+            ("src/t.rs", POINT),
+        ];
+        let body_edit: &[(&str, &[u8])] = &[
+            ("src/a.rs", ALPHA_BODY_EDIT),
+            ("src/b.rs", BETA),
+            ("src/t.rs", POINT),
+        ];
+        let renamed: &[(&str, &[u8])] = &[
+            ("src/a.rs", ALPHA_RENAMED),
+            ("src/b.rs", BETA),
+            ("src/t.rs", POINT),
+        ];
+        let function_removed: &[(&str, &[u8])] = &[
+            ("src/a.rs", NOTHING),
+            ("src/b.rs", BETA),
+            ("src/t.rs", POINT),
+        ];
+        let type_removed: &[(&str, &[u8])] = &[
+            ("src/a.rs", ALPHA_V1),
+            ("src/b.rs", BETA),
+            ("src/t.rs", NOTHING),
+        ];
+        let type_renamed: &[(&str, &[u8])] = &[
+            ("src/a.rs", ALPHA_V1),
+            ("src/b.rs", BETA),
+            ("src/t.rs", POINT_RENAMED),
+        ];
         let added: &[(&str, &[u8])] = &[
             ("src/a.rs", ALPHA_V1),
             ("src/b.rs", BETA),
+            ("src/t.rs", POINT),
             ("src/c.rs", GAMMA),
         ];
         FakeSource::new(
@@ -638,6 +834,9 @@ mod tests {
         .with_revision("main", &[], base)
         .with_revision("body-edit", &["main"], body_edit)
         .with_revision("renamed", &["main"], renamed)
+        .with_revision("function-removed", &["main"], function_removed)
+        .with_revision("type-removed", &["main"], type_removed)
+        .with_revision("type-renamed", &["main"], type_renamed)
         .with_revision("added", &["main"], added)
     }
 
@@ -715,7 +914,10 @@ mod tests {
             record.identity.effective_capabilities,
             BTreeSet::from([AnalysisCapability::AstPattern])
         );
-        assert_eq!(record.identity, current_identity().expect("identity"));
+        assert_eq!(
+            record.identity,
+            current_identity(FUNCTIONS).expect("identity")
+        );
         assert!(
             record
                 .findings
@@ -928,7 +1130,7 @@ mod tests {
             fresh_ensure(&store, &base, &workspace()).expect("second"),
             RunWritten::AlreadyRecorded
         );
-        let id = detector_id().expect("id");
+        let id = detector_id(FUNCTIONS).expect("id");
         let index = store.load().expect("index");
         assert!(index.record_for(id.as_str(), base.facts.snapshot).is_some());
 
@@ -964,7 +1166,7 @@ mod tests {
             RunWritten::Written,
             "a record under another capability is not current"
         );
-        let id = detector_id().expect("id");
+        let id = detector_id(FUNCTIONS).expect("id");
         let index = store.load().expect("index");
         assert_eq!(index.records.len(), 2, "one record per base, no duplicate");
         assert_eq!(
@@ -972,7 +1174,7 @@ mod tests {
                 .record_for(id.as_str(), base.facts.snapshot)
                 .expect("base record")
                 .identity,
-            current_identity().expect("identity")
+            current_identity(FUNCTIONS).expect("identity")
         );
     }
 
@@ -1067,11 +1269,269 @@ mod tests {
             index.record_for("other.detector", base.facts.snapshot),
             Some(&other)
         );
-        let id = detector_id().expect("id");
+        let id = detector_id(FUNCTIONS).expect("id");
         assert_eq!(
             index.record_for(id.as_str(), base.facts.snapshot),
             Some(&again)
         );
         assert!(index.record_for(id.as_str(), head.facts.snapshot).is_some());
+    }
+
+    fn type_facts(produced: &ProducedRevision) -> BTreeSet<FactId> {
+        produced
+            .facts
+            .facts
+            .iter()
+            .filter(|f| {
+                f.predicate.as_str() == DEFINES
+                    && matches!(
+                        f.provenance.detail.as_deref(),
+                        Some("kind=Struct" | "kind=Class" | "kind=Enum" | "kind=Trait")
+                    )
+            })
+            .map(|f| f.id)
+            .collect()
+    }
+
+    fn detect_head(
+        detector: ProductionDetector,
+        fake: &FakeSource,
+        base: &ProducedRevision,
+        head: &ProducedRevision,
+    ) -> Detection {
+        let prior = fresh_run_of(detector, &base.facts).expect("prior run");
+        fresh_detect_of(
+            detector,
+            Some(&prior),
+            base,
+            head,
+            &between(fake, base, head),
+        )
+        .expect("detection")
+    }
+
+    #[test]
+    fn the_type_detector_records_its_own_read_set_identity_and_capability() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+
+        let record = fresh_run_of(TYPES, &base.facts).expect("run");
+
+        let defined = type_facts(&base);
+        assert_eq!(defined.len(), 1, "only Point is a type definition");
+        assert_eq!(record.findings.len(), 1);
+        assert_eq!(
+            record.observed_facts, defined,
+            "the read-set is exactly the type definitions the detector was handed"
+        );
+        assert!(!record.observed_truncated);
+        assert_eq!(
+            record.identity.effective_capabilities,
+            BTreeSet::from([AnalysisCapability::AstPattern])
+        );
+        assert_eq!(record.identity, current_identity(TYPES).expect("identity"));
+        let functions = current_identity(FUNCTIONS).expect("identity");
+        assert_ne!(record.identity.detector_id, functions.detector_id);
+        assert_ne!(record.identity.digests, functions.digests);
+    }
+
+    #[test]
+    fn the_two_detectors_read_disjoint_facts() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+
+        let types = fresh_run_of(TYPES, &base.facts).expect("types");
+        let functions = fresh_run_of(FUNCTIONS, &base.facts).expect("functions");
+
+        assert!(
+            types.observed_facts.is_disjoint(&functions.observed_facts),
+            "a detector's read-set holds only what its own projection handed it"
+        );
+    }
+
+    #[test]
+    fn an_unaffected_change_reuses_every_detector_and_equals_a_full_rerun() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "body-edit");
+
+        for detector in ProductionDetector::ALL {
+            let detection = detect_head(detector, &fake, &base, &head);
+            assert_eq!(
+                detection.reuse,
+                Reuse::Reused {
+                    produced_in: base.facts.snapshot
+                },
+                "{detector:?}"
+            );
+            assert!(detection.fresh.is_none(), "{detector:?}: nothing ran");
+            let reference = fresh_rerun_of(detector, &head, "reference").expect("rerun");
+            assert_eq!(
+                semantics(&detection.findings),
+                semantics(&reference.findings),
+                "{detector:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_changed_type_reruns_the_type_detector_and_finds_the_new_name() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "type-renamed");
+
+        let detection = detect_head(TYPES, &fake, &base, &head);
+
+        let Reuse::Rerun { reason } = &detection.reuse else {
+            panic!("a read type definition changed: {:?}", detection.reuse);
+        };
+        assert!(
+            reason.contains("touches a fact the detector read"),
+            "{reason}"
+        );
+        let prior = fresh_run_of(TYPES, &base.facts).expect("prior");
+        assert_ne!(
+            semantics(&detection.findings),
+            semantics(&rebind_candidate(&prior, head.facts.snapshot)),
+            "the stale finding would have named Point"
+        );
+        assert_eq!(
+            semantics(&detection.findings),
+            semantics(
+                &fresh_rerun_of(TYPES, &head, "reference")
+                    .expect("rerun")
+                    .findings
+            )
+        );
+    }
+
+    #[test]
+    fn removing_what_one_detector_read_leaves_the_other_decided_on_its_own() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+        let reused = Reuse::Reused {
+            produced_in: base.facts.snapshot,
+        };
+
+        let head = produce(&fake, "function-removed");
+        assert!(
+            matches!(
+                detect_head(FUNCTIONS, &fake, &base, &head).reuse,
+                Reuse::Rerun { .. }
+            ),
+            "alpha was read and is gone"
+        );
+        assert_eq!(
+            detect_head(TYPES, &fake, &base, &head).reuse,
+            reused,
+            "no type definition was read by the change"
+        );
+
+        let head = produce(&fake, "type-removed");
+        assert!(
+            matches!(
+                detect_head(TYPES, &fake, &base, &head).reuse,
+                Reuse::Rerun { .. }
+            ),
+            "Point was read and is gone"
+        );
+        assert_eq!(
+            detect_head(FUNCTIONS, &fake, &base, &head).reuse,
+            reused,
+            "no function definition was read by the change"
+        );
+    }
+
+    #[test]
+    fn a_missing_foreign_or_truncated_type_read_set_is_never_reused() {
+        let fake = fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "body-edit");
+        let changes = between(&fake, &base, &head);
+        let prior = fresh_run_of(TYPES, &base.facts).expect("prior run");
+        let on_head = fresh_run_of(TYPES, &head.facts).expect("run on head");
+        let functions = fresh_run_of(FUNCTIONS, &base.facts).expect("functions run");
+        let truncated = DetectorRunRecord {
+            observed_truncated: true,
+            ..prior.clone()
+        };
+
+        for (record, expected) in [
+            (None, "no prior read-set"),
+            (Some(&on_head), "not recorded against the base"),
+            (Some(&truncated), "truncated"),
+            (Some(&functions), "invalidated layer"),
+        ] {
+            let detection =
+                fresh_detect_of(TYPES, record, &base, &head, &changes).expect("detection");
+            let Reuse::Rerun { reason } = detection.reuse else {
+                panic!("{expected}: must not be reused");
+            };
+            assert!(reason.contains(expected), "{reason}");
+        }
+    }
+
+    #[test]
+    fn ensure_runs_writes_one_record_per_detector_and_keeps_them_apart() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let base = produce(&fake, "main");
+        let repository = std::path::Path::new("/repo/demo");
+
+        let written = ensure_runs_in_cache(dir.path(), repository, &base, &mut TestSink::default());
+        assert_eq!(written.len(), ProductionDetector::ALL.len());
+        assert!(
+            written
+                .iter()
+                .all(|(_, outcome)| *outcome == Ok(RunWritten::Written)),
+            "{written:?}"
+        );
+
+        let again = ensure_runs_in_cache(dir.path(), repository, &base, &mut TestSink::default());
+        assert!(
+            again
+                .iter()
+                .all(|(_, outcome)| *outcome == Ok(RunWritten::AlreadyRecorded)),
+            "{again:?}"
+        );
+        let index = DetectorReuseStore::for_workspace(dir.path(), repository)
+            .load()
+            .expect("index");
+        for detector in ProductionDetector::ALL {
+            let id = detector_id(detector).expect("id");
+            assert!(
+                index.record_for(id.as_str(), base.facts.snapshot).is_some(),
+                "{detector:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_in_cache_decides_each_detector_over_its_own_record() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "body-edit");
+        let changes = between(&fake, &base, &head);
+        let repository = std::path::Path::new("/repo/demo");
+        ensure_runs_in_cache(dir.path(), repository, &base, &mut TestSink::default());
+
+        for detector in ProductionDetector::ALL {
+            let detection = detect_in_cache(
+                detector,
+                Some(dir.path()),
+                repository,
+                &base,
+                &head,
+                &changes,
+                &mut TestSink::default(),
+            )
+            .expect("detection");
+            assert!(
+                matches!(detection.reuse, Reuse::Reused { .. }),
+                "{detector:?}: {:?}",
+                detection.reuse
+            );
+        }
     }
 }
