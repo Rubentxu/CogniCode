@@ -432,6 +432,10 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         schema_of::<cognicode_core::interface::goals::security::SecurityInput>(),
     );
     m.insert(
+        "preflight",
+        schema_of::<cognicode_core::interface::goals::preflight::PreflightInput>(),
+    );
+    m.insert(
         "taint_flow",
         schema_of::<
             cognicode_core::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput,

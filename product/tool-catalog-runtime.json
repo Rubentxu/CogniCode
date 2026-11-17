@@ -1340,6 +1340,60 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.105.0"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Lay in-memory edits over a Git revision and report the facts they would add and remove and what producing them costs, before anything is written. `edits` maps a repository-relative path to the complete new text of the file, or to null to delete it; `base_ref` defaults to HEAD. The workspace, the fact store and the revision snapshots are never written: the candidate revision exists only in the answer, under a handle scoped to `session`, and it is never a real revision handle. The delta reports the same `impact_status` as `compare`: a file no reader claims, or one that cannot be parsed, makes it `partial`. Edits are whole-file text. Example: `cognicode preflight --edits '{\"src/lib.rs\":\"fn a() {}\\n\"}'`.",
+    "inputSchema": {
+      "description": "Arguments of the `preflight` goal.",
+      "properties": {
+        "base_ref": {
+          "default": "HEAD",
+          "description": "The Git revision the edits apply to. Defaults to `HEAD`.",
+          "type": "string"
+        },
+        "edits": {
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": "The proposed edits, as an object from repository-relative path to the\ncomplete new text of the file, or to `null` to delete it.",
+          "type": "object"
+        },
+        "session": {
+          "default": null,
+          "description": "A label scoping the candidate: the same edits proposed from two\nsessions name two distinct candidates. Defaults to `default`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "edits"
+      ],
+      "type": "object"
+    },
+    "name": "preflight"
+  },
+  {
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 150,
         "mutates_workspace": false,

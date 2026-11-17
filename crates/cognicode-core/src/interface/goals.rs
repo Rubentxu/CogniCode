@@ -481,10 +481,28 @@ pub const SECURITY: GoalSpec = GoalSpec {
     render: security::render,
 };
 
+/// The `preflight` goal: the facts delta and cost of in-memory edits.
+pub const PREFLIGHT: GoalSpec = GoalSpec {
+    name: "preflight",
+    title: "The facts delta and cost of edits over a revision, without writing",
+    description: "Lay in-memory edits over a Git revision and report the facts they would add and remove and what producing them costs, before anything is written. `edits` maps a repository-relative path to the complete new text of the file, or to null to delete it; `base_ref` defaults to HEAD. The workspace, the fact store and the revision snapshots are never written: the candidate revision exists only in the answer, under a handle scoped to `session`, and it is never a real revision handle. The delta reports the same `impact_status` as `compare`: a file no reader claims, or one that cannot be parsed, makes it `partial`. Edits are whole-file text. Example: `cognicode preflight --edits '{\"src/lib.rs\":\"fn a() {}\\n\"}'`.",
+    examples: &[
+        "cognicode preflight --edits '{\"src/lib.rs\":\"fn a() {}\\n\"}'",
+        "cognicode preflight --base-ref main --edits '{\"src/old.rs\":null}' --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::preflight",
+    requires_graph: false,
+    replaces: &[],
+    run: preflight::run,
+    render: preflight::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 13] = [
+static REGISTRY: [GoalSpec; 14] = [
     STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE,
-    RECIPE, SECURITY,
+    RECIPE, SECURITY, PREFLIGHT,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -516,6 +534,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "change" => crate::interface::schema::schema_of::<change::ChangeInput>(),
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
+        "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
         _ => Map::new(),
     }
 }
@@ -755,6 +774,7 @@ pub mod find;
 pub mod impact;
 pub mod inspect;
 pub mod overview;
+pub mod preflight;
 pub mod recipe;
 mod revision_support;
 pub mod security;
