@@ -116,21 +116,23 @@ fn analyze(overrides: &[Value]) -> ChartAnalysis {
 
 /// The real Helm engine, or `None` after saying why it did not run.
 ///
-/// A machine without `helm` skips the faithful-render lane loudly. A lane
-/// that is supposed to have it sets `COGNICODE_REQUIRE_HELM`, and then its
-/// absence fails the test instead of passing by omission. That lane is
-/// `scripts/ci/helm-lane.sh`.
+/// A machine without a runnable `helm` skips the faithful-render lane loudly,
+/// saying why (absent, or found but unable to run in the confined
+/// environment). A lane that is supposed to have it sets
+/// `COGNICODE_REQUIRE_HELM`, and then its absence fails the test instead of
+/// passing by omission. That lane is `scripts/ci/helm-lane.sh`.
 pub(crate) fn real_helm() -> Option<HelmCli> {
     let cli = HelmCli::from_path();
     if cli.is_available() {
         return Some(cli);
     }
+    let reason = cli.unavailable_reason().unwrap_or("no reason given");
     assert!(
         std::env::var_os("COGNICODE_REQUIRE_HELM").is_none(),
-        "COGNICODE_REQUIRE_HELM is set but `helm` is not installed"
+        "COGNICODE_REQUIRE_HELM is set but `helm` is unavailable: {reason}"
     );
     eprintln!(
-        "SKIPPED: `helm` is not installed on this machine; the faithful render was not \
+        "SKIPPED: `helm` is unavailable ({reason}); the faithful render was not \
          exercised and only the hand-authored renderer double ran"
     );
     None
