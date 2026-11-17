@@ -117,16 +117,32 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     // renamed, so that work is affected and must run again.
     assert_eq!(answer["impact_status"], "evaluated");
     assert_eq!(
-        answer["work_reuse_status"], "evaluated",
-        "{}",
+        answer["work_reuse_status"], "partial",
+        "the type detector cannot prove the added definition unread: {}",
         answer["work_reuse_reason"]
     );
     assert_eq!(answer["work_reuse"]["affected"], 1);
+    assert_eq!(answer["work_reuse"]["unknown"], 1);
     assert_eq!(answer["work_reuse"]["unaffected"], 0);
+    assert_eq!(
+        answer["work_reuse"]["works"].as_array().map(Vec::len),
+        Some(2),
+        "one verdict per detector that wrote a read-set"
+    );
     // The renamed function the detector read forces a re-run on the head, and
     // the answer says so instead of presenting the base findings as current.
-    assert_eq!(answer["head_findings"]["reuse"], "rerun", "{answer}");
-    assert_eq!(answer["head_findings"]["findings"][0]["file"], "src.rs");
+    let heads = answer["head_findings"]
+        .as_array()
+        .expect("one per detector");
+    assert_eq!(heads.len(), 2, "{answer}");
+    assert_eq!(heads[0]["detector"], "structure.function_definition");
+    assert_eq!(heads[0]["reuse"], "rerun", "{answer}");
+    assert_eq!(heads[0]["findings"][0]["file"], "src.rs");
+    assert_eq!(heads[1]["detector"], "structure.type_definition");
+    assert_ne!(
+        heads[1]["reuse"], "reused",
+        "a definition was added that the type detector could not have read: {answer}"
+    );
     // What the answer says it persisted is on disk, in the cache the server
     // was given and nowhere else.
     assert_eq!(answer["revision_facts"]["persisted"], true, "{answer}");
