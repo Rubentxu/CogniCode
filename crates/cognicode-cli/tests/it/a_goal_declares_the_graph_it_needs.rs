@@ -111,6 +111,12 @@ fn commit_two_revisions(workspace: &Path) {
 fn arguments_of(goal: &GoalSpec) -> Vec<String> {
     let schema = goals::input_schema(goal);
     let mut arguments = Vec::new();
+    if goal.name == "inspect" {
+        // `inspect` takes a file or a revision, so neither is required by the
+        // schema alone; the fixture asks about its file.
+        arguments.push("--file".to_string());
+        arguments.push("lib.rs".to_string());
+    }
     for name in goals::required_names(&schema) {
         let value = match name {
             "symbol" => "alpha",
@@ -118,6 +124,7 @@ fn arguments_of(goal: &GoalSpec) -> Vec<String> {
             "new_name" => "gamma",
             "base_ref" => "HEAD~1",
             "head_ref" => "HEAD",
+            "revision" => "HEAD",
             other => panic!(
                 "the fixture does not know what to answer to the argument `{other}` of the goal \
                  `{}`",
@@ -253,7 +260,7 @@ fn catalogue_requires_graph(name: &str) -> bool {
 fn every_goal_declares_the_graph_it_builds() {
     for goal in goals::registry() {
         let (root, workspace, _cache) = workspace();
-        if goal.name == "compare" {
+        if matches!(goal.name, "compare" | "verify") {
             commit_two_revisions(&workspace);
         }
         let calls = calls_of(goal, &workspace);
