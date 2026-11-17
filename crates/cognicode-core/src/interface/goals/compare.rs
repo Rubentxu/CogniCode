@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
-use crate::application::change_tracking::detector_runs::ensure_run_in_cache;
+use crate::application::change_tracking::detector_runs::{
+    Reuse, detect_in_cache, detector_id, ensure_run_in_cache,
+};
 use crate::application::change_tracking::planner::WorkDisposition;
 use crate::application::change_tracking::revision_facts::{
     FactObjectStore, FactsLimits, ProducedRevision, assess_impact, assess_reuse,
@@ -167,6 +169,39 @@ pub struct CompareWorkReuse {
     pub unknown: usize,
 }
 
+/// One finding of the detector on the candidate revision.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareHeadFinding {
+    /// The semantic fingerprint that identifies the finding across revisions.
+    pub fingerprint: String,
+    /// The file the finding is reported in.
+    pub file: String,
+    /// The line the finding is reported at.
+    pub line: u32,
+    /// The revision whose facts produced the evidence of this finding: the
+    /// base revision for a reused finding, the candidate for a fresh one.
+    pub evidence_revision: String,
+}
+
+/// The detector's findings on the candidate revision, and whether they were
+/// reused from the base revision's run or produced again.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareHeadFindings {
+    /// The detector that produced the findings.
+    pub detector: String,
+    /// `reused` only when the findings are the base run's, proven unaffected
+    /// by every change; `rerun` when the detector ran on the candidate;
+    /// `not_evaluated` when it could not run, with no findings.
+    pub reuse: String,
+    /// Why the findings were reused, run again, or not evaluated.
+    pub reason: String,
+    /// `full` when every analyzable file of the candidate has facts,
+    /// `partial` otherwise: findings of a partial revision are a lower bound.
+    pub coverage: String,
+    /// The findings on the candidate revision.
+    pub findings: Vec<CompareHeadFinding>,
+}
+
 /// The shared response contract for comparing two revisions.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoalCompare {
@@ -205,6 +240,9 @@ pub struct GoalCompare {
     /// The reuse verdicts, from the read-set the production detector run
     /// wrote for the base revision.
     pub work_reuse: Option<CompareWorkReuse>,
+    /// The detector's findings on the candidate revision with their reuse
+    /// state; absent when the revision facts could not be assembled.
+    pub head_findings: Option<CompareHeadFindings>,
 }
 
 const FACTS_UNAVAILABLE: &str = "revision facts could not be assembled";
@@ -268,6 +306,67 @@ fn disposition_word(disposition: WorkDisposition) -> &'static str {
     }
 }
 
+/// The detector's findings on the candidate, with the reuse state exactly as
+/// `detect_with_reuse` proved it. A detection that could not be made is
+/// `not_evaluated` with its reason and no findings, never an empty clean list.
+fn head_findings(
+    workspace: &Path,
+    cache_root: Option<&Path>,
+    base: &ProducedRevision,
+    candidate: &ProducedRevision,
+    change_set: &ChangeSet,
+) -> CompareHeadFindings {
+    let coverage = side_coverage(candidate).coverage;
+    let detector = detector_id()
+        .map(|id| id.as_str().to_string())
+        .unwrap_or_default();
+    match detect_in_cache(cache_root, workspace, base, candidate, change_set) {
+        Ok(detection) => {
+            let (reuse, reason) = match &detection.reuse {
+                Reuse::Reused { .. } => (
+                    "reused",
+                    "proven unaffected: no change touches a fact the detector read".to_string(),
+                ),
+                Reuse::Rerun { reason } => ("rerun", reason.clone()),
+            };
+            let findings = detection
+                .findings
+                .iter()
+                .flat_map(|finding| {
+                    let producer = if finding.produced_in == base.facts.snapshot {
+                        base
+                    } else {
+                        candidate
+                    };
+                    finding
+                        .output_locations
+                        .iter()
+                        .map(move |location| CompareHeadFinding {
+                            fingerprint: finding.semantic_fingerprint.as_str().to_string(),
+                            file: location.file.clone(),
+                            line: location.line,
+                            evidence_revision: producer.revision.handle().as_str().to_string(),
+                        })
+                })
+                .collect();
+            CompareHeadFindings {
+                detector,
+                reuse: reuse.to_string(),
+                reason,
+                coverage,
+                findings,
+            }
+        }
+        Err(error) => CompareHeadFindings {
+            detector,
+            reuse: "not_evaluated".to_string(),
+            reason: format!("the detector could not run: {error}"),
+            coverage,
+            findings: Vec::new(),
+        },
+    }
+}
+
 /// What the revision facts and prior read-sets support, as the wire states it.
 struct Semantics {
     impact_status: String,
@@ -277,6 +376,7 @@ struct Semantics {
     revision_facts: Option<CompareRevisionFacts>,
     impact: Option<CompareImpact>,
     work_reuse: Option<CompareWorkReuse>,
+    head_findings: Option<CompareHeadFindings>,
 }
 
 impl Semantics {
@@ -289,6 +389,7 @@ impl Semantics {
             revision_facts: None,
             impact: None,
             work_reuse: None,
+            head_findings: None,
         }
     }
 }
@@ -400,6 +501,9 @@ fn semantics(
                 .collect(),
         }),
         work_reuse,
+        head_findings: Some(head_findings(
+            workspace, cache_root, &base, &candidate, change_set,
+        )),
     }
 }
 
@@ -509,6 +613,7 @@ pub fn compare_with(
         revision_facts: semantic.revision_facts,
         impact: semantic.impact,
         work_reuse: semantic.work_reuse,
+        head_findings: semantic.head_findings,
     })
 }
 
@@ -533,6 +638,16 @@ pub fn render(answer: &Value) -> String {
     let mut text = format!("{}\n", compared.summary);
     for change in compared.changes {
         text.push_str(&format!("  {} {}\n", change.kind, change.path));
+    }
+    if let Some(head) = &compared.head_findings {
+        text.push_str(&format!(
+            "Head findings of {}: {} ({}, {}): {}\n",
+            head.detector,
+            head.findings.len(),
+            head.reuse,
+            head.coverage,
+            head.reason
+        ));
     }
     if !compared.working_copy.staged_changes.is_empty() {
         text.push_str("Staged changes (HEAD → index):\n");
@@ -699,6 +814,114 @@ mod tests {
             (reuse.unaffected, reuse.unknown),
             (0, 1),
             "an aggregate read over all functions cannot prove the new one unread"
+        );
+    }
+
+    #[test]
+    fn a_body_edit_reuses_the_head_findings_and_names_the_base_as_their_producer() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let head = answer.head_findings.expect("head findings are published");
+        assert_eq!(head.reuse, "reused", "{}", head.reason);
+        assert_eq!(head.coverage, "full");
+        assert_eq!(head.findings.len(), 1);
+        assert_eq!(head.findings[0].file, "a.rs");
+        assert_eq!(head.findings[0].line, 1);
+        assert_eq!(head.findings[0].evidence_revision, answer.base.revision);
+    }
+
+    #[test]
+    fn a_renamed_definition_reruns_the_detector_on_the_head_and_says_why() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() {}\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha_two() {}\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let head = answer.head_findings.expect("head findings are published");
+        assert_eq!(head.reuse, "rerun");
+        assert!(
+            head.reason.contains("touches a fact the detector read"),
+            "{}",
+            head.reason
+        );
+        assert_eq!(head.findings.len(), 1);
+        assert_eq!(
+            head.findings[0].evidence_revision,
+            answer.candidate.revision
+        );
+    }
+
+    #[test]
+    fn a_new_definition_is_found_on_the_head_and_never_reused() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() {}\n", "base");
+        commit_file(root, "b.rs", "pub fn beta() {}\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let head = answer.head_findings.expect("head findings are published");
+        assert_eq!(head.reuse, "rerun", "{}", head.reason);
+        assert!(head.reason.contains("not proven"), "{}", head.reason);
+        let files: Vec<&str> = head.findings.iter().map(|f| f.file.as_str()).collect();
+        assert_eq!(files, ["a.rs", "b.rs"]);
+    }
+
+    #[test]
+    fn without_a_cache_the_head_findings_are_a_rerun_because_no_read_set_exists() {
+        let directory = repository();
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+
+        let answer = compare(root, &base, "HEAD").expect("compare");
+
+        let head = answer.head_findings.expect("head findings are published");
+        assert_eq!(head.reuse, "rerun");
+        assert!(head.reason.contains("no prior read-set"), "{}", head.reason);
+        assert_eq!(head.findings.len(), 1);
+    }
+
+    #[test]
+    fn a_partial_head_never_reuses_and_reports_its_findings_as_a_lower_bound() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        std::fs::write(root.join("blob.rs"), [0xff, 0xfe, 0x00, 0x9f]).expect("binary source");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let head = answer.head_findings.expect("head findings are published");
+        assert_eq!(head.coverage, "partial");
+        assert_eq!(head.reuse, "rerun", "{}", head.reason);
+    }
+
+    #[test]
+    fn the_text_rendering_states_whether_the_head_findings_were_reused() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        let text = render(&serde_json::to_value(answer).expect("serialise"));
+
+        assert!(
+            text.contains("Head findings of") && text.contains("1 (reused, full)"),
+            "{text}"
         );
     }
 

@@ -572,6 +572,14 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
             .as_str()
             .is_some_and(|reason| reason.contains("read-set"))
     );
+    // The head findings are still published, and without a prior read-set
+    // they say they were produced again rather than reused.
+    assert_eq!(uncached_answer["head_findings"]["reuse"], "rerun");
+    assert!(
+        uncached_answer["head_findings"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("no prior read-set"))
+    );
 
     let answer = cli_answer;
     assert_eq!(answer["coverage"]["changed_paths"], 1);
@@ -583,6 +591,16 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     // the renamed function it read makes that work affected.
     assert_eq!(answer["work_reuse_status"], "evaluated");
     assert_eq!(answer["work_reuse"]["affected"], 1);
+    // The affected detector ran again on the candidate: its one finding is
+    // the renamed function, backed by the candidate revision's facts, and the
+    // same answer reached both surfaces.
+    assert_eq!(answer["head_findings"]["reuse"], "rerun");
+    assert_eq!(answer["head_findings"]["coverage"], "full");
+    assert_eq!(answer["head_findings"]["findings"][0]["file"], "src.rs");
+    assert_eq!(
+        answer["head_findings"]["findings"][0]["evidence_revision"],
+        answer["candidate"]["revision"]
+    );
     assert_eq!(answer["changes"][0]["path"], "src.rs");
     assert_eq!(
         answer["working_copy"]["staged_changes"][0]["path"],
