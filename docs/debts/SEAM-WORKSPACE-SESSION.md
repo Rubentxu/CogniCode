@@ -1,8 +1,8 @@
 # SEAM — WorkspaceSession (medicion, no opinion)
 
 - Herramienta: `python3 scripts/measure_workspace_session.py --write`
-- HEAD medido: `9ea29db2` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4567 lineas)
-- Regions `#[cfg(test)]` inline: 2; ficheros `tests/` leidos: 338
+- HEAD medido: `3e5e81bf` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4567 lineas)
+- Regions `#[cfg(test)]` inline: 2; ficheros `tests/` leidos: 365
 
 La regla de extraccion (CGH-010 AC#2): un grupo solo se extrae
 cuando este instrumento lo marca READY: cada metodo publico tiene
@@ -11,10 +11,10 @@ estan compartidos con metodos de fuera. Lo demas es opinion.
 
 | grupo | metodos | LOC | crates consumidores | puntos de llamada | sin caracterizar | ayudantes compartidos | veredicto |
 |---|---|---|---|---|---|---|---|
-| lifecycle | 2 | 52 | 1 | 3 | with_capabilities | — | NO EXTRAER AUN |
+| lifecycle | 2 | 52 | 1 | 5 | — | — | READY |
 | graph store | 6 | 94 | 0 | 0 | require_graph, ensure_graph_built | — | NO EXTRAER AUN |
 | indexing | 4 | 231 | 0 | 0 | — | ensure_graph_built, ensure_semantic_search, held_graph, require_graph | NO EXTRAER AUN |
-| files | 5 | 41 | 1 | 49 | resolve_path | — | NO EXTRAER AUN |
+| files | 5 | 41 | 1 | 50 | resolve_path | — | NO EXTRAER AUN |
 | search | 6 | 61 | 1 | 11 | semantic_search, map_kind_strings, map_kind_string | — | NO EXTRAER AUN |
 | symbol queries | 7 | 163 | 2 | 21 | get_outline, get_complexity, ranked_symbols_ai | ensure_graph_built, get_hot_paths, require_graph, resolve_path | NO EXTRAER AUN |
 | graph queries | 9 | 238 | 2 | 11 | get_call_hierarchy, export_mermaid | ensure_graph_built, held_graph, require_graph | NO EXTRAER AUN |
@@ -25,7 +25,7 @@ estan compartidos con metodos de fuera. Lo demas es opinion.
 
 ## Lectura
 
-- Grupos READY para extraer hoy: ninguno.
+- Grupos READY para extraer hoy: lifecycle.
 - Resto: sin caracterizacion suficiente o con ayudantes compartidos
   que hay que mover primero; extraerlos ahora romperiamos la
   fachada publica con un cambio que ningun test notaria.

@@ -36,7 +36,7 @@ def test_measurement_doc_is_tracked():
     out = subprocess.run(
         ["git", "ls-files", "--error-unmatch",
          str(DOC.relative_to(REPO_ROOT))],
-        cwd=REPO_ROOT, capture_output=True, text=True,
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
     )
     assert out.returncode == 0, (
         f"{DOC.name} no esta versionado: o se force-add (porque este gate "
@@ -50,7 +50,7 @@ def test_measurement_reproduces_the_doc():
     veredicto READY dejan el contrato rojo."""
     proc = subprocess.run(
         [sys.executable, str(TOOL), "--check"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
     )
     assert proc.returncode == 0, (
         f"la medicion y el informe han divergido:\n{proc.stderr.strip()}\n"
