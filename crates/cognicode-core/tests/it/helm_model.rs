@@ -118,7 +118,8 @@ fn analyze(overrides: &[Value]) -> ChartAnalysis {
 ///
 /// A machine without `helm` skips the faithful-render lane loudly. A lane
 /// that is supposed to have it sets `COGNICODE_REQUIRE_HELM`, and then its
-/// absence fails the test instead of passing by omission.
+/// absence fails the test instead of passing by omission. That lane is
+/// `scripts/ci/helm-lane.sh`.
 pub(crate) fn real_helm() -> Option<HelmCli> {
     let cli = HelmCli::from_path();
     if cli.is_available() {
@@ -346,4 +347,55 @@ fn the_real_engine_renders_the_chart_when_it_is_installed() {
         verdict(&analysis, HelmCheck::PrivilegedContainer),
         CheckVerdict::Found { .. }
     ));
+}
+
+fn found(analysis: &ChartAnalysis, check: HelmCheck) -> bool {
+    matches!(verdict(analysis, check), CheckVerdict::Found { .. })
+}
+
+/// The labelled double is only trustworthy where it matches the engine. For
+/// the default values both give the same verdict on every check. For the
+/// hardened values they agree on what the chart's `hardened` and `rbac` values
+/// control, and they differ on two checks: the double's hardened output was
+/// written with a pinned image digest and `allowPrivilegeEscalation: false`
+/// that the demo chart never renders, so only the real engine keeps reporting
+/// `PrivilegeEscalation` and `MutableImage`.
+#[test]
+fn the_real_engine_agrees_with_the_double_except_where_the_double_was_hardened_by_hand() {
+    let Some(cli) = real_helm() else {
+        return;
+    };
+    let dir = demo_chart();
+    let chart = read_chart(dir.path()).unwrap();
+
+    let real = analyze_chart(&chart, &[], "rel", &cli);
+    let double = analyze_chart(&chart, &[], "rel", &HandAuthoredRender);
+    for check in HelmCheck::ALL {
+        assert_eq!(
+            found(&real, check),
+            found(&double, check),
+            "default values, {check:?}"
+        );
+    }
+
+    let values = [json!({"hardened": true, "rbac": {"wildcard": false}})];
+    let real = analyze_chart(&chart, &values, "rel", &cli);
+    let double = analyze_chart(&chart, &values, "rel", &HandAuthoredRender);
+    for check in [
+        HelmCheck::PrivilegedContainer,
+        HelmCheck::RunsAsRoot,
+        HelmCheck::HostAccess,
+        HelmCheck::BroadRbac,
+        HelmCheck::ExternalExposure,
+    ] {
+        assert_eq!(
+            found(&real, check),
+            found(&double, check),
+            "hardened values, {check:?}"
+        );
+    }
+    for check in [HelmCheck::PrivilegeEscalation, HelmCheck::MutableImage] {
+        assert!(found(&real, check), "the real render still has {check:?}");
+        assert!(!found(&double, check), "the double hides {check:?}");
+    }
 }
