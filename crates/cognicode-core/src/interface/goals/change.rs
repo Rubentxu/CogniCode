@@ -63,6 +63,7 @@ pub struct GoalChange {
 /// La respuesta del goal `change` para ese símbolo.
 pub fn change(
     workspace: &Path,
+    cache_root: Option<&Path>,
     symbol: &str,
     new_name: &str,
     file: Option<&str>,
@@ -70,7 +71,7 @@ pub fn change(
     // Un solo grafo para todo el goal: el que el índice consulta para
     // saber dónde vive el símbolo es el que mide el impacto del rename
     // (TASK-223).
-    let (service, built) = service_with_graph(workspace)?;
+    let (service, built) = service_with_graph(workspace, cache_root)?;
     let path = match file {
         Some(given) => authorise_workspace_file(workspace, given)?,
         None => {
@@ -124,6 +125,7 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
         .map_err(|error| format!("the arguments of the goal `change` are not valid: {error}"))?;
     let answer = change(
         workspace,
+        ctx.cache_root,
         &input.symbol,
         &input.new_name,
         input.file.as_deref(),
@@ -154,7 +156,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn helper() {}").expect("write");
 
-        let answer = change(dir.path(), "nowhere", "elsewhere", None);
+        let answer = change(dir.path(), None, "nowhere", "elsewhere", None);
 
         assert!(
             answer.is_err(),
@@ -169,7 +171,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn helper() {}").expect("write");
 
-        let answer = change(dir.path(), "helper", "renamed", Some("main.rs"))
+        let answer = change(dir.path(), None, "helper", "renamed", Some("main.rs"))
             .expect("a file inside the workspace is renamed");
 
         assert_eq!(answer.file, dir.path().join("main.rs").to_string_lossy());
@@ -189,9 +191,16 @@ mod tests {
         std::fs::write(work.join("main.rs"), "fn helper() {}").expect("write");
         std::fs::write(outside.join("helper.rs"), "fn helper() {}").expect("write");
 
-        let relative = change(&work, "helper", "renamed", Some("../outside/helper.rs"));
+        let relative = change(
+            &work,
+            None,
+            "helper",
+            "renamed",
+            Some("../outside/helper.rs"),
+        );
         let absolute = change(
             &work,
+            None,
             "helper",
             "renamed",
             Some(&outside.join("helper.rs").to_string_lossy()),

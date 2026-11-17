@@ -61,8 +61,13 @@ pub struct ProjectGraph {
 /// served when it can answer for the tree, and the tree is read again
 /// when it cannot. A command that builds its own graph is a command that
 /// ignores what the product already calculated.
+///
+/// Where the snapshot is kept is what the environment says: this is the
+/// entry point of a command, which owns the user's cache. A caller that
+/// has been told where to keep its state uses [`service_with_graph`].
 pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
-    service_with_graph(dir).map(|(_, project)| project)
+    let cache_root = crate::application::graph_cache::default_cache_root();
+    service_with_graph(dir, cache_root.as_deref()).map(|(_, project)| project)
 }
 
 /// El servicio con el grafo del workspace, y el grafo.
@@ -70,23 +75,24 @@ pub fn project_graph(dir: &Path) -> Result<ProjectGraph, String> {
 /// El servicio se queda con el grafo en su caché, así que las respuestas
 /// que salen del servicio —las estadísticas, el código que no se usa— son
 /// las del dueño, y no una cuenta hecha aparte.
-pub fn service_with_graph(dir: &Path) -> Result<(AnalysisService, ProjectGraph), String> {
-    let cache_root = crate::application::graph_cache::default_cache_root();
+///
+/// `cache_root` is where the product keeps what it derives from `dir`;
+/// `None` keeps no state and rebuilds on every call.
+pub fn service_with_graph(
+    dir: &Path,
+    cache_root: Option<&Path>,
+) -> Result<(AnalysisService, ProjectGraph), String> {
     // The daemon's word, when there is a daemon to ask: a daemon that
     // watches the tree can say that the index is still fresh without the
     // product reading the content of every file again.
-    let service = match &cache_root {
+    let service = match cache_root {
         Some(root) => AnalysisService::new().with_freshness_oracle(Some(std::sync::Arc::new(
             crate::interface::daemon::DaemonOracle::for_workspace(root, dir),
         ))),
         None => AnalysisService::new(),
     };
     let loaded = crate::application::graph_snapshot::load_or_build_graph(
-        &service,
-        dir,
-        cache_root.as_deref(),
-        None,
-        false,
+        &service, dir, cache_root, None, false,
     )
     .map_err(|e| {
         format!(

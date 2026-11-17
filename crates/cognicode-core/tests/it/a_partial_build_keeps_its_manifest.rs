@@ -97,7 +97,7 @@ fn envelope_of(
 fn a_partial_answer_can_be_dated() {
     let (_tmp, root) = tree_with_an_ambiguous_call();
 
-    let answer = overview::overview(&root).expect("the goal answers");
+    let answer = overview::overview(&root, None).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("overview", &answer, &root);
 
@@ -115,7 +115,7 @@ fn a_partial_answer_can_be_dated() {
 fn a_dated_partial_answer_is_still_partial() {
     let (_tmp, root) = tree_with_an_ambiguous_call();
 
-    let answer = overview::overview(&root).expect("the goal answers");
+    let answer = overview::overview(&root, None).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("overview", &answer, &root);
 
@@ -205,7 +205,7 @@ fn the_digest_of_a_partial_answer_follows_its_sources() {
 
 /// El digest que la respuesta de `overview` publica.
 fn digest_of(root: &Path) -> Option<String> {
-    let answer = overview::overview(root).expect("the goal answers");
+    let answer = overview::overview(root, None).expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("overview", &answer, root);
     envelope.basis.freshness.map(|freshness| freshness.snapshot)

@@ -103,12 +103,13 @@ fn direction_of(name: &str) -> Result<Direction, String> {
 /// La respuesta del goal `trace` para ese símbolo.
 pub fn trace(
     workspace: &Path,
+    cache_root: Option<&Path>,
     symbol: &str,
     direction: &str,
     depth: u32,
 ) -> Result<GoalTrace, String> {
     let side = direction_of(direction)?;
-    let (_service, built) = service_with_graph(workspace)?;
+    let (_service, built) = service_with_graph(workspace, cache_root)?;
     let entries = AnalysisService::call_hierarchy(&built.graph, symbol, depth, side)
         .map_err(|error| format!("`{symbol}` could not be traced: {error}"))?;
 
@@ -144,7 +145,13 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     let input: TraceInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `trace` are not valid: {error}"))?;
-    let answer = trace(workspace, &input.symbol, &input.direction, input.depth)?;
+    let answer = trace(
+        workspace,
+        ctx.cache_root,
+        &input.symbol,
+        &input.direction,
+        input.depth,
+    )?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `trace` is not serialisable: {error}"))
 }
@@ -172,7 +179,7 @@ mod tests {
     #[test]
     fn a_side_that_does_not_exist_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let answer = trace(dir.path(), "helper", "sideways", 1);
+        let answer = trace(dir.path(), None, "helper", "sideways", 1);
 
         assert!(answer.is_err(), "an unknown side is not a quiet answer");
     }

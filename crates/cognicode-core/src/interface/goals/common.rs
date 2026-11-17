@@ -262,8 +262,9 @@ mod tests {
     fn the_basis_says_where_the_graph_came_from_and_which_sources_it_describes() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
-        let (_service, built) = crate::interface::project_graph::service_with_graph(dir.path())
-            .expect("the graph of a readable tree");
+        let (_service, built) =
+            crate::interface::project_graph::service_with_graph(dir.path(), None)
+                .expect("the graph of a readable tree");
 
         let basis = graph_basis(dir.path(), &built).expect("a complete build keeps its manifest");
 
@@ -319,8 +320,9 @@ mod tests {
     fn without_a_manifest_there_is_no_basis_and_no_empty_digest() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn main() {}").expect("write");
-        let (_service, mut built) = crate::interface::project_graph::service_with_graph(dir.path())
-            .expect("the graph of a readable tree");
+        let (_service, mut built) =
+            crate::interface::project_graph::service_with_graph(dir.path(), None)
+                .expect("the graph of a readable tree");
         built.manifest = None;
 
         assert_eq!(graph_basis(dir.path(), &built), None);

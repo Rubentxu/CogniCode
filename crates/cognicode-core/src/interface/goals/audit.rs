@@ -66,8 +66,8 @@ pub struct DeadSymbol {
 }
 
 /// La respuesta del goal `audit` para ese workspace.
-pub fn audit(workspace: &Path) -> Result<GoalAudit, String> {
-    let (service, built) = service_with_graph(workspace)?;
+pub fn audit(workspace: &Path, cache_root: Option<&Path>) -> Result<GoalAudit, String> {
+    let (service, built) = service_with_graph(workspace, cache_root)?;
     let dead = service.detect_dead_code();
     let cycles = service.check_cycles(&built.graph);
 
@@ -108,7 +108,7 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     serde_json::from_value::<AuditInput>(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `audit` are not valid: {error}"))?;
-    let answer = audit(workspace)?;
+    let answer = audit(workspace, ctx.cache_root)?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `audit` is not serialisable: {error}"))
 }
@@ -139,7 +139,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("main.rs"), "fn helper() {}\nfn main() {}").expect("write");
 
-        let answer = audit(dir.path()).expect("the goal answers");
+        let answer = audit(dir.path(), None).expect("the goal answers");
 
         assert_eq!(answer.goal, "audit");
         assert_eq!(answer.symbols, 2);
