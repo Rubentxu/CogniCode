@@ -34,6 +34,7 @@ mod prf_h06_adversarial_e2e;
 mod prf_sec_07_adversarial_campaign;
 mod retired_tools_are_not_announced;
 mod telemetry_is_opt_in;
+mod the_compare_goal_answers_over_the_wire;
 mod the_continuation_chain_is_byte_exact;
 mod the_dispatch_deadline_cuts_a_call_and_says_what_happened;
 mod the_harness_finds_the_binary_it_tests;

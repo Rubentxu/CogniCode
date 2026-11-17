@@ -410,6 +410,10 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         schema_of::<cognicode_core::interface::goals::audit::AuditInput>(),
     );
     m.insert(
+        "compare",
+        schema_of::<cognicode_core::interface::goals::compare::CompareInput>(),
+    );
+    m.insert(
         "change",
         schema_of::<cognicode_core::interface::goals::change::ChangeInput>(),
     );

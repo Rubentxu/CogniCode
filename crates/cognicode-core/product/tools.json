@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 88,
+  "runtime_tool_count": 89,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1435,6 +1435,63 @@
       "precision_floor": "ast-heuristic",
       "limitations": [
         "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+      ]
+    },
+    {
+      "name": "compare",
+      "title": "Qué cambió entre dos revisiones",
+      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Arguments for the `compare` goal.",
+        "properties": {
+          "base_ref": {
+            "description": "The ancestor revision to compare from.",
+            "type": "string"
+          },
+          "head_ref": {
+            "description": "The descendant revision to compare to.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_ref",
+          "head_ref"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.104.0"
+      },
+      "precision_floor": "ast-heuristic",
+      "required_args": [
+        "base_ref",
+        "head_ref"
+      ],
+      "limitations": [
+        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents or evaluate semantic impact and prior-work reuse without revision facts and execution read-sets."
       ]
     },
     {

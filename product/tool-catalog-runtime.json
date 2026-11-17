@@ -1232,6 +1232,46 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.104.0"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+    "inputSchema": {
+      "description": "Arguments for the `compare` goal.",
+      "properties": {
+        "base_ref": {
+          "description": "The ancestor revision to compare from.",
+          "type": "string"
+        },
+        "head_ref": {
+          "description": "The descendant revision to compare to.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_ref",
+        "head_ref"
+      ],
+      "type": "object"
+    },
+    "name": "compare"
+  },
+  {
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 150,
         "mutates_workspace": false,

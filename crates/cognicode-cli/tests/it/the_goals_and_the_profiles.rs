@@ -97,21 +97,21 @@ fn the_default_profile_fits_in_six_kilobytes() {
     );
 }
 
-/// El registro declara los diez goals, cada uno con su declaración entera.
+/// El registro declara los once goals, cada uno con su declaración entera.
 ///
 /// Un goal a medias es una promesa a medias: sin dueño no hay a quién
 /// preguntarle, y sin fase no se sabe si el perfil por defecto lo publica.
 #[test]
-fn the_registry_declares_the_ten_goals() {
+fn the_registry_declares_the_eleven_goals() {
     let names: Vec<&str> = goals::registry().iter().map(|goal| goal.name).collect();
 
     assert_eq!(
         names,
         vec![
             "status", "context", "find", "inspect", "trace", "impact", "overview", "audit",
-            "change", "recipe"
+            "compare", "change", "recipe"
         ],
-        "the registry declares the ten goals"
+        "the registry declares the eleven goals"
     );
 
     for goal in goals::registry() {
