@@ -21,6 +21,7 @@ pub mod helm;
 pub mod intelligence_log;
 pub mod lsp;
 pub mod mermaid;
+pub mod native_metrics;
 pub mod parser;
 pub mod persistence;
 pub mod process_memory;
