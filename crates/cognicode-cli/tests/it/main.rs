@@ -58,6 +58,7 @@ mod the_cli_serves_the_snapshot_the_mcp_wrote;
 mod the_complexity_sample_does_not_depend_on_the_directory_order;
 mod the_goals_and_the_profiles;
 mod the_intent_command_survives_arbitrary_input;
+mod the_preflight_goal_is_one_answer_on_both_surfaces;
 mod the_published_coverage_has_one_owner;
 mod the_questions_say_their_coverage;
 mod the_recipe_executor;

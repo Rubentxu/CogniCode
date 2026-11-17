@@ -104,13 +104,13 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
     // `graph_analyze` and `composite_impact_query` left the advertised
     // surface: the code behind them computed nothing.
     //
-    // TASK-84: the surface is the `full` one — 78 tools and the thirteen goals
-    // (91). The capture is taken in that profile because it is the only
+    // TASK-84: the surface is the `full` one — 78 tools and the fourteen goals
+    // (92). The capture is taken in that profile because it is the only
     // surface that publishes every entry of the master.
     assert_eq!(
         hand_names.len(),
-        91,
-        "the surface is 91 entries: 78 tools and 13 goals"
+        92,
+        "the surface is 92 entries: 78 tools and 14 goals"
     );
 }
 
