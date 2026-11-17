@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::application::change_tracking::revision_facts::{
-    FactObjectStore, FactsLimits, ProducedRevision, assess_impact, produce_revision_facts,
+    FactObjectStore, FactsLimits, ProducedRevision, assess_impact, produce_revision_facts_rendering,
 };
 use crate::application::change_tracking::scm_delta::delta_from_change_set;
 use crate::application::revision_snapshots::RevisionSnapshotStore;
@@ -45,6 +45,7 @@ use crate::domain::scm::{
     ChangeKind, ChangeSet, Edit, OverlayReader, PathKey, RevisionReader, SourceRef,
 };
 use crate::infrastructure::git::GitScmAdapter;
+use crate::infrastructure::helm::HelmRevisionCharts;
 use crate::interface::goals::GoalEnvironment;
 
 use super::compare::{RevisionFactsCoverage, side_coverage};
@@ -215,11 +216,18 @@ pub fn preflight(
         FactObjectStore::beside(&RevisionSnapshotStore::for_workspace(cache, &root)).read_only()
     });
     let limits = FactsLimits::default();
-    let base_facts = produce_revision_facts(&overlay, &base, objects.as_ref(), &limits)
-        .map_err(|error| format!("cannot assemble the facts of the base: {error}"))?;
-    let candidate_facts =
-        produce_revision_facts(&overlay, overlay.candidate(), objects.as_ref(), &limits)
-            .map_err(|error| format!("cannot assemble the facts of the candidate: {error}"))?;
+    let charts = HelmRevisionCharts::from_path();
+    let base_facts =
+        produce_revision_facts_rendering(&overlay, &base, objects.as_ref(), &limits, &charts)
+            .map_err(|error| format!("cannot assemble the facts of the base: {error}"))?;
+    let candidate_facts = produce_revision_facts_rendering(
+        &overlay,
+        overlay.candidate(),
+        objects.as_ref(),
+        &limits,
+        &charts,
+    )
+    .map_err(|error| format!("cannot assemble the facts of the candidate: {error}"))?;
 
     let base_inventory = overlay
         .inventory(&base)

@@ -4,11 +4,12 @@
 use std::path::Path;
 
 use crate::application::change_tracking::revision_facts::{
-    FactObjectStore, FactsLimits, ProducedRevision, produce_revision_facts,
+    FactObjectStore, FactsLimits, ProducedRevision, produce_revision_facts_rendering,
 };
 use crate::application::revision_snapshots::RevisionSnapshotStore;
 use crate::domain::scm::{RevisionReader, SourceRef, SourceRevision};
 use crate::infrastructure::git::GitScmAdapter;
+use crate::infrastructure::helm::HelmRevisionCharts;
 
 use super::compare::{RevisionFactsCoverage, side_coverage};
 
@@ -60,9 +61,14 @@ pub(super) fn produce_for_ref(
         None
     };
     let objects = store.as_ref().map(FactObjectStore::beside);
-    let produced =
-        produce_revision_facts(&scm, &revision, objects.as_ref(), &FactsLimits::default())
-            .map_err(|error| format!("cannot assemble the facts of `{reference}`: {error}"))?;
+    let produced = produce_revision_facts_rendering(
+        &scm,
+        &revision,
+        objects.as_ref(),
+        &FactsLimits::default(),
+        &HelmRevisionCharts::from_path(),
+    )
+    .map_err(|error| format!("cannot assemble the facts of `{reference}`: {error}"))?;
     let persisted = store
         .as_ref()
         .is_some_and(|store| store.save(&produced.snapshot).is_ok());

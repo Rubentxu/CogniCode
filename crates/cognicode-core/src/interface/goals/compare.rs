@@ -12,7 +12,7 @@ use crate::application::change_tracking::detector_runs::{
 use crate::application::change_tracking::planner::WorkDisposition;
 use crate::application::change_tracking::revision_facts::{
     FactObjectStore, FactsLimits, ProducedRevision, assess_impact, assess_reuse,
-    produce_revision_facts, producer_versions,
+    produce_revision_facts_rendering, producer_versions,
 };
 use crate::application::revision_snapshots::RevisionSnapshotStore;
 use crate::application::services::detector_reuse_store::DetectorReuseStore;
@@ -21,6 +21,7 @@ use crate::domain::scm::{
 };
 use crate::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 use crate::infrastructure::git::GitScmAdapter;
+use crate::infrastructure::helm::HelmRevisionCharts;
 use crate::interface::goals::GoalEnvironment;
 
 /// Arguments for the `compare` goal.
@@ -444,7 +445,10 @@ fn semantics(
     let snapshots = cache_root.map(|root| RevisionSnapshotStore::for_workspace(root, workspace));
     let objects = snapshots.as_ref().map(FactObjectStore::beside);
     let limits = FactsLimits::default();
-    let produce = |revision| produce_revision_facts(scm, revision, objects.as_ref(), &limits);
+    let charts = HelmRevisionCharts::from_path();
+    let produce = |revision| {
+        produce_revision_facts_rendering(scm, revision, objects.as_ref(), &limits, &charts)
+    };
     let (base, candidate) = match (produce(base_revision), produce(candidate_revision)) {
         (Ok(base), Ok(candidate)) => (base, candidate),
         (Err(error), _) | (_, Err(error)) => {

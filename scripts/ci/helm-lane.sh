@@ -71,7 +71,8 @@ fi
 for real_test in \
   helm_model::the_real_engine_renders_the_chart_when_it_is_installed \
   helm_pack::the_real_engine_feeds_the_pack_when_it_is_installed \
-  helm_model::the_real_engine_agrees_with_the_double; do
+  helm_model::the_real_engine_agrees_with_the_double \
+  mode_equivalence::helm_chart_rendered_by_the_real_engine_reaches_pass; do
   grep -q "test ${real_test}.* ok$" "${LOG}" || fail "${real_test} did not run and pass"
 done
 printf 'OK: helm-lane\n'
