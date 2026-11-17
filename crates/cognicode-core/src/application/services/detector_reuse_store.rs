@@ -56,8 +56,9 @@ impl DetectorReuseStore {
         write_atomic(&self.index_path(), json.as_bytes())
     }
 
-    /// Record one detector run, replacing that detector's previous record
-    /// and keeping every other detector's.
+    /// Record one detector run, replacing the record of the same detector
+    /// over the same snapshot and keeping every other base's and
+    /// detector's (within the index's per-detector retention).
     ///
     /// An index that is absent, corrupt or of a foreign schema starts over
     /// empty: the cache is an optimization, so losing it costs work and

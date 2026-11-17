@@ -685,7 +685,8 @@ pub fn assess_impact(
 }
 
 /// The prior executions recorded against `base`: every detector run
-/// whose evidence snapshot is `base`, as the planner's dependency.
+/// whose evidence snapshot is `base`, as the planner's dependency. Records
+/// kept for other bases are not consumed.
 ///
 /// A record whose read-set was truncated stays truncated, so the planner
 /// answers `Unknown` for it. A record whose detector id is not a valid
@@ -694,9 +695,10 @@ pub fn dependencies_on(index: &DetectorReuseIndex, base: SnapshotId) -> Vec<Exec
     index
         .records
         .iter()
-        .filter(|(_, record)| record.produced_snapshot == base)
-        .filter_map(|(id, record)| {
-            let work = WorkId::new(NamespacedName::new(id.clone()).ok()?);
+        .filter(|record| record.produced_snapshot == base)
+        .filter_map(|record| {
+            let id = record.identity.detector_id.as_str().to_string();
+            let work = WorkId::new(NamespacedName::new(id).ok()?);
             let mut read_set: ReadSet = record.observed_facts.iter().copied().collect();
             if record.observed_truncated {
                 read_set = truncated(&record.observed_facts);
