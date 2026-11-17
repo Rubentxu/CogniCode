@@ -49,9 +49,19 @@ use std::time::Duration;
 
 /// Una ventana que ninguna respuesta alcanza.
 ///
-/// El plazo se cumple en el primer instante: el trabajo se corta casi
-/// siempre, y el test no depende de la velocidad de la máquina.
+/// El plazo vence en el primer instante que el reloj del runtime distingue
+/// (su resolución es de un milisegundo), así que el trabajo tiene que
+/// durar muchos más: ver [`FILLER_FILES`].
 const A_DEADLINE_NO_ANSWER_REACHES: Duration = Duration::from_nanos(1);
+
+/// Los ficheros que rellenan el árbol para que su recorrido dure.
+///
+/// Un recorrido de un solo fichero termina en menos de lo que tarda el reloj
+/// del runtime en vencer el plazo, y entonces la respuesta llega a tiempo:
+/// el test medía la velocidad de la máquina, no el plazo. Con el árbol
+/// relleno el recorrido dura órdenes de magnitud más que la resolución del
+/// reloj, y el plazo vence siempre antes que el trabajo.
+const FILLER_FILES: usize = 3000;
 
 /// Un contexto sobre el workspace.
 fn ctx_for(workspace: &Path) -> HandlerContext {
@@ -60,10 +70,18 @@ fn ctx_for(workspace: &Path) -> HandlerContext {
         .build()
 }
 
-/// Un workspace con un fichero que el recorrido puede encontrar.
+/// Un workspace con un fichero que el recorrido puede encontrar, entre
+/// muchos que no lo contienen.
 fn workspace_with_a_file() -> tempfile::TempDir {
     let workspace = tempfile::tempdir().expect("workspace");
     std::fs::write(workspace.path().join("a.rs"), "fn the_marker() {}\n").expect("fixture file");
+    for index in 0..FILLER_FILES {
+        std::fs::write(
+            workspace.path().join(format!("filler_{index}.rs")),
+            "fn filler() {}\n",
+        )
+        .expect("filler file");
+    }
     workspace
 }
 
@@ -94,6 +112,12 @@ fn search_arguments() -> Value {
     json!({"pattern": "the_marker", "max_results": 1})
 }
 
+/// Los argumentos de un recorrido que no encuentra nada y, por tanto, camina
+/// el árbol entero: el trabajo que el plazo corta.
+fn search_arguments_that_walk_the_whole_tree() -> Value {
+    json!({"pattern": "text_no_file_holds", "max_results": 1})
+}
+
 /// El plazo corta la llamada, y el llamante lee lo que pasó.
 #[tokio::test]
 async fn the_deadline_cuts_the_call_and_says_the_work_was_not_cancelled() {
@@ -103,7 +127,7 @@ async fn the_deadline_cuts_the_call_and_says_the_work_was_not_cancelled() {
     let error = call_with(
         &ctx,
         "search_content",
-        search_arguments(),
+        search_arguments_that_walk_the_whole_tree(),
         Some(A_DEADLINE_NO_ANSWER_REACHES),
     )
     .await
@@ -152,7 +176,7 @@ async fn the_transport_serves_the_next_call_after_a_cut() {
     call_with(
         &ctx,
         "search_content",
-        search_arguments(),
+        search_arguments_that_walk_the_whole_tree(),
         Some(A_DEADLINE_NO_ANSWER_REACHES),
     )
     .await

@@ -42,6 +42,7 @@ use std::path::{Path, PathBuf};
 
 use crate::application::graph_cache::{cache_dir, workspace_key};
 use crate::domain::scm::{ContentDigest, PathKey, RevisionHandle};
+use crate::domain::value_objects::file_time::measured_nanos;
 
 /// The shape of a revision-snapshot file. A file tagged with anything
 /// else is not this shape: it is ignored by readers and swept by GC.
@@ -256,8 +257,7 @@ impl RevisionSnapshotStore {
                 }
             }
         }
-        let mut leftovers: Vec<(std::time::SystemTime, PathBuf, Option<RevisionSnapshot>)> =
-            Vec::new();
+        let mut leftovers: Vec<(Option<i64>, PathBuf, Option<RevisionSnapshot>)> = Vec::new();
         for entry in entries_of(&self.root)? {
             let name = name_of(&entry);
             let snapshot = read_snapshot(&entry).ok().filter(|s| s.file_name() == name);
@@ -267,9 +267,9 @@ impl RevisionSnapshotStore {
             if referenced_lineage {
                 continue;
             }
-            let stamp = std::fs::metadata(&entry)
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::UNIX_EPOCH);
+            // A file whose date cannot be read has no date: `None` sorts
+            // before every measured one, so it is swept first.
+            let stamp = measured_nanos(std::fs::metadata(&entry).and_then(|m| m.modified()).ok());
             leftovers.push((stamp, entry, snapshot));
         }
         // Oldest first: the quota is spent on the newest survivors.

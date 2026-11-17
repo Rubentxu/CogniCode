@@ -1168,7 +1168,13 @@ components:
         // serial tests (`point_at` leaves `COGNICODE_BUNDLE_MANIFEST`
         // pointing at a dropped tempdir). Clear the overrides so the
         // embedded dev fixture is the deterministic input.
+        //
+        // The home is a temporary one: resolving the process home would
+        // read the `bundle.yaml` of whoever runs the suite, and a developer
+        // with a standalone install would fail on a platform that is not
+        // the one the embedded fixture declares.
         crate::release_test_support::unpoint();
+        let _home_guard = TempCognicodeHome::new();
         let home = crate::layout::CognicodeHome::resolve(None).expect("resolve test home");
         let yaml = InstallerTransaction::load_bundle_manifest(&home)
             .expect("embedded bundle manifest must be readable");

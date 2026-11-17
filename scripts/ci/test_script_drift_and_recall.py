@@ -566,6 +566,9 @@ def load_module():
     if spec is None or spec.loader is None:
         raise AssertionError(f"cannot load {HARNESS}")
     module = importlib.util.module_from_spec(spec)
+    # `@dataclass` resolves its own module through `sys.modules`: a module
+    # that is not registered there cannot declare a dataclass.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 

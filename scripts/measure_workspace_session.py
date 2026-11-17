@@ -218,7 +218,7 @@ def measure_characterization(
 def head_sha() -> str:
     return subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=30,
     ).stdout.strip()
 
 
