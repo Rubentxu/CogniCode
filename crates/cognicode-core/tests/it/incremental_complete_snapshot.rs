@@ -399,8 +399,11 @@ fn identical_inputs_produce_identical_results_and_reason_codes() {
 #[test]
 fn a_cache_record_from_another_snapshot_is_refused_not_merged() {
     let (mut cache, ids, reruns) = parts();
-    // Mid-capture change: beta's cached evidence names a foreign
-    // snapshot the plan never diffed from.
+    // Mid-capture change: the only evidence cached for beta names a
+    // foreign snapshot the plan never diffed from.
+    cache
+        .records
+        .retain(|r| r.identity.detector_id.as_str() != "detector.beta");
     cache.remember(record("detector.beta", snap(3), false));
     let snapshot = build(
         AnalysisMode::IncrementalComplete,
@@ -411,6 +414,27 @@ fn a_cache_record_from_another_snapshot_is_refused_not_merged() {
     );
     assert_eq!(snapshot.verdict(), Verdict::NotPass);
     assert!(snapshot.reason_codes().contains(&"snapshot_mismatch"));
+    assert!(
+        !snapshot.findings.iter().any(|f| f.produced_in == snap(3)),
+        "evidence of two snapshots must never be mixed"
+    );
+}
+
+#[test]
+fn the_record_of_the_planned_base_is_used_beside_records_of_other_bases() {
+    let (mut cache, ids, reruns) = parts();
+    cache.remember(record("detector.beta", snap(3), false));
+    let snapshot = build(
+        AnalysisMode::IncrementalComplete,
+        &cache,
+        &ids,
+        &reruns,
+        &[],
+    );
+    assert!(
+        !snapshot.reason_codes().contains(&"snapshot_mismatch"),
+        "a record kept for another base must not shadow the planned base's"
+    );
     assert!(
         !snapshot.findings.iter().any(|f| f.produced_in == snap(3)),
         "evidence of two snapshots must never be mixed"

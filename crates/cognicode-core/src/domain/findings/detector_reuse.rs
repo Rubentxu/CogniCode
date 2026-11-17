@@ -400,27 +400,76 @@ fn rebind_observation(observation: &CachedObservation, candidate: SnapshotId) ->
     }
 }
 
-/// The whole cache for one workspace, keyed by detector id.
+/// The whole cache for one workspace: the runs of every detector, one
+/// per `(detector, produced snapshot)`.
+///
+/// Comparing against alternating bases must not make each comparison
+/// discard the previous base's read-set, so a detector keeps one record
+/// per base it ran on, up to [`MAX_RECORDS_PER_DETECTOR`]. `records` is
+/// ordered from least to most recently remembered, which is the order the
+/// oldest records are evicted in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct DetectorReuseIndex {
     pub schema: String,
-    pub records: std::collections::BTreeMap<String, DetectorRunRecord>,
+    pub records: Vec<DetectorRunRecord>,
 }
 
-pub const DETECTOR_REUSE_SCHEMA: &str = "cognicode.detector-reuse/v1";
+pub const DETECTOR_REUSE_SCHEMA: &str = "cognicode.detector-reuse/v2";
+
+/// How many bases one detector keeps a record for. Past it the least
+/// recently remembered record is dropped: a dropped record costs a re-run,
+/// never a wrong reuse.
+pub const MAX_RECORDS_PER_DETECTOR: usize = 8;
 
 impl DetectorReuseIndex {
     pub fn empty() -> Self {
         Self {
             schema: DETECTOR_REUSE_SCHEMA.to_string(),
-            records: Default::default(),
+            records: Vec::new(),
         }
     }
 
-    /// Insert or replace the record of one detector.
+    /// Insert `record`, replacing the record of the same detector over the
+    /// same produced snapshot and keeping the records of every other base
+    /// and detector. The record becomes the most recent of its detector;
+    /// past [`MAX_RECORDS_PER_DETECTOR`] the detector's least recent
+    /// record is evicted.
     pub fn remember(&mut self, record: DetectorRunRecord) {
+        let detector = record.identity.detector_id.clone();
+        self.records.retain(|kept| {
+            !(kept.identity.detector_id == detector
+                && kept.produced_snapshot == record.produced_snapshot)
+        });
+        self.records.push(record);
+        let kept_for_detector = self
+            .records
+            .iter()
+            .filter(|kept| kept.identity.detector_id == detector)
+            .count();
+        let mut excess = kept_for_detector.saturating_sub(MAX_RECORDS_PER_DETECTOR);
+        self.records.retain(|kept| {
+            if excess > 0 && kept.identity.detector_id == detector {
+                excess -= 1;
+                return false;
+            }
+            true
+        });
+    }
+
+    /// The record `detector` produced over `snapshot`, if one is kept.
+    pub fn record_for(&self, detector: &str, snapshot: SnapshotId) -> Option<&DetectorRunRecord> {
+        self.records.iter().find(|record| {
+            record.identity.detector_id.as_str() == detector && record.produced_snapshot == snapshot
+        })
+    }
+
+    /// The most recently remembered record of `detector`, whatever base it
+    /// was produced over.
+    pub fn latest(&self, detector: &str) -> Option<&DetectorRunRecord> {
         self.records
-            .insert(record.identity.detector_id.as_str().to_string(), record);
+            .iter()
+            .rev()
+            .find(|record| record.identity.detector_id.as_str() == detector)
     }
 
     /// Parse a persisted index, refusing any other schema shape.
