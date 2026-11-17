@@ -40,6 +40,7 @@ mod the_dispatch_deadline_cuts_a_call_and_says_what_happened;
 mod the_harness_finds_the_binary_it_tests;
 mod the_index_tool_only_offers_strategies_that_index;
 mod the_mermaid_tool_only_offers_formats_it_can_publish;
+mod the_preflight_goal_answers_over_the_wire;
 mod the_published_arguments_are_the_declared_ones;
 mod the_revision_goals_answer_over_the_wire;
 mod the_security_goal_answers_over_the_wire;

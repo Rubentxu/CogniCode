@@ -211,6 +211,7 @@ pub struct ProducedRevision {
 #[derive(Debug, Clone)]
 pub struct FactObjectStore {
     dir: PathBuf,
+    writable: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -225,7 +226,22 @@ struct ObjectFile {
 impl FactObjectStore {
     /// An object store rooted at `dir` (created on first write).
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self {
+            dir: dir.into(),
+            writable: true,
+        }
+    }
+
+    /// The same store, serving reads and refusing every write: a run over it
+    /// leaves the directory exactly as it found it.
+    pub fn read_only(mut self) -> Self {
+        self.writable = false;
+        self
+    }
+
+    /// Whether a run may add objects to this store.
+    pub fn is_writable(&self) -> bool {
+        self.writable
     }
 
     /// The store that lives beside the revision snapshots of `store`.
@@ -396,7 +412,7 @@ pub fn produce_revision_facts(
                 Ok(facts) => {
                     coverage.parsed_files += 1;
                     let artifact = artifact_of(&facts).unwrap_or_default();
-                    if let Some(store) = objects {
+                    if let Some(store) = objects.filter(|store| store.is_writable()) {
                         // A store that cannot be written costs reuse, never
                         // correctness: the facts are already in hand.
                         let _ = store.write(&entry.path, content, &facts, &artifact);
@@ -1172,6 +1188,41 @@ mod tests {
 
         assert_eq!(other.coverage.reused_files, 1);
         assert_eq!(other.coverage.parsed_files, 1);
+    }
+
+    #[test]
+    fn a_read_only_store_serves_stored_objects_and_never_writes() {
+        let fake = two_branches();
+        let dir = tempfile::tempdir().expect("dir");
+        let writable = FactObjectStore::new(dir.path().join("objects"));
+        let _ = produce(&fake, "main", Some(&writable));
+        let stored = std::fs::read_dir(dir.path().join("objects"))
+            .expect("objects")
+            .count();
+        let read_only = writable.clone().read_only();
+
+        let other = produce(&fake, "feature", Some(&read_only));
+
+        assert_eq!(other.coverage.reused_files, 1, "stored bytes are served");
+        assert_eq!(other.coverage.parsed_files, 1, "changed bytes are parsed");
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("objects"))
+                .expect("objects")
+                .count(),
+            stored,
+            "the parsed object of the feature branch was not written"
+        );
+    }
+
+    #[test]
+    fn a_read_only_store_over_a_missing_directory_creates_nothing() {
+        let fake = two_branches();
+        let dir = tempfile::tempdir().expect("dir");
+        let read_only = FactObjectStore::new(dir.path().join("objects")).read_only();
+
+        let _ = produce(&fake, "main", Some(&read_only));
+
+        assert!(!dir.path().join("objects").exists());
     }
 
     #[test]
