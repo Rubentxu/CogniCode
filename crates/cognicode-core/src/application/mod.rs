@@ -57,6 +57,8 @@ pub mod graph_snapshot;
 // the same question — what did we already derive — asked over a
 // different key.
 pub mod pull_request_review;
+#[cfg(any(test, feature = "test-support"))]
+pub mod pull_request_review_contract;
 pub mod revision_snapshots;
 // The cost of each stage of a graph answer, measured by the product: a
 // baseline that cannot tell a cache hit from a cold parse cannot be
