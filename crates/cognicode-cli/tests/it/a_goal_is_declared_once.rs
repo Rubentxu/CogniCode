@@ -378,7 +378,7 @@ async fn the_goal_answers_by_its_name() {
 }
 
 #[tokio::test]
-async fn compare_is_the_same_cli_and_mcp_contract_and_does_not_claim_impact() {
+async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated() {
     let goal = goals::find("compare").expect("the registry declares compare");
     let workspace = tempfile::tempdir().expect("temporary Git repository");
     let git = |args: &[&str]| {
@@ -452,15 +452,26 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_does_not_claim_impact() {
     .await
     .expect("the MCP goal answers");
 
-    assert_eq!(cli_envelope.get("result"), Some(&mcp_answer));
+    // Whether the snapshot was persisted depends on the cache each surface
+    // resolves (the CLI has the user's; this MCP context names none): the
+    // rest of the answer is the shared contract.
+    let mut cli_answer = cli_envelope["result"].clone();
+    let mut mcp_answer = mcp_answer;
+    for answer in [&mut cli_answer, &mut mcp_answer] {
+        answer["revision_facts"]["persisted"] = Value::Null;
+    }
+    assert_eq!(cli_answer, mcp_answer);
     assert_eq!(mcp_answer["coverage"]["changed_paths"], 1);
-    assert_eq!(mcp_answer["coverage"]["analysis"], "not_evaluated");
-    assert_eq!(mcp_answer["impact_status"], "not_evaluated");
+    assert_eq!(mcp_answer["coverage"]["analysis"], "evaluated");
+    assert_eq!(mcp_answer["impact_status"], "evaluated");
+    assert_eq!(mcp_answer["impact"]["facts_added"], 2);
+    assert_eq!(mcp_answer["impact"]["facts_removed"], 2);
+    // No detector has stored a read-set, so reuse says so instead of guessing.
     assert_eq!(mcp_answer["work_reuse_status"], "not_evaluated");
     assert!(
         mcp_answer["work_reuse_reason"]
             .as_str()
-            .is_some_and(|reason| { reason.contains("prior execution read-sets") })
+            .is_some_and(|reason| reason.contains("read-set"))
     );
     assert_eq!(mcp_answer["changes"][0]["path"], "src.rs");
     assert_eq!(
@@ -472,4 +483,110 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_does_not_claim_impact() {
         .expect("working-tree paths are published");
     assert!(dirty_paths.iter().any(|path| path == "src.rs"));
     assert!(dirty_paths.iter().any(|path| path == "untracked.rs"));
+}
+
+/// `verify` is one contract on both surfaces: the CLI prints the shared
+/// envelope as JSON and the MCP returns the same answer, and a revision with
+/// no stored snapshot is `not_evaluated` on both, never `verified`.
+#[tokio::test]
+async fn verify_is_the_same_cli_and_mcp_contract_and_never_claims_an_unstored_snapshot() {
+    let goal = goals::find("verify").expect("the registry declares verify");
+    let workspace = tempfile::tempdir().expect("temporary Git repository");
+    let git = |args: &[&str]| {
+        let no_configuration = workspace.path().join("no-git-configuration");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(workspace.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .output()
+            .expect("git is installed");
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "CogniCode tests"]);
+    git(&["config", "user.email", "tests@example.invalid"]);
+    std::fs::write(workspace.path().join("src.rs"), "fn only() {}\n").expect("write source");
+    git(&["add", "src.rs"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+
+    let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
+        .try_get_matches_from(["verify", "--revision", "HEAD"])
+        .expect("the CLI parses the revision");
+    let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)
+        .await
+        .expect("the CLI goal answers");
+    let CommandOutput::Rendered { text, .. } = output else {
+        panic!("verify returns its shared goal envelope");
+    };
+    let cli_envelope: Value = serde_json::from_str(&text).expect("CLI output is only JSON");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(workspace.path().to_path_buf())
+        .build();
+    let mcp_answer = handle_goal(&ctx, goal, serde_json::json!({"revision": "HEAD"}))
+        .await
+        .expect("the MCP goal answers");
+
+    let cli_answer = cli_envelope
+        .get("result")
+        .expect("the envelope has a result");
+    assert_eq!(cli_answer["status"], "not_evaluated");
+    assert_eq!(mcp_answer["status"], "not_evaluated");
+    assert_eq!(cli_answer["revision"], mcp_answer["revision"]);
+    assert_eq!(cli_answer["coverage"], mcp_answer["coverage"]);
+    assert_eq!(cli_answer["snapshot"]["found"], false);
+}
+
+/// `inspect` takes a file or a revision, exactly one of them, and says so
+/// on both surfaces.
+#[tokio::test]
+async fn inspect_takes_a_file_or_a_revision_and_not_both_nor_neither() {
+    let goal = goals::find("inspect").expect("the registry declares inspect");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let ctx = HandlerContext::builder()
+        .with_working_dir(workspace.path().to_path_buf())
+        .build();
+
+    for arguments in [
+        serde_json::json!({}),
+        serde_json::json!({"file": "a.rs", "revision": "HEAD"}),
+    ] {
+        let error = handle_goal(&ctx, goal, arguments.clone())
+            .await
+            .expect_err("an ambiguous or empty question is a failure");
+        assert!(
+            format!("{error}").contains("file"),
+            "{arguments}: the failure names the arguments: {error}"
+        );
+    }
+
+    // An optional flag nobody wrote reaches the goal as absent, not as text.
+    let revision_only = cognicode_cli::cli::goals_clap::clap_command(goal)
+        .try_get_matches_from(["inspect", "--revision", "HEAD"])
+        .expect("clap parses the revision alone");
+    assert_eq!(
+        cognicode_cli::cli::goals_clap::arguments_from_matches(goal, &revision_only),
+        serde_json::json!({"revision": "HEAD"})
+    );
+
+    let both = cognicode_cli::cli::goals_clap::clap_command(goal).try_get_matches_from([
+        "inspect",
+        "--file",
+        "a.rs",
+        "--revision",
+        "HEAD",
+    ]);
+    let matches = both.expect("clap parses both; the goal refuses them");
+    let refused =
+        CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json).await;
+    assert!(
+        refused.is_err(),
+        "the CLI refuses file and revision together"
+    );
 }

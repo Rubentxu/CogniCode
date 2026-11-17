@@ -414,6 +414,10 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         schema_of::<cognicode_core::interface::goals::compare::CompareInput>(),
     );
     m.insert(
+        "verify",
+        schema_of::<cognicode_core::interface::goals::verify::VerifyInput>(),
+    );
+    m.insert(
         "change",
         schema_of::<cognicode_core::interface::goals::change::ChangeInput>(),
     );

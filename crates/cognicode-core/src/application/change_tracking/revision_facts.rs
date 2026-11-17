@@ -1,0 +1,1281 @@
+//! The production source of [`RevisionFacts`]: the facts of one
+//! revision, read through the SCM ports and projected by the existing
+//! fact bridge, plus the honest statements a comparison may make from
+//! two such revisions.
+//!
+//! ## What this module is, and is not
+//!
+//! It is the missing producer between the neutral SCM ports
+//! ([`RevisionReader`]) and the one affected-work planner
+//! ([`plan_between`]). It does not plan, rank or schedule: the planner
+//! and the bridge in [`super::scm_delta`] keep every verdict. It does
+//! not parse differently from the rest of the product either: every
+//! file goes through `extract_file` and [`FactBatchBuilder`].
+//!
+//! ## Why the facts are assembled per file
+//!
+//! The fact of one file depends on that file's bytes and path alone:
+//! every object of a bridge fact is text and every subject is named by
+//! [`stable_entity_id`], so a batch of two files is the union of the two
+//! batches of one. Per-file facts are therefore content-addressed
+//! objects ([`FactObjectStore`]): a revision that shares bytes with an
+//! earlier one, on any branch, reuses them instead of parsing again, and
+//! the assembled facts are identical to a cold rebuild. A test pins that
+//! equivalence.
+//!
+//! ## What incomplete means
+//!
+//! A file the producer could not read, decode or extract is a
+//! [`FactGap`], never an empty file. Gaps travel with the facts
+//! ([`FactsCoverage`]) and every statement derived from them degrades:
+//! an impact becomes [`ImpactStatus::Partial`], and no piece of work is
+//! reported as reusable on facts that could be missing — a fact missing
+//! on both sides looks unchanged, which is exactly the false negative
+//! the planner exists to prevent.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::io;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::application::fact_bridge::FactBatchBuilder;
+use crate::application::ingest::extractor::{HandlerOutcome, extract_file_with_outcome};
+use crate::application::revision_snapshots::{
+    ExtractionObject, ProducerVersions, RevisionSnapshot,
+};
+use crate::domain::evidence_kernel::fact::Fact;
+use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
+use crate::domain::findings::detector_reuse::DetectorReuseIndex;
+use crate::domain::kernel_ids::ExecutionId;
+use crate::domain::naming::NamespacedName;
+use crate::domain::readset::{ReadSet, ReadSetConfig};
+use crate::domain::scm::{
+    BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceRevision,
+};
+
+use crate::application::ingest::extractor::{SourceLanguage, language_for_extension};
+
+use super::planner::{AffectedWorkPlan, ExecutionDependency, WorkDisposition, WorkId};
+use super::scm_delta::{
+    RevisionFacts, ScmDeltaError, delta_from_change_set, plan_between, snapshot_id_for,
+};
+
+/// The version of the fact assembly itself. It is part of every object
+/// key and of the producer identity of every persisted snapshot: a change
+/// to how facts are assembled must bump it, and nothing written before
+/// is served afterwards.
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v1";
+
+/// Paths read per batched content request: bounds peak memory (about
+/// this many files of at most `max_file_bytes` each) while keeping the
+/// per-request process cost amortised.
+const READ_CHUNK: usize = 256;
+
+const OBJECT_SCHEMA: &str = "cognicode.revision-facts-object/v1";
+
+/// The files a build system reads. A change to any of them can move
+/// what an analysis means without moving a single extracted fact, so the
+/// planner is told about them explicitly.
+const MANIFEST_NAMES: &[&str] = &[
+    "Cargo.toml",
+    "Cargo.lock",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "tsconfig.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "go.mod",
+    "go.sum",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "Gemfile",
+    "Gemfile.lock",
+    "composer.json",
+    "mix.exs",
+];
+
+/// How much one production run may read. A bound that is hit is a gap,
+/// not a silent omission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FactsLimits {
+    /// Analyzable files read per revision.
+    pub max_files: usize,
+    /// Bytes of one file the extractor is given.
+    pub max_file_bytes: usize,
+}
+
+impl Default for FactsLimits {
+    fn default() -> Self {
+        Self {
+            max_files: 20_000,
+            max_file_bytes: 1024 * 1024,
+        }
+    }
+}
+
+/// Why one analyzable file contributes no facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GapReason {
+    /// The provider could not hand over the bytes.
+    Unreadable(String),
+    /// The bytes are not UTF-8 text.
+    NotText,
+    /// The file is over the byte bound.
+    TooLarge { bytes: usize, limit: usize },
+    /// The extractor failed on this file.
+    ExtractionFailed(String),
+    /// The revision has more analyzable files than the run may read.
+    FileLimitReached { limit: usize },
+}
+
+impl GapReason {
+    /// A stable, one-line rendering for answers.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Unreadable(why) => format!("content unreadable: {why}"),
+            Self::NotText => "content is not UTF-8 text".to_string(),
+            Self::TooLarge { bytes, limit } => {
+                format!("file of {bytes} bytes exceeds the {limit} byte bound")
+            }
+            Self::ExtractionFailed(why) => format!("extraction failed: {why}"),
+            Self::FileLimitReached { limit } => {
+                format!("revision exceeds the {limit} analyzable file bound")
+            }
+        }
+    }
+}
+
+/// One analyzable path whose facts are missing, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactGap {
+    pub path: PathKey,
+    pub reason: GapReason,
+}
+
+/// What the facts of one revision cover.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FactsCoverage {
+    /// Tracked paths of the revision.
+    pub tracked_files: usize,
+    /// Paths a language reader claims.
+    pub analyzable_files: usize,
+    /// Analyzable files whose facts were parsed in this run.
+    pub parsed_files: usize,
+    /// Analyzable files whose facts came from a stored object.
+    pub reused_files: usize,
+    /// Tracked paths no reader claims: their content is invisible to the
+    /// facts, which is a limit of the facts, not a gap in them.
+    pub unanalyzed_files: usize,
+    /// Analyzable paths with no facts, and why.
+    pub gaps: Vec<FactGap>,
+}
+
+impl FactsCoverage {
+    /// Whether every analyzable file contributed its facts.
+    pub fn is_complete(&self) -> bool {
+        self.gaps.is_empty()
+    }
+}
+
+/// The facts of one revision, how complete they are, and the snapshot
+/// record that makes them reusable.
+#[derive(Debug, Clone)]
+pub struct ProducedRevision {
+    pub revision: SourceRevision,
+    pub facts: RevisionFacts,
+    pub coverage: FactsCoverage,
+    /// The tracked manifest paths of this revision.
+    pub manifests: BTreeSet<PathKey>,
+    /// Tracked paths no reader claims, for statements about changes the
+    /// facts cannot see.
+    pub unanalyzed: BTreeSet<PathKey>,
+    /// The record to persist: per-file objects plus the coverage verdict.
+    pub snapshot: RevisionSnapshot,
+}
+
+// ----- the object store ---------------------------------------------
+
+/// Where the per-file fact objects live: a directory of
+/// content-addressed files, one per `(producer, path, bytes)`.
+///
+/// Reading is never trusted blindly: an object that cannot be parsed, or
+/// whose inside names another path, content or artifact digest than the
+/// one asked for, is simply absent. Writing is atomic.
+#[derive(Debug, Clone)]
+pub struct FactObjectStore {
+    dir: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ObjectFile {
+    schema: String,
+    path: String,
+    content: String,
+    artifact: String,
+    facts: Vec<Fact>,
+}
+
+impl FactObjectStore {
+    /// An object store rooted at `dir` (created on first write).
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        Self { dir: dir.into() }
+    }
+
+    /// The store that lives beside the revision snapshots of `store`.
+    pub fn beside(
+        snapshots: &crate::application::revision_snapshots::RevisionSnapshotStore,
+    ) -> Self {
+        Self::new(snapshots.root().join("facts"))
+    }
+
+    fn file_for(&self, path: &PathKey, content: &str) -> PathBuf {
+        let mut hasher = Sha256::new();
+        hasher.update(FACTS_PRODUCER_VERSION.as_bytes());
+        hasher.update([0]);
+        hasher.update(path.as_str().as_bytes());
+        hasher.update([0]);
+        hasher.update(content.as_bytes());
+        self.dir
+            .join(format!("{}.facts.json", hex(&hasher.finalize())))
+    }
+
+    fn read(&self, path: &PathKey, content: &str) -> Option<(Vec<Fact>, String)> {
+        let text = std::fs::read_to_string(self.file_for(path, content)).ok()?;
+        let object: ObjectFile = serde_json::from_str(&text).ok()?;
+        let agrees = object.schema == OBJECT_SCHEMA
+            && object.path == path.as_str()
+            && object.content == content
+            && artifact_of(&object.facts).as_deref() == Some(object.artifact.as_str());
+        agrees.then_some((object.facts, object.artifact))
+    }
+
+    fn write(
+        &self,
+        path: &PathKey,
+        content: &str,
+        facts: &[Fact],
+        artifact: &str,
+    ) -> io::Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
+        let object = ObjectFile {
+            schema: OBJECT_SCHEMA.to_string(),
+            path: path.as_str().to_string(),
+            content: content.to_string(),
+            artifact: artifact.to_string(),
+            facts: facts.to_vec(),
+        };
+        let bytes = serde_json::to_vec(&object)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let target = self.file_for(path, content);
+        let mut writer =
+            crate::application::services::atomic_file_writer::AtomicFileWriter::create(&target)?;
+        writer.write(&bytes)?;
+        writer.commit()
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// The digest of the derived object: the facts, serialized.
+fn artifact_of(facts: &[Fact]) -> Option<String> {
+    serde_json::to_vec(facts)
+        .ok()
+        .map(|bytes| hex(&Sha256::digest(bytes)))
+}
+
+// ----- the producer ---------------------------------------------------
+
+/// The producer identity written into every snapshot this module saves.
+pub fn producer_versions() -> ProducerVersions {
+    ProducerVersions::new(
+        format!(
+            "tree-sitter-facts/{FACTS_PRODUCER_VERSION}/{}",
+            env!("CARGO_PKG_VERSION")
+        ),
+        "none",
+        FACTS_PRODUCER_VERSION,
+        "none",
+        "none",
+    )
+}
+
+fn is_manifest(path: &PathKey) -> bool {
+    let name = path.as_str().rsplit('/').next().unwrap_or_default();
+    MANIFEST_NAMES.contains(&name)
+}
+
+fn language_of(path: &PathKey) -> Option<&'static SourceLanguage> {
+    let extension = Path::new(path.as_str()).extension()?.to_str()?;
+    language_for_extension(extension)
+}
+
+/// Assembles the facts of `revision`.
+///
+/// `objects`, when given, serves and receives per-file fact objects; with
+/// `None` every file is parsed (a cold rebuild). The two produce the same
+/// facts.
+///
+/// # Errors
+/// The inventory of the revision could not be read: with no inventory
+/// there is no honest partial answer. Per-file failures are
+/// [`FactGap`]s, not errors.
+pub fn produce_revision_facts(
+    reader: &dyn RevisionReader,
+    revision: &SourceRevision,
+    objects: Option<&FactObjectStore>,
+    limits: &FactsLimits,
+) -> Result<ProducedRevision, ScmError> {
+    let inventory = reader.inventory(revision)?;
+    let snapshot_id = snapshot_id_for(revision);
+    let mut coverage = FactsCoverage {
+        tracked_files: inventory.entries().len(),
+        ..FactsCoverage::default()
+    };
+    let mut manifests = BTreeSet::new();
+    let mut unanalyzed = BTreeSet::new();
+    let mut per_file: BTreeMap<PathKey, Vec<Fact>> = BTreeMap::new();
+    let mut files: BTreeMap<PathKey, ExtractionObject> = BTreeMap::new();
+    let mut pending: Vec<(&InventoryEntry, &SourceLanguage)> = Vec::new();
+
+    for entry in inventory.entries() {
+        if is_manifest(&entry.path) {
+            manifests.insert(entry.path.clone());
+        }
+        let Some(config) = language_of(&entry.path) else {
+            coverage.unanalyzed_files += 1;
+            unanalyzed.insert(entry.path.clone());
+            continue;
+        };
+        coverage.analyzable_files += 1;
+        if coverage.analyzable_files > limits.max_files {
+            coverage.gaps.push(FactGap {
+                path: entry.path.clone(),
+                reason: GapReason::FileLimitReached {
+                    limit: limits.max_files,
+                },
+            });
+            continue;
+        }
+        let content = entry.content.as_hex();
+        if let Some((facts, artifact)) = objects.and_then(|store| store.read(&entry.path, content))
+        {
+            coverage.reused_files += 1;
+            files.insert(
+                entry.path.clone(),
+                ExtractionObject {
+                    content: entry.content.clone(),
+                    artifact,
+                },
+            );
+            per_file.insert(entry.path.clone(), facts);
+            continue;
+        }
+        pending.push((entry, config));
+    }
+
+    for chunk in pending.chunks(READ_CHUNK) {
+        let paths: Vec<PathKey> = chunk.iter().map(|(entry, _)| entry.path.clone()).collect();
+        let blobs = reader.contents(revision, &paths, limits.max_file_bytes as u64);
+        for (index, (entry, config)) in chunk.iter().enumerate() {
+            let content = entry.content.as_hex();
+            let blob = blobs.get(index).cloned().unwrap_or_else(|| {
+                Err(ScmError::ContentUnavailable {
+                    path: entry.path.as_str().to_string(),
+                })
+            });
+            match extract_one(blob, &entry.path, content, config, limits) {
+                Ok(facts) => {
+                    coverage.parsed_files += 1;
+                    let artifact = artifact_of(&facts).unwrap_or_default();
+                    if let Some(store) = objects {
+                        // A store that cannot be written costs reuse, never
+                        // correctness: the facts are already in hand.
+                        let _ = store.write(&entry.path, content, &facts, &artifact);
+                    }
+                    files.insert(
+                        entry.path.clone(),
+                        ExtractionObject {
+                            content: entry.content.clone(),
+                            artifact,
+                        },
+                    );
+                    per_file.insert(entry.path.clone(), facts);
+                }
+                Err(reason) => coverage.gaps.push(FactGap {
+                    path: entry.path.clone(),
+                    reason,
+                }),
+            }
+        }
+    }
+
+    // Gaps are found in two passes (limit/skip first, reads after): a
+    // path order keeps the report independent of that.
+    coverage.gaps.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let facts = assemble(snapshot_id, per_file);
+    let verdict = if coverage.is_complete() {
+        "full".to_string()
+    } else {
+        format!("partial: {} file(s) without facts", coverage.gaps.len())
+    };
+    let snapshot = RevisionSnapshot {
+        lineage: revision.handle().clone(),
+        source_content: revision.content().clone(),
+        coverage: verdict,
+        producer: producer_versions(),
+        files,
+        resolution: None,
+    };
+    Ok(ProducedRevision {
+        revision: revision.clone(),
+        facts,
+        coverage,
+        manifests,
+        unanalyzed,
+        snapshot,
+    })
+}
+
+/// Parses one file into its facts, with stable subject ids.
+fn extract_one(
+    blob: Result<BlobRead, ScmError>,
+    path: &PathKey,
+    content_hex: &str,
+    config: &SourceLanguage,
+    limits: &FactsLimits,
+) -> Result<Vec<Fact>, GapReason> {
+    let bytes = match blob.map_err(|error| GapReason::Unreadable(error.to_string()))? {
+        BlobRead::Bytes(bytes) if bytes.len() <= limits.max_file_bytes => bytes,
+        BlobRead::Bytes(bytes) => {
+            return Err(GapReason::TooLarge {
+                bytes: bytes.len(),
+                limit: limits.max_file_bytes,
+            });
+        }
+        BlobRead::TooLarge { bytes } => {
+            return Err(GapReason::TooLarge {
+                bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
+                limit: limits.max_file_bytes,
+            });
+        }
+    };
+    let source = String::from_utf8(bytes).map_err(|_| GapReason::NotText)?;
+    let (result, outcome) =
+        extract_file_with_outcome(config, Path::new(path.as_str()), &source, content_hex);
+    if let Some(error) = result.error {
+        return Err(GapReason::ExtractionFailed(error));
+    }
+    if let HandlerOutcome::Failed(cause) = outcome {
+        return Err(GapReason::ExtractionFailed(cause));
+    }
+    // The snapshot id of a per-file batch is a placeholder: the facts are
+    // re-pinned to the revision when they are assembled.
+    let mut builder = FactBatchBuilder::new(SnapshotId::new(1));
+    builder.add_extraction(&result);
+    Ok(builder.finish_stable())
+}
+
+/// Merges per-file facts into the facts of one snapshot: pinned to the
+/// snapshot, one assertion per triple, ids sequential in path order.
+fn assemble(snapshot: SnapshotId, per_file: BTreeMap<PathKey, Vec<Fact>>) -> RevisionFacts {
+    let mut seen = BTreeSet::new();
+    let mut facts = Vec::new();
+    let mut path_facts: BTreeMap<PathKey, Vec<FactId>> = BTreeMap::new();
+    for (path, file_facts) in per_file {
+        for mut fact in file_facts {
+            let key = (
+                fact.subject,
+                fact.predicate.as_str().to_string(),
+                format!("{:?}", fact.object),
+            );
+            if !seen.insert(key) {
+                continue;
+            }
+            fact.snapshot = snapshot;
+            fact.id = FactId::new(facts.len() as u64 + 1);
+            path_facts.entry(path.clone()).or_default().push(fact.id);
+            facts.push(fact);
+        }
+    }
+    RevisionFacts {
+        snapshot,
+        facts,
+        path_facts,
+    }
+}
+
+// ----- what a comparison may say ------------------------------------
+
+/// How much of the semantic change the facts can vouch for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImpactStatus {
+    /// Every changed path is covered by complete facts.
+    Evaluated,
+    /// The counts are a lower bound: some change is invisible to the
+    /// facts, or some facts are missing.
+    Partial,
+    /// There is nothing to compare.
+    NotEvaluated,
+}
+
+impl ImpactStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Evaluated => "evaluated",
+            Self::Partial => "partial",
+            Self::NotEvaluated => "not_evaluated",
+        }
+    }
+}
+
+/// The semantic impact of a transition, as far as the facts see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImpactAssessment {
+    pub status: ImpactStatus,
+    pub reason: String,
+    pub facts_added: usize,
+    pub facts_removed: usize,
+    /// Changed paths no language reader claims.
+    pub unanalyzed_changed: Vec<PathKey>,
+    /// Changed paths the SCM could not classify.
+    pub unclassified: Vec<PathKey>,
+    /// Paths whose facts are missing on either side.
+    pub gap_paths: Vec<PathKey>,
+}
+
+/// What a comparison can say about the reuse of prior work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReuseStatus {
+    /// Every piece of prior work has a proven verdict.
+    Evaluated,
+    /// Some verdicts are unknown, or no verdict can be trusted as
+    /// reusable because facts are missing.
+    Partial,
+    /// There is no prior execution to reuse.
+    NotEvaluated,
+}
+
+impl ReuseStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Evaluated => "evaluated",
+            Self::Partial => "partial",
+            Self::NotEvaluated => "not_evaluated",
+        }
+    }
+}
+
+/// The verdict for one piece of prior work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkVerdict {
+    pub work: String,
+    pub disposition: WorkDisposition,
+}
+
+/// Reuse of prior work over a transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReuseAssessment {
+    pub status: ReuseStatus,
+    pub reason: String,
+    pub works: Vec<WorkVerdict>,
+}
+
+impl ReuseAssessment {
+    fn not_evaluated(reason: impl Into<String>) -> Self {
+        Self {
+            status: ReuseStatus::NotEvaluated,
+            reason: reason.into(),
+            works: Vec::new(),
+        }
+    }
+
+    pub fn count(&self, disposition: WorkDisposition) -> usize {
+        self.works
+            .iter()
+            .filter(|work| work.disposition == disposition)
+            .count()
+    }
+}
+
+fn paths_of(changes: &ChangeSet, keep: impl Fn(&PathKey) -> bool) -> Vec<PathKey> {
+    let mut paths: Vec<PathKey> = changes
+        .changes()
+        .iter()
+        .map(|change| change.path().clone())
+        .filter(|path| keep(path))
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+/// The impact the two revisions' facts support.
+///
+/// # Errors
+/// The delta could not be computed (the two revisions share a snapshot
+/// identity); callers state that as not evaluated.
+pub fn assess_impact(
+    base: &ProducedRevision,
+    head: &ProducedRevision,
+    changes: &ChangeSet,
+) -> Result<ImpactAssessment, ScmDeltaError> {
+    let scm = delta_from_change_set(&base.facts, &head.facts, changes)?;
+    let unanalyzed_changed = paths_of(changes, |path| {
+        base.unanalyzed.contains(path) || head.unanalyzed.contains(path)
+    });
+    let gap_paths: Vec<PathKey> = base
+        .coverage
+        .gaps
+        .iter()
+        .chain(head.coverage.gaps.iter())
+        .map(|gap| gap.path.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let unclassified = scm.unclassified;
+    let mut limits = Vec::new();
+    if !gap_paths.is_empty() {
+        limits.push(format!(
+            "facts are missing for {} analyzable path(s)",
+            gap_paths.len()
+        ));
+    }
+    if !unanalyzed_changed.is_empty() {
+        limits.push(format!(
+            "{} changed path(s) have no language reader",
+            unanalyzed_changed.len()
+        ));
+    }
+    if !unclassified.is_empty() {
+        limits.push(format!(
+            "{} change(s) the SCM could not classify",
+            unclassified.len()
+        ));
+    }
+    let (status, reason) = if limits.is_empty() {
+        (
+            ImpactStatus::Evaluated,
+            "the fact delta covers every changed path".to_string(),
+        )
+    } else {
+        (
+            ImpactStatus::Partial,
+            format!("the counts are a lower bound: {}", limits.join("; ")),
+        )
+    };
+    Ok(ImpactAssessment {
+        status,
+        reason,
+        facts_added: scm.delta.added.len(),
+        facts_removed: scm.delta.removed.len(),
+        unanalyzed_changed,
+        unclassified,
+        gap_paths,
+    })
+}
+
+/// The prior executions recorded against `base`: every detector run
+/// whose evidence snapshot is `base`, as the planner's dependency.
+///
+/// A record whose read-set was truncated stays truncated, so the planner
+/// answers `Unknown` for it. A record whose detector id is not a valid
+/// work name is skipped.
+pub fn dependencies_on(index: &DetectorReuseIndex, base: SnapshotId) -> Vec<ExecutionDependency> {
+    index
+        .records
+        .iter()
+        .filter(|(_, record)| record.produced_snapshot == base)
+        .filter_map(|(id, record)| {
+            let work = WorkId::new(NamespacedName::new(id.clone()).ok()?);
+            let mut read_set: ReadSet = record.observed_facts.iter().copied().collect();
+            if record.observed_truncated {
+                read_set = truncated(&record.observed_facts);
+            }
+            Some(ExecutionDependency {
+                work,
+                execution: ExecutionId(0),
+                read_set,
+            })
+        })
+        .collect()
+}
+
+/// The read-set of a run whose recording was cut short. Every observed
+/// fact stays tracked for invalidation, and one extra fact past the
+/// bound marks the set truncated, so the planner can only answer
+/// `Unknown` for it.
+fn truncated(observed: &BTreeSet<FactId>) -> ReadSet {
+    use crate::domain::readset::InMemoryReadSetRecorder;
+    let mut recorder = InMemoryReadSetRecorder::new(ReadSetConfig {
+        max_records: std::num::NonZeroUsize::new(observed.len().max(1)),
+    });
+    for fact in observed {
+        let _ = recorder.record(*fact);
+    }
+    let past_the_bound = observed.iter().next_back().map_or(1, |last| last.0 + 1);
+    let _ = recorder.record(FactId::new(past_the_bound));
+    let _ = recorder.record(FactId::new(past_the_bound + 1));
+    recorder.finalize()
+}
+
+/// The reuse the prior executions support over a transition, from the one
+/// existing planner.
+///
+/// With no prior execution recorded against the base snapshot the answer
+/// is `NotEvaluated`. With facts missing on either side no work is
+/// reported reusable: an `Unaffected` verdict over facts that could be
+/// absent is downgraded to `Unknown`.
+///
+/// # Errors
+/// The delta could not be computed.
+pub fn assess_reuse(
+    base: &ProducedRevision,
+    head: &ProducedRevision,
+    changes: &ChangeSet,
+    index: Option<&DetectorReuseIndex>,
+) -> Result<ReuseAssessment, ScmDeltaError> {
+    let Some(index) = index else {
+        return Ok(ReuseAssessment::not_evaluated(
+            "no prior execution read-sets are stored for this workspace",
+        ));
+    };
+    let dependencies = dependencies_on(index, base.facts.snapshot);
+    if dependencies.is_empty() {
+        return Ok(ReuseAssessment::not_evaluated(
+            "no prior execution read-set is recorded against the base revision",
+        ));
+    }
+    let manifests: BTreeSet<PathKey> = base.manifests.union(&head.manifests).cloned().collect();
+    let plan: AffectedWorkPlan =
+        plan_between(&base.facts, &head.facts, changes, &manifests, &dependencies)?;
+    let incomplete = !base.coverage.is_complete() || !head.coverage.is_complete();
+    let works: Vec<WorkVerdict> = plan
+        .decisions
+        .iter()
+        .map(|decision| WorkVerdict {
+            work: decision.work.as_namespaced_name().to_string(),
+            disposition: if incomplete && decision.disposition == WorkDisposition::Unaffected {
+                WorkDisposition::Unknown
+            } else {
+                decision.disposition
+            },
+        })
+        .collect();
+    let all_proven = works
+        .iter()
+        .all(|work| work.disposition != WorkDisposition::Unknown);
+    let (status, reason) = if all_proven {
+        (
+            ReuseStatus::Evaluated,
+            "every prior execution has a proven verdict".to_string(),
+        )
+    } else if incomplete {
+        (
+            ReuseStatus::Partial,
+            "facts are missing for some analyzable paths, so unchanged work is not proven reusable"
+                .to_string(),
+        )
+    } else {
+        (
+            ReuseStatus::Partial,
+            "some prior executions cannot be proven unaffected and must run again".to_string(),
+        )
+    };
+    Ok(ReuseAssessment {
+        status,
+        reason,
+        works,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::revision_snapshots::RevisionSnapshotStore;
+    use crate::domain::findings::detector_reuse::{DetectorRunIdentity, DetectorRunRecord};
+    use crate::domain::findings::digest::DetectorDigest;
+    use crate::domain::findings::{
+        AnalysisCapability, DetectorAuthority, DetectorDigests, DetectorId,
+    };
+    use crate::domain::scm::fake::FakeSource;
+    use crate::domain::scm::{ChangeReader, ProviderCapabilities, SourceRef};
+
+    const ALPHA_V1: &[u8] = b"pub fn alpha() { first(); }\n";
+    const ALPHA_V2: &[u8] = b"pub fn alpha() { second(); }\n";
+    const BETA: &[u8] = b"pub fn beta() { helper(); }\n";
+    const GAMMA: &[u8] = b"pub fn gamma() {}\n";
+
+    fn source() -> SourceRef {
+        SourceRef::new("fake", "demo").expect("source")
+    }
+
+    /// A revision name, its parents and its files.
+    type RevisionSpec<'a> = (&'a str, &'a [&'a str], &'a [(&'a str, &'a [u8])]);
+
+    fn provider(revisions: &[RevisionSpec]) -> FakeSource {
+        revisions.iter().fold(
+            FakeSource::new(
+                "fake",
+                ProviderCapabilities {
+                    ancestor_queries: true,
+                    ..ProviderCapabilities::NONE
+                },
+            ),
+            |fake, (name, parents, files)| fake.with_revision(name, parents, files),
+        )
+    }
+
+    fn revision(fake: &FakeSource, name: &str) -> SourceRevision {
+        fake.resolve(&source(), name).expect("revision")
+    }
+
+    fn produce(
+        fake: &FakeSource,
+        name: &str,
+        objects: Option<&FactObjectStore>,
+    ) -> ProducedRevision {
+        produce_revision_facts(
+            fake,
+            &revision(fake, name),
+            objects,
+            &FactsLimits::default(),
+        )
+        .expect("facts")
+    }
+
+    fn path(text: &str) -> PathKey {
+        PathKey::new(text).expect("path")
+    }
+
+    fn triples(facts: &RevisionFacts) -> BTreeSet<(u64, String, String)> {
+        facts
+            .facts
+            .iter()
+            .map(|f| {
+                (
+                    f.subject.0,
+                    f.predicate.as_str().to_string(),
+                    format!("{:?}", f.object),
+                )
+            })
+            .collect()
+    }
+
+    fn identity(key: &str) -> DetectorRunIdentity {
+        let digest = |s: &str| DetectorDigest::from_content(s);
+        DetectorRunIdentity {
+            detector_id: DetectorId::new(key).expect("detector id"),
+            version: "1".to_string(),
+            authority: DetectorAuthority::Gated,
+            digests: DetectorDigests {
+                logic: digest("logic"),
+                policy: digest("policy"),
+                semantic: digest(key),
+                instance: digest("instance"),
+            },
+            effective_capabilities: [AnalysisCapability::AstPattern].into_iter().collect(),
+            parser: digest("parser"),
+            sanitizer: digest("sanitizer"),
+        }
+    }
+
+    fn index_reading(
+        base: &ProducedRevision,
+        reads: &[(&str, &str)],
+        truncated: bool,
+    ) -> DetectorReuseIndex {
+        let mut index = DetectorReuseIndex::empty();
+        for (detector, file) in reads {
+            let observed = base.facts.path_facts[&path(file)].iter().copied().collect();
+            index.remember(DetectorRunRecord {
+                identity: identity(detector),
+                observed_facts: observed,
+                observed_truncated: truncated,
+                produced_snapshot: base.facts.snapshot,
+                findings: Vec::new(),
+            });
+        }
+        index
+    }
+
+    fn two_branches() -> FakeSource {
+        provider(&[
+            (
+                "main",
+                &[],
+                &[
+                    ("src/a.rs", ALPHA_V1),
+                    ("src/b.rs", BETA),
+                    ("README.md", b"docs"),
+                ],
+            ),
+            (
+                "feature",
+                &["main"],
+                &[
+                    ("src/a.rs", ALPHA_V2),
+                    ("src/b.rs", BETA),
+                    ("README.md", b"docs"),
+                ],
+            ),
+        ])
+    }
+
+    #[test]
+    fn a_revision_yields_pinned_deterministic_facts_with_a_path_index() {
+        let fake = two_branches();
+        let first = produce(&fake, "main", None);
+        let second = produce(&fake, "main", None);
+
+        assert!(!first.facts.facts.is_empty());
+        assert!(
+            first
+                .facts
+                .facts
+                .iter()
+                .all(|f| f.snapshot == first.facts.snapshot)
+        );
+        assert_eq!(first.facts.facts, second.facts.facts);
+        assert_eq!(first.facts.path_facts, second.facts.path_facts);
+        assert!(first.coverage.is_complete());
+        assert_eq!(first.coverage.analyzable_files, 2);
+        assert_eq!(first.coverage.unanalyzed_files, 1);
+        let ids: Vec<u64> = first.facts.facts.iter().map(|f| f.id.0).collect();
+        assert_eq!(ids, (1..=ids.len() as u64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn incremental_assembly_equals_a_full_rebuild() {
+        let fake = two_branches();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _warm = produce(&fake, "main", Some(&objects));
+
+        let incremental = produce(&fake, "feature", Some(&objects));
+        let rebuilt = produce(&fake, "feature", None);
+
+        assert_eq!(incremental.coverage.reused_files, 1, "b.rs is shared");
+        assert_eq!(incremental.coverage.parsed_files, 1, "a.rs changed");
+        assert_eq!(rebuilt.coverage.reused_files, 0);
+        assert_eq!(incremental.facts.facts, rebuilt.facts.facts);
+        assert_eq!(incremental.facts.path_facts, rebuilt.facts.path_facts);
+        assert_eq!(incremental.snapshot, rebuilt.snapshot);
+    }
+
+    #[test]
+    fn the_assembly_is_the_union_of_a_one_shot_batch() {
+        use crate::application::ingest::extractor::extract_file;
+        let fake = two_branches();
+        let produced = produce(&fake, "main", None);
+
+        let mut batch = FactBatchBuilder::new(produced.facts.snapshot);
+        for (file, bytes) in [("src/a.rs", ALPHA_V1), ("src/b.rs", BETA)] {
+            let text = std::str::from_utf8(bytes).expect("utf8");
+            let hash = crate::domain::scm::ContentDigest::from_bytes(bytes);
+            let result = extract_file(
+                language_for_extension("rs").expect("Rust is supported"),
+                Path::new(file),
+                text,
+                hash.as_hex(),
+            );
+            batch.add_extraction(&result);
+        }
+        let one_shot = RevisionFacts {
+            snapshot: produced.facts.snapshot,
+            facts: batch.finish_stable(),
+            path_facts: Default::default(),
+        };
+
+        assert_eq!(triples(&one_shot), triples(&produced.facts));
+    }
+
+    #[test]
+    fn a_saved_snapshot_is_reloaded_for_the_same_producer_only() {
+        let fake = two_branches();
+        let cache = tempfile::tempdir().expect("cache");
+        let store = RevisionSnapshotStore::for_workspace(cache.path(), Path::new("/ws"));
+        let produced = produce(&fake, "main", Some(&FactObjectStore::beside(&store)));
+
+        store.save(&produced.snapshot).expect("save");
+
+        let loaded = store
+            .load(produced.revision.handle(), &producer_versions())
+            .expect("the snapshot is reusable");
+        assert_eq!(loaded, produced.snapshot);
+        assert_eq!(
+            loaded.files.len(),
+            2,
+            "one extraction object per analyzable file"
+        );
+        assert_eq!(loaded.coverage, "full");
+        let foreign = ProducerVersions::new("other", "none", "other", "none", "none");
+        assert!(store.load(produced.revision.handle(), &foreign).is_none());
+    }
+
+    #[test]
+    fn two_branches_share_the_objects_of_identical_bytes() {
+        let fake = provider(&[
+            ("main", &[], &[("src/a.rs", ALPHA_V1), ("src/c.rs", GAMMA)]),
+            ("other", &[], &[("src/a.rs", ALPHA_V2), ("src/c.rs", GAMMA)]),
+        ]);
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _ = produce(&fake, "main", Some(&objects));
+
+        let other = produce(&fake, "other", Some(&objects));
+
+        assert_eq!(other.coverage.reused_files, 1);
+        assert_eq!(other.coverage.parsed_files, 1);
+    }
+
+    #[test]
+    fn a_corrupt_object_is_a_miss_not_evidence() {
+        let fake = two_branches();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _ = produce(&fake, "main", Some(&objects));
+        for entry in std::fs::read_dir(dir.path()).expect("objects") {
+            std::fs::write(entry.expect("entry").path(), b"{ not json").expect("corrupt");
+        }
+
+        let again = produce(&fake, "main", Some(&objects));
+
+        assert_eq!(again.coverage.reused_files, 0);
+        assert_eq!(again.coverage.parsed_files, 2);
+        assert_eq!(again.facts.facts, produce(&fake, "main", None).facts.facts);
+    }
+
+    #[test]
+    fn an_unreadable_file_is_a_gap_and_the_impact_is_partial() {
+        let fake = provider(&[
+            (
+                "main",
+                &[],
+                &[("src/a.rs", ALPHA_V1), ("src/bad.rs", &[0xff, 0xfe, 0x00])],
+            ),
+            (
+                "feature",
+                &["main"],
+                &[("src/a.rs", ALPHA_V2), ("src/bad.rs", &[0xff, 0xfe, 0x00])],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+
+        assert!(!head.coverage.is_complete());
+        assert_eq!(head.coverage.gaps[0].path, path("src/bad.rs"));
+        assert_eq!(head.coverage.gaps[0].reason, GapReason::NotText);
+        assert_eq!(head.snapshot.coverage, "partial: 1 file(s) without facts");
+        let impact = assess_impact(&base, &head, &changes).expect("impact");
+        assert_eq!(impact.status, ImpactStatus::Partial);
+        assert_eq!(impact.gap_paths, vec![path("src/bad.rs")]);
+        assert!(impact.facts_added > 0 && impact.facts_removed > 0);
+    }
+
+    #[test]
+    fn oversized_files_and_the_file_bound_are_gaps_never_silence() {
+        let fake = two_branches();
+        let tiny = FactsLimits {
+            max_files: 1,
+            max_file_bytes: 8,
+        };
+        let produced =
+            produce_revision_facts(&fake, &revision(&fake, "main"), None, &tiny).expect("facts");
+
+        let reasons: Vec<&GapReason> = produced.coverage.gaps.iter().map(|g| &g.reason).collect();
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| matches!(reason, GapReason::TooLarge { .. }))
+        );
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| matches!(reason, GapReason::FileLimitReached { limit: 1 }))
+        );
+        assert!(produced.facts.facts.is_empty());
+        assert!(!produced.coverage.is_complete());
+    }
+
+    #[test]
+    fn complete_facts_give_an_evaluated_impact_over_analyzed_changes() {
+        let fake = two_branches();
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+
+        let impact = assess_impact(&base, &head, &changes).expect("impact");
+
+        assert_eq!(impact.status, ImpactStatus::Evaluated);
+        assert!(impact.facts_added > 0 && impact.facts_removed > 0);
+        assert!(impact.unanalyzed_changed.is_empty());
+    }
+
+    #[test]
+    fn a_changed_path_no_reader_claims_makes_the_impact_partial() {
+        let fake = provider(&[
+            (
+                "main",
+                &[],
+                &[("src/a.rs", ALPHA_V1), ("notes.txt", b"one")],
+            ),
+            (
+                "feature",
+                &["main"],
+                &[("src/a.rs", ALPHA_V1), ("notes.txt", b"two")],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+
+        let impact = assess_impact(&base, &head, &changes).expect("impact");
+
+        assert_eq!(impact.status, ImpactStatus::Partial);
+        assert_eq!(impact.unanalyzed_changed, vec![path("notes.txt")]);
+        assert_eq!((impact.facts_added, impact.facts_removed), (0, 0));
+    }
+
+    #[test]
+    fn without_prior_read_sets_reuse_is_not_evaluated_with_a_reason() {
+        let fake = two_branches();
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+
+        let none = assess_reuse(&base, &head, &changes, None).expect("reuse");
+        let empty = assess_reuse(&base, &head, &changes, Some(&DetectorReuseIndex::empty()))
+            .expect("reuse");
+
+        for answer in [none, empty] {
+            assert_eq!(answer.status, ReuseStatus::NotEvaluated);
+            assert!(answer.reason.contains("read-set"), "{}", answer.reason);
+            assert!(answer.works.is_empty());
+        }
+    }
+
+    #[test]
+    fn prior_read_sets_decide_which_work_is_reusable() {
+        let fake = two_branches();
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_reading(
+            &base,
+            &[
+                ("detector.reads_a", "src/a.rs"),
+                ("detector.reads_b", "src/b.rs"),
+            ],
+            false,
+        );
+
+        let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+
+        let verdict = |name: &str| {
+            answer
+                .works
+                .iter()
+                .find(|w| w.work == name)
+                .unwrap_or_else(|| panic!("no verdict for {name}: {answer:?}"))
+                .disposition
+        };
+        assert_eq!(verdict("detector.reads_a"), WorkDisposition::Affected);
+        assert_eq!(verdict("detector.reads_b"), WorkDisposition::Unaffected);
+        assert_eq!(answer.status, ReuseStatus::Evaluated);
+    }
+
+    #[test]
+    fn a_truncated_read_set_is_never_reusable() {
+        let fake = two_branches();
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_reading(&base, &[("detector.reads_b", "src/b.rs")], true);
+
+        let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+
+        assert_eq!(answer.works[0].disposition, WorkDisposition::Unknown);
+        assert_eq!(answer.status, ReuseStatus::Partial);
+    }
+
+    #[test]
+    fn incomplete_facts_never_report_work_as_reusable() {
+        let fake = provider(&[
+            (
+                "main",
+                &[],
+                &[("src/b.rs", BETA), ("src/bad.rs", &[0xff, 0x00])],
+            ),
+            (
+                "feature",
+                &["main"],
+                &[("src/b.rs", BETA), ("src/bad.rs", &[0xfe, 0x00])],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_reading(&base, &[("detector.reads_b", "src/b.rs")], false);
+
+        let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+
+        assert_ne!(answer.works[0].disposition, WorkDisposition::Unaffected);
+        assert_eq!(answer.status, ReuseStatus::Partial);
+        assert!(answer.reason.contains("missing"));
+    }
+
+    #[test]
+    fn a_manifest_change_leaves_no_work_reusable() {
+        let fake = provider(&[
+            (
+                "main",
+                &[],
+                &[("src/b.rs", BETA), ("Cargo.toml", b"[package]\n")],
+            ),
+            (
+                "feature",
+                &["main"],
+                &[
+                    ("src/b.rs", BETA),
+                    ("Cargo.toml", b"[package]\nname=\"x\"\n"),
+                ],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_reading(&base, &[("detector.reads_b", "src/b.rs")], false);
+
+        assert!(head.manifests.contains(&path("Cargo.toml")));
+        let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+
+        assert_eq!(answer.works[0].disposition, WorkDisposition::Unknown);
+    }
+}

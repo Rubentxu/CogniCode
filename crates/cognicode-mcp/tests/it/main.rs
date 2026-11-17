@@ -41,5 +41,6 @@ mod the_harness_finds_the_binary_it_tests;
 mod the_index_tool_only_offers_strategies_that_index;
 mod the_mermaid_tool_only_offers_formats_it_can_publish;
 mod the_published_arguments_are_the_declared_ones;
+mod the_revision_goals_answer_over_the_wire;
 mod the_watch_endpoint_names_what_is_watched;
 mod workspace_catalogue_cannot_define_the_product;
