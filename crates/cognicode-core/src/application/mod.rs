@@ -47,6 +47,8 @@ pub mod findings;
 // repository: the user's cache, keyed by the workspace, and never
 // inside the tree that was analysed.
 pub mod graph_cache;
+// What was measured about a graph, tied to the revision it was measured for.
+pub mod graph_measure;
 // TASK-79 AC1 — the durable snapshot and the one decision that says
 // whether it is served or calculated again. It lives in the application
 // layer so that the MCP and the CLI share it.

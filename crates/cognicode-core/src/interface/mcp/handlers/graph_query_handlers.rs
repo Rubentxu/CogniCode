@@ -5,14 +5,15 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::unnecessary_to_owned, clippy::unnecessary_unwrap)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::application::services::graph_queries::{
     CommunityDetection, CommunitySection, community_callflow,
 };
-use crate::domain::aggregates::call_graph::SymbolId;
+use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::published_line;
 use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
+use crate::interface::coverage::CoverageInfo;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::symbol_identity::{
     Precision, default_provider_for_tool, precision_floor_for_tool,
@@ -25,14 +26,20 @@ use schemars::JsonSchema;
 // graph_query
 // ============================================================================
 
+/// What `graph_query` is asked.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphQueryInput {
     /// Natural language question about the graph topology
     pub question: String,
-    /// Maximum BFS depth from seed nodes (default: 3)
+    /// Maximum BFS depth from the seed nodes (default: 3). Depth 0 returns
+    /// only the seeds.
     #[serde(default = "default_max_depth")]
     pub max_depth: usize,
-    /// Maximum nodes to collect (default: 1500)
+    /// Maximum elements the answer holds, counting seed nodes, discovered
+    /// nodes and edges together (default: 1500). The answer never exceeds
+    /// it; when it stops here, `truncated` is true and `truncation_reason`
+    /// is `budget`. A larger budget extends the answer: the elements come
+    /// out in a fixed order that does not depend on the budget.
     #[serde(default = "default_budget")]
     pub budget: usize,
 }
@@ -44,14 +51,75 @@ fn default_budget() -> usize {
     1500
 }
 
+/// What `graph_query` answers.
+///
+/// The answer is a **traversal**, not a subgraph: it holds the nodes the
+/// walk reached and the edges the walk followed. An edge between two
+/// returned nodes that the walk did not follow (because the depth or the
+/// budget stopped it) is not in the answer. `mode` says so, and
+/// `truncated` says whether anything reachable was left out.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryOutput {
     pub question: String,
+    /// The nodes reached: the seeds first, then the nodes the walk
+    /// discovered, in discovery order.
     pub nodes: Vec<GraphQueryNode>,
+    /// The edges the walk followed, in the order it followed them. An edge
+    /// never appears before its two endpoints are in `nodes`.
     pub edges: Vec<GraphQueryEdge>,
     pub explanation: String,
-    /// One line saying what the answer says.
+    /// One line saying what the answer says: its size, what it covers and
+    /// whether it was cut.
     pub summary: String,
+    /// What the answer is: always `traversal`, the nodes reached from the
+    /// seeds and the edges followed, as opposed to the subgraph induced by
+    /// the returned nodes.
+    pub mode: String,
+    /// The direction the edges are followed in: `outgoing`.
+    pub direction: String,
+    /// Whether something the walk could reach was left out, because of the
+    /// budget or the depth.
+    pub truncated: bool,
+    /// Why: `budget` when the answer reached the budget, `max_depth` when
+    /// nodes at the last depth have outgoing edges that were not followed,
+    /// `null` when the answer is not cut. `budget` wins when both apply.
+    pub truncation_reason: Option<String>,
+    /// How many returned nodes have outgoing edges that were not followed
+    /// because they sit at the last depth.
+    pub unexpanded_nodes: usize,
+    /// The limits the walk ran under and how much of them it used.
+    pub limits: GraphQueryLimits,
+    /// What the graph this answer was read from covers. `unknown` when
+    /// nobody measured that graph, and then an empty answer is not proof
+    /// that nothing exists.
+    pub coverage: CoverageInfo,
+    /// Which tree and which snapshot the graph was read from, when the
+    /// session knows; `null` otherwise.
+    pub basis: Option<GraphQueryBasis>,
+}
+
+/// The limits of a `graph_query` walk.
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub struct GraphQueryLimits {
+    /// The depth that was asked for.
+    pub max_depth: usize,
+    /// The deepest level a returned node sits at.
+    pub depth_reached: usize,
+    /// The budget that was asked for.
+    pub budget: usize,
+    /// How many elements (nodes plus edges) the answer holds.
+    pub budget_used: usize,
+}
+
+/// Where the graph of a `graph_query` answer came from.
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub struct GraphQueryBasis {
+    /// The canonical workspace the graph was read from.
+    pub workspace: String,
+    /// The digest of the source manifest the graph was read against.
+    pub source_manifest_digest: String,
+    /// `built`, `cache` or `daemon`.
+    pub graph_source: String,
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -60,24 +128,192 @@ pub struct GraphQueryNode {
     pub label: String,
     pub kind: String,
     pub source_path: Option<String>,
+    /// The words of the question that matched this node as a seed. Empty
+    /// for a node the walk discovered.
     pub why_matched: Vec<String>,
 }
 
+/// One relation the walk followed, as the graph holds it.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryEdge {
     pub source: String,
     pub target: String,
+    /// The kind of relation: `calls`, `imports`, `inherits`,
+    /// `uses_generic`, `references`, `defines`, `annotated_by` or
+    /// `contains`.
     pub relation: String,
+    /// How the graph established the relation: `Extracted`, `Inferred`,
+    /// `Ambiguous`, `Manual` or `Tested`.
     pub provenance: String,
+    /// How sure the graph is, as it recorded it.
     pub confidence: f64,
+    /// Whether this edge is the one through which the walk first reached
+    /// its target. `false` for a relation that reaches a node the walk
+    /// already knew, or a second relation between the same two nodes.
+    pub discovers: bool,
 }
 
-/// Handle `graph_query` — natural language graph topology query.
-/// Simplified v1: keyword match + BFS from seed nodes.
-pub async fn handle_graph_query(
-    ctx: &HandlerContext,
-    input: GraphQueryInput,
-) -> HandlerResult<GraphQueryOutput> {
+/// How a walk stopped.
+#[derive(Debug, Default)]
+struct Walk {
+    nodes: Vec<GraphQueryNode>,
+    edges: Vec<GraphQueryEdge>,
+    budget_reached: bool,
+    unexpanded: usize,
+    depth_reached: usize,
+}
+
+impl Walk {
+    /// Whether one more element fits in the budget.
+    fn has_room(&self, budget: usize) -> bool {
+        self.nodes.len() + self.edges.len() < budget
+    }
+}
+
+fn node_of(graph: &CallGraph, id: &SymbolId, why_matched: Vec<String>) -> Option<GraphQueryNode> {
+    let symbol = graph.get_symbol(id)?;
+    Some(GraphQueryNode {
+        id: id.as_str().to_string(),
+        label: symbol.name().to_string(),
+        kind: symbol.kind().name().to_string(),
+        source_path: Some(symbol.location().file().to_string()),
+        why_matched,
+    })
+}
+
+/// The seeds of a question: the symbols a word of it names, each once, with
+/// every word that named it.
+///
+/// The order is the order of the words, and within a word the order of the
+/// symbol ids: it does not depend on how the graph was written.
+fn seeds_of(graph: &CallGraph, keywords: &[String]) -> Vec<(SymbolId, Vec<String>)> {
+    let mut seeds: Vec<(SymbolId, Vec<String>)> = Vec::new();
+    let mut position: HashMap<String, usize> = HashMap::new();
+    for keyword in keywords {
+        let mut ids: Vec<SymbolId> = graph
+            .find_by_name(keyword)
+            .into_iter()
+            .map(|symbol| SymbolId::new(symbol.fully_qualified_name()))
+            .collect();
+        ids.sort();
+        for id in ids {
+            match position.get(id.as_str()) {
+                Some(&at) => seeds[at].1.push(keyword.clone()),
+                None => {
+                    position.insert(id.as_str().to_string(), seeds.len());
+                    seeds.push((id, vec![keyword.clone()]));
+                }
+            }
+        }
+    }
+    seeds
+}
+
+/// Breadth-first walk from the seeds along the outgoing edges.
+///
+/// Every element —seed, discovered node, edge— is checked against the
+/// budget before it is emitted, and the first one that does not fit ends
+/// the walk, so the answer is a prefix of the unbounded one whatever the
+/// budget is. The edges of a node come out in the graph's canonical order,
+/// and a node is emitted before the edge that discovers it.
+fn walk(
+    graph: &CallGraph,
+    seeds: Vec<(SymbolId, Vec<String>)>,
+    max_depth: usize,
+    budget: usize,
+) -> Walk {
+    let mut walk = Walk::default();
+    let mut known: HashSet<SymbolId> = HashSet::new();
+    let mut queue: VecDeque<(SymbolId, usize)> = VecDeque::new();
+
+    for (id, words) in seeds {
+        let Some(node) = node_of(graph, &id, words) else {
+            continue;
+        };
+        if !walk.has_room(budget) {
+            return stopped_by_budget(graph, walk, queue, max_depth);
+        }
+        walk.nodes.push(node);
+        known.insert(id.clone());
+        queue.push_back((id, 0));
+    }
+
+    while let Some((current, depth)) = queue.pop_front() {
+        let mut outgoing = graph.dependencies_with_metadata(&current).peekable();
+        if depth >= max_depth {
+            if outgoing.peek().is_some() {
+                walk.unexpanded += 1;
+            }
+            continue;
+        }
+        for (target, dependency, provenance, confidence) in outgoing {
+            let discovers = !known.contains(target);
+            if discovers {
+                // A relation to something the graph holds no symbol for is
+                // not a relation between two nodes.
+                let Some(node) = node_of(graph, target, Vec::new()) else {
+                    continue;
+                };
+                if !walk.has_room(budget) {
+                    return stopped_by_budget(graph, walk, queue, max_depth);
+                }
+                walk.nodes.push(node);
+                walk.depth_reached = walk.depth_reached.max(depth + 1);
+                known.insert(target.clone());
+                queue.push_back((target.clone(), depth + 1));
+            }
+            if !walk.has_room(budget) {
+                return stopped_by_budget(graph, walk, queue, max_depth);
+            }
+            walk.edges.push(GraphQueryEdge {
+                source: current.as_str().to_string(),
+                target: target.as_str().to_string(),
+                relation: dependency.to_string(),
+                provenance: provenance.to_string(),
+                confidence,
+                discovers,
+            });
+        }
+    }
+    walk
+}
+
+/// The walk, stopped because the next element did not fit.
+///
+/// The nodes still waiting at the last depth are counted as unexpanded, as
+/// the ones the walk reached before the stop were: the depth is a limit of
+/// the answer too, and it is reported whether or not the budget came first.
+fn stopped_by_budget(
+    graph: &CallGraph,
+    mut walk: Walk,
+    queue: VecDeque<(SymbolId, usize)>,
+    max_depth: usize,
+) -> Walk {
+    walk.budget_reached = true;
+    walk.unexpanded += queue
+        .iter()
+        .filter(|(id, depth)| {
+            *depth >= max_depth && graph.dependencies_with_metadata(id).next().is_some()
+        })
+        .count();
+    walk
+}
+
+/// The graph a `graph_query` reads, with what is known about it.
+struct GraphRead {
+    graph: std::sync::Arc<CallGraph>,
+    measure: Option<crate::application::graph_measure::GraphMeasure>,
+}
+
+/// Reads the graph and what was measured about THAT graph, in one step.
+///
+/// The measure is asked for with the revision the service held before and
+/// after the graph was taken: if another route replaced the graph in
+/// between, nobody can say which graph was read, and nothing is claimed
+/// about it.
+fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
+    let service = ctx.analysis_service();
+    let before = service.current_graph_revision();
     let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         Ok(None) => {
@@ -87,113 +323,114 @@ pub async fn handle_graph_query(
         }
         Err(e) => return Err(HandlerError::Internal(format!("Graph store error: {e}"))),
     };
+    let after = service.current_graph_revision();
+    let measure = if before == after {
+        service.graph_measures().of(after, &graph)
+    } else {
+        None
+    };
+    Ok(GraphRead { graph, measure })
+}
+
+/// The one line of the answer: its size, what it covers and whether it was
+/// cut.
+fn summary_of(
+    question: &str,
+    nodes: usize,
+    edges: usize,
+    coverage: &CoverageInfo,
+    truncation_reason: Option<&str>,
+) -> String {
+    let mut line = format!(
+        "{nodes} nodes, {edges} edges for \"{question}\" (traversal, coverage {})",
+        coverage.status
+    );
+    if let Some(reason) = truncation_reason {
+        line.push_str(&format!(", cut by {reason}"));
+    }
+    if nodes == 0 && coverage.status != "complete" {
+        line.push_str(
+            ": an empty answer over a graph whose coverage is not complete does not prove absence",
+        );
+    }
+    line.push('.');
+    line
+}
+
+/// Handle `graph_query` — natural language graph topology query.
+///
+/// Keyword match to find the seeds, then a breadth-first traversal along
+/// the outgoing edges of any kind. The answer publishes each edge as the
+/// graph holds it (kind, provenance, confidence), the limits the walk ran
+/// under, and the coverage of the graph it was read from: see
+/// [`GraphQueryOutput`].
+pub async fn handle_graph_query(
+    ctx: &HandlerContext,
+    input: GraphQueryInput,
+) -> HandlerResult<GraphQueryOutput> {
+    let GraphRead { graph, measure } = read_the_graph(ctx)?;
+
+    let coverage = match &measure {
+        Some(measure) => CoverageInfo::of(&measure.coverage),
+        None => CoverageInfo::unmeasured(),
+    };
+    let basis = measure.as_ref().and_then(|measure| {
+        Some(GraphQueryBasis {
+            workspace: measure.workspace.clone(),
+            source_manifest_digest: measure.source_manifest_digest.clone()?,
+            graph_source: measure.source.published_label().to_string(),
+        })
+    });
 
     let keywords = extract_keywords(&input.question);
-    if keywords.is_empty() {
-        return Ok(GraphQueryOutput {
-            question: input.question.clone(),
-            explanation: "No keywords extracted from question.".into(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            summary: format!(
-                "No keywords extracted from \"{}\": 0 nodes, 0 edges.",
-                input.question
-            ),
-        });
-    }
+    let seeds = seeds_of(&graph, &keywords);
+    let walk = walk(&graph, seeds, input.max_depth, input.budget);
 
-    let graph_ref = &graph;
-
-    // Find seed nodes by matching keyword against symbol names
-    let mut seeds: Vec<(SymbolId, Vec<String>)> = Vec::new();
-    for kw in &keywords {
-        let matches = graph_ref.find_by_name(kw);
-        for sym in matches {
-            let sid = SymbolId::new(sym.fully_qualified_name());
-            seeds.push((sid, vec![kw.clone()]));
-        }
-    }
-
-    // BFS from seeds
-    let mut visited_nodes: HashSet<String> = HashSet::new();
-    let mut query_nodes: Vec<GraphQueryNode> = Vec::new();
-    let mut query_edges: Vec<GraphQueryEdge> = Vec::new();
-
-    for (seed_id, matched_kws) in &seeds {
-        let seed_str = seed_id.as_str();
-        if !visited_nodes.insert(seed_str.to_string()) {
-            continue;
-        }
-
-        // Add seed node
-        if let Some(sym) = graph_ref.get_symbol(seed_id) {
-            query_nodes.push(GraphQueryNode {
-                id: seed_str.to_string(),
-                label: sym.name().to_string(),
-                kind: sym.kind().name().to_string(),
-                source_path: Some(sym.location().file().to_string()),
-                why_matched: matched_kws.clone(),
-            });
-        }
-
-        // BFS: follow outgoing dependencies
-        let mut frontier: Vec<(SymbolId, usize)> = vec![(seed_id.clone(), 0)];
-        let mut idx = 0;
-        while idx < frontier.len() && visited_nodes.len() < input.budget {
-            let (current_id, depth) = frontier[idx].clone();
-            idx += 1;
-
-            if depth >= input.max_depth {
-                continue;
-            }
-
-            for (callee_id, _dep_type) in graph_ref.dependencies(&current_id) {
-                let callee_str = callee_id.as_str().to_string();
-                if visited_nodes.insert(callee_str.clone()) {
-                    if let Some(sym) = graph_ref.get_symbol(callee_id) {
-                        query_nodes.push(GraphQueryNode {
-                            id: callee_str.clone(),
-                            label: sym.name().to_string(),
-                            kind: sym.kind().name().to_string(),
-                            source_path: Some(sym.location().file().to_string()),
-                            why_matched: Vec::new(),
-                        });
-                    }
-
-                    query_edges.push(GraphQueryEdge {
-                        source: current_id.as_str().to_string(),
-                        target: callee_str.clone(),
-                        relation: "calls".into(),
-                        provenance: "Extracted".into(),
-                        confidence: 1.0,
-                    });
-
-                    frontier.push((callee_id.clone(), depth + 1));
-                }
-            }
-        }
-    }
-
-    let explanation = format!(
-        "Found {} nodes, {} edges in {} hops. Query: '{}'",
-        query_nodes.len(),
-        query_edges.len(),
-        input.max_depth,
-        input.question
+    let truncation_reason = if walk.budget_reached {
+        Some("budget")
+    } else if walk.unexpanded > 0 {
+        Some("max_depth")
+    } else {
+        None
+    };
+    let explanation = if keywords.is_empty() {
+        "No keywords extracted from question.".to_string()
+    } else {
+        format!(
+            "Found {} nodes, {} edges in {} hops. Query: '{}'",
+            walk.nodes.len(),
+            walk.edges.len(),
+            input.max_depth,
+            input.question
+        )
+    };
+    let summary = summary_of(
+        &input.question,
+        walk.nodes.len(),
+        walk.edges.len(),
+        &coverage,
+        truncation_reason,
     );
-
-    let summary = format!(
-        "{} nodes, {} edges for \"{}\"",
-        query_nodes.len(),
-        query_edges.len(),
-        input.question
-    );
+    let limits = GraphQueryLimits {
+        max_depth: input.max_depth,
+        depth_reached: walk.depth_reached,
+        budget: input.budget,
+        budget_used: walk.nodes.len() + walk.edges.len(),
+    };
     Ok(GraphQueryOutput {
         question: input.question,
-        nodes: query_nodes,
-        edges: query_edges,
+        nodes: walk.nodes,
+        edges: walk.edges,
         explanation,
         summary,
+        mode: "traversal".into(),
+        direction: "outgoing".into(),
+        truncated: truncation_reason.is_some(),
+        truncation_reason: truncation_reason.map(str::to_string),
+        unexpanded_nodes: walk.unexpanded,
+        limits,
+        coverage,
+        basis,
     })
 }
 

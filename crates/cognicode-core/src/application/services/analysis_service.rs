@@ -166,7 +166,7 @@ pub struct AnalysisService {
     ///
     /// `None` until somebody measures it: a coverage nobody measured is
     /// not "complete", and the answer says "unknown".
-    last_coverage: Mutex<Option<crate::application::services::analyze::Coverage>>,
+    last_measure: crate::application::graph_measure::MeasureCell,
     /// What the recent operations of this session cost. The window is
     /// per session: a percentile over every workspace of a process is a
     /// percentile over a question nobody asked.
@@ -269,7 +269,7 @@ impl AnalysisService {
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
             build_timings: Mutex::new(None),
-            last_coverage: Mutex::new(None),
+            last_measure: Default::default(),
             reparse_costs: Mutex::new(Default::default()),
             reuse: ReuseState::default(),
             repository_factory: default_repository_factory(),
@@ -1693,19 +1693,18 @@ impl AnalysisService {
     /// somewhere that does not say what it covers, and a coverage nobody
     /// measured is not a coverage that was found to be complete.
     pub fn get_last_coverage(&self) -> Option<crate::application::services::analyze::Coverage> {
-        self.last_coverage.lock().unwrap().clone()
+        self.last_measure.last_coverage()
     }
 
-    /// Remembers the coverage of the graph the service holds.
-    ///
-    /// Whoever measured it decides the coverage —with
-    /// [`coverage_verdict`], the one owner of that decision— and this only
-    /// keeps it, so that the next question answered with the same graph
+    /// What was measured about the graph the service holds, tied to the
+    /// revision it was measured for. The coverage is decided by
+    /// [`coverage_verdict`], the one owner of that decision; this only
+    /// keeps it, so the next question answered with the same graph
     /// publishes the same coverage.
     ///
     /// [`coverage_verdict`]: crate::application::services::analyze::coverage_verdict
-    pub fn set_last_coverage(&self, coverage: crate::application::services::analyze::Coverage) {
-        *self.last_coverage.lock().unwrap() = Some(coverage);
+    pub fn graph_measures(&self) -> &crate::application::graph_measure::MeasureCell {
+        &self.last_measure
     }
 
     /// Extracts symbols from a file
