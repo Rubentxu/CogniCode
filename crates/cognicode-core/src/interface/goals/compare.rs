@@ -19,6 +19,7 @@ use crate::application::services::detector_reuse_store::DetectorReuseStore;
 use crate::domain::scm::{
     ChangeKind, ChangeReader, ChangeSet, RevisionReader, SourceRef, WorkingCopyReader,
 };
+use crate::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 use crate::infrastructure::git::GitScmAdapter;
 use crate::interface::goals::GoalEnvironment;
 
@@ -443,7 +444,7 @@ fn semantics(
     // writing it here is what turns `not_evaluated` into a real verdict. A
     // failed write only leaves the answer `not_evaluated`.
     let writer_note = cache_root.and_then(|root| {
-        ensure_run_in_cache(root, workspace, &base)
+        ensure_run_in_cache(root, workspace, &base, &mut InMemoryEvidenceStore::new())
             .err()
             .map(|error| error.to_string())
     });

@@ -57,13 +57,13 @@ use crate::domain::findings::execution::{
 };
 use crate::domain::findings::grounding::GroundingRef;
 use crate::domain::findings::guard_transfer::to_guard_observation;
+use crate::domain::findings::ports::EvidenceSink;
 use crate::domain::findings::projection::project_finding;
 use crate::domain::findings::scope::AnalysisScope;
 use crate::domain::findings::{AnalysisCapability, DetectorDigest, DetectorId};
 use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::scm::ChangeSet;
 use crate::domain::value_objects::WorkspaceId;
-use crate::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 
 use super::planner::WorkDisposition;
 use super::revision_facts::{ProducedRevision, assess_reuse, producer_versions};
@@ -231,12 +231,16 @@ pub fn detector_id() -> Result<DetectorId, DetectorRunError> {
 /// Runs the detector over `facts` through the real executor and records
 /// what it read and under which capability.
 ///
+/// `sink` receives the run's evidence. Evidence ids are allocated by the
+/// sink, so a caller that wants reproducible ids passes a fresh one per run.
+///
 /// # Errors
 /// Admission, execution or finding/construct arity failed. A failed run
 /// records nothing: there is no half-written read-set.
 pub fn run_detector(
     facts: &RevisionFacts,
     workspace: &WorkspaceId,
+    sink: &mut dyn EvidenceSink,
 ) -> Result<DetectorRunRecord, DetectorRunError> {
     let permit = permit()?;
     let registry = registry();
@@ -258,9 +262,8 @@ pub fn run_detector(
         ActorRef::kernel(),
         correlation,
     );
-    let mut sink = InMemoryEvidenceStore::with_scope(scope);
     let executed = DetectorExecutor::new(&registry)
-        .execute(&permit, &input, &mut sink, request)
+        .execute(&permit, &input, sink, request)
         .map_err(|error| DetectorRunError::Execution(error.to_string()))?;
 
     // The backend emits one match per construct, in construct order. The
@@ -321,7 +324,8 @@ pub enum RunWritten {
 /// Makes sure the store holds a current run of the detector for `produced`:
 /// keeps the existing record when it is for this very snapshot under the
 /// identity a run would carry now, and runs and writes otherwise. The
-/// records kept for other snapshots are left as they were.
+/// records kept for other snapshots are left as they were. `sink` is only
+/// used when a run happens.
 ///
 /// # Errors
 /// The run or the write failed; the previous record is left as it was.
@@ -329,6 +333,7 @@ pub fn ensure_run(
     store: &DetectorReuseStore,
     produced: &ProducedRevision,
     workspace: &WorkspaceId,
+    sink: &mut dyn EvidenceSink,
 ) -> Result<RunWritten, DetectorRunError> {
     let identity = current_identity()?;
     let current = store.load().is_some_and(|index| {
@@ -339,7 +344,7 @@ pub fn ensure_run(
     if current {
         return Ok(RunWritten::AlreadyRecorded);
     }
-    let record = run_detector(&produced.facts, workspace)?;
+    let record = run_detector(&produced.facts, workspace, sink)?;
     store
         .record(record)
         .map_err(|error| DetectorRunError::Persist(error.to_string()))?;
@@ -355,6 +360,7 @@ pub fn ensure_run_in_cache(
     cache_root: &Path,
     repository: &Path,
     produced: &ProducedRevision,
+    sink: &mut dyn EvidenceSink,
 ) -> Result<RunWritten, DetectorRunError> {
     let workspace = WorkspaceId::try_new(workspace_key(repository))
         .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
@@ -362,6 +368,7 @@ pub fn ensure_run_in_cache(
         &DetectorReuseStore::for_workspace(cache_root, repository),
         produced,
         &workspace,
+        sink,
     )
 }
 
@@ -413,9 +420,10 @@ pub struct Detection {
 fn rerun(
     head: &ProducedRevision,
     workspace: &WorkspaceId,
+    sink: &mut dyn EvidenceSink,
     reason: impl Into<String>,
 ) -> Result<Detection, DetectorRunError> {
-    let record = run_detector(&head.facts, workspace)?;
+    let record = run_detector(&head.facts, workspace, sink)?;
     let findings = record
         .findings
         .iter()
@@ -460,25 +468,28 @@ pub fn detect_with_reuse(
     head: &ProducedRevision,
     changes: &ChangeSet,
     workspace: &WorkspaceId,
+    sink: &mut dyn EvidenceSink,
 ) -> Result<Detection, DetectorRunError> {
     let Some(prior) = prior else {
-        return rerun(head, workspace, "no prior read-set is recorded");
+        return rerun(head, workspace, sink, "no prior read-set is recorded");
     };
     if prior.produced_snapshot != base.facts.snapshot {
         return rerun(
             head,
             workspace,
+            sink,
             "the prior read-set was not recorded against the base revision",
         );
     }
     if prior.observed_truncated {
-        return rerun(head, workspace, "the prior read-set is truncated");
+        return rerun(head, workspace, sink, "the prior read-set is truncated");
     }
     let current = current_identity()?;
     if let ReuseDecision::Invalidated { levels } = reuse_decision(prior, &current, None) {
         return rerun(
             head,
             workspace,
+            sink,
             format!("invalidated layer(s): {}", levels_word(&levels)),
         );
     }
@@ -501,12 +512,16 @@ pub fn detect_with_reuse(
             },
             fresh: None,
         }),
-        Some(WorkDisposition::Affected) => {
-            rerun(head, workspace, "a change touches a fact the detector read")
-        }
+        Some(WorkDisposition::Affected) => rerun(
+            head,
+            workspace,
+            sink,
+            "a change touches a fact the detector read",
+        ),
         Some(WorkDisposition::Unknown) | None => rerun(
             head,
             workspace,
+            sink,
             format!("reuse is not proven: {}", assessment.reason),
         ),
     }
@@ -518,7 +533,11 @@ mod tests {
     use crate::application::change_tracking::revision_facts::{
         FactsLimits, ReuseStatus, produce_revision_facts,
     };
+    use crate::domain::findings::binding::{EvidenceBinding, EvidenceBindings, GroundingFailure};
     use crate::domain::findings::detector_reuse::CachedObservation;
+    use crate::domain::findings::outcome::ProducedEvidence;
+    use crate::domain::findings::ports::EvidenceError;
+    use crate::domain::kernel_ids::EvidenceId;
     use crate::domain::scm::fake::FakeSource;
     use crate::domain::scm::{
         ChangeReader, ProviderCapabilities, RevisionReader, SourceRef, SourceRevision,
@@ -529,6 +548,71 @@ mod tests {
     const ALPHA_RENAMED: &[u8] = b"pub fn alpha_two() { first(); }\n";
     const BETA: &[u8] = b"pub fn beta() { helper(); }\n";
     const GAMMA: &[u8] = b"pub fn gamma() {}\n";
+
+    /// Binds each item to the fact it names, with ids numbered from one, as
+    /// the production sink does; a run only reads the bindings back.
+    #[derive(Default)]
+    struct TestSink {
+        recorded: u64,
+    }
+
+    impl EvidenceSink for TestSink {
+        fn persist(
+            &mut self,
+            produced: &[ProducedEvidence],
+        ) -> Result<EvidenceBindings, EvidenceError> {
+            let entries = produced
+                .iter()
+                .map(|item| {
+                    self.recorded += 1;
+                    match item.grounding {
+                        Some(grounding) => EvidenceBinding::grounded(
+                            EvidenceId::new(self.recorded),
+                            grounding.fact,
+                        ),
+                        None => EvidenceBinding::ungrounded(GroundingFailure::NoFact),
+                    }
+                })
+                .collect();
+            Ok(EvidenceBindings::new(entries))
+        }
+    }
+
+    fn fresh_run(
+        facts: &RevisionFacts,
+        workspace: &WorkspaceId,
+    ) -> Result<DetectorRunRecord, DetectorRunError> {
+        run_detector(facts, workspace, &mut TestSink::default())
+    }
+
+    fn fresh_ensure(
+        store: &DetectorReuseStore,
+        produced: &ProducedRevision,
+        workspace: &WorkspaceId,
+    ) -> Result<RunWritten, DetectorRunError> {
+        ensure_run(store, produced, workspace, &mut TestSink::default())
+    }
+
+    fn fresh_detect(
+        prior: Option<&DetectorRunRecord>,
+        base: &ProducedRevision,
+        head: &ProducedRevision,
+        changes: &ChangeSet,
+        workspace: &WorkspaceId,
+    ) -> Result<Detection, DetectorRunError> {
+        detect_with_reuse(
+            prior,
+            base,
+            head,
+            changes,
+            workspace,
+            &mut TestSink::default(),
+        )
+    }
+
+    fn fresh_rerun(head: &ProducedRevision, reason: &str) -> Result<Detection, DetectorRunError> {
+        rerun(head, &workspace(), &mut TestSink::default(), reason)
+    }
 
     fn workspace() -> WorkspaceId {
         WorkspaceId::try_new("ws").expect("workspace")
@@ -596,7 +680,7 @@ mod tests {
     }
 
     fn full_rerun(head: &ProducedRevision) -> Vec<ReboundFinding> {
-        rerun(head, &workspace(), "reference")
+        fresh_rerun(head, "reference")
             .expect("full re-execution")
             .findings
     }
@@ -606,7 +690,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
 
-        let record = run_detector(&base.facts, &workspace()).expect("run");
+        let record = fresh_run(&base.facts, &workspace()).expect("run");
 
         assert_eq!(record.findings.len(), 2, "alpha and beta");
         assert_eq!(record.produced_snapshot, base.facts.snapshot);
@@ -645,8 +729,8 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         assert_eq!(
-            run_detector(&base.facts, &workspace()).expect("first"),
-            run_detector(&base.facts, &workspace()).expect("second")
+            fresh_run(&base.facts, &workspace()).expect("first"),
+            fresh_run(&base.facts, &workspace()).expect("second")
         );
     }
 
@@ -655,9 +739,9 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let prior = run_detector(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
 
-        let detection = detect_with_reuse(
+        let detection = fresh_detect(
             Some(&prior),
             &base,
             &head,
@@ -700,9 +784,9 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "renamed");
-        let prior = run_detector(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
 
-        let detection = detect_with_reuse(
+        let detection = fresh_detect(
             Some(&prior),
             &base,
             &head,
@@ -729,9 +813,9 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "added");
-        let prior = run_detector(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
 
-        let detection = detect_with_reuse(
+        let detection = fresh_detect(
             Some(&prior),
             &base,
             &head,
@@ -749,13 +833,13 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let mut prior = run_detector(&base.facts, &workspace()).expect("prior run");
+        let mut prior = fresh_run(&base.facts, &workspace()).expect("prior run");
         prior
             .identity
             .effective_capabilities
             .insert(AnalysisCapability::Dataflow);
 
-        let detection = detect_with_reuse(
+        let detection = fresh_detect(
             Some(&prior),
             &base,
             &head,
@@ -776,8 +860,8 @@ mod tests {
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
         let changes = between(&fake, &base, &head);
-        let prior = run_detector(&base.facts, &workspace()).expect("prior run");
-        let on_head = run_detector(&head.facts, &workspace()).expect("run on head");
+        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let on_head = fresh_run(&head.facts, &workspace()).expect("run on head");
         let truncated = DetectorRunRecord {
             observed_truncated: true,
             ..prior.clone()
@@ -789,7 +873,7 @@ mod tests {
             (Some(&truncated), "truncated"),
         ] {
             let detection =
-                detect_with_reuse(record, &base, &head, &changes, &workspace()).expect("detection");
+                fresh_detect(record, &base, &head, &changes, &workspace()).expect("detection");
             let Reuse::Rerun { reason } = detection.reuse else {
                 panic!("{expected}: must not be reused");
             };
@@ -813,9 +897,9 @@ mod tests {
                 path: crate::domain::scm::PathKey::new("src/a.rs").expect("path"),
                 reason: super::super::revision_facts::GapReason::NotText,
             });
-        let prior = run_detector(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
 
-        let detection = detect_with_reuse(
+        let detection = fresh_detect(
             Some(&prior),
             &base,
             &head,
@@ -836,11 +920,11 @@ mod tests {
         let head = produce(&fake, "body-edit");
 
         assert_eq!(
-            ensure_run(&store, &base, &workspace()).expect("first"),
+            fresh_ensure(&store, &base, &workspace()).expect("first"),
             RunWritten::Written
         );
         assert_eq!(
-            ensure_run(&store, &base, &workspace()).expect("second"),
+            fresh_ensure(&store, &base, &workspace()).expect("second"),
             RunWritten::AlreadyRecorded
         );
         let id = detector_id().expect("id");
@@ -848,7 +932,7 @@ mod tests {
         assert!(index.record_for(id.as_str(), base.facts.snapshot).is_some());
 
         assert_eq!(
-            ensure_run(&store, &head, &workspace()).expect("moved"),
+            fresh_ensure(&store, &head, &workspace()).expect("moved"),
             RunWritten::Written
         );
         let index = store.load().expect("index");
@@ -866,16 +950,16 @@ mod tests {
         let store = DetectorReuseStore::new(dir.path());
         let base = produce(&fake, "main");
         let other_base = produce(&fake, "renamed");
-        let mut stale = run_detector(&base.facts, &workspace()).expect("run");
+        let mut stale = fresh_run(&base.facts, &workspace()).expect("run");
         stale
             .identity
             .effective_capabilities
             .insert(AnalysisCapability::Dataflow);
         store.record(stale).expect("stale");
-        ensure_run(&store, &other_base, &workspace()).expect("other base");
+        fresh_ensure(&store, &other_base, &workspace()).expect("other base");
 
         assert_eq!(
-            ensure_run(&store, &base, &workspace()).expect("refresh"),
+            fresh_ensure(&store, &base, &workspace()).expect("refresh"),
             RunWritten::Written,
             "a record under another capability is not current"
         );
@@ -900,15 +984,15 @@ mod tests {
         let second = produce(&fake, "renamed");
 
         assert_eq!(
-            ensure_run(&store, &first, &workspace()).expect("first"),
+            fresh_ensure(&store, &first, &workspace()).expect("first"),
             RunWritten::Written
         );
         assert_eq!(
-            ensure_run(&store, &second, &workspace()).expect("second"),
+            fresh_ensure(&store, &second, &workspace()).expect("second"),
             RunWritten::Written
         );
         assert_eq!(
-            ensure_run(&store, &first, &workspace()).expect("back to the first base"),
+            fresh_ensure(&store, &first, &workspace()).expect("back to the first base"),
             RunWritten::AlreadyRecorded,
             "the second base must not have overwritten the first base's read-set"
         );
@@ -922,8 +1006,8 @@ mod tests {
         let base = produce(&fake, "main");
         let other_base = produce(&fake, "renamed");
         let head = produce(&fake, "body-edit");
-        ensure_run(&store, &base, &workspace()).expect("base");
-        ensure_run(&store, &other_base, &workspace()).expect("other base");
+        fresh_ensure(&store, &base, &workspace()).expect("base");
+        fresh_ensure(&store, &other_base, &workspace()).expect("other base");
 
         let index = store.load().expect("index");
         let assessment = assess_reuse(&base, &head, &between(&fake, &base, &head), Some(&index))
@@ -942,7 +1026,7 @@ mod tests {
         let base = produce(&fake, "main");
         let other_base = produce(&fake, "renamed");
         let head = produce(&fake, "body-edit");
-        ensure_run(&store, &other_base, &workspace()).expect("other base only");
+        fresh_ensure(&store, &other_base, &workspace()).expect("other base only");
 
         let index = store.load().expect("index");
         let assessment = assess_reuse(&base, &head, &between(&fake, &base, &head), Some(&index))
@@ -963,17 +1047,17 @@ mod tests {
         let store = DetectorReuseStore::new(dir.path());
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let mut other = run_detector(&base.facts, &workspace()).expect("run");
+        let mut other = fresh_run(&base.facts, &workspace()).expect("run");
         other.identity.detector_id = DetectorId::new("other.detector").expect("id");
 
         store.record(other.clone()).expect("other");
         store
-            .record(run_detector(&base.facts, &workspace()).expect("run"))
+            .record(fresh_run(&base.facts, &workspace()).expect("run"))
             .expect("first");
         store
-            .record(run_detector(&head.facts, &workspace()).expect("run"))
+            .record(fresh_run(&head.facts, &workspace()).expect("run"))
             .expect("second base");
-        let again = run_detector(&base.facts, &workspace()).expect("run");
+        let again = fresh_run(&base.facts, &workspace()).expect("run");
         store.record(again.clone()).expect("same base again");
 
         let index = store.load().expect("index");
