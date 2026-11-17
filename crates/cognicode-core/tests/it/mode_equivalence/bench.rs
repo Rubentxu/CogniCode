@@ -449,10 +449,10 @@ fn machine(load_before: Option<String>) -> Value {
 /// What this benchmark does not measure, and why. Never estimated.
 fn not_evaluated(isolated_memory: bool) -> Value {
     let mut reasons = json!({
-        "compilation_time": "no compilation happens in this pipeline; measuring cargo needs a separate, external benchmark",
-        "check_publication_time": "publishing a check run belongs to the CI and gate tooling, not to this crate",
-        "ci_cost_per_scenario": "needs the CI gates run per scenario; not derivable from analysis time",
-        "branch_and_worktree_scenarios": "the pipelines compare two commits in one repository; branch switching and worktree creation are not exercised",
+        "compilation_time": "no compilation happens in this pipeline; scripts/measure/scenario_cost.py corpus-gates times the cargo stages on the same corpus",
+        "check_publication_time": "publishing a check run belongs to the CI and gate tooling, not to this crate; scripts/measure/scenario_cost.py pr-checks reads hosted check durations back from the API",
+        "ci_cost_per_scenario": "not derivable from analysis time; scripts/measure/scenario_cost.py corpus-gates runs the gate stages per scenario, and the PipelineK lane is not run by it",
+        "branch_and_worktree_scenarios": "the pipelines compare two commits in one repository and do not exercise git; scripts/measure/scenario_cost.py worktree times branch and worktree operations",
         "speedup_claims": "no speedup is claimed: the numbers above are per pipeline, taken in a debug build on a shared host",
         "detection_precision_of_terraform_and_helm": "the production detectors read only function and type definitions, so nothing is detected in these parts",
     });
