@@ -78,6 +78,7 @@ fn function(case: &Case) -> ObservedFunction {
         path: format!("fixtures/{}", case.label),
         language: case.language,
         observations: case.observations.clone(),
+        jvm: None,
     }
 }
 
@@ -459,23 +460,24 @@ fn sink_hidden_in_an_unmodeled_helper_is_unknown_not_clean() {
 
 #[test]
 fn unsupported_language_is_reported_as_unsupported() {
-    let kotlin = ObservedFunction {
-        id: "k".to_string(),
-        path: "fixtures/k".to_string(),
-        language: SourceLanguage::Kotlin,
+    let python = ObservedFunction {
+        id: "p".to_string(),
+        path: "fixtures/p".to_string(),
+        language: SourceLanguage::Python,
         observations: vec![call(JAVA_PARAM, vec![lit()], Some("id"))],
+        jvm: None,
     };
-    let classification = SemanticModelCatalog::builtin().classify(Weakness::SqlInjection, &kotlin);
+    let classification = SemanticModelCatalog::builtin().classify(Weakness::SqlInjection, &python);
     assert_eq!(
         classification,
         Classification::Unsupported {
-            language: SourceLanguage::Kotlin
+            language: SourceLanguage::Python
         }
     );
     assert_eq!(
         assess(&classification, 0).verdict,
         SastVerdict::Unsupported {
-            language: SourceLanguage::Kotlin
+            language: SourceLanguage::Python
         }
     );
 }
@@ -528,9 +530,13 @@ fn every_language_reuses_the_same_detector_and_vocabulary() {
         let adapter = catalog
             .adapter(language)
             .unwrap_or_else(|| panic!("{language:?} adapter missing"));
-        assert!(adapter.models().iter().any(|m| m.is_source()));
-        assert!(adapter.models().iter().any(|m| m.is_sink()));
-        assert!(adapter.models().iter().any(|m| m.is_sanitizer()));
+        assert!(adapter.models().any(|m| m.is_source()));
+        assert!(adapter.models().any(|m| m.sinks(Weakness::SqlInjection)));
+        assert!(
+            adapter
+                .models()
+                .any(|m| m.sanitizes(Weakness::SqlInjection))
+        );
         // The rule is built once and carries no language: its logic identity
         // does not depend on the adapter.
         assert_eq!(
@@ -539,7 +545,7 @@ fn every_language_reuses_the_same_detector_and_vocabulary() {
         );
     }
     assert!(
-        catalog.adapter(SourceLanguage::Kotlin).is_none(),
+        catalog.adapter(SourceLanguage::Python).is_none(),
         "no adapter means Unsupported, not an empty model"
     );
 }
