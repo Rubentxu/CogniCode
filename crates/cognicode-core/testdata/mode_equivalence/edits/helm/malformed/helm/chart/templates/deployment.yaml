@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }-demo
+spec:
+  replicas: {{ .Values.replicaCount
+  template:
+    spec:
+      containers:
+        - name: app
+         image: "{{ .Values.image.repository
+          ports: [

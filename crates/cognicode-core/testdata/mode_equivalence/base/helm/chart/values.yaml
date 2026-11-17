@@ -1,0 +1,6 @@
+replicaCount: 1
+image:
+  repository: demo/app
+  tag: "1.0.0"
+service:
+  port: 80
