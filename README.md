@@ -17,7 +17,7 @@ languages out of the box — 20 with full acceptance evidence, 11 experimental.
 
 ## Features
 
-- **88 MCP tools** — 78 tools and the 10 goals that answer them: call graphs, impact analysis, fuzzy symbol search, safe refactoring, complexity metrics, and more
+- **92 MCP tools** — 78 tools and the 14 goals that answer them: call graphs, impact analysis, fuzzy symbol search, safe refactoring, complexity metrics, and more
 - **31 languages** — 20 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML, Kotlin, Groovy) and 11 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
 - **3 graph strategies** — `full`, `lightweight`, `on_demand`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
@@ -139,7 +139,7 @@ Add CogniCode as an MCP server in your AI client configuration:
 
 ## MCP Tools
 
-CogniCode ships **88 MCP tools**: 78 tools and the 10 goals that answer them.
+CogniCode ships **92 MCP tools**: 78 tools and the 14 goals that answer them.
 The tables below are a **curated selection**,
 grouped by the capability a reader is most likely to care about — not the full
 surface. The authoritative list, generated from the code and checked in CI, is
