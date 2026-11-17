@@ -31,6 +31,7 @@ REAL_TESTS = (
     "helm_model::the_real_engine_renders_the_chart_when_it_is_installed",
     "helm_pack::the_real_engine_feeds_the_pack_when_it_is_installed",
     "helm_model::the_real_engine_agrees_with_the_double",
+    "mode_equivalence::helm_chart_rendered_by_the_real_engine_reaches_pass",
 )
 PASSING_RUN = "".join(f"test {name} ... ok\n" for name in REAL_TESTS)
 

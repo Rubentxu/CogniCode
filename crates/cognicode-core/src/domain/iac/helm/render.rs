@@ -75,6 +75,16 @@ pub enum NotRenderedCause {
     },
 }
 
+impl NotRenderedCause {
+    /// One-line explanation for reports.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::EngineUnavailable { reason } => format!("engine unavailable: {reason}"),
+            Self::EngineFailed { message } => format!("engine failed: {message}"),
+        }
+    }
+}
+
 /// Whether concrete objects exist for a chart and values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]

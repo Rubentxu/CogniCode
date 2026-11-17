@@ -33,9 +33,13 @@ use cognicode_core::application::change_tracking::complete_snapshot::{
 use cognicode_core::application::change_tracking::detector_runs::{
     Detection, ProductionDetector, Reuse, current_identity, detect_with_reuse, run_detector,
 };
+use cognicode_core::application::change_tracking::helm_templates::{
+    ChartFiles, ChartRender, ChartRenderCheck, NoChartRender,
+};
 use cognicode_core::application::change_tracking::planner::WorkDisposition;
 use cognicode_core::application::change_tracking::revision_facts::{
-    FactObjectStore, FactsLimits, ProducedRevision, dependencies_on, produce_revision_facts,
+    FactObjectStore, FactsLimits, ProducedRevision, dependencies_on,
+    produce_revision_facts_rendering,
 };
 use cognicode_core::application::change_tracking::scm_delta::{
     delta_from_change_set, plan_between,
@@ -47,6 +51,7 @@ use cognicode_core::domain::scm::{ChangeReader, ChangeSet, RevisionReader, Sourc
 use cognicode_core::domain::value_objects::WorkspaceId;
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 use cognicode_core::infrastructure::git::GitScmAdapter;
+use cognicode_core::infrastructure::helm::HelmRevisionCharts;
 use tempfile::TempDir;
 
 /// The parts of the corpus, in report order.
@@ -76,29 +81,75 @@ impl EditClass {
     }
 }
 
-/// Which view of the corpus a scenario is judged over.
+/// How the Helm chart of the corpus is rendered while a scenario is judged.
+///
+/// A chart template is not YAML until rendered, so the verdict over a
+/// chart depends on whether anything rendered it. The corpus is never
+/// altered to make a verdict reachable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Projection {
-    /// Every file of the corpus, Helm templates included. Templates are
-    /// not YAML, so every revision has gaps and `Pass` is unreachable.
-    Full,
-    /// The corpus without `helm/chart/templates`, so a revision can reach
-    /// `Pass` and the comparison exercises the claim that matters.
-    WithoutHelmTemplates,
+    /// Nothing renders the chart, as in a run with no engine: its templates
+    /// are gaps and `Pass` is unreachable, in both modes.
+    Unrendered,
+    /// A labelled double of the engine renders every chart whose templates
+    /// are complete, so a revision can reach `Pass` and the comparison
+    /// exercises the claim that matters. The double is deterministic and
+    /// needs no `helm` binary; [`StrictTemplateRender`] says what it checks.
+    Rendered,
+    /// The real `helm` binary through the production adapter. Not part of
+    /// [`Projection::ALL`]: it needs the engine on the machine.
+    RealEngine,
 }
 
 impl Projection {
-    pub const ALL: [Self; 2] = [Self::Full, Self::WithoutHelmTemplates];
+    pub const ALL: [Self; 2] = [Self::Unrendered, Self::Rendered];
 
     fn label(self) -> &'static str {
         match self {
-            Self::Full => "full",
-            Self::WithoutHelmTemplates => "clean",
+            Self::Unrendered => "unrendered",
+            Self::Rendered => "rendered",
+            Self::RealEngine => "helm",
+        }
+    }
+
+    /// The render check the production seam is given.
+    fn charts(self) -> Box<dyn ChartRenderCheck> {
+        match self {
+            Self::Unrendered => Box::new(NoChartRender),
+            Self::Rendered => Box::new(StrictTemplateRender),
+            Self::RealEngine => Box::new(HelmRevisionCharts::from_path()),
         }
     }
 }
 
-const HELM_TEMPLATES: &str = "helm/chart/templates";
+/// A test double for the Helm engine, labelled as one: it renders nothing.
+/// It answers `Rendered` for a chart that has a `Chart.yaml` and whose
+/// every template action is closed, which is what an engine needs to
+/// render it at all, and `NotRendered` otherwise. It does not evaluate
+/// values, so it is more lenient than the engine where a template reads
+/// an unset value.
+pub struct StrictTemplateRender;
+
+impl ChartRenderCheck for StrictTemplateRender {
+    fn check(&self, chart: &ChartFiles) -> ChartRender {
+        if !chart.files.contains_key("Chart.yaml") {
+            return ChartRender::NotRendered {
+                cause: "the chart has no Chart.yaml".to_string(),
+            };
+        }
+        for (path, bytes) in &chart.files {
+            let text = String::from_utf8_lossy(bytes);
+            if path.starts_with("templates/")
+                && text.matches("{{").count() != text.matches("}}").count()
+            {
+                return ChartRender::NotRendered {
+                    cause: format!("template `{path}` has an unclosed action"),
+                };
+            }
+        }
+        ChartRender::Rendered
+    }
+}
 
 /// A deliberate defect injected into the incremental side, to prove the
 /// comparison can fail: an oracle that cannot disagree certifies nothing.
@@ -206,6 +257,8 @@ fn commit_all(repo: &Path, message: &str) -> String {
 /// A throwaway repository holding the base commit and the edited commit.
 pub struct Fixture {
     _dir: TempDir,
+    /// Decides the Helm charts of both revisions.
+    pub charts: Box<dyn ChartRenderCheck>,
     pub adapter: GitScmAdapter,
     pub source: SourceRef,
     pub base_sha: String,
@@ -218,7 +271,6 @@ pub fn materialize(corpus: &Path, scenario: &Scenario, projection: Projection) -
     let repo = dir.path();
     git(repo, &["init", "-q", "-b", "main"]);
     copy_tree(&corpus.join("base"), repo);
-    project(repo, projection);
     let base_sha = commit_all(repo, "base");
     let deletions = scenario.overlay.join("DELETE");
     if deletions.is_file() {
@@ -229,20 +281,14 @@ pub fn materialize(corpus: &Path, scenario: &Scenario, projection: Projection) -
         }
     }
     copy_overlay(&scenario.overlay, repo);
-    project(repo, projection);
     let head_sha = commit_all(repo, "edit");
     Fixture {
         adapter: GitScmAdapter::new(repo),
+        charts: projection.charts(),
         source: SourceRef::new("git", "mode-equivalence").expect("source"),
         _dir: dir,
         base_sha,
         head_sha,
-    }
-}
-
-fn project(repo: &Path, projection: Projection) {
-    if projection == Projection::WithoutHelmTemplates {
-        let _ = fs::remove_dir_all(repo.join(HELM_TEMPLATES));
     }
 }
 
@@ -285,10 +331,22 @@ pub fn produce(fixture: &Fixture) -> Produced {
         .changes_between(&base_revision, &head_revision)
         .expect("changes between");
     Produced {
-        base: produce_revision_facts(&fixture.adapter, &base_revision, None, &limits)
-            .expect("base facts"),
-        head: produce_revision_facts(&fixture.adapter, &head_revision, None, &limits)
-            .expect("head facts"),
+        base: produce_revision_facts_rendering(
+            &fixture.adapter,
+            &base_revision,
+            None,
+            &limits,
+            fixture.charts.as_ref(),
+        )
+        .expect("base facts"),
+        head: produce_revision_facts_rendering(
+            &fixture.adapter,
+            &head_revision,
+            None,
+            &limits,
+            fixture.charts.as_ref(),
+        )
+        .expect("head facts"),
         changes,
     }
 }
@@ -364,8 +422,7 @@ pub struct ScenarioResult {
     /// Where an honest analysis would have refused and did not: a
     /// malformed edit that still receives `Pass`.
     pub false_passes: Vec<String>,
-    /// The overlay changed nothing in this projection, so there is no
-    /// edit to judge.
+    /// The overlay changed nothing, so there is no edit to judge.
     pub no_change: bool,
 }
 
@@ -421,18 +478,20 @@ fn warm_equals_cold(fixture: &Fixture, produced: &Produced) -> bool {
             .resolve(&fixture.source, sha)
             .expect("resolve")
     };
-    let _prime = produce_revision_facts(
+    let _prime = produce_revision_facts_rendering(
         &fixture.adapter,
         &revision(&fixture.base_sha),
         Some(&store),
         &limits,
+        fixture.charts.as_ref(),
     )
     .expect("prime");
-    let warm = produce_revision_facts(
+    let warm = produce_revision_facts_rendering(
         &fixture.adapter,
         &revision(&fixture.head_sha),
         Some(&store),
         &limits,
+        fixture.charts.as_ref(),
     )
     .expect("warm head");
     format!("{:?}", warm.facts.facts) == format!("{:?}", produced.head.facts.facts)
@@ -724,10 +783,7 @@ impl Certification {
                 let _ = writeln!(out, "    DIVERGENCE: {divergence}");
             }
             if r.no_change {
-                let _ = writeln!(
-                    out,
-                    "    no change: the overlay is empty in this projection"
-                );
+                let _ = writeln!(out, "    no change: the overlay changes nothing");
             }
             for false_pass in &r.false_passes {
                 let _ = writeln!(out, "    FALSE PASS: {false_pass}");
