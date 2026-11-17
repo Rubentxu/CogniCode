@@ -10,6 +10,44 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.106.0] — 2026-11-17
+
+**Minor: el producto compara, inspecciona y verifica revisiones, y publica su
+primer paquete de seguridad semántico (Rust, Java, Kotlin, Go, Terraform y
+Helm).**
+
+**Goals sobre revisiones.** `compare` (impacto entre dos revisiones, con el
+trabajo reutilizado medido a partir de los *read-sets* de los detectores),
+`inspect` (una revisión), `verify` y `preflight` (el delta de hechos de unas
+ediciones antes de escribirlas) pasan a ser goals del catálogo: 92
+herramientas MCP, 14 de ellas goals. El MCP dice con honestidad qué pasó
+cuando un deadline corta una llamada.
+
+**Hallazgos.** Modelos SAST semánticos con un detector CWE-89 compartido, el
+primer paquete de seguridad para Rust, Java, Kotlin y Go, una IR estática de
+Terraform con valores desconocidos y reglas de seguridad, y el modelo de
+charts de Helm (valores y manifiestos renderizados) cableado al paquete de
+seguridad y expuesto por CLI y MCP. Terraform nunca informa limpio ante
+overrides, duplicados, nombres no UTF-8 ni anidamiento profundo.
+
+**Revisión de pull requests.** Revisión neutral respecto a la forja con un
+adaptador de GitHub, y suites de conformidad reutilizables para los puertos
+de SCM y de forja.
+
+**Rendimiento y build.** Métricas de calidad nativas para Rust, Java, Kotlin y
+Go; el árbol de una revisión se lista una vez para todas sus lecturas; un
+perfil de desarrollo ligero para el workspace; un arnés que mide la
+equivalencia entre el modo incremental y la reconstrucción completa sobre un
+corpus multilenguaje.
+
+**Gate.** La rama principal vuelve a estar verde: el fixture del grafo
+declarado conoce el argumento `edits` de `preflight`, el barrido de
+instantáneas ordena por una fecha medida y no por una época fabricada, toda
+llamada a un subproceso de los scripts tiene deadline, el test del instalador
+no lee el `COGNICODE_HOME` real, el test del deadline del MCP recorre un
+árbol que dura más que el deadline, y el corpus de equivalencia entre modos no
+viaja en el crate publicado.
+
 ## [v0.105.0] — 2026-11-17
 
 **Minor: la release publica un lane *standalone* (musl estático) que corre en

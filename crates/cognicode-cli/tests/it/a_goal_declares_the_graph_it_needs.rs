@@ -49,6 +49,10 @@ const CATALOG: &str = concat!(
 /// La fuente del fixture: un símbolo y la llamada que lo alcanza.
 const SOURCE: &str = "pub fn alpha() -> u32 { beta() + 1 }\npub fn beta() -> u32 { 2 }\n";
 
+/// Las ediciones candidatas de `preflight`: `lib.rs` con otro cuerpo.
+const EDITS: &str =
+    r#"{"lib.rs":"pub fn alpha() -> u32 { beta() + 2 }\npub fn beta() -> u32 { 2 }\n"}"#;
+
 // ---------------------------------------------------------------------------
 // Fixture: un workspace y una caché que no son de nadie más.
 // ---------------------------------------------------------------------------
@@ -68,8 +72,9 @@ fn workspace() -> (tempfile::TempDir, PathBuf, PathBuf) {
 
 /// Un historial de dos commits en el workspace.
 ///
-/// `compare` lee revisiones de Git: sobre un directorio sin historial no hay
-/// nada que comparar, y su fallo no diría nada de si construye el grafo.
+/// `compare`, `verify` y `preflight` leen revisiones de Git: sobre un
+/// directorio sin historial no hay nada que comparar, y su fallo no diría
+/// nada de si construye el grafo.
 fn commit_two_revisions(workspace: &Path) {
     let git = |args: &[&str]| {
         let no_configuration = workspace.join("no-git-configuration");
@@ -125,6 +130,9 @@ fn arguments_of(goal: &GoalSpec) -> Vec<String> {
             "base_ref" => "HEAD~1",
             "head_ref" => "HEAD",
             "revision" => "HEAD",
+            // `preflight` asks about a candidate: a map from path to the new
+            // content of that file.
+            "edits" => EDITS,
             other => panic!(
                 "the fixture does not know what to answer to the argument `{other}` of the goal \
                  `{}`",
@@ -260,7 +268,7 @@ fn catalogue_requires_graph(name: &str) -> bool {
 fn every_goal_declares_the_graph_it_builds() {
     for goal in goals::registry() {
         let (root, workspace, _cache) = workspace();
-        if matches!(goal.name, "compare" | "verify") {
+        if matches!(goal.name, "compare" | "verify" | "preflight") {
             commit_two_revisions(&workspace);
         }
         let calls = calls_of(goal, &workspace);

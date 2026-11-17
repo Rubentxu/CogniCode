@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "anyhow",
  "cognicode-cli",
@@ -407,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-cli"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-core"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-graph-algos"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "petgraph",
  "serde",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-graph-wasm"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "cognicode-graph-algos",
  "js-sys",
@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-ladybug"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-macros"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-mcp"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "cognicode-sandbox"
-version = "0.105.0"
+version = "0.106.0"
 dependencies = [
  "chrono",
  "clap",

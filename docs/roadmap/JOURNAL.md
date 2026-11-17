@@ -39995,3 +39995,23 @@ inventario y `SHA256SUMS`.
   y no la política de la máquina. El rojo del contrato del witness del árbol era de
   otra cosa: `AGENTS.md` se editó **mientras** la suite corría, así que el testigo
   vio un cambio que nadie había hecho durante los tests.
+
+## Release v0.106.0 — preparación (2026-11-17)
+
+**Cambio.** El workspace sube a `0.106.0`. El minor reúne lo integrado desde `v0.105.0`: los
+goals `compare`, `inspect`, `verify` y `preflight` (92 herramientas MCP, 14 goals), la
+revisión de pull requests neutral respecto a la forja, el paquete de seguridad para Rust,
+Java, Kotlin, Go, Terraform y Helm, las métricas de calidad nativas y el arnés de
+equivalencia entre modos.
+
+**Antes de cortar.** La rama principal tenía el gate en rojo por causas propias, no del
+entorno: un fixture sin el argumento `edits` de `preflight`, una fecha fabricada en el barrido
+de instantáneas, llamadas a subprocesos sin deadline en los scripts del contrato de la costura,
+un test del instalador que leía el `COGNICODE_HOME` real, un test de deadline del MCP que
+perdía la carrera contra un reloj de resolución de un milisegundo, un cargador de contrato que
+no registraba su módulo, y 41 ficheros de corpus de prueba empaquetados en el crate publicado.
+Todo corregido en el PR #956; los rojos que quedan en local son de la máquina (sin `cargo
+nextest`, sin `cosign` fijado, sin los binarios release, `rustc -vV` en el contrato de lanes).
+
+**Límite.** Esta entrada prepara el corte; no lo declara hecho: el tag y la publicación son
+una operación aparte y la tabla de releases de `CURRENT.md` no cambia hasta que ocurra.
