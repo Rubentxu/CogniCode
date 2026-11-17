@@ -14,7 +14,6 @@ pub mod evidence_kernel;
 pub mod extraction;
 pub mod findings;
 pub mod git;
-#[cfg(feature = "multimodal")]
 pub mod github;
 pub mod graph;
 // M7 — in-memory append-only Intelligence Event Log (reference oracle).
