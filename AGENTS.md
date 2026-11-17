@@ -450,3 +450,7 @@ Antes `AGENTS.md` estaba ignorado en `.gitignore`; ahora **solo el AGENTS.md ra�
 | ¿Qué es el gate? | Tres pasos, y los tres verdes: tests unitarios, tests de integración con mocks, y mutantes. `bash scripts/test-gate.sh` los agrupa. La autoridad de un cambio es esa suite en verde, revisada por una persona. |
 | ¿Qué verifico antes de dar algo por terminado? | **Una tarea**: su prueba focal y `guard` en verde, y el `finalSummary` en Backlog.md. **Un bloque de 10**: `GATE_BASE=<base> bash scripts/test-gate.sh` + `npm test --prefix apps/explorer-ui` + los contratos en verde, y el recibo del bloque en el `JOURNAL`. |
 | ¿Cómo se trabaja el día a día? | Por bloques de 10 tareas: prueba focal por tarea, verificación completa al cerrar el bloque. Ver «Flujo de trabajo: bloques de 10 tareas». |
+
+## Compilar con reparto de recursos
+
+Los builds y tests pesados van con `bld` **si está disponible** (`command -v bld`): `bld rust cargo test --workspace`, `bld jvm ./gradlew build`, `bld e2e just e2e-run`. `bld` mete el árbol de procesos del build en una slice con tope duro de CPU y RAM, para que un build no se coma la máquina (en esta familia de máquinas, un build sin tope llegó a provocar un OOM global). Si `bld` no existe, compila normal: es otra máquina sin reparto de recursos. Detalle de esta máquina: `~/.config/agent-docs/build-resources.md`.
