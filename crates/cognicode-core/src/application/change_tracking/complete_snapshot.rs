@@ -257,7 +257,7 @@ impl CompleteSnapshot {
 /// Convention: the string key of each work item IS the detector id
 /// string — `WorkId` and `DetectorId` are both validated
 /// `namespace.name`, and the reuse index keys its records by the
-/// detector id of the run that produced them.
+/// detector id of the run that produced them and the snapshot it ran over.
 pub struct CompleteSnapshotRequest<'a> {
     pub mode: AnalysisMode,
     pub plan: &'a AffectedWorkPlan,
@@ -443,7 +443,15 @@ fn resolve_reuse(
     key: &str,
     req: &CompleteSnapshotRequest<'_>,
 ) -> (Resolution, Vec<BlockingIssue>) {
-    let Some(record) = req.cache.records.get(key) else {
+    // The record over the snapshot the plan diffed from. A detector kept
+    // only for other bases falls back to its latest record, which the
+    // snapshot check below refuses rather than reuses.
+    let record = req
+        .plan
+        .from_snapshot
+        .and_then(|from| req.cache.record_for(key, from))
+        .or_else(|| req.cache.latest(key));
+    let Some(record) = record else {
         return (
             Resolution::Unresolved {
                 codes: vec![ReasonCode::CacheMissing],

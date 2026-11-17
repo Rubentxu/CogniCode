@@ -188,10 +188,7 @@ fn the_index_survives_a_round_trip_through_the_store() {
 
     let loaded = store.load().expect("load");
     assert_eq!(loaded, index);
-    let rec = loaded
-        .records
-        .get("security.sql_injection")
-        .expect("one record");
+    let rec = loaded.latest("security.sql_injection").expect("one record");
     assert!(reuse_decision(rec, &identity("v1"), None).is_reusable());
 }
 
@@ -412,13 +409,83 @@ fn no_state_is_promoted_by_caching_or_rebinding() {
     }
 }
 
+fn record_over(snapshot: u64) -> DetectorRunRecord {
+    DetectorRunRecord {
+        produced_snapshot: SnapshotId(snapshot),
+        ..record(verifiable(), &[100], false)
+    }
+}
+
+#[test]
+fn a_detector_keeps_one_record_per_base() {
+    let mut index = DetectorReuseIndex::empty();
+    index.remember(record_over(1));
+    index.remember(record_over(2));
+    index.remember(record_over(1));
+
+    assert_eq!(index.records.len(), 2, "re-remembering a base replaces it");
+    let id = "security.sql_injection";
+    assert!(index.record_for(id, SnapshotId(1)).is_some());
+    assert!(index.record_for(id, SnapshotId(2)).is_some());
+    assert!(index.record_for(id, SnapshotId(3)).is_none());
+    assert_eq!(
+        index.latest(id).map(|r| r.produced_snapshot),
+        Some(SnapshotId(1)),
+        "the base remembered last is the latest"
+    );
+}
+
+#[test]
+fn retention_is_bounded_per_detector_and_evicts_the_least_recent() {
+    use cognicode_core::domain::findings::detector_reuse::MAX_RECORDS_PER_DETECTOR;
+    let bound = MAX_RECORDS_PER_DETECTOR as u64;
+    let mut index = DetectorReuseIndex::empty();
+    let mut other = record_over(1);
+    other.identity = identity("v1");
+    other.identity.detector_id = DetectorId::new("other.detector").expect("id");
+    index.remember(other);
+    for snapshot in 1..=bound {
+        index.remember(record_over(snapshot));
+    }
+    // Using the oldest base again makes it the most recent.
+    index.remember(record_over(1));
+    index.remember(record_over(bound + 1));
+
+    let id = "security.sql_injection";
+    let kept = index
+        .records
+        .iter()
+        .filter(|r| r.identity.detector_id.as_str() == id)
+        .count();
+    assert_eq!(kept, MAX_RECORDS_PER_DETECTOR);
+    assert!(index.record_for(id, SnapshotId(1)).is_some(), "refreshed");
+    assert!(index.record_for(id, SnapshotId(2)).is_none(), "evicted");
+    assert!(index.record_for(id, SnapshotId(bound + 1)).is_some());
+    assert!(
+        index.record_for("other.detector", SnapshotId(1)).is_some(),
+        "another detector's records are never evicted by this one's"
+    );
+}
+
+#[test]
+fn an_index_in_the_previous_schema_loads_as_nothing() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let store = DetectorReuseStore::new(dir.path());
+    std::fs::write(
+        store_dir_file(dir.path()),
+        br#"{"schema":"cognicode.detector-reuse/v1","records":{}}"#,
+    )
+    .expect("write");
+    assert_eq!(store.load(), None, "costs a re-run, never a wrong reuse");
+}
+
 #[test]
 fn a_foreign_schema_never_decodes_into_the_index() {
     let mut index = DetectorReuseIndex::empty();
     index.remember(record(verifiable(), &[100], false));
     let json = index.to_json().expect("serialize");
     let foreign = json.replace(
-        "cognicode.detector-reuse/v1",
+        "cognicode.detector-reuse/v2",
         "cognicode.detector-reuse/v99",
     );
     assert!(DetectorReuseIndex::from_json(&foreign).is_err());

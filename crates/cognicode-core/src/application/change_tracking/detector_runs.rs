@@ -320,7 +320,8 @@ pub enum RunWritten {
 
 /// Makes sure the store holds a current run of the detector for `produced`:
 /// keeps the existing record when it is for this very snapshot under the
-/// identity a run would carry now, and runs and writes otherwise.
+/// identity a run would carry now, and runs and writes otherwise. The
+/// records kept for other snapshots are left as they were.
 ///
 /// # Errors
 /// The run or the write failed; the previous record is left as it was.
@@ -332,13 +333,8 @@ pub fn ensure_run(
     let identity = current_identity()?;
     let current = store.load().is_some_and(|index| {
         index
-            .records
-            .get(identity.detector_id.as_str())
-            .is_some_and(|record| {
-                record.produced_snapshot == produced.facts.snapshot
-                    && record.identity == identity
-                    && !record.observed_truncated
-            })
+            .record_for(identity.detector_id.as_str(), produced.facts.snapshot)
+            .is_some_and(|record| record.identity == identity && !record.observed_truncated)
     });
     if current {
         return Ok(RunWritten::AlreadyRecorded);
@@ -493,7 +489,7 @@ pub fn detect_with_reuse(
 mod tests {
     use super::*;
     use crate::application::change_tracking::revision_facts::{
-        FactsLimits, produce_revision_facts,
+        FactsLimits, ReuseStatus, produce_revision_facts,
     };
     use crate::domain::findings::detector_reuse::CachedObservation;
     use crate::domain::scm::fake::FakeSource;
@@ -821,19 +817,120 @@ mod tests {
             RunWritten::AlreadyRecorded
         );
         let id = detector_id().expect("id");
-        let record = store.load().expect("index").records[id.as_str()].clone();
-        assert_eq!(record.produced_snapshot, base.facts.snapshot);
+        let index = store.load().expect("index");
+        assert!(index.record_for(id.as_str(), base.facts.snapshot).is_some());
 
         assert_eq!(
             ensure_run(&store, &head, &workspace()).expect("moved"),
             RunWritten::Written
         );
-        let record = store.load().expect("index").records[id.as_str()].clone();
-        assert_eq!(record.produced_snapshot, head.facts.snapshot);
+        let index = store.load().expect("index");
+        assert!(index.record_for(id.as_str(), head.facts.snapshot).is_some());
+        assert!(
+            index.record_for(id.as_str(), base.facts.snapshot).is_some(),
+            "moving to another snapshot keeps the previous base's record"
+        );
     }
 
     #[test]
-    fn the_store_replaces_a_detectors_record_and_keeps_the_others() {
+    fn a_stale_identity_is_rewritten_over_the_same_snapshot_only() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let store = DetectorReuseStore::new(dir.path());
+        let base = produce(&fake, "main");
+        let other_base = produce(&fake, "renamed");
+        let mut stale = run_detector(&base.facts, &workspace()).expect("run");
+        stale
+            .identity
+            .effective_capabilities
+            .insert(AnalysisCapability::Dataflow);
+        store.record(stale).expect("stale");
+        ensure_run(&store, &other_base, &workspace()).expect("other base");
+
+        assert_eq!(
+            ensure_run(&store, &base, &workspace()).expect("refresh"),
+            RunWritten::Written,
+            "a record under another capability is not current"
+        );
+        let id = detector_id().expect("id");
+        let index = store.load().expect("index");
+        assert_eq!(index.records.len(), 2, "one record per base, no duplicate");
+        assert_eq!(
+            index
+                .record_for(id.as_str(), base.facts.snapshot)
+                .expect("base record")
+                .identity,
+            current_identity().expect("identity")
+        );
+    }
+
+    #[test]
+    fn alternating_bases_each_keep_their_own_read_set() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let store = DetectorReuseStore::new(dir.path());
+        let first = produce(&fake, "main");
+        let second = produce(&fake, "renamed");
+
+        assert_eq!(
+            ensure_run(&store, &first, &workspace()).expect("first"),
+            RunWritten::Written
+        );
+        assert_eq!(
+            ensure_run(&store, &second, &workspace()).expect("second"),
+            RunWritten::Written
+        );
+        assert_eq!(
+            ensure_run(&store, &first, &workspace()).expect("back to the first base"),
+            RunWritten::AlreadyRecorded,
+            "the second base must not have overwritten the first base's read-set"
+        );
+    }
+
+    #[test]
+    fn a_compare_still_reuses_its_base_after_another_base_was_recorded() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let store = DetectorReuseStore::new(dir.path());
+        let base = produce(&fake, "main");
+        let other_base = produce(&fake, "renamed");
+        let head = produce(&fake, "body-edit");
+        ensure_run(&store, &base, &workspace()).expect("base");
+        ensure_run(&store, &other_base, &workspace()).expect("other base");
+
+        let index = store.load().expect("index");
+        let assessment = assess_reuse(&base, &head, &between(&fake, &base, &head), Some(&index))
+            .expect("assessment");
+
+        assert_eq!(assessment.status, ReuseStatus::Evaluated, "{assessment:?}");
+        assert_eq!(assessment.works.len(), 1, "only the record of this base");
+        assert_eq!(assessment.works[0].disposition, WorkDisposition::Unaffected);
+    }
+
+    #[test]
+    fn a_record_of_another_base_is_never_consumed() {
+        let fake = fake();
+        let dir = tempfile::tempdir().expect("dir");
+        let store = DetectorReuseStore::new(dir.path());
+        let base = produce(&fake, "main");
+        let other_base = produce(&fake, "renamed");
+        let head = produce(&fake, "body-edit");
+        ensure_run(&store, &other_base, &workspace()).expect("other base only");
+
+        let index = store.load().expect("index");
+        let assessment = assess_reuse(&base, &head, &between(&fake, &base, &head), Some(&index))
+            .expect("assessment");
+
+        assert_eq!(
+            assessment.status,
+            ReuseStatus::NotEvaluated,
+            "{assessment:?}"
+        );
+        assert!(assessment.works.is_empty());
+    }
+
+    #[test]
+    fn the_store_replaces_a_records_own_base_and_keeps_the_others() {
         let fake = fake();
         let dir = tempfile::tempdir().expect("dir");
         let store = DetectorReuseStore::new(dir.path());
@@ -848,15 +945,21 @@ mod tests {
             .expect("first");
         store
             .record(run_detector(&head.facts, &workspace()).expect("run"))
-            .expect("replacement");
+            .expect("second base");
+        let again = run_detector(&base.facts, &workspace()).expect("run");
+        store.record(again.clone()).expect("same base again");
 
         let index = store.load().expect("index");
-        assert_eq!(index.records.len(), 2);
-        assert_eq!(index.records["other.detector"], other);
+        assert_eq!(index.records.len(), 3, "other detector, base and head");
+        assert_eq!(
+            index.record_for("other.detector", base.facts.snapshot),
+            Some(&other)
+        );
         let id = detector_id().expect("id");
         assert_eq!(
-            index.records[id.as_str()].produced_snapshot,
-            head.facts.snapshot
+            index.record_for(id.as_str(), base.facts.snapshot),
+            Some(&again)
         );
+        assert!(index.record_for(id.as_str(), head.facts.snapshot).is_some());
     }
 }
