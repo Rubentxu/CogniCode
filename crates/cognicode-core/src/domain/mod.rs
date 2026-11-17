@@ -28,6 +28,7 @@ pub mod budgets;
 pub mod conformance;
 pub mod execution;
 pub mod findings;
+pub mod iac;
 // M7 (Living Software Intelligence) — the causal Intelligence Event Log.
 // Additive pure domain (no I/O), ungated: the log records *what happened*,
 // never canonical truth (that is the evidence kernel's job).
