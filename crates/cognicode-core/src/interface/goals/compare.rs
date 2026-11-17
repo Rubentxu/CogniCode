@@ -231,7 +231,7 @@ fn compared_changes(change_set: &ChangeSet) -> Vec<ComparedChange> {
         .collect()
 }
 
-fn side_coverage(produced: &ProducedRevision) -> RevisionFactsCoverage {
+pub(super) fn side_coverage(produced: &ProducedRevision) -> RevisionFactsCoverage {
     let coverage = &produced.coverage;
     RevisionFactsCoverage {
         facts: produced.facts.facts.len(),
