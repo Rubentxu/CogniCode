@@ -1307,6 +1307,39 @@
     "_meta": {
       "cognicode": {
         "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.105.0"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Corre el pack de seguridad sobre las raíces Terraform y los charts Helm del proyecto y publica un veredicto por unidad y familia: `found`, `not_observed`, `unknown` o `unsupported`, siempre distintos (un `unknown` o `unsupported` nunca se presenta como limpio). Para Helm dice si el chart se renderizó y con qué cobertura; sin el motor `helm` el chart queda `not_rendered` y sus comprobaciones `unknown`. Publica la matriz de capacidades con sus límites (`all_languages` la amplía a todos los lenguajes). Es un informe de candidatos, no una puerta. Ejemplos: `cognicode security`, `cognicode security --format json`.",
+    "inputSchema": {
+      "description": "Arguments of the `security` goal.",
+      "properties": {
+        "all_languages": {
+          "default": false,
+          "description": "Publish the capability matrix of every language the pack names. By\ndefault only the Terraform and Helm rows are published.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "security"
+  },
+  {
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 150,
         "mutates_workspace": false,
