@@ -26,10 +26,77 @@ use serde_json::Value;
 
 use cognicode_cli::cli::commands::{CommandExecutor, Format};
 use cognicode_cli::cli::result::CommandOutput;
+use cognicode_core::application::graph_cache::{cache_dir, default_cache_root, workspace_key};
+use cognicode_core::application::revision_snapshots::RevisionSnapshotStore;
 use cognicode_core::interface::goals::{self, GoalSpec};
 use cognicode_core::interface::mcp::handlers::HandlerContext;
 use cognicode_core::interface::mcp::handlers::goal::handle_goal;
 use cognicode_mcp::rmcp_adapter::build_all_tools;
+
+/// The canonical form of the workspace, the way the product keys it.
+fn canonical(workspace: &std::path::Path) -> std::path::PathBuf {
+    workspace.canonicalize().expect("canonical workspace")
+}
+
+/// The `.snap` files directly under `dir`: the revision snapshots, apart
+/// from the per-file fact objects that live in a subdirectory.
+fn snapshot_files(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "snap"))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+/// Runs `goal` on the CLI with its cache at `cache` and returns the envelope
+/// it prints.
+async fn run_in_cache(
+    goal: &GoalSpec,
+    matches: &clap::ArgMatches,
+    workspace: &std::path::Path,
+    cache: &std::path::Path,
+) -> Value {
+    let output =
+        CommandExecutor::execute_goal_in_cache(goal, matches, workspace, Some(cache), Format::Json)
+            .await
+            .expect("the CLI goal answers");
+    let CommandOutput::Rendered { text, .. } = output else {
+        panic!("a goal returns its shared envelope");
+    };
+    serde_json::from_str(&text).expect("the CLI prints only JSON")
+}
+
+/// The workspace of a test is a fresh temporary directory, so no entry keyed
+/// by it can exist in the cache of the environment unless the test wrote it
+/// there: this is the leak, made checkable without touching the environment.
+/// Every kind of entry the product keeps (snapshots, revision snapshots,
+/// detector read-sets, sockets) is named by the key of its workspace, so the
+/// key is looked for under the whole cache directory.
+fn assert_not_in_the_environment_cache(workspace: &std::path::Path) {
+    let Some(environment) = default_cache_root() else {
+        return;
+    };
+    let key = workspace_key(&canonical(workspace));
+    let mut pending = vec![cache_dir(&environment)];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            assert!(
+                !path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(key.as_str())),
+                "the test wrote into the cache of the environment: {}",
+                path.display()
+            );
+            if path.is_dir() {
+                pending.push(path);
+            }
+        }
+    }
+}
 
 /// El catálogo que el operador mantiene a mano.
 const CATALOG: &str = concat!(
@@ -430,12 +497,25 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     std::fs::write(workspace.path().join("untracked.rs"), "fn untracked() {}\n")
         .expect("write untracked");
 
+    // Each surface keeps what it derives in a cache of its own, fresh for
+    // this test: nothing the suite did before, or on the machine, can reach
+    // the answer, and nothing the answer persists leaves the temporary
+    // directories.
+    let cli_cache = tempfile::tempdir().expect("CLI cache");
+    let mcp_cache = tempfile::tempdir().expect("MCP cache");
+
     let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from(["compare", "--base-ref", base.trim(), "--head-ref", "HEAD"])
         .expect("the CLI parses both revisions");
-    let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)
-        .await
-        .expect("the CLI goal answers");
+    let output = CommandExecutor::execute_goal_in_cache(
+        goal,
+        &matches,
+        workspace.path(),
+        Some(cli_cache.path()),
+        Format::Json,
+    )
+    .await
+    .expect("the CLI goal answers");
     let CommandOutput::Rendered { text, .. } = output else {
         panic!("compare returns its shared goal envelope");
     };
@@ -443,6 +523,7 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
 
     let ctx = HandlerContext::builder()
         .with_working_dir(workspace.path().to_path_buf())
+        .with_cache_root(mcp_cache.path().to_path_buf())
         .build();
     let mcp_answer = handle_goal(
         &ctx,
@@ -452,49 +533,62 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     .await
     .expect("the MCP goal answers");
 
-    // What depends on the cache each surface resolves (the CLI has the
-    // user's; this MCP context names none) is the persisted snapshot and
-    // the reuse of prior work, whose read-sets live in that cache. The rest
-    // of the answer is the shared contract.
-    let mut cli_answer = cli_envelope["result"].clone();
-    let mut mcp_answer = mcp_answer;
-    let cache_bound = [
-        "summary",
-        "work_reuse",
-        "work_reuse_reason",
-        "work_reuse_status",
-    ];
-    let cli_reuse = cli_answer.clone();
-    let mcp_reuse = mcp_answer.clone();
-    for answer in [&mut cli_answer, &mut mcp_answer] {
-        answer["revision_facts"]["persisted"] = Value::Null;
-        for key in cache_bound {
-            answer[key] = Value::Null;
-        }
-    }
+    // The whole answer is the shared contract, snapshot persistence and
+    // work reuse included: nothing is masked.
+    let cli_answer = cli_envelope["result"].clone();
     assert_eq!(cli_answer, mcp_answer);
-    assert_eq!(mcp_answer["coverage"]["changed_paths"], 1);
-    assert_eq!(mcp_answer["coverage"]["analysis"], "evaluated");
-    assert_eq!(mcp_answer["impact_status"], "evaluated");
-    assert_eq!(mcp_answer["impact"]["facts_added"], 2);
-    assert_eq!(mcp_answer["impact"]["facts_removed"], 2);
-    // Without a cache there is no read-set, so reuse says so instead of
-    // guessing; with one, the production detector run wrote the base
-    // read-set and the renamed function it read makes that work affected.
-    assert_eq!(mcp_reuse["work_reuse_status"], "not_evaluated");
+    for surface in [&cli_answer, &mcp_answer] {
+        assert_eq!(surface["revision_facts"]["persisted"], true, "{surface}");
+    }
+    for cache in [&cli_cache, &mcp_cache] {
+        let store = RevisionSnapshotStore::for_workspace(
+            cache.path(),
+            &workspace.path().canonicalize().expect("canonical root"),
+        );
+        assert_eq!(
+            snapshot_files(store.root()),
+            2,
+            "the snapshot of each compared revision is on disk, in the cache the surface was given"
+        );
+    }
+    assert_not_in_the_environment_cache(workspace.path());
+
+    // Without a cache there is no read-set and nothing is persisted, so the
+    // answer says so instead of guessing.
+    let uncached = HandlerContext::builder()
+        .with_working_dir(workspace.path().to_path_buf())
+        .build();
+    let uncached_answer = handle_goal(
+        &uncached,
+        goal,
+        serde_json::json!({"base_ref": base.trim(), "head_ref": "HEAD"}),
+    )
+    .await
+    .expect("the MCP goal answers without a cache");
+    assert_eq!(uncached_answer["revision_facts"]["persisted"], false);
+    assert_eq!(uncached_answer["work_reuse_status"], "not_evaluated");
     assert!(
-        mcp_reuse["work_reuse_reason"]
+        uncached_answer["work_reuse_reason"]
             .as_str()
             .is_some_and(|reason| reason.contains("read-set"))
     );
-    assert_eq!(cli_reuse["work_reuse_status"], "evaluated");
-    assert_eq!(cli_reuse["work_reuse"]["affected"], 1);
-    assert_eq!(mcp_answer["changes"][0]["path"], "src.rs");
+
+    let answer = cli_answer;
+    assert_eq!(answer["coverage"]["changed_paths"], 1);
+    assert_eq!(answer["coverage"]["analysis"], "evaluated");
+    assert_eq!(answer["impact_status"], "evaluated");
+    assert_eq!(answer["impact"]["facts_added"], 2);
+    assert_eq!(answer["impact"]["facts_removed"], 2);
+    // With a cache, the production detector run wrote the base read-set and
+    // the renamed function it read makes that work affected.
+    assert_eq!(answer["work_reuse_status"], "evaluated");
+    assert_eq!(answer["work_reuse"]["affected"], 1);
+    assert_eq!(answer["changes"][0]["path"], "src.rs");
     assert_eq!(
-        mcp_answer["working_copy"]["staged_changes"][0]["path"],
+        answer["working_copy"]["staged_changes"][0]["path"],
         "staged.rs"
     );
-    let dirty_paths = mcp_answer["working_copy"]["dirty_paths"]
+    let dirty_paths = answer["working_copy"]["dirty_paths"]
         .as_array()
         .expect("working-tree paths are published");
     assert!(dirty_paths.iter().any(|path| path == "src.rs"));
@@ -531,32 +625,159 @@ async fn verify_is_the_same_cli_and_mcp_contract_and_never_claims_an_unstored_sn
     git(&["add", "src.rs"]);
     git(&["commit", "--quiet", "-m", "base"]);
 
+    let cli_cache = tempfile::tempdir().expect("CLI cache");
+    let mcp_cache = tempfile::tempdir().expect("MCP cache");
+
     let matches = cognicode_cli::cli::goals_clap::clap_command(goal)
         .try_get_matches_from(["verify", "--revision", "HEAD"])
         .expect("the CLI parses the revision");
-    let output = CommandExecutor::execute_goal(goal, &matches, workspace.path(), Format::Json)
-        .await
-        .expect("the CLI goal answers");
-    let CommandOutput::Rendered { text, .. } = output else {
-        panic!("verify returns its shared goal envelope");
-    };
-    let cli_envelope: Value = serde_json::from_str(&text).expect("CLI output is only JSON");
+    let cli_envelope = run_in_cache(goal, &matches, workspace.path(), cli_cache.path()).await;
 
     let ctx = HandlerContext::builder()
         .with_working_dir(workspace.path().to_path_buf())
+        .with_cache_root(mcp_cache.path().to_path_buf())
         .build();
     let mcp_answer = handle_goal(&ctx, goal, serde_json::json!({"revision": "HEAD"}))
         .await
         .expect("the MCP goal answers");
 
-    let cli_answer = cli_envelope
-        .get("result")
-        .expect("the envelope has a result");
+    let cli_answer = &cli_envelope["result"];
     assert_eq!(cli_answer["status"], "not_evaluated");
     assert_eq!(mcp_answer["status"], "not_evaluated");
     assert_eq!(cli_answer["revision"], mcp_answer["revision"]);
     assert_eq!(cli_answer["coverage"], mcp_answer["coverage"]);
     assert_eq!(cli_answer["snapshot"]["found"], false);
+    assert_eq!(mcp_answer["snapshot"]["found"], false);
+
+    // `verify` never writes: it leaves nothing behind in either cache.
+    for cache in [&cli_cache, &mcp_cache] {
+        assert!(
+            !RevisionSnapshotStore::for_workspace(cache.path(), &canonical(workspace.path()))
+                .root()
+                .exists(),
+            "verify persisted a snapshot instead of only reading one"
+        );
+    }
+    assert_not_in_the_environment_cache(workspace.path());
+}
+
+/// A snapshot `inspect` persists on the CLI is the one `verify` confirms on
+/// the CLI and on the MCP that share its cache, and it is on disk in that
+/// cache and nowhere else.
+#[tokio::test]
+async fn the_cli_persists_the_snapshot_that_verify_then_confirms_on_both_surfaces() {
+    let inspect = goals::find("inspect").expect("the registry declares inspect");
+    let verify = goals::find("verify").expect("the registry declares verify");
+    let workspace = tempfile::tempdir().expect("temporary Git repository");
+    let git = |args: &[&str]| {
+        let no_configuration = workspace.path().join("no-git-configuration");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(workspace.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .output()
+            .expect("git is installed");
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "CogniCode tests"]);
+    git(&["config", "user.email", "tests@example.invalid"]);
+    std::fs::write(workspace.path().join("src.rs"), "fn only() {}\n").expect("write source");
+    git(&["add", "src.rs"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    let cache = tempfile::tempdir().expect("cache");
+
+    let inspected = run_in_cache(
+        inspect,
+        &cognicode_cli::cli::goals_clap::clap_command(inspect)
+            .try_get_matches_from(["inspect", "--revision", "HEAD"])
+            .expect("the CLI parses the revision"),
+        workspace.path(),
+        cache.path(),
+    )
+    .await;
+    assert_eq!(
+        inspected["result"]["revision_facts"]["persisted"], true,
+        "{inspected}"
+    );
+    let store = RevisionSnapshotStore::for_workspace(cache.path(), &canonical(workspace.path()));
+    assert_eq!(snapshot_files(store.root()), 1, "the snapshot is on disk");
+
+    let verified = run_in_cache(
+        verify,
+        &cognicode_cli::cli::goals_clap::clap_command(verify)
+            .try_get_matches_from(["verify", "--revision", "HEAD"])
+            .expect("the CLI parses the revision"),
+        workspace.path(),
+        cache.path(),
+    )
+    .await;
+    assert_eq!(verified["result"]["status"], "verified", "{verified}");
+    assert_eq!(verified["result"]["snapshot"]["found"], true);
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(workspace.path().to_path_buf())
+        .with_cache_root(cache.path().to_path_buf())
+        .build();
+    let mcp_verified = handle_goal(&ctx, verify, serde_json::json!({"revision": "HEAD"}))
+        .await
+        .expect("the MCP goal answers");
+    assert_eq!(
+        mcp_verified, verified["result"],
+        "the MCP confirms what the CLI persisted, in the same words"
+    );
+    assert_not_in_the_environment_cache(workspace.path());
+}
+
+/// The isolation itself: a goal run in an injected cache writes there, and
+/// the cache of the environment gains nothing for that workspace, whatever
+/// `HOME` and `XDG_CACHE_HOME` say where the suite runs.
+#[tokio::test]
+async fn a_goal_run_in_an_injected_cache_leaves_the_environment_cache_untouched() {
+    let inspect = goals::find("inspect").expect("the registry declares inspect");
+    let workspace = tempfile::tempdir().expect("temporary Git repository");
+    let git = |args: &[&str]| {
+        let no_configuration = workspace.path().join("no-git-configuration");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(workspace.path())
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
+            .output()
+            .expect("git is installed");
+        assert!(output.status.success(), "git {args:?}");
+    };
+    git(&["init", "--quiet"]);
+    git(&["config", "user.name", "CogniCode tests"]);
+    git(&["config", "user.email", "tests@example.invalid"]);
+    std::fs::write(workspace.path().join("src.rs"), "fn only() {}\n").expect("write source");
+    git(&["add", "src.rs"]);
+    git(&["commit", "--quiet", "-m", "base"]);
+    let cache = tempfile::tempdir().expect("cache");
+
+    run_in_cache(
+        inspect,
+        &cognicode_cli::cli::goals_clap::clap_command(inspect)
+            .try_get_matches_from(["inspect", "--revision", "HEAD"])
+            .expect("the CLI parses the revision"),
+        workspace.path(),
+        cache.path(),
+    )
+    .await;
+
+    let store = RevisionSnapshotStore::for_workspace(cache.path(), &canonical(workspace.path()));
+    assert!(
+        store.root().exists(),
+        "the injected cache received the snapshot"
+    );
+    assert_not_in_the_environment_cache(workspace.path());
 }
 
 /// `inspect` takes a file or a revision, exactly one of them, and says so

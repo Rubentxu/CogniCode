@@ -90,28 +90,41 @@ pub fn parse_cli() -> Result<ParsedCli, clap::Error> {
 }
 
 impl CommandExecutor {
-    /// Execute a goal from the registry.
+    /// Execute a goal from the registry, with the cache of the environment.
     ///
     /// The arguments arrive as the `ArgMatches` of the command clap built
     /// from the declaration, and the core reads them with the same struct the
     /// MCP reads: the flag in the terminal and the field on the wire are the
     /// same argument, and the answer is the same one.
     ///
-    /// TASK-82.
+    /// The terminal has no injected cache: it uses the one the environment
+    /// names, the same one the rest of the product uses. Callers that need
+    /// to choose where the product keeps what it derives call
+    /// [`CommandExecutor::execute_goal_in_cache`].
     pub async fn execute_goal(
         goal: &GoalSpec,
         arguments: &clap::ArgMatches,
         workspace: &std::path::Path,
         format: Format,
     ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
-        let values = crate::cli::goals_clap::arguments_from_matches(goal, arguments);
-        // La terminal no tiene una caché inyectada: usa la del entorno, la
-        // misma que usa el resto del producto.
         let cache_root = cognicode_core::application::graph_cache::default_cache_root();
-        let context = cognicode_core::interface::goals::GoalEnvironment::new(
-            workspace,
-            cache_root.as_deref(),
-        );
+        Self::execute_goal_in_cache(goal, arguments, workspace, cache_root.as_deref(), format).await
+    }
+
+    /// Execute a goal from the registry, keeping what it derives under
+    /// `cache_root`.
+    ///
+    /// `None` means no cache at all: a goal that reuses or persists prior
+    /// work then says it could not, instead of guessing a place to write.
+    pub async fn execute_goal_in_cache(
+        goal: &GoalSpec,
+        arguments: &clap::ArgMatches,
+        workspace: &std::path::Path,
+        cache_root: Option<&std::path::Path>,
+        format: Format,
+    ) -> Result<CommandOutput, Box<dyn std::error::Error>> {
+        let values = crate::cli::goals_clap::arguments_from_matches(goal, arguments);
+        let context = cognicode_core::interface::goals::GoalEnvironment::new(workspace, cache_root);
         let answer = (goal.run)(&context, &values)
             .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
 
