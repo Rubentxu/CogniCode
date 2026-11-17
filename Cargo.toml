@@ -18,6 +18,20 @@ members = [
 ]
 exclude = ["crates/spike-ladybug"]
 
+# Development and test builds (`[profile.test]` inherits from `dev`).
+#
+# Line tables only: the least debug info that still gives file:line in panic
+# backtraces and test failures. Full debuginfo made the `cognicode-core` `it`
+# test binary and the incremental cache several times larger, and the link step
+# is what runs a shared host out of disk and memory first.
+#
+# Release and the musl published lane are deliberately not declared here: they
+# keep cargo's defaults, so the published bytes do not change.
+[profile.dev]
+opt-level = 0
+debug = "line-tables-only"
+lto = false
+
 [workspace.package]
 version = "0.105.0"
 edition = "2024"

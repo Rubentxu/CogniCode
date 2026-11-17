@@ -22,9 +22,11 @@
 
 ## El entorno de compilación
 
-El entorno de compilación de este repositorio **no está en el repositorio**: es la configuración global de cargo de la máquina (`~/.cargo/config.toml`). El perfil **no se puede declarar por proyecto**: un `[profile.test]` en el workspace invalida la caché compartida de `/var/home/rubentxu/cargo-targets/`, que es de todos los proyectos de la máquina (regla 4 de «Estrategia de tests»).
+El perfil de desarrollo vive **en el manifiesto del workspace** (`Cargo.toml`, `[profile.dev]`; `test` lo hereda), para que cualquier máquina —con o sin configuración global de cargo— compile igual de ligero. El linker y la caché de compilación son propiedades de la máquina y viven en su configuración global (`~/.cargo/config.toml`), si la tiene. El carril publicado (release y musl) **no declara perfil**: conserva los valores por defecto de cargo.
 
-Lo que la máquina declara hoy, y lo que midió el recibo de TASK-76:
+Medido el 2026-11-17 (CogniCode, rustc 1.96.0, `CARGO_BUILD_JOBS=4`, test `it` de `cognicode-core`): sin `[profile.dev]` (debuginfo completo) el binario `it` pesa 424 MB; con `debug = "line-tables-only"` pesa 231 MB (-45 %), y el rebuild incremental tras tocar un fichero de `cognicode-core` pasa de ~11,5 s (mejor caso) a ~10 s. Los backtraces de panic siguen dando `fichero:línea`. `debug = false` para las dependencias externas (`[profile.dev.package."*"]`) se midió y se descartó: ahorra otros 25 MB (231 → 206 MB) sin ganancia de tiempo, a cambio de perder la línea en los marcos de dependencias.
+
+Lo que declara el perfil del workspace, y lo que midió el recibo de TASK-76 en la configuración global de otra máquina:
 
 | Qué | Valor | Por qué |
 |---|---|---|
@@ -34,9 +36,9 @@ Lo que la máquina declara hoy, y lo que midió el recibo de TASK-76:
 
 `mold` y `sccache` viven en `~/.cargo/bin`, junto a `cargo`: donde puede correr cargo pueden correr ellos. `ld.mold` es un enlace simbólico a `mold` (es el nombre que busca `gcc` con `-fuse-ld=mold`).
 
-**Lo que nadie debe hacer**: declarar el perfil en el workspace, ni `jobs` o `CARGO_BUILD_JOBS` en la configuración del repo. Si falta una herramienta, se dice y se para: una configuración que nombra un linker o una caché que no están rompe el build de toda la máquina, y el error no lo dice.
+**Lo que nadie debe hacer**: declarar `[profile.release]` o `[profile.test]` en el workspace (el carril publicado no cambia, y `test` ya hereda de `dev`), ni `jobs` o `CARGO_BUILD_JOBS` en la configuración del repo. Si falta una herramienta, se dice y se para: una configuración que nombra un linker o una caché que no están rompe el build de toda la máquina, y el error no lo dice.
 
-**Cómo se mide**: `bash scripts/build-time.sh` (o `just build-time`) mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite. El contrato `scripts/ci/test_cargo_environment_contracts.py` vigila que el instrumento siga declarando los cuatro escenarios, que el repositorio no declare un perfil, y que toda herramienta que la configuración de la máquina nombre esté instalada.
+**Cómo se mide**: `bash scripts/build-time.sh` (o `just build-time`) mide los cuatro momentos —frío, sin cambios, tocar un test de integración, tocar `core/src/lib.rs`— en un **directorio de destino aislado**, e imprime la tasa de aciertos de `sccache`. No es un test: compila el workspace cuatro veces, y por eso vive fuera de la suite. El contrato `scripts/ci/test_cargo_environment_contracts.py` vigila que el instrumento siga declarando los cuatro escenarios, que el workspace declare el perfil `dev` ligero y ningún `release`, y que toda herramienta que la configuración de la máquina nombre esté instalada.
 
 ## Cómo leer un fichero grande sin llenarte el contexto
 
@@ -199,13 +201,7 @@ regla sobre dónde viven los tests.
    que el cambio hizo algo.
 3. **Un test filtrado no es evidencia**: un run con `--filter` acota el feedback, no
    certifica la unidad. Para certificar, la suite entera sin filtro.
-4. **No pisar la config global de cargo** (`~/.cargo/config.toml`: `jobs=4, codegen-units=256,
-   debug=line-tables-only, lto=false`, compartida con otros workspaces): `CARGO_BUILD_JOBS` y
-   `[profile.test]` workspace **prohibidos** — invalidan la caché compartida de
-   `/var/home/rubentxu/cargo-targets/`. La configuración global sí es el sitio donde vive el
-   perfil, el linker y la caché de compilación (ver «El entorno de compilación»): tocarla afecta a
-   todos los proyectos de la máquina, y por eso el contrato `scripts/ci/test_cargo_environment_contracts.py` vigila
-   que lo que declara siga declarado y que las herramientas que nombra estén instaladas.
+4. **No pisar la config global de cargo** (`~/.cargo/config.toml`, si la máquina la tiene: linker, caché de compilación, `jobs`, compartida con otros workspaces): `CARGO_BUILD_JOBS` y `jobs` en la configuración del repo **prohibidos**, y `[profile.release]`/`[profile.test]` en el workspace también. El perfil `dev` ligero sí vive en el `Cargo.toml` del workspace (ver «El entorno de compilación»); el contrato `scripts/ci/test_cargo_environment_contracts.py` vigila que siga declarado, que release no lo esté, y que lo que declara la configuración global siga declarado y las herramientas que nombra estén instaladas.
 5. **Un mutante que sobrevive es un agujero, no una puntuación.** Cuando aparezca uno, lo
    que se arregla es el test que no lo mata. Relajar el umbral es esconder el agujero.
 6. **Un test que frena la entrega no se queda dentro de la suite.** Un test que compila
