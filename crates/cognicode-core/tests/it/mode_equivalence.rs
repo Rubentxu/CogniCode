@@ -224,6 +224,61 @@ fn a_planner_that_skips_required_reruns_is_caught() {
     );
 }
 
+/// The Terraform part is edited three ways and a production detector reads
+/// its facts in every one: agreement between the modes is about findings
+/// inside the edited part, not about an empty answer. The malformed edit
+/// breaks one module and leaves another whole, so the detector still speaks
+/// about what it could read.
+#[test]
+fn every_terraform_scenario_has_findings_inside_the_edited_part() {
+    let corpus = corpus_root();
+    for scenario in scenarios(&corpus)
+        .into_iter()
+        .filter(|s| s.part == "terraform")
+    {
+        for projection in Projection::ALL {
+            let result = evaluate(&corpus, &scenario, projection);
+            assert!(
+                result.divergences.is_empty(),
+                "{}: {:?}",
+                result.scenario,
+                result.divergences
+            );
+            assert!(
+                !result.vacuous(),
+                "{}: no finding lands in the edited part, so agreement proves nothing",
+                result.scenario
+            );
+        }
+    }
+}
+
+/// A detector whose result is dropped on the incremental side must make the
+/// certification fail: the comparison is not satisfied by silence.
+#[test]
+fn an_incremental_side_that_drops_a_detector_result_is_caught() {
+    let corpus = corpus_root();
+    for class in EditClass::ALL {
+        let scenario = scenarios(&corpus)
+            .into_iter()
+            .find(|s| s.part == "terraform" && s.class == class)
+            .expect("the terraform scenario exists");
+        let result = evaluate_with_fault(
+            &corpus,
+            &scenario,
+            Projection::Rendered,
+            Fault::DropDetectorFindings,
+        );
+        let certification = certify(vec![result]);
+        assert!(
+            !certification.certified,
+            "terraform/{}: a dropped detector result went unnoticed:\n{}",
+            class.dir(),
+            certification.render()
+        );
+    }
+}
+
 #[test]
 fn the_benchmark_reports_every_phase_and_agrees_across_modes() {
     let report = bench::report(&corpus_root(), 2, Some("rust"));
