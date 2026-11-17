@@ -314,17 +314,138 @@ pub struct TfModule {
     pub calls: BTreeMap<String, TfModuleCall>,
     /// Provider configurations.
     pub providers: Vec<TfProvider>,
+    /// Declarations made a second time. Terraform rejects such a module, so
+    /// the first declaration is the one kept and the repeats are listed here.
+    pub duplicates: Vec<TfDuplicate>,
+}
+
+/// A declaration that repeats one the module already has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TfDuplicate {
+    /// What was declared: `resource`, `variable`, `local`, `output` or
+    /// `module`.
+    pub kind: &'static str,
+    /// The name or in-module address.
+    pub name: String,
+    /// The file of the repeat.
+    pub file: String,
+    /// 1-based line of the repeat.
+    pub line: u32,
+}
+
+/// Keeps the first declaration under `key`; a repeat is listed in
+/// `duplicates` and dropped.
+fn declare<V>(
+    map: &mut BTreeMap<String, V>,
+    duplicates: &mut Vec<TfDuplicate>,
+    kind: &'static str,
+    key: String,
+    value: V,
+    place: impl FnOnce(&V) -> (String, u32),
+) {
+    if map.contains_key(&key) {
+        let (file, line) = place(&value);
+        duplicates.push(TfDuplicate {
+            kind,
+            name: key,
+            file,
+            line,
+        });
+    } else {
+        map.insert(key, value);
+    }
 }
 
 impl TfModule {
-    /// Adds the declarations of another file of the same directory.
+    /// Declares a variable; a second one of the same name is a duplicate.
+    pub fn declare_variable(&mut self, variable: TfVariable) {
+        let place = |v: &TfVariable| (v.file.clone(), v.line);
+        declare(
+            &mut self.variables,
+            &mut self.duplicates,
+            "variable",
+            variable.name.clone(),
+            variable,
+            place,
+        );
+    }
+
+    /// Declares a local; a second one of the same name is a duplicate.
+    pub fn declare_local(&mut self, local: TfLocal) {
+        let place = |v: &TfLocal| (v.file.clone(), v.line);
+        declare(
+            &mut self.locals,
+            &mut self.duplicates,
+            "local",
+            local.name.clone(),
+            local,
+            place,
+        );
+    }
+
+    /// Declares an output; a second one of the same name is a duplicate.
+    pub fn declare_output(&mut self, output: TfOutput) {
+        let place = |v: &TfOutput| (v.file.clone(), v.line);
+        declare(
+            &mut self.outputs,
+            &mut self.duplicates,
+            "output",
+            output.name.clone(),
+            output,
+            place,
+        );
+    }
+
+    /// Declares a resource or data source; a second one at the same address
+    /// is a duplicate.
+    pub fn declare_resource(&mut self, resource: TfResource) {
+        let place = |v: &TfResource| (v.file.clone(), v.line);
+        declare(
+            &mut self.resources,
+            &mut self.duplicates,
+            "resource",
+            resource.address(),
+            resource,
+            place,
+        );
+    }
+
+    /// Declares a module call; a second one of the same name is a duplicate.
+    pub fn declare_call(&mut self, call: TfModuleCall) {
+        let place = |v: &TfModuleCall| (v.file.clone(), v.line);
+        declare(
+            &mut self.calls,
+            &mut self.duplicates,
+            "module",
+            call.name.clone(),
+            call,
+            place,
+        );
+    }
+
+    /// Adds the declarations of another file of the same directory. What the
+    /// directory already declares is kept, and a repeat is listed in
+    /// [`TfModule::duplicates`].
     pub fn absorb(&mut self, other: TfModule) {
-        self.variables.extend(other.variables);
-        self.locals.extend(other.locals);
-        self.outputs.extend(other.outputs);
-        self.resources.extend(other.resources);
-        self.calls.extend(other.calls);
+        other
+            .variables
+            .into_values()
+            .for_each(|v| self.declare_variable(v));
+        other
+            .locals
+            .into_values()
+            .for_each(|v| self.declare_local(v));
+        other
+            .outputs
+            .into_values()
+            .for_each(|v| self.declare_output(v));
+        other
+            .resources
+            .into_values()
+            .for_each(|v| self.declare_resource(v));
+        other.calls.into_values().for_each(|v| self.declare_call(v));
         self.providers.extend(other.providers);
+        self.duplicates.extend(other.duplicates);
     }
 
     /// Whether the file declared nothing.

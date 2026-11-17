@@ -12,7 +12,9 @@ use std::fmt;
 
 /// Query keys that carry a credential in a module source (`?token=..`,
 /// `?aws_access_key_secret=..`).
-const SECRET_QUERY_KEYS: &[&str] = &["token", "key", "secret", "pass", "pwd", "sig", "auth", "cred"];
+const SECRET_QUERY_KEYS: &[&str] = &[
+    "token", "key", "secret", "pass", "pwd", "sig", "auth", "cred",
+];
 
 /// A module `source` that is safe to show: the userinfo of a URL
 /// (`user:password@`) is dropped and the value of a query parameter whose
