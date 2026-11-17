@@ -18,19 +18,18 @@ Part II needs a real cargo binary (`cargo metadata`), and its last test
 # I. The build environment: `scripts/build-time.sh` and the
 machine's cargo configuration.
 
-The build environment of this repository is NOT in the repository: it is the
-machine's `~/.cargo/config.toml`, because the profile cannot be declared per
-project without invalidating the shared cache of `/var/home/rubentxu/cargo-targets/`
-(AGENTS.md forbids a workspace `[profile.test]`), and because the linker and
-the compilation cache are properties of the machine, not of this tree.
+The development profile (`[profile.dev]`, inherited by `test`) is declared in
+the workspace manifest, so a machine without a global cargo configuration gets
+the same light build. The linker and the compilation cache are properties of
+the machine, not of this tree, and stay in the machine's `~/.cargo/config.toml`.
 
 A promise that lives outside the repository needs something in the repository
 that says it is still true. These checks are that something:
 
   * the instrument that measured the times still declares the four scenarios,
     and still measures them in an isolated target directory;
-  * the repository still does NOT declare a workspace profile (the reason the
-    declaration has to live on the machine);
+  * the workspace manifest declares the line-tables-only dev profile and no
+    release profile;
   * the machine's configuration, when it is the shared one, still declares the
     build environment this repository published, and every tool it names is
     actually installed — a configuration that names a linker or a cache that is
@@ -134,44 +133,56 @@ def test_the_instrument_measures_in_an_isolated_target_directory() -> None:
     )
 
 
-def test_the_repository_does_not_declare_a_workspace_profile() -> None:
-    """The reason the build environment lives on the machine.
+def test_the_workspace_declares_the_light_dev_profile_and_nothing_for_release() -> None:
+    """The development build must not depend on a machine that has the right
+    global configuration.
 
-    A workspace `[profile.test]` invalidates the shared cache of the machine
-    (AGENTS.md), so the profile cannot be declared here. If somebody declares
-    it anyway, the two declarations drift and the published times stop meaning
-    anything.
+    Without a `[profile.dev]` cargo builds with full debug info: the
+    `cognicode-core` `it` test binary roughly doubles and the incremental cache
+    grows with it. The workspace manifest therefore carries the line-tables-only
+    profile (`test` inherits from `dev`), which still gives file:line in panic
+    backtraces. Release and the musl published lane stay on cargo's defaults, so
+    the published bytes do not change; `.cargo/config.toml` keeps declaring only
+    the target rustflags and no profile or jobs.
     """
-    manifest = REPO_ROOT / "Cargo.toml"
-    if manifest.is_file():
-        text = manifest.read_text(encoding="utf-8")
+    root = tomllib.loads((REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+    profiles = root.get("profile", {})
+    dev = profiles.get("dev")
+    check(dev is not None, "el manifiesto del workspace no declara [profile.dev]")
+    if dev is not None:
         check(
-            "[profile." not in text,
-            "el manifiesto del workspace declara un [profile.*]: "
-            "el perfil tiene que vivir en la configuracion global de la maquina "
-            "(AGENTS.md lo prohibe aqui porque invalida la cache compartida)",
+            dev.get("debug") == "line-tables-only",
+            f"[profile.dev].debug es {dev.get('debug')!r} y no 'line-tables-only': "
+            "con otro valor el build de desarrollo vuelve a pagar la informacion de depuracion completa "
+            "o pierde la ubicacion de linea de los backtraces",
         )
+        check(dev.get("lto") is False, "[profile.dev].lto tiene que ser false")
+    check(
+        "release" not in profiles,
+        "el manifiesto del workspace declara [profile.release]: "
+        "el carril publicado (release y musl) conserva los valores por defecto de cargo",
+    )
     repo_config = REPO_ROOT / ".cargo" / "config.toml"
     if repo_config.is_file():
         text = repo_config.read_text(encoding="utf-8")
         check(
             "[profile." not in text,
             ".cargo/config.toml declara un [profile.*]: "
-            "el perfil tiene que vivir en la configuracion global de la maquina",
+            "el perfil vive en el manifiesto del workspace, una sola vez",
         )
         check(
             "CARGO_BUILD_JOBS" not in text and "jobs" not in text,
-            ".cargo/config.toml declara jobs: la cache compartida de la maquina "
-            "es de todos los proyectos y none la puede reescribir",
+            ".cargo/config.toml declara jobs: el presupuesto de jobs lo fija cada "
+            "maquina, no el repositorio",
         )
 
 
 def test_no_workspace_member_declares_a_profile() -> None:
     """Cargo ignores a `[profile.*]` in a member and warns on every command.
 
-    Only the workspace root can carry a profile, and the root cannot (see the
-    test above), so a member that declares one has a setting that never applied
-    and a warning that hides real ones. Crates excluded from the workspace are
+    Only the workspace root can carry a profile (see the test above), so a
+    member that declares one has a setting that never applied and a warning
+    that hides real ones. Crates excluded from the workspace are
     their own root and keep the right to declare theirs.
     """
     root = tomllib.loads((REPO_ROOT / "Cargo.toml").read_text(encoding="utf-8"))
