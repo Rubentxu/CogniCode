@@ -20,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node;
 
+use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::{Language, NameRule, Receiver};
 
 /// The name a declaration carries, read by the language's rule.
@@ -103,6 +104,29 @@ fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
         None
     } else {
         Some(header.join(" "))
+    }
+}
+
+/// What a node of the language's function kinds is: a function when it has a
+/// body, and a method signature when the language lets it go without one.
+///
+/// One answer for every reader that publishes symbols, so the graph, the
+/// symbol index and the outline agree on which declarations are functions.
+pub fn callable_kind(language: Language, node: &Node) -> SymbolKind {
+    let body = language
+        .bodied_callables()
+        .iter()
+        .find(|(kind, _)| *kind == node.kind())
+        .map(|(_, body)| *body);
+    let Some(body) = body else {
+        return SymbolKind::Function;
+    };
+    let mut cursor = node.walk();
+    let has_body = node.children(&mut cursor).any(|child| child.kind() == body);
+    if has_body {
+        SymbolKind::Function
+    } else {
+        SymbolKind::Method
     }
 }
 

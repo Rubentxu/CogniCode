@@ -2,8 +2,9 @@
 # Hand-written from the sources: the types and callables each file declares,
 # as `class|function <name>@<path relative to this directory>`. Properties,
 # variables, the package and the synthetic <script> entry are not part of the
-# contract. The unnamed companion of Plain is read as Plain.Companion, the
-# name Kotlin gives it.
+# contract. A signature without a body (the interface's `describe`) is not a
+# callable the file defines, so it is not listed. The unnamed companion of
+# Plain is read as Plain.Companion, the name Kotlin gives it.
 class Shape@Shapes.kt
 class Rect@Shapes.kt
 class Filled@Shapes.kt
@@ -15,7 +16,6 @@ class Plain.Companion@Shapes.kt
 class Registry@Shapes.kt
 class Node@Shapes.kt
 class Money@Shapes.kt
-function describe@Shapes.kt
 function describe@Shapes.kt
 function Rect@Shapes.kt
 function unit@Shapes.kt

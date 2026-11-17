@@ -218,7 +218,7 @@ impl Language {
             },
             Language::Go => LanguageSymbols {
                 function_types: &["function_declaration", "method_declaration"],
-                class_types: &["type_declaration"],
+                class_types: &["type_spec"],
                 variable_types: &["short_var_declaration", "var_declaration"],
                 call_types: &["call_expression"],
                 import_types: &["import_spec"],
@@ -593,6 +593,29 @@ impl Language {
                 ],
             },
             _ => NameRule::DEFAULT,
+        }
+    }
+
+    /// The function kinds that a grammar also uses for a callable declared
+    /// without a body, each with the kind of the child that is the body.
+    ///
+    /// A method of an interface or an abstract class is a signature: it
+    /// names a callable but defines none. The grammar parses it as the same
+    /// node as a method that has a body, and the only thing that tells them
+    /// apart is whether the body child is there. A language that lists
+    /// nothing here has no such ambiguity, or has not been measured, and
+    /// reads every node of its function kinds as a definition.
+    ///
+    /// MEDIDO: in `tree-sitter-java` 0.23.5 a method without a body has no
+    /// `block` child (a constructor always has a `constructor_body`, so it is
+    /// not listed); in `tree-sitter-kotlin-sg` 0.4.1 a function without a body
+    /// has no `function_body` child, and a secondary constructor is a
+    /// definition even when it only delegates, so it is not listed.
+    pub const fn bodied_callables(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Language::Java => &[("method_declaration", "block")],
+            Language::Kotlin => &[("function_declaration", "function_body")],
+            _ => &[],
         }
     }
 

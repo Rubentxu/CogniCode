@@ -245,11 +245,11 @@ fn the_kotlin_declaration_vocabulary_is_classified_explicitly() {
         (SymbolKind::Class, "Rect".to_string(), 12),
         (SymbolKind::Class, "Registry".to_string(), 49),
         (SymbolKind::Class, "Shape".to_string(), 7),
-        // Funciones: método de interface, override, constructor
-        // secundario, método de companion, método de object, función
-        // top-level, extensión y las dos sobrecargas.
+        // Funciones: override, constructor secundario, método de
+        // companion, método de object, función top-level, extensión y
+        // las dos sobrecargas. La firma sin cuerpo de la interface es un
+        // método, no una función: no define nada que ejecutar.
         (SymbolKind::Function, "Rect".to_string(), 16),
-        (SymbolKind::Function, "describe".to_string(), 9),
         (SymbolKind::Function, "describe".to_string(), 22),
         (SymbolKind::Function, "largest".to_string(), 59),
         (SymbolKind::Function, "make".to_string(), 45),
@@ -258,6 +258,7 @@ fn the_kotlin_declaration_vocabulary_is_classified_explicitly() {
         (SymbolKind::Function, "register".to_string(), 52),
         (SymbolKind::Function, "shout".to_string(), 61),
         (SymbolKind::Function, "unit".to_string(), 32),
+        (SymbolKind::Method, "describe".to_string(), 9),
         // Propiedades: de interface, de constructor (`val` en el
         // constructor primario), de clase, de clase anidada, `const`,
         // de enum, de value class y top-level.

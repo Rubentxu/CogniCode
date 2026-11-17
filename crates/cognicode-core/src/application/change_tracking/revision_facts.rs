@@ -66,7 +66,7 @@ use super::scm_delta::{
 /// key and of the producer identity of every persisted snapshot: a change
 /// to how facts are assembled must bump it, and nothing written before
 /// is served afterwards.
-pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v2";
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v3";
 
 /// Paths read per batched content request: bounds peak memory (about
 /// this many files of at most `max_file_bytes` each) while keeping the
@@ -1386,13 +1386,9 @@ mod tests {
         assert_eq!(produced.coverage.analyzable_files, 4);
     }
 
-    #[test]
-    fn an_object_stored_by_the_previous_producer_is_never_served() {
-        // Before syntax errors were gaps, a broken file was stored with the
-        // facts of its damaged tree. Those objects sit under the previous
-        // producer's key and must stay unreachable, or a warm store keeps
-        // vouching for them.
-        let (file, source) = BROKEN_SOURCES[0];
+    /// Plants, under the key `producer` would have used, an object that
+    /// claims `file` has no facts at all.
+    fn plant_object_of(producer: &str, dir: &std::path::Path, file: &str, source: &[u8]) {
         let fake = provider(&[("main", &[], &[(file, source)])]);
         let content = fake
             .inventory(&revision(&fake, "main"))
@@ -1401,11 +1397,9 @@ mod tests {
             .iter()
             .find(|entry| entry.path == path(file))
             .map(|entry| entry.content.as_hex().to_string())
-            .expect("the broken file is tracked");
-        let dir = tempfile::tempdir().expect("dir");
-        let objects = FactObjectStore::new(dir.path());
+            .expect("the file is tracked");
         let mut hasher = Sha256::new();
-        hasher.update(b"cognicode.revision-facts/v1");
+        hasher.update(producer.as_bytes());
         hasher.update([0]);
         hasher.update(file.as_bytes());
         hasher.update([0]);
@@ -1418,19 +1412,52 @@ mod tests {
             facts: Vec::new(),
         };
         std::fs::write(
-            dir.path()
-                .join(format!("{}.facts.json", hex(&hasher.finalize()))),
+            dir.join(format!("{}.facts.json", hex(&hasher.finalize()))),
             serde_json::to_vec(&stale).expect("json"),
         )
         .expect("plant the stale object");
+    }
 
-        let produced = produce(&fake, "main", Some(&objects));
+    #[test]
+    fn an_object_stored_before_syntax_errors_were_gaps_is_never_served() {
+        // A broken file used to be stored with the facts of its damaged
+        // tree. Those objects sit under an earlier producer's key and must
+        // stay unreachable, or a warm store keeps vouching for them.
+        let (file, source) = BROKEN_SOURCES[0];
+        let fake = provider(&[("main", &[], &[(file, source)])]);
+        let dir = tempfile::tempdir().expect("dir");
+        plant_object_of("cognicode.revision-facts/v1", dir.path(), file, source);
+
+        let produced = produce(&fake, "main", Some(&FactObjectStore::new(dir.path())));
 
         assert_eq!(
             produced.coverage.reused_files, 0,
             "the stale object is a miss"
         );
         assert_eq!(produced.coverage.gaps.len(), 1);
+    }
+
+    #[test]
+    fn an_object_stored_before_go_types_and_bodiless_signatures_is_never_served() {
+        // Facts extracted before Go types were reported and bodiless
+        // signatures were told apart from functions describe the same bytes
+        // differently. They sit under the previous producer's key.
+        let fake = provider(&[("main", &[], &[("src/ok.rs", GAMMA)])]);
+        let dir = tempfile::tempdir().expect("dir");
+        plant_object_of(
+            "cognicode.revision-facts/v2",
+            dir.path(),
+            "src/ok.rs",
+            GAMMA,
+        );
+
+        let produced = produce(&fake, "main", Some(&FactObjectStore::new(dir.path())));
+
+        assert_eq!(
+            produced.coverage.reused_files, 0,
+            "the stale object is a miss"
+        );
+        assert_eq!(produced.coverage.parsed_files, 1);
     }
 
     #[test]

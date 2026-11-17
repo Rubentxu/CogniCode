@@ -20,7 +20,7 @@ mod oracle;
 
 use harness::{
     Certification, EditClass, Fault, PARTS, Projection, certify, corpus_root, evaluate,
-    evaluate_with_fault, scenarios,
+    evaluate_with_fault, materialize, produce, scenarios,
 };
 
 fn certification() -> Certification {
@@ -71,6 +71,44 @@ fn no_malformed_edit_receives_pass() {
     assert!(
         false_passes.is_empty(),
         "malformed edits received Pass: {false_passes:?}"
+    );
+}
+
+/// The extraction reads exactly the definitions the hand-labelled oracle
+/// expects, in every scenario whose edit leaves the file parsable: no
+/// definition is missing and none is invented. A malformed edit is left out
+/// because what a damaged file yields is the grammar's recovery, not a
+/// definition reading.
+#[test]
+fn the_extraction_matches_the_oracle_in_every_well_formed_scenario() {
+    let corpus = corpus_root();
+    let mut mismatches = Vec::new();
+    for scenario in scenarios(&corpus)
+        .into_iter()
+        .filter(|s| s.class != EditClass::Malformed)
+    {
+        let produced = produce(&materialize(
+            &corpus,
+            &scenario,
+            Projection::WithoutHelmTemplates,
+        ));
+        let score = oracle::score(
+            &oracle::expected(&corpus, &scenario),
+            &oracle::observed(&produced.head),
+        );
+        if !score.false_positives.is_empty() || !score.false_negatives.is_empty() {
+            mismatches.push(format!(
+                "{}: invented {:?}, missing {:?}",
+                scenario.name(Projection::WithoutHelmTemplates),
+                score.false_positives,
+                score.false_negatives
+            ));
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "the extraction disagrees with the oracle:\n{}",
+        mismatches.join("\n")
     );
 }
 
