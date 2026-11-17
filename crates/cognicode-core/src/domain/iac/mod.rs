@@ -4,3 +4,4 @@
 //! configuration *means* lives here.
 
 pub mod helm;
+pub mod terraform;

@@ -149,7 +149,7 @@ fn terraform_blocks<'a>(root: Node<'a>, source: &[u8]) -> Vec<Block<'a>> {
 /// `config_file > body > block`. A complete walk would also yield the nested
 /// ones, and `aws_lb_listener` is not a resource apart from its
 /// `default_action`.
-fn top_level_blocks(root: Node) -> Vec<Node> {
+pub(super) fn top_level_blocks(root: Node) -> Vec<Node> {
     let mut cursor = root.walk();
     root.named_children(&mut cursor)
         .flat_map(|body| {
@@ -167,7 +167,7 @@ fn top_level_blocks(root: Node) -> Vec<Node> {
 /// The text of the whole block would also contain the body, and splitting
 /// it on whitespace would then yield `bucket`, `=` and the rest of the
 /// attributes. The header is what names the block; the body is what uses it.
-fn block_header(node: Node, source: &[u8]) -> String {
+pub(super) fn block_header(node: Node, source: &[u8]) -> String {
     let mut header = String::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -292,7 +292,7 @@ fn is_language_built_in(name: &str) -> bool {
 /// `s` names no declaration of the project. A `for` can bind two names —
 /// `[for k, v in var.map : v.key]` binds `k` and `v` — so every name the
 /// expression binds is looked at.
-fn is_bound_by_an_enclosing_for(node: Node, name: &str, source: &[u8]) -> bool {
+pub(super) fn is_bound_by_an_enclosing_for(node: Node, name: &str, source: &[u8]) -> bool {
     let mut current = node.parent();
     while let Some(ancestor) = current {
         if matches!(ancestor.kind(), "for_tuple_expr" | "for_object_expr") {
@@ -358,11 +358,11 @@ fn tf_id(source_path: &str, identity: &str) -> String {
 }
 
 /// The text of a tree node.
-fn node_text(node: Node, source: &[u8]) -> String {
+pub(super) fn node_text(node: Node, source: &[u8]) -> String {
     String::from_utf8_lossy(&source[node.start_byte()..node.end_byte()]).into_owned()
 }
 
-fn line_of(node: Node) -> u32 {
+pub(super) fn line_of(node: Node) -> u32 {
     (node.start_position().row + 1) as u32
 }
 
@@ -387,7 +387,7 @@ fn column_of(node: Node) -> u32 {
 ///
 /// The quotes around HCL literals are removed here, once. Keeping them would
 /// contaminate both the label and the identifier of the node.
-fn hcl_header(label: &str) -> Option<(&str, Vec<String>)> {
+pub(super) fn hcl_header(label: &str) -> Option<(&str, Vec<String>)> {
     let mut parts = label.split_whitespace();
     let keyword = parts.next()?;
     Some((
