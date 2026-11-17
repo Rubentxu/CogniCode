@@ -1,7 +1,19 @@
+# The lane that gets published is the *standalone* one: musl, statically
+# linked.
+#
+# `+crt-static` is what makes the binary depend on nothing from the target:
+# with no libc linked dynamically, the artifact runs on any Linux x86_64
+# whatever glibc the host carries (glibc 2.39 on Ubuntu 24.04, 2.44 on
+# Fedora 42, whatever it happens to be). The opposite sign (`-crt-static`)
+# produces a binary that needs the musl loader installed on the target,
+# which is to say: one that does not run on a normal glibc distribution.
+#
+# The linker is deliberately not pinned here: `cc` is enough (the toolchain
+# ships its own static musl libc), and the C compiler that the crates with C
+# code need is pinned by the build recipe (CC_x86_64_unknown_linux_musl).
+
 [target.x86_64-unknown-linux-musl]
-linker = "clang"
-rustflags = ["-C", "target-feature=-crt-static"]
+rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-unknown-linux-musl]
-linker = "clang"
-rustflags = ["-C", "target-feature=-crt-static"]
+rustflags = ["-C", "target-feature=+crt-static"]

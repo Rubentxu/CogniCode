@@ -15,6 +15,15 @@
 #   partial download       -> never reaches the destination
 #   existing destination   -> replaced only AFTER the new binary verifies
 #
+# Lane selection:
+#   Linux x86_64 installs the STANDALONE lane (musl, statically linked),
+#   because it carries no glibc dependency and therefore runs on any Linux
+#   x86_64 whatever glibc the host has (2.39 on Ubuntu 24.04, 2.44 on
+#   Fedora 42). The native lane (GNU, dynamically linked) is the fallback
+#   for the releases that do not publish the standalone one. Which lane is
+#   installed is decided by the published checksum surface, not by guessing:
+#   the first candidate whose asset appears in SHA256SUMS is the one.
+#
 # Version selection:
 #   default: latest stable GitHub release
 #   COGNICODE_VERSION=v0.96.0  -> pin an exact release
@@ -39,12 +48,17 @@ case "$os" in
 esac
 
 case "$arch" in
-  x86_64|amd64)  rust_target="x86_64-unknown-linux-gnu" ;;
-  aarch64|arm64) rust_target="aarch64-unknown-linux-gnu" ;;
+  # The candidates are tried in order, and the first one the release
+  # publishes is the one installed. On Linux x86_64 the standalone lane
+  # comes first: it is statically linked and carries no glibc dependency,
+  # so it runs on any x86_64 Linux whatever glibc the host has. The native
+  # lane is the fallback for the releases that do not publish it.
+  x86_64|amd64)  rust_target_candidates="x86_64-unknown-linux-musl x86_64-unknown-linux-gnu" ;;
+  aarch64|arm64) rust_target_candidates="aarch64-unknown-linux-gnu" ;;
   *) fail "unsupported architecture '$arch' — supported: x86_64, aarch64" ;;
 esac
 
-log "install.sh: detected $os_name/$rust_target"
+log "install.sh: detected $os_name (candidates: $rust_target_candidates)"
 
 # --- 2. Release resolution (T3: pinned version is honoured exactly) --------
 api="https://api.github.com/repos/$REPO"
@@ -61,26 +75,40 @@ esac
 log "install.sh: installing cogh $tag"
 
 base="${COGNICODE_RELEASE_BASE:-https://github.com/$REPO/releases/download/$tag}"
-asset="cogh-$version-$rust_target.tar.gz"
-asset_url="$base/$asset"
 
-# --- 3. Download to temp (never straight to the destination) ---------------
+# --- 3. Checksum surface (fetched FIRST: it decides the lane) -------------
+# The published SHA256SUMS is the list of what the release actually
+# contains, so it is what decides whether the standalone lane exists for
+# this release. Downloading it before the payload is what makes the lane
+# choice a fact about the release and not a guess about it.
 tmpdir="$(mktemp -d)" || fail "cannot create temp dir"
 trap 'rm -rf "$tmpdir"' EXIT
+sums="$tmpdir/SHA256SUMS"
+
+curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 -o "$sums" "$base/SHA256SUMS" \
+  || fail "cannot download SHA256SUMS from $base — refusing to install without a checksum (fail closed)"
+
+rust_target=""
+for candidate in $rust_target_candidates; do
+  if grep -q " cogh-$version-$candidate\.tar\.gz\$" "$sums"; then
+    rust_target="$candidate"
+    break
+  fi
+done
+[ -n "$rust_target" ] || fail "no published cogh asset for this host in $tag (looked for: $rust_target_candidates)"
+
+asset="cogh-$version-$rust_target.tar.gz"
+asset_url="$base/$asset"
 archive="$tmpdir/$asset"
 
+# --- 4. Download to temp (never straight to the destination) ---------------
 log "install.sh: downloading $asset_url"
 curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "$archive" "$asset_url" || fail "download failed: $asset_url"
 
 # Non-empty archive: a partial download must never proceed.
 [ -s "$archive" ] || fail "downloaded archive is empty (partial download?)"
 
-# --- 4. Checksum verification (fail closed) --------------------------------
-# Fetch SHA256SUMS from the same release; it is the public digest surface.
-sums="$tmpdir/SHA256SUMS"
-curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 -o "$sums" "$base/SHA256SUMS" \
-  || fail "cannot download SHA256SUMS from $base — refusing to install without a checksum (fail closed)"
-
+# --- 5. Checksum verification (fail closed) --------------------------------
 expected="$(grep " $asset\$" "$sums" | awk '{print $1}')"
 [ -n "$expected" ] || fail "no checksum found for $asset in SHA256SUMS (fail closed)"
 
@@ -98,7 +126,7 @@ fi
 
 log "install.sh: checksum verified ($actual)"
 
-# --- 5. Extract + validate the binary in temp ------------------------------
+# --- 6. Extract + validate the binary in temp ------------------------------
 mkdir -p "$tmpdir/extract"
 tar -xzf "$archive" -C "$tmpdir/extract" || fail "cannot extract archive"
 binary="$tmpdir/extract/bin/cogh"
@@ -112,7 +140,7 @@ case "$validated_version" in
   *) fail "downloaded binary failed validation (expected version $version, got: '$validated_version')" ;;
 esac
 
-# --- 6. Atomic-ish install (rename after full verification) ----------------
+# --- 7. Atomic-ish install (rename after full verification) ----------------
 mkdir -p "$DEST"
 target="$DEST/cogh"
 old="$tmpdir/cogh.old"
@@ -127,7 +155,7 @@ fi
 
 log "install.sh: installed cogh $version -> $target"
 
-# --- 7. PATH instructions (never mutate shell rc silently) ------------------
+# --- 8. PATH instructions (never mutate shell rc silently) ------------------
 case ":$PATH:" in
   *":$DEST:"*) ;;
   *)

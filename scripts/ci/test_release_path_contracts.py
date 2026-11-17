@@ -543,24 +543,50 @@ def tier1_platforms() -> list[str]:
     return re.findall(r"Platform::(\w+)", const.group(1))
 
 
-def installer_targets() -> dict[str, str]:
-    """`{alias_de_arquitectura: rust_target}` tal como lo deduce install.sh.
+def installer_targets() -> dict[str, list[str]]:
+    """`{alias_de_arquitectura: [triples candidatos]}` tal como lo deduce install.sh.
 
     Se lee el `case "$arch"` real, no una lista escrita aqui: si alguien anade un
     alias nuevo, el contrato lo ve sin que haya que actualizar ninguna lista.
+
+    La lista esta ordenada por preferencia: el PRIMER candidato es el que se
+    instala cuando la release lo publica, y los siguientes son el respaldo para
+    las releases que no lo publican. El orden es parte del contrato, no un
+    detalle: en Linux x86_64 el standalone lane (musl, enlazado
+    estaticamente) va primero porque corre en cualquier Linux x86_64 sea cual
+    sea la glibc de la maquina.
     """
     text = read(INSTALL_SH)
     block = re.search(r'case\s+"\$arch"\s+in(.*?)\nesac', text, re.DOTALL)
     if block is None:
         raise AssertionError('install.sh ya no tiene un `case "$arch"`; el contrato no lee nada')
-    found: dict[str, str] = {}
+    found: dict[str, list[str]] = {}
     for line in block.group(1).splitlines():
-        match = re.match(r'\s*([\w|]+)\)\s*rust_target="([^"]+)"', line)
+        match = re.match(r'\s*([\w|]+)\)\s*rust_target_candidates="([^"]+)"', line)
         if match:
+            candidates = match.group(2).split()
+            assert candidates, (
+                f"install.sh asigna una lista de candidatos vacia a {match.group(1)}: "
+                "un triple vacio no se puede instalar"
+            )
             for alias in match.group(1).split("|"):
-                found[alias] = match.group(2)
-    assert found, f"install.sh no asigna ningun rust_target en su case de arquitectura:\n{block.group(1)}"
+                found[alias] = candidates
+    assert found, f"install.sh no asigna ningun rust_target_candidates en su case de arquitectura:\n{block.group(1)}"
     return found
+
+
+def installer_preferred_target() -> str:
+    """El triple que install.sh instala en esta maquina cuando la release lo publica.
+
+    Es el primer candidato del alias de la arquitectura de esta maquina.
+    """
+    targets = installer_targets()
+    arch = platform.machine()
+    assert arch in targets, (
+        f"install.sh no deduce ningun triple para la arquitectura de esta maquina "
+        f"({arch!r}); sus alias son {sorted(targets)}"
+    )
+    return targets[arch][0]
 
 
 def installer_supported_os() -> set[str]:
@@ -651,11 +677,99 @@ def test_every_installer_target_is_a_real_platform_token() -> None:
     esa plataforma, sin que la release pueda notarlo: ella solo publica lo suyo.
     """
     tokens = set(platform_tokens().values())
-    for alias, target in sorted(installer_targets().items()):
-        assert target in tokens, (
-            f"install.sh asigna {target!r} al alias {alias!r}, y ese triple no es "
-            f"ningun platform_token de la release. Los que existen: {sorted(tokens)}"
+    for alias, candidates in sorted(installer_targets().items()):
+        for target in candidates:
+            assert target in tokens, (
+                f"install.sh asigna {target!r} al alias {alias!r}, y ese triple no es "
+                f"ningun platform_token de la release. Los que existen: {sorted(tokens)}"
+            )
+
+
+def test_the_installer_prefers_the_standalone_lane() -> None:
+    """El instalador tiene que preferir el lane standalone.
+
+    MEDIDO 2026-11-17: un binario compilado contra glibc 2.44 no corre en una
+    maquina con glibc 2.39 (Ubuntu 24.04), y el remedy era recompilar en la
+    maquina destino. El lane standalone (musl, enlazado estaticamente)
+    resuelve eso, pero solo si el canal que instala ES el que lo instala: un
+    `install.sh` que siguiera pidiendo el triple nativo devolveria a un
+    consumidor el binario que no corre en su maquina, y la release publicaria
+    el standalone lane sin que nadie lo recibiera.
+
+    Este contrato mira el PRIMER candidato, que es el que install.sh instala
+    cuando la release lo publica.
+    """
+    targets = installer_targets()
+    tier1 = {platform_tokens().get(v) for v in tier1_platforms()}
+    for alias, candidates in sorted(targets.items()):
+        if alias not in ("x86_64", "amd64"):
+            continue
+        preferred = candidates[0]
+        assert preferred == "x86_64-unknown-linux-musl", (
+            f"install.sh instala {preferred!r} en Linux x86_64, y el lane standalone "
+            "deberia ir primero: es el que corre en cualquier glibc. Los candidatos "
+            f"declarados son {candidates}"
         )
+        assert preferred in tier1, (
+            f"el lane que install.sh instala ({preferred!r}) no es Tier 1: "
+            f"publicarlo sin que sea el que se instala seria publicar sin entregar. "
+            f"Tier 1 = {sorted(t for t in tier1 if t)}"
+        )
+
+
+def product_platform_matrix() -> dict:
+    """La matriz de plataformas que el producto publica como tal."""
+    path = REPO_ROOT / "product" / "platforms.json"
+    return json.loads(read(path))
+
+
+def test_the_matrix_certifies_every_tier1_platform() -> None:
+    """La cadena entera, de punta a punta, en un solo contrato.
+
+    `install.sh` prefiere el lane standalone; la release tiene que publicarlo;
+    y la release publica las plataformas que `product/platforms.json`
+    certifica (los `support_level: certified` de la matriz). Si la matriz
+    deja de certificar el lane standalone, la release deja de publicarlo, el
+    instalador pide un asset que no existe y el consumidor recibe un 404 —
+    con los dos lados en verde, porque cada uno mira su mitad.
+
+    MEDIDO 2026-11-17: la matriz declaraba el target musl como
+    `experimental`, el generador de release publicaba solo el nativo, y el
+    instalador preferia el standalone. Los tres hechos eran ciertos y juntos
+    no significaban nada.
+    """
+    matrix = product_platform_matrix()
+    certified = {
+        entry["target"]
+        for entry in matrix["platforms"]
+        if entry.get("support_level") == "certified"
+    }
+    for variant in tier1_platforms():
+        token = platform_tokens().get(variant)
+        assert token is not None, f"{variant} esta en TIER1_PLATFORMS y no tiene platform_token"
+        assert token in certified, (
+            f"{variant} es Tier 1 ({token}) pero product/platforms.json no lo certifica: "
+            "la release publica lo que la matriz certifica, asi que ese lane se "
+            f"publicaria sin existir. Certificados: {sorted(certified)}"
+        )
+
+
+def test_the_matrix_declares_no_platform_twice() -> None:
+    """Una plataforma, una entrada.
+
+    MEDIDO 2026-11-17: al certificar el lane standalone, el generador de la
+    matriz lo emitia dos veces —una como plataforma publicada y otra como la
+    entrada `experimental` de reserva—, y la matriz acababa con dos
+    afirmaciones sobre la misma plataforma. El generador lo rechaza ahora, y
+    este contrato lo vigila en el artefacto ya generado.
+    """
+    ids = [entry["id"] for entry in product_platform_matrix()["platforms"]]
+    duplicated = sorted({i for i in ids if ids.count(i) > 1})
+    assert not duplicated, (
+        f"product/platforms.json declara dos veces las mismas plataformas: {duplicated}. "
+        "Una matriz con dos afirmaciones sobre una plataforma es una matriz que "
+        "nadie puede leer"
+    )
 
 
 def test_every_tier1_platform_is_installable() -> None:
@@ -665,7 +779,7 @@ def test_every_tier1_platform_is_installable() -> None:
     `install.sh` no sabe deducir su triple, esa plataforma queda publicada y no
     instalable, y ningun gate lo ve porque cada uno mira un lado.
     """
-    producible = set(installer_targets().values())
+    producible = {t for candidates in installer_targets().values() for t in candidates}
     for variant in tier1_platforms():
         token = platform_tokens().get(variant)
         assert token is not None, f"{variant} esta en TIER1_PLATFORMS y no tiene platform_token"
@@ -807,14 +921,12 @@ INSTALL_VERSION = "0.0.0-contract"
 
 
 def host_triple() -> str:
-    """El triple que install.sh deduciria en ESTA maquina, leido de su `case`."""
-    targets = installer_targets()
-    arch = platform.machine()
-    assert arch in targets, (
-        f"install.sh no deduce ningun triple para la arquitectura de esta maquina "
-        f"({arch!r}); sus alias son {sorted(targets)}"
-    )
-    return targets[arch]
+    """El triple que install.sh deduciria en ESTA maquina, leido de su `case`.
+
+    Es el PRIMER candidato: el que install.sh instala cuando la release lo
+    publica. En Linux x86_64 ese es el lane standalone.
+    """
+    return installer_preferred_target()
 
 
 def _write_tarball(path: Path, entries: dict[str, str]) -> None:
@@ -949,13 +1061,24 @@ def test_a_tampered_asset_is_refused_and_installs_nothing() -> None:
 
 
 def test_a_missing_checksum_entry_is_refused() -> None:
-    """missing checksum -> fail closed: un manifiesto sin nuestra linea no vale."""
+    """missing checksum -> fail closed: un manifiesto sin nuestra linea no vale.
+
+    MEDIDO 2026-11-17: el mensaje cambio cuando install.sh paso a elegir el
+    lane por el SHA256SUMS publicado (el standalone lane va primero y el
+    nativo es el respaldo). Un manifiesto sin nuestra linea ya no llega a la
+    comprobacion de checksum: no hay ningun candidato que instalar, y el
+    rechazo llega antes y con otra frase. Lo que este contrato mide —el
+    rechazo y que el destino no se toque— no cambio; lo que cambio es la
+    razon declarada, y el mensaje nombra ahora la razon de verdad.
+    """
     triple = host_triple()
     with tempfile.TemporaryDirectory() as raw:
         work = Path(raw)
         base = stage_release(work / "release", triple, sums="other-asset-only")
         result, dest = run_installer(work, base)
-        assert_refused(result, "no checksum found", "manifiesto sin nuestra entrada")
+        assert_refused(
+            result, "no published cogh asset", "manifiesto sin nuestra entrada"
+        )
         assert not (dest / "cogh").exists()
 
 

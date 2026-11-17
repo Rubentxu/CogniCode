@@ -10,7 +10,7 @@
 
 [pack]
 id = "cognicode"
-version = "0.100.0"
+version = "0.105.0"
 schema_version = 2
 compatibility = "rust>=1.96.0"
 risk = "medium"

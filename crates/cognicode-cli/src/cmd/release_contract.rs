@@ -68,8 +68,9 @@ const MIN_PLAUSIBLE_DIGEST_VALUE: u128 = 0x1_0000_0000_0000_0000;
 // ---------------------------------------------------------------------------
 
 /// Every platform the contract knows about, in stable order.
-pub const ALL_PLATFORMS: [Platform; 5] = [
+pub const ALL_PLATFORMS: [Platform; 6] = [
     Platform::LinuxX86_64,
+    Platform::LinuxX86_64Musl,
     Platform::LinuxAarch64,
     Platform::MacOsX86_64,
     Platform::MacOsAarch64,
@@ -78,17 +79,20 @@ pub const ALL_PLATFORMS: [Platform; 5] = [
 
 /// Platforms e85 actually publishes. Tier 1 (e84 WU9).
 ///
-/// Restricted to `LinuxX86_64` while `linux-aarch64` remains
-/// `experimental` per `product/platforms.json` and the cross-build
-/// lane (TF-6/TF-7) is not provisioned. Aarch64 returns to Tier 1
-/// once the runner ships; the only change required then is restoring
-/// the second element of this array.
-pub const TIER1_PLATFORMS: [Platform; 1] = [Platform::LinuxX86_64];
+/// Two lanes on Linux x86_64: the native one (`linux-x86-64`) and the
+/// standalone one (`linux-x86-64-musl`), which is statically linked and
+/// therefore runs on any Linux x86_64 whatever glibc the host carries.
+/// `linux-aarch64` remains `experimental` per `product/platforms.json` and
+/// the cross-build lane (TF-6/TF-7) is not provisioned. Aarch64 returns to
+/// Tier 1 once the runner ships; the only change required then is restoring
+/// the third element of this array.
+pub const TIER1_PLATFORMS: [Platform; 2] = [Platform::LinuxX86_64, Platform::LinuxX86_64Musl];
 
 /// The Rust target triple for a platform. Total over all variants.
 pub fn platform_token(platform: Platform) -> &'static str {
     match platform {
         Platform::LinuxX86_64 => "x86_64-unknown-linux-gnu",
+        Platform::LinuxX86_64Musl => "x86_64-unknown-linux-musl",
         Platform::LinuxAarch64 => "aarch64-unknown-linux-gnu",
         Platform::MacOsX86_64 => "x86_64-apple-darwin",
         Platform::MacOsAarch64 => "aarch64-apple-darwin",
@@ -96,7 +100,7 @@ pub fn platform_token(platform: Platform) -> &'static str {
     }
 }
 
-/// Inverse of [`platform_token`]. Total over the five known triples.
+/// Inverse of [`platform_token`]. Total over the six known triples.
 pub fn platform_from_token(token: &str) -> Option<Platform> {
     ALL_PLATFORMS
         .iter()
@@ -110,6 +114,20 @@ pub fn parse_platform(raw: &str) -> Option<Platform> {
         return Some(p);
     }
     ALL_PLATFORMS.iter().copied().find(|p| p.to_string() == raw)
+}
+
+/// The platforms a host may install from, most preferred first.
+///
+/// A Linux x86_64 host runs the standalone build just as well as the native
+/// one: the standalone artifacts are statically linked and carry no glibc
+/// dependency, so they are what a host should install. The native lane stays
+/// in the list as the fallback for a release that does not publish the
+/// standalone one.
+pub fn platform_candidates(host: Platform) -> Vec<Platform> {
+    match host {
+        Platform::LinuxX86_64 => vec![Platform::LinuxX86_64Musl, Platform::LinuxX86_64],
+        other => vec![other],
+    }
 }
 
 // ---------------------------------------------------------------------------

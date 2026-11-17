@@ -34,6 +34,25 @@ SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
 # — a claim about a file. If someone added a macOS target to the release lane,
 # the evidence would have kept saying no lane existed while the lane built one,
 # which is worse than having no evidence at all.
+# How a published platform is described when the derivation is not enough.
+#
+# The name and the evidence of a published lane are derived from its id, which
+# is enough for a lane whose whole claim is "the product builds this target".
+# The standalone lane claims something more: the artifact is statically linked,
+# so it carries no glibc dependency and runs on any Linux x86_64 whatever
+# glibc the host has. A matrix that said only "publishable platform" would
+# hide the one property that makes the lane worth publishing.
+PUBLISHED_PLATFORM_DETAIL: dict[str, dict[str, Any]] = {
+    "linux-x86-64-musl": {
+        "name": "Linux x86_64 standalone (musl)",
+        "evidence": [
+            "Statically linked against musl: the artifact carries no glibc "
+            "dependency and runs on any Linux x86_64",
+            "Published as a Tier-1 lane of the release next to the native one",
+        ],
+    },
+}
+
 DEFERRED_PUBLIC_PLATFORMS = [
     {
         "id": "macos-arm64",
@@ -376,44 +395,55 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
         )
 
     platforms = []
+    published_ids = set()
     for entry in release_platforms(root):
+        published_ids.add(entry.platform)
+        detail = PUBLISHED_PLATFORM_DETAIL.get(entry.platform, {})
         platforms.append(
             {
                 "id": entry.platform,
                 "target": entry.target,
-                "name": entry.platform.replace("-", " ").title(),
+                "name": detail.get("name", entry.platform.replace("-", " ").title()),
                 "support_level": "certified",
                 "evidence": [
-                    f"Native publishable platform in {release_lane.PLATFORMS_MATRIX}",
-                    f"Certified by {release_lane.PLATFORMS_MATRIX} and published unchanged",
+                    "Published by the release lane: the target is built and the "
+                    "artifact is published unchanged",
+                    *detail.get("evidence", []),
                 ],
             }
         )
-    platforms.append(
-        {
-            "id": "linux-x86-64-musl",
-            "target": musl_target(root),
-            "name": "Linux x86_64 musl",
-            "support_level": "experimental",
-            "evidence": [
-                "Smoke build of the musl target",
-                f"No publishable platform in {release_lane.PLATFORMS_MATRIX}",
-            ],
-        }
-    )
-    platforms.append(
-        {
-            "id": "linux-aarch64",
-            "target": linux_aarch64_target(root),
-            "name": "Linux Aarch64",
-            "support_level": "experimental",
-            "evidence": [
-                f"Not published by {release_lane.PLATFORMS_MATRIX} "
-                f"(support_level is not `{release_lane.PUBLISHED_LEVEL}`)",
-                "TF-6/TF-7 track the CI runner provisioning and the cross toolchain",
-            ],
-        }
-    )
+    # The fallback entries describe platforms the product knows about but does
+    # not publish. A platform that the release lane publishes already has an
+    # entry — the certified one above — so appending the fallback too would
+    # declare the same id twice, and a matrix with two claims about one
+    # platform is a matrix nobody can read.
+    if "linux-x86-64-musl" not in published_ids:
+        platforms.append(
+            {
+                "id": "linux-x86-64-musl",
+                "target": musl_target(root),
+                "name": "Linux x86_64 musl",
+                "support_level": "experimental",
+                "evidence": [
+                    "Smoke build of the musl target",
+                    f"No publishable platform in {release_lane.PLATFORMS_MATRIX}",
+                ],
+            }
+        )
+    if "linux-aarch64" not in published_ids:
+        platforms.append(
+            {
+                "id": "linux-aarch64",
+                "target": linux_aarch64_target(root),
+                "name": "Linux Aarch64",
+                "support_level": "experimental",
+                "evidence": [
+                    f"Not published by {release_lane.PLATFORMS_MATRIX} "
+                    f"(support_level is not `{release_lane.PUBLISHED_LEVEL}`)",
+                    "TF-6/TF-7 track the CI runner provisioning and the cross toolchain",
+                ],
+            }
+        )
     for entry in DEFERRED_PUBLIC_PLATFORMS:
         platforms.append(
             {

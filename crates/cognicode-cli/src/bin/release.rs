@@ -151,8 +151,9 @@ fn resolve_platforms(raw: &[String]) -> anyhow::Result<Vec<Platform>> {
         .map(|r| {
             parse_platform(r).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "unknown platform `{r}`; expected one of linux-x86-64, linux-aarch64, \
-                     mac-os-x86-64, mac-os-aarch64, windows-x86-64, or a Rust triple"
+                    "unknown platform `{r}`; expected one of linux-x86-64, \
+                     linux-x86-64-musl, linux-aarch64, mac-os-x86-64, \
+                     mac-os-aarch64, windows-x86-64, or a Rust triple"
                 )
             })
         })

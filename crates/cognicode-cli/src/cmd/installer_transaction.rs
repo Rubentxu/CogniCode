@@ -646,7 +646,21 @@ impl InstallerTransaction {
              Remote resolution of version+platform is not implemented until e86.",
             home_manifest.display()
         );
-        Ok(include_str!("dev-bundle.yaml").to_string())
+        // The DEV-ONLY fixture declares the native lane. On the standalone
+        // lane the host IS the standalone one, and the fixture exists to work
+        // offline: rewrite the declared platform instead of refusing an
+        // install that would otherwise be fine. On the native lane the
+        // rewrite is a no-op.
+        //
+        // The replacement is anchored to the whole line so it cannot hit a
+        // longer platform name: `platform: linux-x86-64` is a prefix of
+        // `platform: linux-x86-64-musl`, and a plain substring replacement
+        // would turn that one into `platform: linux-x86-64-musl-musl`.
+        let host = crate::platform_adapter::detect_host_platform();
+        Ok(include_str!("dev-bundle.yaml").replace(
+            "\nplatform: linux-x86-64\n",
+            &format!("\nplatform: {host}\n"),
+        ))
     }
 
     /// Advance the transaction to the next stage.
@@ -1172,6 +1186,7 @@ components:
         // Then, force a mismatch by picking a different triple.
         let wrong_host = match host {
             Platform::LinuxX86_64 => Platform::WindowsX86_64,
+            Platform::LinuxX86_64Musl => Platform::WindowsX86_64,
             Platform::LinuxAarch64 => Platform::MacOsX86_64,
             Platform::MacOsX86_64 => Platform::LinuxX86_64,
             Platform::MacOsAarch64 => Platform::LinuxAarch64,
