@@ -33,12 +33,14 @@ mod error;
 pub mod fake;
 mod identity;
 mod inventory;
+mod overlay;
 pub mod ports;
 
 pub use changeset::{Change, ChangeKind, ChangeSet};
 pub use error::ScmError;
 pub use identity::{ContentDigest, PathKey, ProviderId, RevisionHandle, SourceRef, SourceRevision};
 pub use inventory::{InventoryEntry, SourceInventory};
+pub use overlay::{Edit, OverlayReader};
 pub use ports::{BlobRead, ChangeReader, ProviderCapabilities, RevisionReader, WorkingCopyReader};
 
 #[cfg(test)]
