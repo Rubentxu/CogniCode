@@ -1,15 +1,17 @@
-//! Read-only comparison of two ancestor Git revisions.
+//! Comparison of two ancestor Git revisions. It never touches the working
+//! tree; when a cache is named it records the revision snapshots and the
+//! detector read-set of the base revision there.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::application::change_tracking::detector_runs::ensure_run_in_cache;
 use crate::application::change_tracking::planner::WorkDisposition;
 use crate::application::change_tracking::revision_facts::{
     FactObjectStore, FactsLimits, ProducedRevision, assess_impact, assess_reuse,
     produce_revision_facts, producer_versions,
 };
-use crate::application::graph_cache::{cache_dir, workspace_key};
 use crate::application::revision_snapshots::RevisionSnapshotStore;
 use crate::application::services::detector_reuse_store::DetectorReuseStore;
 use crate::domain::scm::{
@@ -200,7 +202,8 @@ pub struct GoalCompare {
     pub revision_facts: Option<CompareRevisionFacts>,
     /// The fact delta, when facts exist for both revisions.
     pub impact: Option<CompareImpact>,
-    /// The reuse verdicts, when prior read-sets exist for the base.
+    /// The reuse verdicts, from the read-set the production detector run
+    /// wrote for the base revision.
     pub work_reuse: Option<CompareWorkReuse>,
 }
 
@@ -335,14 +338,16 @@ fn semantics(
             return answer;
         }
     };
-    let index = cache_root.and_then(|root| {
-        DetectorReuseStore::new(
-            cache_dir(root)
-                .join("detector-reuse")
-                .join(workspace_key(workspace)),
-        )
-        .load()
+    // The base is the revision whose read-set a later comparison consumes;
+    // writing it here is what turns `not_evaluated` into a real verdict. A
+    // failed write only leaves the answer `not_evaluated`.
+    let writer_note = cache_root.and_then(|root| {
+        ensure_run_in_cache(root, workspace, &base)
+            .err()
+            .map(|error| error.to_string())
     });
+    let index =
+        cache_root.and_then(|root| DetectorReuseStore::for_workspace(root, workspace).load());
     let reuse = assess_reuse(&base, &candidate, change_set, index.as_ref());
     let (work_reuse_status, work_reuse_reason, work_reuse) = match reuse {
         Ok(reuse) => {
@@ -359,7 +364,14 @@ fn semantics(
                 unaffected: reuse.count(WorkDisposition::Unaffected),
                 unknown: reuse.count(WorkDisposition::Unknown),
             });
-            (reuse.status.as_str().to_string(), reuse.reason, verdicts)
+            let reason = match &writer_note {
+                Some(note) => format!(
+                    "{}; the read-set could not be written: {note}",
+                    reuse.reason
+                ),
+                None => reuse.reason,
+            };
+            (reuse.status.as_str().to_string(), reason, verdicts)
         }
         Err(error) => (
             "not_evaluated".to_string(),
@@ -649,6 +661,59 @@ mod tests {
             &["config", "user.email", "tests@example.invalid"],
         );
         directory
+    }
+
+    #[test]
+    fn a_body_edit_leaves_the_detector_unaffected_so_its_work_is_reusable() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() { first(); }\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { second(); }\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        assert_eq!(
+            answer.work_reuse_status, "evaluated",
+            "{}",
+            answer.work_reuse_reason
+        );
+        let reuse = answer.work_reuse.expect("a verdict per detector");
+        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 1, 0));
+        assert_eq!(reuse.works[0].disposition, "unaffected");
+    }
+
+    #[test]
+    fn a_new_definition_cannot_be_proven_unread_so_the_detector_must_run_again() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() {}\n", "base");
+        commit_file(root, "b.rs", "pub fn beta() {}\n", "head");
+
+        let answer = compare_with(root, Some(cache.path()), &base, "HEAD").expect("compare");
+
+        assert_eq!(answer.work_reuse_status, "partial");
+        let reuse = answer.work_reuse.expect("a verdict per detector");
+        assert_eq!(
+            (reuse.unaffected, reuse.unknown),
+            (0, 1),
+            "an aggregate read over all functions cannot prove the new one unread"
+        );
+    }
+
+    #[test]
+    fn without_a_cache_there_is_no_read_set_and_the_answer_says_so() {
+        let directory = repository();
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "pub fn alpha() {}\n", "base");
+        commit_file(root, "a.rs", "pub fn alpha() { x(); }\n", "head");
+
+        let answer = compare(root, &base, "HEAD").expect("compare");
+
+        assert_eq!(answer.work_reuse_status, "not_evaluated");
+        assert!(answer.work_reuse_reason.contains("read-set"));
+        assert!(answer.work_reuse.is_none());
     }
 
     #[test]

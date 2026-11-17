@@ -96,17 +96,18 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     assert_eq!(answer["coverage"]["changed_paths"], 1);
     assert_eq!(answer["changes"][0]["path"], "src.rs");
     assert_eq!(answer["changes"][0]["kind"], "modified");
-    // The impact is computed from produced revision facts; what could not be
-    // evaluated (reuse, with no stored read-sets) is said, with its reason.
+    // The impact is computed from produced revision facts. The server names a
+    // cache, so the detector run over the base revision wrote its read-set
+    // and reuse is a real verdict: the function the detector read was
+    // renamed, so that work is affected and must run again.
     assert_eq!(answer["impact_status"], "evaluated");
-    assert_eq!(answer["work_reuse_status"], "not_evaluated");
-    assert!(
-        !answer["work_reuse_reason"]
-            .as_str()
-            .unwrap_or_default()
-            .is_empty(),
-        "an unevaluated reuse says why: {answer}"
+    assert_eq!(
+        answer["work_reuse_status"], "evaluated",
+        "{}",
+        answer["work_reuse_reason"]
     );
+    assert_eq!(answer["work_reuse"]["affected"], 1);
+    assert_eq!(answer["work_reuse"]["unaffected"], 0);
 }
 
 #[tokio::test]
