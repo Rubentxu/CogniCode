@@ -635,3 +635,187 @@ fn a_batch_that_fails_midway_leaves_no_git_process_behind() {
         );
     }
 }
+
+// ----- one ls-tree per revision, however many files are read ----------
+
+/// A git stand-in that appends the subcommand of every invocation to a
+/// log, then defers to the real binary. The adapter always calls
+/// `git -C <repo> <subcommand> ...`, so the subcommand is `$3`.
+#[cfg(unix)]
+fn counting_git(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let log = dir.join("calls.log");
+    let program = dir.join("counting-git");
+    let script = format!(
+        "#!/bin/sh\necho \"$3\" >> '{log}'\nexec /usr/bin/git \"$@\"\n",
+        log = log.display(),
+    );
+    fs::write(&program, script).expect("write the git stand-in");
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).expect("make it executable");
+    (program, log)
+}
+
+#[cfg(unix)]
+fn calls_of(log: &Path, subcommand: &str) -> usize {
+    fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| *line == subcommand)
+        .count()
+}
+
+/// A repo of `count` small Rust files, committed once.
+#[cfg(unix)]
+fn repo_of_rust_files(count: usize) -> TempDir {
+    let repo = init_repo();
+    for index in 0..count {
+        fs::write(
+            repo.path().join(format!("f{index:04}.rs")),
+            format!("pub fn f{index}() {{}}\n"),
+        )
+        .expect("write a source file");
+    }
+    commit_all(repo.path(), "many files");
+    repo
+}
+
+#[cfg(unix)]
+#[test]
+fn reading_many_chunks_of_one_revision_lists_the_tree_once() {
+    let repo = repo_of_rust_files(600);
+    let tools = tempfile::tempdir().expect("tools dir");
+    let (program, log) = counting_git(tools.path());
+    let adapter = GitScmAdapter::with_git_program(repo.path(), program.to_str().expect("utf-8"));
+    let head = adapter.resolve(&source(), "HEAD").expect("HEAD");
+    let paths: Vec<PathKey> = (0..600).map(|i| key(&format!("f{i:04}.rs"))).collect();
+
+    let answers: Vec<_> = paths
+        .chunks(256)
+        .flat_map(|chunk| adapter.contents(&head, chunk, 1_000))
+        .collect();
+
+    assert_eq!(answers.len(), 600);
+    assert!(
+        answers
+            .iter()
+            .all(|answer| matches!(answer, Ok(BlobRead::Bytes(_)))),
+        "every blob is read"
+    );
+    assert_eq!(
+        calls_of(&log, "ls-tree"),
+        1,
+        "resolve plus three 256-path chunks must share one tree listing"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn producing_the_facts_of_a_revision_lists_the_tree_once() {
+    use cognicode_core::application::change_tracking::revision_facts::{
+        FactsLimits, produce_revision_facts,
+    };
+    let repo = repo_of_rust_files(600);
+    let tools = tempfile::tempdir().expect("tools dir");
+    let (program, log) = counting_git(tools.path());
+    let adapter = GitScmAdapter::with_git_program(repo.path(), program.to_str().expect("utf-8"));
+    let head = adapter.resolve(&source(), "HEAD").expect("HEAD");
+
+    let produced = produce_revision_facts(&adapter, &head, None, &FactsLimits::default())
+        .expect("facts of the revision");
+
+    assert_eq!(produced.coverage.parsed_files, 600, "every file is parsed");
+    assert_eq!(
+        calls_of(&log, "ls-tree"),
+        1,
+        "one listing for the whole read"
+    );
+}
+
+// ----- the listing is cached per immutable revision, nothing more ------
+
+#[test]
+fn alternating_revisions_each_read_their_own_tree() {
+    let (repo, first) = repo_with_baseline();
+    fs::write(repo.path().join("a.txt"), "v2\n").unwrap();
+    fs::write(repo.path().join("c.txt"), "new\n").unwrap();
+    let second = commit_all(repo.path(), "second");
+    let adapter = GitScmAdapter::new(repo.path());
+    let old = adapter.resolve(&source(), &first).expect("first");
+    let new = adapter.resolve(&source(), &second).expect("second");
+    let paths = [key("a.txt"), key("c.txt")];
+
+    let read = |revision| adapter.contents(revision, &paths, 1_000);
+    let bytes = |text: &str| Ok(BlobRead::Bytes(text.as_bytes().to_vec()));
+
+    for _ in 0..2 {
+        assert_eq!(
+            read(&old),
+            vec![
+                bytes("v1\n"),
+                Err(ScmError::ContentUnavailable {
+                    path: "c.txt".to_string()
+                })
+            ],
+            "the first revision never sees the second one's rows"
+        );
+        assert_eq!(read(&new), vec![bytes("v2\n"), bytes("new\n")]);
+    }
+}
+
+#[test]
+fn adapters_of_different_repositories_never_share_rows() {
+    let (left, _) = repo_with_baseline();
+    let right = init_repo();
+    fs::write(right.path().join("a.txt"), "other\n").unwrap();
+    commit_all(right.path(), "other repo");
+    let left_adapter = GitScmAdapter::new(left.path());
+    let right_adapter = GitScmAdapter::new(right.path());
+    let left_head = left_adapter.resolve(&source(), "HEAD").expect("left");
+    let right_head = right_adapter.resolve(&source(), "HEAD").expect("right");
+    let paths = [key("a.txt"), key("b.txt")];
+
+    let from_left = left_adapter.contents(&left_head, &paths, 1_000);
+    let from_right = right_adapter.contents(&right_head, &paths, 1_000);
+    let asking_right_for_left = right_adapter.contents(&left_head, &paths, 1_000);
+
+    assert_eq!(from_left[0], Ok(BlobRead::Bytes(b"v1\n".to_vec())));
+    assert_eq!(from_right[0], Ok(BlobRead::Bytes(b"other\n".to_vec())));
+    assert!(
+        matches!(from_right[1], Err(ScmError::ContentUnavailable { .. })),
+        "the other repository has no b.txt: {:?}",
+        from_right[1]
+    );
+    assert!(
+        asking_right_for_left
+            .iter()
+            .all(|answer| matches!(answer, Err(ScmError::ContentUnavailable { .. }))),
+        "a revision unknown to this repository is a named absence, not another repository's rows: {asking_right_for_left:?}"
+    );
+}
+
+#[test]
+fn a_movable_handle_is_listed_again_after_the_repository_changes() {
+    let (repo, _sha) = repo_with_baseline();
+    let adapter = GitScmAdapter::new(repo.path());
+    let head = adapter.resolve(&source(), "HEAD").expect("HEAD");
+    // A handle naming a moving reference, not an immutable object id.
+    let moving = cognicode_core::domain::scm::SourceRevision::new(
+        source(),
+        cognicode_core::domain::scm::RevisionHandle::new("HEAD").expect("handle"),
+        head.content().clone(),
+    );
+    let paths = [key("a.txt")];
+    assert_eq!(
+        adapter.contents(&moving, &paths, 1_000),
+        vec![Ok(BlobRead::Bytes(b"v1\n".to_vec()))]
+    );
+
+    fs::write(repo.path().join("a.txt"), "v2\n").unwrap();
+    commit_all(repo.path(), "move HEAD");
+
+    assert_eq!(
+        adapter.contents(&moving, &paths, 1_000),
+        vec![Ok(BlobRead::Bytes(b"v2\n".to_vec()))],
+        "rows of a movable reference must not be served from a stale listing"
+    );
+}
