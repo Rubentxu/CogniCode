@@ -10,6 +10,54 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+/// Query keys that carry a credential in a module source (`?token=..`,
+/// `?aws_access_key_secret=..`).
+const SECRET_QUERY_KEYS: &[&str] = &[
+    "token", "key", "secret", "pass", "pwd", "sig", "auth", "cred",
+];
+
+/// A module `source` that is safe to show: the userinfo of a URL
+/// (`user:password@`) is dropped and the value of a query parameter whose
+/// name looks like a credential is replaced. Everything else, the host and
+/// the path included, is kept so the source is still recognisable. A source
+/// with nothing to hide comes back as written, and redacting twice changes
+/// nothing more.
+pub fn redact_source(source: &str) -> String {
+    let (location, query) = match source.split_once('?') {
+        Some((location, query)) => (location, Some(query)),
+        None => (source, None),
+    };
+    let mut out = match location.find("://").map(|at| at + "://".len()) {
+        Some(start) => {
+            let end = location[start..]
+                .find('/')
+                .map_or(location.len(), |slash| start + slash);
+            let host = location[start..end]
+                .rsplit_once('@')
+                .map_or(&location[start..end], |(_, host)| host);
+            format!("{}{host}{}", &location[..start], &location[end..])
+        }
+        None => location.to_string(),
+    };
+    if let Some(query) = query {
+        let params: Vec<String> = query
+            .split('&')
+            .map(|param| match param.split_once('=') {
+                Some((key, _)) if is_secret_key(key) => format!("{key}=REDACTED"),
+                _ => param.to_string(),
+            })
+            .collect();
+        out.push('?');
+        out.push_str(&params.join("&"));
+    }
+    out
+}
+
+fn is_secret_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    SECRET_QUERY_KEYS.iter().any(|secret| key.contains(secret))
+}
+
 /// Why a value cannot be known without running Terraform or supplying input.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UnknownCause {
@@ -53,7 +101,7 @@ pub enum UnknownCause {
     UnresolvedModule {
         /// Address of the module call.
         address: String,
-        /// The `source` text as written.
+        /// The `source` text; credentials are removed when it is shown.
         source: String,
     },
     /// A reference to something the configuration does not declare.
@@ -115,7 +163,11 @@ impl fmt::Display for UnknownCause {
             Self::Splat => write!(f, "splat expressions are not evaluated"),
             Self::RuntimeBinding { name } => write!(f, "`{name}` is bound at run time"),
             Self::UnresolvedModule { address, source } => {
-                write!(f, "module `{address}` (source `{source}`) is not available")
+                write!(
+                    f,
+                    "module `{address}` (source `{}`) is not available",
+                    redact_source(source)
+                )
             }
             Self::UndeclaredReference { reference } => {
                 write!(f, "`{reference}` is not declared in the configuration")

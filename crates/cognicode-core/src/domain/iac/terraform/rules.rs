@@ -655,13 +655,9 @@ fn document_outcome(document: &TfValue) -> Outcome {
                     causes: causes.clone(),
                 };
             }
-            _ => return Outcome::Satisfied,
+            _ => return unreadable_document(),
         },
-        _ => {
-            return Outcome::Unverified {
-                causes: BTreeSet::from([UnknownCause::UnsupportedExpression]),
-            };
-        }
+        _ => return unreadable_document(),
     };
     let verdict = statements.into_iter().fold(Tri::No, |acc, statement| {
         acc.or(statement_is_admin(statement))
@@ -669,12 +665,20 @@ fn document_outcome(document: &TfValue) -> Outcome {
     verdict.outcome(|| "a statement allows every action on every resource".to_string())
 }
 
+/// A document whose shape the rule does not read says nothing about admin
+/// access, so it is neither a violation nor clean.
+fn unreadable_document() -> Outcome {
+    Outcome::Unverified {
+        causes: BTreeSet::from([UnknownCause::UnsupportedExpression]),
+    }
+}
+
 fn statement_is_admin(statement: &TfValue) -> Tri {
     let TfValue::Object(map) = statement else {
-        return match statement {
-            TfValue::Unknown(causes) => Tri::Maybe(causes.clone()),
-            _ => Tri::No,
-        };
+        return Tri::Maybe(match statement {
+            TfValue::Unknown(causes) => causes.clone(),
+            _ => BTreeSet::from([UnknownCause::UnsupportedExpression]),
+        });
     };
     let allow = any_string(map.get("Effect"), &|s| s == "Allow");
     let star = |key: &str| any_string(map.get(key), &|s| s == "*");
@@ -1042,6 +1046,40 @@ mod tests {
         assert!(
             is_unverified(&opaque[0].outcome),
             "a file() policy is not read, so it is not clean"
+        );
+    }
+
+    #[test]
+    fn a_policy_document_without_a_readable_statement_is_never_satisfied() {
+        let policy = |json: &str| {
+            results(
+                "aws_iam_policy",
+                vec![attr("policy", s(json))],
+                vec![],
+                &Bindings::none(),
+            )
+        };
+        for json in [
+            r#"{"Version":"2012-10-17"}"#,
+            r#"{"Statement":"Allow"}"#,
+            r#"{"Statement":42}"#,
+            r#"{"Statement":null}"#,
+            r#"{"Statement":["Allow"]}"#,
+            r#"{"Statement":[{"Effect":"Deny"},7]}"#,
+        ] {
+            let found = policy(json);
+            assert!(
+                is_unverified(&found[0].outcome),
+                "{json} has no statement the rule can read, so it is not clean: {:?}",
+                found[0].outcome
+            );
+        }
+        assert_eq!(
+            outcomes(&policy(
+                r#"{"Statement":[{"Effect":"Allow","Action":"s3:Get*","Resource":"*"}]}"#
+            )),
+            vec![&Outcome::Satisfied],
+            "a readable statement that is not admin stays satisfied"
         );
     }
 

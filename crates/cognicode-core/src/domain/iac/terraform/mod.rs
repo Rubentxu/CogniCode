@@ -17,10 +17,10 @@ pub use analysis::{Coverage, Explanation, RebindReport, TfAnalysis};
 pub use eval::{Bindings, Evaluation, constant};
 pub use graph::{FlowEdge, Node, NodeAddr, NodeKind, ResourceInstance, TfGraph, UnresolvedModule};
 pub use ir::{
-    Reference, ResourceMode, Step, TfAttribute, TfBlock, TfBody, TfExpr, TfLocal, TfModule,
-    TfModuleCall, TfOutput, TfProject, TfProvider, TfResource, TfVariable, UnreadSource,
+    Reference, ResourceMode, Step, TfAttribute, TfBlock, TfBody, TfDuplicate, TfExpr, TfLocal,
+    TfModule, TfModuleCall, TfOutput, TfProject, TfProvider, TfResource, TfVariable, UnreadSource,
     resolve_local_source,
 };
 pub use observe::{observed_units, structural_family};
 pub use rules::{CheckResult, MODELED_TYPES, Outcome, RiskFamily, assess, is_absent, is_modeled};
-pub use value::{TfValue, UnknownCause};
+pub use value::{TfValue, UnknownCause, redact_source};

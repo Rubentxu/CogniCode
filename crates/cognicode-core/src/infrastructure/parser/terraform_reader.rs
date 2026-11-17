@@ -19,6 +19,35 @@ use crate::domain::iac::terraform::{
 /// Module-call arguments that configure the call and are not inputs.
 const MODULE_META_ARGUMENTS: &[&str] = &["source", "version", "providers", "depends_on"];
 
+/// The deepest node nesting the reader follows. The reader recurses over the
+/// tree, so a hostile file nested far beyond anything written by hand would
+/// exhaust the stack; such a file is refused instead.
+const MAX_NODE_DEPTH: usize = 512;
+
+/// Refuses a tree nested deeper than [`MAX_NODE_DEPTH`]. The walk is iterative
+/// so the check itself cannot overflow.
+fn check_depth(file: &str, tree: &Tree) -> Result<(), String> {
+    let mut cursor = tree.walk();
+    let mut depth = 0usize;
+    loop {
+        if depth > MAX_NODE_DEPTH {
+            return Err(format!(
+                "{file} is nested more than {MAX_NODE_DEPTH} levels deep"
+            ));
+        }
+        if cursor.goto_first_child() {
+            depth += 1;
+            continue;
+        }
+        while !cursor.goto_next_sibling() {
+            if !cursor.goto_parent() {
+                return Ok(());
+            }
+            depth -= 1;
+        }
+    }
+}
+
 /// Reads the declarations of one file. `file` is the path the nodes will
 /// report. A file with syntax errors is refused whole, like the generic pass
 /// refuses it: half a file is not a configuration anyone can rely on.
@@ -26,6 +55,7 @@ pub fn read_terraform_file(file: &str, source: &str, tree: &Tree) -> Result<TfMo
     if tree.root_node().has_error() {
         return Err(format!("Syntax errors in {file}"));
     }
+    check_depth(file, tree)?;
     let src = source.as_bytes();
     let mut module = TfModule::default();
     for block in top_level_blocks(tree.root_node()) {
@@ -51,47 +81,38 @@ pub fn read_terraform_file(file: &str, source: &str, tree: &Tree) -> Result<TfMo
                     file,
                     line,
                 };
-                module.resources.insert(resource.address(), resource);
+                module.declare_resource(resource);
             }
             ("variable", [name, ..]) => {
                 let default = body.attribute("default").map(|a| a.expr.clone());
                 let sensitive = is_true(body.attribute("sensitive"));
-                module.variables.insert(
-                    name.clone(),
-                    TfVariable {
-                        name: name.clone(),
-                        default,
-                        sensitive,
-                        file,
-                        line,
-                    },
-                );
+                module.declare_variable(TfVariable {
+                    name: name.clone(),
+                    default,
+                    sensitive,
+                    file,
+                    line,
+                });
             }
             ("output", [name, ..]) => {
                 let value = body.attribute("value").map(|a| a.expr.clone());
                 let sensitive = is_true(body.attribute("sensitive"));
-                module.outputs.insert(
-                    name.clone(),
-                    TfOutput {
-                        name: name.clone(),
-                        value,
-                        sensitive,
-                        file,
-                        line,
-                    },
-                );
+                module.declare_output(TfOutput {
+                    name: name.clone(),
+                    value,
+                    sensitive,
+                    file,
+                    line,
+                });
             }
             ("locals", _) => {
                 for attribute in body.attributes {
-                    module.locals.insert(
-                        attribute.name.clone(),
-                        TfLocal {
-                            name: attribute.name,
-                            expr: attribute.expr,
-                            file: file.clone(),
-                            line: attribute.line,
-                        },
-                    );
+                    module.declare_local(TfLocal {
+                        name: attribute.name,
+                        expr: attribute.expr,
+                        file: file.clone(),
+                        line: attribute.line,
+                    });
                 }
             }
             ("module", [name, ..]) => {
@@ -104,16 +125,13 @@ pub fn read_terraform_file(file: &str, source: &str, tree: &Tree) -> Result<TfMo
                     .into_iter()
                     .filter(|a| !MODULE_META_ARGUMENTS.contains(&a.name.as_str()))
                     .collect();
-                module.calls.insert(
-                    name.clone(),
-                    TfModuleCall {
-                        name: name.clone(),
-                        source: source_text,
-                        args,
-                        file,
-                        line,
-                    },
-                );
+                module.declare_call(TfModuleCall {
+                    name: name.clone(),
+                    source: source_text,
+                    args,
+                    file,
+                    line,
+                });
             }
             ("provider", [name, ..]) => module.providers.push(TfProvider {
                 name: name.clone(),
@@ -132,6 +150,7 @@ pub fn read_tfvars(file: &str, source: &str, tree: &Tree) -> Result<Vec<TfAttrib
     if tree.root_node().has_error() {
         return Err(format!("Syntax errors in {file}"));
     }
+    check_depth(file, tree)?;
     let mut out = Vec::new();
     for body in children_of(tree.root_node()) {
         for item in children_of(body) {
@@ -1022,5 +1041,36 @@ resource "aws_s3_bucket" "b" {}
         let attributes = read_tfvars("terraform.tfvars", source, &tree).unwrap();
         let names: Vec<&str> = attributes.iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, ["region", "ports"]);
+    }
+
+    fn read_text(source: &str) -> Result<TfModule, String> {
+        let tree = super::super::tree::build_tree(&tree_sitter_hcl::LANGUAGE.into(), source)
+            .expect("parses");
+        read_terraform_file("deep.tf", source, &tree)
+    }
+
+    #[test]
+    fn nesting_beyond_the_cap_is_a_read_error_and_ordinary_nesting_is_read() {
+        let nested = |depth: usize| {
+            format!(
+                "resource \"r\" \"x\" {{ a = {}1{} }}\n",
+                "[".repeat(depth),
+                "]".repeat(depth)
+            )
+        };
+        let refused = read_text(&nested(100_000)).expect_err("hostile nesting is refused");
+        assert!(refused.contains("nest"), "{refused}");
+        let calls = format!(
+            "resource \"r\" \"x\" {{ a = {}1{} }}\n",
+            "f(".repeat(100_000),
+            ")".repeat(100_000)
+        );
+        assert!(read_text(&calls).is_err());
+        let blocks = format!("{}{}", "b {\n".repeat(100_000), "}\n".repeat(100_000));
+        assert!(read_text(&blocks).is_err());
+        assert!(
+            read_text(&nested(40)).is_ok(),
+            "human-written nesting is not affected"
+        );
     }
 }
