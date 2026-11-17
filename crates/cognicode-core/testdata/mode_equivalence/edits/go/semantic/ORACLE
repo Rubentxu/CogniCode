@@ -1,0 +1,3 @@
+-go/greeter.go|Shout|function
++go/greeter.go|Yell|function
++go/greeter.go|Count|function
