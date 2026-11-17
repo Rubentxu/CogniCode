@@ -16,3 +16,6 @@ pub use git_history::{file_mtime, get_file_mtime, git_log_mtime};
 #[cfg(feature = "evidence-kernel")]
 pub use rename_evidence::GitRenameEvidenceAdapter;
 pub use scm_adapter::GitScmAdapter;
+
+#[cfg(test)]
+mod scm_conformance_tests;

@@ -26,7 +26,11 @@
 //! of invented data.
 
 mod changeset;
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
 mod error;
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake;
 mod identity;
 mod inventory;
 pub mod ports;
@@ -36,3 +40,6 @@ pub use error::ScmError;
 pub use identity::{ContentDigest, PathKey, ProviderId, RevisionHandle, SourceRef, SourceRevision};
 pub use inventory::{InventoryEntry, SourceInventory};
 pub use ports::{ChangeReader, ProviderCapabilities, RevisionReader, WorkingCopyReader};
+
+#[cfg(test)]
+mod conformance_tests;

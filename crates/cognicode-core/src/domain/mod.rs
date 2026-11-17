@@ -23,6 +23,9 @@ pub mod behaviors;
 // Pure domain (no I/O, no clocks). Ungated: budgets are declarative ceilings
 // and the refusal path never reaches the canonical store.
 pub mod budgets;
+/// Shared vocabulary of the port conformance suites.
+#[cfg(any(test, feature = "test-support"))]
+pub mod conformance;
 pub mod execution;
 pub mod findings;
 // M7 (Living Software Intelligence) — the causal Intelligence Event Log.
