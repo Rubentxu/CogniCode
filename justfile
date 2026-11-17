@@ -203,6 +203,13 @@ mutants:
     @echo "🧬 Running mutants..."
     bash scripts/test-gate.sh --mutants
 
+# The faithful-render lane: the Helm tests against the real `helm template`
+# engine, with the helm pinned in .tool-versions and COGNICODE_REQUIRE_HELM=1,
+# so a missing binary fails the lane instead of skipping it.
+helm-lane:
+    @echo "Running the Helm faithful-render lane..."
+    bash scripts/ci/helm-lane.sh
+
 # One command per SDK release. `just sdk-release 0.103.0` bumps the version,
 # rehearses, and opens the PR; after merging it, `just sdk-release --publish`
 # publishes, verifies and tags.
