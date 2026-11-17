@@ -17,7 +17,7 @@ use crate::application::fact_bridge::lsp_facts;
 use crate::application::fact_bridge::tree_sitter_facts;
 use crate::application::ingest::types::ExtractionResult;
 use crate::domain::evidence_kernel::fact::{Fact, FactValue, ProducerKind, ProvenanceRecord};
-use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
+use crate::domain::evidence_kernel::ids::{EntityId, FactId, SnapshotId};
 use crate::domain::evidence_kernel::relation::RelationKind;
 use crate::domain::traits::code_intelligence::{PrecisionTier, TieredCodeIntelligenceProvider};
 use crate::domain::value_objects::Provenance;
@@ -226,6 +226,49 @@ impl FactBatchBuilder {
     /// detail untouched. Exhausted-query records taken with
     /// [`FactBatchBuilder::take_unresolved`] are NOT part of the fact set.
     pub fn finish(self) -> Vec<Fact> {
+        self.finish_with(|table, subject| {
+            table
+                .get(subject)
+                .expect("every record subject was registered in the table")
+        })
+    }
+
+    /// Canonicalizes like [`Self::finish`] but names every subject by an
+    /// id derived from its own text ([`stable_entity_id`]) instead of by
+    /// its position in the batch.
+    ///
+    /// Positional ids are only meaningful inside one snapshot: the same
+    /// symbol takes a different id once another symbol appears before it,
+    /// and two unrelated symbols of two snapshots can share one. A diff
+    /// between snapshots keys facts by `(subject, predicate, object)`, so
+    /// positional ids can pair a removal with an unrelated addition and
+    /// hide it. Stable ids make the key mean the same thing in every
+    /// snapshot. Fact ids stay sequential in canonical order; a consumer
+    /// that merges batches renumbers them.
+    ///
+    /// Facts whose `(subject, predicate, object)` repeat collapse into the
+    /// first in canonical order: a snapshot asserts a triple once.
+    pub fn finish_stable(self) -> Vec<Fact> {
+        let mut seen = BTreeSet::new();
+        let facts = self.finish_with(|_, subject| stable_entity_id(subject));
+        let mut unique = Vec::with_capacity(facts.len());
+        for fact in facts {
+            let key = (
+                fact.subject,
+                fact.predicate.as_str().to_string(),
+                format!("{:?}", fact.object),
+            );
+            if seen.insert(key) {
+                unique.push(fact);
+            }
+        }
+        for (index, fact) in unique.iter_mut().enumerate() {
+            fact.id = FactId::new(index as u64 + 1);
+        }
+        unique
+    }
+
+    fn finish_with(self, subject_id: impl Fn(&EntityIdTable, &str) -> EntityId) -> Vec<Fact> {
         let snapshot = self.snapshot;
         let mut records = self.records;
         // Compose the tier attestation BEFORE sorting so the canonical
@@ -262,9 +305,7 @@ impl FactBatchBuilder {
             .into_iter()
             .enumerate()
             .map(|(i, record)| {
-                let subject = table
-                    .get(&record.subject)
-                    .expect("every record subject was registered in the table");
+                let subject = subject_id(&table, &record.subject);
                 let class = record
                     .tier
                     .map(PrecisionTier::provenance_class)
@@ -281,6 +322,17 @@ impl FactBatchBuilder {
             })
             .collect()
     }
+}
+
+/// The id of an entity named by `subject`, derived from the text alone:
+/// the first eight bytes of its SHA-256, never zero. The same text names
+/// the same entity in every snapshot and every process.
+pub fn stable_entity_id(subject: &str) -> EntityId {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(subject.as_bytes());
+    let mut head = [0u8; 8];
+    head.copy_from_slice(&digest[..8]);
+    EntityId::new(std::cmp::max(u64::from_be_bytes(head), 1))
 }
 
 /// Appends the pinned tier attestation `tier=<T> provider=<id>` to a
@@ -818,5 +870,70 @@ fn main() {
             Some("kind=Function"),
             "tier-less records keep their detail untouched"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Stable entity identity (cross-snapshot deltas)
+    // -------------------------------------------------------------------------
+
+    fn observe(
+        builder: &mut FactBatchBuilder,
+        subject: &str,
+        predicate: &'static str,
+        object: &str,
+    ) {
+        builder
+            .add_observation(
+                subject,
+                relation(predicate),
+                object,
+                ProducerKind::DeterministicAnalyzer,
+                None,
+            )
+            .expect("deterministic producer");
+    }
+
+    /// The id of a subject depends on its text alone: a symbol that
+    /// appears BEFORE it in another snapshot does not renumber it, and an
+    /// unrelated symbol never inherits it.
+    #[test]
+    fn stable_ids_do_not_depend_on_the_other_subjects_of_the_batch() {
+        let mut alone = FactBatchBuilder::new(SNAPSHOT);
+        observe(&mut alone, "m.rs:b:2", "core:calls", "x");
+        let mut crowded = FactBatchBuilder::new(SnapshotId::new(2));
+        observe(&mut crowded, "a.rs:a:1", "core:calls", "x");
+        observe(&mut crowded, "m.rs:b:2", "core:calls", "x");
+
+        let alone = alone.finish_stable();
+        let crowded = crowded.finish_stable();
+
+        let subject_of = |facts: &[Fact], text: &str| {
+            facts
+                .iter()
+                .find(|f| f.subject == stable_entity_id(text))
+                .map(|f| f.subject)
+        };
+        assert_eq!(
+            subject_of(&alone, "m.rs:b:2"),
+            subject_of(&crowded, "m.rs:b:2")
+        );
+        assert_ne!(stable_entity_id("a.rs:a:1"), stable_entity_id("m.rs:b:2"));
+        assert_ne!(stable_entity_id("a.rs:a:1").0, 0);
+    }
+
+    /// A triple asserted twice (two calls to the same callee) is one fact,
+    /// and the surviving fact ids are sequential from 1.
+    #[test]
+    fn stable_batches_assert_each_triple_once_with_sequential_fact_ids() {
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        observe(&mut builder, "m.rs:f:1", "core:calls", "g");
+        observe(&mut builder, "m.rs:f:1", "core:calls", "g");
+        observe(&mut builder, "m.rs:f:1", "core:calls", "h");
+
+        let facts = builder.finish_stable();
+
+        assert_eq!(facts.len(), 2);
+        let ids: Vec<u64> = facts.iter().map(|f| f.id.0).collect();
+        assert_eq!(ids, vec![1, 2]);
     }
 }

@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 89,
+  "runtime_tool_count": 90,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1440,7 +1440,7 @@
     {
       "name": "compare",
       "title": "Qué cambió entre dos revisiones",
-      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",
@@ -1483,7 +1483,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.104.0"
+        "tool_version": "0.105.0"
       },
       "precision_floor": "ast-heuristic",
       "required_args": [
@@ -1491,7 +1491,58 @@
         "head_ref"
       ],
       "limitations": [
-        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents or evaluate semantic impact and prior-work reuse without revision facts and execution read-sets."
+        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare."
+      ]
+    },
+    {
+      "name": "verify",
+      "title": "El snapshot guardado de una revisión frente a una reconstrucción completa",
+      "description": "Reconstruye desde cero los hechos de una revisión Git y los compara con el snapshot guardado para ella; no escribe nada. Responde `verified`, `mismatch`, `partial` (faltan hechos de algún fichero analizable) o `not_evaluated` (sin caché o sin snapshot guardado), y nunca presenta un estado incompleto como verificado. Ejemplo: `cognicode verify --revision HEAD`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Arguments for the `verify` goal.",
+        "properties": {
+          "revision": {
+            "description": "The Git revision whose stored snapshot is verified.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.105.0"
+      },
+      "precision_floor": "ast-heuristic",
+      "required_args": [
+        "revision"
+      ],
+      "limitations": [
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
       ]
     },
     {
@@ -2506,7 +2557,7 @@
     {
       "name": "inspect",
       "title": "Qué declara un fichero",
-      "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs --format json`.",
+      "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea, o —con `--revision`— los hechos que se ensamblan de una revisión Git y su cobertura. No necesita el grafo: parsea el fichero que se le nombra. Se da exactamente uno de `--file` y `--revision`. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --revision HEAD --format json`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",
@@ -2514,13 +2565,22 @@
         "description": "Input for the `inspect` goal",
         "properties": {
           "file": {
-            "description": "The file to inspect, relative to the workspace or absolute",
-            "type": "string"
+            "default": null,
+            "description": "The file to inspect, relative to the workspace or absolute. Exactly one of\n`file` and `revision` is required.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "default": null,
+            "description": "A Git revision to inspect instead: the facts assembled for it, their\ncoverage and the files left without facts. Exactly one of `file` and\n`revision` is required.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "required": [
-          "file"
-        ],
         "type": "object"
       },
       "output_schema": null,
@@ -2544,12 +2604,9 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.105.0"
       },
       "precision_floor": "ast-heuristic",
-      "required_args": [
-        "file"
-      ],
       "limitations": [
         "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
       ]

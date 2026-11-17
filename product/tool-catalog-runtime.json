@@ -1238,7 +1238,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.104.0"
+        "tool_version": "0.105.0"
       }
     },
     "annotations": {
@@ -1247,7 +1247,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+    "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
     "inputSchema": {
       "description": "Arguments for the `compare` goal.",
       "properties": {
@@ -1267,6 +1267,41 @@
       "type": "object"
     },
     "name": "compare"
+  },
+  {
+    "_meta": {
+      "cognicode": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.105.0"
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Reconstruye desde cero los hechos de una revisión Git y los compara con el snapshot guardado para ella; no escribe nada. Responde `verified`, `mismatch`, `partial` (faltan hechos de algún fichero analizable) o `not_evaluated` (sin caché o sin snapshot guardado), y nunca presenta un estado incompleto como verificado. Ejemplo: `cognicode verify --revision HEAD`.",
+    "inputSchema": {
+      "description": "Arguments for the `verify` goal.",
+      "properties": {
+        "revision": {
+          "description": "The Git revision whose stored snapshot is verified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "type": "object"
+    },
+    "name": "verify"
   },
   {
     "_meta": {
@@ -2091,7 +2126,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.105.0"
       }
     },
     "annotations": {
@@ -2100,18 +2135,27 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs --format json`.",
+    "description": "Lee un fichero y dice qué símbolos declara, con su tipo y su línea, o —con `--revision`— los hechos que se ensamblan de una revisión Git y su cobertura. No necesita el grafo: parsea el fichero que se le nombra. Se da exactamente uno de `--file` y `--revision`. Ejemplos: `cognicode inspect --file src/lib.rs`, `cognicode inspect --revision HEAD --format json`.",
     "inputSchema": {
       "description": "Input for the `inspect` goal",
       "properties": {
         "file": {
-          "description": "The file to inspect, relative to the workspace or absolute",
-          "type": "string"
+          "default": null,
+          "description": "The file to inspect, relative to the workspace or absolute. Exactly one of\n`file` and `revision` is required.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "default": null,
+          "description": "A Git revision to inspect instead: the facts assembled for it, their\ncoverage and the files left without facts. Exactly one of `file` and\n`revision` is required.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "file"
-      ],
       "type": "object"
     },
     "name": "inspect"

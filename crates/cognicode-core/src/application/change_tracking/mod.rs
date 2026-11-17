@@ -21,3 +21,6 @@ pub mod complete_snapshot;
 
 #[cfg(feature = "evidence-kernel")]
 pub mod hooks;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod revision_facts;

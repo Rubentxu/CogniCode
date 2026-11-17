@@ -49,6 +49,45 @@ pub trait RevisionReader: Send + Sync {
     /// The raw bytes of one tracked path in one revision. Missing
     /// bytes are `ContentUnavailable` — never a silent empty vector.
     fn content(&self, revision: &SourceRevision, path: &PathKey) -> Result<Vec<u8>, ScmError>;
+
+    /// The bytes of many tracked paths of one revision, one answer per
+    /// requested path and in the same order. A blob larger than
+    /// `max_bytes` is `TooLarge` and its bytes are not returned.
+    ///
+    /// The default asks `content` once per path; providers whose
+    /// per-call cost grows with the size of the tree override it with
+    /// a batched read.
+    fn contents(
+        &self,
+        revision: &SourceRevision,
+        paths: &[PathKey],
+        max_bytes: u64,
+    ) -> Vec<Result<BlobRead, ScmError>> {
+        paths
+            .iter()
+            .map(|path| {
+                self.content(revision, path).map(|bytes| {
+                    if bytes.len() as u64 > max_bytes {
+                        BlobRead::TooLarge {
+                            bytes: bytes.len() as u64,
+                        }
+                    } else {
+                        BlobRead::Bytes(bytes)
+                    }
+                })
+            })
+            .collect()
+    }
+}
+
+/// One blob answered by [`RevisionReader::contents`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlobRead {
+    /// The blob, within the requested bound.
+    Bytes(Vec<u8>),
+    /// The blob exists but is larger than the bound; only its size is
+    /// reported.
+    TooLarge { bytes: u64 },
 }
 
 /// Answers what changed between two revisions and whether one is the

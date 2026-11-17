@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::domain::scm::{
-    ChangeKind, ChangeReader, ChangeSet, ContentDigest, InventoryEntry, PathKey,
+    BlobRead, ChangeKind, ChangeReader, ChangeSet, ContentDigest, InventoryEntry, PathKey,
     ProviderCapabilities, RevisionHandle, RevisionReader, ScmError, SourceInventory, SourceRef,
     SourceRevision, WorkingCopyReader,
 };
@@ -429,6 +429,46 @@ impl GitScmAdapter {
         &self,
         oids: &[&str],
     ) -> Result<Vec<Result<ContentDigest, ScmError>>, ScmError> {
+        self.batch_cat(oids, |pipe, oid, size| {
+            if size > BLOB_CAP {
+                drain(pipe, size)?;
+                return Ok(Err(failure(format!(
+                    "blob {oid} is {size} bytes, over the {BLOB_CAP} cap"
+                ))));
+            }
+            Ok(Ok(stream_digest(pipe, size)?))
+        })
+    }
+
+    /// The bytes of every OID through ONE `cat-file --batch`. A blob
+    /// over `max_bytes` is reported as `TooLarge` and drained without
+    /// being held, so one huge blob never costs more than a chunk.
+    fn batch_blob_contents(
+        &self,
+        oids: &[&str],
+        max_bytes: u64,
+    ) -> Result<Vec<Result<BlobRead, ScmError>>, ScmError> {
+        let limit = max_bytes.min(BLOB_CAP);
+        self.batch_cat(oids, |pipe, _oid, size| {
+            if size > limit {
+                drain(pipe, size)?;
+                return Ok(Ok(BlobRead::TooLarge { bytes: size }));
+            }
+            Ok(Ok(BlobRead::Bytes(read_blob(pipe, size)?)))
+        })
+    }
+
+    /// Drives one `git cat-file --batch` process. `visit` receives the
+    /// pipe positioned at the blob body and MUST consume exactly
+    /// `size` bytes; the trailing newline is consumed here. An `Err`
+    /// returned by `visit` aborts the whole batch (the stream is no
+    /// longer trustworthy); a per-blob failure travels in the inner
+    /// `Result`.
+    fn batch_cat<T>(
+        &self,
+        oids: &[&str],
+        mut visit: impl FnMut(&mut dyn Read, &str, u64) -> Result<Result<T, ScmError>, ScmError>,
+    ) -> Result<Vec<Result<T, ScmError>>, ScmError> {
         if oids.is_empty() {
             return Ok(Vec::new());
         }
@@ -442,19 +482,18 @@ impl GitScmAdapter {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| failure(format!("cannot spawn git cat-file: {error}")))?;
-        {
-            let stdin = child
-                .stdin
-                .as_mut()
-                .ok_or_else(|| failure("git cat-file stdin missing"))?;
-            for oid in oids {
-                stdin
-                    .write_all(oid.as_bytes())
-                    .and_then(|()| stdin.write_all(b"\n"))
-                    .map_err(|error| failure(format!("cannot feed git cat-file: {error}")))?;
-            }
-            stdin.flush().ok();
-        }
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| failure("git cat-file stdin missing"))?;
+        let requests: Vec<u8> = oids
+            .iter()
+            .flat_map(|oid| oid.bytes().chain(std::iter::once(b'\n')))
+            .collect();
+        // Feeding runs on its own thread: a large request list and a
+        // large response would otherwise fill both pipes and deadlock.
+        let feeder =
+            std::thread::spawn(move || stdin.write_all(&requests).and_then(|()| stdin.flush()));
         let mut stdout = child
             .stdout
             .take()
@@ -484,16 +523,13 @@ impl GitScmAdapter {
             let size: u64 = size_text
                 .parse()
                 .map_err(|_| failure(format!("malformed cat-file size {size_text:?}")))?;
-            if size > BLOB_CAP {
-                results.push(Err(failure(format!(
-                    "blob {oid} is {size} bytes, over the {BLOB_CAP} cap"
-                ))));
-                continue;
-            }
-            let digest = stream_digest(&mut stdout, size)?;
+            results.push(visit(&mut stdout, oid, size)?);
             let _trailing_newline = read_exact_one(&mut stdout)?;
-            results.push(Ok(digest));
         }
+        feeder
+            .join()
+            .map_err(|_| failure("git cat-file feeder panicked"))?
+            .map_err(|error| failure(format!("cannot feed git cat-file: {error}")))?;
         let status = child
             .wait()
             .map_err(|error| failure(format!("cannot wait for git cat-file: {error}")))?;
@@ -800,6 +836,53 @@ impl RevisionReader for GitScmAdapter {
         }
         Ok(run.stdout)
     }
+
+    fn contents(
+        &self,
+        revision: &SourceRevision,
+        paths: &[PathKey],
+        max_bytes: u64,
+    ) -> Vec<Result<BlobRead, ScmError>> {
+        let unavailable = |path: &PathKey| ScmError::ContentUnavailable {
+            path: path.as_str().to_string(),
+        };
+        let rows = match self.tracked_rows(revision.handle().as_str()) {
+            Ok(rows) => rows,
+            Err(error) => return paths.iter().map(|_| Err(error.clone())).collect(),
+        };
+        let mut oid_of: std::collections::HashMap<PathKey, &OwnedRow> =
+            std::collections::HashMap::with_capacity(rows.len());
+        for row in &rows {
+            if let Ok(key) = path_key_from_bytes(&row.path) {
+                oid_of.insert(key, row);
+            }
+        }
+        let mut wanted: Vec<&str> = Vec::new();
+        let mut slot: Vec<Option<usize>> = Vec::with_capacity(paths.len());
+        for path in paths {
+            match oid_of.get(path) {
+                Some(row) if !row.gitlink => {
+                    slot.push(Some(wanted.len()));
+                    wanted.push(row.oid.as_str());
+                }
+                _ => slot.push(None),
+            }
+        }
+        let mut blobs = match self.batch_blob_contents(&wanted, max_bytes) {
+            Ok(blobs) => blobs.into_iter().map(Some).collect::<Vec<_>>(),
+            Err(error) => return paths.iter().map(|_| Err(error.clone())).collect(),
+        };
+        paths
+            .iter()
+            .zip(slot)
+            .map(|(path, slot)| match slot {
+                Some(index) => blobs[index]
+                    .take()
+                    .unwrap_or_else(|| Err(unavailable(path))),
+                None => Err(unavailable(path)),
+            })
+            .collect()
+    }
 }
 
 impl ChangeReader for GitScmAdapter {
@@ -966,6 +1049,24 @@ fn read_exact_one(mut pipe: impl Read) -> Result<u8, ScmError> {
         return Err(failure("git cat-file ended mid-record"));
     }
     Ok(byte[0])
+}
+
+/// Reads exactly `size` bytes into memory (the caller bounded `size`).
+fn read_blob(mut pipe: impl Read, size: u64) -> Result<Vec<u8>, ScmError> {
+    let mut bytes = vec![0u8; size as usize];
+    pipe.read_exact(&mut bytes)
+        .map_err(|e| failure(format!("git cat-file ended mid-blob: {e}")))?;
+    Ok(bytes)
+}
+
+/// Discards exactly `size` bytes so the next batch header stays aligned.
+fn drain(mut pipe: impl Read, size: u64) -> Result<(), ScmError> {
+    let copied = std::io::copy(&mut (&mut pipe).take(size), &mut std::io::sink())
+        .map_err(|e| failure(e.to_string()))?;
+    if copied != size {
+        return Err(failure("git cat-file ended mid-blob"));
+    }
+    Ok(())
 }
 
 /// Streams exactly `size` bytes into the domain hasher, chunk by

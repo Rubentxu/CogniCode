@@ -286,13 +286,15 @@ homónimo: el mismo nombre puede estar en dos ficheros. Ejemplos: `cognicode fin
 pub const INSPECT: GoalSpec = GoalSpec {
     name: "inspect",
     title: "Qué declara un fichero",
-    description: "Lee un fichero y dice qué símbolos declara, con su tipo y su línea. \
-No necesita el grafo: parsea el fichero que se le nombra. Ejemplos: \
-`cognicode inspect --file src/lib.rs`, `cognicode inspect --file src/lib.rs \
---format json`.",
+    description: "Lee un fichero y dice qué símbolos declara, con su tipo y su línea, o \
+—con `--revision`— los hechos que se ensamblan de una revisión Git y su cobertura. \
+No necesita el grafo: parsea el fichero que se le nombra. Se da exactamente uno de \
+`--file` y `--revision`. Ejemplos: `cognicode inspect --file src/lib.rs`, \
+`cognicode inspect --revision HEAD --format json`.",
     examples: &[
         "cognicode inspect --file src/lib.rs",
         "cognicode inspect --file src/lib.rs --format json",
+        "cognicode inspect --revision HEAD --format json",
     ],
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Discover,
@@ -381,7 +383,7 @@ usarse y los ciclos de llamadas. Ejemplos: `cognicode audit`, `cognicode audit \
 pub const COMPARE: GoalSpec = GoalSpec {
     name: "compare",
     title: "Qué cambió entre dos revisiones",
-    description: "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Publica identidades de snapshot y cobertura; no afirma impacto semántico ni reutilización sin evidencia. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+    description: "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
     examples: &["cognicode compare --base-ref main --head-ref HEAD"],
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
@@ -446,9 +448,27 @@ costaría, sin ejecutar nada. Ejemplos: `cognicode recipe --name onboard`, \
     render: recipe::render,
 };
 
+/// El goal `verify`: el snapshot guardado de una revisión frente a su reconstrucción.
+pub const VERIFY: GoalSpec = GoalSpec {
+    name: "verify",
+    title: "El snapshot guardado de una revisión frente a una reconstrucción completa",
+    description: "Reconstruye desde cero los hechos de una revisión Git y los compara con el snapshot guardado para ella; no escribe nada. Responde `verified`, `mismatch`, `partial` (faltan hechos de algún fichero analizable) o `not_evaluated` (sin caché o sin snapshot guardado), y nunca presenta un estado incompleto como verificado. Ejemplo: `cognicode verify --revision HEAD`.",
+    examples: &[
+        "cognicode verify --revision HEAD",
+        "cognicode verify --revision HEAD --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::verify",
+    requires_graph: false,
+    replaces: &[],
+    run: verify::run,
+    render: verify::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 11] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, CHANGE, RECIPE,
+static REGISTRY: [GoalSpec; 12] = [
+    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE, RECIPE,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -476,6 +496,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "overview" => crate::interface::schema::schema_of::<overview::OverviewInput>(),
         "audit" => crate::interface::schema::schema_of::<audit::AuditInput>(),
         "compare" => crate::interface::schema::schema_of::<compare::CompareInput>(),
+        "verify" => crate::interface::schema::schema_of::<verify::VerifyInput>(),
         "change" => crate::interface::schema::schema_of::<change::ChangeInput>(),
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         _ => Map::new(),
@@ -643,7 +664,7 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
         ]
     } else if goal.name == "compare" {
         vec![
-            "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents or evaluate semantic impact and prior-work reuse without revision facts and execution read-sets."
+            "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare."
                 .to_string(),
         ]
     } else {
@@ -718,8 +739,10 @@ pub mod impact;
 pub mod inspect;
 pub mod overview;
 pub mod recipe;
+mod revision_support;
 pub mod status;
 pub mod trace;
+pub mod verify;
 
 #[cfg(test)]
 mod tests {

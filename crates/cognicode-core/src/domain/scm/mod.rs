@@ -39,7 +39,7 @@ pub use changeset::{Change, ChangeKind, ChangeSet};
 pub use error::ScmError;
 pub use identity::{ContentDigest, PathKey, ProviderId, RevisionHandle, SourceRef, SourceRevision};
 pub use inventory::{InventoryEntry, SourceInventory};
-pub use ports::{ChangeReader, ProviderCapabilities, RevisionReader, WorkingCopyReader};
+pub use ports::{BlobRead, ChangeReader, ProviderCapabilities, RevisionReader, WorkingCopyReader};
 
 #[cfg(test)]
 mod conformance_tests;

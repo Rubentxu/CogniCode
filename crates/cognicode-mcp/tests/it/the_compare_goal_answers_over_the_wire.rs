@@ -96,15 +96,16 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     assert_eq!(answer["coverage"]["changed_paths"], 1);
     assert_eq!(answer["changes"][0]["path"], "src.rs");
     assert_eq!(answer["changes"][0]["kind"], "modified");
-    // What was not evaluated is said, with its reason, and never as "clean".
-    assert_eq!(answer["impact_status"], "not_evaluated");
+    // The impact is computed from produced revision facts; what could not be
+    // evaluated (reuse, with no stored read-sets) is said, with its reason.
+    assert_eq!(answer["impact_status"], "evaluated");
     assert_eq!(answer["work_reuse_status"], "not_evaluated");
     assert!(
-        !answer["impact_reason"]
+        !answer["work_reuse_reason"]
             .as_str()
             .unwrap_or_default()
             .is_empty(),
-        "an unevaluated impact says why: {answer}"
+        "an unevaluated reuse says why: {answer}"
     );
 }
 
