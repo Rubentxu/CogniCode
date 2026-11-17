@@ -466,9 +466,25 @@ pub const VERIFY: GoalSpec = GoalSpec {
     render: verify::render,
 };
 
+/// El goal `security`: el pack de seguridad sobre Terraform y Helm.
+pub const SECURITY: GoalSpec = GoalSpec {
+    name: "security",
+    title: "El pack de seguridad sobre Terraform y Helm",
+    description: "Corre el pack de seguridad sobre las raíces Terraform y los charts Helm del proyecto y publica un veredicto por unidad y familia: `found`, `not_observed`, `unknown` o `unsupported`, siempre distintos (un `unknown` o `unsupported` nunca se presenta como limpio). Para Helm dice si el chart se renderizó y con qué cobertura; sin el motor `helm` el chart queda `not_rendered` y sus comprobaciones `unknown`. Publica la matriz de capacidades con sus límites (`all_languages` la amplía a todos los lenguajes). Es un informe de candidatos, no una puerta. Ejemplos: `cognicode security`, `cognicode security --format json`.",
+    examples: &["cognicode security", "cognicode security --format json"],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::security",
+    requires_graph: false,
+    replaces: &[],
+    run: security::run,
+    render: security::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 12] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE, RECIPE,
+static REGISTRY: [GoalSpec; 13] = [
+    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE,
+    RECIPE, SECURITY,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -499,6 +515,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "verify" => crate::interface::schema::schema_of::<verify::VerifyInput>(),
         "change" => crate::interface::schema::schema_of::<change::ChangeInput>(),
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
+        "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
         _ => Map::new(),
     }
 }
@@ -740,6 +757,7 @@ pub mod inspect;
 pub mod overview;
 pub mod recipe;
 mod revision_support;
+pub mod security;
 pub mod status;
 pub mod trace;
 pub mod verify;
