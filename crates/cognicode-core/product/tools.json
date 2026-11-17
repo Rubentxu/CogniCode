@@ -1440,7 +1440,7 @@
     {
       "name": "compare",
       "title": "Qué cambió entre dos revisiones",
-      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot y el read-set del detector sobre la base si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",

@@ -24,3 +24,6 @@ pub mod hooks;
 
 #[cfg(feature = "evidence-kernel")]
 pub mod revision_facts;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod detector_runs;

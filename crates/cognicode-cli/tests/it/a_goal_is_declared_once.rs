@@ -452,13 +452,25 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     .await
     .expect("the MCP goal answers");
 
-    // Whether the snapshot was persisted depends on the cache each surface
-    // resolves (the CLI has the user's; this MCP context names none): the
-    // rest of the answer is the shared contract.
+    // What depends on the cache each surface resolves (the CLI has the
+    // user's; this MCP context names none) is the persisted snapshot and
+    // the reuse of prior work, whose read-sets live in that cache. The rest
+    // of the answer is the shared contract.
     let mut cli_answer = cli_envelope["result"].clone();
     let mut mcp_answer = mcp_answer;
+    let cache_bound = [
+        "summary",
+        "work_reuse",
+        "work_reuse_reason",
+        "work_reuse_status",
+    ];
+    let cli_reuse = cli_answer.clone();
+    let mcp_reuse = mcp_answer.clone();
     for answer in [&mut cli_answer, &mut mcp_answer] {
         answer["revision_facts"]["persisted"] = Value::Null;
+        for key in cache_bound {
+            answer[key] = Value::Null;
+        }
     }
     assert_eq!(cli_answer, mcp_answer);
     assert_eq!(mcp_answer["coverage"]["changed_paths"], 1);
@@ -466,13 +478,17 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     assert_eq!(mcp_answer["impact_status"], "evaluated");
     assert_eq!(mcp_answer["impact"]["facts_added"], 2);
     assert_eq!(mcp_answer["impact"]["facts_removed"], 2);
-    // No detector has stored a read-set, so reuse says so instead of guessing.
-    assert_eq!(mcp_answer["work_reuse_status"], "not_evaluated");
+    // Without a cache there is no read-set, so reuse says so instead of
+    // guessing; with one, the production detector run wrote the base
+    // read-set and the renamed function it read makes that work affected.
+    assert_eq!(mcp_reuse["work_reuse_status"], "not_evaluated");
     assert!(
-        mcp_answer["work_reuse_reason"]
+        mcp_reuse["work_reuse_reason"]
             .as_str()
             .is_some_and(|reason| reason.contains("read-set"))
     );
+    assert_eq!(cli_reuse["work_reuse_status"], "evaluated");
+    assert_eq!(cli_reuse["work_reuse"]["affected"], 1);
     assert_eq!(mcp_answer["changes"][0]["path"], "src.rs");
     assert_eq!(
         mcp_answer["working_copy"]["staged_changes"][0]["path"],

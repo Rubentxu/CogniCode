@@ -8,7 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::domain::findings::detector_reuse::DetectorReuseIndex;
+use crate::application::graph_cache::{cache_dir, workspace_key};
+use crate::domain::findings::detector_reuse::{DetectorReuseIndex, DetectorRunRecord};
 
 use super::atomic_file_writer::AtomicFileWriter;
 
@@ -21,6 +22,16 @@ pub struct DetectorReuseStore {
 impl DetectorReuseStore {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self { dir: dir.into() }
+    }
+
+    /// The store of `workspace` under `cache_root`: one directory per
+    /// repository, beside its graph snapshot and revision snapshots.
+    pub fn for_workspace(cache_root: &Path, workspace: &Path) -> Self {
+        Self::new(
+            cache_dir(cache_root)
+                .join("detector-reuse")
+                .join(workspace_key(workspace)),
+        )
     }
 
     fn index_path(&self) -> PathBuf {
@@ -43,6 +54,21 @@ impl DetectorReuseStore {
         let json = serde_json::to_string(index)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         write_atomic(&self.index_path(), json.as_bytes())
+    }
+
+    /// Record one detector run, replacing that detector's previous record
+    /// and keeping every other detector's.
+    ///
+    /// An index that is absent, corrupt or of a foreign schema starts over
+    /// empty: the cache is an optimization, so losing it costs work and
+    /// never correctness.
+    ///
+    /// # Errors
+    /// I/O from persisting the index.
+    pub fn record(&self, run: DetectorRunRecord) -> std::io::Result<()> {
+        let mut index = self.load().unwrap_or_else(DetectorReuseIndex::empty);
+        index.remember(run);
+        self.save(&index)
     }
 }
 
