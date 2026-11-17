@@ -1,8 +1,8 @@
 # SEAM — WorkspaceSession (medicion, no opinion)
 
 - Herramienta: `python3 scripts/measure_workspace_session.py --write`
-- HEAD medido: `663861dc` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4567 lineas)
-- Regions `#[cfg(test)]` inline: 2; ficheros `tests/` leidos: 361
+- HEAD medido: `3e5e81bf` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4567 lineas)
+- Regions `#[cfg(test)]` inline: 2; ficheros `tests/` leidos: 365
 
 La regla de extraccion (CGH-010 AC#2): un grupo solo se extrae
 cuando este instrumento lo marca READY: cada metodo publico tiene
