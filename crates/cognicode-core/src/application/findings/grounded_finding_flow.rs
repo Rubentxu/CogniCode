@@ -95,6 +95,35 @@ fn canonical_provenance() -> ProvenanceRecord {
     )
 }
 
+/// The IR of the function-definition detector: match every
+/// [`SUBJECT_FUNCTION_DEFINITION`] construct and produce one finding for it.
+///
+/// One definition shared by the e67 flow and the revision detector runs, so
+/// "the detector that ran" never means two different things.
+///
+/// # Errors
+/// The id, subject or kind is not a valid namespaced name (a programming
+/// error, surfaced as its message).
+pub fn function_definition_detector_ir() -> Result<DetectorIr, String> {
+    Ok(DetectorIr {
+        id: DetectorId::new(DETECTOR_ID_FUNCTION_DEFINITION).map_err(|e| e.to_string())?,
+        name: DETECTOR_ID_FUNCTION_DEFINITION.to_string(),
+        policy: Default::default(),
+        requires: [AnalysisCapability::AstPattern].into_iter().collect(),
+        authority: DetectorAuthority::Candidate,
+        steps: vec![
+            DetectorStep::Match {
+                subject: SubjectPattern::new(SUBJECT_FUNCTION_DEFINITION)
+                    .map_err(|e| e.to_string())?,
+            },
+            DetectorStep::Produce {
+                kind: FindingKind::new(DETECTOR_ID_FUNCTION_DEFINITION)
+                    .map_err(|e| e.to_string())?,
+            },
+        ],
+    })
+}
+
 /// Outcome of the full e67 vertical for a single source file.
 #[derive(Debug, Clone)]
 pub struct GroundedFindingReport {
@@ -204,24 +233,7 @@ pub async fn run_grounded_finding_flow(
     let construct_count = projection.grounded_outcomes.len();
 
     // ---- Detector admission + plan ---------------------------------------
-    let ir = DetectorIr {
-        id: DetectorId::new(DETECTOR_ID_FUNCTION_DEFINITION)
-            .map_err(|e| GroundedFindingFlowError::Admit(e.to_string()))?,
-        name: DETECTOR_ID_FUNCTION_DEFINITION.to_string(),
-        policy: Default::default(),
-        requires: [AnalysisCapability::AstPattern].into_iter().collect(),
-        authority: DetectorAuthority::Candidate,
-        steps: vec![
-            DetectorStep::Match {
-                subject: SubjectPattern::new(SUBJECT_FUNCTION_DEFINITION)
-                    .map_err(|e| GroundedFindingFlowError::Admit(e.to_string()))?,
-            },
-            DetectorStep::Produce {
-                kind: FindingKind::new(DETECTOR_ID_FUNCTION_DEFINITION)
-                    .map_err(|e| GroundedFindingFlowError::Admit(e.to_string()))?,
-            },
-        ],
-    };
+    let ir = function_definition_detector_ir().map_err(GroundedFindingFlowError::Admit)?;
     let permit = crate::domain::findings::admission::DetectorAdmission::admit(
         ir,
         "e67-wu3-1.0.0",
