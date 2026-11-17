@@ -9,8 +9,11 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use super::catalog::{ModelRole, SemanticModelCatalog, SourceLanguage, Weakness};
-use super::rule::{SANITIZER_SUBJECT, SQL_EXECUTION_SUBJECT, USER_INPUT_SUBJECT};
+use super::catalog::{
+    ApiModel, LanguageAdapter, ModelRole, SemanticModelCatalog, SourceLanguage, Weakness,
+};
+use super::jvm::JvmContext;
+use super::rule::{SANITIZER_SUBJECT, USER_INPUT_SUBJECT};
 use crate::domain::findings::{
     DataflowFunction, DataflowInput, DataflowLocation, DataflowStatement, GroundingRef,
     SubjectPattern,
@@ -105,6 +108,11 @@ pub struct ObservedFunction {
     pub language: SourceLanguage,
     /// Statements in program order.
     pub observations: Vec<Observation>,
+    /// Imports and classpath supertypes at the call sites, for JVM languages.
+    /// Optional: when absent, only fully qualified callees resolve and the
+    /// rest are reported as unmodeled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jvm: Option<JvmContext>,
 }
 
 /// A function classified against a language adapter.
@@ -112,6 +120,7 @@ pub struct ObservedFunction {
 pub struct ModeledFunction {
     function: DataflowFunction,
     unmodeled_callees: Vec<String>,
+    context_resolved: Vec<(String, String)>,
 }
 
 impl ModeledFunction {
@@ -131,6 +140,13 @@ impl ModeledFunction {
     /// hide behind any of them.
     pub fn unmodeled_callees(&self) -> &[String] {
         &self.unmodeled_callees
+    }
+
+    /// Callees the JVM context resolved, as `(as written, as cataloged)`,
+    /// sorted and deduplicated. They explain why a call that is not spelled
+    /// fully qualified was still modeled.
+    pub fn context_resolved(&self) -> &[(String, String)] {
+        &self.context_resolved
     }
 }
 
@@ -156,13 +172,16 @@ impl SemanticModelCatalog {
         };
 
         let mut unmodeled = BTreeSet::new();
+        let mut context_resolved = BTreeSet::new();
         let mut statements = Vec::with_capacity(function.observations.len());
         for (index, observation) in function.observations.iter().enumerate() {
             let (defs, uses, subject) = match &observation.kind {
                 ObservationKind::Assign { def, uses } => (vec![def.clone()], dedup(uses), None),
                 ObservationKind::Call(call) => {
                     let defs: Vec<String> = call.def.iter().cloned().collect();
-                    match adapter.lookup(&call.callee).map(|m| m.role()) {
+                    let model =
+                        lookup_model(adapter, function, &call.callee, &mut context_resolved);
+                    match model.map(ApiModel::role) {
                         None => {
                             unmodeled.insert(call.callee.clone());
                             (defs, all_uses(call), None)
@@ -172,12 +191,14 @@ impl SemanticModelCatalog {
                             weakness: w,
                             text_arg,
                         }) if w == weakness => {
-                            // Only the text argument reaches the sink: bound
-                            // values are data, not code.
+                            // Only the dangerous argument reaches the sink:
+                            // bound values are data, not code.
                             let text = call.args.get(text_arg).map(CallArg::uses).unwrap_or(&[]);
-                            (defs, dedup(text), Some(SQL_EXECUTION_SUBJECT))
+                            (defs, dedup(text), Some(weakness.sink_subject()))
                         }
-                        Some(ModelRole::Sanitizer { weakness: w }) if w == weakness => {
+                        Some(ModelRole::Sanitizer { neutralises })
+                            if neutralises.contains(&weakness) =>
+                        {
                             (defs, all_uses(call), Some(SANITIZER_SUBJECT))
                         }
                         // Inert, or a sink/sanitizer of another weakness.
@@ -204,8 +225,31 @@ impl SemanticModelCatalog {
                 statements,
             },
             unmodeled_callees: unmodeled.into_iter().collect(),
+            context_resolved: context_resolved.into_iter().collect(),
         })
     }
+}
+
+/// The model of `callee`: exact first, then through the JVM context when the
+/// function carries one.
+fn lookup_model<'a>(
+    adapter: &'a LanguageAdapter,
+    function: &ObservedFunction,
+    callee: &str,
+    resolved: &mut BTreeSet<(String, String)>,
+) -> Option<&'a ApiModel> {
+    if let Some(model) = adapter.lookup(callee) {
+        return Some(model);
+    }
+    if !function.language.is_jvm() {
+        return None;
+    }
+    let qualified = function
+        .jvm
+        .as_ref()?
+        .resolve(callee, |candidate| adapter.lookup(candidate).is_some())?;
+    resolved.insert((callee.to_string(), qualified.clone()));
+    adapter.lookup(&qualified)
 }
 
 fn subject_pattern(name: &str) -> SubjectPattern {
@@ -227,6 +271,7 @@ fn dedup<'a>(uses: impl IntoIterator<Item = &'a String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::rule::SQL_EXECUTION_SUBJECT;
     use super::*;
 
     fn call(callee: &str, args: Vec<CallArg>, def: Option<&str>) -> Observation {
@@ -254,6 +299,7 @@ mod tests {
                 path: "f".to_string(),
                 language,
                 observations,
+                jvm: None,
             },
         )
     }
@@ -365,10 +411,112 @@ mod tests {
     #[test]
     fn a_language_without_adapter_is_unsupported() {
         assert_eq!(
-            classify(SourceLanguage::Kotlin, vec![call("x", vec![], None)]),
+            classify(SourceLanguage::Python, vec![call("x", vec![], None)]),
             Classification::Unsupported {
-                language: SourceLanguage::Kotlin
+                language: SourceLanguage::Python
             }
         );
+    }
+
+    fn jvm_function(language: SourceLanguage, jvm: Option<JvmContext>) -> ObservedFunction {
+        ObservedFunction {
+            id: "f".to_string(),
+            path: "f".to_string(),
+            language,
+            observations: vec![call("Statement.executeQuery", vec![val(&["q"])], None)],
+            jvm,
+        }
+    }
+
+    #[test]
+    fn a_jvm_context_resolves_a_simple_name_into_the_catalog() {
+        let ctx = JvmContext::new().with_import("Statement", "java.sql.Statement");
+        for language in [SourceLanguage::Java, SourceLanguage::Kotlin] {
+            let m = modeled(SemanticModelCatalog::builtin().classify(
+                Weakness::SqlInjection,
+                &jvm_function(language, Some(ctx.clone())),
+            ));
+            assert_eq!(
+                subjects(&m.function().statements[0]),
+                vec![SQL_EXECUTION_SUBJECT]
+            );
+            assert!(m.unmodeled_callees().is_empty());
+            assert_eq!(
+                m.context_resolved(),
+                [(
+                    "Statement.executeQuery".to_string(),
+                    "java.sql.Statement.executeQuery".to_string()
+                )]
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_jvm_context_the_same_call_stays_unmodeled() {
+        let m = modeled(SemanticModelCatalog::builtin().classify(
+            Weakness::SqlInjection,
+            &jvm_function(SourceLanguage::Java, None),
+        ));
+        assert_eq!(
+            m.unmodeled_callees(),
+            ["Statement.executeQuery".to_string()]
+        );
+        assert!(m.context_resolved().is_empty());
+    }
+
+    #[test]
+    fn a_jvm_context_never_resolves_calls_of_other_languages() {
+        let ctx = JvmContext::new().with_import("Statement", "java.sql.Statement");
+        let m = modeled(SemanticModelCatalog::builtin().classify(
+            Weakness::SqlInjection,
+            &jvm_function(SourceLanguage::Go, Some(ctx)),
+        ));
+        assert_eq!(m.unmodeled_callees().len(), 1);
+    }
+
+    #[test]
+    fn the_sink_subject_follows_the_weakness_asked_for() {
+        let call = vec![call("os/exec.Command", vec![val(&["c"])], None)];
+        let catalog = SemanticModelCatalog::builtin();
+        let function = ObservedFunction {
+            id: "f".to_string(),
+            path: "f".to_string(),
+            language: SourceLanguage::Go,
+            observations: call,
+            jvm: None,
+        };
+        let subjects_for = |weakness| {
+            let m = modeled(catalog.classify(weakness, &function));
+            m.function().statements[0]
+                .subjects
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            subjects_for(Weakness::CommandInjection),
+            vec![Weakness::CommandInjection.sink_subject().to_string()]
+        );
+        // A command sink is plain data when the question is SQL injection.
+        assert!(subjects_for(Weakness::SqlInjection).is_empty());
+    }
+
+    #[test]
+    fn a_numeric_sanitizer_neutralises_every_weakness_but_a_basename_only_path() {
+        let catalog = SemanticModelCatalog::builtin();
+        let run = |callee: &str, weakness| {
+            let function = ObservedFunction {
+                id: "f".to_string(),
+                path: "f".to_string(),
+                language: SourceLanguage::Go,
+                observations: vec![call(callee, vec![val(&["x"])], Some("y"))],
+                jvm: None,
+            };
+            let m = modeled(catalog.classify(weakness, &function));
+            m.function().statements[0].subjects.len()
+        };
+        assert_eq!(run("strconv.Atoi", Weakness::CommandInjection), 1);
+        assert_eq!(run("path/filepath.Base", Weakness::PathTraversal), 1);
+        assert_eq!(run("path/filepath.Base", Weakness::SqlInjection), 0);
     }
 }

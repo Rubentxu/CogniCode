@@ -221,6 +221,7 @@ mod tests {
                         )
                     })
                     .collect(),
+                jvm: None,
             },
         )
     }
@@ -265,11 +266,11 @@ mod tests {
 
     #[test]
     fn unsupported_language_is_never_negative() {
-        let a = assess(&classify(&["x"], SourceLanguage::Kotlin), 0);
+        let a = assess(&classify(&["x"], SourceLanguage::Python), 0);
         assert_eq!(
             a.verdict,
             SastVerdict::Unsupported {
-                language: SourceLanguage::Kotlin
+                language: SourceLanguage::Python
             }
         );
         assert_eq!(a.diagnostics[0].code, "sast.language_unsupported");

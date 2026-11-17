@@ -1,5 +1,7 @@
 //! Semantic SAST models: one catalog of source / sink / sanitizer API models,
-//! per-language adapters, and the shared CWE-89 detector.
+//! per-language adapters, the shared taint detector (SQL injection, command
+//! injection, path traversal), structural families (hardcoded secrets, `unsafe`
+//! Rust), optional JVM context, and the capability matrix derived from them.
 //!
 //! This module owns **what an API means** for taint analysis. It does not own
 //! **how taint flows**: reachability stays in the M5 engine behind
@@ -25,6 +27,20 @@
 //!   (resolution and graph queries on top of dataflow). With no backend that
 //!   provides them the planner refuses the run, so no evidence is admitted.
 //!
+//! ## Pack and capability matrix
+//!
+//! [`CapabilityMatrix`] states, per language and family, whether the pack is
+//! supported, through which backend, up to which evidence class and whether a
+//! finding may block. It is derived from the catalog and the backend registry,
+//! so it cannot drift from what a run does. `unsafe` Rust is a
+//! [`FindingNature::Risk`] with [`BlockingLevel::AdvisoryOnly`], never an
+//! automatic vulnerability.
+//!
+//! Java and Kotlin may carry a [`JvmContext`] (imports and classpath
+//! supertypes) so receivers resolve to JDK types. It is plain data supplied by
+//! the caller: no JVM or Detekt scanner is required, and without it an
+//! unresolvable callee keeps the verdict at `Unknown`.
+//!
 //! ## Extension points
 //!
 //! A new language is one more [`LanguageAdapter`] table; a new weakness is a
@@ -36,7 +52,10 @@
 mod assessment;
 mod catalog;
 mod classify;
+mod jvm;
+mod pack;
 mod rule;
+mod structural;
 
 pub use assessment::{Assessment, PrecisionRecall, SastVerdict, assess};
 pub use catalog::{
@@ -46,7 +65,18 @@ pub use classify::{
     CallArg, Classification, ModeledFunction, Observation, ObservationKind, ObservedCall,
     ObservedFunction,
 };
+pub use jvm::JvmContext;
+pub use pack::{
+    BlockingLevel, CapabilityEntry, CapabilityMatrix, FindingNature, ModelCounts, PACK_VERSION,
+    PackVerdict, SecurityFamily, Support,
+};
 pub use rule::{
-    AnalysisReach, SANITIZER_SUBJECT, SQL_EXECUTION_SUBJECT, SQL_INJECTION_KIND,
-    USER_INPUT_SUBJECT, cwe89_sql_injection,
+    AnalysisReach, COMMAND_EXECUTION_SUBJECT, COMMAND_INJECTION_KIND, FILE_ACCESS_SUBJECT,
+    PATH_TRAVERSAL_KIND, SANITIZER_SUBJECT, SQL_EXECUTION_SUBJECT, SQL_INJECTION_KIND,
+    USER_INPUT_SUBJECT, cwe89_sql_injection, taint_detector,
+};
+pub use structural::{
+    HARDCODED_SECRET_KIND, HARDCODED_SECRET_SUBJECT, ObservedUnit, StructuralClassification,
+    StructuralFact, StructuralFamily, StructuralObservation, UNSAFE_CODE_KIND, UNSAFE_CODE_SUBJECT,
+    UnsafeConstruct, classify_structural,
 };
