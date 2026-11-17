@@ -158,6 +158,9 @@ pub enum Fault {
     None,
     /// The incremental side skips every rerun the planner asked for.
     SkipPlannedReruns,
+    /// The incremental side loses every finding a detector produced: the
+    /// rerun results and the answer of the production entry point.
+    DropDetectorFindings,
 }
 
 /// One edit of the base, named by the part it touches and its class.
@@ -459,7 +462,7 @@ pub fn fresh_record(
 ) -> DetectorRunRecord {
     run_detector(
         detector,
-        &revision.facts,
+        revision,
         &workspace(),
         &mut InMemoryEvidenceStore::new(),
     )
@@ -563,6 +566,11 @@ pub fn evaluate_produced(
     if fault == Fault::SkipPlannedReruns {
         incremental_reruns.clear();
     }
+    if fault == Fault::DropDetectorFindings {
+        for record in incremental_reruns.values_mut() {
+            record.findings.clear();
+        }
+    }
 
     let build = |mode, reruns: &BTreeMap<String, DetectorRunRecord>| -> CompleteSnapshot {
         build_complete_snapshot(&CompleteSnapshotRequest {
@@ -648,7 +656,11 @@ pub fn evaluate_produced(
                 observation: f.observation.clone(),
             })
             .collect();
-        let got = comparable_set(&detection.findings);
+        let got = if fault == Fault::DropDetectorFindings {
+            BTreeSet::new()
+        } else {
+            comparable_set(&detection.findings)
+        };
         let want = comparable_set(&cold_findings);
         let comparison = DetectorComparison {
             detector: key.clone(),

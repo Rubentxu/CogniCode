@@ -6015,21 +6015,22 @@
     {
       "name": "graph_query",
       "title": "Natural language graph topology query",
-      "description": "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+      "description": "Keyword-seeded breadth-first traversal of the call graph along edges of every kind. Each edge carries its kind, provenance and confidence; the answer states its depth and budget limits, whether it was cut, and the coverage of the graph it was read from. It is a traversal, not an induced subgraph. Requires build_graph first.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
       "input_schema": {
+        "description": "What `graph_query` is asked.",
         "properties": {
           "budget": {
             "default": 1500,
-            "description": "Maximum nodes to collect (default: 1500)",
+            "description": "Maximum elements the answer holds, counting seed nodes, discovered\nnodes and edges together (default: 1500). The answer never exceeds\nit; when it stops here, `truncated` is true and `truncation_reason`\nis `budget`. A larger budget extends the answer: the elements come\nout in a fixed order that does not depend on the budget.",
             "minimum": 0,
             "type": "integer"
           },
           "max_depth": {
             "default": 3,
-            "description": "Maximum BFS depth from seed nodes (default: 3)",
+            "description": "Maximum BFS depth from the seed nodes (default: 3). Depth 0 returns\nonly the seeds.",
             "minimum": 0,
             "type": "integer"
           },
@@ -6145,6 +6146,43 @@
             ],
             "type": "object"
           },
+          "CoverageInfo": {
+            "description": "What an answer covers, in the shape every consumer reads it.\n\nThe word is the coverage's, not the consumer's: it is the word the\nowner of the coverage publishes, so the CLI, the MCP and the SDK say\nthe same thing about the same tree. The three lists are the three\nholes a build can leave open, and they travel together because a\nconsumer that reads one of them and not the others reads half the\ntruth.",
+            "properties": {
+              "pending_references": {
+                "description": "The references the graph could not tie to a declaration.",
+                "items": {
+                  "$ref": "#/$defs/PendingReferenceInfo"
+                },
+                "type": "array"
+              },
+              "rejected_relations": {
+                "description": "The relations the repository refused.",
+                "items": {
+                  "$ref": "#/$defs/RejectedRelationInfo"
+                },
+                "type": "array"
+              },
+              "skipped_files": {
+                "description": "The files the walk could not read.",
+                "items": {
+                  "$ref": "#/$defs/SkippedFileInfo"
+                },
+                "type": "array"
+              },
+              "status": {
+                "description": "The word the coverage is published with: \"complete\", \"partial\",\n\"unknown\" or \"unsupported\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relations"
+            ],
+            "type": "object"
+          },
           "FreshnessBasis": {
             "description": "La frescura de la respuesta.",
             "properties": {
@@ -6170,16 +6208,47 @@
             ],
             "type": "object"
           },
+          "GraphQueryBasis": {
+            "description": "Where the graph of a `graph_query` answer came from.",
+            "properties": {
+              "graph_source": {
+                "description": "`built`, `cache` or `daemon`.",
+                "type": "string"
+              },
+              "source_manifest_digest": {
+                "description": "The digest of the source manifest the graph was read against.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "The canonical workspace the graph was read from.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "source_manifest_digest",
+              "graph_source"
+            ],
+            "type": "object"
+          },
           "GraphQueryEdge": {
+            "description": "One relation the walk followed, as the graph holds it.",
             "properties": {
               "confidence": {
+                "description": "How sure the graph is, as it recorded it.",
                 "format": "double",
                 "type": "number"
               },
+              "discovers": {
+                "description": "Whether this edge is the one through which the walk first reached\nits target. `false` for a relation that reaches a node the walk\nalready knew, or a second relation between the same two nodes.",
+                "type": "boolean"
+              },
               "provenance": {
+                "description": "How the graph established the relation: `Extracted`, `Inferred`,\n`Ambiguous`, `Manual` or `Tested`.",
                 "type": "string"
               },
               "relation": {
+                "description": "The kind of relation: `calls`, `imports`, `inherits`,\n`uses_generic`, `references`, `defines`, `annotated_by` or\n`contains`.",
                 "type": "string"
               },
               "source": {
@@ -6194,7 +6263,44 @@
               "target",
               "relation",
               "provenance",
-              "confidence"
+              "confidence",
+              "discovers"
+            ],
+            "type": "object"
+          },
+          "GraphQueryLimits": {
+            "description": "The limits of a `graph_query` walk.",
+            "properties": {
+              "budget": {
+                "description": "The budget that was asked for.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "budget_used": {
+                "description": "How many elements (nodes plus edges) the answer holds.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "depth_reached": {
+                "description": "The deepest level a returned node sits at.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_depth": {
+                "description": "The depth that was asked for.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "max_depth",
+              "depth_reached",
+              "budget",
+              "budget_used"
             ],
             "type": "object"
           },
@@ -6216,6 +6322,7 @@
                 ]
               },
               "why_matched": {
+                "description": "The words of the question that matched this node as a seed. Empty\nfor a node the walk discovered.",
                 "items": {
                   "type": "string"
                 },
@@ -6277,6 +6384,113 @@
               "authority"
             ],
             "type": "object"
+          },
+          "PendingReason": {
+            "description": "Why the far end of a reference could not be identified.",
+            "oneOf": [
+              {
+                "const": "unresolved",
+                "description": "The far end could not be identified: either no declaration\ncarries the name, or the declaration that carries it could not be\ntied to the call.\n\nThe two are the same answer for the consumer — the reference does\nnot name a declaration — and they are the same answer for the\nwire: the class of a reference is what a consumer reads, and the\nshape of this enum does not change to tell them apart.",
+                "type": "string"
+              },
+              {
+                "const": "ambiguous",
+                "description": "More than one does, and the graph cannot prove which one.",
+                "type": "string"
+              }
+            ]
+          },
+          "PendingReferenceInfo": {
+            "description": "A reference the graph could not tie to a declaration.",
+            "properties": {
+              "candidates": {
+                "description": "How many declarations carry the name, when there are several.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "file": {
+                "description": "The file that writes the reference.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "What the reference is.",
+                "type": "string"
+              },
+              "line": {
+                "description": "The line the reference is written on (1-indexed): the line a person reads.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/$defs/PendingReason",
+                "description": "Why the far end could not be identified: `unresolved` when the far\nend could not be identified — no declaration carries the name, or\nthe declaration that carries it could not be tied to the call —\nand `ambiguous` when several declarations carry the name."
+              },
+              "target": {
+                "description": "The name the reference names.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "RejectedRelationInfo": {
+            "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+            "properties": {
+              "kind": {
+                "description": "What the relation is.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the repository refused it.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The declaration that holds the relation.",
+                "type": "string"
+              },
+              "target": {
+                "description": "The declaration the relation points at.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "SkippedFileInfo": {
+            "description": "A file the walk could not read.",
+            "properties": {
+              "path": {
+                "description": "The path of the file.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the walk could not read it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "reason"
+            ],
+            "type": "object"
           }
         },
         "description": "La respuesta, con lo que la sostiene y lo que viene después.",
@@ -6297,8 +6511,29 @@
             "description": "Lo que la respuesta dejó fuera."
           },
           "result": {
+            "description": "What `graph_query` answers.\n\nThe answer is a **traversal**, not a subgraph: it holds the nodes the\nwalk reached and the edges the walk followed. An edge between two\nreturned nodes that the walk did not follow (because the depth or the\nbudget stopped it) is not in the answer. `mode` says so, and\n`truncated` says whether anything reachable was left out.",
             "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/GraphQueryBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Which tree and which snapshot the graph was read from, when the\nsession knows; `null` otherwise."
+              },
+              "coverage": {
+                "$ref": "#/$defs/CoverageInfo",
+                "description": "What the graph this answer was read from covers. `unknown` when\nnobody measured that graph, and then an empty answer is not proof\nthat nothing exists."
+              },
+              "direction": {
+                "description": "The direction the edges are followed in: `outgoing`.",
+                "type": "string"
+              },
               "edges": {
+                "description": "The edges the walk followed, in the order it followed them. An edge\nnever appears before its two endpoints are in `nodes`.",
                 "items": {
                   "$ref": "#/$defs/GraphQueryEdge"
                 },
@@ -6307,7 +6542,16 @@
               "explanation": {
                 "type": "string"
               },
+              "limits": {
+                "$ref": "#/$defs/GraphQueryLimits",
+                "description": "The limits the walk ran under and how much of them it used."
+              },
+              "mode": {
+                "description": "What the answer is: always `traversal`, the nodes reached from the\nseeds and the edges followed, as opposed to the subgraph induced by\nthe returned nodes.",
+                "type": "string"
+              },
               "nodes": {
+                "description": "The nodes reached: the seeds first, then the nodes the walk\ndiscovered, in discovery order.",
                 "items": {
                   "$ref": "#/$defs/GraphQueryNode"
                 },
@@ -6317,8 +6561,25 @@
                 "type": "string"
               },
               "summary": {
-                "description": "One line saying what the answer says.",
+                "description": "One line saying what the answer says: its size, what it covers and\nwhether it was cut.",
                 "type": "string"
+              },
+              "truncated": {
+                "description": "Whether something the walk could reach was left out, because of the\nbudget or the depth.",
+                "type": "boolean"
+              },
+              "truncation_reason": {
+                "description": "Why: `budget` when the answer reached the budget, `max_depth` when\nnodes at the last depth have outgoing edges that were not followed,\n`null` when the answer is not cut. `budget` wins when both apply.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "unexpanded_nodes": {
+                "description": "How many returned nodes have outgoing edges that were not followed\nbecause they sit at the last depth.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
               }
             },
             "required": [
@@ -6326,7 +6587,13 @@
               "nodes",
               "edges",
               "explanation",
-              "summary"
+              "summary",
+              "mode",
+              "direction",
+              "truncated",
+              "unexpanded_nodes",
+              "limits",
+              "coverage"
             ],
             "title": "GraphQueryOutput",
             "type": "object"
@@ -6372,7 +6639,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.106.0"
       },
       "required_args": [
         "question"
@@ -6581,15 +6848,23 @@
             "type": "object"
           },
           "GraphQueryEdge": {
+            "description": "One relation the walk followed, as the graph holds it.",
             "properties": {
               "confidence": {
+                "description": "How sure the graph is, as it recorded it.",
                 "format": "double",
                 "type": "number"
               },
+              "discovers": {
+                "description": "Whether this edge is the one through which the walk first reached\nits target. `false` for a relation that reaches a node the walk\nalready knew, or a second relation between the same two nodes.",
+                "type": "boolean"
+              },
               "provenance": {
+                "description": "How the graph established the relation: `Extracted`, `Inferred`,\n`Ambiguous`, `Manual` or `Tested`.",
                 "type": "string"
               },
               "relation": {
+                "description": "The kind of relation: `calls`, `imports`, `inherits`,\n`uses_generic`, `references`, `defines`, `annotated_by` or\n`contains`.",
                 "type": "string"
               },
               "source": {
@@ -6604,7 +6879,8 @@
               "target",
               "relation",
               "provenance",
-              "confidence"
+              "confidence",
+              "discovers"
             ],
             "type": "object"
           },
@@ -6626,6 +6902,7 @@
                 ]
               },
               "why_matched": {
+                "description": "The words of the question that matched this node as a seed. Empty\nfor a node the walk discovered.",
                 "items": {
                   "type": "string"
                 },
@@ -6789,7 +7066,7 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.106.0"
       },
       "required_args": [
         "question"

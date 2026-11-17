@@ -3,16 +3,20 @@
 //!
 //! ## What runs
 //!
-//! Two detectors, listed by [`ProductionDetector`], run through the real
+//! Three detectors, listed by [`ProductionDetector`], run through the real
 //! seam: `DetectorAdmission` -> `ExecutionPermit` -> `DetectorExecutor` ->
 //! `AstBackend`. Each projects its AST view from the revision's own facts,
-//! so a run reads exactly the `core:defines` facts its detector is about
-//! and nothing else:
+//! so a run reads exactly the facts its detector is about and nothing else:
 //!
 //! - the function-definition detector (the IR the grounded finding flow
 //!   already defines) reads the definitions of kind `Function`;
 //! - the type-definition detector reads the definitions of kind `Struct`,
-//!   `Class`, `Enum` and `Trait`.
+//!   `Class`, `Enum` and `Trait`;
+//! - the unprotected-bucket detector reads the Terraform declarations of
+//!   S3 buckets and of their public access blocks, and the references of
+//!   those blocks. It is the one detector that also reads the revision's
+//!   coverage: a Terraform module with a file that has no facts is not
+//!   judged, because the file may hold the block (see `terraform_buckets`).
 //!
 //! The other detectors the platform ships read source text, not revision
 //! facts, so a facts read-set recorded for them would claim something the
@@ -79,6 +83,7 @@ use crate::domain::value_objects::WorkspaceId;
 use super::planner::WorkDisposition;
 use super::revision_facts::{ProducedRevision, assess_reuse, producer_versions};
 use super::scm_delta::RevisionFacts;
+use super::terraform_buckets;
 
 const DEFINES: &str = "core:defines";
 const FUNCTION_KIND: &str = "kind=Function";
@@ -86,6 +91,9 @@ const TYPE_KINDS: [&str; 4] = ["kind=Struct", "kind=Class", "kind=Enum", "kind=T
 
 const TYPE_DEFINITION_SUBJECT: &str = "syntax.type_definition";
 const TYPE_DEFINITION_ID: &str = "structure.type_definition";
+
+const UNPROTECTED_BUCKET_SUBJECT: &str = "infrastructure.s3_bucket";
+const UNPROTECTED_BUCKET_ID: &str = "infrastructure.unprotected_s3_bucket";
 
 /// A detector that reads revision facts and records what it read.
 ///
@@ -98,16 +106,25 @@ pub enum ProductionDetector {
     FunctionDefinition,
     /// Every struct, class, enum and trait definition.
     TypeDefinition,
+    /// Every Terraform `aws_s3_bucket` that no public access block of its
+    /// module references. Reads Terraform declaration and reference facts,
+    /// not definitions of code.
+    UnprotectedBucket,
 }
 
 impl ProductionDetector {
     /// Every detector that writes a read-set, in the order they are recorded.
-    pub const ALL: [Self; 2] = [Self::FunctionDefinition, Self::TypeDefinition];
+    pub const ALL: [Self; 3] = [
+        Self::FunctionDefinition,
+        Self::TypeDefinition,
+        Self::UnprotectedBucket,
+    ];
 
     fn ir(self) -> Result<DetectorIr, String> {
         match self {
             Self::FunctionDefinition => function_definition_detector_ir(),
             Self::TypeDefinition => type_definition_detector_ir(),
+            Self::UnprotectedBucket => unprotected_bucket_detector_ir(),
         }
     }
 
@@ -115,6 +132,7 @@ impl ProductionDetector {
         match self {
             Self::FunctionDefinition => "cgh-044-1.0.0",
             Self::TypeDefinition => "1.0.0",
+            Self::UnprotectedBucket => "1.0.0",
         }
     }
 
@@ -122,6 +140,7 @@ impl ProductionDetector {
         match self {
             Self::FunctionDefinition => SUBJECT_FUNCTION_DEFINITION,
             Self::TypeDefinition => TYPE_DEFINITION_SUBJECT,
+            Self::UnprotectedBucket => UNPROTECTED_BUCKET_SUBJECT,
         }
     }
 
@@ -129,6 +148,7 @@ impl ProductionDetector {
         match self {
             Self::FunctionDefinition => "function",
             Self::TypeDefinition => "type",
+            Self::UnprotectedBucket => "S3 bucket",
         }
     }
 
@@ -137,6 +157,8 @@ impl ProductionDetector {
         match self {
             Self::FunctionDefinition => detail == Some(FUNCTION_KIND),
             Self::TypeDefinition => detail.is_some_and(|kind| TYPE_KINDS.contains(&kind)),
+            // Not a definition of code: its projection reads Terraform facts.
+            Self::UnprotectedBucket => false,
         }
     }
 }
@@ -154,6 +176,25 @@ fn type_definition_detector_ir() -> Result<DetectorIr, String> {
             },
             DetectorStep::Produce {
                 kind: FindingKind::new(TYPE_DEFINITION_ID).map_err(|e| e.to_string())?,
+            },
+        ],
+    })
+}
+
+fn unprotected_bucket_detector_ir() -> Result<DetectorIr, String> {
+    Ok(DetectorIr {
+        id: DetectorId::new(UNPROTECTED_BUCKET_ID).map_err(|e| e.to_string())?,
+        name: UNPROTECTED_BUCKET_ID.to_string(),
+        policy: Default::default(),
+        requires: [AnalysisCapability::AstPattern].into_iter().collect(),
+        authority: DetectorAuthority::Candidate,
+        steps: vec![
+            DetectorStep::Match {
+                subject: SubjectPattern::new(UNPROTECTED_BUCKET_SUBJECT)
+                    .map_err(|e| e.to_string())?,
+            },
+            DetectorStep::Produce {
+                kind: FindingKind::new(UNPROTECTED_BUCKET_ID).map_err(|e| e.to_string())?,
             },
         ],
     })
@@ -234,6 +275,72 @@ fn definition_reads(
         }
     }
     Ok(reads)
+}
+
+/// What one detector reads of one revision.
+struct Projection {
+    /// The constructs handed to the detector, one per possible finding.
+    reads: Vec<DefinitionRead>,
+    /// Every fact consulted to decide them: the read-set the record keeps.
+    /// For a detector whose answer depends on more than the facts it
+    /// reports on, this is wider than `reads`.
+    observed: BTreeSet<FactId>,
+}
+
+/// The pure projection of a revision into what `detector` reads.
+fn projection(
+    detector: ProductionDetector,
+    produced: &ProducedRevision,
+) -> Result<Projection, DetectorRunError> {
+    match detector {
+        ProductionDetector::FunctionDefinition | ProductionDetector::TypeDefinition => {
+            let reads = definition_reads(detector, &produced.facts)?;
+            let observed = reads.iter().map(|read| read.fact).collect();
+            Ok(Projection { reads, observed })
+        }
+        ProductionDetector::UnprotectedBucket => bucket_projection(detector, produced),
+    }
+}
+
+/// The unprotected buckets of the revision's Terraform facts, each grounded
+/// on the bucket's own declaration fact.
+fn bucket_projection(
+    detector: ProductionDetector,
+    produced: &ProducedRevision,
+) -> Result<Projection, DetectorRunError> {
+    let subject = SubjectPattern::new(detector.subject())
+        .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
+    let by_id: BTreeMap<FactId, &Fact> = produced.facts.facts.iter().map(|f| (f.id, f)).collect();
+    let scan = terraform_buckets::scan(&produced.facts, &produced.coverage);
+    let reads = scan
+        .unprotected
+        .into_iter()
+        .filter_map(|bucket| {
+            let fact = by_id.get(&bucket.fact)?;
+            Some(DefinitionRead {
+                path: bucket.path,
+                line: 0,
+                construct: AstConstruct {
+                    subject: subject.clone(),
+                    // The declaration fact names a file and an identity, not
+                    // a line.
+                    line: 0,
+                    detail: format!(
+                        "{} `{}` has no public access block in its module",
+                        detector.noun(),
+                        bucket.fqn
+                    ),
+                    grounding: Some(GroundingRef::entity(fact.subject, fact.id)),
+                },
+                fqn: bucket.fqn,
+                fact: bucket.fact,
+            })
+        })
+        .collect();
+    Ok(Projection {
+        reads,
+        observed: scan.observed,
+    })
 }
 
 fn ast_view(reads: &[DefinitionRead]) -> AstInput {
@@ -329,14 +436,15 @@ pub fn detector_id(detector: ProductionDetector) -> Result<DetectorId, DetectorR
 /// records nothing: there is no half-written read-set.
 pub fn run_detector(
     detector: ProductionDetector,
-    facts: &RevisionFacts,
+    produced: &ProducedRevision,
     workspace: &WorkspaceId,
     sink: &mut dyn EvidenceSink,
 ) -> Result<DetectorRunRecord, DetectorRunError> {
     let permit = permit(detector)?;
     let registry = registry();
     let identity = identity_of(&permit, &registry)?;
-    let reads = definition_reads(detector, facts)?;
+    let Projection { reads, observed } = projection(detector, produced)?;
+    let facts = &produced.facts;
 
     let scope = AnalysisScope::new(workspace.clone(), facts.snapshot);
     let input = AnalysisInput {
@@ -396,7 +504,7 @@ pub fn run_detector(
 
     Ok(DetectorRunRecord {
         identity,
-        observed_facts: reads.iter().map(|read| read.fact).collect(),
+        observed_facts: observed,
         observed_truncated: false,
         produced_snapshot: facts.snapshot,
         findings,
@@ -436,7 +544,7 @@ pub fn ensure_run(
     if current {
         return Ok(RunWritten::AlreadyRecorded);
     }
-    let record = run_detector(detector, &produced.facts, workspace, sink)?;
+    let record = run_detector(detector, produced, workspace, sink)?;
     store
         .record(record)
         .map_err(|error| DetectorRunError::Persist(error.to_string()))?;
@@ -523,7 +631,7 @@ fn rerun(
     sink: &mut dyn EvidenceSink,
     reason: impl Into<String>,
 ) -> Result<Detection, DetectorRunError> {
-    let record = run_detector(detector, &head.facts, workspace, sink)?;
+    let record = run_detector(detector, head, workspace, sink)?;
     let findings = record
         .findings
         .iter()
@@ -702,7 +810,7 @@ mod tests {
     const TYPES: ProductionDetector = ProductionDetector::TypeDefinition;
 
     fn fresh_run(
-        facts: &RevisionFacts,
+        facts: &ProducedRevision,
         workspace: &WorkspaceId,
     ) -> Result<DetectorRunRecord, DetectorRunError> {
         run_detector(FUNCTIONS, facts, workspace, &mut TestSink::default())
@@ -710,7 +818,7 @@ mod tests {
 
     fn fresh_run_of(
         detector: ProductionDetector,
-        facts: &RevisionFacts,
+        facts: &ProducedRevision,
     ) -> Result<DetectorRunRecord, DetectorRunError> {
         run_detector(detector, facts, &workspace(), &mut TestSink::default())
     }
@@ -890,7 +998,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
 
-        let record = fresh_run(&base.facts, &workspace()).expect("run");
+        let record = fresh_run(&base, &workspace()).expect("run");
 
         assert_eq!(record.findings.len(), 2, "alpha and beta");
         assert_eq!(record.produced_snapshot, base.facts.snapshot);
@@ -932,8 +1040,8 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         assert_eq!(
-            fresh_run(&base.facts, &workspace()).expect("first"),
-            fresh_run(&base.facts, &workspace()).expect("second")
+            fresh_run(&base, &workspace()).expect("first"),
+            fresh_run(&base, &workspace()).expect("second")
         );
     }
 
@@ -942,7 +1050,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base, &workspace()).expect("prior run");
 
         let detection = fresh_detect(
             Some(&prior),
@@ -987,7 +1095,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "renamed");
-        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base, &workspace()).expect("prior run");
 
         let detection = fresh_detect(
             Some(&prior),
@@ -1016,7 +1124,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "added");
-        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base, &workspace()).expect("prior run");
 
         let detection = fresh_detect(
             Some(&prior),
@@ -1036,7 +1144,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let mut prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let mut prior = fresh_run(&base, &workspace()).expect("prior run");
         prior
             .identity
             .effective_capabilities
@@ -1066,7 +1174,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let mut prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let mut prior = fresh_run(&base, &workspace()).expect("prior run");
         prior.identity.parser = DetectorDigest::from_content("cognicode.revision-facts/v1");
 
         let detection = fresh_detect(
@@ -1090,8 +1198,8 @@ mod tests {
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
         let changes = between(&fake, &base, &head);
-        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
-        let on_head = fresh_run(&head.facts, &workspace()).expect("run on head");
+        let prior = fresh_run(&base, &workspace()).expect("prior run");
+        let on_head = fresh_run(&head, &workspace()).expect("run on head");
         let truncated = DetectorRunRecord {
             observed_truncated: true,
             ..prior.clone()
@@ -1127,7 +1235,7 @@ mod tests {
                 path: crate::domain::scm::PathKey::new("src/a.rs").expect("path"),
                 reason: super::super::revision_facts::GapReason::NotText,
             });
-        let prior = fresh_run(&base.facts, &workspace()).expect("prior run");
+        let prior = fresh_run(&base, &workspace()).expect("prior run");
 
         let detection = fresh_detect(
             Some(&prior),
@@ -1180,7 +1288,7 @@ mod tests {
         let store = DetectorReuseStore::new(dir.path());
         let base = produce(&fake, "main");
         let other_base = produce(&fake, "renamed");
-        let mut stale = fresh_run(&base.facts, &workspace()).expect("run");
+        let mut stale = fresh_run(&base, &workspace()).expect("run");
         stale
             .identity
             .effective_capabilities
@@ -1277,17 +1385,17 @@ mod tests {
         let store = DetectorReuseStore::new(dir.path());
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
-        let mut other = fresh_run(&base.facts, &workspace()).expect("run");
+        let mut other = fresh_run(&base, &workspace()).expect("run");
         other.identity.detector_id = DetectorId::new("other.detector").expect("id");
 
         store.record(other.clone()).expect("other");
         store
-            .record(fresh_run(&base.facts, &workspace()).expect("run"))
+            .record(fresh_run(&base, &workspace()).expect("run"))
             .expect("first");
         store
-            .record(fresh_run(&head.facts, &workspace()).expect("run"))
+            .record(fresh_run(&head, &workspace()).expect("run"))
             .expect("second base");
-        let again = fresh_run(&base.facts, &workspace()).expect("run");
+        let again = fresh_run(&base, &workspace()).expect("run");
         store.record(again.clone()).expect("same base again");
 
         let index = store.load().expect("index");
@@ -1326,7 +1434,7 @@ mod tests {
         base: &ProducedRevision,
         head: &ProducedRevision,
     ) -> Detection {
-        let prior = fresh_run_of(detector, &base.facts).expect("prior run");
+        let prior = fresh_run_of(detector, base).expect("prior run");
         fresh_detect_of(
             detector,
             Some(&prior),
@@ -1342,7 +1450,7 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
 
-        let record = fresh_run_of(TYPES, &base.facts).expect("run");
+        let record = fresh_run_of(TYPES, &base).expect("run");
 
         let defined = type_facts(&base);
         assert_eq!(defined.len(), 1, "only Point is a type definition");
@@ -1367,8 +1475,8 @@ mod tests {
         let fake = fake();
         let base = produce(&fake, "main");
 
-        let types = fresh_run_of(TYPES, &base.facts).expect("types");
-        let functions = fresh_run_of(FUNCTIONS, &base.facts).expect("functions");
+        let types = fresh_run_of(TYPES, &base).expect("types");
+        let functions = fresh_run_of(FUNCTIONS, &base).expect("functions");
 
         assert!(
             types.observed_facts.is_disjoint(&functions.observed_facts),
@@ -1416,7 +1524,7 @@ mod tests {
             reason.contains("touches a fact the detector read"),
             "{reason}"
         );
-        let prior = fresh_run_of(TYPES, &base.facts).expect("prior");
+        let prior = fresh_run_of(TYPES, &base).expect("prior");
         assert_ne!(
             semantics(&detection.findings),
             semantics(&rebind_candidate(&prior, head.facts.snapshot)),
@@ -1475,9 +1583,9 @@ mod tests {
         let base = produce(&fake, "main");
         let head = produce(&fake, "body-edit");
         let changes = between(&fake, &base, &head);
-        let prior = fresh_run_of(TYPES, &base.facts).expect("prior run");
-        let on_head = fresh_run_of(TYPES, &head.facts).expect("run on head");
-        let functions = fresh_run_of(FUNCTIONS, &base.facts).expect("functions run");
+        let prior = fresh_run_of(TYPES, &base).expect("prior run");
+        let on_head = fresh_run_of(TYPES, &head).expect("run on head");
+        let functions = fresh_run_of(FUNCTIONS, &base).expect("functions run");
         let truncated = DetectorRunRecord {
             observed_truncated: true,
             ..prior.clone()
@@ -1560,5 +1668,315 @@ mod tests {
                 detection.reuse
             );
         }
+    }
+
+    // ----- The Terraform detector ---------------------------------------
+
+    const BUCKETS: ProductionDetector = ProductionDetector::UnprotectedBucket;
+
+    const LOGS_BUCKET: &[u8] = b"resource \"aws_s3_bucket\" \"logs\" {\n  bucket = var.name\n}\n";
+    const LOGS_BUCKET_TAGGED: &[u8] = b"resource \"aws_s3_bucket\" \"logs\" {\n  bucket = var.name\n  tags = {\n    Team = \"platform\"\n  }\n}\n";
+    const LOGS_WITH_BLOCK: &[u8] = b"resource \"aws_s3_bucket\" \"logs\" {\n  bucket = var.name\n}\n\nresource \"aws_s3_bucket_public_access_block\" \"logs\" {\n  bucket                  = aws_s3_bucket.logs.id\n  block_public_acls       = true\n  block_public_policy     = true\n  ignore_public_acls      = true\n  restrict_public_buckets = true\n}\n";
+    const BLOCK_OF_LOGS_ELSEWHERE: &[u8] = b"resource \"aws_s3_bucket_public_access_block\" \"logs\" {\n  bucket = aws_s3_bucket.logs.id\n}\n";
+    const BLOCK_OF_ANOTHER_BUCKET: &[u8] = b"resource \"aws_s3_bucket_public_access_block\" \"logs\" {\n  bucket = aws_s3_bucket.other.id\n}\n";
+    const BROKEN_TERRAFORM: &[u8] =
+        b"resource \"aws_s3_bucket_public_access_block\" \"logs\" {\n  bucket = \n";
+    const ARCHIVE_BUCKET: &[u8] =
+        b"resource \"aws_s3_bucket\" \"archive\" {\n  bucket = \"archive\"\n}\n";
+
+    /// A revision's name, its parents and its files.
+    type TerraformRevision<'a> = (&'a str, &'a [&'a str], Vec<(&'a str, &'a [u8])>);
+
+    fn terraform_fake() -> FakeSource {
+        let revisions: [TerraformRevision; 9] = [
+            (
+                "main",
+                &[],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "unrelated-edit",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET_TAGGED),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "protected",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_WITH_BLOCK),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "protected-in-another-file",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("infra/protection.tf", BLOCK_OF_LOGS_ELSEWHERE),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "protected-in-another-module",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("other/protection.tf", BLOCK_OF_LOGS_ELSEWHERE),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "block_of_another_bucket",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("infra/protection.tf", BLOCK_OF_ANOTHER_BUCKET),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "module-unreadable",
+                &["main"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("infra/protection.tf", BROKEN_TERRAFORM),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "block-removed",
+                &["protected"],
+                vec![
+                    ("infra/main.tf", LOGS_BUCKET),
+                    ("other/main.tf", ARCHIVE_BUCKET),
+                ],
+            ),
+            (
+                "bucket-removed",
+                &["main"],
+                vec![("other/main.tf", ARCHIVE_BUCKET)],
+            ),
+        ];
+        revisions.iter().fold(
+            FakeSource::new(
+                "fake",
+                ProviderCapabilities {
+                    ancestor_queries: true,
+                    ..ProviderCapabilities::NONE
+                },
+            ),
+            |source, (name, parents, files)| source.with_revision(name, parents, files),
+        )
+    }
+
+    /// The buckets the detector reports on `name`, by declaration.
+    fn unprotected_in(fake: &FakeSource, name: &str) -> Vec<String> {
+        let head = produce(fake, name);
+        let record = fresh_run_of(BUCKETS, &head).expect("run");
+        let mut names: Vec<String> = record
+            .findings
+            .iter()
+            .flat_map(|finding| finding.output_locations.iter().map(|l| l.file.clone()))
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_bucket_no_public_access_block_references_is_reported_where_it_is_declared() {
+        let fake = terraform_fake();
+
+        assert_eq!(
+            unprotected_in(&fake, "main"),
+            ["infra/main.tf", "other/main.tf"]
+        );
+    }
+
+    #[test]
+    fn a_block_in_the_same_file_protects_the_bucket() {
+        assert_eq!(
+            unprotected_in(&terraform_fake(), "protected"),
+            ["other/main.tf"]
+        );
+    }
+
+    #[test]
+    fn a_block_in_another_file_of_the_module_protects_the_bucket() {
+        assert_eq!(
+            unprotected_in(&terraform_fake(), "protected-in-another-file"),
+            ["other/main.tf"]
+        );
+    }
+
+    #[test]
+    fn a_block_of_another_module_or_of_another_bucket_protects_nothing() {
+        let fake = terraform_fake();
+
+        assert_eq!(
+            unprotected_in(&fake, "protected-in-another-module"),
+            ["infra/main.tf", "other/main.tf"],
+            "the block names `aws_s3_bucket.logs` of its own module"
+        );
+        assert_eq!(
+            unprotected_in(&fake, "block_of_another_bucket"),
+            ["infra/main.tf", "other/main.tf"]
+        );
+    }
+
+    #[test]
+    fn a_module_with_an_unreadable_file_is_not_judged_but_the_others_still_are() {
+        let fake = terraform_fake();
+        let head = produce(&fake, "module-unreadable");
+        assert!(!head.coverage.is_complete(), "the broken file is a gap");
+
+        assert_eq!(
+            unprotected_in(&fake, "module-unreadable"),
+            ["other/main.tf"],
+            "infra/protection.tf may hold the block, so no absence is claimed for infra"
+        );
+    }
+
+    #[test]
+    fn the_bucket_detector_reads_only_what_decides_it() {
+        let fake = terraform_fake();
+        let head = produce(&fake, "protected");
+        let record = fresh_run_of(BUCKETS, &head).expect("run");
+
+        let consulted: BTreeSet<String> = head
+            .facts
+            .facts
+            .iter()
+            .filter(|f| record.observed_facts.contains(&f.id))
+            .map(|f| format!("{} {:?}", f.predicate.as_str(), f.object))
+            .collect();
+        let tags: BTreeSet<&str> = ["core:defines", "core:references"].into();
+        assert!(
+            consulted
+                .iter()
+                .all(|c| tags.iter().any(|tag| c.starts_with(tag))),
+            "{consulted:?}"
+        );
+        assert!(
+            consulted.iter().any(|c| c.contains("aws_s3_bucket.logs\"")),
+            "the bucket declaration is read: {consulted:?}"
+        );
+        assert!(
+            consulted
+                .iter()
+                .any(|c| c.contains("aws_s3_bucket_public_access_block.logs")),
+            "the block declaration is read: {consulted:?}"
+        );
+        assert!(
+            !consulted.iter().any(|c| c.contains("var.name")),
+            "a reference of the bucket itself decides nothing: {consulted:?}"
+        );
+        assert!(
+            record.observed_facts.len() < head.facts.facts.len(),
+            "not every fact of the revision"
+        );
+    }
+
+    fn assert_detection_equals_a_cold_run(fake: &FakeSource, head_name: &str, want: &Reuse) {
+        let base = produce(fake, "main");
+        let head = produce(fake, head_name);
+        let detection = detect_head(BUCKETS, fake, &base, &head);
+        match want {
+            Reuse::Reused { .. } => assert_eq!(detection.reuse, *want, "{head_name}"),
+            Reuse::Rerun { .. } => assert!(
+                matches!(detection.reuse, Reuse::Rerun { .. }),
+                "{head_name}: {:?}",
+                detection.reuse
+            ),
+        }
+        let cold = fresh_rerun_of(BUCKETS, &head, "reference").expect("cold");
+        assert_eq!(
+            semantics(&detection.findings),
+            semantics(&cold.findings),
+            "{head_name}: the reused or re-run findings are the cold run's"
+        );
+    }
+
+    #[test]
+    fn an_edit_outside_the_read_facts_is_reused_and_equals_a_cold_run() {
+        let reused = Reuse::Reused {
+            produced_in: produce(&terraform_fake(), "main").facts.snapshot,
+        };
+        assert_detection_equals_a_cold_run(&terraform_fake(), "unrelated-edit", &reused);
+    }
+
+    #[test]
+    fn adding_the_block_that_protects_a_bucket_forces_a_rerun_that_drops_the_finding() {
+        let fake = terraform_fake();
+        let rerun = Reuse::Rerun {
+            reason: String::new(),
+        };
+        for head in ["protected", "protected-in-another-file"] {
+            assert_detection_equals_a_cold_run(&fake, head, &rerun);
+        }
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "protected");
+        assert_eq!(
+            detect_head(BUCKETS, &fake, &base, &head).findings.len(),
+            1,
+            "only the archive bucket is left"
+        );
+    }
+
+    #[test]
+    fn removing_the_block_forces_a_rerun_that_finds_the_bucket_again() {
+        let fake = terraform_fake();
+        // The base record holds the block's facts.
+        let base = produce(&fake, "protected");
+        let head = produce(&fake, "block-removed");
+        let detection = detect_head(BUCKETS, &fake, &base, &head);
+
+        assert!(matches!(detection.reuse, Reuse::Rerun { .. }));
+        assert_eq!(detection.findings.len(), 2);
+    }
+
+    #[test]
+    fn a_module_that_turns_unreadable_is_never_answered_from_the_prior_run() {
+        let fake = terraform_fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "module-unreadable");
+        let detection = detect_head(BUCKETS, &fake, &base, &head);
+
+        assert!(
+            matches!(detection.reuse, Reuse::Rerun { .. }),
+            "facts are missing, so nothing is proven reusable: {:?}",
+            detection.reuse
+        );
+        let reported: Vec<_> = detection
+            .findings
+            .iter()
+            .flat_map(|f| f.output_locations.iter().map(|l| l.file.as_str()))
+            .collect();
+        assert_eq!(reported, ["other/main.tf"]);
+    }
+
+    #[test]
+    fn removing_the_bucket_removes_its_finding() {
+        let fake = terraform_fake();
+        let base = produce(&fake, "main");
+        let head = produce(&fake, "bucket-removed");
+        let detection = detect_head(BUCKETS, &fake, &base, &head);
+
+        assert!(matches!(detection.reuse, Reuse::Rerun { .. }));
+        assert_eq!(detection.findings.len(), 1);
+    }
+
+    #[test]
+    fn a_revision_without_terraform_yields_a_record_with_nothing_read() {
+        let fake = fake();
+        let record = fresh_run_of(BUCKETS, &produce(&fake, "main")).expect("run");
+
+        assert!(record.findings.is_empty());
+        assert!(record.observed_facts.is_empty());
     }
 }
