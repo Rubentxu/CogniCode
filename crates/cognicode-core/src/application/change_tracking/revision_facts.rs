@@ -32,6 +32,13 @@
 //! reported as reusable on facts that could be missing — a fact missing
 //! on both sides looks unchanged, which is exactly the false negative
 //! the planner exists to prevent.
+//!
+//! A Helm chart template is the one analyzable file that is not read as
+//! its extension says: it is Go-template text until rendered, so it is
+//! decided by a render check of its chart instead
+//! (see [`super::helm_templates`]). Without a faithful render it is a
+//! [`GapReason::TemplateNotRendered`] gap: never a syntax error, never
+//! facts, never clean.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -52,11 +59,16 @@ use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::naming::NamespacedName;
 use crate::domain::readset::{ReadSet, ReadSetConfig};
 use crate::domain::scm::{
-    BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceRevision,
+    BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceInventory,
+    SourceRevision,
 };
 
 use crate::application::ingest::extractor::{SourceLanguage, language_for_extension};
 
+use super::helm_templates::{
+    ChartFiles, ChartRender, ChartRenderCheck, NoChartRender, below_root, chart_roots,
+    is_chart_file, template_chart_root,
+};
 use super::planner::{AffectedWorkPlan, ExecutionDependency, WorkDisposition, WorkId};
 use super::scm_delta::{
     RevisionFacts, ScmDeltaError, delta_from_change_set, plan_between, snapshot_id_for,
@@ -65,8 +77,9 @@ use super::scm_delta::{
 /// The version of the fact assembly itself. It is part of every object
 /// key and of the producer identity of every persisted snapshot: a change
 /// to how facts are assembled must bump it, and nothing written before
-/// is served afterwards.
-pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v2";
+/// is served afterwards. v3: chart templates are decided by a render, no
+/// longer extracted as YAML.
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v3";
 
 /// Paths read per batched content request: bounds peak memory (about
 /// this many files of at most `max_file_bytes` each) while keeping the
@@ -135,6 +148,16 @@ pub enum GapReason {
     /// fault, so the declarations read from it are an unknown share of what
     /// the file declares, and no consumer may take them for the whole.
     SyntaxError(SyntaxFault),
+    /// The file is a Helm chart template, which is Go-template text and not
+    /// YAML until rendered, and its chart was not (completely) rendered, so
+    /// nothing is known about the document it stands for. Not a syntax
+    /// error: the file is fine; the render is what is missing.
+    TemplateNotRendered {
+        /// The chart root, `.` for the repository root.
+        chart: String,
+        /// Why the chart was not rendered.
+        cause: String,
+    },
     /// The revision has more analyzable files than the run may read.
     FileLimitReached { limit: usize },
 }
@@ -150,6 +173,9 @@ impl GapReason {
             }
             Self::ExtractionFailed(why) => format!("extraction failed: {why}"),
             Self::SyntaxError(fault) => fault.describe(),
+            Self::TemplateNotRendered { chart, cause } => format!(
+                "helm template is not YAML until rendered, and chart `{chart}` was not rendered: {cause}"
+            ),
             Self::FileLimitReached { limit } => {
                 format!("revision exceeds the {limit} analyzable file bound")
             }
@@ -175,6 +201,9 @@ pub struct FactsCoverage {
     pub parsed_files: usize,
     /// Analyzable files whose facts came from a stored object.
     pub reused_files: usize,
+    /// Analyzable chart templates covered by a faithful render of their
+    /// chart instead of by facts of their own.
+    pub rendered_files: usize,
     /// Tracked paths no reader claims: their content is invisible to the
     /// facts, which is a limit of the facts, not a gap in them.
     pub unanalyzed_files: usize,
@@ -355,6 +384,26 @@ pub fn produce_revision_facts(
     objects: Option<&FactObjectStore>,
     limits: &FactsLimits,
 ) -> Result<ProducedRevision, ScmError> {
+    produce_revision_facts_rendering(reader, revision, objects, limits, &NoChartRender)
+}
+
+/// [`produce_revision_facts`] with a render check for Helm charts.
+///
+/// A chart template is not YAML until rendered, so it never reaches the
+/// YAML grammar (see [`super::helm_templates`]): `charts` decides, once per
+/// chart, whether the chart was faithfully rendered. Only then are its
+/// templates covered; otherwise each one is a
+/// [`GapReason::TemplateNotRendered`] gap.
+///
+/// # Errors
+/// As [`produce_revision_facts`].
+pub fn produce_revision_facts_rendering(
+    reader: &dyn RevisionReader,
+    revision: &SourceRevision,
+    objects: Option<&FactObjectStore>,
+    limits: &FactsLimits,
+    charts: &dyn ChartRenderCheck,
+) -> Result<ProducedRevision, ScmError> {
     let inventory = reader.inventory(revision)?;
     let snapshot_id = snapshot_id_for(revision);
     let mut coverage = FactsCoverage {
@@ -366,6 +415,8 @@ pub fn produce_revision_facts(
     let mut per_file: BTreeMap<PathKey, Vec<Fact>> = BTreeMap::new();
     let mut files: BTreeMap<PathKey, ExtractionObject> = BTreeMap::new();
     let mut pending: Vec<(&InventoryEntry, &SourceLanguage)> = Vec::new();
+    let roots = chart_roots(inventory.entries().iter().map(|entry| entry.path.as_str()));
+    let mut templates: BTreeMap<String, Vec<PathKey>> = BTreeMap::new();
 
     for entry in inventory.entries() {
         if is_manifest(&entry.path) {
@@ -384,6 +435,12 @@ pub fn produce_revision_facts(
                     limit: limits.max_files,
                 },
             });
+            continue;
+        }
+        // Go-template text is not YAML: no grammar and no stored object may
+        // speak for it. Only a render of its chart can.
+        if let Some(root) = template_chart_root(entry.path.as_str(), &roots) {
+            templates.entry(root).or_default().push(entry.path.clone());
             continue;
         }
         let content = entry.content.as_hex();
@@ -439,7 +496,32 @@ pub fn produce_revision_facts(
         }
     }
 
-    // Gaps are found in two passes (limit/skip first, reads after): a
+    for (root, template_paths) in &templates {
+        let outcome = match read_chart_files(reader, revision, &inventory, root, limits) {
+            Ok(chart) => charts.check(&chart),
+            Err(cause) => ChartRender::NotRendered { cause },
+        };
+        match outcome {
+            ChartRender::Rendered => {
+                coverage.rendered_files += template_paths.len();
+                unanalyzed.extend(template_paths.iter().cloned());
+            }
+            ChartRender::NotRendered { cause } => {
+                let chart = if root.is_empty() { "." } else { root.as_str() };
+                coverage
+                    .gaps
+                    .extend(template_paths.iter().map(|path| FactGap {
+                        path: path.clone(),
+                        reason: GapReason::TemplateNotRendered {
+                            chart: chart.to_string(),
+                            cause: cause.clone(),
+                        },
+                    }));
+            }
+        }
+    }
+
+    // Gaps are found in several passes (limit/skip first, reads after): a
     // path order keeps the report independent of that.
     coverage.gaps.sort_by(|a, b| a.path.cmp(&b.path));
 
@@ -464,6 +546,63 @@ pub fn produce_revision_facts(
         manifests,
         unanalyzed,
         snapshot,
+    })
+}
+
+/// The files of the chart rooted at `root`, read from the revision.
+///
+/// # Errors
+/// A chart file that cannot be read, is over the byte bound, or whose
+/// path is not inside the chart: a chart that cannot be handed over whole
+/// cannot be rendered faithfully, and the cause says why.
+fn read_chart_files(
+    reader: &dyn RevisionReader,
+    revision: &SourceRevision,
+    inventory: &SourceInventory,
+    root: &str,
+    limits: &FactsLimits,
+) -> Result<ChartFiles, String> {
+    let wanted: Vec<(PathKey, String)> = inventory
+        .entries()
+        .iter()
+        .filter_map(|entry| {
+            let relative = below_root(entry.path.as_str(), root)?;
+            is_chart_file(relative).then(|| (entry.path.clone(), relative.to_string()))
+        })
+        .collect();
+    let mut files = BTreeMap::new();
+    for chunk in wanted.chunks(READ_CHUNK) {
+        let paths: Vec<PathKey> = chunk.iter().map(|(path, _)| path.clone()).collect();
+        let blobs = reader.contents(revision, &paths, limits.max_file_bytes as u64);
+        for (index, (path, relative)) in chunk.iter().enumerate() {
+            let blob = blobs.get(index).cloned().unwrap_or_else(|| {
+                Err(ScmError::ContentUnavailable {
+                    path: path.as_str().to_string(),
+                })
+            });
+            match blob {
+                Ok(BlobRead::Bytes(bytes)) if bytes.len() <= limits.max_file_bytes => {
+                    files.insert(relative.clone(), bytes);
+                }
+                Ok(_) => {
+                    return Err(format!(
+                        "chart file `{}` exceeds the {} byte bound",
+                        path.as_str(),
+                        limits.max_file_bytes
+                    ));
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "chart file `{}` is unreadable: {error}",
+                        path.as_str()
+                    ));
+                }
+            }
+        }
+    }
+    Ok(ChartFiles {
+        root: root.to_string(),
+        files,
     })
 }
 
@@ -1625,5 +1764,239 @@ mod tests {
         let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
 
         assert_eq!(answer.works[0].disposition, WorkDisposition::Unknown);
+    }
+
+    // ----- Helm chart templates -----------------------------------------
+
+    use super::super::helm_templates::{ChartFiles, ChartRender};
+    use std::cell::RefCell;
+
+    /// A labelled test double: it answers what it was told, whatever the
+    /// chart, and records every chart it was asked about. It renders
+    /// nothing; it stands in for an engine whose verdict is the input of
+    /// the producer under test.
+    struct ScriptedRender {
+        answer: ChartRender,
+        asked: RefCell<Vec<ChartFiles>>,
+    }
+
+    impl ScriptedRender {
+        fn answering(answer: ChartRender) -> Self {
+            Self {
+                answer,
+                asked: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn rendering() -> Self {
+            Self::answering(ChartRender::Rendered)
+        }
+
+        fn refusing(cause: &str) -> Self {
+            Self::answering(ChartRender::NotRendered {
+                cause: cause.to_string(),
+            })
+        }
+    }
+
+    impl ChartRenderCheck for ScriptedRender {
+        fn check(&self, chart: &ChartFiles) -> ChartRender {
+            self.asked.borrow_mut().push(chart.clone());
+            self.answer.clone()
+        }
+    }
+
+    const CHART_YAML: &[u8] = b"apiVersion: v2\nname: web\nversion: 0.1.0\n";
+    const VALUES: &[u8] = b"replicas: 2\n";
+    const DEPLOYMENT: &[u8] = b"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {{ .Release.Name }}\nspec:\n  replicas: {{ .Values.replicas }}\n";
+    const SERVICE: &[u8] = b"{{- if .Values.service.enabled }}\nkind: Service\n{{- end }}\n";
+
+    fn chart_revision() -> FakeSource {
+        provider(&[(
+            "main",
+            &[],
+            &[
+                ("src/ok.rs", GAMMA),
+                ("README.md", b"docs"),
+                ("deploy/web/Chart.yaml", CHART_YAML),
+                ("deploy/web/values.yaml", VALUES),
+                ("deploy/web/templates/deployment.yaml", DEPLOYMENT),
+                ("deploy/web/templates/service.yaml", SERVICE),
+            ],
+        )])
+    }
+
+    fn produce_with(
+        fake: &FakeSource,
+        objects: Option<&FactObjectStore>,
+        charts: &dyn ChartRenderCheck,
+    ) -> ProducedRevision {
+        produce_revision_facts_rendering(
+            fake,
+            &revision(fake, "main"),
+            objects,
+            &FactsLimits::default(),
+            charts,
+        )
+        .expect("facts")
+    }
+
+    #[test]
+    fn go_template_text_is_never_a_syntax_error_and_never_facts() {
+        let fake = chart_revision();
+
+        let produced = produce(&fake, "main", None);
+
+        assert_eq!(produced.coverage.gaps.len(), 2, "{:?}", produced.coverage);
+        for gap in &produced.coverage.gaps {
+            let GapReason::TemplateNotRendered { chart, cause } = &gap.reason else {
+                panic!("{:?}: not a template gap: {:?}", gap.path, gap.reason);
+            };
+            assert_eq!(chart, "deploy/web");
+            assert!(cause.contains("no chart renderer"), "{cause}");
+        }
+        assert_eq!(paths_of(&produced), ["src/ok.rs"]);
+        assert!(!produced.coverage.is_complete());
+        assert_eq!(
+            produced.snapshot.coverage,
+            "partial: 2 file(s) without facts"
+        );
+    }
+
+    #[test]
+    fn a_chart_that_was_not_rendered_is_a_gap_per_template_with_the_cause() {
+        let fake = chart_revision();
+        let engine = ScriptedRender::refusing("engine failed: boom");
+
+        let produced = produce_with(&fake, None, &engine);
+
+        let causes: Vec<String> = produced
+            .coverage
+            .gaps
+            .iter()
+            .map(|gap| gap.reason.describe())
+            .collect();
+        assert_eq!(causes.len(), 2);
+        for cause in causes {
+            assert!(cause.contains("engine failed: boom"), "{cause}");
+            assert!(cause.contains("not rendered"), "{cause}");
+        }
+        assert_ne!(produced.snapshot.coverage, "full");
+    }
+
+    #[test]
+    fn a_faithfully_rendered_chart_leaves_no_gap_so_the_revision_can_be_complete() {
+        let fake = chart_revision();
+        let engine = ScriptedRender::rendering();
+
+        let produced = produce_with(&fake, None, &engine);
+
+        assert!(produced.coverage.is_complete(), "{:?}", produced.coverage);
+        assert_eq!(produced.snapshot.coverage, "full");
+        assert_eq!(produced.coverage.rendered_files, 2);
+        assert_eq!(
+            produced.coverage.parsed_files, 3,
+            "the plain YAML of the chart and src/ok.rs are parsed; the templates are not"
+        );
+        assert!(
+            paths_of(&produced)
+                .iter()
+                .all(|path| !path.contains("/templates/")),
+            "{:?}",
+            paths_of(&produced)
+        );
+        assert!(
+            produced
+                .unanalyzed
+                .contains(&path("deploy/web/templates/service.yaml")),
+            "a template's content is invisible to the facts, and a change to it must say so"
+        );
+    }
+
+    #[test]
+    fn a_chart_is_rendered_once_from_exactly_its_own_files() {
+        let fake = chart_revision();
+        let engine = ScriptedRender::rendering();
+
+        let _ = produce_with(&fake, None, &engine);
+
+        let asked = engine.asked.borrow();
+        let [chart] = asked.as_slice() else {
+            panic!("one check per chart, got {}", asked.len());
+        };
+        assert_eq!(chart.root, "deploy/web");
+        assert_eq!(
+            chart.files.keys().map(String::as_str).collect::<Vec<_>>(),
+            [
+                "Chart.yaml",
+                "templates/deployment.yaml",
+                "templates/service.yaml",
+                "values.yaml"
+            ]
+        );
+        assert_eq!(chart.files["templates/deployment.yaml"], DEPLOYMENT);
+    }
+
+    #[test]
+    fn a_templates_directory_outside_a_chart_is_plain_yaml() {
+        let fake = provider(&[(
+            "main",
+            &[],
+            &[("docs/templates/a.yaml", b"title: report\n")],
+        )]);
+        let engine = ScriptedRender::refusing("must not be asked");
+
+        let produced = produce_with(&fake, None, &engine);
+
+        assert!(produced.coverage.is_complete(), "{:?}", produced.coverage);
+        assert_eq!(produced.coverage.parsed_files, 1);
+        assert!(engine.asked.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_warm_store_cannot_serve_or_hide_a_template() {
+        let fake = chart_revision();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        // An object for the template under the current producer, as a
+        // store written by anything else could hold.
+        let template = path("deploy/web/templates/service.yaml");
+        let content = fake
+            .inventory(&revision(&fake, "main"))
+            .expect("inventory")
+            .entries()
+            .iter()
+            .find(|entry| entry.path == template)
+            .map(|entry| entry.content.as_hex().to_string())
+            .expect("tracked");
+        objects
+            .write(
+                &template,
+                &content,
+                &[],
+                &artifact_of(&[]).expect("artifact"),
+            )
+            .expect("plant");
+
+        let _prime = produce(&fake, "main", Some(&objects));
+        let warm = produce(&fake, "main", Some(&objects));
+        let cold = produce(&fake, "main", None);
+
+        assert_eq!(warm.coverage.gaps, cold.coverage.gaps);
+        assert_eq!(warm.coverage.gaps.len(), 2);
+        assert_eq!(
+            warm.coverage.reused_files, 3,
+            "src/ok.rs and the chart's plain YAML are reused, never a template"
+        );
+        assert_eq!(warm.snapshot, cold.snapshot);
+    }
+
+    #[test]
+    fn the_extraction_contract_change_is_versioned() {
+        // Template files stopped being extracted: nothing stored under the
+        // previous contract may be served for them.
+        assert_eq!(FACTS_PRODUCER_VERSION, "cognicode.revision-facts/v3");
+        assert_eq!(producer_versions().facts, FACTS_PRODUCER_VERSION);
+        assert!(producer_versions().extractor.contains("revision-facts/v3"));
     }
 }

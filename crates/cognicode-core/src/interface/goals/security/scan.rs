@@ -24,18 +24,15 @@ use crate::domain::findings::semantic_model::{
 };
 use crate::domain::findings::{AnalysisScope, GroundingRef};
 use crate::domain::iac::helm::{
-    ChartAnalysis, ChartRenderer, NotRenderedCause, RenderCoverage, RenderStatus, analyze_chart,
+    ChartAnalysis, ChartRenderer, RenderCoverage, RenderStatus, analyze_chart,
 };
 use crate::domain::iac::terraform::TfAnalysis;
 use crate::domain::kernel_ids::{ExecutionId, SnapshotId};
 use crate::domain::value_objects::WorkspaceId;
 use crate::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
 use crate::infrastructure::graph::source_files::real_files;
-use crate::infrastructure::helm::read_chart;
+use crate::infrastructure::helm::{RELEASE_NAME, read_chart};
 use crate::infrastructure::terraform_project::load_terraform_project;
-
-/// The name of the release the charts are rendered as.
-const RELEASE_NAME: &str = "release";
 
 /// What this report does not claim, published with every answer.
 const LIMITS: [&str; 6] = [
@@ -430,14 +427,7 @@ fn render_report(status: &RenderStatus) -> RenderReport {
         RenderStatus::NotRendered(cause) => RenderReport {
             status: "not_rendered".to_string(),
             documents: None,
-            cause: Some(match cause {
-                NotRenderedCause::EngineUnavailable { reason } => {
-                    format!("engine unavailable: {reason}")
-                }
-                NotRenderedCause::EngineFailed { message } => {
-                    format!("engine failed: {message}")
-                }
-            }),
+            cause: Some(cause.describe()),
         },
     }
 }

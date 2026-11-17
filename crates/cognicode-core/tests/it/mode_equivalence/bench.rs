@@ -35,7 +35,8 @@ use cognicode_core::application::change_tracking::detector_runs::{
     Detection, ProductionDetector, Reuse, current_identity, detect_with_reuse,
 };
 use cognicode_core::application::change_tracking::revision_facts::{
-    FactObjectStore, FactsLimits, ProducedRevision, dependencies_on, produce_revision_facts,
+    FactObjectStore, FactsLimits, ProducedRevision, dependencies_on,
+    produce_revision_facts_rendering,
 };
 use cognicode_core::application::change_tracking::scm_delta::{
     delta_from_change_set, plan_between,
@@ -141,11 +142,12 @@ pub fn context(fixture: Fixture, produced: &Produced) -> Context {
 fn primed_store(ctx: &Context) -> (tempfile::TempDir, FactObjectStore) {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = FactObjectStore::new(dir.path());
-    produce_revision_facts(
+    produce_revision_facts_rendering(
         &ctx.fixture.adapter,
         &ctx.base_revision,
         Some(&store),
         &FactsLimits::default(),
+        ctx.fixture.charts.as_ref(),
     )
     .expect("prime the store");
     (dir, store)
@@ -156,11 +158,12 @@ pub fn run_once(ctx: &Context, mode: Mode, cache: Cache) -> Sample {
     let limits = FactsLimits::default();
     let started = Instant::now();
 
-    let head = produce_revision_facts(
+    let head = produce_revision_facts_rendering(
         &ctx.fixture.adapter,
         &ctx.head_revision,
         primed.as_ref().map(|(_, store)| store),
         &limits,
+        ctx.fixture.charts.as_ref(),
     )
     .expect("head facts");
     let facts = started.elapsed();
@@ -451,14 +454,14 @@ pub fn report(corpus: &std::path::Path, runs: usize, only_part: Option<&str>) ->
     let scenarios: Vec<Value> = super::harness::scenarios(corpus)
         .iter()
         .filter(|s| only_part.is_none_or(|part| s.part == part))
-        .map(|s| scenario_report(corpus, s, Projection::WithoutHelmTemplates, runs))
+        .map(|s| scenario_report(corpus, s, Projection::Rendered, runs))
         .collect();
     json!({
         "benchmark": "cgh-mode-equivalence",
         "command": "MODE_BENCH_RUNS=<n> MODE_BENCH_OUT=<file> CARGO_BUILD_JOBS=4 cargo test -p cognicode-core --test it mode_equivalence::bench_report -- --ignored --exact --nocapture",
         "runs_per_pipeline": runs,
         "percentiles": "nearest-rank over the runs; with fewer than 20 runs the p95 is the maximum",
-        "projection": "corpus without helm/chart/templates, so a revision can reach Pass",
+        "projection": "the Helm chart is rendered by a labelled deterministic double of the engine (no helm binary needed), so a revision can reach Pass; the corpus itself is unaltered",
         "machine": machine(load_before),
         "peak_rss_kib_process_high_water_mark": proc_status_kib("VmHWM:"),
         "scenarios": scenarios,
