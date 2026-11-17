@@ -20,6 +20,14 @@ use cognicode_graph_algos::algorithms::Statement;
 
 use tree_sitter::{Node, Parser};
 
+/// How a language is read, as callers outside the extractor name it.
+pub(crate) type SourceLanguage = LanguageConfig;
+
+/// The language configuration for a file extension, when one is supported.
+pub(crate) fn language_for_extension(extension: &str) -> Option<&'static SourceLanguage> {
+    LanguageConfig::from_extension(extension)
+}
+
 /// What happened to the reader of the language.
 ///
 /// The outcome of the reader is a fact of its own, apart from the result it

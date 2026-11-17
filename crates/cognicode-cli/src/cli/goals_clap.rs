@@ -68,7 +68,9 @@ pub fn clap_command(goal: &GoalSpec) -> Command {
         if required.contains(&name.as_str()) {
             arg = arg.required(true);
         }
-        if let Some(default) = property.get("default") {
+        // A `null` default is the absence of the argument, not a value to
+        // hand the goal: an optional flag nobody wrote stays unset.
+        if let Some(default) = property.get("default").filter(|value| !value.is_null()) {
             arg = arg.default_value(default_value_for(default));
         }
         command = command.arg(arg);

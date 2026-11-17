@@ -54,7 +54,8 @@ use crate::domain::readset::{ReadSet, ReadSetConfig};
 use crate::domain::scm::{
     BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceRevision,
 };
-use crate::infrastructure::parser::LanguageConfig;
+
+use crate::application::ingest::extractor::{SourceLanguage, language_for_extension};
 
 use super::planner::{AffectedWorkPlan, ExecutionDependency, WorkDisposition, WorkId};
 use super::scm_delta::{
@@ -312,9 +313,9 @@ fn is_manifest(path: &PathKey) -> bool {
     MANIFEST_NAMES.contains(&name)
 }
 
-fn language_of(path: &PathKey) -> Option<&'static LanguageConfig> {
+fn language_of(path: &PathKey) -> Option<&'static SourceLanguage> {
     let extension = Path::new(path.as_str()).extension()?.to_str()?;
-    LanguageConfig::from_extension(extension)
+    language_for_extension(extension)
 }
 
 /// Assembles the facts of `revision`.
@@ -343,7 +344,7 @@ pub fn produce_revision_facts(
     let mut unanalyzed = BTreeSet::new();
     let mut per_file: BTreeMap<PathKey, Vec<Fact>> = BTreeMap::new();
     let mut files: BTreeMap<PathKey, ExtractionObject> = BTreeMap::new();
-    let mut pending: Vec<(&InventoryEntry, &LanguageConfig)> = Vec::new();
+    let mut pending: Vec<(&InventoryEntry, &SourceLanguage)> = Vec::new();
 
     for entry in inventory.entries() {
         if is_manifest(&entry.path) {
@@ -450,7 +451,7 @@ fn extract_one(
     blob: Result<BlobRead, ScmError>,
     path: &PathKey,
     content_hex: &str,
-    config: &LanguageConfig,
+    config: &SourceLanguage,
     limits: &FactsLimits,
 ) -> Result<Vec<Fact>, GapReason> {
     let bytes = match blob.map_err(|error| GapReason::Unreadable(error.to_string()))? {
@@ -818,7 +819,10 @@ mod tests {
         SourceRef::new("fake", "demo").expect("source")
     }
 
-    fn provider(revisions: &[(&str, &[&str], &[(&str, &[u8])])]) -> FakeSource {
+    /// A revision name, its parents and its files.
+    type RevisionSpec<'a> = (&'a str, &'a [&'a str], &'a [(&'a str, &'a [u8])]);
+
+    fn provider(revisions: &[RevisionSpec]) -> FakeSource {
         revisions.iter().fold(
             FakeSource::new(
                 "fake",
@@ -979,7 +983,7 @@ mod tests {
             let text = std::str::from_utf8(bytes).expect("utf8");
             let hash = crate::domain::scm::ContentDigest::from_bytes(bytes);
             let result = extract_file(
-                &crate::infrastructure::parser::language_config::RUST_CONFIG,
+                language_for_extension("rs").expect("Rust is supported"),
                 Path::new(file),
                 text,
                 hash.as_hex(),
