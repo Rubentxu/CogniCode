@@ -1095,7 +1095,7 @@
     {
       "name": "codebase_map",
       "title": "Generate a compact, LLM-optimized codebase map",
-      "description": "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
+      "description": "Summarize the project graph the server holds: symbol, edge, entry-point and leaf counts, the most-called symbols and the coverage of that graph. Format: compact (one line) or detailed (one line per hot symbol, holes of the coverage counted).",
       "category": "composite",
       "authority": "read",
       "stability": "stable",
@@ -1215,6 +1215,43 @@
             ],
             "type": "object"
           },
+          "CoverageInfo": {
+            "description": "What an answer covers, in the shape every consumer reads it.\n\nThe word is the coverage's, not the consumer's: it is the word the\nowner of the coverage publishes, so the CLI, the MCP and the SDK say\nthe same thing about the same tree. The three lists are the three\nholes a build can leave open, and they travel together because a\nconsumer that reads one of them and not the others reads half the\ntruth.",
+            "properties": {
+              "pending_references": {
+                "description": "The references the graph could not tie to a declaration.",
+                "items": {
+                  "$ref": "#/$defs/PendingReferenceInfo"
+                },
+                "type": "array"
+              },
+              "rejected_relations": {
+                "description": "The relations the repository refused.",
+                "items": {
+                  "$ref": "#/$defs/RejectedRelationInfo"
+                },
+                "type": "array"
+              },
+              "skipped_files": {
+                "description": "The files the walk could not read.",
+                "items": {
+                  "$ref": "#/$defs/SkippedFileInfo"
+                },
+                "type": "array"
+              },
+              "status": {
+                "description": "The word the coverage is published with: \"complete\", \"partial\",\n\"unknown\" or \"unsupported\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relations"
+            ],
+            "type": "object"
+          },
           "FreshnessBasis": {
             "description": "La frescura de la respuesta.",
             "properties": {
@@ -1237,6 +1274,45 @@
             "required": [
               "workspace",
               "snapshot"
+            ],
+            "type": "object"
+          },
+          "HotSymbol": {
+            "description": "A symbol the map calls hot: one that several others call.",
+            "properties": {
+              "fan_in": {
+                "description": "How many symbols call it.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "fan_out": {
+                "description": "How many symbols it calls.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "file": {
+                "description": "The file that declares it.",
+                "type": "string"
+              },
+              "line": {
+                "description": "The line it is declared on (1-indexed).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "description": "The name the symbol carries.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "file",
+              "line",
+              "fan_in",
+              "fan_out"
             ],
             "type": "object"
           },
@@ -1287,6 +1363,113 @@
               "authority"
             ],
             "type": "object"
+          },
+          "PendingReason": {
+            "description": "Why the far end of a reference could not be identified.",
+            "oneOf": [
+              {
+                "const": "unresolved",
+                "description": "The far end could not be identified: either no declaration\ncarries the name, or the declaration that carries it could not be\ntied to the call.\n\nThe two are the same answer for the consumer — the reference does\nnot name a declaration — and they are the same answer for the\nwire: the class of a reference is what a consumer reads, and the\nshape of this enum does not change to tell them apart.",
+                "type": "string"
+              },
+              {
+                "const": "ambiguous",
+                "description": "More than one does, and the graph cannot prove which one.",
+                "type": "string"
+              }
+            ]
+          },
+          "PendingReferenceInfo": {
+            "description": "A reference the graph could not tie to a declaration.",
+            "properties": {
+              "candidates": {
+                "description": "How many declarations carry the name, when there are several.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "file": {
+                "description": "The file that writes the reference.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "What the reference is.",
+                "type": "string"
+              },
+              "line": {
+                "description": "The line the reference is written on (1-indexed): the line a person reads.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/$defs/PendingReason",
+                "description": "Why the far end could not be identified: `unresolved` when the far\nend could not be identified — no declaration carries the name, or\nthe declaration that carries it could not be tied to the call —\nand `ambiguous` when several declarations carry the name."
+              },
+              "target": {
+                "description": "The name the reference names.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "RejectedRelationInfo": {
+            "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+            "properties": {
+              "kind": {
+                "description": "What the relation is.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the repository refused it.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The declaration that holds the relation.",
+                "type": "string"
+              },
+              "target": {
+                "description": "The declaration the relation points at.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "SkippedFileInfo": {
+            "description": "A file the walk could not read.",
+            "properties": {
+              "path": {
+                "description": "The path of the file.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the walk could not read it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "reason"
+            ],
+            "type": "object"
           }
         },
         "description": "La respuesta, con lo que la sostiene y lo que viene después.",
@@ -1307,11 +1490,25 @@
             "description": "Lo que la respuesta dejó fuera."
           },
           "result": {
+            "description": "What `codebase_map` publishes.\n\nEvery number and every name in `map` is read from the call graph the\nserver holds; nothing in it is a constant. The structured fields carry\nthe same facts as the text, so a consumer does not have to parse `map`.",
             "properties": {
+              "coverage": {
+                "$ref": "#/$defs/CoverageInfo",
+                "description": "What the graph covers. The map describes the graph the server holds,\nnot the whole tree: a `partial` or `unknown` coverage means the\ncounts and the hot symbols may leave out part of the project."
+              },
               "format": {
+                "description": "The format that was asked for, echoed back.",
                 "type": "string"
               },
+              "hot_symbols": {
+                "description": "The symbols with the most callers, most-called first, at most\n[`MAP_HOT_SYMBOLS`] of them, and only those with at least\n[`MAP_MIN_FAN_IN`] callers. Empty when no symbol qualifies — a\ngraph without call edges has none — and never filled from the order\nin which the graph happens to hold its symbols.",
+                "items": {
+                  "$ref": "#/$defs/HotSymbol"
+                },
+                "type": "array"
+              },
               "map": {
+                "description": "The map as text.",
                 "type": "string"
               },
               "summary": {
@@ -1319,6 +1516,7 @@
                 "type": "string"
               },
               "token_estimate": {
+                "description": "A rough size of `map` in tokens (four bytes per token). An estimate,\nnot a count of any tokenizer.",
                 "format": "uint",
                 "minimum": 0,
                 "type": "integer"
@@ -1328,7 +1526,9 @@
               "format",
               "map",
               "token_estimate",
-              "summary"
+              "summary",
+              "hot_symbols",
+              "coverage"
             ],
             "title": "CodebaseMapOutput",
             "type": "object"
