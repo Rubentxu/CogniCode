@@ -31,6 +31,7 @@ mod analysis;
 mod chart;
 mod checks;
 mod manifest;
+mod observe;
 mod render;
 mod template;
 mod values;
@@ -46,6 +47,7 @@ pub use manifest::{
     ObjectFacts, ObjectOrigin, PodFacts, PublishedPort, RbacFacts, RbacRule, RbacSubject,
     RenderedDocument, SkippedDocument, WorkloadFacts,
 };
+pub use observe::{observed_units, structural_family};
 pub use render::{
     ChartRenderer, NoRenderer, NotRenderedCause, RenderRequest, RenderResponse, RenderStatus,
 };
