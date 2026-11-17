@@ -972,6 +972,140 @@ mod tests {
         assert_eq!(incremental.snapshot, rebuilt.snapshot);
     }
 
+    /// Three histories of one tree: `main` has three files, `deleted` drops
+    /// one of them, `renamed` moves another to a new path with the same bytes.
+    fn deletion_and_rename() -> FakeSource {
+        provider(&[
+            (
+                "main",
+                &[],
+                &[
+                    ("src/a.rs", ALPHA_V1),
+                    ("src/b.rs", BETA),
+                    ("src/c.rs", GAMMA),
+                ],
+            ),
+            (
+                "deleted",
+                &["main"],
+                &[("src/a.rs", ALPHA_V1), ("src/c.rs", GAMMA)],
+            ),
+            (
+                "renamed",
+                &["main"],
+                &[
+                    ("src/alpha.rs", ALPHA_V1),
+                    ("src/b.rs", BETA),
+                    ("src/c.rs", GAMMA),
+                ],
+            ),
+        ])
+    }
+
+    fn paths_of(produced: &ProducedRevision) -> Vec<&str> {
+        produced
+            .facts
+            .path_facts
+            .keys()
+            .map(PathKey::as_str)
+            .collect()
+    }
+
+    /// What was parsed and what was reused, as `(parsed, reused)`.
+    fn work_of(produced: &ProducedRevision) -> (usize, usize) {
+        (
+            produced.coverage.parsed_files,
+            produced.coverage.reused_files,
+        )
+    }
+
+    #[test]
+    fn a_deleted_file_leaves_no_facts_and_costs_no_parsing() {
+        let fake = deletion_and_rename();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _warm = produce(&fake, "main", Some(&objects));
+
+        let incremental = produce(&fake, "deleted", Some(&objects));
+        let rebuilt = produce(&fake, "deleted", None);
+
+        assert_eq!(paths_of(&incremental), ["src/a.rs", "src/c.rs"]);
+        assert_eq!(work_of(&incremental), (0, 2), "every survivor is reused");
+        assert_eq!(incremental.coverage.analyzable_files, 2);
+        assert_eq!(incremental.facts.facts, rebuilt.facts.facts);
+        assert_eq!(incremental.facts.path_facts, rebuilt.facts.path_facts);
+        assert_eq!(incremental.snapshot, rebuilt.snapshot);
+        let kept: BTreeSet<_> = incremental
+            .snapshot
+            .files
+            .keys()
+            .map(PathKey::as_str)
+            .collect();
+        assert_eq!(kept, BTreeSet::from(["src/a.rs", "src/c.rs"]));
+    }
+
+    #[test]
+    fn a_renamed_file_is_parsed_again_under_its_new_path() {
+        let fake = deletion_and_rename();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _warm = produce(&fake, "main", Some(&objects));
+
+        let incremental = produce(&fake, "renamed", Some(&objects));
+        let rebuilt = produce(&fake, "renamed", None);
+
+        // The object is addressed by path and bytes: the same bytes under
+        // another path are another object, never the old path's facts.
+        assert_eq!(
+            paths_of(&incremental),
+            ["src/alpha.rs", "src/b.rs", "src/c.rs"]
+        );
+        assert_eq!(
+            work_of(&incremental),
+            (1, 2),
+            "only the moved file is parsed"
+        );
+        assert_eq!(incremental.facts.facts, rebuilt.facts.facts);
+        assert_eq!(incremental.facts.path_facts, rebuilt.facts.path_facts);
+        assert_eq!(incremental.snapshot, rebuilt.snapshot);
+    }
+
+    #[test]
+    fn the_order_revisions_are_assembled_in_changes_the_work_and_never_the_facts() {
+        let fake = deletion_and_rename();
+        let cold: BTreeMap<&str, ProducedRevision> = ["main", "deleted", "renamed"]
+            .into_iter()
+            .map(|name| (name, produce(&fake, name, None)))
+            .collect();
+
+        // (revision, parsed, reused) in the order each history is assembled.
+        let forward = [("main", 3, 0), ("deleted", 0, 2), ("renamed", 1, 2)];
+        let backward = [("renamed", 3, 0), ("deleted", 1, 1), ("main", 0, 3)];
+
+        for (order, expected) in [("forward", forward), ("backward", backward)] {
+            let dir = tempfile::tempdir().expect("dir");
+            let objects = FactObjectStore::new(dir.path());
+            for (name, parsed, reused) in expected {
+                let incremental = produce(&fake, name, Some(&objects));
+                let rebuilt = &cold[name];
+                assert_eq!(
+                    work_of(&incremental),
+                    (parsed, reused),
+                    "{order}: {name} parsed and reused"
+                );
+                assert_eq!(
+                    incremental.facts.facts, rebuilt.facts.facts,
+                    "{order}: {name}"
+                );
+                assert_eq!(
+                    incremental.facts.path_facts, rebuilt.facts.path_facts,
+                    "{order}: {name}"
+                );
+                assert_eq!(incremental.snapshot, rebuilt.snapshot, "{order}: {name}");
+            }
+        }
+    }
+
     #[test]
     fn the_assembly_is_the_union_of_a_one_shot_batch() {
         use crate::application::ingest::extractor::extract_file;
@@ -1052,6 +1186,32 @@ mod tests {
 
         assert_eq!(again.coverage.reused_files, 0);
         assert_eq!(again.coverage.parsed_files, 2);
+        assert_eq!(again.facts.facts, produce(&fake, "main", None).facts.facts);
+    }
+
+    #[test]
+    fn an_object_whose_facts_were_edited_in_place_is_a_miss_not_evidence() {
+        let fake = two_branches();
+        let dir = tempfile::tempdir().expect("dir");
+        let objects = FactObjectStore::new(dir.path());
+        let _ = produce(&fake, "main", Some(&objects));
+        for entry in std::fs::read_dir(dir.path()).expect("objects") {
+            let file = entry.expect("entry").path();
+            let mut object: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&file).expect("read"))
+                    .expect("a stored object is JSON");
+            let facts = object["facts"].as_array_mut().expect("facts array");
+            assert!(!facts.is_empty(), "the fixture has facts to tamper with");
+            facts.pop();
+            std::fs::write(&file, serde_json::to_vec(&object).expect("json")).expect("tamper");
+        }
+
+        let again = produce(&fake, "main", Some(&objects));
+
+        assert_eq!(
+            (again.coverage.parsed_files, again.coverage.reused_files),
+            (2, 0)
+        );
         assert_eq!(again.facts.facts, produce(&fake, "main", None).facts.facts);
     }
 

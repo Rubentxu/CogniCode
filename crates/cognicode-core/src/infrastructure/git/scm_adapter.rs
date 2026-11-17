@@ -312,15 +312,18 @@ impl GitScmAdapter {
     /// spawn failure is the named `ProviderFailure`, never a status
     /// the caller could mistake for "no changes".
     fn run(&self, args: &[&str], cap: u64) -> Result<GitRun, ScmError> {
-        let mut child = Command::new(&self.git_program)
-            .arg("-C")
-            .arg(&self.repo_root)
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| failure(format!("cannot spawn git: {error}")))?;
+        let mut child = ReapedChild::new(
+            Command::new(&self.git_program)
+                .arg("-C")
+                .arg(&self.repo_root)
+                .args(args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| failure(format!("cannot spawn git: {error}")))?,
+        );
         let stderr_pipe = child
+            .child()
             .stderr
             .take()
             .ok_or_else(|| failure("git stderr pipe missing"))?;
@@ -331,6 +334,7 @@ impl GitScmAdapter {
                 .unwrap_or_default()
         });
         let stdout_pipe = child
+            .child()
             .stdout
             .take()
             .ok_or_else(|| failure("git stdout pipe missing"))?;
@@ -342,7 +346,7 @@ impl GitScmAdapter {
                 ))
             })?;
         let status = child
-            .wait()
+            .finish()
             .map_err(|error| failure(format!("cannot wait for git: {error}")))?;
         Ok(GitRun {
             code: status.code().unwrap_or(-1),
@@ -472,17 +476,20 @@ impl GitScmAdapter {
         if oids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut child = Command::new(&self.git_program)
-            .arg("-C")
-            .arg(&self.repo_root)
-            .arg("cat-file")
-            .arg("--batch")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| failure(format!("cannot spawn git cat-file: {error}")))?;
+        let mut child = ReapedChild::new(
+            Command::new(&self.git_program)
+                .arg("-C")
+                .arg(&self.repo_root)
+                .arg("cat-file")
+                .arg("--batch")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| failure(format!("cannot spawn git cat-file: {error}")))?,
+        );
         let mut stdin = child
+            .child()
             .stdin
             .take()
             .ok_or_else(|| failure("git cat-file stdin missing"))?;
@@ -495,6 +502,7 @@ impl GitScmAdapter {
         let feeder =
             std::thread::spawn(move || stdin.write_all(&requests).and_then(|()| stdin.flush()));
         let mut stdout = child
+            .child()
             .stdout
             .take()
             .ok_or_else(|| failure("git cat-file stdout missing"))?;
@@ -531,7 +539,7 @@ impl GitScmAdapter {
             .map_err(|_| failure("git cat-file feeder panicked"))?
             .map_err(|error| failure(format!("cannot feed git cat-file: {error}")))?;
         let status = child
-            .wait()
+            .finish()
             .map_err(|error| failure(format!("cannot wait for git cat-file: {error}")))?;
         if !status.success() {
             return Err(failure("git cat-file --batch exited unsuccessfully"));
@@ -1057,6 +1065,41 @@ fn read_blob(mut pipe: impl Read, size: u64) -> Result<Vec<u8>, ScmError> {
     pipe.read_exact(&mut bytes)
         .map_err(|e| failure(format!("git cat-file ended mid-blob: {e}")))?;
     Ok(bytes)
+}
+
+/// A spawned git process that never outlives the scope that owns it:
+/// on any early return it is killed and reaped, so a broken stream
+/// cannot leave an orphan or a zombie behind.
+struct ReapedChild(Option<std::process::Child>);
+
+impl ReapedChild {
+    fn new(child: std::process::Child) -> Self {
+        Self(Some(child))
+    }
+
+    fn child(&mut self) -> &mut std::process::Child {
+        self.0
+            .as_mut()
+            .expect("the child is held until it is finished")
+    }
+
+    /// Waits for a normal exit, handing the process back as finished.
+    fn finish(mut self) -> std::io::Result<std::process::ExitStatus> {
+        let mut child = self
+            .0
+            .take()
+            .expect("the child is held until it is finished");
+        child.wait()
+    }
+}
+
+impl Drop for ReapedChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _already_gone = child.kill();
+            let _reaped = child.wait();
+        }
+    }
 }
 
 /// Discards exactly `size` bytes so the next batch header stays aligned.
