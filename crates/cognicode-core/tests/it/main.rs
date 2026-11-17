@@ -164,6 +164,7 @@ mod scm_changeset_planning;
 mod incremental_complete_snapshot;
 mod scm_revision_snapshots;
 mod scm_source_ports;
+mod security_pack;
 mod security_validation_tests;
 mod semantic_reader_owns_its_language;
 mod semantic_sast_cwe89;
