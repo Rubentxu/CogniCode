@@ -20,7 +20,9 @@
 //! Nothing here measures compilation, check publication, CI cost, branches or
 //! worktrees: those are reported as `not_evaluated` with the reason, never
 //! estimated. Memory is the process's resident set read from `/proc`, which
-//! is a high-water mark of the whole test process, not of one pipeline.
+//! is a high-water mark of the whole test process, not of one pipeline; with
+//! `isolate` every pipeline is also run in a process of its own (see
+//! `isolated`) and its peak is reported under `memory`.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -49,7 +51,7 @@ use super::harness::{
     Fixture, Produced, Projection, Scenario, fresh_record, gaps_of, identities, materialize,
     produce, workspace,
 };
-use super::oracle;
+use super::{isolated, oracle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -343,12 +345,20 @@ fn accuracy_report(
     })
 }
 
+/// The peak memory of one pipeline, measured in a process of its own. A
+/// pipeline whose isolated run failed says so instead of reporting a number.
+fn isolated_memory(scenario_name: &str, mode: Mode, cache: Cache, runs: usize) -> Value {
+    isolated::spawn(&isolated::selector(scenario_name, mode, cache), runs)
+        .unwrap_or_else(|reason| json!({ "unavailable": reason }))
+}
+
 /// Everything measured for one scenario.
 pub fn scenario_report(
     corpus: &std::path::Path,
     scenario: &Scenario,
     projection: Projection,
     runs: usize,
+    isolate: bool,
 ) -> Value {
     let fixture = materialize(corpus, scenario, projection);
     let produced = produce(&fixture);
@@ -365,10 +375,11 @@ pub fn scenario_report(
             let samples: Vec<Sample> = (0..runs).map(|_| run_once(&ctx, mode, cache)).collect();
             let last = samples.last().expect("runs >= 1");
             verdicts.insert((mode.name(), cache.name()), (last.verdict, last.findings));
-            pipelines.insert(
-                format!("{}.{}", mode.name(), cache.name()),
-                pipeline_report(&samples),
-            );
+            let mut pipeline = pipeline_report(&samples);
+            if isolate {
+                pipeline["memory"] = isolated_memory(&scenario.name(projection), mode, cache, runs);
+            }
+            pipelines.insert(format!("{}.{}", mode.name(), cache.name()), pipeline);
         }
     }
     let reference = verdicts
@@ -436,36 +447,47 @@ fn machine(load_before: Option<String>) -> Value {
 }
 
 /// What this benchmark does not measure, and why. Never estimated.
-fn not_evaluated() -> Value {
-    json!({
+fn not_evaluated(isolated_memory: bool) -> Value {
+    let mut reasons = json!({
         "compilation_time": "no compilation happens in this pipeline; measuring cargo needs a separate, external benchmark",
         "check_publication_time": "publishing a check run belongs to the CI and gate tooling, not to this crate",
         "ci_cost_per_scenario": "needs the CI gates run per scenario; not derivable from analysis time",
         "branch_and_worktree_scenarios": "the pipelines compare two commits in one repository; branch switching and worktree creation are not exercised",
-        "peak_memory_per_pipeline": "only the resident set of the whole test process is read, so it cannot be attributed to a pipeline",
         "speedup_claims": "no speedup is claimed: the numbers above are per pipeline, taken in a debug build on a shared host",
         "detection_precision_of_terraform_and_helm": "the production detectors read only function and type definitions, so nothing is detected in these parts",
-    })
+    });
+    if !isolated_memory {
+        reasons["peak_memory_per_pipeline"] = json!(
+            "only the resident set of the whole test process is read, so it cannot be attributed to a pipeline; rerun with MODE_BENCH_ISOLATE=1"
+        );
+    }
+    reasons
 }
 
 /// The whole report: machine, command, every measured scenario and the limits.
-pub fn report(corpus: &std::path::Path, runs: usize, only_part: Option<&str>) -> Value {
+pub fn report(
+    corpus: &std::path::Path,
+    runs: usize,
+    only_part: Option<&str>,
+    isolate: bool,
+) -> Value {
     let load_before = load_average();
     let scenarios: Vec<Value> = super::harness::scenarios(corpus)
         .iter()
         .filter(|s| only_part.is_none_or(|part| s.part == part))
-        .map(|s| scenario_report(corpus, s, Projection::Rendered, runs))
+        .map(|s| scenario_report(corpus, s, Projection::Rendered, runs, isolate))
         .collect();
     json!({
         "benchmark": "cgh-mode-equivalence",
-        "command": "MODE_BENCH_RUNS=<n> MODE_BENCH_OUT=<file> CARGO_BUILD_JOBS=4 cargo test -p cognicode-core --test it mode_equivalence::bench_report -- --ignored --exact --nocapture",
+        "command": "MODE_BENCH_RUNS=<n> MODE_BENCH_ISOLATE=<1 for per-pipeline memory> MODE_BENCH_OUT=<file> CARGO_BUILD_JOBS=4 cargo test -p cognicode-core --test it mode_equivalence::bench_report -- --ignored --exact --nocapture",
         "runs_per_pipeline": runs,
         "percentiles": "nearest-rank over the runs; with fewer than 20 runs the p95 is the maximum",
         "projection": "the Helm chart is rendered by a labelled deterministic double of the engine (no helm binary needed), so a revision can reach Pass; the corpus itself is unaltered",
         "machine": machine(load_before),
         "peak_rss_kib_process_high_water_mark": proc_status_kib("VmHWM:"),
         "scenarios": scenarios,
-        "not_evaluated": not_evaluated(),
+        "memory_isolation": if isolate { "each pipeline ran in a fresh process; `memory` holds its own peak" } else { "off" },
+        "not_evaluated": not_evaluated(isolate),
     })
 }
 
