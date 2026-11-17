@@ -1,4 +1,4 @@
-//! The first security pack: five families, one capability matrix.
+//! The security pack: eight families, one capability matrix.
 //!
 //! The pack names the families it covers, what kind of claim each makes
 //! ([`FindingNature`]), the evidence a finding needs before it may block
@@ -22,7 +22,7 @@ use crate::domain::findings::{BackendRegistry, DetectorIr, EvidenceClass, Findin
 
 /// Version of the pack: its detectors, catalog tables and limits. Bump it when
 /// any of them changes what a result means.
-pub const PACK_VERSION: &str = "1.0.0";
+pub const PACK_VERSION: &str = "1.1.0";
 
 /// What a finding of a family claims.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,16 +77,25 @@ pub enum SecurityFamily {
     HardcodedSecret,
     /// `unsafe` Rust.
     UnsafeCode,
+    /// CWE-284 in infrastructure configuration.
+    InfraPublicExposure,
+    /// CWE-311 in infrastructure configuration.
+    InfraEncryption,
+    /// CWE-732 in infrastructure configuration.
+    InfraPermissions,
 }
 
 impl SecurityFamily {
     /// Every family, in a stable order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 8] = [
         Self::SqlInjection,
         Self::CommandInjection,
         Self::PathTraversal,
         Self::HardcodedSecret,
         Self::UnsafeCode,
+        Self::InfraPublicExposure,
+        Self::InfraEncryption,
+        Self::InfraPermissions,
     ];
 
     /// The family of a taint weakness.
@@ -103,6 +112,9 @@ impl SecurityFamily {
         match family {
             StructuralFamily::HardcodedSecret => Self::HardcodedSecret,
             StructuralFamily::UnsafeCode => Self::UnsafeCode,
+            StructuralFamily::InfraPublicExposure => Self::InfraPublicExposure,
+            StructuralFamily::InfraEncryption => Self::InfraEncryption,
+            StructuralFamily::InfraPermissions => Self::InfraPermissions,
         }
     }
 
@@ -112,7 +124,11 @@ impl SecurityFamily {
             Self::SqlInjection => Some(Weakness::SqlInjection),
             Self::CommandInjection => Some(Weakness::CommandInjection),
             Self::PathTraversal => Some(Weakness::PathTraversal),
-            Self::HardcodedSecret | Self::UnsafeCode => None,
+            Self::HardcodedSecret
+            | Self::UnsafeCode
+            | Self::InfraPublicExposure
+            | Self::InfraEncryption
+            | Self::InfraPermissions => None,
         }
     }
 
@@ -121,7 +137,10 @@ impl SecurityFamily {
         match self {
             Self::HardcodedSecret => Some(StructuralFamily::HardcodedSecret),
             Self::UnsafeCode => Some(StructuralFamily::UnsafeCode),
-            _ => None,
+            Self::InfraPublicExposure => Some(StructuralFamily::InfraPublicExposure),
+            Self::InfraEncryption => Some(StructuralFamily::InfraEncryption),
+            Self::InfraPermissions => Some(StructuralFamily::InfraPermissions),
+            Self::SqlInjection | Self::CommandInjection | Self::PathTraversal => None,
         }
     }
 
@@ -153,8 +172,9 @@ impl SecurityFamily {
 
     /// The evidence level the family declares for blocking.
     ///
-    /// Taint families need a dataflow path (class B); secrets are a construct
-    /// match (class C); `unsafe` never blocks.
+    /// Taint families need a dataflow path (class B); secrets and
+    /// infrastructure misconfigurations are construct matches over known
+    /// values (class C); `unsafe` never blocks.
     pub fn blocking(self) -> BlockingLevel {
         match self {
             Self::SqlInjection | Self::CommandInjection | Self::PathTraversal => {
@@ -163,7 +183,10 @@ impl SecurityFamily {
                     min_risk: RiskLevel::High,
                 }
             }
-            Self::HardcodedSecret => BlockingLevel::Gated {
+            Self::HardcodedSecret
+            | Self::InfraPublicExposure
+            | Self::InfraEncryption
+            | Self::InfraPermissions => BlockingLevel::Gated {
                 min_evidence_class: EvidenceClass::C,
                 min_risk: RiskLevel::High,
             },
@@ -420,6 +443,39 @@ fn limits(language: SourceLanguage, family: SecurityFamily) -> Vec<String> {
                     .into(),
             );
         }
+        SecurityFamily::InfraPublicExposure => {
+            limits.push(
+                "public ACLs, world-open SSH/RDP/all-port ingress and public databases only; reachability through routing or load balancers is not analysed"
+                    .into(),
+            );
+        }
+        SecurityFamily::InfraEncryption => {
+            limits.push(
+                "storage-encryption flags of volumes, file systems and database instances only; provider defaults that changed across versions stay unknown"
+                    .into(),
+            );
+        }
+        SecurityFamily::InfraPermissions => {
+            limits.push(
+                "allow statements with a wildcard action on a wildcard resource only; conditions and partial wildcards are not judged"
+                    .into(),
+            );
+        }
+    }
+    if matches!(
+        family,
+        SecurityFamily::InfraPublicExposure
+            | SecurityFamily::InfraEncryption
+            | SecurityFamily::InfraPermissions
+    ) {
+        limits.push(
+            "configuration is read statically: a value is known only when the text fixes it, and any other value is unknown, never guessed. No plan, provider, credentials or module code is run"
+                .into(),
+        );
+        limits.push(
+            "only the modeled resource types are checked; remote modules are not opened; a negative result names what stayed unknown"
+                .into(),
+        );
     }
     if family.weakness().is_some() {
         limits.push("intraprocedural: flows across function calls are not followed".into());

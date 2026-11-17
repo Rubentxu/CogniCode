@@ -76,7 +76,9 @@ pub use rule::{
     USER_INPUT_SUBJECT, cwe89_sql_injection, taint_detector,
 };
 pub use structural::{
-    HARDCODED_SECRET_KIND, HARDCODED_SECRET_SUBJECT, ObservedUnit, StructuralClassification,
-    StructuralFact, StructuralFamily, StructuralObservation, UNSAFE_CODE_KIND, UNSAFE_CODE_SUBJECT,
-    UnsafeConstruct, classify_structural,
+    HARDCODED_SECRET_KIND, HARDCODED_SECRET_SUBJECT, IAC_ENCRYPTION_KIND, IAC_ENCRYPTION_SUBJECT,
+    IAC_PERMISSIONS_KIND, IAC_PERMISSIONS_SUBJECT, IAC_PUBLIC_EXPOSURE_KIND,
+    IAC_PUBLIC_EXPOSURE_SUBJECT, ObservedUnit, StructuralClassification, StructuralFact,
+    StructuralFamily, StructuralObservation, UNSAFE_CODE_KIND, UNSAFE_CODE_SUBJECT,
+    UnsafeConstruct, classify_structural, is_hardcoded_secret, unresolved_checks,
 };

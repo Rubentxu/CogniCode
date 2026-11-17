@@ -29,6 +29,18 @@ pub const UNSAFE_CODE_SUBJECT: &str = "security.unsafe_code";
 pub const HARDCODED_SECRET_KIND: &str = "security.hardcoded_secret";
 /// The finding kind of the unsafe-code detector: a risk, not a vulnerability.
 pub const UNSAFE_CODE_KIND: &str = "security.unsafe_code_risk";
+/// Subject carried by a verifiable public-exposure misconfiguration.
+pub const IAC_PUBLIC_EXPOSURE_SUBJECT: &str = "security.iac.public_exposure";
+/// Subject carried by a verifiable missing-encryption misconfiguration.
+pub const IAC_ENCRYPTION_SUBJECT: &str = "security.iac.encryption";
+/// Subject carried by a verifiable excessive-permission misconfiguration.
+pub const IAC_PERMISSIONS_SUBJECT: &str = "security.iac.permissions";
+/// The finding kind of the public-exposure detector.
+pub const IAC_PUBLIC_EXPOSURE_KIND: &str = "security.iac_public_exposure";
+/// The finding kind of the missing-encryption detector.
+pub const IAC_ENCRYPTION_KIND: &str = "security.iac_missing_encryption";
+/// The finding kind of the excessive-permission detector.
+pub const IAC_PERMISSIONS_KIND: &str = "security.iac_excessive_permissions";
 
 /// A structural family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -38,11 +50,33 @@ pub enum StructuralFamily {
     HardcodedSecret,
     /// An `unsafe` construct (Rust).
     UnsafeCode,
+    /// An infrastructure resource reachable from outside its boundary
+    /// (CWE-284), established from known configuration values.
+    InfraPublicExposure,
+    /// Infrastructure data left unencrypted (CWE-311).
+    InfraEncryption,
+    /// Infrastructure access granted beyond need (CWE-732).
+    InfraPermissions,
 }
 
 impl StructuralFamily {
     /// Every structural family, in a stable order.
-    pub const ALL: [Self; 2] = [Self::HardcodedSecret, Self::UnsafeCode];
+    pub const ALL: [Self; 5] = [
+        Self::HardcodedSecret,
+        Self::UnsafeCode,
+        Self::InfraPublicExposure,
+        Self::InfraEncryption,
+        Self::InfraPermissions,
+    ];
+
+    /// Whether the family reads infrastructure configuration rather than
+    /// program text.
+    pub fn is_infrastructure(self) -> bool {
+        matches!(
+            self,
+            Self::InfraPublicExposure | Self::InfraEncryption | Self::InfraPermissions
+        )
+    }
 
     /// The CWE the family maps to, when it maps to one. `unsafe` maps to none:
     /// it is not a weakness by itself.
@@ -50,6 +84,9 @@ impl StructuralFamily {
         match self {
             Self::HardcodedSecret => Some("CWE-798"),
             Self::UnsafeCode => None,
+            Self::InfraPublicExposure => Some("CWE-284"),
+            Self::InfraEncryption => Some("CWE-311"),
+            Self::InfraPermissions => Some("CWE-732"),
         }
     }
 
@@ -58,6 +95,9 @@ impl StructuralFamily {
         match self {
             Self::HardcodedSecret => HARDCODED_SECRET_SUBJECT,
             Self::UnsafeCode => UNSAFE_CODE_SUBJECT,
+            Self::InfraPublicExposure => IAC_PUBLIC_EXPOSURE_SUBJECT,
+            Self::InfraEncryption => IAC_ENCRYPTION_SUBJECT,
+            Self::InfraPermissions => IAC_PERMISSIONS_SUBJECT,
         }
     }
 
@@ -66,6 +106,9 @@ impl StructuralFamily {
         match self {
             Self::HardcodedSecret => HARDCODED_SECRET_KIND,
             Self::UnsafeCode => UNSAFE_CODE_KIND,
+            Self::InfraPublicExposure => IAC_PUBLIC_EXPOSURE_KIND,
+            Self::InfraEncryption => IAC_ENCRYPTION_KIND,
+            Self::InfraPermissions => IAC_PERMISSIONS_KIND,
         }
     }
 
@@ -79,6 +122,12 @@ impl StructuralFamily {
                 DetectorFindingPolicy::new(FindingSeverity::Critical, RiskLevel::High)
             }
             Self::UnsafeCode => DetectorFindingPolicy::new(FindingSeverity::Info, RiskLevel::Low),
+            Self::InfraPublicExposure | Self::InfraPermissions => {
+                DetectorFindingPolicy::new(FindingSeverity::Critical, RiskLevel::High)
+            }
+            Self::InfraEncryption => {
+                DetectorFindingPolicy::new(FindingSeverity::Warning, RiskLevel::High)
+            }
         }
     }
 
@@ -92,8 +141,12 @@ impl StructuralFamily {
                     | SourceLanguage::Java
                     | SourceLanguage::Kotlin
                     | SourceLanguage::Go
+                    | SourceLanguage::Terraform
             ),
             Self::UnsafeCode => language == SourceLanguage::Rust,
+            Self::InfraPublicExposure | Self::InfraEncryption | Self::InfraPermissions => {
+                language == SourceLanguage::Terraform
+            }
         }
     }
 
@@ -160,6 +213,32 @@ pub enum StructuralFact {
         construct: UnsafeConstruct,
         /// Whether a `SAFETY:` justification precedes it.
         safety_comment: bool,
+    },
+    /// A risky configuration established from known values only: every value
+    /// the check needed was known when it concluded.
+    Misconfiguration {
+        /// The infrastructure family it belongs to.
+        family: StructuralFamily,
+        /// The stable check id.
+        check: String,
+        /// The resource instance address.
+        resource: String,
+        /// The attribute path the check looked at.
+        attribute: String,
+        /// What is wrong. Never carries a secret value.
+        detail: String,
+    },
+    /// A check that could not decide because a value it needs is unknown. It
+    /// never becomes a finding; it keeps the verdict from reading as clean.
+    UnknownValue {
+        /// The infrastructure family of the check.
+        family: StructuralFamily,
+        /// The resource instance address.
+        resource: String,
+        /// The attribute path.
+        attribute: String,
+        /// Why the value is unknown.
+        causes: Vec<String>,
     },
 }
 
@@ -241,6 +320,18 @@ pub fn classify_structural(
                         "no SAFETY justification"
                     }
                 ),
+                (
+                    family,
+                    StructuralFact::Misconfiguration {
+                        family: fact_family,
+                        check,
+                        resource,
+                        attribute,
+                        detail,
+                    },
+                ) if family == *fact_family => {
+                    format!("{check}: {detail} ({resource}, `{attribute}`)")
+                }
                 _ => return None,
             };
             Some(AstConstruct {
@@ -257,6 +348,30 @@ pub fn classify_structural(
             constructs,
         }],
     })
+}
+
+/// The checks of `family` that could not decide in `unit` because a value they
+/// need is unknown, as stable sorted descriptions. A run that finds nothing
+/// while this is non-empty has not shown the unit clean.
+pub fn unresolved_checks(family: StructuralFamily, unit: &ObservedUnit) -> Vec<String> {
+    let mut unresolved: Vec<String> = unit
+        .facts
+        .iter()
+        .filter_map(|observation| match &observation.fact {
+            StructuralFact::UnknownValue {
+                family: fact_family,
+                resource,
+                attribute,
+                causes,
+            } if *fact_family == family => {
+                Some(format!("{resource} `{attribute}`: {}", causes.join("; ")))
+            }
+            _ => None,
+        })
+        .collect();
+    unresolved.sort();
+    unresolved.dedup();
+    unresolved
 }
 
 const SECRET_MARKERS: [&str; 7] = [
@@ -283,7 +398,9 @@ const PLACEHOLDERS: [&str; 6] = [
 
 const MIN_SECRET_LEN: usize = 8;
 
-fn is_hardcoded_secret(name: &str, value: &str) -> bool {
+/// Whether `value`, bound to `name`, looks like a credential committed to the
+/// source: a secret-like name with an opaque literal that is not a placeholder.
+pub fn is_hardcoded_secret(name: &str, value: &str) -> bool {
     let name = name.to_ascii_lowercase();
     if !SECRET_MARKERS.iter().any(|m| name.contains(m))
         || LOCATOR_MARKERS.iter().any(|m| name.contains(m))
@@ -435,5 +552,91 @@ mod tests {
         assert_eq!(policy.default_risk, RiskLevel::Low);
         assert_eq!(policy.default_severity, FindingSeverity::Info);
         assert_eq!(StructuralFamily::UnsafeCode.cwe(), None);
+    }
+
+    fn misconfiguration(family: StructuralFamily) -> StructuralObservation {
+        StructuralObservation {
+            line: 9,
+            grounding: None,
+            fact: StructuralFact::Misconfiguration {
+                family,
+                check: "open_ingress".to_string(),
+                resource: "aws_security_group.web".to_string(),
+                attribute: "ingress[0].cidr_blocks".to_string(),
+                detail: "ingress from anywhere".to_string(),
+            },
+        }
+    }
+
+    fn unknown_value(family: StructuralFamily, resource: &str) -> StructuralObservation {
+        StructuralObservation {
+            line: 4,
+            grounding: None,
+            fact: StructuralFact::UnknownValue {
+                family,
+                resource: resource.to_string(),
+                attribute: "acl".to_string(),
+                causes: vec!["variable `var.acl` is not bound".to_string()],
+            },
+        }
+    }
+
+    #[test]
+    fn a_misconfiguration_becomes_a_construct_only_for_its_own_family() {
+        let facts = vec![misconfiguration(StructuralFamily::InfraPublicExposure)];
+        let own = constructs(classify_structural(
+            StructuralFamily::InfraPublicExposure,
+            &unit(SourceLanguage::Terraform, facts.clone()),
+        ));
+        assert_eq!(own.len(), 1);
+        assert_eq!(own[0].line, 9);
+        assert!(own[0].detail.contains("aws_security_group.web"));
+        let other = constructs(classify_structural(
+            StructuralFamily::InfraEncryption,
+            &unit(SourceLanguage::Terraform, facts),
+        ));
+        assert!(other.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_value_is_never_a_construct_but_is_reported_as_unresolved() {
+        let terraform = unit(
+            SourceLanguage::Terraform,
+            vec![
+                unknown_value(StructuralFamily::InfraPublicExposure, "aws_s3_bucket.b"),
+                unknown_value(StructuralFamily::InfraPublicExposure, "aws_s3_bucket.b"),
+                unknown_value(StructuralFamily::InfraEncryption, "aws_ebs_volume.d"),
+            ],
+        );
+        assert!(
+            constructs(classify_structural(
+                StructuralFamily::InfraPublicExposure,
+                &terraform
+            ))
+            .is_empty()
+        );
+        let unresolved = unresolved_checks(StructuralFamily::InfraPublicExposure, &terraform);
+        assert_eq!(unresolved.len(), 1, "duplicates collapse");
+        assert!(unresolved[0].contains("aws_s3_bucket.b"));
+        assert!(unresolved_checks(StructuralFamily::HardcodedSecret, &terraform).is_empty());
+    }
+
+    #[test]
+    fn infrastructure_families_are_modeled_for_terraform_only_and_secrets_join_them() {
+        for family in StructuralFamily::ALL
+            .into_iter()
+            .filter(|f| f.is_infrastructure())
+        {
+            for language in SourceLanguage::ALL {
+                assert_eq!(
+                    family.supports(language),
+                    language == SourceLanguage::Terraform,
+                    "{family:?} {language:?}"
+                );
+            }
+            assert!(family.cwe().is_some());
+        }
+        assert!(StructuralFamily::HardcodedSecret.supports(SourceLanguage::Terraform));
+        assert!(!StructuralFamily::UnsafeCode.supports(SourceLanguage::Terraform));
     }
 }
