@@ -49,21 +49,32 @@ pub struct McpSession {
     stdin: tokio::process::ChildStdin,
     stdout: BufReader<tokio::process::ChildStdout>,
     next_id: u64,
+    /// The cache of a session that was not given one: private to this
+    /// session, removed with it.
+    _own_cache: Option<tempfile::TempDir>,
 }
 
 impl McpSession {
     /// Spawn + initialize. `kill_on_drop` como red de seguridad.
+    ///
+    /// The server keeps what it derives from the workspace in a cache of
+    /// this session alone, never in the cache of whoever runs the suite and
+    /// never shared with another session: a test that needs two servers to
+    /// share one says so with [`Self::spawn_with_cache`].
     pub async fn spawn(ws: &Path) -> Result<Self, String> {
-        Self::spawn_with_env(ws, &[]).await
+        let cache = tempfile::tempdir().map_err(|e| e.to_string())?;
+        let mut session = Self::spawn_with_env(ws, &[("XDG_CACHE_HOME", cache.path())]).await?;
+        session._own_cache = Some(cache);
+        Ok(session)
     }
 
     /// Spawn + initialize, with the cache the server keeps pointed at
     /// `cache`.
     ///
-    /// El producto guarda en la caché del usuario lo que deriva del
-    /// workspace. Un test que no dice dónde está esa caché escribe en la
-    /// caché de quien ejecuta la suite, así que este spawn lo dice: el
-    /// servidor lee `XDG_CACHE_HOME`, y el hijo recibe el suyo.
+    /// El producto guarda en la caché lo que deriva del workspace; el
+    /// servidor la lee de `XDG_CACHE_HOME`, y el hijo recibe la que el test
+    /// nombra. Sirve para compartir una caché entre servidores o para
+    /// inspeccionar lo que el servidor dejó en ella.
     pub async fn spawn_with_cache(ws: &Path, cache: &Path) -> Result<Self, String> {
         Self::spawn_with_env(ws, &[("XDG_CACHE_HOME", cache)]).await
     }
@@ -87,6 +98,7 @@ impl McpSession {
             stdin,
             stdout: BufReader::new(stdout),
             next_id: 1,
+            _own_cache: None,
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat","version":"0"}}})).await?;
         let line = s.read_line_within("la respuesta a initialize").await?;
@@ -342,6 +354,7 @@ impl McpSession {
             stdin,
             stdout: BufReader::new(stdout),
             next_id: 1,
+            _own_cache: None,
         };
         s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"a013","version":"0"}}})).await?;
         let line = s.read_line_within("la respuesta a initialize").await?;
