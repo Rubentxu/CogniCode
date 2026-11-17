@@ -259,6 +259,14 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "n/a",
         },
 
+        // El preflight lee las revisiones con los mismos lectores que
+        // `compare`; lo que un lector no reclama lo publica la respuesta como
+        // `partial`.
+        "preflight" => ToolCapabilities {
+            langs: tree_sitter_langs(),
+            precision: "AST",
+        },
+
         "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
             ToolCapabilities {
                 langs: tree_sitter_langs(),
@@ -379,6 +387,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "compare",
         "verify",
         "security",
+        "preflight",
     ]
 }
 
