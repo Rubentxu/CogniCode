@@ -1323,6 +1323,10 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
         "lists the release staging directory: not a project tree",
     "crates/cognicode-cli/src/cmd/release_test_support.rs":
         "lists the release staging directory for the release tests: not a project tree",
+    "crates/cognicode-core/src/application/revision_snapshots.rs":
+        "lists the flat directory of the revision-snapshot store (and sweeps its "
+        "orphaned temp files): the product's own derived-state cache, one file "
+        "per revision, not a project tree",
     "crates/cognicode-sandbox/src/main.rs":
         "reads and copies the sandbox's own work and results directories: not the analysed project",
     # -- evidence and documentation corpora: a directory the caller names for a

@@ -68,6 +68,8 @@ pub mod evidence_kernel;
 // builds so the byte-level surface is unchanged.
 #[cfg(feature = "multimodal")]
 pub mod federation;
+/// Forge-neutral pull-request review: ports and pure core.
+pub mod forge;
 // Hexagonal "driven" ports for the Generic Graph Layer.
 // `GraphRepository` / `GraphError` / `GraphResult` / `SearchPage`
 // are available in the default build (multimodal gates WRITE only).

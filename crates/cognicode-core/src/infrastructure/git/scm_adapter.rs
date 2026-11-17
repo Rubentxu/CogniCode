@@ -84,7 +84,10 @@ struct GitRun {
 /// Reads a pipe with a hard byte cap. Over-cap returns `None` (the
 /// caller turns it into a named failure); the remainder is drained so
 /// git can never block writing into a closed buffer.
-fn read_bounded(mut pipe: impl Read, cap: u64) -> Result<Option<Vec<u8>>, std::io::Error> {
+pub(crate) fn read_bounded(
+    mut pipe: impl Read,
+    cap: u64,
+) -> Result<Option<Vec<u8>>, std::io::Error> {
     let mut out = Vec::new();
     let mut chunk = [0u8; 1 << 16];
     let mut over = false;
