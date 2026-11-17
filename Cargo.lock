@@ -421,6 +421,7 @@ dependencies = [
  "flate2",
  "rayon",
  "reqwest",
+ "rmcp",
  "serde",
  "serde_json",
  "serde_norway",

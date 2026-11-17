@@ -243,6 +243,22 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "n/a",
         },
 
+        // Comparar y verificar revisiones lee hechos de Git y de los
+        // snapshots guardados: no depende del lenguaje del código.
+        "compare" | "verify" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
+
+        // El pack de seguridad lee Terraform y Helm con sus propios
+        // cargadores, no con las gramáticas del registro de lenguajes, así
+        // que no anuncia lenguajes del registro: lo que cubre y lo que no lo
+        // publica el propio informe, en su matriz de capacidades.
+        "security" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
+
         "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
             ToolCapabilities {
                 langs: tree_sitter_langs(),
@@ -360,6 +376,9 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "audit",
         "change",
         "recipe",
+        "compare",
+        "verify",
+        "security",
     ]
 }
 

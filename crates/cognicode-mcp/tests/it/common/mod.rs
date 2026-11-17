@@ -69,7 +69,7 @@ impl McpSession {
     }
 
     /// The spawn body shared by [`Self::spawn`] and [`Self::spawn_with_cache`].
-    async fn spawn_with_env(ws: &Path, env: &[(&str, &Path)]) -> Result<Self, String> {
+    pub async fn spawn_with_env(ws: &Path, env: &[(&str, &Path)]) -> Result<Self, String> {
         let mut cmd = Command::new(binary_path());
         cmd.arg("--cwd").arg(ws);
         for (name, value) in env {

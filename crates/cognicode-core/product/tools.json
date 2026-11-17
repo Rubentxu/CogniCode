@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 90,
+  "runtime_tool_count": 91,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1541,6 +1541,52 @@
       "required_args": [
         "revision"
       ],
+      "limitations": [
+        "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
+      ]
+    },
+    {
+      "name": "security",
+      "title": "El pack de seguridad sobre Terraform y Helm",
+      "description": "Corre el pack de seguridad sobre las raíces Terraform y los charts Helm del proyecto y publica un veredicto por unidad y familia: `found`, `not_observed`, `unknown` o `unsupported`, siempre distintos (un `unknown` o `unsupported` nunca se presenta como limpio). Para Helm dice si el chart se renderizó y con qué cobertura; sin el motor `helm` el chart queda `not_rendered` y sus comprobaciones `unknown`. Publica la matriz de capacidades con sus límites (`all_languages` la amplía a todos los lenguajes). Es un informe de candidatos, no una puerta. Ejemplos: `cognicode security`, `cognicode security --format json`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Arguments of the `security` goal.",
+        "properties": {
+          "all_languages": {
+            "default": false,
+            "description": "Publish the capability matrix of every language the pack names. By\ndefault only the Terraform and Helm rows are published.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.105.0"
+      },
+      "precision_floor": "ast-heuristic",
       "limitations": [
         "El goal se monta sobre el dueño que ya calcula esto: su respuesta no añade un cálculo nuevo."
       ]
