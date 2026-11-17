@@ -5,7 +5,11 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-15, sobre `b9776403765321e6c0536472b4ae4140a789dac9` (la
+> **Snapshot**: 2026-11-17, sobre `3c96a90dca9b93778898f701420f1c7d34cccd54` (el lane standalone ya está publicado: la release v0.105.0 declara el target
+> musl enlazado estáticamente como lane de Tier 1 junto al nativo, y el canal
+> que instala —`install.sh`— lo prefiere porque su artefacto no lleva glibc
+> enlazada y corre en cualquier Linux x86_64 sea cual sea la glibc de la
+> máquina; la
 > incrementalidad ya está integrada: el grafo se reconstruye sólo donde cambió,
 > el servicio dice cuánto conservó, y el escaneo declara los ficheros que no
 > puede fechar ni los que no puede leer; los recuentos que el producto
@@ -501,14 +505,19 @@
 > test —el contrato que fijaba la frescura de los goals que leen el árbol, que
 > la unidad anterior cambió a propósito— y lo corrigió TASK-321 (`a55d0c4e`);
 > el recibo del bloque lo escribe su cierre.
-> Versión del workspace: `0.103.1`. Última release publicada: `v0.103.1`
-> (2026-11-11, 8 assets).
+> Versión del workspace: `0.105.0`. Última release publicada: `v0.105.0`
+> (2026-11-17, 12 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`6ca67fde794f442a940fd6f4d66f32f006a978ad` → `b9776403765321e6c0536472b4ae4140a789dac9`)
+## Qué cambió desde el snapshot anterior (`d9c441c48bea3b421867c9f1d22950b035153179` → `3c96a90dca9b93778898f701420f1c7d34cccd54`)
 
-Entre una punta y otra entraron **30 commits** (`git rev-list --count 6ca67fde794f442a940fd6f4d66f32f006a978ad..b9776403765321e6c0536472b4ae4140a789dac9`).
+Entre una punta y otra entraron **42 commits** (`git rev-list --count d9c441c48bea3b421867c9f1d22950b035153179..3c96a90dca9b93778898f701420f1c7d34cccd54`).
+
+El snapshot anterior declaraba un puntero que ya no existe en la historia
+(`b9776403765321e6c0536472b4ae4140a789dac9`): el tip al que apuntaba se
+reescribió. La base de esta comparación es el commit que lo escribió
+(`d9c441c48bea3b421867c9f1d22950b035153179`), que sí existe.
 Lo que sigue no es una lista de intenciones: cada fila dice qué se movió y
 en qué commits está; la medición de cada unidad está en su tarea de Backlog y,
 cuando la hay, en su recibo del `JOURNAL`. La tabla lleva las quince unidades
@@ -519,6 +528,7 @@ recibo en el `JOURNAL`.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
+| La release publica un lane *standalone* que corre en cualquier Linux x86_64 | `3c96a90dca9b93778898f701420f1c7d34cccd54` (corte v0.105.0) | El target musl se compila estático (`-C target-feature=+crt-static`), así que el artefacto no lleva glibc enlazada: los binarios construidos aquí (glibc 2.44) corren sin recompilar en un Ubuntu 24.04 con glibc 2.39. `install.sh` instala el lane standalone en Linux x86_64, y el resolver lo prueba antes que el nativo. |
 | El volcado de detalle por stderr se acota y dice lo que deja fuera | `68490568` (TASK-305, #895) | `cognicode --format json graph full .` escribía 4 285 666 bytes de stderr: una línea por cada referencia que nadie declaró (44 905) y otra por cada fichero que no se pudo leer. Medido sobre este repositorio con el binario debug: stderr 4 285 666 → 33 456 bytes, con los 135 ficheros listados y el documento JSON con las listas completas (135 / 44 905 / 0); lo que no cabe se cuenta con el número exacto y se dice: «Omitted: 44821 of 44905 pending references were not listed». |
 | El prefijo de categoría del limitador no aísla nada y se borra | `523c641c` (TASK-299, #896) | El limitador cuenta por clave y el despacho nunca consultaba el cubo global: el namespace `strict:` no separaba nada de nada. Se borra el mecanismo y se dice la verdad: cada herramienta tiene su propio presupuesto. |
 | Los contratos que no miden lo que prometen se renombran | `105cca7a` (TASK-307, #897) | Los restos de la revisión de TASK-297: un doc que describía `list_files` como si leyera ficheros y dos contratos cuyos nombres prometen una duración que no miden. Los tres contratos se renombran para decir lo que comprueban, y se mide que tienen dientes; un test nuevo fija que el listado del árbol no lee los ficheros que lista. |

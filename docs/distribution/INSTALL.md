@@ -136,7 +136,7 @@ The four `library` crates declared in
 in [`SDK_ARCHITECTURE.md`](SDK_ARCHITECTURE.md) and the release procedure in
 [`SDK_RELEASE.md`](SDK_RELEASE.md).
 
-The four crates are published on crates.io at version `0.103.1`, and a clean
+The four crates are published on crates.io at version `0.105.0`, and a clean
 consumer project that depends on those exact versions builds and runs. You can
 repeat that check with
 `bash scripts/distribution/verify-sdk-consumer.sh --confirm-published`.
@@ -146,10 +146,10 @@ Add the crates in publication order, dependencies first
 `cognicode-graph-wasm` depends on `cognicode-graph-algos`):
 
 ```bash
-cargo add cognicode-graph-algos@=0.103.1
-cargo add cognicode-macros@=0.103.1
-cargo add cognicode-core@=0.103.1
-cargo add cognicode-graph-wasm@=0.103.1
+cargo add cognicode-graph-algos@=0.105.0
+cargo add cognicode-macros@=0.105.0
+cargo add cognicode-core@=0.105.0
+cargo add cognicode-graph-wasm@=0.105.0
 ```
 
 Add only the crates your project uses; the order matters for publishing, not
@@ -260,7 +260,7 @@ Manifests and checksums:
 
 Verify integrity after downloading every file you need into one empty
 directory (the URL base is
-`https://github.com/Rubentxu/CogniCode/releases/download/v0.103.1/`):
+`https://github.com/Rubentxu/CogniCode/releases/download/v0.105.0/`):
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
@@ -271,11 +271,11 @@ present and does not match still fails the command.
 
 Limitation: these names are derived from the release contract in this tree and
 were compared, on November 9, 2026, with the asset list that
-`gh release view v0.103.1` reports: all eight match and the release is not a
-draft. On November 11, 2026 the x86_64 Linux assets of `v0.103.1` were
+`gh release view v0.105.0` reports: all eight match and the release is not a
+draft. On November 11, 2026 the x86_64 Linux assets of `v0.105.0` were
 downloaded to a fresh directory and `sha256sum --check SHA256SUMS` matched
 every entry; the `cognicode`, `cognicode-mcp` and `cogh` binaries extracted
-from them ran `--version` and reported 0.103.1. The same checks had been run
+from them ran `--version` and reported 0.105.0. The same checks had been run
 for the v0.103.0 assets on November 9, 2026, where the remote `install.sh`
 also installed `cogh` 0.103.0 into a temporary directory. Only that one
 platform was exercised, and
@@ -338,8 +338,8 @@ published repository and not from a local copy:
 
 ```sh
 asdf plugin add cogh https://github.com/Rubentxu/asdf-cogh.git
-asdf install cogh 0.103.1
-"$(asdf where cogh 0.103.1)/bin/cogh" --version   # cogh 0.103.1
+asdf install cogh 0.105.0
+"$(asdf where cogh 0.105.0)/bin/cogh" --version   # cogh 0.105.0
 ```
 
 `asdf install` verified the tarball against `SHA256SUMS` ("La suma coincide")

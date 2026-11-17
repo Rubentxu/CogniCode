@@ -494,7 +494,7 @@ trazado de rutas de ejecución** y mucho más.
 ## Versionado
 
 - **Release vigente:** `v0.105.0`, cortada desde este árbol con ese tag
-  (`main` en `793033d4`). Un minor: la release publica un **lane
+  (`main` en `3c96a90d`). Un minor: la release publica un **lane
   standalone** (musl, enlazado estáticamente, sin dependencia de glibc) junto
   al nativo, los assets binarios se generaron con la release factory desde el
   mismo árbol, y un host Linux x86_64 instala el lane standalone por
