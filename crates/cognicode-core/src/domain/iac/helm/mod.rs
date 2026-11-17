@@ -36,7 +36,7 @@ mod template;
 mod values;
 
 pub use analysis::{
-    ChartAnalysis, ChartDelta, CheckResult, CheckVerdict, ComparedDelta, ManifestFactChange,
+    ChartAnalysis, ChartCheckResult, ChartDelta, CheckVerdict, ComparedDelta, ManifestFactChange,
     ObjectChange, RenderCoverage, analyze_chart, compare,
 };
 pub use chart::{ChartDependency, ChartModel, PartialReason, ValueGap, ValuesSchema};

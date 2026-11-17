@@ -52,7 +52,7 @@ pub enum CheckVerdict {
 
 /// A check with its verdict and findings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CheckResult {
+pub struct ChartCheckResult {
     /// The check.
     pub check: HelmCheck,
     /// Its verdict.
@@ -77,7 +77,7 @@ pub struct ChartAnalysis {
     /// The concrete objects; `None` exactly when nothing was rendered.
     pub manifest: Option<ManifestModel>,
     /// One result per check.
-    pub results: Vec<CheckResult>,
+    pub results: Vec<ChartCheckResult>,
     /// What this analysis does not cover regardless of coverage.
     pub limits: Vec<String>,
 }
@@ -89,7 +89,7 @@ impl ChartAnalysis {
     }
 
     /// The result of `check`.
-    pub fn result(&self, check: HelmCheck) -> Option<&CheckResult> {
+    pub fn result(&self, check: HelmCheck) -> Option<&ChartCheckResult> {
         self.results.iter().find(|r| r.check == check)
     }
 }
@@ -154,7 +154,7 @@ fn results_for(
     render: &RenderStatus,
     coverage: &RenderCoverage,
     manifest: Option<&ManifestModel>,
-) -> Vec<CheckResult> {
+) -> Vec<ChartCheckResult> {
     let findings = manifest.map(check_manifest).unwrap_or_default();
     HelmCheck::ALL
         .iter()
@@ -165,7 +165,7 @@ fn results_for(
                 .cloned()
                 .collect();
             let verdict = verdict_for(render, coverage, manifest, &own);
-            CheckResult {
+            ChartCheckResult {
                 check,
                 verdict,
                 findings: own,
