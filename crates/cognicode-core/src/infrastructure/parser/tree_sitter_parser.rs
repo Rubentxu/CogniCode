@@ -591,7 +591,7 @@ impl TreeSitterParser {
         // `SymbolKind` for each.
         let kind = if by_sets {
             if declared.function_types.contains(&node.kind()) {
-                SymbolKind::Function
+                naming::callable_kind(self.language, &node)
             } else if declared.class_types.contains(&node.kind()) {
                 SymbolKind::Class
             } else if declared.variable_types.contains(&node.kind()) {

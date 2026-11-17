@@ -270,7 +270,7 @@ impl OutlineBuilder {
         let kind = node.kind();
 
         let symbol_kind = if declared.function_types.contains(&kind) {
-            SymbolKind::Function
+            naming::callable_kind(self.language, &node)
         } else if declared.class_types.contains(&kind) {
             SymbolKind::Class
         } else if declared.variable_types.contains(&kind) {

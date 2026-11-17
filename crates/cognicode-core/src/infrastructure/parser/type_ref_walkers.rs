@@ -178,9 +178,11 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
     refs
 }
 
-/// Walk a Go function/type declaration and extract type references.
+/// Walk a Go function or `type_spec` and extract type references.
 ///
-/// Go syntax: `func foo(x int, y string) error`, `type Foo struct { Bar Baz }`
+/// Go syntax: `func foo(x int, y string) error`, `type Foo struct { Bar Baz }`.
+/// A grouped `type ( ... )` declaration holds one `type_spec` per type, and
+/// each is walked on its own.
 pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef> {
     let mut refs = Vec::new();
     let node_type = node.kind();
@@ -214,52 +216,44 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
             }
         }
 
-        "type_declaration" => {
-            // type_declaration wraps type_spec nodes
-            for i in 0..node.child_count() {
-                let child = node.child(i).unwrap();
-                if child.kind() == "type_spec" {
-                    // type_spec has `name` and `type` fields
-                    if let Some(type_node) = child.child_by_field_name("type") {
-                        // If it's a struct/interface, walk its fields
-                        if type_node.kind() == "struct_type" {
-                            // struct_type → field_declaration_list → field_declaration
-                            for j in 0..type_node.child_count() {
-                                let fdl = type_node.child(j).unwrap();
-                                if fdl.kind() == "field_declaration_list" {
-                                    for k in 0..fdl.child_count() {
-                                        let field = fdl.child(k).unwrap();
-                                        if field.kind() == "field_declaration" {
-                                            // field_declaration has `type` field
-                                            if let Some(ftype) = field.child_by_field_name("type") {
-                                                collect_type_names(
-                                                    &ftype,
-                                                    source,
-                                                    TypeRefContext::FieldType,
-                                                    &mut refs,
-                                                );
-                                            }
-                                        }
-                                    }
+        "type_spec" => {
+            // type_spec has `name` and `type` fields
+            if let Some(type_node) = node.child_by_field_name("type") {
+                match type_node.kind() {
+                    // struct_type → field_declaration_list → field_declaration
+                    "struct_type" => {
+                        for j in 0..type_node.child_count() {
+                            let fdl = type_node.child(j).unwrap();
+                            if fdl.kind() != "field_declaration_list" {
+                                continue;
+                            }
+                            for k in 0..fdl.child_count() {
+                                let field = fdl.child(k).unwrap();
+                                if field.kind() != "field_declaration" {
+                                    continue;
+                                }
+                                // field_declaration has `type` field
+                                if let Some(ftype) = field.child_by_field_name("type") {
+                                    collect_type_names(
+                                        &ftype,
+                                        source,
+                                        TypeRefContext::FieldType,
+                                        &mut refs,
+                                    );
                                 }
                             }
-                        } else if type_node.kind() == "interface_type" {
-                            // interface_type → method_spec_list → method_spec
-                            collect_type_names_recursive(
-                                &type_node,
-                                source,
-                                TypeRefContext::TraitBound,
-                                &mut refs,
-                            );
-                        } else {
-                            // type alias: type Foo = Bar
-                            collect_type_names(
-                                &type_node,
-                                source,
-                                TypeRefContext::FieldType,
-                                &mut refs,
-                            );
                         }
+                    }
+                    // interface_type → method_spec_list → method_spec
+                    "interface_type" => collect_type_names_recursive(
+                        &type_node,
+                        source,
+                        TypeRefContext::TraitBound,
+                        &mut refs,
+                    ),
+                    // a defined type: type Foo Bar
+                    _ => {
+                        collect_type_names(&type_node, source, TypeRefContext::FieldType, &mut refs)
                     }
                 }
             }
@@ -1209,7 +1203,7 @@ mod tests {
         test_walker(
             source,
             walk_go_type_refs,
-            "type_declaration",
+            "type_spec",
             |refs| {
                 assert!(
                     !refs.is_empty(),
