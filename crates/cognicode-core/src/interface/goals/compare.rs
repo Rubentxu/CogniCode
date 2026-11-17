@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::application::change_tracking::planner::WorkDisposition;
+use crate::application::change_tracking::revision_facts::{
+    FactObjectStore, FactsLimits, ProducedRevision, assess_impact, assess_reuse,
+    produce_revision_facts, producer_versions,
+};
+use crate::application::graph_cache::{cache_dir, workspace_key};
+use crate::application::revision_snapshots::RevisionSnapshotStore;
+use crate::application::services::detector_reuse_store::DetectorReuseStore;
 use crate::domain::scm::{
     ChangeKind, ChangeReader, ChangeSet, RevisionReader, SourceRef, WorkingCopyReader,
 };
@@ -73,8 +81,88 @@ pub struct CompareCoverage {
     pub changed_paths: usize,
     /// Changes the SCM provider could not classify.
     pub unclassified_changes: usize,
-    /// Semantic analysis is deliberately not claimed by this goal.
+    /// How far the semantic analysis reaches: `evaluated`, `partial` or
+    /// `not_evaluated`, the same word as `impact_status`.
     pub analysis: String,
+}
+
+/// What one revision's facts cover.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RevisionFactsCoverage {
+    /// Facts assembled for the revision.
+    pub facts: usize,
+    /// Tracked files at the revision.
+    pub tracked_files: usize,
+    /// Tracked files a language reader claims.
+    pub analyzable_files: usize,
+    /// Files parsed now.
+    pub parsed_files: usize,
+    /// Files whose facts were reused from a stored object.
+    pub reused_files: usize,
+    /// Tracked files no language reader claims.
+    pub unanalyzed_files: usize,
+    /// `full` when every analyzable file has facts, `partial` otherwise.
+    pub coverage: String,
+    /// Analyzable files left without facts, each with its reason.
+    pub gaps: Vec<RevisionFactsGap>,
+}
+
+/// An analyzable file that has no facts, and why.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RevisionFactsGap {
+    /// The tracked path.
+    pub path: String,
+    /// Why no facts exist for it.
+    pub reason: String,
+}
+
+/// The revision facts the comparison was computed from.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareRevisionFacts {
+    /// The producer that assembled the facts.
+    pub producer: String,
+    /// Facts of the base revision.
+    pub base: RevisionFactsCoverage,
+    /// Facts of the candidate revision.
+    pub candidate: RevisionFactsCoverage,
+    /// Whether both revision snapshots were persisted for reuse across
+    /// branches. `false` when the environment names no cache.
+    pub persisted: bool,
+}
+
+/// The change in facts between the two revisions.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareImpact {
+    /// Facts asserted at the candidate and not at the base.
+    pub facts_added: usize,
+    /// Facts asserted at the base and not at the candidate.
+    pub facts_removed: usize,
+    /// Changed paths no language reader claims: their effect is invisible.
+    pub unanalyzed_changed_paths: Vec<String>,
+    /// Paths with a missing side of facts.
+    pub gap_paths: Vec<String>,
+}
+
+/// The reuse verdict of one piece of prior work.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareWorkVerdict {
+    /// The prior work, by the detector name it ran under.
+    pub work: String,
+    /// `affected`, `unaffected` or `unknown`.
+    pub disposition: String,
+}
+
+/// What the prior read-sets say about reusing earlier work.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareWorkReuse {
+    /// One verdict per prior work recorded against the base revision.
+    pub works: Vec<CompareWorkVerdict>,
+    /// Works that read a changed fact.
+    pub affected: usize,
+    /// Works proven independent of every change.
+    pub unaffected: usize,
+    /// Works that cannot be decided.
+    pub unknown: usize,
 }
 
 /// The shared response contract for comparing two revisions.
@@ -98,17 +186,25 @@ pub struct GoalCompare {
     pub changes: Vec<ComparedChange>,
     /// Staged changes and dirty working-tree paths, observed separately.
     pub working_copy: WorkingCopyComparison,
-    /// Semantic impact and prior-result reuse are not inferred from an SCM diff.
+    /// `evaluated`, `partial` or `not_evaluated`: how much of the semantic
+    /// impact the revision facts support. `partial` counts are a lower bound.
     pub impact_status: String,
-    /// Why semantic impact and reuse were not evaluated.
+    /// Why the impact has that status.
     pub impact_reason: String,
-    /// Whether previous work was reused; this slice never claims reuse.
+    /// `evaluated`, `partial` or `not_evaluated`: what prior read-sets say
+    /// about reusing earlier work.
     pub work_reuse_status: String,
-    /// Why previous work reuse was not evaluated.
+    /// Why the reuse has that status.
     pub work_reuse_reason: String,
+    /// The facts the comparison was computed from, with their gaps.
+    pub revision_facts: Option<CompareRevisionFacts>,
+    /// The fact delta, when facts exist for both revisions.
+    pub impact: Option<CompareImpact>,
+    /// The reuse verdicts, when prior read-sets exist for the base.
+    pub work_reuse: Option<CompareWorkReuse>,
 }
 
-const NOT_EVALUATED_REASON: &str = "No production source currently assembles complete revision facts and prior execution read-sets for this request; an SCM diff alone cannot establish impact or reuse.";
+const FACTS_UNAVAILABLE: &str = "revision facts could not be assembled";
 
 fn compared_changes(change_set: &ChangeSet) -> Vec<ComparedChange> {
     change_set
@@ -135,14 +231,187 @@ fn compared_changes(change_set: &ChangeSet) -> Vec<ComparedChange> {
         .collect()
 }
 
-/// Compare two ancestor revisions without claiming semantic impact or reused work.
+fn side_coverage(produced: &ProducedRevision) -> RevisionFactsCoverage {
+    let coverage = &produced.coverage;
+    RevisionFactsCoverage {
+        facts: produced.facts.facts.len(),
+        tracked_files: coverage.tracked_files,
+        analyzable_files: coverage.analyzable_files,
+        parsed_files: coverage.parsed_files,
+        reused_files: coverage.reused_files,
+        unanalyzed_files: coverage.unanalyzed_files,
+        coverage: if coverage.is_complete() {
+            "full"
+        } else {
+            "partial"
+        }
+        .to_string(),
+        gaps: coverage
+            .gaps
+            .iter()
+            .map(|gap| RevisionFactsGap {
+                path: gap.path.as_str().to_string(),
+                reason: gap.reason.describe(),
+            })
+            .collect(),
+    }
+}
+
+fn disposition_word(disposition: WorkDisposition) -> &'static str {
+    match disposition {
+        WorkDisposition::Affected => "affected",
+        WorkDisposition::Unaffected => "unaffected",
+        WorkDisposition::Unknown => "unknown",
+    }
+}
+
+/// What the revision facts and prior read-sets support, as the wire states it.
+struct Semantics {
+    impact_status: String,
+    impact_reason: String,
+    work_reuse_status: String,
+    work_reuse_reason: String,
+    revision_facts: Option<CompareRevisionFacts>,
+    impact: Option<CompareImpact>,
+    work_reuse: Option<CompareWorkReuse>,
+}
+
+impl Semantics {
+    fn not_evaluated(reason: String) -> Self {
+        Self {
+            impact_status: "not_evaluated".to_string(),
+            impact_reason: reason.clone(),
+            work_reuse_status: "not_evaluated".to_string(),
+            work_reuse_reason: reason,
+            revision_facts: None,
+            impact: None,
+            work_reuse: None,
+        }
+    }
+}
+
+/// Assembles both revisions' facts over the SCM ports, persists their
+/// snapshots when a cache is named, and asks the one planner what the
+/// transition means. Whatever cannot be established stays `not_evaluated`.
+fn semantics(
+    scm: &GitScmAdapter,
+    workspace: &Path,
+    cache_root: Option<&Path>,
+    revisions: (
+        &crate::domain::scm::SourceRevision,
+        &crate::domain::scm::SourceRevision,
+    ),
+    change_set: &ChangeSet,
+) -> Semantics {
+    let (base_revision, candidate_revision) = revisions;
+    let snapshots = cache_root.map(|root| RevisionSnapshotStore::for_workspace(root, workspace));
+    let objects = snapshots.as_ref().map(FactObjectStore::beside);
+    let limits = FactsLimits::default();
+    let produce = |revision| produce_revision_facts(scm, revision, objects.as_ref(), &limits);
+    let (base, candidate) = match (produce(base_revision), produce(candidate_revision)) {
+        (Ok(base), Ok(candidate)) => (base, candidate),
+        (Err(error), _) | (_, Err(error)) => {
+            return Semantics::not_evaluated(format!("{FACTS_UNAVAILABLE}: {error}"));
+        }
+    };
+    let persisted = snapshots.as_ref().is_some_and(|store| {
+        [&base, &candidate]
+            .iter()
+            .all(|produced| store.save(&produced.snapshot).is_ok())
+    });
+    let revision_facts = CompareRevisionFacts {
+        producer: producer_versions().facts,
+        base: side_coverage(&base),
+        candidate: side_coverage(&candidate),
+        persisted,
+    };
+
+    let impact = match assess_impact(&base, &candidate, change_set) {
+        Ok(impact) => impact,
+        Err(error) => {
+            let mut answer =
+                Semantics::not_evaluated(format!("the fact delta could not be computed: {error}"));
+            answer.revision_facts = Some(revision_facts);
+            return answer;
+        }
+    };
+    let index = cache_root.and_then(|root| {
+        DetectorReuseStore::new(
+            cache_dir(root)
+                .join("detector-reuse")
+                .join(workspace_key(workspace)),
+        )
+        .load()
+    });
+    let reuse = assess_reuse(&base, &candidate, change_set, index.as_ref());
+    let (work_reuse_status, work_reuse_reason, work_reuse) = match reuse {
+        Ok(reuse) => {
+            let verdicts = (!reuse.works.is_empty()).then(|| CompareWorkReuse {
+                works: reuse
+                    .works
+                    .iter()
+                    .map(|work| CompareWorkVerdict {
+                        work: work.work.clone(),
+                        disposition: disposition_word(work.disposition).to_string(),
+                    })
+                    .collect(),
+                affected: reuse.count(WorkDisposition::Affected),
+                unaffected: reuse.count(WorkDisposition::Unaffected),
+                unknown: reuse.count(WorkDisposition::Unknown),
+            });
+            (reuse.status.as_str().to_string(), reuse.reason, verdicts)
+        }
+        Err(error) => (
+            "not_evaluated".to_string(),
+            format!("the reuse plan could not be computed: {error}"),
+            None,
+        ),
+    };
+    Semantics {
+        impact_status: impact.status.as_str().to_string(),
+        impact_reason: impact.reason,
+        work_reuse_status,
+        work_reuse_reason,
+        revision_facts: Some(revision_facts),
+        impact: Some(CompareImpact {
+            facts_added: impact.facts_added,
+            facts_removed: impact.facts_removed,
+            unanalyzed_changed_paths: impact
+                .unanalyzed_changed
+                .iter()
+                .map(|path| path.as_str().to_string())
+                .collect(),
+            gap_paths: impact
+                .gap_paths
+                .iter()
+                .map(|path| path.as_str().to_string())
+                .collect(),
+        }),
+        work_reuse,
+    }
+}
+
+/// Compare two ancestor revisions without a cache: nothing is persisted and
+/// no prior read-sets are available, so reuse is `not_evaluated`.
 pub fn compare(workspace: &Path, base_ref: &str, head_ref: &str) -> Result<GoalCompare, String> {
+    compare_with(workspace, None, base_ref, head_ref)
+}
+
+/// Compare two ancestor revisions: the SCM diff, plus the impact and reuse
+/// the revision facts and stored read-sets support. A revision snapshot is
+/// persisted under `cache_root` so another branch can reuse its files.
+pub fn compare_with(
+    workspace: &Path,
+    cache_root: Option<&Path>,
+    base_ref: &str,
+    head_ref: &str,
+) -> Result<GoalCompare, String> {
     let root = workspace
         .canonicalize()
         .map_err(|error| format!("cannot resolve repository root: {error}"))?;
     let project = root.to_string_lossy();
     let source = SourceRef::new("git", &project).map_err(|error| error.to_string())?;
-    let scm = GitScmAdapter::new(root);
+    let scm = GitScmAdapter::new(root.clone());
     let base_revision = scm
         .resolve(&source, base_ref)
         .map_err(|error| format!("cannot resolve base revision: {error}"))?;
@@ -189,11 +458,20 @@ pub fn compare(workspace: &Path, base_ref: &str, head_ref: &str) -> Result<GoalC
         content_digest: candidate_revision.content().as_hex().to_string(),
         tracked_files: candidate_inventory.entries().len(),
     };
+    let semantic = semantics(
+        &scm,
+        &root,
+        cache_root,
+        (&base_revision, &candidate_revision),
+        &change_set,
+    );
     let summary = format!(
-        "Git compared {} changed path(s) from {} to {}; semantic impact and prior-work reuse were not evaluated.",
+        "Git compared {} changed path(s) from {} to {}; semantic impact is {} and prior-work reuse is {}.",
         changes.len(),
         base.revision,
-        candidate.revision
+        candidate.revision,
+        semantic.impact_status,
+        semantic.work_reuse_status
     );
 
     Ok(GoalCompare {
@@ -206,16 +484,19 @@ pub fn compare(workspace: &Path, base_ref: &str, head_ref: &str) -> Result<GoalC
             candidate_tracked_files: candidate.tracked_files,
             changed_paths: changes.len(),
             unclassified_changes,
-            analysis: "not_evaluated".to_string(),
+            analysis: semantic.impact_status.clone(),
         },
         base,
         candidate,
         changes,
         working_copy,
-        impact_status: "not_evaluated".to_string(),
-        impact_reason: NOT_EVALUATED_REASON.to_string(),
-        work_reuse_status: "not_evaluated".to_string(),
-        work_reuse_reason: NOT_EVALUATED_REASON.to_string(),
+        impact_status: semantic.impact_status,
+        impact_reason: semantic.impact_reason,
+        work_reuse_status: semantic.work_reuse_status,
+        work_reuse_reason: semantic.work_reuse_reason,
+        revision_facts: semantic.revision_facts,
+        impact: semantic.impact,
+        work_reuse: semantic.work_reuse,
     })
 }
 
@@ -223,7 +504,12 @@ pub fn compare(workspace: &Path, base_ref: &str, head_ref: &str) -> Result<GoalC
 pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let input: CompareInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `compare` are not valid: {error}"))?;
-    let answer = compare(ctx.workspace, &input.base_ref, &input.head_ref)?;
+    let answer = compare_with(
+        ctx.workspace,
+        ctx.cache_root,
+        &input.base_ref,
+        &input.head_ref,
+    )?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `compare` is not serialisable: {error}"))
 }
@@ -275,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn compare_reports_scm_changes_without_claiming_semantic_impact() {
+    fn compare_reports_scm_changes_with_the_fact_impact() {
         let directory = tempfile::tempdir().expect("temporary repository");
         git(directory.path(), &["init", "--quiet"]);
         git(
@@ -322,12 +608,105 @@ mod tests {
             .expect("dirty paths are published");
         assert!(dirty_paths.iter().any(|path| path == "loose.rs"));
         assert!(dirty_paths.iter().any(|path| path == "untracked.rs"));
-        assert_eq!(answer.coverage.analysis, "not_evaluated");
+        assert_eq!(answer.coverage.analysis, "evaluated");
         assert_eq!(answer.coverage.changed_paths, 1);
         assert_eq!(answer.changes[0].path, "src.rs");
         assert_eq!(answer.changes[0].kind, "modified");
-        assert_eq!(answer.impact_status, "not_evaluated");
-        assert!(answer.impact_reason.contains("read-sets"));
+        assert_eq!(answer.impact_status, "evaluated");
+        let impact = answer.impact.as_ref().expect("a real fact delta");
+        assert!(impact.facts_added > 0 && impact.facts_removed > 0);
+        assert_eq!(answer.work_reuse_status, "not_evaluated");
+        assert!(answer.work_reuse_reason.contains("read-set"));
+        assert!(answer.work_reuse.is_none());
         assert_ne!(answer.base.content_digest, answer.candidate.content_digest);
+    }
+
+    fn commit_file(root: &Path, name: &str, body: &str, message: &str) -> String {
+        std::fs::write(root.join(name), body).expect("write file");
+        git(root, &["add", "-A"]);
+        git(root, &["commit", "--quiet", "-m", message]);
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse");
+        String::from_utf8(output.stdout)
+            .expect("utf8")
+            .trim()
+            .to_string()
+    }
+
+    fn repository() -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("temporary repository");
+        git(directory.path(), &["init", "--quiet"]);
+        git(
+            directory.path(),
+            &["config", "user.name", "CogniCode tests"],
+        );
+        git(
+            directory.path(),
+            &["config", "user.email", "tests@example.invalid"],
+        );
+        directory
+    }
+
+    #[test]
+    fn unreadable_files_make_the_impact_partial_never_evaluated() {
+        let directory = repository();
+        let root = directory.path();
+        let base = commit_file(root, "src.rs", "fn first() {}\n", "base");
+        std::fs::write(root.join("blob.rs"), [0xff, 0xfe, 0x00, 0x9f]).expect("binary source");
+        commit_file(root, "src.rs", "fn second() {}\n", "head");
+
+        let answer = compare(root, &base, "HEAD").expect("compare");
+
+        assert_eq!(answer.impact_status, "partial", "{}", answer.impact_reason);
+        assert_eq!(answer.coverage.analysis, "partial");
+        let facts = answer.revision_facts.expect("facts are reported");
+        assert_eq!(facts.candidate.coverage, "partial");
+        assert_eq!(facts.candidate.gaps[0].path, "blob.rs");
+        assert!(!facts.persisted, "no cache named, nothing persisted");
+    }
+
+    #[test]
+    fn snapshots_persist_and_the_next_comparison_reuses_the_files() {
+        let directory = repository();
+        let cache = tempfile::tempdir().expect("cache");
+        let root = directory.path();
+        let base = commit_file(root, "a.rs", "fn a() {}\n", "base");
+        commit_file(root, "b.rs", "fn b() {}\n", "head");
+
+        let first = compare_with(root, Some(cache.path()), &base, "HEAD").expect("first");
+        let facts = first.revision_facts.expect("facts");
+        assert!(facts.persisted);
+        assert_eq!(facts.base.reused_files, 0);
+
+        let second = compare_with(root, Some(cache.path()), &base, "HEAD").expect("second");
+        let facts = second.revision_facts.expect("facts");
+        assert_eq!(facts.base.parsed_files, 0, "every file came from objects");
+        assert_eq!(facts.candidate.parsed_files, 0);
+        assert_eq!(facts.candidate.reused_files, 2);
+        assert_eq!(
+            first.impact.unwrap().facts_added,
+            second.impact.unwrap().facts_added
+        );
+    }
+
+    #[test]
+    fn the_same_revision_on_both_sides_is_not_evaluated_with_a_reason() {
+        let directory = repository();
+        let root = directory.path();
+        commit_file(root, "a.rs", "fn a() {}\n", "base");
+
+        let answer = compare(root, "HEAD", "HEAD").expect("compare");
+
+        assert_eq!(answer.impact_status, "not_evaluated");
+        assert!(
+            answer.impact_reason.contains("delta"),
+            "{}",
+            answer.impact_reason
+        );
+        assert!(answer.impact.is_none());
     }
 }
