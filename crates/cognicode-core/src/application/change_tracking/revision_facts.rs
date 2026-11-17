@@ -51,7 +51,9 @@ use crate::domain::findings::detector_reuse::DetectorReuseIndex;
 use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::naming::NamespacedName;
 use crate::domain::readset::{ReadSet, ReadSetConfig};
-use crate::domain::scm::{ChangeSet, PathKey, RevisionReader, ScmError, SourceRevision};
+use crate::domain::scm::{
+    BlobRead, ChangeSet, InventoryEntry, PathKey, RevisionReader, ScmError, SourceRevision,
+};
 use crate::infrastructure::parser::LanguageConfig;
 
 use super::planner::{AffectedWorkPlan, ExecutionDependency, WorkDisposition, WorkId};
@@ -64,6 +66,11 @@ use super::scm_delta::{
 /// to how facts are assembled must bump it, and nothing written before
 /// is served afterwards.
 pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v1";
+
+/// Paths read per batched content request: bounds peak memory (about
+/// this many files of at most `max_file_bytes` each) while keeping the
+/// per-request process cost amortised.
+const READ_CHUNK: usize = 256;
 
 const OBJECT_SCHEMA: &str = "cognicode.revision-facts-object/v1";
 
@@ -336,6 +343,7 @@ pub fn produce_revision_facts(
     let mut unanalyzed = BTreeSet::new();
     let mut per_file: BTreeMap<PathKey, Vec<Fact>> = BTreeMap::new();
     let mut files: BTreeMap<PathKey, ExtractionObject> = BTreeMap::new();
+    let mut pending: Vec<(&InventoryEntry, &LanguageConfig)> = Vec::new();
 
     for entry in inventory.entries() {
         if is_manifest(&entry.path) {
@@ -370,30 +378,48 @@ pub fn produce_revision_facts(
             per_file.insert(entry.path.clone(), facts);
             continue;
         }
-        match extract_one(reader, revision, &entry.path, content, config, limits) {
-            Ok(facts) => {
-                coverage.parsed_files += 1;
-                let artifact = artifact_of(&facts).unwrap_or_default();
-                if let Some(store) = objects {
-                    // A store that cannot be written costs reuse, never
-                    // correctness: the facts are already in hand.
-                    let _ = store.write(&entry.path, content, &facts, &artifact);
+        pending.push((entry, config));
+    }
+
+    for chunk in pending.chunks(READ_CHUNK) {
+        let paths: Vec<PathKey> = chunk.iter().map(|(entry, _)| entry.path.clone()).collect();
+        let blobs = reader.contents(revision, &paths, limits.max_file_bytes as u64);
+        for (index, (entry, config)) in chunk.iter().enumerate() {
+            let content = entry.content.as_hex();
+            let blob = blobs.get(index).cloned().unwrap_or_else(|| {
+                Err(ScmError::ContentUnavailable {
+                    path: entry.path.as_str().to_string(),
+                })
+            });
+            match extract_one(blob, &entry.path, content, config, limits) {
+                Ok(facts) => {
+                    coverage.parsed_files += 1;
+                    let artifact = artifact_of(&facts).unwrap_or_default();
+                    if let Some(store) = objects {
+                        // A store that cannot be written costs reuse, never
+                        // correctness: the facts are already in hand.
+                        let _ = store.write(&entry.path, content, &facts, &artifact);
+                    }
+                    files.insert(
+                        entry.path.clone(),
+                        ExtractionObject {
+                            content: entry.content.clone(),
+                            artifact,
+                        },
+                    );
+                    per_file.insert(entry.path.clone(), facts);
                 }
-                files.insert(
-                    entry.path.clone(),
-                    ExtractionObject {
-                        content: entry.content.clone(),
-                        artifact,
-                    },
-                );
-                per_file.insert(entry.path.clone(), facts);
+                Err(reason) => coverage.gaps.push(FactGap {
+                    path: entry.path.clone(),
+                    reason,
+                }),
             }
-            Err(reason) => coverage.gaps.push(FactGap {
-                path: entry.path.clone(),
-                reason,
-            }),
         }
     }
+
+    // Gaps are found in two passes (limit/skip first, reads after): a
+    // path order keeps the report independent of that.
+    coverage.gaps.sort_by(|a, b| a.path.cmp(&b.path));
 
     let facts = assemble(snapshot_id, per_file);
     let verdict = if coverage.is_complete() {
@@ -421,22 +447,27 @@ pub fn produce_revision_facts(
 
 /// Parses one file into its facts, with stable subject ids.
 fn extract_one(
-    reader: &dyn RevisionReader,
-    revision: &SourceRevision,
+    blob: Result<BlobRead, ScmError>,
     path: &PathKey,
     content_hex: &str,
     config: &LanguageConfig,
     limits: &FactsLimits,
 ) -> Result<Vec<Fact>, GapReason> {
-    let bytes = reader
-        .content(revision, path)
-        .map_err(|error| GapReason::Unreadable(error.to_string()))?;
-    if bytes.len() > limits.max_file_bytes {
-        return Err(GapReason::TooLarge {
-            bytes: bytes.len(),
-            limit: limits.max_file_bytes,
-        });
-    }
+    let bytes = match blob.map_err(|error| GapReason::Unreadable(error.to_string()))? {
+        BlobRead::Bytes(bytes) if bytes.len() <= limits.max_file_bytes => bytes,
+        BlobRead::Bytes(bytes) => {
+            return Err(GapReason::TooLarge {
+                bytes: bytes.len(),
+                limit: limits.max_file_bytes,
+            });
+        }
+        BlobRead::TooLarge { bytes } => {
+            return Err(GapReason::TooLarge {
+                bytes: usize::try_from(bytes).unwrap_or(usize::MAX),
+                limit: limits.max_file_bytes,
+            });
+        }
+    };
     let source = String::from_utf8(bytes).map_err(|_| GapReason::NotText)?;
     let (result, outcome) =
         extract_file_with_outcome(config, Path::new(path.as_str()), &source, content_hex);
@@ -1061,11 +1092,16 @@ mod tests {
             produce_revision_facts(&fake, &revision(&fake, "main"), None, &tiny).expect("facts");
 
         let reasons: Vec<&GapReason> = produced.coverage.gaps.iter().map(|g| &g.reason).collect();
-        assert!(matches!(reasons[0], GapReason::TooLarge { .. }));
-        assert!(matches!(
-            reasons[1],
-            GapReason::FileLimitReached { limit: 1 }
-        ));
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| matches!(reason, GapReason::TooLarge { .. }))
+        );
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| matches!(reason, GapReason::FileLimitReached { limit: 1 }))
+        );
         assert!(produced.facts.facts.is_empty());
         assert!(!produced.coverage.is_complete());
     }

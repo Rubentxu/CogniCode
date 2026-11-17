@@ -19,7 +19,8 @@ use std::path::Path;
 use std::process::Command;
 
 use cognicode_core::domain::scm::{
-    ChangeKind, ChangeReader, PathKey, RevisionReader, ScmError, SourceRef, WorkingCopyReader,
+    BlobRead, ChangeKind, ChangeReader, PathKey, RevisionReader, ScmError, SourceRef,
+    WorkingCopyReader,
 };
 use cognicode_core::infrastructure::git::GitScmAdapter;
 use tempfile::TempDir;
@@ -172,6 +173,43 @@ fn inventory_and_revision_share_one_content_digest() {
         &inventory.content_digest(),
         "a revision's content IS its tracked-tree digest (the CAA-04 reuse key)"
     );
+}
+
+#[test]
+fn batched_contents_match_single_reads_and_stay_aligned_past_an_oversize_blob() {
+    let repo = init_repo();
+    fs::write(repo.path().join("a.txt"), "first\n").unwrap();
+    fs::write(repo.path().join("big.bin"), vec![b'x'; 200_000]).unwrap();
+    fs::write(repo.path().join("z.txt"), "last\n").unwrap();
+    commit_all(repo.path(), "three blobs");
+    let adapter = GitScmAdapter::new(repo.path());
+    let head = adapter.resolve(&source(), "HEAD").expect("HEAD");
+
+    let asked = [key("z.txt"), key("big.bin"), key("gone.txt"), key("a.txt")];
+    let answers = adapter.contents(&head, &asked, 1_000);
+
+    assert_eq!(answers.len(), asked.len(), "one answer per path, in order");
+    assert_eq!(answers[0], Ok(BlobRead::Bytes(b"last\n".to_vec())));
+    assert_eq!(
+        answers[1],
+        Ok(BlobRead::TooLarge { bytes: 200_000 }),
+        "an oversize blob is named, not returned"
+    );
+    assert!(
+        matches!(answers[2], Err(ScmError::ContentUnavailable { .. })),
+        "an untracked path is a named absence: {:?}",
+        answers[2]
+    );
+    assert_eq!(
+        answers[3],
+        Ok(BlobRead::Bytes(b"first\n".to_vec())),
+        "the stream stays aligned after the drained blob"
+    );
+    for path in [key("a.txt"), key("z.txt")] {
+        let single = adapter.content(&head, &path).expect("single read");
+        let batched = adapter.contents(&head, std::slice::from_ref(&path), 1_000);
+        assert_eq!(batched, vec![Ok(BlobRead::Bytes(single))]);
+    }
 }
 
 // ----- AC #2: B...F vs D...merge(D,F) are different comparisons ----
