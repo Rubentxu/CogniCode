@@ -896,7 +896,7 @@ fn handle_context(
     }
 }
 
-/// The dispatch boundary: the functions live in [`crate::dispatch`] and
+/// The dispatch boundary: the functions live in `crate::dispatch` and
 /// are re-exported here because this is the path the transport —and
 /// every consumer that already used it— reads.
 pub use crate::dispatch::{call_tool_handler, call_tool_handler_with_window};

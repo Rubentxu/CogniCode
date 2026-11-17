@@ -7,7 +7,7 @@
 //! list and no zero.
 //!
 //! One walk serves all the metrics. A language only contributes the
-//! classification of its node kinds ([`classify`]); the counting rules are the
+//! classification of its node kinds (`classify`); the counting rules are the
 //! same for all of them, so a semantic exception is defined once.
 
 use std::collections::BTreeSet;

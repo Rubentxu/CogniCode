@@ -119,7 +119,7 @@ impl ObjectId {
 }
 
 /// Measure-based cost estimator: integer mean of the most recent
-/// [`ESTIMATOR_WINDOW`] observed unit costs per `WorkId`. Cold work
+/// `ESTIMATOR_WINDOW` observed unit costs per `WorkId`. Cold work
 /// has no estimate; callers supply a conservative default.
 #[derive(Debug, Default)]
 pub struct CostEstimator {

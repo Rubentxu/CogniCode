@@ -108,7 +108,7 @@ fn own_name(node: &Node, source: &[u8], rule: &NameRule) -> Option<String> {
 
 /// The node that carries the name of a declaration.
 ///
-/// The rule is the one [`own_name`] applies, and it answers with the node
+/// The rule is the one `own_name` applies, and it answers with the node
 /// instead of with its text: a reader that has to know WHICH node writes
 /// the name —the occurrence search, to tell a declaration from a use— asks
 /// here, so the two readers cannot disagree about where a name is written.

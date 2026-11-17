@@ -1,8 +1,8 @@
 //! `github` — GitHub REST API adapter (production + test impls).
 //!
 //! Provides:
-//! - [`client`] — the `GitHubClient` trait + `RawIssue` DTO.
-//! - [`octocrab_client`] — the production `OctocrabClient`
+//! - `client` — the `GitHubClient` trait + `RawIssue` DTO.
+//! - `octocrab_client` — the production `OctocrabClient`
 //!   (gated behind `multimodal`).
 //! - `mock_client` — the in-memory `MockGitHubClient` for
 //!   unit tests (`#[cfg(test)]`).

@@ -32,7 +32,7 @@
 //! ## El sobre
 //!
 //! Every answer also carries an **envelope**
-//! ([`crate::interface::hateoas`]): the result, what it rests on, what it
+//! ([`cognicode_core::interface::hateoas`]): the result, what it rests on, what it
 //! left out and what can be done next. The envelope is what travels in
 //! `structuredContent`, and the lines that say what comes next travel as
 //! text blocks beside the summary — an agent reading the answer as text

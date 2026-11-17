@@ -16,7 +16,7 @@
 //!   the run;
 //! - **sanitizer** — the digest of any sanitizer/normalization layer;
 //! - **semantic dependency** — the facts the run read, as a
-//!   [`ReadSet`].
+//!   [`ReadSet`](crate::domain::readset::ReadSet).
 //!
 //! Reuse requires ALL layers to survive: [`reuse_decision`] reports
 //! exactly the layers that died and nothing else, so one rule edit
