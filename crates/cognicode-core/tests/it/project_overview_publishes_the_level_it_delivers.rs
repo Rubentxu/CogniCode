@@ -167,6 +167,30 @@ async fn the_detailed_answer_carries_everything() {
     );
 }
 
+/// The context for a prompt states what the graph holds, not a pipeline.
+///
+/// The sentence the answer used to carry named a fixed chain of stages that
+/// nothing in the project's graph says exists; a prompt built from it would
+/// describe an architecture nobody read.
+#[tokio::test]
+async fn the_prompt_context_does_not_describe_a_fixed_pipeline() {
+    let dir = project_with_a_hot_path();
+
+    let answer = overview_at(dir.path(), json!({"detail": "detailed"})).await;
+
+    let context = answer
+        .system_prompt_context
+        .expect("the detailed answer carries the context for a prompt");
+    assert!(
+        !context.contains("Pipeline") && !context.contains("PgUpsert"),
+        "the context describes a pipeline the graph never read: {context}"
+    );
+    assert!(
+        context.contains("symbols") && context.contains("edges"),
+        "the context still states the counts the graph holds: {context}"
+    );
+}
+
 /// The answer a client gets without asking for a level is the complete one.
 ///
 /// The tool published a complete answer before the levels meant anything,
