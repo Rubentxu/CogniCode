@@ -334,7 +334,7 @@ pub async fn handle_project_overview(
     );
 
     let system_prompt_context = format!(
-        "CogniCode project: {} symbols, {} edges. Pipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report.",
+        "CogniCode project: {} symbols, {} edges.",
         symbol_count, edge_count
     );
 
@@ -400,56 +400,198 @@ pub struct CodebaseMapInput {
     pub format: MapFormat,
 }
 
+/// A symbol the map calls hot: one that several others call.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, JsonSchema)]
+pub struct HotSymbol {
+    /// The name the symbol carries.
+    pub name: String,
+    /// The file that declares it.
+    pub file: String,
+    /// The line it is declared on (1-indexed).
+    pub line: u32,
+    /// How many symbols call it.
+    pub fan_in: usize,
+    /// How many symbols it calls.
+    pub fan_out: usize,
+}
+
+/// What `codebase_map` publishes.
+///
+/// Every number and every name in `map` is read from the call graph the
+/// server holds; nothing in it is a constant. The structured fields carry
+/// the same facts as the text, so a consumer does not have to parse `map`.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct CodebaseMapOutput {
+    /// The format that was asked for, echoed back.
     pub format: String,
+    /// The map as text.
     pub map: String,
+    /// A rough size of `map` in tokens (four bytes per token). An estimate,
+    /// not a count of any tokenizer.
     pub token_estimate: usize,
     /// One line saying what the answer says.
     pub summary: String,
+    /// The symbols with the most callers, most-called first, at most
+    /// [`MAP_HOT_SYMBOLS`] of them, and only those with at least
+    /// [`MAP_MIN_FAN_IN`] callers. Empty when no symbol qualifies — a
+    /// graph without call edges has none — and never filled from the order
+    /// in which the graph happens to hold its symbols.
+    pub hot_symbols: Vec<HotSymbol>,
+    /// What the graph covers. The map describes the graph the server holds,
+    /// not the whole tree: a `partial` or `unknown` coverage means the
+    /// counts and the hot symbols may leave out part of the project.
+    pub coverage: crate::interface::coverage::CoverageInfo,
 }
 
+/// The most hot symbols the map names.
+pub const MAP_HOT_SYMBOLS: usize = 5;
+
+/// The fewest callers a symbol needs to be called hot.
+pub const MAP_MIN_FAN_IN: usize = 2;
+
+/// The counts the map states, read from the graph.
+struct MapCounts {
+    symbols: usize,
+    edges: usize,
+    entry_points: usize,
+    leaves: usize,
+}
+
+/// The map as text. Pure: the same facts give the same text.
+fn render_map(
+    format: MapFormat,
+    counts: &MapCounts,
+    hot: &[HotSymbol],
+    coverage: &crate::interface::coverage::CoverageInfo,
+) -> String {
+    let hot_line = if hot.is_empty() {
+        format!("none (no symbol has {MAP_MIN_FAN_IN} or more callers)")
+    } else {
+        hot.iter()
+            .map(|h| format!("{} ({}:{}, fan-in {})", h.name, h.file, h.line, h.fan_in))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let coverage_line = coverage_line(coverage);
+    match format {
+        MapFormat::Compact => format!(
+            "Project: {} symbols, {} edges | Entry points: {} | Leaves: {} | Hot: {} | {}",
+            counts.symbols,
+            counts.edges,
+            counts.entry_points,
+            counts.leaves,
+            hot_line,
+            coverage_line
+        ),
+        MapFormat::Detailed => {
+            let mut map = format!(
+                "Project: {} symbols | {} edges | {} entry points | {} leaf functions",
+                counts.symbols, counts.edges, counts.entry_points, counts.leaves
+            );
+            if hot.is_empty() {
+                map.push_str(&format!("\nHot symbols: {hot_line}"));
+            } else {
+                map.push_str("\nHot symbols:");
+                for h in hot {
+                    map.push_str(&format!(
+                        "\n- {} ({}:{}) fan-in {}, fan-out {}",
+                        h.name, h.file, h.line, h.fan_in, h.fan_out
+                    ));
+                }
+            }
+            map.push_str(&format!("\n{coverage_line}"));
+            map
+        }
+    }
+}
+
+/// The coverage as one clause, with the holes counted when there are any.
+fn coverage_line(coverage: &crate::interface::coverage::CoverageInfo) -> String {
+    if coverage.status == "complete" {
+        return "Coverage: complete".to_string();
+    }
+    format!(
+        "Coverage: {} ({} skipped files, {} pending references, {} rejected relations)",
+        coverage.status,
+        coverage.skipped_files.len(),
+        coverage.pending_references.len(),
+        coverage.rejected_relations.len()
+    )
+}
+
+/// The map of the project the server holds.
+///
+/// The hot symbols are the owner's answer to "which symbols have the most
+/// callers" (the same one `get_hot_paths` gives), cut to
+/// [`MAP_HOT_SYMBOLS`]. The coverage is the one measured for the graph that
+/// was read, not the last one anybody measured; a graph nobody measured says
+/// `unknown`, never `complete`.
+///
+/// # Errors
+///
+/// Fails when the server holds no graph, or its store cannot be read.
 pub async fn handle_codebase_map(
     ctx: &HandlerContext,
     input: CodebaseMapInput,
 ) -> HandlerResult<CodebaseMapOutput> {
+    let service = ctx.analysis_service();
+    let revision_before = service.current_graph_revision();
     let graph = match ctx.get_graph_store().load_graph_shared() {
         Ok(Some(g)) => g,
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
-    let symbols = graph.symbol_count();
-    let edges = graph.edge_count();
-    let entries = graph.roots().len();
-    let leaves = graph.leaves().len();
-    let hot = graph
-        .symbol_ids()
-        .take(5)
-        .map(|(sid, _)| sid.as_str().to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let map = match input.format {
-        MapFormat::Compact => format!(
-            "Project: {} symbols, {} edges | Entry points: {} | Leaves: {} | Hot: {}",
-            symbols, edges, entries, leaves, hot
-        ),
-        MapFormat::Detailed => format!(
-            "Project: {} symbols | {} edges | {} entry points | {} leaf functions | Hot symbols: {}\nPipeline: Scan→Extract→PgUpsert→Resolve→Cluster→Analyze→Report→Refresh→Notify",
-            symbols, edges, entries, leaves, hot
-        ),
+    let revision_after = service.current_graph_revision();
+    // A route that replaced the graph in between leaves nobody able to say
+    // which graph was read, so nothing is claimed about its coverage.
+    let measure = if revision_before == revision_after {
+        service.graph_measures().of(revision_after, &graph)
+    } else {
+        None
     };
+    let counts = MapCounts {
+        symbols: graph.symbol_count(),
+        edges: graph.edge_count(),
+        entry_points: graph.roots().len(),
+        leaves: graph.leaves().len(),
+    };
+    let hot_symbols: Vec<HotSymbol> =
+        crate::application::services::analysis_service::AnalysisService::hot_paths(
+            &graph,
+            MAP_HOT_SYMBOLS,
+            MAP_MIN_FAN_IN,
+        )
+        .into_iter()
+        .map(|row| HotSymbol {
+            name: row.name,
+            file: row.file,
+            line: row.line,
+            fan_in: row.fan_in,
+            fan_out: row.fan_out,
+        })
+        .collect();
+    let coverage = match &measure {
+        Some(measure) => crate::interface::coverage::CoverageInfo::of(&measure.coverage),
+        None => crate::interface::coverage::CoverageInfo::unmeasured(),
+    };
+
+    let map = render_map(input.format, &counts, &hot_symbols, &coverage);
+    let token_estimate = map.len() / 4;
     let summary = format!(
-        "{} symbols, {} edges, {} entry points, ~{} tokens",
-        symbols,
-        edges,
-        entries,
-        map.len() / 4
+        "{} symbols, {} edges, {} entry points, {} hot symbols, coverage {}, ~{} tokens",
+        counts.symbols,
+        counts.edges,
+        counts.entry_points,
+        hot_symbols.len(),
+        coverage.status,
+        token_estimate
     );
     Ok(CodebaseMapOutput {
         format: input.format.as_str().to_string(),
-        token_estimate: map.len() / 4,
+        token_estimate,
         map,
         summary,
+        hot_symbols,
+        coverage,
     })
 }
 
@@ -1675,5 +1817,285 @@ mod tests {
             error.to_string().contains("xml"),
             "el rechazo tiene que decir que formato es: {error}"
         );
+    }
+
+    // ── codebase_map: what the map publishes is read from the graph ─────────
+
+    /// A graph where the most-called symbol sorts LAST by id.
+    ///
+    /// Four callers and a leaf sort before `zz_hub`, so a map that publishes
+    /// "the first five symbols" misses the one symbol everything depends on.
+    fn graph_with_a_hub_that_sorts_last() -> CallGraph {
+        let mut graph = CallGraph::new();
+        let mut add = |name: &str, line: u32| {
+            graph.add_symbol(Symbol::new(
+                name.to_string(),
+                SymbolKind::Function,
+                crate::domain::value_objects::Location::new("lib.rs", line, 0),
+            ))
+        };
+        let callers: Vec<SymbolId> = (1..=4).map(|i| add(&format!("caller_{i}"), i)).collect();
+        let _leaf = add("leaf", 5);
+        let hub = add("zz_hub", 6);
+        for caller in &callers {
+            graph
+                .add_dependency(caller, &hub, DependencyType::Calls)
+                .expect("both ends are in the graph");
+        }
+        graph
+    }
+
+    /// Five symbols and no call between them.
+    fn graph_without_edges() -> CallGraph {
+        let mut graph = CallGraph::new();
+        for (i, name) in ["a", "b", "c", "d", "e"].iter().enumerate() {
+            graph.add_symbol(Symbol::new(
+                (*name).to_string(),
+                SymbolKind::Function,
+                crate::domain::value_objects::Location::new("lib.rs", i as u32 + 1, 0),
+            ));
+        }
+        graph
+    }
+
+    fn ctx_holding(graph: &CallGraph) -> (HandlerContext, tempfile::TempDir) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let store = InMemoryGraphStore::new();
+        store.save_graph(graph).expect("the graph is stored");
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_graph_store(store)
+            .build();
+        (ctx, temp_dir)
+    }
+
+    /// Records `coverage` as the measure of `graph`, the way a build does.
+    fn measure_held_graph(
+        ctx: &HandlerContext,
+        graph: &CallGraph,
+        coverage: crate::application::services::analyze::Coverage,
+    ) {
+        let service = ctx.analysis_service();
+        service
+            .graph_measures()
+            .record(crate::application::graph_measure::GraphMeasure::new(
+                service.current_graph_revision(),
+                graph,
+                coverage,
+                crate::application::analysis_basis::GraphSource::Built,
+                "/workspace".to_string(),
+                None,
+            ));
+    }
+
+    async fn map_of(ctx: &HandlerContext, format: MapFormat) -> CodebaseMapOutput {
+        handle_codebase_map(ctx, CodebaseMapInput { format })
+            .await
+            .expect("the map answers over a held graph")
+    }
+
+    /// The hot symbols are the most-called ones, not the first ones by id.
+    #[tokio::test]
+    async fn the_hot_symbol_is_the_one_everything_calls() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        for format in [MapFormat::Compact, MapFormat::Detailed] {
+            let map = map_of(&ctx, format).await.map;
+            assert!(
+                map.contains("zz_hub"),
+                "the symbol four callers depend on is the hot one: {map}"
+            );
+            assert!(
+                !map.contains("caller_2"),
+                "a caller nobody calls is not hot just because it sorts early: {map}"
+            );
+        }
+    }
+
+    /// With no call edges there is no ranking, and the map says so.
+    #[tokio::test]
+    async fn a_graph_without_edges_has_no_hot_symbols() {
+        let (ctx, _dir) = ctx_holding(&graph_without_edges());
+        let map = map_of(&ctx, MapFormat::Compact).await.map;
+        for name in ["a", "b", "c", "d", "e"] {
+            assert!(
+                !map.contains(&format!("lib.rs:{name}")),
+                "no symbol is hot over a graph with no edges: {map}"
+            );
+        }
+        assert!(
+            map.contains("Hot: none"),
+            "the absence of hot symbols is stated, not left blank: {map}"
+        );
+    }
+
+    /// The map does not describe a pipeline the graph never read.
+    #[tokio::test]
+    async fn the_detailed_map_does_not_publish_a_fixed_pipeline() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        let map = map_of(&ctx, MapFormat::Detailed).await.map;
+        for invented in ["Pipeline", "PgUpsert", "Scan", "Notify"] {
+            assert!(
+                !map.contains(invented),
+                "`{invented}` is not read from the graph: {map}"
+            );
+        }
+    }
+
+    /// The structured hot symbols are the facts the text names.
+    #[tokio::test]
+    async fn the_hot_symbols_are_published_as_facts() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(
+            out.hot_symbols,
+            vec![HotSymbol {
+                name: "zz_hub".to_string(),
+                file: "lib.rs".to_string(),
+                // The graph stores lines 0-indexed; the published line is 1-indexed.
+                line: 7,
+                fan_in: 4,
+                fan_out: 0,
+            }]
+        );
+    }
+
+    /// The hot list is bounded and ordered by how much each is called.
+    #[tokio::test]
+    async fn the_hot_list_is_bounded_and_most_called_first() {
+        let mut graph = CallGraph::new();
+        let mut add = |name: String, line: u32| {
+            graph.add_symbol(Symbol::new(
+                name,
+                SymbolKind::Function,
+                crate::domain::value_objects::Location::new("lib.rs", line, 0),
+            ))
+        };
+        let callers: Vec<SymbolId> = (0..8).map(|i| add(format!("caller_{i}"), i)).collect();
+        let targets: Vec<SymbolId> = (0..7u32)
+            .map(|k| add(format!("target_{k}"), 100 + k))
+            .collect();
+        // `target_k` is called by k + 2 callers: seven targets, five survive.
+        for (k, target) in targets.iter().enumerate() {
+            for caller in callers.iter().take(k + 2) {
+                graph
+                    .add_dependency(caller, target, DependencyType::Calls)
+                    .expect("both ends are in the graph");
+            }
+        }
+        let (ctx, _dir) = ctx_holding(&graph);
+        let out = map_of(&ctx, MapFormat::Detailed).await;
+        let names: Vec<&str> = out.hot_symbols.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["target_6", "target_5", "target_4", "target_3", "target_2"]
+        );
+    }
+
+    /// A graph nobody measured is `unknown`, and the map says it.
+    #[tokio::test]
+    async fn an_unmeasured_graph_is_not_called_complete() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(out.coverage.status, "unknown");
+        assert!(out.map.contains("Coverage: unknown"), "{}", out.map);
+        assert!(out.summary.contains("coverage unknown"), "{}", out.summary);
+    }
+
+    /// A partial coverage reaches the map with its holes counted.
+    #[tokio::test]
+    async fn a_partial_coverage_is_published_with_its_holes() {
+        use crate::application::services::analyze::{Coverage, CoverageFacts};
+        use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &graph,
+            Coverage::Partial(CoverageFacts {
+                skipped: vec![SkippedFile {
+                    path: "vendored/x.rs".to_string(),
+                    reason: SkipReason::Read("permission denied".to_string()),
+                }],
+                pending: Vec::new(),
+                rejected: Vec::new(),
+            }),
+        );
+        let out = map_of(&ctx, MapFormat::Detailed).await;
+        assert_eq!(out.coverage.status, "partial");
+        assert_eq!(out.coverage.skipped_files.len(), 1);
+        assert!(
+            out.map.contains("Coverage: partial (1 skipped files"),
+            "{}",
+            out.map
+        );
+    }
+
+    /// A graph that was measured complete says so.
+    #[tokio::test]
+    async fn a_complete_coverage_is_published_as_complete() {
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &graph,
+            crate::application::services::analyze::Coverage::Complete,
+        );
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(out.coverage.status, "complete");
+        assert!(out.map.contains("Coverage: complete"), "{}", out.map);
+    }
+
+    /// A coverage measured for some other graph is not this graph's.
+    #[tokio::test]
+    async fn a_coverage_measured_for_another_graph_is_not_published() {
+        let other = graph_without_edges();
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &other,
+            crate::application::services::analyze::Coverage::Complete,
+        );
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(out.coverage.status, "unknown");
+    }
+
+    /// A graph with no symbols is mapped as empty, not as an error.
+    #[tokio::test]
+    async fn a_graph_with_no_symbols_has_an_empty_map() {
+        let (ctx, _dir) = ctx_holding(&CallGraph::new());
+        let out = map_of(&ctx, MapFormat::Detailed).await;
+        assert!(out.hot_symbols.is_empty());
+        assert!(out.map.contains("0 symbols"), "{}", out.map);
+    }
+
+    /// Without a graph the tool refuses; it does not invent a map.
+    #[tokio::test]
+    async fn without_a_graph_there_is_no_map() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_graph_store(InMemoryGraphStore::new())
+            .build();
+        let err = handle_codebase_map(
+            &ctx,
+            CodebaseMapInput {
+                format: MapFormat::Compact,
+            },
+        )
+        .await
+        .expect_err("a map needs a graph");
+        assert!(err.to_string().contains("No graph available"), "{err}");
+    }
+
+    /// The same graph gives the same hot symbols, in the same order.
+    #[tokio::test]
+    async fn the_hot_symbols_come_out_in_the_same_order_every_time() {
+        let (ctx, _dir) = ctx_holding(&graph_with_a_hub_that_sorts_last());
+        let first = map_of(&ctx, MapFormat::Detailed).await;
+        let second = map_of(&ctx, MapFormat::Detailed).await;
+        assert_eq!(first.hot_symbols, second.hot_symbols);
+        assert_eq!(first.map, second.map);
     }
 }
