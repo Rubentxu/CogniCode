@@ -145,6 +145,7 @@ mod mcp_response_boundary;
 mod mcp_robustness_boundary;
 mod mcp_status_boundary;
 mod mcp_transport_slice_boundary;
+mod native_metrics_per_language;
 mod no_dead_rig_surface;
 mod one_dto_per_shape;
 mod one_owner_for_the_graph_questions;

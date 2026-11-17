@@ -49,9 +49,10 @@ impl ComplexityAnalysis for TreeSitterComplexity {
             .map_err(|e| AppError::AnalysisError(format!("Parse error: {e}")))?;
 
         let (cyclomatic, cognitive, max_nesting, param_count, lines_of_code) =
-            function_metrics(&tree, source, function, lang.symbols().function_types).ok_or_else(
-                || AppError::SymbolNotFound(function.unwrap_or("<first function>").to_string()),
-            )?;
+            function_metrics(lang, &tree, source, function, lang.symbols().function_types)
+                .ok_or_else(|| {
+                    AppError::SymbolNotFound(function.unwrap_or("<first function>").to_string())
+                })?;
 
         Ok(ComplexityResult {
             cyclomatic,
@@ -70,14 +71,22 @@ impl ComplexityAnalysis for TreeSitterComplexity {
 /// language declares several function kinds (methods, constructors, arrows);
 /// all of them are looked up, not only the first (TASK-42).
 ///
+/// Rust, Java, Kotlin and Go are measured by the native metrics engine, the
+/// one owner of those formulas; every other language keeps the generic
+/// decision-point walk. The published shape does not change.
+///
 /// `None` means no such function exists in the tree: nothing was measured, so
 /// no figure is made up for it.
 pub(crate) fn function_metrics(
+    language: Language,
     tree: &tree_sitter::Tree,
     source: &str,
     function_name: Option<&str>,
     function_types: &[&str],
 ) -> Option<(u32, u32, u32, u32, u32)> {
+    if crate::domain::metrics::is_measurable(language) {
+        return native_function_metrics(language, tree, source, function_name);
+    }
     let calculator = ComplexityCalculator::new();
     let mut max_nesting = 0u32;
     let mut decision_points = Vec::new();
@@ -116,6 +125,29 @@ pub(crate) fn function_metrics(
         max_nesting,
         param_count,
         lines_of_code,
+    ))
+}
+
+/// The legacy tuple for a function measured by the native engine. Lines of
+/// code keep their published meaning: the distance between the first and last
+/// row of the function, never below one.
+fn native_function_metrics(
+    language: Language,
+    tree: &tree_sitter::Tree,
+    source: &str,
+    function_name: Option<&str>,
+) -> Option<(u32, u32, u32, u32, u32)> {
+    let report = crate::infrastructure::native_metrics::measure_tree(language, "", tree, source);
+    let found = report
+        .functions
+        .iter()
+        .find(|f| function_name.is_none_or(|name| f.name == name))?;
+    Some((
+        found.cyclomatic,
+        found.cognitive,
+        found.nesting_depth,
+        found.size.parameters,
+        (found.end_line - found.start_line).max(1),
     ))
 }
 
@@ -224,7 +256,7 @@ fn parameter_owner(node: tree_sitter::Node) -> tree_sitter::Node {
 /// than by one kind. Comments and the Python `/` and `*` separators are not
 /// parameters. A Go `parameter_declaration` such as `a, b int` declares one name
 /// per `name` field.
-fn count_parameters(node: tree_sitter::Node, source: &str) -> u32 {
+pub(crate) fn count_parameters(node: tree_sitter::Node, source: &str) -> u32 {
     let mut count = 0u32;
     // C and C++ hang the list off the `function_declarator`, below any pointer
     // declarator; every other grammar keeps it under the function node.
@@ -562,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_function_is_measured_with_the_minimum_complexity() {
+    fn an_empty_function_is_one_path_and_costs_nothing_cognitively() {
         let m = measure_rust("fn f() {}\n", Some("f")).unwrap();
         assert_eq!(
             (
@@ -571,14 +603,14 @@ mod tests {
                 m.nesting_depth,
                 m.parameter_count
             ),
-            (1, 1, 0, 0)
+            (1, 0, 0, 0)
         );
     }
 
     #[test]
     fn calls_without_decisions_do_not_raise_complexity() {
         let m = measure_rust("fn f() {\n    a();\n    b();\n    c();\n}\n", Some("f")).unwrap();
-        assert_eq!((m.cyclomatic, m.cognitive, m.nesting_depth), (1, 1, 0));
+        assert_eq!((m.cyclomatic, m.cognitive, m.nesting_depth), (1, 0, 0));
     }
 
     #[test]
