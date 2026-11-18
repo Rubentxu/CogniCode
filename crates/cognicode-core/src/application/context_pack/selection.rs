@@ -62,6 +62,41 @@ pub enum Reason {
         /// How many symbols it calls.
         fan_out: usize,
     },
+    /// A modified line of the change falls in its declaration: `how` is
+    /// `added`, `signature` or `body`.
+    ChangedSymbol {
+        /// How the declaration changed.
+        how: String,
+        /// The changed lines inside the declaration, counted from one, both
+        /// ends included.
+        lines: Vec<(u32, u32)>,
+    },
+    /// It depends on a changed symbol through an edge of the graph.
+    ConsumerOfChange {
+        /// The changed symbol it depends on.
+        changed: SymbolId,
+        /// The kind of the edge, as the graph publishes it.
+        edge: String,
+        /// How the edge was obtained.
+        provenance: String,
+        /// The confidence the edge carries.
+        confidence: f64,
+    },
+    /// A changed symbol declares that it satisfies it.
+    ContractOfChange {
+        /// The changed symbol.
+        changed: SymbolId,
+        /// The kind of the edge, as the graph publishes it.
+        edge: String,
+    },
+    /// It is a test the reader marked, and the graph reaches a changed
+    /// symbol from it.
+    TestOfChange {
+        /// The changed symbol it reaches.
+        changed: SymbolId,
+        /// The path of the graph from the test to the changed symbol.
+        path: Vec<SymbolId>,
+    },
 }
 
 impl Reason {
@@ -74,6 +109,10 @@ impl Reason {
             Reason::CalleeOfAnchor(_) => "callee_of_anchor",
             Reason::CallerOfAnchor(_) => "caller_of_anchor",
             Reason::HotPath { .. } => "hot_path",
+            Reason::ChangedSymbol { .. } => "changed_symbol",
+            Reason::ConsumerOfChange { .. } => "consumer_of_change",
+            Reason::ContractOfChange { .. } => "contract_of_change",
+            Reason::TestOfChange { .. } => "test_of_change",
         }
     }
 
@@ -85,6 +124,34 @@ impl Reason {
             }
             Reason::HotPath { fan_in, fan_out } => {
                 Some(format!("fan_in={fan_in}, fan_out={fan_out}"))
+            }
+            Reason::ChangedSymbol { how, lines } if lines.is_empty() => Some(how.clone()),
+            Reason::ChangedSymbol { how, lines } => {
+                let spans: Vec<String> = lines
+                    .iter()
+                    .map(|&(start, end)| {
+                        if start == end {
+                            start.to_string()
+                        } else {
+                            format!("{start}-{end}")
+                        }
+                    })
+                    .collect();
+                Some(format!("{how}; changed lines {}", spans.join(", ")))
+            }
+            Reason::ConsumerOfChange {
+                changed,
+                edge,
+                provenance,
+                confidence,
+            } => Some(format!(
+                "{edge} {changed} ({}, confidence {confidence:.2})",
+                provenance.to_lowercase()
+            )),
+            Reason::ContractOfChange { changed, edge } => Some(format!("{changed} {edge}")),
+            Reason::TestOfChange { changed, path } => {
+                let hops: Vec<&str> = path.iter().map(SymbolId::as_str).collect();
+                Some(format!("reaches {changed} through {}", hops.join(" -> ")))
             }
             _ => None,
         }

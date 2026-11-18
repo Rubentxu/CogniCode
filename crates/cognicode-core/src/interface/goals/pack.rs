@@ -30,7 +30,8 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::application::context_pack::render::{RenderView, render as render_pack};
+use crate::application::context_pack::change::input::ChangeBytes;
+use crate::application::context_pack::render::{RenderView, render_with_notes};
 use crate::application::context_pack::{
     AmbiguousAnchor, BudgetReport, ContextPackService, MeasureKind, Omission, PackItem,
     PackRequest, Ranked, Relevance, SelectionRequest, SnapshotView, SourceReader, Utf8UpperBound,
@@ -46,6 +47,9 @@ use crate::interface::coverage::{
 use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::{GoalBasis, graph_basis};
 use crate::interface::project_graph::{ProjectGraph, service_with_graph};
+
+pub use self::change::ChangeReport;
+use self::change::{ChangePack, build as build_change, pending_of, read_change, scope_of};
 
 /// The budget a pack gets when the caller names none.
 pub const DEFAULT_MAX_TOKENS: u64 = 2000;
@@ -78,6 +82,21 @@ pub struct PackInput {
     /// of the same snapshot.
     #[serde(default)]
     pub continuation_token: Option<String>,
+    /// Pack the lines of a change instead of named symbols: `staged`,
+    /// `working_tree`, `commit`, `range` or `merge_candidate`. The seed is the
+    /// changed lines, so `symbols` and `intent` are not passed with it.
+    /// `staged` and `working_tree` take no reference; `commit` takes `head`;
+    /// `range` and `merge_candidate` take `base` and `head`.
+    #[serde(default)]
+    pub change_scope: Option<String>,
+    /// The branch a `range` is proposed against, or the branch that receives
+    /// a `merge_candidate`.
+    #[serde(default)]
+    pub base: Option<String>,
+    /// The commit of a `commit` scope, the branch that carries a `range`, or
+    /// the branch merged in a `merge_candidate`.
+    #[serde(default)]
+    pub head: Option<String>,
 }
 
 /// How much of the candidate list a page delivered.
@@ -221,6 +240,10 @@ pub struct GoalPack {
     /// What the graph was built from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basis: Option<GoalBasis>,
+    /// The change the pack is about: present only for a `change_scope`
+    /// request, with the changed files and symbols and what is not known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<ChangeReport>,
 }
 
 /// The ranker of the product, built on the first intent only.
@@ -293,9 +316,11 @@ pub fn pack(
         .as_deref()
         .map(str::trim)
         .filter(|text| !text.is_empty());
-    if input.symbols.is_empty() && intent.is_none() {
+    let scope = scope_of(input)?;
+    if scope.is_none() && input.symbols.is_empty() && intent.is_none() {
         return Err(
-            "a pack needs at least one symbol or an intent: pass `symbols` or `intent`."
+            "a pack needs at least one symbol, an intent or a change scope: pass `symbols`, \
+             `intent` or `change_scope`."
                 .to_string(),
         );
     }
@@ -317,6 +342,12 @@ pub fn pack(
         })?,
     };
 
+    let change = scope
+        .as_ref()
+        .map(|scope| read_change(workspace, scope))
+        .transpose()?;
+    let token_scope = change.as_ref().map(ChangeBytes::digest).unwrap_or_default();
+
     let (_service, built) = service_with_graph(workspace, cache_root)?;
     let snapshot = snapshot_of(&built)?;
     let relevance = IdfRelevance {
@@ -332,29 +363,50 @@ pub fn pack(
         sources: &sources,
         declarations: &TreeSitterDeclarations,
         measure: measure.as_ref(),
+        token_scope: &token_scope,
     };
-    let built_pack = service
-        .build(&PackRequest {
-            selection: SelectionRequest {
-                anchors: input.symbols.clone(),
-                intent: intent.map(str::to_string),
-                hot_paths: 0,
-            },
-            max_tokens,
-            continuation: input.continuation_token.clone(),
-        })
-        .map_err(|error| error.to_string())?;
+    let coverage = CoverageInfo::of(&built.coverage);
+    let pending = pending_of(&coverage.pending_references);
+    let (built_pack, change_report) = match (&scope, &change) {
+        (Some(scope), Some(change)) => {
+            let ChangePack { page, report } = build_change(
+                &service,
+                scope,
+                change,
+                &pending,
+                input.continuation_token.as_deref(),
+                max_tokens,
+            )
+            .map_err(|error| error.to_string())?;
+            (page, Some(report))
+        }
+        _ => {
+            let page = service
+                .build(&PackRequest {
+                    selection: SelectionRequest {
+                        anchors: input.symbols.clone(),
+                        intent: intent.map(str::to_string),
+                        hot_paths: 0,
+                    },
+                    max_tokens,
+                    continuation: input.continuation_token.clone(),
+                })
+                .map_err(|error| error.to_string())?;
+            (page, None)
+        }
+    };
 
-    let coverage = PackCoverage::bounded(CoverageInfo::of(&built.coverage));
+    let coverage = PackCoverage::bounded(coverage);
     let partial = built_pack.omitted > 0
         || !built_pack.ambiguities.is_empty()
-        || !built_pack.unresolved.is_empty();
+        || !built_pack.unresolved.is_empty()
+        || change_report.as_ref().is_some_and(ChangeReport::is_partial);
     let status = if partial || coverage.status != "complete" {
         "partial"
     } else {
         "unknown"
     };
-    let summary = format!(
+    let mut summary = format!(
         "{} of {} candidate(s) within {} token(s) ({}); {} omitted.",
         built_pack.items.len(),
         built_pack.candidates,
@@ -362,6 +414,15 @@ pub fn pack(
         measure_label(&built_pack.budget.used.kind),
         built_pack.omitted
     );
+    if let Some(change) = &change_report {
+        summary = format!(
+            "{} change: {} file(s), {} changed symbol(s), {} gap(s) not known; {summary}",
+            change.scope,
+            change.files_total,
+            change.symbols.len(),
+            change.gaps_total
+        );
+    }
     let truncated = built_pack.remaining > 0;
     let truncation_reason = truncated.then(|| {
         if built_pack.continuation_token.is_some() {
@@ -406,6 +467,7 @@ pub fn pack(
         items: built_pack.items,
         coverage,
         basis: graph_basis(workspace, &built),
+        change: change_report,
     })
 }
 
@@ -429,14 +491,26 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
 pub fn render(answer: &Value) -> String {
     let pack: GoalPack = serde_json::from_value(answer.clone())
         .expect("the answer of the goal `pack` is the answer its own type describes");
-    render_pack(&RenderView {
-        snapshot_digest: &pack.snapshot.digest,
-        items: &pack.items,
-        remaining: pack.remaining,
-        refused: pack.refused,
-        continuation: pack.continuation_token.as_deref(),
-    })
+    let notes = pack
+        .change
+        .as_ref()
+        .map(|change| change.notes.as_slice())
+        .unwrap_or_default();
+    render_with_notes(
+        &RenderView {
+            snapshot_digest: &pack.snapshot.digest,
+            items: &pack.items,
+            remaining: pack.remaining,
+            refused: pack.refused,
+            continuation: pack.continuation_token.as_deref(),
+        },
+        notes,
+    )
 }
 
+mod change;
+
+#[cfg(test)]
+mod change_tests;
 #[cfg(test)]
 mod tests;

@@ -60,3 +60,45 @@ fallida se cuenta aparte y no entra en ningún número; los bytes no se conviert
 en tokens; un campo que la respuesta no trae es `false`, no una estimación. La
 comparación vale dentro de un mismo binario (uno debug es mucho más lento que
 uno release).
+
+## Pack de un cambio frente a `git diff` y leer ficheros
+
+`change_pack_ab.py` crea en un directorio temporal un repositorio Rust escrito a
+mano (nueve ficheros de código, cinco de tests, un README), aplica un cambio por
+caso sobre el árbol de trabajo y compara `cognicode pack --change-scope
+working_tree` con lo que haría hoy un agente: `diff` (solo `git diff`),
+`grep_lines` (el diff y un `git grep -n -w` por nombre, sin leer ficheros) y
+`grep_files` (el diff, `git grep -l -w` y leer entero cada fichero que casa).
+Casos: firma pública (`api-signature`), cuerpo de un auxiliar privado
+(`private-body`), un tipo que implementa un trait (`contract-implementor`), el
+cuerpo de una hoja (`unrelated-body`) y solo documentación (`docs-only`). La
+verdad terreno (`required`, `unwanted`) está escrita en el propio script.
+
+```sh
+cargo build -p cognicode-cli
+python3 -I scripts/measure/change_pack_ab.py --cognicode <target>/debug/cognicode \
+  --runs 7 --out /tmp/change-pack-ab.json
+```
+
+Qué mide, por caso y con varias pasadas: acierto (`recall`) y precisión sobre la
+verdad terreno, bytes que lee el agente, llamadas, y latencia (p50 y rango
+p10-p90; el pack se mide en frío, con una caché nueva por pasada, y en caliente).
+`pack` cuenta por símbolo; las alternativas no nombran símbolos, así que cuentan
+por fichero y se les concede que leer un fichero que declara un símbolo
+requerido es acertarlo (lectura caritativa que favorece a la alternativa). Se
+mide el `pack` con el presupuesto por defecto y con `--max-tokens 6000`
+(`pack-wide`), para separar lo que deja fuera el presupuesto de lo que el grafo
+no sabe. El informe guarda el estado y los tipos de hueco del pack: un caso con
+una relación que el grafo no ve no debe volver completo.
+
+Límites del instrumento: la compilación es de depuración (los tiempos solo se
+comparan dentro de un mismo binario), el host es compartido (se guardan la carga
+y los núcleos antes y después), el fixture es pequeño y una sola semilla de
+cada tipo de cambio, y las alternativas no incluyen el razonamiento del agente
+entre llamadas.
+
+Límites del grafo que el instrumento deja a la vista: los tests que llaman a la
+función dentro de una macro (`assert_eq!(f(), ..)`) no tienen arista de llamada,
+y el lector de Rust no publica la relación `impl Trait for Tipo` como
+`Inherits`, así que en `contract-implementor` el contrato y sus consumidores
+indirectos no llegan.
