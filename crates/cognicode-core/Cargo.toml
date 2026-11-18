@@ -218,6 +218,10 @@ harness = false
 required-features = ["persistence"]
 
 [[bench]]
+name = "ranking_stats"
+harness = false
+
+[[bench]]
 name = "reparse_benchmarks"
 harness = false
 required-features = ["persistence"]
