@@ -2067,6 +2067,13 @@ pub struct SearchContentOutput {
     /// existed reads as "unknown", never as "complete".
     #[serde(default = "crate::interface::coverage::CoverageInfo::unmeasured")]
     pub coverage: crate::interface::coverage::CoverageInfo,
+
+    /// What the text index did for this search: whether it narrowed the
+    /// files read, why not when it did not, and how many files it named,
+    /// skipped and indexed. Absent when no text index is enabled. The
+    /// matches are verified against the files whatever the index says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_index: Option<crate::application::dto::TextIndexReport>,
 }
 
 /// Input for list_files tool

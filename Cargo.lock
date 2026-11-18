@@ -467,6 +467,7 @@ dependencies = [
  "pulldown-cmark",
  "rayon",
  "regex",
+ "regex-syntax",
  "schemars",
  "serde",
  "serde_json",

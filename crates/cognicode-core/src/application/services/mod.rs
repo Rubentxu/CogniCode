@@ -12,7 +12,10 @@ pub mod analyze;
 pub mod context_compressor;
 // Casar un patron contra el texto de un fichero, sin abrir ninguno.
 pub(crate) mod content_search;
+// Indice derivado de trigramas que decide que ficheros hay que leer.
 pub mod detector_reuse_store;
+pub(crate) mod indexed_search;
+pub mod text_index;
 // Lo que el servicio recuerda de cada fichero leido (TASK-228).
 pub(crate) mod file_facts_cache;
 pub mod file_operations;
