@@ -50,12 +50,14 @@ fn analytics_graph(ctx: &HandlerContext) -> Result<Arc<CallGraph>, HandlerError>
 /// The projection is built by the adapter that owns the graph
 /// representation. The handler does not know how a projection is
 /// represented: it asks for one and hands it to the application service
-/// that knows how to analyse it.
+/// that knows how to analyse it. The projection belongs to the snapshot,
+/// not to the call: the first call on a snapshot builds it, with the
+/// adjacency it carries, and the rest share it.
 fn analytics_graph_with_projection(
     ctx: &HandlerContext,
 ) -> Result<(Arc<CallGraph>, Arc<dyn CallGraphProjectionPort>), HandlerError> {
     let graph = analytics_graph(ctx)?;
-    let projection = crate::infrastructure::graph::project_call_graph(&graph);
+    let projection = ctx.snapshot_caches.projections.projection_for(&graph);
     Ok((graph, projection))
 }
 
@@ -434,7 +436,16 @@ impl HandlerContext {
     pub fn ranking_stats_cache(
         &self,
     ) -> Arc<crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache> {
-        Arc::clone(&self.ranking_stats)
+        Arc::clone(&self.snapshot_caches.ranking_stats)
+    }
+
+    /// What the projection cache of this context has built, served and
+    /// evicted so far: one build per snapshot, however many analytics calls
+    /// it answers.
+    pub fn projection_cache_counters(
+        &self,
+    ) -> crate::infrastructure::graph::projection_cache::ProjectionCacheCounters {
+        self.snapshot_caches.projections.counters()
     }
 
     /// What the ranking-statistics cache of this context has built, served
@@ -443,7 +454,7 @@ impl HandlerContext {
     pub fn ranking_cache_counters(
         &self,
     ) -> crate::infrastructure::graph::analytics::ranking_stats::RankingCacheCounters {
-        self.ranking_stats.counters()
+        self.snapshot_caches.ranking_stats.counters()
     }
 }
 
@@ -466,6 +477,7 @@ pub async fn handle_graph_search_idf(
     // The statistics belong to the snapshot, not to the call: the first
     // query of a snapshot builds them and the rest read them.
     let results = ctx
+        .snapshot_caches
         .ranking_stats
         .stats_for(&graph)
         .rank(&input.query, max_results);
