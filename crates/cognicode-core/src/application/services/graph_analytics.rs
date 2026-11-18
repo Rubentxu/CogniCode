@@ -189,15 +189,18 @@ impl GraphAnalyticsService {
     /// reported. The output is sorted by score descending so the most
     /// critical god nodes come first.
     ///
-    /// Returns an empty vec for an empty graph or one with no edges: without
-    /// relations, PageRank has no ranking signal. The percentile selection uses
-    /// an off-by-one-tolerant clamp so values at the upper end (`percentile == 1.0`)
-    /// include the single top score.
+    /// Returns an empty vec for an empty graph, and for one with no edges and
+    /// more than one symbol: without relations, PageRank has no ranking
+    /// signal, and naming one of several symbols would be arbitrary. A graph
+    /// with a single symbol is not a choice — it is the whole graph, and it
+    /// is reported. The percentile selection uses an off-by-one-tolerant clamp
+    /// so values at the upper end (`percentile == 1.0`) include the single top
+    /// score.
     pub fn god_nodes(
         projection: &dyn CallGraphProjectionPort,
         percentile: f64,
     ) -> Vec<(SymbolId, f64)> {
-        if projection.edge_count() == 0 {
+        if projection.edge_count() == 0 && projection.node_count() > 1 {
             return Vec::new();
         }
         let scores = Self::page_rank(projection, 0.85, 100);

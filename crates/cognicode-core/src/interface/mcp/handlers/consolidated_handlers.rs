@@ -1861,7 +1861,31 @@ mod tests {
         graph
     }
 
+    /// A context that holds `graph`, the way the product holds a graph: in
+    /// the service's own cache, which is what the store the answer reads
+    /// from serves.
+    ///
+    /// A context whose store holds a graph the service does not hold is a
+    /// different thing: the answer reads a graph that nothing measured, and
+    /// its coverage is unknown on purpose.
     fn ctx_holding(graph: &CallGraph) -> (HandlerContext, tempfile::TempDir) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let service = crate::application::services::analysis_service::AnalysisService::new();
+        service.graph_cache().replace(graph.clone());
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_analysis_service(service)
+            .build();
+        (ctx, temp_dir)
+    }
+
+    /// A context whose store holds `graph` on its own.
+    ///
+    /// The store the product uses serves the service's own cache, and an
+    /// empty graph is not served at all — an empty graph is not a graph.
+    /// This fixture keeps the store that can hold one, for the answers that
+    /// have to render it.
+    fn ctx_with_a_store_holding(graph: &CallGraph) -> (HandlerContext, tempfile::TempDir) {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let store = InMemoryGraphStore::new();
         store.save_graph(graph).expect("the graph is stored");
@@ -2064,10 +2088,54 @@ mod tests {
         assert_eq!(out.coverage.status, "unknown");
     }
 
+    /// A graph that replaced the measured one is not described by the old
+    /// coverage, not even when it has the same size: the measure belongs to
+    /// the revision it was taken for.
+    #[tokio::test]
+    async fn a_graph_replaced_after_the_measure_is_not_published() {
+        let graph = graph_with_a_hub_that_sorts_last();
+        let (ctx, _dir) = ctx_holding(&graph);
+        measure_held_graph(
+            &ctx,
+            &graph,
+            crate::application::services::analyze::Coverage::Complete,
+        );
+
+        // Another route replaces the graph the service holds. The
+        // replacement has the same shape as the measured one, so only the
+        // revision tells the two apart.
+        let mut replacement = CallGraph::new();
+        let mut add = |name: &str, line: u32| {
+            replacement.add_symbol(Symbol::new(
+                name.to_string(),
+                SymbolKind::Function,
+                crate::domain::value_objects::Location::new("lib.rs", line, 0),
+            ))
+        };
+        let callers: Vec<SymbolId> = (1..=4).map(|i| add(&format!("other_{i}"), i)).collect();
+        let _leaf = add("other_leaf", 5);
+        let hub = add("other_hub", 6);
+        for caller in &callers {
+            replacement
+                .add_dependency(caller, &hub, DependencyType::Calls)
+                .expect("both ends are in the graph");
+        }
+        assert_eq!(replacement.symbol_count(), graph.symbol_count());
+        assert_eq!(replacement.edge_count(), graph.edge_count());
+
+        ctx.analysis_service().graph_cache().replace(replacement);
+
+        let out = map_of(&ctx, MapFormat::Compact).await;
+        assert_eq!(
+            out.coverage.status, "unknown",
+            "the coverage measured for the previous graph is not this graph's"
+        );
+    }
+
     /// A graph with no symbols is mapped as empty, not as an error.
     #[tokio::test]
     async fn a_graph_with_no_symbols_has_an_empty_map() {
-        let (ctx, _dir) = ctx_holding(&CallGraph::new());
+        let (ctx, _dir) = ctx_with_a_store_holding(&CallGraph::new());
         let out = map_of(&ctx, MapFormat::Detailed).await;
         assert!(out.hot_symbols.is_empty());
         assert!(out.map.contains("0 symbols"), "{}", out.map);
