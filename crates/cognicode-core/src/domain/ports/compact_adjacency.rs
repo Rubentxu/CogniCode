@@ -83,22 +83,30 @@ const DENSE_BELOW: usize = 4096;
 /// already visited a fixed fraction of the graph.
 const SPARSE_RATIO: usize = 64;
 
+/// A shallow bounded walk seldom visits more than this many nodes. Keeping
+/// that wave inline avoids allocating a hash table for the common case.
+const INLINE_VISITED_NODES: usize = 64;
+
 /// The nodes a traversal has visited.
 ///
 /// A bounded walk on a large graph visits a few hundred nodes; allocating and
 /// zeroing one flag per node of the graph for it would cost more than the
-/// walk. The set starts as a hash set sized by what the walk visits and turns
-/// into a bitset (one bit per node) once the walk has visited a fixed share of
-/// the graph, so a walk costs in proportion to what it visits and an
-/// unbounded one costs one bit per node.
+/// walk. The set starts with a small inline buffer and grows into a sparse hash
+/// set only when that buffer fills; it turns into a bitset once the walk has
+/// visited a fixed share of the graph. Thus a short walk pays no heap allocation
+/// for membership tracking, and an unbounded one costs one bit per node.
 #[derive(Debug)]
 pub struct VisitedNodes {
     node_count: usize,
+    inline_nodes: [u32; INLINE_VISITED_NODES],
+    inline_len: usize,
     repr: VisitedRepr,
 }
 
 #[derive(Debug)]
 enum VisitedRepr {
+    Empty,
+    Inline,
     Sparse(HashSet<u32, BuildHasherDefault<NodeHasher>>),
     Dense(Vec<u64>),
 }
@@ -109,9 +117,14 @@ impl VisitedNodes {
         let repr = if node_count <= DENSE_BELOW {
             VisitedRepr::Dense(vec![0; node_count.div_ceil(64)])
         } else {
-            VisitedRepr::Sparse(HashSet::default())
+            VisitedRepr::Inline
         };
-        Self { node_count, repr }
+        Self {
+            node_count,
+            inline_nodes: [0; INLINE_VISITED_NODES],
+            inline_len: 0,
+            repr,
+        }
     }
 
     /// Marks `node` as visited and says whether it was new.
@@ -121,19 +134,60 @@ impl VisitedNodes {
     /// When `node >= node_count`.
     pub fn insert(&mut self, node: u32) -> bool {
         assert!((node as usize) < self.node_count, "node out of range");
-        match &mut self.repr {
-            VisitedRepr::Dense(words) => Self::set_bit(words, node),
-            VisitedRepr::Sparse(set) => {
+        let repr = std::mem::replace(&mut self.repr, VisitedRepr::Empty);
+        match repr {
+            VisitedRepr::Empty => unreachable!("visited set representation is never empty"),
+            VisitedRepr::Dense(mut words) => {
+                let fresh = Self::set_bit(&mut words, node);
+                self.repr = VisitedRepr::Dense(words);
+                fresh
+            }
+            VisitedRepr::Inline => {
+                if self.inline_nodes[..self.inline_len].contains(&node) {
+                    self.repr = VisitedRepr::Inline;
+                    return false;
+                }
+                if self.inline_len < INLINE_VISITED_NODES {
+                    self.inline_nodes[self.inline_len] = node;
+                    self.inline_len += 1;
+                    self.repr = VisitedRepr::Inline;
+                    return true;
+                }
+
+                let mut set = HashSet::with_capacity_and_hasher(
+                    INLINE_VISITED_NODES * 2,
+                    BuildHasherDefault::default(),
+                );
+                set.extend(self.inline_nodes[..self.inline_len].iter().copied());
+                set.insert(node);
+                self.promote_sparse(set);
+                true
+            }
+            VisitedRepr::Sparse(mut set) => {
                 let fresh = set.insert(node);
                 if set.len() > self.node_count / SPARSE_RATIO {
                     let mut words = vec![0; self.node_count.div_ceil(64)];
-                    for &seen in set.iter() {
+                    for &seen in &set {
                         Self::set_bit(&mut words, seen);
                     }
                     self.repr = VisitedRepr::Dense(words);
+                } else {
+                    self.repr = VisitedRepr::Sparse(set);
                 }
                 fresh
             }
+        }
+    }
+
+    fn promote_sparse(&mut self, set: HashSet<u32, BuildHasherDefault<NodeHasher>>) {
+        if set.len() > self.node_count / SPARSE_RATIO {
+            let mut words = vec![0; self.node_count.div_ceil(64)];
+            for &seen in &set {
+                Self::set_bit(&mut words, seen);
+            }
+            self.repr = VisitedRepr::Dense(words);
+        } else {
+            self.repr = VisitedRepr::Sparse(set);
         }
     }
 
@@ -584,6 +638,22 @@ mod tests {
     }
 
     #[test]
+    fn visited_nodes_keep_small_waves_inline_then_promote_without_losing_marks() {
+        let mut visited = VisitedNodes::new(100_000);
+        assert!(matches!(visited.repr, VisitedRepr::Inline));
+        for node in 0..INLINE_VISITED_NODES as u32 {
+            assert!(visited.insert(node));
+        }
+        assert!(matches!(visited.repr, VisitedRepr::Inline));
+        assert!(!visited.insert(0));
+        assert!(visited.insert(INLINE_VISITED_NODES as u32));
+        assert!(matches!(visited.repr, VisitedRepr::Sparse(_)));
+        for node in 0..=INLINE_VISITED_NODES as u32 {
+            assert!(!visited.insert(node));
+        }
+    }
+
+    #[test]
     fn visited_nodes_report_first_insertion_in_both_representations() {
         for node_count in [10, DENSE_BELOW + 1, 100_000] {
             let mut visited = VisitedNodes::new(node_count);
@@ -602,7 +672,7 @@ mod tests {
     fn visited_nodes_keep_their_marks_when_the_set_turns_into_a_bitset() {
         let node_count = 100_000;
         let mut visited = VisitedNodes::new(node_count);
-        assert!(matches!(visited.repr, VisitedRepr::Sparse(_)));
+        assert!(matches!(visited.repr, VisitedRepr::Inline));
         let until = (node_count / SPARSE_RATIO + 10) as u32;
         for node in 0..until {
             assert!(visited.insert(node * 7 % node_count as u32));
