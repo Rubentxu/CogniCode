@@ -505,7 +505,7 @@
 > test —el contrato que fijaba la frescura de los goals que leen el árbol, que
 > la unidad anterior cambió a propósito— y lo corrigió TASK-321 (`a55d0c4e`);
 > el recibo del bloque lo escribe su cierre.
-> Versión del workspace: `0.106.0` (preparada, aún sin publicar). Última release
+> Versión del workspace: `0.107.0` (preparada, aún sin publicar). Última release
 > publicada: `v0.105.0` (2026-11-17, 12 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.

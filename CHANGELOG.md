@@ -10,6 +10,107 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.107.0] — 2026-11-18
+
+**Minor: el producto selecciona contexto para un agente (goal `pack`), lee
+dependencias, SBOM y avisos de seguridad sin red, y publica como API de
+librería los ámbitos de lectura, el envío de detectores y el arnés de
+equivalencia entre modos. Corte preparado, aún sin publicar: el tag existe, la
+release de GitHub y sus assets no.**
+
+**Context pack.** El goal `pack` entrega símbolos con su identidad inequívoca,
+rango de fuente, digest del fichero, motivo de selección y snapshot; un
+nombre que varios símbolos declaran se informa como ambigüedad y nunca se
+resuelve. La selección es adaptativa por propósito (diagnóstico, refactor,
+arquitectura) y nivel de detalle (firma, trozo o cuerpo): combina señal léxica,
+PageRank personalizado, proximidad en el grafo de llamadas e impacto, ordena por
+valor por token con penalización de redundancia y acota la expansión por
+profundidad, apertura, confianza de arista y presupuesto de trabajo, informando
+si la expansión fue completa, parcial, cancelada o desconocida. Con
+`change_scope` (`staged`, `working_tree`, `commit`, `range` o
+`merge_candidate`) el pack parte de las líneas exactas de un cambio y trae sus
+consumidores, contratos y tests. Cada respuesta publica qué alcanzaría expandir
+cada símbolo entregado y una recomendación de parada que no certifica nada, con
+enlaces de solo lectura a las herramientas existentes (rango, fichero,
+consumidores; comunidad y visión general marcadas como inferencias). Una
+llamada dentro de una sesión MCP reutiliza el grafo publicado y las
+estadísticas de ranking, y la decisión de frescura se toma en cada llamada. El
+presupuesto de tokens es exacto solo con un tokenizador configurado; sin él es
+una cota declarada. La cobertura se publica como muestra con totales exactos.
+
+**Dependencias y avisos, sin red.** El goal `dependencies` lee `Cargo.toml` y
+`Cargo.lock` de una revisión y dice, por unidad del workspace, qué paquetes fija
+el lockfile, qué declaraciones los pidieron y si ambos concuerdan (`consistent`,
+`stale`, `partial`, `no_lockfile`, `no_manifest`); con `dependents_of` y
+`base_ref` responde quién depende de un paquete y qué cambió en el lockfile.
+Puede comparar un SBOM CycloneDX (1.2 a 1.7) con ese inventario: el documento es
+una afirmación del productor, ligada por SHA-256 con pin opcional, y la capa
+distribuida es como mucho parcial porque el artefacto nunca se inspecciona; SPDX
+se informa como formato no soportado. El goal `advisories` correlaciona los
+paquetes de crates.io del lockfile con un feed OSV que el operador aporta como
+fichero del workspace: nunca se descarga, se fija con un digest y se acota por
+edad. `not_found_in_scope` significa que ese feed, completo y reciente, no cubre
+la versión; no significa que el paquete sea seguro. Un feed ausente, ilegible,
+demasiado grande, que no coincide con su digest o que no se puede interpretar
+nunca produce un resultado limpio. Solo cubre Cargo.
+
+**Búsqueda y consultas sobre el grafo.** La búsqueda de símbolos por nombre
+responde desde tablas de candidatos (nombre exacto por búsqueda directa, prefijo
+por rango ordenado, subcadena y subsecuencia por firma de caracteres) con la
+misma regla de juicio que el recorrido completo, que sigue como referencia y
+como respaldo. Se corrige la selección de los mejores resultados, que con un
+límite menor que el número de coincidencias devolvía los peores; con un orden
+total, un límite de n es los n primeros de la respuesta sin límite. Los
+operadores de lectura tipados y acotados (búsqueda, expansión, filtro, top-k)
+corren bajo un presupuesto de visitas, eligen índice inverso o recorrido según
+estimaciones y publican un explain con el gasto real; el goal `trace`,
+`graph_query`, `get_implementors` y los contratos y consumidores del cambio
+delegan en ellos, y un homónimo nunca se elige. `graph_query` publica las
+relaciones, los límites y la cobertura que de verdad usó, en vez de inventar
+aristas `calls`, y `graph_query_filtered`, que respondía 0 nodos y 0 aristas
+sin importar el filtro, ahora ejecuta el recorrido que sus filtros describen y
+rechaza los filtros que no nombran nada real. `codebase_map` ordena los símbolos
+calientes por fan-in, publica la base y la cobertura del grafo que leyó y ya no
+inventa un pipeline.
+
+**API de librería.** Ámbitos de lectura por fichero (`cognicode.read-scope/v1`)
+con marca de truncamiento explícita y un resolvedor que decide qué lecturas
+invalida un conjunto de hechos cambiados; un ámbito ausente, truncado o de
+esquema desconocido fuerza la revalidación y nunca se extrapola a una respuesta
+limpia. Envío de detectores del catálogo al planificador
+(`cognicode.detector-submission/v1`): una respuesta por par (detector, lenguaje),
+con base, ámbito de lectura y el veredicto más débil honesto; nada se resuelve
+como limpio si no se observó nada. Las pipelines de equivalencia entre modos
+(incremental y reconstrucción completa, con caché de hechos fría y caliente) son
+ahora una API soportada (`change_tracking::mode_benchmark`) para medirlas sobre
+un repositorio propio.
+
+**Extracción y detectores.** Un fichero con error de sintaxis ya no pasa en
+silencio: se informa como hueco de extracción con línea, columna y token
+esperado, y una gramática que no sabe leer Rust válido se distingue de un error
+de sintaxis (la gramática de Rust sube a 0.24). Se extraen los tipos de Go y los
+métodos abstractos de Java y Kotlin dejan de contarse como funciones. Las
+plantillas de un chart de Helm se deciden por un render y no por la gramática
+YAML: sin motor disponible cada plantilla deja un hueco con causa propia, y un
+`helm` que no puede ejecutarse en el entorno confinado (por ejemplo, un shim de
+un gestor de versiones) se declara no disponible. Nuevo detector de buckets S3
+que ningún bloqueo de acceso público referencia.
+
+**Honestidad del catálogo y rendimiento.** El grafo en memoria entrega un único
+snapshot estable por escritura, las estadísticas de ranking se calculan una vez
+por snapshot, y el catálogo y su captura publican los límites tipados de cada
+goal nuevo y corregido. La suite incorpora instrumentos de medición (pack frente
+a lectura de ficheros, brechas de sintaxis de las gramáticas empaquetadas, coste
+de escenarios de gate, memoria máxima por pipeline en proceso aparte).
+
+**Límites conocidos.** `v0.106.0` tiene tag pero no se publicó, así que las
+novedades de ambos cortes llegan juntas cuando se publique. La selección
+adaptativa de `pack` se evaluó sobre un corpus fijo, no sobre repositorios
+arbitrarios. `dependencies` y `advisories` cubren Cargo; el feed OSV lo aporta
+el operador. Las consultas del grafo que agotan su presupuesto devuelven un
+subconjunto parcial, nunca una respuesta completa. Los assets binarios de este corte no se han generado ni
+comparado con una release publicada.
+
 ## [v0.106.0] — 2026-11-17
 
 **Minor: el producto compara, inspecciona y verifica revisiones, y publica su

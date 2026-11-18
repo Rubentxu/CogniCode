@@ -38,7 +38,7 @@ lenguajes de serie: 20 con evidencia de aceptación completa y 11 experimentales
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). En Linux x86_64 instala la build **standalone**: enlazada estáticamente contra musl, sin dependencia de glibc, así que corre en cualquier Linux x86_64 sea cual sea la glibc de la máquina (2.39 en Ubuntu 24.04, 2.44 en Fedora 42). Fija una versión con `COGNICODE_VERSION=v0.106.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
+Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los checksums de la release oficial de GitHub). En Linux x86_64 instala la build **standalone**: enlazada estáticamente contra musl, sin dependencia de glibc, así que corre en cualquier Linux x86_64 sea cual sea la glibc de la máquina (2.39 en Ubuntu 24.04, 2.44 en Fedora 42). Fija una versión con `COGNICODE_VERSION=v0.107.0`. Después ejecuta `cogh init && cogh install mcp-server --profile reviewer --ide opencode` para instalar CLI, MCP y las skills portables. Consulta [Distribución e instalación](docs/distribution/INSTALL.md) para actualización, rollback, desinstalación, plataformas y recuperación.
 
 ### mise
 
@@ -46,7 +46,7 @@ Instala solo el ejecutable `cogh` en `~/.cognicode/bin` (verificado contra los c
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Fija una versión con `@v0.106.0`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
+Fija una versión con `@v0.107.0`. Ambos canales instalan el mismo asset de la release publicada — la prueba de identidad por digest ya no está versionada en este árbol (limitación conocida). Contrato de propiedad: instalado vía mise, mise es dueño del binario `cogh` de Capa 0 (actualiza con `mise upgrade`); `cogh` solo es dueño del runtime de Capa 1 (`~/.cognicode`).
 
 Una release publica dos lanes de Linux x86_64, así que hay que nombrar el que quieres: con mise, `asset_pattern = "cogh-*-x86_64-unknown-linux-musl.tar.gz"` selecciona la build standalone (enlazada estáticamente, sin dependencia de glibc) y `asset_pattern = "cogh-*-x86_64-unknown-linux-gnu.tar.gz"` la nativa.
 
@@ -72,9 +72,9 @@ cd CogniCode
 cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
 # Daemon MCP
 cargo build --release -p cognicode-mcp
-./target/release/cogh --version         # esperado: cogh 0.106.0
-./target/release/cognicode --version    # esperado: cognicode 0.106.0
-./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.106.0
+./target/release/cogh --version         # esperado: cogh 0.107.0
+./target/release/cognicode --version    # esperado: cognicode 0.107.0
+./target/release/cognicode-mcp --version # esperado: cognicode-mcp 0.107.0
 ```
 
 > **Nota:** los binarios publicados también incluyen los de la cadena de herramientas cruzada
@@ -493,24 +493,28 @@ trazado de rutas de ejecución** y mucho más.
 
 ## Versionado
 
-- **Release vigente:** `v0.106.0`, cortada desde este árbol con ese tag. Un
-  minor: añade los goals `compare`, `inspect`, `verify` y `preflight` (92
-  herramientas MCP, 14 de ellas goals), la revisión de pull requests neutral
-  respecto a la forja, el paquete de seguridad para Rust, Java, Kotlin, Go,
-  Terraform y Helm, y el arnés de equivalencia entre modos. Los assets
+- **Release vigente:** `v0.107.0`, cortada desde este árbol con ese tag,
+  preparada y aún sin publicar. Un minor: añade el goal `pack` (selección
+  adaptativa de contexto por propósito y nivel de detalle, las líneas exactas
+  de un cambio con sus consumidores, contratos y tests, y navegación entre
+  niveles de conocimiento), los goals `dependencies` y `advisories` sin red
+  (inventario de Cargo, comparación con un SBOM CycloneDX, feed OSV fijado),
+  consultas tipadas y acotadas sobre el grafo, búsqueda de símbolos por
+  candidatos, ámbitos de lectura por fichero y envío de detectores para quien
+  usa la librería (95 herramientas MCP, 17 de ellas goals). Los assets
   binarios se generan con la release factory desde el mismo árbol. Los cuatro
   crates de librería del SDK siguen publicados en crates.io en `0.103.1`;
-  se publican en `0.106.0` con el procedimiento de release del SDK, una
-  operación aparte posterior al tag.
-  La release publicada anterior es
+  se publican en `0.107.0` con el procedimiento de release del SDK, una
+  operación aparte posterior al tag. El corte anterior, `v0.106.0`, tiene tag
+  y nunca se publicó; la última release publicada es
   [`v0.105.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.105.0);
   la completa anterior a ella es
   [`v0.103.1`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.103.1).
   `v0.101.24`, `v0.101.25` y `v0.101.26` tienen tag pero nunca se publicaron,
   y un tag que no se publicó no se mueve. La release sale sin atestación de
   procedencia (misma decisión abierta de custodia de la clave desde v0.103.0).
-- **Los binarios informan:** `0.106.0` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.106.0`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.106.0).
+- **Los binarios informan:** `0.107.0` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** `v0.107.0` en `origin`; todavía no hay release de GitHub para él.
 - **Tags sin release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` y
   `v0.101.26` existen y nunca se publicaron; cada uno tiene una entrada en el

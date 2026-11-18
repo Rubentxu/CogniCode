@@ -40015,3 +40015,21 @@ nextest`, sin `cosign` fijado, sin los binarios release, `rustc -vV` en el contr
 
 **Límite.** Esta entrada prepara el corte; no lo declara hecho: el tag y la publicación son
 una operación aparte y la tabla de releases de `CURRENT.md` no cambia hasta que ocurra.
+
+## Release v0.107.0 — preparación (2026-11-18)
+
+**Cambio.** El workspace sube a `0.107.0`. El minor reúne lo integrado desde `v0.106.0`: el
+goal `pack` (selección adaptativa de contexto, líneas exactas de un cambio con sus
+consumidores, contratos y tests, y navegación entre niveles de conocimiento), los goals
+`dependencies` y `advisories` sin red (inventario de Cargo, comparación con un SBOM CycloneDX y
+feed OSV fijado), las consultas tipadas y acotadas sobre el grafo con `graph_query` y
+`graph_query_filtered` corregidos, la búsqueda de símbolos por candidatos, los ámbitos de
+lectura por fichero, el envío de detectores y el arnés de equivalencia entre modos publicado
+como API (95 herramientas MCP, 17 de ellas goals).
+
+**Antes de cortar.** La puerta completa se ejecutó sobre el árbol del bump; el recibo
+detallado, con lo ejecutado y lo no ejecutado, lo lleva el PR de la preparación.
+
+**Límite.** Esta entrada prepara el corte; no lo declara hecho. `v0.106.0` tiene tag y nunca se
+publicó; `v0.107.0` tampoco se publica con este corte (sin release de GitHub, sin assets, sin
+crates.io), y la tabla de releases de `CURRENT.md` no cambia hasta que ocurra.
