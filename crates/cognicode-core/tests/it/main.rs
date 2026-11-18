@@ -69,6 +69,7 @@ mod cached_coverage_is_honest;
 mod callgraph_projection_orientation;
 mod checkpoint_integration;
 mod codebase_map_says_where_its_graph_came_from;
+mod compact_adjacency_equivalence;
 mod context_semantics;
 mod core_declares_only_the_dependencies_it_uses;
 mod cost_aware_scheduling;
