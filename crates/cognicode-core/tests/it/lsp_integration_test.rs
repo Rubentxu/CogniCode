@@ -63,6 +63,7 @@ fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
 async fn test_rust_analyzer_hover() {
     use cognicode_core::application::services::analysis_service::AnalysisService;
     use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::interface::composition::code_intelligence_provider;
 
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -99,11 +100,10 @@ fn main() {
     .expect("Failed to write Rust file");
 
     // Create the LSP proxy service with the temp directory as workspace
-    let service = LspProxyService::new(Arc::new(AnalysisService::new()), project_dir.clone());
+    let mut service = LspProxyService::new(Arc::new(AnalysisService::new()));
 
-    // Enable proxy mode with the composite provider
-    let mut service = service;
-    service.enable_proxy_mode_with_provider();
+    // Enable proxy mode with the composite provider the interface composed
+    service.enable_proxy_mode_with_provider(Arc::new(code_intelligence_provider(&project_dir)));
 
     // Define LSP params for hover on "greet" function definition (line 0, character 7)
     // This is 0-indexed as per LSP protocol
@@ -153,6 +153,7 @@ fn main() {
 async fn test_rust_analyzer_goto_definition() {
     use cognicode_core::application::services::analysis_service::AnalysisService;
     use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
+    use cognicode_core::interface::composition::code_intelligence_provider;
 
     // Create a temporary Rust project
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -190,9 +191,8 @@ fn main() {
     .expect("Failed to write Rust file");
 
     // Create the LSP proxy service
-    let service = LspProxyService::new(Arc::new(AnalysisService::new()), project_dir.clone());
-    let mut service = service;
-    service.enable_proxy_mode_with_provider();
+    let mut service = LspProxyService::new(Arc::new(AnalysisService::new()));
+    service.enable_proxy_mode_with_provider(Arc::new(code_intelligence_provider(&project_dir)));
 
     // Request goto-definition on the call to calculate (line 5, character 17)
     // Should return the definition at line 0
@@ -260,12 +260,18 @@ fn test_availability_detection_asks_the_binary_and_not_the_filesystem() {
         "un comando que no existe no puede estar disponible"
     );
 
-    // `sh` existe en cualquier POSIX y responde a `--version` con 0: el caso
-    // positivo control. Sin esto, "no disponible" seria el unico veredicto
-    // posible y el detector no distinguiria nada.
+    // `cargo` existe en toda maquina que puede compilar este repositorio y
+    // responde a `--version` con 0: el caso positivo control. Sin esto, "no
+    // disponible" seria el unico veredicto posible y el detector no
+    // distinguiria nada.
+    //
+    // El control tiene que ser un binario que RESPONDA, no un binario que
+    // exista: en Ubuntu y Debian `/bin/sh` es dash, que responde a
+    // `--version` con "Illegal option" y codigo 2. Lo que se comprueba es
+    // que el detector pregunte al binario.
     assert!(
-        command_reports_version("sh"),
-        "`sh` responde a `--version`: el detector tiene que verlo disponible"
+        command_reports_version("cargo"),
+        "`cargo` responde a `--version`: el detector tiene que verlo disponible"
     );
 
     // Y el caso que motivo todo esto: un shim que existe y no sirve. Se
@@ -317,7 +323,7 @@ async fn test_extract_location_from_lsp_params() {
     use cognicode_core::application::services::analysis_service::AnalysisService;
     use cognicode_core::application::services::lsp_proxy_service::LspProxyService;
 
-    let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+    let service = LspProxyService::new(Arc::new(AnalysisService::new()));
 
     // Test valid LSP params (0-indexed line 10, character 5 becomes Location line 11, column 6)
     let params = serde_json::json!({

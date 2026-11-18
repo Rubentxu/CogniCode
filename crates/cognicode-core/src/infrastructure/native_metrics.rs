@@ -19,9 +19,20 @@ use crate::domain::metrics::{
     FileMetrics, FileSize, FunctionMetrics, METRICS_RULES_VERSION, MetricsCoverage, MetricsOutcome,
     SizeMetrics, capability_matrix, is_measurable,
 };
+use crate::domain::ports::SourceMetrics;
 use crate::domain::value_objects::Language;
 use crate::infrastructure::complexity::count_parameters;
 use crate::infrastructure::parser::TreeSitterParser;
+
+/// The adapter behind [`SourceMetrics`]: the rule tables of this module,
+/// answering the measurement of a file.
+pub struct NativeMetrics;
+
+impl SourceMetrics for NativeMetrics {
+    fn measure_by_extension(&self, path: &str, source: &str) -> MetricsOutcome {
+        crate::infrastructure::native_metrics::measure_by_extension(path, source)
+    }
+}
 
 /// How deep the walk goes before it stops and says so. Real code is far
 /// shallower; the limit protects the stack from machine-generated sources.

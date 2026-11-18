@@ -353,20 +353,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         ex(
             "application_no_infrastructure",
-            "application/fact_bridge/lsp_facts.rs",
-            "infrastructure::lsp::providers::fallback::",
-            "team:st-04",
-            "ST-04: TreesitterFallbackProvider via port.",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/fact_bridge/lsp_facts.rs",
-            "infrastructure::lsp::providers::lsp::",
-            "team:st-04",
-            "ST-04: LspIntelligenceProvider via port.",
-        ),
-        ex(
-            "application_no_infrastructure",
             "application/findings/grounded_finding_flow.rs",
             "infrastructure::evidence_kernel",
             "team:st-04",
@@ -434,13 +420,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "infrastructure::intelligence_log::",
             "team:st-04",
             "ST-04: EventLog via port.",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/services/lsp_proxy_service.rs",
-            "infrastructure::lsp::providers::composite::CompositeProvider",
-            "team:st-04",
-            "ST-04: the composite LSP provider behind a port (CompositeProvider).",
         ),
         ex(
             "application_no_infrastructure",
@@ -812,10 +791,21 @@ mod tests {
         // the file names no `infrastructure` path any more: the entry covered
         // nothing. The pair is retired, not swapped: swapping would have been
         // a new coupling under a new name.
+        //
+        // 51 -> 48. Three entries retired, none added:
+        //
+        // * `lsp_facts.rs` named the fallback and the LSP providers only to
+        //   pin the identity each one exports. Those identities live in the
+        //   port now, so the application reads the port's vocabulary and the
+        //   adapters export it; the pinning moved to the integration suite,
+        //   which is the only place where both sides are visible at once.
+        // * `lsp_proxy_service.rs` named the concrete composite provider.
+        //   The service holds the port it asks for its questions, and the
+        //   provider is injected by the caller that composed it.
         assert_eq!(
             list.len(),
-            51,
-            "expected exactly 51 entries; if you removed/added a drift \
+            48,
+            "expected exactly 48 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

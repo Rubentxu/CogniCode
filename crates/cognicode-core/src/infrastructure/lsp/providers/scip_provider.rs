@@ -33,7 +33,8 @@ pub struct ScipIntelligenceProvider {
 
 impl ScipIntelligenceProvider {
     /// Stable provider identity of the S3 SCIP tier.
-    pub const PROVIDER_ID: &'static str = "scip";
+    pub const PROVIDER_ID: &'static str =
+        crate::domain::traits::code_intelligence::provider_ids::SCIP;
 
     /// Builds a provider over an already-parsed index.
     pub fn new(index: ScipIndex) -> Self {
