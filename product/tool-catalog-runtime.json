@@ -5951,12 +5951,15 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
+    "description": "Breadth-first traversal of the call graph, the one graph_query runs, restricted by filters on edge provenance, node kind and community. The answer states the filters it applied, how many nodes and edges they left out, its depth and budget limits, whether it was cut, and the coverage of the graph it was read from. An unknown filter value is refused, never answered empty. Requires build_graph first.",
     "inputSchema": {
+      "description": "What `graph_query_filtered` is asked: a `graph_query` question, narrowed.",
       "properties": {
         "filters": {
+          "description": "What the walk may follow and return. Omitted or empty, the answer is\nthe one `graph_query` gives.",
           "properties": {
             "community_id": {
+              "description": "The community, as `graph_communities` numbers them, every node must\nbelong to. A number the detection does not produce is refused.",
               "minimum": 0,
               "type": [
                 "integer",
@@ -5964,6 +5967,7 @@
               ]
             },
             "exclude_kinds": {
+              "description": "Kinds no node may have. Wins over `node_kinds`.",
               "items": {
                 "type": "string"
               },
@@ -5973,6 +5977,7 @@
               ]
             },
             "node_kinds": {
+              "description": "Kinds a node must have to be returned or walked through, by the name\n`graph_query` publishes in `kind`, for example `function`, `class` or\n`trait`. Must not be empty.",
               "items": {
                 "type": "string"
               },
@@ -5982,6 +5987,7 @@
               ]
             },
             "provenance": {
+              "description": "Provenances the walk follows: `Extracted`, `Inferred`, `Ambiguous`,\n`Manual` or `Tested`, in any letter case. An edge of another\nprovenance is not followed, and the nodes only it reaches are not\nreached. Must not be empty.",
               "items": {
                 "type": "string"
               },
@@ -5997,13 +6003,21 @@
           ]
         },
         "limit": {
+          "description": "Maximum elements the answer holds, counting seed nodes, discovered\nnodes and edges together (default: 1500): the budget of\n`graph_query`. The answer never exceeds it; what the filters exclude\ncosts none of it.",
           "minimum": 0,
           "type": [
             "integer",
             "null"
           ]
         },
+        "max_depth": {
+          "default": 3,
+          "description": "Maximum BFS depth from the seed nodes (default: 3). Depth 0 returns\nonly the seeds.",
+          "minimum": 0,
+          "type": "integer"
+        },
         "question": {
+          "description": "Natural language question about the graph topology; its words seed\nthe walk exactly as they do for `graph_query`.",
           "type": "string"
         }
       },
@@ -6115,6 +6129,65 @@
           ],
           "type": "object"
         },
+        "CoverageInfo": {
+          "description": "What an answer covers, in the shape every consumer reads it.\n\nThe word is the coverage's, not the consumer's: it is the word the\nowner of the coverage publishes, so the CLI, the MCP and the SDK say\nthe same thing about the same tree. The three lists are the three\nholes a build can leave open, and they travel together because a\nconsumer that reads one of them and not the others reads half the\ntruth.",
+          "properties": {
+            "pending_references": {
+              "description": "The references the graph could not tie to a declaration.",
+              "items": {
+                "$ref": "#/$defs/PendingReferenceInfo"
+              },
+              "type": "array"
+            },
+            "rejected_relations": {
+              "description": "The relations the repository refused.",
+              "items": {
+                "$ref": "#/$defs/RejectedRelationInfo"
+              },
+              "type": "array"
+            },
+            "skipped_files": {
+              "description": "The files the walk could not read.",
+              "items": {
+                "$ref": "#/$defs/SkippedFileInfo"
+              },
+              "type": "array"
+            },
+            "status": {
+              "description": "The word the coverage is published with: \"complete\", \"partial\",\n\"unknown\" or \"unsupported\".",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "skipped_files",
+            "pending_references",
+            "rejected_relations"
+          ],
+          "type": "object"
+        },
+        "FilteredOut": {
+          "description": "What a filtered query left out of the walk because a filter excluded it,\nas opposed to the budget or the depth.\n\nThe counts are over the part of the walk that ran: when the answer is\ncut, what lies beyond the cut is counted by nobody.",
+          "properties": {
+            "edges": {
+              "description": "Relations the walk met and a filter excluded: those whose provenance\nis not admitted, and those that lead to an excluded node.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "nodes": {
+              "description": "Distinct symbols the walk reached and a node filter excluded: seeds\nand discovered nodes alike.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "nodes",
+            "edges"
+          ],
+          "type": "object"
+        },
         "FreshnessBasis": {
           "description": "La frescura de la respuesta.",
           "properties": {
@@ -6137,6 +6210,29 @@
           "required": [
             "workspace",
             "snapshot"
+          ],
+          "type": "object"
+        },
+        "GraphQueryBasis": {
+          "description": "Where the graph an answer was read from came from: the basis `graph_query`\nand `codebase_map` publish.",
+          "properties": {
+            "graph_source": {
+              "description": "`built`, `cache` or `daemon`.",
+              "type": "string"
+            },
+            "source_manifest_digest": {
+              "description": "The digest of the source manifest the graph was read against.",
+              "type": "string"
+            },
+            "workspace": {
+              "description": "The canonical workspace the graph was read from.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace",
+            "source_manifest_digest",
+            "graph_source"
           ],
           "type": "object"
         },
@@ -6174,6 +6270,42 @@
             "provenance",
             "confidence",
             "discovers"
+          ],
+          "type": "object"
+        },
+        "GraphQueryLimits": {
+          "description": "The limits of a `graph_query` walk.",
+          "properties": {
+            "budget": {
+              "description": "The budget that was asked for.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "budget_used": {
+              "description": "How many elements (nodes plus edges) the answer holds.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "depth_reached": {
+              "description": "The deepest level a returned node sits at.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_depth": {
+              "description": "The depth that was asked for.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "max_depth",
+            "depth_reached",
+            "budget",
+            "budget_used"
           ],
           "type": "object"
         },
@@ -6257,6 +6389,113 @@
             "authority"
           ],
           "type": "object"
+        },
+        "PendingReason": {
+          "description": "Why the far end of a reference could not be identified.",
+          "oneOf": [
+            {
+              "const": "unresolved",
+              "description": "The far end could not be identified: either no declaration\ncarries the name, or the declaration that carries it could not be\ntied to the call.\n\nThe two are the same answer for the consumer — the reference does\nnot name a declaration — and they are the same answer for the\nwire: the class of a reference is what a consumer reads, and the\nshape of this enum does not change to tell them apart.",
+              "type": "string"
+            },
+            {
+              "const": "ambiguous",
+              "description": "More than one does, and the graph cannot prove which one.",
+              "type": "string"
+            }
+          ]
+        },
+        "PendingReferenceInfo": {
+          "description": "A reference the graph could not tie to a declaration.",
+          "properties": {
+            "candidates": {
+              "description": "How many declarations carry the name, when there are several.",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "file": {
+              "description": "The file that writes the reference.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "What the reference is.",
+              "type": "string"
+            },
+            "line": {
+              "description": "The line the reference is written on (1-indexed): the line a person reads.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "reason": {
+              "$ref": "#/$defs/PendingReason",
+              "description": "Why the far end could not be identified: `unresolved` when the far\nend could not be identified — no declaration carries the name, or\nthe declaration that carries it could not be tied to the call —\nand `ambiguous` when several declarations carry the name."
+            },
+            "target": {
+              "description": "The name the reference names.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "target",
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "RejectedRelationInfo": {
+          "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+          "properties": {
+            "kind": {
+              "description": "What the relation is.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Why the repository refused it.",
+              "type": "string"
+            },
+            "source": {
+              "description": "The declaration that holds the relation.",
+              "type": "string"
+            },
+            "target": {
+              "description": "The declaration the relation points at.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target",
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "SkippedFileInfo": {
+          "description": "A file the walk could not read.",
+          "properties": {
+            "path": {
+              "description": "The path of the file.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Why the walk could not read it.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "reason"
+          ],
+          "type": "object"
         }
       },
       "description": "La respuesta, con lo que la sostiene y lo que viene después.",
@@ -6277,14 +6516,36 @@
           "description": "Lo que la respuesta dejó fuera."
         },
         "result": {
+          "description": "What `graph_query_filtered` answers: the answer of `graph_query` over the\nnarrowed traversal, and what the narrowing took out.",
           "properties": {
             "applied_filters": {
+              "description": "The filters the walk ran under, one line each.",
               "items": {
                 "type": "string"
               },
               "type": "array"
             },
+            "basis": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/GraphQueryBasis"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Which tree and which snapshot the graph was read from, when the\nsession knows; `null` otherwise."
+            },
+            "coverage": {
+              "$ref": "#/$defs/CoverageInfo",
+              "description": "What the graph this answer was read from covers. `unknown` when\nnobody measured that graph, and then an empty answer is not proof\nthat nothing exists."
+            },
+            "direction": {
+              "description": "The direction the edges are followed in: `outgoing`.",
+              "type": "string"
+            },
             "edges": {
+              "description": "The edges the walk followed, in the order it followed them. An edge\nnever appears before its two endpoints are in `nodes`.",
               "items": {
                 "$ref": "#/$defs/GraphQueryEdge"
               },
@@ -6293,7 +6554,20 @@
             "explanation": {
               "type": "string"
             },
+            "filtered_out": {
+              "$ref": "#/$defs/FilteredOut",
+              "description": "What the filters excluded from the walk."
+            },
+            "limits": {
+              "$ref": "#/$defs/GraphQueryLimits",
+              "description": "The limits the walk ran under and how much of them it used."
+            },
+            "mode": {
+              "description": "What the answer is: always `traversal`, the nodes reached from the\nseeds and the edges followed, as opposed to the subgraph induced by\nthe returned nodes.",
+              "type": "string"
+            },
             "nodes": {
+              "description": "The nodes reached: the seeds first, then the nodes the walk\ndiscovered, in discovery order.",
               "items": {
                 "$ref": "#/$defs/GraphQueryNode"
               },
@@ -6303,8 +6577,25 @@
               "type": "string"
             },
             "summary": {
-              "description": "One line saying what the answer says.",
+              "description": "One line saying what the answer says: its size, what it covers and\nwhether it was cut.",
               "type": "string"
+            },
+            "truncated": {
+              "description": "Whether something the walk could reach was left out, because of the\nbudget or the depth.",
+              "type": "boolean"
+            },
+            "truncation_reason": {
+              "description": "Why: `budget` when the answer reached the budget, `max_depth` when\nnodes at the last depth have outgoing edges that were not followed,\n`null` when the answer is not cut. `budget` wins when both apply.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "unexpanded_nodes": {
+              "description": "How many returned nodes have outgoing edges that were not followed\nbecause they sit at the last depth.",
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
             }
           },
           "required": [
@@ -6312,8 +6603,15 @@
             "nodes",
             "edges",
             "explanation",
+            "summary",
+            "mode",
+            "direction",
+            "truncated",
+            "unexpanded_nodes",
+            "limits",
+            "coverage",
             "applied_filters",
-            "summary"
+            "filtered_out"
           ],
           "title": "GraphQueryFilteredOutput",
           "type": "object"
