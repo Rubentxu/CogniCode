@@ -102,7 +102,7 @@ async fn a_parent_name_two_declarations_share_invents_no_edge() {
 #[tokio::test]
 async fn a_parent_name_two_declarations_share_says_so_and_picks_none() {
     let dir = tempfile::tempdir().unwrap();
-    let files = vec![
+    let files = [
         write(dir.path(), "a/Mover.kt", "interface Mover\n"),
         write(dir.path(), "b/Mover.kt", "interface Mover\n"),
         write(dir.path(), "c/Car.kt", "class Car : Mover\n"),
