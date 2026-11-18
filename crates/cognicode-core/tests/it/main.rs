@@ -185,6 +185,7 @@ mod the_analyzer_is_identified_by_its_source;
 mod the_answer_says_what_each_stage_cost;
 mod the_broken_file_is_not_published;
 mod the_callflow_of_a_real_project_shows_the_relations;
+mod the_cargo_inventory_matches_cargo_metadata;
 mod the_complexity_of_a_real_project_answers;
 mod the_consumer_can_declare_the_version;
 mod the_core_has_no_command_line;
