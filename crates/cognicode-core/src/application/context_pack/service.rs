@@ -57,20 +57,20 @@ pub struct PackRequest {
 
 /// Why a pack could not be built at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PackError {
+pub enum ContextPackError {
     /// The continuation token is not one this product issues.
     InvalidContinuation,
     /// The continuation token was issued for another snapshot.
     StaleContinuation,
 }
 
-impl std::fmt::Display for PackError {
+impl std::fmt::Display for ContextPackError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PackError::InvalidContinuation => {
+            ContextPackError::InvalidContinuation => {
                 write!(f, "the continuation token is not valid")
             }
-            PackError::StaleContinuation => write!(
+            ContextPackError::StaleContinuation => write!(
                 f,
                 "the continuation token was issued for another snapshot; \
                  run the request again without it"
@@ -79,11 +79,11 @@ impl std::fmt::Display for PackError {
     }
 }
 
-impl std::error::Error for PackError {}
+impl std::error::Error for ContextPackError {}
 
 /// A line range of a source file, counted from one, both ends included.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SourceRange {
+pub struct ItemRange {
     /// The first line.
     pub start_line: u32,
     /// The last line.
@@ -102,7 +102,7 @@ pub struct PackItem {
     /// The file that declares it, as the graph records it.
     pub file: String,
     /// The lines of the declaration.
-    pub range: SourceRange,
+    pub range: ItemRange,
     /// Where the range comes from: `declaration` when a parser read the
     /// declaration, `line` when only the line of the symbol is known.
     pub range_basis: String,
@@ -205,7 +205,7 @@ impl ContextPackService<'_> {
     }
 
     /// Builds the pack of `request`.
-    pub fn build(&self, request: &PackRequest) -> Result<ContextPack, PackError> {
+    pub fn build(&self, request: &PackRequest) -> Result<ContextPack, ContextPackError> {
         let offset = self.offset_of(request.continuation.as_deref())?;
         let selection = self.selection(&request.selection);
         Ok(self.pack_of(&selection, offset, request.max_tokens))
@@ -364,16 +364,16 @@ impl ContextPackService<'_> {
         })
     }
 
-    fn offset_of(&self, token: Option<&str>) -> Result<usize, PackError> {
+    fn offset_of(&self, token: Option<&str>) -> Result<usize, ContextPackError> {
         let Some(token) = token else { return Ok(0) };
         let mut parts = token.splitn(3, '.');
         let (Some("v1"), Some(digest), Some(position)) = (parts.next(), parts.next(), parts.next())
         else {
-            return Err(PackError::InvalidContinuation);
+            return Err(ContextPackError::InvalidContinuation);
         };
         let position: usize = position
             .parse()
-            .map_err(|_| PackError::InvalidContinuation)?;
+            .map_err(|_| ContextPackError::InvalidContinuation)?;
         let current: String = self
             .snapshot
             .digest
@@ -381,7 +381,7 @@ impl ContextPackService<'_> {
             .take(TOKEN_DIGEST_PREFIX)
             .collect();
         if digest != current {
-            return Err(PackError::StaleContinuation);
+            return Err(ContextPackError::StaleContinuation);
         }
         Ok(position)
     }
@@ -423,7 +423,7 @@ impl ContextPackService<'_> {
                 .declaration(&relative, source, line, symbol.location().column());
         let (range, range_basis, header) = match span {
             Some(span) => (
-                SourceRange {
+                ItemRange {
                     start_line: span.start_line,
                     end_line: span.end_line,
                 },
@@ -438,7 +438,7 @@ impl ContextPackService<'_> {
                     .unwrap_or_default()
                     .to_string();
                 (
-                    SourceRange {
+                    ItemRange {
                         start_line: published,
                         end_line: published,
                     },

@@ -22,6 +22,6 @@ pub use selection::{
     Ambiguity, Candidate, ContextSelection, MAX_CANDIDATES, Reason, SelectionRequest, select,
 };
 pub use service::{
-    AmbiguousAnchor, BudgetReport, ContextPack, ContextPackService, OMISSIONS_LISTED, Omission,
-    PackError, PackItem, PackRequest, SourceRange,
+    AmbiguousAnchor, BudgetReport, ContextPack, ContextPackError, ContextPackService, ItemRange,
+    OMISSIONS_LISTED, Omission, PackItem, PackRequest,
 };

@@ -154,7 +154,7 @@ fn pack(
     decl: &dyn DeclarationReader,
     measure: &dyn TokenMeasure,
     request: PackRequest,
-) -> Result<ContextPack, PackError> {
+) -> Result<ContextPack, ContextPackError> {
     ContextPackService {
         snapshot: &f.snapshot,
         relevance,
@@ -221,7 +221,7 @@ fn an_item_carries_range_digest_reason_and_the_snapshot_is_named() {
     let item = &p.items[0];
     assert_eq!(
         item.range,
-        SourceRange {
+        ItemRange {
             start_line: 1,
             end_line: 3
         }
@@ -406,7 +406,7 @@ fn a_continuation_of_another_snapshot_is_refused() {
     let mut req = request(&[&id], 10_000);
     req.continuation = Some(format!("v1.{}.1", "0".repeat(16)));
     let err = pack(&f, &Ranking(vec![]), &ThreeLines, &Utf8UpperBound, req).unwrap_err();
-    assert_eq!(err, PackError::StaleContinuation);
+    assert_eq!(err, ContextPackError::StaleContinuation);
 }
 
 #[test]
@@ -415,7 +415,7 @@ fn a_continuation_that_is_not_ours_is_refused() {
     let mut req = request(&["run"], 10_000);
     req.continuation = Some("garbage".to_string());
     let err = pack(&f, &Ranking(vec![]), &ThreeLines, &Utf8UpperBound, req).unwrap_err();
-    assert_eq!(err, PackError::InvalidContinuation);
+    assert_eq!(err, ContextPackError::InvalidContinuation);
 }
 
 #[test]
