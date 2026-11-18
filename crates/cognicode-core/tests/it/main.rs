@@ -165,6 +165,7 @@ mod only_the_verdict_owner_publishes_complete;
 mod project_overview_publishes_the_level_it_delivers;
 mod provider_conformance;
 mod ranking_order_is_stable_per_snapshot;
+mod read_scope_resolution;
 mod read_set_e2e;
 mod refactor_impact_uses_the_analysis_graph;
 mod refactor_integration_tests;
