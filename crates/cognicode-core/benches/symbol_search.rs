@@ -515,7 +515,7 @@ fn agreement(index: &SearchIndex, cases: &[Case]) -> (usize, usize) {
     (same, cases.len())
 }
 
-fn row(label: &str, runs: &mut Vec<Vec<f64>>) {
+fn row(label: &str, runs: &mut [Vec<f64>]) {
     let mut p50s = Vec::new();
     let mut p95s = Vec::new();
     for run in runs.iter_mut() {

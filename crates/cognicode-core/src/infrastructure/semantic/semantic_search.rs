@@ -111,7 +111,7 @@ impl Ord for SearchResult {
 /// # How
 ///
 /// The symbols are the source of truth. Beside them the index keeps
-/// *derived* tables of names (see [`NameTerms`]) that let a search look at
+/// *derived* tables of names (the names and a signature of each) that let a search look at
 /// the few names that can match instead of at every symbol: an exact name
 /// is a lookup, a prefix is a range, and a substring or subsequence query
 /// only looks at the names that have all its characters. Every candidate is

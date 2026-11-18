@@ -137,11 +137,11 @@ impl NameTerms {
     /// Records that `slot` holds a symbol named `name_lower`; returns the id
     /// of the name and the one copy of the name that every holder shares.
     pub(super) fn attach(&mut self, name_lower: &str, slot: u32) -> (u32, Arc<str>) {
-        if let Some(&id) = self.by_name.get(name_lower) {
-            if let Some(term) = self.terms[id as usize].as_mut() {
-                term.slots.push(slot);
-                return (id, Arc::clone(&term.name));
-            }
+        if let Some(&id) = self.by_name.get(name_lower)
+            && let Some(term) = self.terms[id as usize].as_mut()
+        {
+            term.slots.push(slot);
+            return (id, Arc::clone(&term.name));
         }
         let name: Arc<str> = Arc::from(name_lower);
         let term = Term {
