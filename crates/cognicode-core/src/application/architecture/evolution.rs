@@ -4,6 +4,7 @@
 //! constraints, infer causality, or grant gate authority.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 
 use crate::application::architecture::control_query::wire_canonical_control_query;
 use crate::application::architecture::{
@@ -16,6 +17,7 @@ use crate::infrastructure::native_metrics::measure_by_extension;
 const MAX_REVISION_SOURCE_FILES: usize = 256;
 const MAX_REVISION_FILE_BYTES: u64 = 256 * 1024;
 const MAX_REVISION_SOURCE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_REVISION_QUERY_DURATION: Duration = Duration::from_secs(5);
 const REVISION_READ_BATCH_SIZE: usize = 16;
 
 /// The bounded source coverage used for one immutable revision's evaluation.
@@ -109,8 +111,10 @@ struct RevisionSourceRead {
     coverage: RevisionArchitectureCoverage,
 }
 
-/// Reads tracked Rust source from the requested immutable revision under a
-/// fixed file, per-file, batch, and total-byte budget.
+/// Reads tracked Rust source from both immutable revisions under a fixed file,
+/// per-file, batch, total-byte, and five-second wall-clock budget. Deadline
+/// checks are cooperative between SCM provider calls; an in-flight provider
+/// call must return before the query can report that its budget was exceeded.
 ///
 /// Failed or over-budget reads remain explicit gaps; callers must not treat a
 /// partial source set as a clean architecture evaluation.
@@ -119,8 +123,11 @@ pub fn query_architecture_evolution(
     base_revision: &SourceRevision,
     candidate_revision: &SourceRevision,
 ) -> ArchitectureEvolutionQuery {
-    let base_read = read_revision_source(reader, base_revision);
-    let candidate_read = read_revision_source(reader, candidate_revision);
+    let deadline = Instant::now() + MAX_REVISION_QUERY_DURATION;
+    let mut now = Instant::now;
+    let base_read = read_revision_source_with_clock(reader, base_revision, deadline, &mut now);
+    let candidate_read =
+        read_revision_source_with_clock(reader, candidate_revision, deadline, &mut now);
     let service = wire_canonical_control_query();
     let base_workspace = revision_workspace(base_revision);
     let candidate_workspace = revision_workspace(candidate_revision);
@@ -161,9 +168,11 @@ fn revision_workspace(revision: &SourceRevision) -> String {
     )
 }
 
-fn read_revision_source(
+fn read_revision_source_with_clock(
     reader: &dyn RevisionReader,
     revision: &SourceRevision,
+    deadline: Instant,
+    now: &mut impl FnMut() -> Instant,
 ) -> RevisionSourceRead {
     let mut coverage = RevisionArchitectureCoverage {
         revision_ref: revision.handle().as_str().to_string(),
@@ -177,6 +186,9 @@ fn read_revision_source(
         constraints: Vec::new(),
     };
     let mut source = ArchitectureSource::default();
+    if enforce_revision_deadline(&mut coverage, deadline, now) {
+        return RevisionSourceRead { source, coverage };
+    }
     let inventory = match reader.inventory(revision) {
         Ok(inventory)
             if inventory.revision_handle() == revision.handle()
@@ -206,6 +218,9 @@ fn read_revision_source(
             return RevisionSourceRead { source, coverage };
         }
     };
+    if enforce_revision_deadline(&mut coverage, deadline, now) {
+        return RevisionSourceRead { source, coverage };
+    }
     let mut paths: Vec<PathKey> = inventory
         .entries()
         .iter()
@@ -222,7 +237,13 @@ fn read_revision_source(
     }
 
     'batches: for batch in paths.chunks(REVISION_READ_BATCH_SIZE) {
+        if enforce_revision_deadline(&mut coverage, deadline, now) {
+            break 'batches;
+        }
         let answers = reader.contents(revision, batch, MAX_REVISION_FILE_BYTES);
+        if enforce_revision_deadline(&mut coverage, deadline, now) {
+            break 'batches;
+        }
         if answers.len() != batch.len() {
             coverage.gaps.push(format!(
                 "provider returned {} answers for {} requested source files",
@@ -293,10 +314,33 @@ fn read_revision_source(
             });
         }
     }
+    enforce_revision_deadline(&mut coverage, deadline, now);
     if !coverage.gaps.is_empty() {
         coverage.coverage = "partial".into();
     }
     RevisionSourceRead { source, coverage }
+}
+
+fn enforce_revision_deadline(
+    coverage: &mut RevisionArchitectureCoverage,
+    deadline: Instant,
+    now: &mut impl FnMut() -> Instant,
+) -> bool {
+    if now() < deadline {
+        return false;
+    }
+    if !coverage
+        .gaps
+        .iter()
+        .any(|gap| gap.contains("time budget exceeded"))
+    {
+        coverage.gaps.push(format!(
+            "revision source time budget exceeded ({} ms)",
+            MAX_REVISION_QUERY_DURATION.as_millis()
+        ));
+    }
+    coverage.coverage = "partial".into();
+    true
 }
 
 fn module_path(path: &str) -> Option<String> {
@@ -574,6 +618,10 @@ fn violations_by_key(violations: &[ViolationRef]) -> BTreeMap<(String, String), 
 mod tests {
     use super::*;
     use crate::application::architecture::{ConstraintRef, EvaluationStatus};
+    use crate::domain::scm::fake::FakeSource;
+    use crate::domain::scm::{ProviderCapabilities, SourceRef};
+    use std::collections::VecDeque;
+    use std::time::{Duration, Instant};
 
     fn violation(file_path: &str, line: u32, dependency_path: &str) -> ViolationRef {
         ViolationRef {
@@ -600,6 +648,42 @@ mod tests {
             statements_examined: 4,
             unevaluated_constraints: Vec::new(),
         }
+    }
+
+    #[test]
+    fn revision_read_that_exceeds_deadline_is_partial_not_clean() {
+        let provider = FakeSource::new("fake", ProviderCapabilities::NONE).with_revision(
+            "base",
+            &[],
+            &[("src/lib.rs", b"pub fn value() {}")],
+        );
+        let source = SourceRef::new("fake", "workspace").expect("source ref");
+        let revision = provider.resolve(&source, "base").expect("base revision");
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(5);
+        let mut readings = VecDeque::from([
+            started,
+            started,
+            started,
+            deadline + Duration::from_millis(1),
+        ]);
+        let mut now = || {
+            readings
+                .pop_front()
+                .unwrap_or(deadline + Duration::from_millis(1))
+        };
+
+        let result = read_revision_source_with_clock(&provider, &revision, deadline, &mut now);
+
+        assert_eq!(result.coverage.coverage, "partial");
+        assert_eq!(result.coverage.evaluated_source_files, 0);
+        assert!(
+            result
+                .coverage
+                .gaps
+                .iter()
+                .any(|gap| gap.contains("time budget exceeded"))
+        );
     }
 
     #[test]
