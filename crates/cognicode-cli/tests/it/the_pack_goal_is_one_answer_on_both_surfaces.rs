@@ -10,6 +10,8 @@
 //! * The budget is verified and never claims an exact count without a
 //!   configured tokenizer.
 //! * An empty request is refused on both surfaces.
+//! * An adaptive request (`--mode`) is one answer on both surfaces, with its
+//!   policy published, and a tuning flag without `--mode` is refused on both.
 
 use crate::common;
 
@@ -177,4 +179,62 @@ async fn an_empty_request_is_refused_on_both_surfaces() {
         call_tool_handler_with_window(&ctx, CallToolRequestParams::new("pack".to_string()), None)
             .await;
     assert!(refused.is_err(), "the MCP refuses an empty request");
+}
+
+#[tokio::test]
+async fn an_adaptive_pack_is_one_answer_on_both_surfaces_with_its_policy() {
+    let repo = workspace();
+    let arguments = json!({"symbols": ["run"], "mode": "diagnose", "max_tokens": 4000});
+
+    let cli = cli_envelope(repo.path(), &arguments)["result"].clone();
+    let mcp = mcp_answer(repo.path(), &arguments).await;
+
+    assert_eq!(cli, mcp, "the two surfaces publish one answer");
+    assert_eq!(cli["adaptive"]["policy"]["mode"], "diagnose");
+    assert_eq!(cli["adaptive"]["expansion"]["status"], "expanded", "{cli}");
+    assert!(
+        cli["adaptive"]["score_semantics"]
+            .as_str()
+            .is_some_and(|text| text.contains("not a confidence")),
+        "a score is not presented as a confidence: {cli}"
+    );
+    assert_ne!(cli["status"], "complete");
+    let ids: Vec<&str> = cli["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .map(|item| item["id"].as_str().expect("an id"))
+        .collect();
+    assert!(
+        ids[0].contains(":run:"),
+        "the named symbol goes first: {ids:?}"
+    );
+    assert!(
+        ids.iter().any(|id| id.contains("a.rs:parse:")),
+        "the walk adds what the symbol calls: {ids:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_tuning_without_a_mode_is_refused_on_both_surfaces() {
+    let repo = workspace();
+    let arguments = json!({"symbols": ["run"], "detail": "full"});
+
+    let cache = common::isolated_cache();
+    let output = Command::new(common::binary_path("cognicode"))
+        .current_dir(repo.path())
+        .args(["pack", "--format", "json"])
+        .args(flags_of(&arguments))
+        .env("XDG_CACHE_HOME", cache.path())
+        .output()
+        .expect("the CLI starts");
+    assert!(!output.status.success(), "the CLI refuses the tuning");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(repo.path().to_path_buf())
+        .build();
+    let request = CallToolRequestParams::new("pack".to_string())
+        .with_arguments(arguments.as_object().cloned().unwrap_or_default());
+    let refused = call_tool_handler_with_window(&ctx, request, None).await;
+    assert!(refused.is_err(), "the MCP refuses the tuning");
 }

@@ -25,11 +25,13 @@
 //! have meant.
 
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+use super::policy::Detail;
 use super::ports::Relevance;
+use super::service::ItemSelection;
 use crate::application::services::graph_queries::hot_paths;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 
@@ -55,6 +57,14 @@ pub enum Reason {
     CalleeOfAnchor(SymbolId),
     /// It calls an anchor.
     CallerOfAnchor(SymbolId),
+    /// The graph reaches it from a seed within a few hops, through the
+    /// relations it believes.
+    Proximity {
+        /// The seed the walk reached it from.
+        seed: SymbolId,
+        /// How many hops away it is.
+        hops: u32,
+    },
     /// It is one of the most connected symbols of the graph.
     HotPath {
         /// How many symbols call it.
@@ -108,6 +118,7 @@ impl Reason {
             Reason::NameRelevance => "name_relevance",
             Reason::CalleeOfAnchor(_) => "callee_of_anchor",
             Reason::CallerOfAnchor(_) => "caller_of_anchor",
+            Reason::Proximity { .. } => "call_proximity",
             Reason::HotPath { .. } => "hot_path",
             Reason::ChangedSymbol { .. } => "changed_symbol",
             Reason::ConsumerOfChange { .. } => "consumer_of_change",
@@ -122,6 +133,7 @@ impl Reason {
             Reason::CalleeOfAnchor(anchor) | Reason::CallerOfAnchor(anchor) => {
                 Some(anchor.to_string())
             }
+            Reason::Proximity { seed, hops } => Some(format!("{hops} hop(s) from {seed}")),
             Reason::HotPath { fan_in, fan_out } => {
                 Some(format!("fan_in={fan_in}, fan_out={fan_out}"))
             }
@@ -201,10 +213,34 @@ pub struct ContextSelection {
     pub ambiguities: Vec<Ambiguity>,
     /// The anchors that name no symbol of the snapshot.
     pub unresolved: Vec<String>,
+    /// How each candidate is shown, when the selection is adaptive. Empty
+    /// for a plain selection: every candidate is then a signature.
+    pub plan: Plan,
+    /// How the selection was made, when it is adaptive.
+    pub adaptive: Option<super::adaptive::AdaptiveReport>,
+}
+
+/// How an adaptive selection shows its candidates.
+#[derive(Debug, Clone, Default)]
+pub struct Plan {
+    /// The words the request is about: slices keep the statements that
+    /// mention them.
+    pub focus: Vec<String>,
+    /// What is planned for each candidate.
+    pub items: HashMap<SymbolId, PlannedItem>,
+}
+
+/// What an adaptive selection decided about one candidate.
+#[derive(Debug, Clone)]
+pub struct PlannedItem {
+    /// The representation the policy plans for its role.
+    pub detail: Detail,
+    /// Why it is where it is.
+    pub trace: ItemSelection,
 }
 
 /// How an anchor resolves over a graph.
-enum Resolution {
+pub(super) enum Resolution {
     Found(SymbolId),
     Ambiguous(Vec<SymbolId>),
     Missing,
@@ -216,7 +252,7 @@ enum Resolution {
 /// when none does, the symbols that declare it case-insensitively are taken
 /// into account, because a language that folds case declares both spellings
 /// as the same name.
-fn resolve(graph: &CallGraph, anchor: &str) -> Resolution {
+pub(super) fn resolve(graph: &CallGraph, anchor: &str) -> Resolution {
     let as_id = SymbolId::new(anchor);
     if graph.get_symbol(&as_id).is_some() {
         return Resolution::Found(as_id);
@@ -252,7 +288,7 @@ fn resolve(graph: &CallGraph, anchor: &str) -> Resolution {
 ///
 /// The ranker scores identifiers, so a phrase only finds something through
 /// the words it is made of.
-fn intent_terms(intent: &str) -> Vec<String> {
+pub(super) fn intent_terms(intent: &str) -> Vec<String> {
     let mut terms: Vec<String> = Vec::new();
     for term in intent
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -276,7 +312,11 @@ fn intent_terms(intent: &str) -> Vec<String> {
 /// (`FileFactsCache`). A symbol whose name is the intent, spelled in snake or
 /// camel case, is an exact match. Ties break on the id, so the order is
 /// deterministic.
-fn rank_intent(graph: &CallGraph, relevance: &dyn Relevance, intent: &str) -> Vec<Candidate> {
+pub(super) fn rank_intent(
+    graph: &CallGraph,
+    relevance: &dyn Relevance,
+    intent: &str,
+) -> Vec<Candidate> {
     let terms = intent_terms(intent);
     if terms.is_empty() {
         return Vec::new();
