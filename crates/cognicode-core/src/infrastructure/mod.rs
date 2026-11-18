@@ -27,6 +27,8 @@ pub mod persistence;
 pub mod process_memory;
 pub mod refactor;
 pub mod safety;
+pub mod scip;
+pub mod scip_loader;
 pub mod semantic;
 pub mod telemetry;
 pub mod terraform_project;
