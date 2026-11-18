@@ -26,271 +26,38 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use cognicode_core::application::change_tracking::complete_snapshot::{
-    AnalysisMode, CompleteSnapshotRequest, Verdict, build_complete_snapshot,
+use cognicode_core::application::change_tracking::mode_benchmark::{
+    BenchCache as Cache, BenchContext, BenchMode as Mode, BenchSample as Sample, run_pipeline_once,
+    summarize_pipeline,
 };
-use cognicode_core::application::change_tracking::detector_runs::{
-    Detection, ProductionDetector, Reuse, current_identity, detect_with_reuse,
-};
-use cognicode_core::application::change_tracking::revision_facts::{
-    FactObjectStore, FactsLimits, ProducedRevision, dependencies_on,
-    produce_revision_facts_rendering,
-};
-use cognicode_core::application::change_tracking::scm_delta::{
-    delta_from_change_set, plan_between,
-};
-use cognicode_core::domain::findings::detector_reuse::{DetectorReuseIndex, DetectorRunRecord};
-use cognicode_core::domain::scm::{ChangeReader, RevisionReader, SourceRevision};
+use cognicode_core::application::change_tracking::revision_facts::ProducedRevision;
 use cognicode_core::infrastructure::findings::in_memory_evidence::InMemoryEvidenceStore;
+use cognicode_core::infrastructure::git::GitScmAdapter;
 
-use super::harness::{
-    Fixture, Produced, Projection, Scenario, fresh_record, gaps_of, identities, materialize,
-    produce, workspace,
-};
+use super::harness::{Fixture, Projection, Scenario, materialize, produce, workspace};
 use super::{isolated, oracle};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    IncrementalComplete,
-    FullRebuild,
-}
-
-impl Mode {
-    pub const ALL: [Self; 2] = [Self::IncrementalComplete, Self::FullRebuild];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::IncrementalComplete => "incremental_complete",
-            Self::FullRebuild => "full_rebuild",
-        }
-    }
-
-    fn analysis(self) -> AnalysisMode {
-        match self {
-            Self::IncrementalComplete => AnalysisMode::IncrementalComplete,
-            Self::FullRebuild => AnalysisMode::FullRebuild,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Cache {
-    Cold,
-    Warm,
-}
-
-impl Cache {
-    pub const ALL: [Self; 2] = [Self::Cold, Self::Warm];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Cold => "cold",
-            Self::Warm => "warm",
-        }
-    }
-}
-
-/// One repetition of one pipeline.
-#[derive(Debug, Clone)]
-pub struct Sample {
-    pub facts: Duration,
-    pub plan: Duration,
-    pub detect: Duration,
-    pub snapshot: Duration,
-    pub first_feedback: Duration,
-    pub total: Duration,
-    pub parsed_files: usize,
-    pub reused_files: usize,
-    pub detectors_reused: usize,
-    pub detectors_run: usize,
-    pub verdict: Verdict,
-    pub findings: usize,
-}
-
-/// What one scenario needs that is not part of what is timed.
-pub struct Context {
-    fixture: Fixture,
-    base_revision: SourceRevision,
-    head_revision: SourceRevision,
-    base: ProducedRevision,
-    prior: DetectorReuseIndex,
-}
-
-pub fn context(fixture: Fixture, produced: &Produced) -> Context {
-    let resolve = |sha: &str| {
-        fixture
-            .adapter
-            .resolve(&fixture.source, sha)
-            .expect("resolve revision")
-    };
-    let mut prior = DetectorReuseIndex::empty();
-    for detector in ProductionDetector::ALL {
-        prior.remember(fresh_record(detector, &produced.base));
-    }
-    Context {
-        base_revision: resolve(&fixture.base_sha),
-        head_revision: resolve(&fixture.head_sha),
-        base: produced.base.clone(),
-        prior,
-        fixture,
-    }
-}
-
-/// A store holding the objects of the base revision, as a previous run leaves it.
-fn primed_store(ctx: &Context) -> (tempfile::TempDir, FactObjectStore) {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let store = FactObjectStore::new(dir.path());
-    produce_revision_facts_rendering(
-        &ctx.fixture.adapter,
-        &ctx.base_revision,
-        Some(&store),
-        &FactsLimits::default(),
-        ctx.fixture.charts.as_ref(),
+/// The benchmark context of a fixture: its two commits, read through the Git
+/// adapter the fixture holds.
+pub fn context(fixture: &Fixture) -> BenchContext<'_, GitScmAdapter> {
+    BenchContext::prepare(
+        &fixture.adapter,
+        &fixture.source,
+        &fixture.base_sha,
+        &fixture.head_sha,
+        fixture.charts.as_ref(),
+        workspace(),
+        || Box::new(InMemoryEvidenceStore::new()),
     )
-    .expect("prime the store");
-    (dir, store)
+    .expect("prepare the benchmark context")
 }
 
-pub fn run_once(ctx: &Context, mode: Mode, cache: Cache) -> Sample {
-    let primed = (cache == Cache::Warm).then(|| primed_store(ctx));
-    let limits = FactsLimits::default();
-    let started = Instant::now();
-
-    let head = produce_revision_facts_rendering(
-        &ctx.fixture.adapter,
-        &ctx.head_revision,
-        primed.as_ref().map(|(_, store)| store),
-        &limits,
-        ctx.fixture.charts.as_ref(),
-    )
-    .expect("head facts");
-    let facts = started.elapsed();
-
-    let planning = Instant::now();
-    let changes = ctx
-        .fixture
-        .adapter
-        .changes_between(&ctx.base_revision, &ctx.head_revision)
-        .expect("changes between");
-    let manifests = ctx.base.manifests.union(&head.manifests).cloned().collect();
-    let dependencies = dependencies_on(&ctx.prior, ctx.base.facts.snapshot);
-    let plan = plan_between(
-        &ctx.base.facts,
-        &head.facts,
-        &changes,
-        &manifests,
-        &dependencies,
-    )
-    .expect("plan between");
-    let delta = delta_from_change_set(&ctx.base.facts, &head.facts, &changes)
-        .expect("delta")
-        .delta;
-    let plan_time = planning.elapsed();
-
-    let detecting = Instant::now();
-    let mut first_feedback = None;
-    let mut reruns: BTreeMap<String, DetectorRunRecord> = BTreeMap::new();
-    let mut detectors_reused = 0;
-    for detector in ProductionDetector::ALL {
-        let key = current_identity(detector)
-            .expect("identity")
-            .detector_id
-            .as_str()
-            .to_string();
-        match mode {
-            Mode::IncrementalComplete => {
-                let prior = ctx.prior.record_for(&key, ctx.base.facts.snapshot);
-                let Detection { reuse, fresh, .. } = detect_with_reuse(
-                    detector,
-                    prior,
-                    &ctx.base,
-                    &head,
-                    &changes,
-                    &workspace(),
-                    &mut InMemoryEvidenceStore::new(),
-                )
-                .expect("detect with reuse");
-                if matches!(reuse, Reuse::Reused { .. }) {
-                    detectors_reused += 1;
-                }
-                if let Some(record) = fresh {
-                    reruns.insert(key, record);
-                }
-            }
-            Mode::FullRebuild => {
-                reruns.insert(key, fresh_record(detector, &head));
-            }
-        }
-        first_feedback.get_or_insert_with(|| started.elapsed());
-    }
-    let detect = detecting.elapsed();
-
-    let snapshotting = Instant::now();
-    let ids = identities();
-    let gaps = gaps_of(&head);
-    let snapshot = build_complete_snapshot(&CompleteSnapshotRequest {
-        mode: mode.analysis(),
-        plan: &plan,
-        candidate_snapshot: head.facts.snapshot,
-        delta: &delta,
-        cache: &ctx.prior,
-        current_identities: &ids,
-        reruns: &reruns,
-        gaps: &gaps,
-    });
-    let snapshot_time = snapshotting.elapsed();
-    let total = started.elapsed();
-
-    Sample {
-        facts,
-        plan: plan_time,
-        detect,
-        snapshot: snapshot_time,
-        first_feedback: first_feedback.unwrap_or(total),
-        total,
-        parsed_files: head.coverage.parsed_files,
-        reused_files: head.coverage.reused_files,
-        detectors_reused,
-        detectors_run: reruns.len(),
-        verdict: snapshot.verdict(),
-        findings: snapshot.findings.len(),
-    }
-}
-
-/// Nearest-rank percentile of `values` (`p` in 1..=100); `None` when empty.
-pub fn percentile(values: &[f64], p: usize) -> Option<f64> {
-    if values.is_empty() {
-        return None;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_by(f64::total_cmp);
-    let rank = (p * sorted.len()).div_ceil(100).max(1);
-    Some(sorted[rank - 1])
-}
-
-fn millis(duration: Duration) -> f64 {
-    duration.as_secs_f64() * 1000.0
-}
-
-fn stats(values: &[f64]) -> Value {
-    #[allow(clippy::cast_precision_loss)]
-    let mean = values.iter().sum::<f64>() / values.len().max(1) as f64;
-    json!({
-        "n": values.len(),
-        "p50_ms": percentile(values, 50),
-        "p95_ms": percentile(values, 95),
-        "min_ms": percentile(values, 1),
-        "max_ms": percentile(values, 100),
-        "mean_ms": mean,
-    })
-}
-
-fn phase(samples: &[Sample], pick: impl Fn(&Sample) -> Duration) -> Value {
-    stats(&samples.iter().map(|s| millis(pick(s))).collect::<Vec<_>>())
+/// One repetition of a pipeline; a failed pipeline fails the benchmark.
+pub fn run_once(ctx: &BenchContext<'_, GitScmAdapter>, mode: Mode, cache: Cache) -> Sample {
+    run_pipeline_once(ctx, mode, cache).expect("run the pipeline")
 }
 
 fn proc_status_kib(field: &str) -> Option<u64> {
@@ -304,29 +71,6 @@ fn proc_status_kib(field: &str) -> Option<u64> {
                 .parse()
                 .ok()
         })
-}
-
-fn pipeline_report(samples: &[Sample]) -> Value {
-    let last = samples.last().expect("at least one sample");
-    json!({
-        "runs": samples.len(),
-        "phases": {
-            "facts": phase(samples, |s| s.facts),
-            "plan": phase(samples, |s| s.plan),
-            "detect": phase(samples, |s| s.detect),
-            "snapshot": phase(samples, |s| s.snapshot),
-            "total": phase(samples, |s| s.total),
-        },
-        "time_to_first_feedback": phase(samples, |s| s.first_feedback),
-        "cache": {
-            "fact_files_parsed": last.parsed_files,
-            "fact_files_reused": last.reused_files,
-            "detectors_reused": last.detectors_reused,
-            "detectors_run": last.detectors_run,
-        },
-        "verdict": format!("{:?}", last.verdict),
-        "findings": last.findings,
-    })
 }
 
 fn accuracy_report(
@@ -363,7 +107,7 @@ pub fn scenario_report(
     let fixture = materialize(corpus, scenario, projection);
     let produced = produce(&fixture);
     let accuracy = accuracy_report(corpus, scenario, &produced.head);
-    let ctx = context(fixture, &produced);
+    let ctx = context(&fixture);
 
     let mut pipelines = serde_json::Map::new();
     let mut verdicts = BTreeMap::new();
@@ -375,7 +119,7 @@ pub fn scenario_report(
             let samples: Vec<Sample> = (0..runs).map(|_| run_once(&ctx, mode, cache)).collect();
             let last = samples.last().expect("runs >= 1");
             verdicts.insert((mode.name(), cache.name()), (last.verdict, last.findings));
-            let mut pipeline = pipeline_report(&samples);
+            let mut pipeline = summarize_pipeline(&samples).expect("runs >= 1");
             if isolate {
                 pipeline["memory"] = isolated_memory(&scenario.name(projection), mode, cache, runs);
             }
@@ -489,24 +233,4 @@ pub fn report(
         "memory_isolation": if isolate { "each pipeline ran in a fresh process; `memory` holds its own peak" } else { "off" },
         "not_evaluated": not_evaluated(isolate),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nearest_rank_percentiles() {
-        let values: Vec<f64> = (1..=20).map(f64::from).collect();
-        assert_eq!(percentile(&values, 50), Some(10.0));
-        assert_eq!(percentile(&values, 95), Some(19.0));
-        assert_eq!(percentile(&values, 100), Some(20.0));
-        assert_eq!(percentile(&[7.0], 95), Some(7.0));
-        assert_eq!(percentile(&[], 50), None);
-    }
-
-    #[test]
-    fn percentiles_do_not_depend_on_input_order() {
-        assert_eq!(percentile(&[3.0, 1.0, 2.0], 50), Some(2.0));
-    }
 }

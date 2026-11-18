@@ -18,8 +18,11 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
-use super::bench::{Cache, Mode, context, run_once};
-use super::harness::{Projection, materialize, produce, scenarios};
+use super::bench::{context, run_once};
+use super::harness::{Projection, materialize, scenarios};
+use cognicode_core::application::change_tracking::mode_benchmark::{
+    BenchCache as Cache, BenchMode as Mode,
+};
 
 /// Environment variable that selects the pipeline an isolated run measures.
 pub const SELECTOR_ENV: &str = "MODE_BENCH_ISOLATED";
@@ -78,8 +81,7 @@ pub fn measure_selected(corpus: &Path, selected: &str, runs: usize) -> Value {
         .find(|s| s.name(Projection::Rendered) == name)
         .unwrap_or_else(|| panic!("no scenario is named `{name}`"));
     let fixture = materialize(corpus, &scenario, Projection::Rendered);
-    let produced = produce(&fixture);
-    let ctx = context(fixture, &produced);
+    let ctx = context(&fixture);
 
     let setup_peak = status_kib("VmHWM:");
     let reset = reset_peak();

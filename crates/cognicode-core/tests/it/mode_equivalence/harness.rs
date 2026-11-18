@@ -27,14 +27,17 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cognicode_core::application::change_tracking::complete_snapshot::{
-    AnalysisMode, CaptureGap, CompleteSnapshot, CompleteSnapshotRequest, ReasonCode, Verdict,
+    AnalysisMode, CaptureGap, CompleteSnapshot, CompleteSnapshotRequest, Verdict,
     build_complete_snapshot,
 };
 use cognicode_core::application::change_tracking::detector_runs::{
-    Detection, ProductionDetector, Reuse, current_identity, detect_with_reuse, run_detector,
+    Detection, ProductionDetector, Reuse, current_identity, detect_with_reuse,
 };
 use cognicode_core::application::change_tracking::helm_templates::{
     ChartFiles, ChartRender, ChartRenderCheck, NoChartRender,
+};
+use cognicode_core::application::change_tracking::mode_benchmark::{
+    capture_gaps, current_identities, fresh_record as bench_fresh_record,
 };
 use cognicode_core::application::change_tracking::planner::WorkDisposition;
 use cognicode_core::application::change_tracking::revision_facts::{
@@ -436,31 +439,18 @@ impl ScenarioResult {
 }
 
 pub fn identities() -> BTreeMap<String, DetectorRunIdentity> {
-    ProductionDetector::ALL
-        .into_iter()
-        .map(|detector| {
-            let identity = current_identity(detector).expect("identity");
-            (identity.detector_id.as_str().to_string(), identity)
-        })
-        .collect()
+    current_identities().expect("identities")
 }
 
 pub fn gaps_of(head: &ProducedRevision) -> Vec<CaptureGap> {
-    head.coverage
-        .gaps
-        .iter()
-        .map(|gap| CaptureGap {
-            code: ReasonCode::ParseError,
-            detail: format!("{}: {}", gap.path.as_str(), gap.reason.describe()),
-        })
-        .collect()
+    capture_gaps(head)
 }
 
 pub fn fresh_record(
     detector: ProductionDetector,
     revision: &ProducedRevision,
 ) -> DetectorRunRecord {
-    run_detector(
+    bench_fresh_record(
         detector,
         revision,
         &workspace(),
