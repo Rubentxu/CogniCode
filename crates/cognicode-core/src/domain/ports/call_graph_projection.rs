@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use petgraph::graph::NodeIndex;
 
+use super::compact_adjacency::CompactAdjacency;
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::value_objects::DependencyType;
 
@@ -138,6 +139,15 @@ pub trait CallGraphProjectionPort: Send + Sync {
     /// Used to translate algorithm results (which use `NodeIndex`) back
     /// to the domain-level `SymbolId` for MCP/tool output.
     fn symbol_index(&self) -> &HashMap<SymbolId, NodeIndex>;
+
+    /// The array adjacency of the projection, lent to the caller.
+    ///
+    /// Built once per projection, the first time anyone asks, and shared by
+    /// every reader afterwards: a call never rebuilds it. Node numbers are
+    /// the `NodeIndex` numbers of [`Self::symbol_index`]. Prefer it over the
+    /// `build_*` methods below, which allocate a fresh set of lists per
+    /// call to satisfy consumers that need owned lists.
+    fn compact_adjacency(&self) -> &CompactAdjacency;
 
     /// Build incoming adjacency: `(in_neighbors, out_degree)`.
     ///

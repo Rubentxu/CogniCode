@@ -53,10 +53,9 @@
 //! `Direction::Outgoing`).
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use petgraph::Direction;
-use petgraph::algo::{astar, has_path_connecting, is_cyclic_directed, tarjan_scc, toposort};
+use petgraph::algo::{astar, is_cyclic_directed, tarjan_scc, toposort};
 use petgraph::graph::NodeIndex;
 use petgraph::stable_graph::StableGraph;
 use petgraph::unionfind::UnionFind;
@@ -69,6 +68,7 @@ use crate::domain::ports::call_graph_projection::{
     CallGraphProjectionFactory, CallGraphProjectionPort, ExplanationHop, ExplanationView,
     SubgraphDirection, SubgraphEdge, SubgraphView,
 };
+use crate::domain::ports::compact_adjacency::{CompactAdjacency, EdgeSide, VisitedNodes};
 use crate::domain::value_objects::DependencyType;
 
 #[cfg(feature = "evidence-kernel")]
@@ -98,6 +98,9 @@ pub struct CallGraphProjection {
     /// counter). Zero for `from_call_graph` (the legacy constructor never
     /// drops edges silently; orphan endpoints are skipped instead).
     unresolved_edges: usize,
+    /// Array adjacency over the node numbers of `graph`, built the first
+    /// time a reader asks and then shared by every reader.
+    compact: OnceLock<CompactAdjacency>,
 }
 
 // Re-export the domain-declared error type so the existing public path
@@ -216,6 +219,7 @@ impl CallGraphProjection {
             symbol_lookup,
             id_to_index,
             unresolved_edges: 0,
+            compact: OnceLock::new(),
         }
     }
 
@@ -275,6 +279,35 @@ impl CallGraphProjection {
     /// map (approval-pinned by `symbol_index_mirrors_id_to_index`).
     pub fn symbol_index(&self) -> &HashMap<SymbolId, NodeIndex> {
         &self.id_to_index
+    }
+
+    /// The array adjacency of this projection.
+    ///
+    /// Built from the edge list on the first call and lent to every caller
+    /// after that: the projection owns one copy and never rebuilds it.
+    /// Node numbers are the `NodeIndex` numbers of the underlying graph,
+    /// which is dense because the constructors never remove a node.
+    pub fn compact_adjacency(&self) -> &CompactAdjacency {
+        self.compact.get_or_init(|| {
+            debug_assert_eq!(self.graph.node_bound(), self.graph.node_count());
+            CompactAdjacency::build(
+                self.graph.node_bound(),
+                self.graph.edge_count(),
+                self.graph.edge_references().map(|edge| {
+                    (
+                        edge.source().index(),
+                        edge.target().index(),
+                        edge.weight().0,
+                        edge.weight().1,
+                    )
+                }),
+            )
+        })
+    }
+
+    /// The symbol id of the node numbered `node` in the adjacency.
+    fn id_of(&self, node: u32) -> &SymbolId {
+        &self.graph[NodeIndex::new(node as usize)]
     }
 
     /// Compute a topological ordering of the nodes.
@@ -370,7 +403,8 @@ impl CallGraphProjection {
         else {
             return false;
         };
-        has_path_connecting(&self.graph, from_node, to_node, None)
+        self.compact_adjacency()
+            .connects(from_node.index(), to_node.index())
     }
 
     /// Compute the lowest-cost path from `from` to `to`.
@@ -415,34 +449,16 @@ impl CallGraphProjection {
     /// - `max_depth == 0`;
     /// - the projection is empty.
     pub fn find_impact_radius(&self, root: &SymbolId, max_depth: usize) -> Vec<SymbolId> {
-        if max_depth == 0 {
-            return Vec::new();
-        }
         let Some(&start) = self.id_to_index.get(root) else {
             return Vec::new();
         };
-
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
-        let mut result: Vec<SymbolId> = Vec::new();
-        let mut queue: VecDeque<(NodeIndex, usize)> = VecDeque::new();
-        queue.push_back((start, 0));
-
-        while let Some((ni, depth)) = queue.pop_front() {
-            if depth >= max_depth {
-                continue;
-            }
-            for edge in self.graph.edges_directed(ni, Direction::Incoming) {
-                let pred = edge.source();
-                if visited.insert(pred) {
-                    if let Some(symbol_id) = self.graph.node_weight(pred) {
-                        result.push(symbol_id.clone());
-                    }
-                    queue.push_back((pred, depth + 1));
-                }
-            }
-        }
-
-        result
+        // The visited set does not hold the root, so a root on a cycle is
+        // listed among its own callers: the published behaviour.
+        self.compact_adjacency()
+            .reach(start.index(), EdgeSide::Incoming, max_depth, true)
+            .into_iter()
+            .map(|node| self.id_of(node).clone())
+            .collect()
     }
 
     /// Compute the *forward* reach of `root`: the set of successors of
@@ -465,38 +481,14 @@ impl CallGraphProjection {
     /// `max_depth == usize::MAX` is a sentinel meaning "follow every
     /// reachable successor" and terminates via the visited-set.
     pub fn find_forward_reach(&self, root: &SymbolId, max_depth: usize) -> Vec<SymbolId> {
-        if max_depth == 0 {
-            return Vec::new();
-        }
         let Some(&start) = self.id_to_index.get(root) else {
             return Vec::new();
         };
-
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
-        // Pre-insert the root so a back-edge (cycle) cannot re-add it to
-        // the result. The BFS still explores from the root; it just never
-        // *yields* the root.
-        visited.insert(start);
-        let mut result: Vec<SymbolId> = Vec::new();
-        let mut queue: VecDeque<(NodeIndex, usize)> = VecDeque::new();
-        queue.push_back((start, 0));
-
-        while let Some((ni, depth)) = queue.pop_front() {
-            if depth >= max_depth {
-                continue;
-            }
-            for edge in self.graph.edges_directed(ni, Direction::Outgoing) {
-                let succ = edge.target();
-                if visited.insert(succ) {
-                    if let Some(symbol_id) = self.graph.node_weight(succ) {
-                        result.push(symbol_id.clone());
-                    }
-                    queue.push_back((succ, depth + 1));
-                }
-            }
-        }
-
-        result
+        self.compact_adjacency()
+            .reach(start.index(), EdgeSide::Outgoing, max_depth, false)
+            .into_iter()
+            .map(|node| self.id_of(node).clone())
+            .collect()
     }
 
     /// Extract a neighborhood subgraph of `root` bounded by `max_depth`
@@ -523,59 +515,46 @@ impl CallGraphProjection {
         let Some(&start) = self.id_to_index.get(root) else {
             return SubgraphView::default();
         };
+        let adjacency = self.compact_adjacency();
+        let start = start.index() as u32;
 
         // Always seed the view with the root, even at depth 0.
-        let mut nodes: Vec<SymbolId> = vec![self.graph[start].clone()];
+        let mut nodes: Vec<SymbolId> = vec![self.id_of(start).clone()];
         let mut edges: Vec<SubgraphEdge> = Vec::new();
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
+        let mut visited = VisitedNodes::new(adjacency.node_count());
         visited.insert(start);
-        let mut queue: VecDeque<(NodeIndex, usize)> = VecDeque::new();
+        let mut queue: VecDeque<(u32, usize)> = VecDeque::new();
         queue.push_back((start, 0));
 
         // Edge dedup is keyed on (source, target, dep_type) so parallel
         // edges with different `DependencyType` variants are kept
-        // distinct (matches `StableGraph` semantics).
-        let mut seen_edges: HashSet<(SymbolId, SymbolId, DependencyType)> = HashSet::new();
+        // distinct. The key of an incoming edge is (node, caller), the
+        // orientation the view publishes.
+        let mut seen_edges: HashSet<(u32, u32, DependencyType)> = HashSet::new();
+        let sides: &[EdgeSide] = match direction {
+            SubgraphDirection::Outgoing => &[EdgeSide::Outgoing],
+            SubgraphDirection::Incoming => &[EdgeSide::Incoming],
+            SubgraphDirection::Both => &[EdgeSide::Outgoing, EdgeSide::Incoming],
+        };
 
-        while let Some((ni, depth)) = queue.pop_front() {
+        while let Some((node, depth)) = queue.pop_front() {
             if depth >= max_depth {
                 continue;
             }
-            // Walk the direction(s) once per node. The list is small
-            // (1 or 2 elements) so a Vec is cheaper than a HashSet.
-            let step_dirs: &[Direction] = match direction {
-                SubgraphDirection::Outgoing => &[Direction::Outgoing],
-                SubgraphDirection::Incoming => &[Direction::Incoming],
-                SubgraphDirection::Both => &[Direction::Outgoing, Direction::Incoming],
-            };
-            for dir in step_dirs {
-                for edge in self.graph.edges_directed(ni, *dir) {
-                    // The `dir` is one of `Outgoing` / `Incoming`
-                    // because `step_dirs` only ever yields those two
-                    // values. Use an explicit match to disambiguate
-                    // source/target positions.
-                    let (src_ni, dst_ni) = if matches!(dir, Direction::Outgoing) {
-                        (ni, edge.target())
-                    } else {
-                        (ni, edge.source())
-                    };
-                    let (dep_type, confidence) = *edge.weight();
-                    let source_id = self.graph[src_ni].clone();
-                    let target_id = self.graph[dst_ni].clone();
-
-                    // Edge dedup: only record the first time we see
-                    // this (source, target, dep_type) tuple.
-                    if seen_edges.insert((source_id.clone(), target_id.clone(), dep_type)) {
+            for &side in sides {
+                for edge in adjacency.edges(node as usize, side) {
+                    let neighbour = edge.neighbour;
+                    if seen_edges.insert((node, neighbour, edge.dependency_type)) {
                         edges.push(SubgraphEdge {
-                            source: source_id,
-                            target: target_id,
-                            dependency_type: dep_type,
-                            confidence,
+                            source: self.id_of(node).clone(),
+                            target: self.id_of(neighbour).clone(),
+                            dependency_type: edge.dependency_type,
+                            confidence: edge.confidence,
                         });
                     }
-                    if visited.insert(dst_ni) {
-                        nodes.push(self.graph[dst_ni].clone());
-                        queue.push_back((dst_ni, depth + 1));
+                    if visited.insert(neighbour) {
+                        nodes.push(self.id_of(neighbour).clone());
+                        queue.push_back((neighbour, depth + 1));
                     }
                 }
             }
@@ -798,6 +777,7 @@ impl CallGraphProjection {
             symbol_lookup,
             id_to_index,
             unresolved_edges: unresolved,
+            compact: OnceLock::new(),
         }
     }
 }
@@ -871,12 +851,7 @@ impl CallGraphProjection {
     /// algorithms, `GraphBuilder::build_adjacency()` returns
     /// `(in_neighbors, out_degree)` which is sufficient.
     pub fn build_out_neighbors(&self) -> Vec<Vec<usize>> {
-        let bound = self.graph.node_bound();
-        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
-        for edge in self.graph.edge_references() {
-            out_neighbors[edge.source().index()].push(edge.target().index());
-        }
-        out_neighbors
+        self.compact_adjacency().out_lists_in_insertion_order()
     }
 
     /// Build undirected adjacency (union of incoming and outgoing edges).
@@ -885,71 +860,23 @@ impl CallGraphProjection {
     /// direction. Used by Bridges, Articulation Points, and K-Core algorithms
     /// that treat the call graph as an undirected connectivity graph.
     pub fn build_undirected_neighbors(&self) -> Vec<Vec<usize>> {
-        let bound = self.graph.node_bound();
-        let (in_neighbors, _) = GraphBuilder::build_adjacency(self);
-        let out_neighbors = self.build_out_neighbors();
-
-        let mut undirected: Vec<Vec<usize>> = vec![Vec::new(); bound];
-        // Add all incoming neighbors
-        for (i, neighbors) in in_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < bound && j < bound {
-                    undirected[i].push(j);
-                }
-            }
-        }
-        // Add all outgoing neighbors, deduplicating
-        for (i, neighbors) in out_neighbors.iter().enumerate() {
-            for &j in neighbors {
-                if i < bound && j < bound && !undirected[i].contains(&j) {
-                    undirected[i].push(j);
-                }
-            }
-        }
-        undirected
+        self.compact_adjacency().undirected_lists()
     }
 }
 
 impl GraphBuilder for CallGraphProjection {
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {
-        let bound = self.graph.node_bound();
-        let mut in_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
-        let mut out_degree: Vec<usize> = vec![0; bound];
-        for ni in self.graph.node_indices() {
-            // CORRECT: Incoming edges give us callers (who calls this node)
-            let callers: Vec<usize> = self
-                .graph
-                .edges_directed(ni, Direction::Incoming)
-                .map(|e| e.source().index())
-                .collect();
-            in_neighbors[ni.index()] = callers;
-
-            // CORRECT: Outgoing edges give us out_degree (who this node calls)
-            let out_count = self.graph.edges_directed(ni, Direction::Outgoing).count();
-            out_degree[ni.index()] = out_count;
-        }
-        (in_neighbors, out_degree)
+        self.compact_adjacency().in_lists()
     }
 
     /// Build directed adjacency list: `out_neighbors[v]` contains every `w`
     /// such that edge `v → w` exists (callees of `v`).
     ///
-    /// Override of [`GraphBuilder::build_directed_adjacency`] for CallGraphProjection.
-    /// Uses direct outgoing edge traversal (no intermediate in-neighbor reversal),
-    /// which is more efficient for sparse petgraph StableGraph indices where
-    /// `node_bound()` may be larger than `node_count()`.
+    /// Override of [`GraphBuilder::build_directed_adjacency`] for
+    /// CallGraphProjection: the rows come straight from the shared array
+    /// adjacency, with no intermediate in-neighbor reversal.
     fn build_directed_adjacency(&self) -> Vec<Vec<usize>> {
-        let bound = self.graph.node_bound();
-        let mut out_neighbors: Vec<Vec<usize>> = vec![Vec::new(); bound];
-        for ni in self.graph.node_indices() {
-            let succs: Vec<usize> = self
-                .graph
-                .edges_directed(ni, Direction::Outgoing)
-                .map(|e| e.target().index())
-                .collect();
-            out_neighbors[ni.index()] = succs;
-        }
-        out_neighbors
+        self.compact_adjacency().out_lists()
     }
 }
 
@@ -996,6 +923,10 @@ impl CallGraphProjectionPort for CallGraphProjection {
 
     fn symbol_index(&self) -> &HashMap<SymbolId, NodeIndex> {
         self.symbol_index()
+    }
+
+    fn compact_adjacency(&self) -> &CompactAdjacency {
+        self.compact_adjacency()
     }
 
     fn build_adjacency(&self) -> (Vec<Vec<usize>>, Vec<usize>) {

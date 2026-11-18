@@ -12,6 +12,7 @@
 //! | `graph_error` | `GraphError`, `GraphResult` | utility (not a port) |
 //! | `call_graph_projection` | `CallGraphProjectionPort` | new (e29-3) |
 //! | `call_graph_store` | `CallGraphStore` | existing |
+//! | `compact_adjacency` | `CompactAdjacency` | value (array adjacency lent by a projection) |
 //! | `federation_store` | `FederationStore` | new (PR1) · cfg `multimodal` |
 //! | `graph_repository` | `GraphRepository` | existing |
 //! | `ingest_commit_port` | `IngestCommitPort` | new (PR1) · cfg `multimodal` |
@@ -29,6 +30,7 @@
 pub mod adr_repository;
 pub mod call_graph_projection;
 pub mod call_graph_store;
+pub mod compact_adjacency;
 pub mod doc_repository;
 pub mod evidence_store;
 #[cfg(feature = "multimodal")]
@@ -57,6 +59,7 @@ pub use call_graph_projection::{
     ProjectionError, SubgraphDirection, SubgraphEdge, SubgraphView,
 };
 pub use call_graph_store::{CallGraphError, CallGraphStore};
+pub use compact_adjacency::{CompactAdjacency, CompactEdge, EdgeSide, VisitedNodes};
 pub use doc_repository::{DocError, DocRepository, DocSummary};
 pub use evidence_store::{EvidenceError, EvidenceKind, EvidenceStore, EvidenceSummary};
 #[cfg(feature = "multimodal")]
