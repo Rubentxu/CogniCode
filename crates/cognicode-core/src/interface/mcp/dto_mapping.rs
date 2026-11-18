@@ -146,6 +146,7 @@ impl From<SearchContentResult> for SearchContentOutput {
             total: result.total,
             files_scanned: result.files_scanned,
             coverage,
+            text_index: result.text_index,
         }
     }
 }

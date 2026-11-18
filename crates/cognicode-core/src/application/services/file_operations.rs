@@ -28,8 +28,10 @@ use crate::application::dto::{
 use crate::application::error::{AppError, AppResult};
 use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::application::services::atomic_file_writer::AtomicFileWriter;
-use crate::application::services::content_search::find_matches_in_content;
+use crate::application::services::content_search::ContentPattern;
+use crate::application::services::indexed_search::{FileRead, IndexedWalk, SharedTextIndex};
 use crate::application::services::path_glob::path_matches_glob;
+use crate::application::services::text_index::TextIndexConfig;
 use crate::application::services::unread_entries::{
     budget_cut, declined_symlink, read_failure, walk_failure,
 };
@@ -305,6 +307,10 @@ pub struct FileOperationsService {
 
     /// Code verifier for retrieve_and_verify operations (ISP-segregated)
     code_verifier: Arc<dyn CodeVerifier>,
+
+    /// Lets a content search skip files that cannot hold a match; shared by
+    /// clones, absent unless [`FileOperationsService::with_text_index`] set it.
+    text_index: Option<SharedTextIndex>,
 }
 
 impl FileOperationsService {
@@ -328,7 +334,19 @@ impl FileOperationsService {
             path_policy,
             code_verifier,
             syntax,
+            text_index: None,
         }
+    }
+
+    /// Enables the in-memory text index, derived from what searches read.
+    ///
+    /// It only decides which files a search has to read: the answer is the
+    /// one the search gives without it, and the result says what the index
+    /// did. Files that `config` excludes are never indexed, only read.
+    #[must_use]
+    pub fn with_text_index(mut self, config: TextIndexConfig) -> Self {
+        self.text_index = Some(SharedTextIndex::new(config));
+        self
     }
 
     /// Validates that a path is within the workspace and safe.
@@ -1611,6 +1629,11 @@ impl FileOperationsService {
             .parents(true)
             .require_git(false);
 
+        // Prepared once for the tree. A pattern that cannot match (an empty
+        // literal) still walks, so the files are counted, and reads none.
+        let pattern = ContentPattern::new(&input.pattern, is_regex, case_insensitive);
+        let mut indexed = IndexedWalk::over(self.text_index.as_ref(), &input.pattern, is_regex);
+
         let mut matches = Vec::new();
         let mut files_scanned = 0;
         let mut unread = Vec::new();
@@ -1677,26 +1700,21 @@ impl FileOperationsService {
                 continue;
             }
 
-            let content = match fs::read_to_string(path) {
-                Ok(c) => c,
-                // A file that opens and is not text is the binary the
-                // extension list did not know: it has nothing to search, and
-                // it is not a hole. One that does not open is a hole.
-                Err(error) if error.kind() == std::io::ErrorKind::InvalidData => continue,
-                Err(error) => {
+            let Some(pattern) = &pattern else {
+                continue;
+            };
+
+            let content = match indexed.read_text(path, entry.metadata().ok().as_ref()) {
+                FileRead::Text(content) => content,
+                FileRead::Skipped | FileRead::NotText => continue,
+                FileRead::Failed(error) => {
                     unread.push(read_failure(path, &error));
                     continue;
                 }
             };
 
             // Search for pattern
-            let search_matches = find_matches_in_content(
-                &content,
-                &input.pattern,
-                is_regex,
-                case_insensitive,
-                context_lines,
-            );
+            let search_matches = pattern.find_in(&content, context_lines);
 
             for (line_num, col, text, context) in search_matches {
                 if matches.len() >= max_results {
@@ -1723,11 +1741,15 @@ impl FileOperationsService {
             unread.push(budget_cut(reason));
         }
 
+        let complete = truncation.is_none() && unread.is_empty() && input.file_glob.is_none();
+        let text_index = indexed.finish(Path::new(&search_path), complete);
+
         Ok(SearchContentResult {
             matches,
             total,
             files_scanned,
             unread,
+            text_index,
         })
     }
 
@@ -4346,3 +4368,7 @@ mod tests {
         }
     }
 }
+
+/// A search with the text index answers what one without it answers.
+#[cfg(test)]
+mod text_index_equivalence;
