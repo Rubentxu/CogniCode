@@ -12,7 +12,7 @@ use crate::application::services::graph_queries::{
     CommunityDetection, CommunitySection, community_callflow,
 };
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
-use crate::domain::value_objects::published_line;
+use crate::domain::value_objects::{Provenance, SymbolKind, published_line};
 use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
@@ -168,6 +168,21 @@ pub struct GraphQueryEdge {
     pub discovers: bool,
 }
 
+/// What a filtered query left out of the walk because a filter excluded it,
+/// as opposed to the budget or the depth.
+///
+/// The counts are over the part of the walk that ran: when the answer is
+/// cut, what lies beyond the cut is counted by nobody.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, JsonSchema)]
+pub struct FilteredOut {
+    /// Distinct symbols the walk reached and a node filter excluded: seeds
+    /// and discovered nodes alike.
+    pub nodes: usize,
+    /// Relations the walk met and a filter excluded: those whose provenance
+    /// is not admitted, and those that lead to an excluded node.
+    pub edges: usize,
+}
+
 /// How a walk stopped.
 #[derive(Debug, Default)]
 struct Walk {
@@ -176,6 +191,7 @@ struct Walk {
     budget_reached: bool,
     unexpanded: usize,
     depth_reached: usize,
+    filtered_out: FilteredOut,
 }
 
 impl Walk {
@@ -224,29 +240,105 @@ fn seeds_of(graph: &CallGraph, keywords: &[String]) -> Vec<(SymbolId, Vec<String
     seeds
 }
 
+/// What a walk is allowed to follow and to return.
+///
+/// The default admits everything: it is the traversal `graph_query` runs.
+/// `graph_query_filtered` narrows that same traversal, so a filter restricts
+/// what the walk follows (and so what it can reach through it), never what
+/// the answer claims to have looked at.
+#[derive(Debug, Default)]
+struct QueryFilter {
+    /// Provenances the walk follows. `None` follows every provenance.
+    provenance: Option<HashSet<Provenance>>,
+    /// Kinds a node must have. `None` admits every kind.
+    kinds: Option<HashSet<SymbolKind>>,
+    /// Kinds no node may have. Wins over `kinds`.
+    excluded_kinds: HashSet<SymbolKind>,
+    /// The community every node must belong to.
+    community: Option<CommunityScope>,
+}
+
+/// A community, as the detection that `graph_communities` runs numbers it.
+#[derive(Debug)]
+struct CommunityScope {
+    id: u32,
+    /// Community of every symbol, by symbol id.
+    members: HashMap<String, u32>,
+}
+
+impl QueryFilter {
+    fn admits_edge(&self, provenance: Provenance) -> bool {
+        self.provenance
+            .as_ref()
+            .is_none_or(|admitted| admitted.contains(&provenance))
+    }
+
+    /// Whether the walk may reach `id`. A relation to something the graph
+    /// holds no symbol for is not the filter's to judge: the walk drops it
+    /// on its own, as it does without filters.
+    fn admits_node(&self, graph: &CallGraph, id: &SymbolId) -> bool {
+        let Some(symbol) = graph.get_symbol(id) else {
+            return true;
+        };
+        let kind = symbol.kind();
+        if self.excluded_kinds.contains(kind) {
+            return false;
+        }
+        if self
+            .kinds
+            .as_ref()
+            .is_some_and(|kinds| !kinds.contains(kind))
+        {
+            return false;
+        }
+        self.community
+            .as_ref()
+            .is_none_or(|scope| scope.members.get(id.as_str()) == Some(&scope.id))
+    }
+
+    /// Whether `id` has an outgoing relation this filter lets the walk
+    /// follow.
+    fn has_followable_outgoing(&self, graph: &CallGraph, id: &SymbolId) -> bool {
+        graph
+            .dependencies_with_metadata(id)
+            .any(|(target, _, provenance, _)| {
+                self.admits_edge(provenance) && self.admits_node(graph, target)
+            })
+    }
+}
+
 /// Breadth-first walk from the seeds along the outgoing edges.
 ///
 /// Every element —seed, discovered node, edge— is checked against the
 /// budget before it is emitted, and the first one that does not fit ends
 /// the walk, so the answer is a prefix of the unbounded one whatever the
 /// budget is. The edges of a node come out in the graph's canonical order,
-/// and a node is emitted before the edge that discovers it.
+/// and a node is emitted before the edge that discovers it. The filter
+/// decides what is followed before the budget sees it: an excluded element
+/// is counted in `filtered_out` and costs no budget.
 fn walk(
     graph: &CallGraph,
+    filter: &QueryFilter,
     seeds: Vec<(SymbolId, Vec<String>)>,
     max_depth: usize,
     budget: usize,
 ) -> Walk {
     let mut walk = Walk::default();
     let mut known: HashSet<SymbolId> = HashSet::new();
+    let mut excluded: HashSet<SymbolId> = HashSet::new();
     let mut queue: VecDeque<(SymbolId, usize)> = VecDeque::new();
 
     for (id, words) in seeds {
         let Some(node) = node_of(graph, &id, words) else {
             continue;
         };
+        if !filter.admits_node(graph, &id) {
+            excluded.insert(id);
+            continue;
+        }
         if !walk.has_room(budget) {
-            return stopped_by_budget(graph, walk, queue, max_depth);
+            walk.filtered_out.nodes = excluded.len();
+            return stopped_by_budget(graph, filter, walk, queue, max_depth);
         }
         walk.nodes.push(node);
         known.insert(id.clone());
@@ -254,23 +346,34 @@ fn walk(
     }
 
     while let Some((current, depth)) = queue.pop_front() {
-        let mut outgoing = graph.dependencies_with_metadata(&current).peekable();
         if depth >= max_depth {
-            if outgoing.peek().is_some() {
+            if filter.has_followable_outgoing(graph, &current) {
                 walk.unexpanded += 1;
             }
             continue;
         }
-        for (target, dependency, provenance, confidence) in outgoing {
+        for (target, dependency, provenance, confidence) in
+            graph.dependencies_with_metadata(&current)
+        {
+            if !filter.admits_edge(provenance) {
+                walk.filtered_out.edges += 1;
+                continue;
+            }
             let discovers = !known.contains(target);
             if discovers {
+                if !filter.admits_node(graph, target) {
+                    excluded.insert(target.clone());
+                    walk.filtered_out.edges += 1;
+                    continue;
+                }
                 // A relation to something the graph holds no symbol for is
                 // not a relation between two nodes.
                 let Some(node) = node_of(graph, target, Vec::new()) else {
                     continue;
                 };
                 if !walk.has_room(budget) {
-                    return stopped_by_budget(graph, walk, queue, max_depth);
+                    walk.filtered_out.nodes = excluded.len();
+                    return stopped_by_budget(graph, filter, walk, queue, max_depth);
                 }
                 walk.nodes.push(node);
                 walk.depth_reached = walk.depth_reached.max(depth + 1);
@@ -278,7 +381,8 @@ fn walk(
                 queue.push_back((target.clone(), depth + 1));
             }
             if !walk.has_room(budget) {
-                return stopped_by_budget(graph, walk, queue, max_depth);
+                walk.filtered_out.nodes = excluded.len();
+                return stopped_by_budget(graph, filter, walk, queue, max_depth);
             }
             walk.edges.push(GraphQueryEdge {
                 source: current.as_str().to_string(),
@@ -290,6 +394,7 @@ fn walk(
             });
         }
     }
+    walk.filtered_out.nodes = excluded.len();
     walk
 }
 
@@ -300,6 +405,7 @@ fn walk(
 /// the answer too, and it is reported whether or not the budget came first.
 fn stopped_by_budget(
     graph: &CallGraph,
+    filter: &QueryFilter,
     mut walk: Walk,
     queue: VecDeque<(SymbolId, usize)>,
     max_depth: usize,
@@ -307,9 +413,7 @@ fn stopped_by_budget(
     walk.budget_reached = true;
     walk.unexpanded += queue
         .iter()
-        .filter(|(id, depth)| {
-            *depth >= max_depth && graph.dependencies_with_metadata(id).next().is_some()
-        })
+        .filter(|(id, depth)| *depth >= max_depth && filter.has_followable_outgoing(graph, id))
         .count();
     walk
 }
@@ -348,13 +452,14 @@ pub(crate) fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
 }
 
 /// The one line of the answer: its size, what it covers and whether it was
-/// cut.
+/// cut, and what the filters left out when there were any.
 fn summary_of(
     question: &str,
     nodes: usize,
     edges: usize,
     coverage: &CoverageInfo,
     truncation_reason: Option<&str>,
+    filtered_out: &FilteredOut,
 ) -> String {
     let mut line = format!(
         "{nodes} nodes, {edges} edges for \"{question}\" (traversal, coverage {})",
@@ -362,6 +467,12 @@ fn summary_of(
     );
     if let Some(reason) = truncation_reason {
         line.push_str(&format!(", cut by {reason}"));
+    }
+    if *filtered_out != FilteredOut::default() {
+        line.push_str(&format!(
+            ", {} nodes and {} edges left out by the filters",
+            filtered_out.nodes, filtered_out.edges
+        ));
     }
     if nodes == 0 && coverage.status != "complete" {
         line.push_str(
@@ -372,28 +483,28 @@ fn summary_of(
     line
 }
 
-/// Handle `graph_query` — natural language graph topology query.
+/// The traversal both graph query tools run: the seeds the question names,
+/// the walk under `filter`, and the limits and coverage of what was read.
 ///
-/// Keyword match to find the seeds, then a breadth-first traversal along
-/// the outgoing edges of any kind. The answer publishes each edge as the
-/// graph holds it (kind, provenance, confidence), the limits the walk ran
-/// under, and the coverage of the graph it was read from: see
-/// [`GraphQueryOutput`].
-pub async fn handle_graph_query(
-    ctx: &HandlerContext,
-    input: GraphQueryInput,
-) -> HandlerResult<GraphQueryOutput> {
-    let GraphRead { graph, measure } = read_the_graph(ctx)?;
-
+/// The answer is a function of the graph, the question, the limits and the
+/// filter; nothing else decides what comes out.
+fn answer_for(
+    read: GraphRead,
+    question: String,
+    max_depth: usize,
+    budget: usize,
+    filter: &QueryFilter,
+) -> (GraphQueryOutput, FilteredOut) {
+    let GraphRead { graph, measure } = read;
     let coverage = match &measure {
         Some(measure) => CoverageInfo::of(&measure.coverage),
         None => CoverageInfo::unmeasured(),
     };
     let basis = measure.as_ref().and_then(GraphQueryBasis::of);
 
-    let keywords = extract_keywords(&input.question);
+    let keywords = extract_keywords(&question);
     let seeds = seeds_of(&graph, &keywords);
-    let walk = walk(&graph, seeds, input.max_depth, input.budget);
+    let walk = walk(&graph, filter, seeds, max_depth, budget);
 
     let truncation_reason = if walk.budget_reached {
         Some("budget")
@@ -409,25 +520,26 @@ pub async fn handle_graph_query(
             "Found {} nodes, {} edges in {} hops. Query: '{}'",
             walk.nodes.len(),
             walk.edges.len(),
-            input.max_depth,
-            input.question
+            max_depth,
+            question
         )
     };
     let summary = summary_of(
-        &input.question,
+        &question,
         walk.nodes.len(),
         walk.edges.len(),
         &coverage,
         truncation_reason,
+        &walk.filtered_out,
     );
     let limits = GraphQueryLimits {
-        max_depth: input.max_depth,
+        max_depth,
         depth_reached: walk.depth_reached,
-        budget: input.budget,
+        budget,
         budget_used: walk.nodes.len() + walk.edges.len(),
     };
-    Ok(GraphQueryOutput {
-        question: input.question,
+    let answer = GraphQueryOutput {
+        question,
         nodes: walk.nodes,
         edges: walk.edges,
         explanation,
@@ -440,7 +552,30 @@ pub async fn handle_graph_query(
         limits,
         coverage,
         basis,
-    })
+    };
+    (answer, walk.filtered_out)
+}
+
+/// Handle `graph_query` — natural language graph topology query.
+///
+/// Keyword match to find the seeds, then a breadth-first traversal along
+/// the outgoing edges of any kind. The answer publishes each edge as the
+/// graph holds it (kind, provenance, confidence), the limits the walk ran
+/// under, and the coverage of the graph it was read from: see
+/// [`GraphQueryOutput`].
+pub async fn handle_graph_query(
+    ctx: &HandlerContext,
+    input: GraphQueryInput,
+) -> HandlerResult<GraphQueryOutput> {
+    let read = read_the_graph(ctx)?;
+    let (answer, _) = answer_for(
+        read,
+        input.question,
+        input.max_depth,
+        input.budget,
+        &QueryFilter::default(),
+    );
+    Ok(answer)
 }
 
 // ============================================================================
@@ -912,76 +1047,202 @@ pub async fn handle_get_members(
     })
 }
 
-// graph_query_filtered — graph_query with provenance/kind/community filters
+// ============================================================================
+// graph_query_filtered
+// ============================================================================
+
+/// What `graph_query_filtered` is asked: a `graph_query` question, narrowed.
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GraphQueryFilteredInput {
+    /// Natural language question about the graph topology; its words seed
+    /// the walk exactly as they do for `graph_query`.
     pub question: String,
+    /// What the walk may follow and return. Omitted or empty, the answer is
+    /// the one `graph_query` gives.
     pub filters: Option<QueryFilters>,
+    /// Maximum elements the answer holds, counting seed nodes, discovered
+    /// nodes and edges together (default: 1500): the budget of
+    /// `graph_query`. The answer never exceeds it; what the filters exclude
+    /// costs none of it.
     pub limit: Option<usize>,
-}
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-pub struct QueryFilters {
-    pub provenance: Option<Vec<String>>,
-    pub node_kinds: Option<Vec<String>>,
-    pub community_id: Option<usize>,
-    pub exclude_kinds: Option<Vec<String>>,
-}
-#[derive(Debug, serde::Serialize, JsonSchema)]
-pub struct GraphQueryFilteredOutput {
-    pub question: String,
-    pub nodes: Vec<GraphQueryNode>,
-    pub edges: Vec<GraphQueryEdge>,
-    pub explanation: String,
-    pub applied_filters: Vec<String>,
-    /// One line saying what the answer says.
-    pub summary: String,
+    /// Maximum BFS depth from the seed nodes (default: 3). Depth 0 returns
+    /// only the seeds.
+    #[serde(default = "default_max_depth")]
+    pub max_depth: usize,
 }
 
+/// The filters of `graph_query_filtered`. Every one that is given must hold;
+/// a name that is not one of the accepted values is refused, never read as a
+/// filter that matches nothing.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct QueryFilters {
+    /// Provenances the walk follows: `Extracted`, `Inferred`, `Ambiguous`,
+    /// `Manual` or `Tested`, in any letter case. An edge of another
+    /// provenance is not followed, and the nodes only it reaches are not
+    /// reached. Must not be empty.
+    pub provenance: Option<Vec<String>>,
+    /// Kinds a node must have to be returned or walked through, by the name
+    /// `graph_query` publishes in `kind`, for example `function`, `class` or
+    /// `trait`. Must not be empty.
+    pub node_kinds: Option<Vec<String>>,
+    /// The community, as `graph_communities` numbers them, every node must
+    /// belong to. A number the detection does not produce is refused.
+    pub community_id: Option<usize>,
+    /// Kinds no node may have. Wins over `node_kinds`.
+    pub exclude_kinds: Option<Vec<String>>,
+}
+
+/// What `graph_query_filtered` answers: the answer of `graph_query` over the
+/// narrowed traversal, and what the narrowing took out.
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub struct GraphQueryFilteredOutput {
+    /// The traversal, its limits, its coverage and its basis, as
+    /// `graph_query` publishes them.
+    #[serde(flatten)]
+    pub answer: GraphQueryOutput,
+    /// The filters the walk ran under, one line each.
+    pub applied_filters: Vec<String>,
+    /// What the filters excluded from the walk.
+    pub filtered_out: FilteredOut,
+}
+
+fn refuse_empty(name: &str, values: &[String]) -> HandlerResult<()> {
+    if values.is_empty() {
+        return Err(HandlerError::InvalidInput(format!(
+            "the {name} filter is empty: omit it to admit everything"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_provenances(values: &[String]) -> HandlerResult<HashSet<Provenance>> {
+    const ACCEPTED: [Provenance; 5] = [
+        Provenance::Extracted,
+        Provenance::Inferred,
+        Provenance::Ambiguous,
+        Provenance::Manual,
+        Provenance::Tested,
+    ];
+    values
+        .iter()
+        .map(|value| {
+            ACCEPTED
+                .into_iter()
+                .find(|provenance| provenance.name() == value.to_lowercase())
+                .ok_or_else(|| {
+                    HandlerError::InvalidInput(format!(
+                        "unknown provenance '{value}': expected one of {}",
+                        ACCEPTED.map(|p| p.to_string()).join(", ")
+                    ))
+                })
+        })
+        .collect()
+}
+
+fn parse_kinds(name: &str, values: &[String]) -> HandlerResult<HashSet<SymbolKind>> {
+    values
+        .iter()
+        .map(|value| {
+            value.to_lowercase().parse::<SymbolKind>().map_err(|_| {
+                HandlerError::InvalidInput(format!(
+                    "unknown kind '{value}' in {name}: use the names the answer publishes in `kind`, for example function, class, trait"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// The community `id`, as `graph_communities` numbers it, or a refusal that
+/// says how many communities the graph has.
+fn community_scope(graph: &CallGraph, id: usize) -> HandlerResult<(CommunityScope, String)> {
+    let detection = CommunityDetector::detect(graph, CommunityDetector::MAX_ITERATIONS);
+    let community = u32::try_from(id)
+        .ok()
+        .and_then(|id| detection.communities.iter().find(|c| c.id == id));
+    let Some(community) = community else {
+        return Err(HandlerError::InvalidInput(format!(
+            "community {id} does not exist: the graph has {} communities (0..{})",
+            detection.communities.len(),
+            detection.communities.len()
+        )));
+    };
+    let mut line = format!(
+        "community {} ({}, {} symbols)",
+        community.id,
+        community.label,
+        community.nodes.len()
+    );
+    if !detection.converged {
+        line.push_str(
+            "; the detection did not converge, so the community is the last one it reached",
+        );
+    }
+    let scope = CommunityScope {
+        id: community.id,
+        members: detection.node_communities,
+    };
+    Ok((scope, line))
+}
+
+/// The filter the input asks for, and one line per filter that narrows the
+/// walk.
+fn filter_of(
+    graph: &CallGraph,
+    filters: Option<QueryFilters>,
+) -> HandlerResult<(QueryFilter, Vec<String>)> {
+    let mut filter = QueryFilter::default();
+    let mut applied = Vec::new();
+    let Some(filters) = filters else {
+        return Ok((filter, applied));
+    };
+    if let Some(values) = &filters.provenance {
+        refuse_empty("provenance", values)?;
+        filter.provenance = Some(parse_provenances(values)?);
+        applied.push(format!("provenance in [{}]", values.join(", ")));
+    }
+    if let Some(values) = &filters.node_kinds {
+        refuse_empty("node_kinds", values)?;
+        filter.kinds = Some(parse_kinds("node_kinds", values)?);
+        applied.push(format!("node_kinds in [{}]", values.join(", ")));
+    }
+    if let Some(values) = &filters.exclude_kinds
+        && !values.is_empty()
+    {
+        filter.excluded_kinds = parse_kinds("exclude_kinds", values)?;
+        applied.push(format!("exclude_kinds [{}]", values.join(", ")));
+    }
+    if let Some(id) = filters.community_id {
+        let (scope, line) = community_scope(graph, id)?;
+        filter.community = Some(scope);
+        applied.push(line);
+    }
+    Ok((filter, applied))
+}
+
+/// Handle `graph_query_filtered` — `graph_query` over a narrowed traversal.
+///
+/// It runs the same walk as [`handle_graph_query`] (same seeds, same order,
+/// same budget and depth rules, same coverage and basis) and applies the
+/// filters to what the walk follows. The answer says which filters ran and
+/// how many nodes and edges they excluded; an invalid filter is refused
+/// rather than answered with nothing.
 pub async fn handle_graph_query_filtered(
     ctx: &HandlerContext,
     input: GraphQueryFilteredInput,
 ) -> HandlerResult<GraphQueryFilteredOutput> {
-    let _graph = match ctx.get_graph_store().load_graph_shared() {
-        Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal("No graph available".into())),
-    };
-    let keywords: Vec<String> = input
-        .question
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-        .filter(|w| w.len() > 1)
-        .map(|w| w.to_string())
-        .collect();
-    let mut applied = Vec::new();
-    if let Some(ref f) = input.filters {
-        if f.provenance.is_some() {
-            applied.push("provenance filter applied".into());
-        }
-        if f.node_kinds.is_some() {
-            applied.push("kind filter applied".into());
-        }
-        if f.community_id.is_some() {
-            applied.push(format!("community: {}", f.community_id.unwrap()));
-        }
-    }
-    let question = input.question;
-    let summary = format!(
-        "0 nodes, 0 edges for \"{}\" ({} keywords, {} filters applied)",
-        question,
-        keywords.len(),
-        applied.len()
+    let read = read_the_graph(ctx)?;
+    let (filter, applied_filters) = filter_of(&read.graph, input.filters)?;
+    let (answer, filtered_out) = answer_for(
+        read,
+        input.question,
+        input.max_depth,
+        input.limit.unwrap_or_else(default_budget),
+        &filter,
     );
     Ok(GraphQueryFilteredOutput {
-        question,
-        nodes: vec![],
-        edges: vec![],
-        explanation: format!(
-            "Filtered query with {} keywords. Filters: {}",
-            keywords.len(),
-            applied.to_vec().join("; ")
-        ),
-        applied_filters: applied,
-        summary,
+        answer,
+        applied_filters,
+        filtered_out,
     })
 }
 

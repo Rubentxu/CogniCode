@@ -7,6 +7,9 @@
 //!
 //! * The two surfaces answer with the same document, for the inventory, for
 //!   the transitive dependents and for the lockfile delta.
+//! * An SBOM supplied as a workspace file is compared with the inventory the
+//!   same way on both, and a pinned digest that does not match refuses it on
+//!   both.
 //! * Asking leaves the workspace tree and Git exactly as they were.
 
 use crate::common;
@@ -99,19 +102,23 @@ fn question() -> Value {
     json!({ "dependents_of": "memchr", "base_ref": "base" })
 }
 
+/// The question as the flags of the CLI: every key is the flag of the same
+/// name with dashes.
+fn flags(question: &Value) -> Vec<String> {
+    let mut flags = Vec::new();
+    for (key, value) in question.as_object().expect("an object") {
+        flags.push(format!("--{}", key.replace('_', "-")));
+        flags.push(value.as_str().expect("a string").to_string());
+    }
+    flags
+}
+
 fn cli_answer(workspace: &Path, question: &Value) -> Value {
     let cache = common::isolated_cache();
     let output = Command::new(common::binary_path("cognicode"))
         .current_dir(workspace)
-        .args([
-            "dependencies",
-            "--format",
-            "json",
-            "--dependents-of",
-            question["dependents_of"].as_str().expect("dependents_of"),
-            "--base-ref",
-            question["base_ref"].as_str().expect("base_ref"),
-        ])
+        .args(["dependencies", "--format", "json"])
+        .args(flags(question))
         .env("XDG_CACHE_HOME", cache.path())
         .output()
         .expect("the CLI starts");
@@ -180,4 +187,87 @@ async fn asking_from_either_surface_leaves_the_workspace_as_it_was() {
         git_before
     );
     assert_eq!(git(repo.path(), &["rev-parse", "HEAD"]), head_before);
+}
+
+const SBOM: &str = "cargo-workspace.cargo-cyclonedx.cdx.json";
+
+fn sbom_bytes() -> Vec<u8> {
+    std::fs::read(Path::new(FIXTURE).join("..").join(SBOM)).expect("the SBOM fixture")
+}
+
+fn sbom_question(digest: &str) -> Value {
+    json!({
+        "sbom": SBOM,
+        "sbom_expected_digest": format!("sha256:{digest}"),
+        "artifact_digest": "1".repeat(64),
+    })
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    cognicode_core::domain::scm::ContentDigest::from_bytes(bytes)
+        .as_hex()
+        .to_string()
+}
+
+#[tokio::test]
+async fn an_sbom_is_compared_the_same_way_on_both_surfaces() {
+    let repo = repository();
+    std::fs::write(repo.path().join(SBOM), sbom_bytes()).expect("sbom");
+    let digest = sha256_hex(&sbom_bytes());
+
+    let from_cli = cli_answer(repo.path(), &sbom_question(&digest));
+    let from_mcp = mcp_answer(repo.path(), &sbom_question(&digest)).await;
+
+    assert_eq!(from_cli, from_mcp, "the two surfaces publish one answer");
+    let distributed = &from_cli["distributed"];
+    assert_eq!(distributed["status"], "usable");
+    assert_eq!(distributed["document"]["digest"], json!(digest));
+    assert_eq!(distributed["document"]["pinned"], json!(true));
+    let unit = &distributed["units"][0];
+    assert_eq!(unit["evaluation"], "evaluated");
+    assert_eq!(unit["report"]["claim"]["stage"], "unstated");
+    assert_eq!(
+        unit["report"]["artifact_binding"]["state"], "not_stated_by_sbom",
+        "a document that does not hash its subject cannot be bound to an artifact"
+    );
+    let layers = from_cli["units"][0]["layers"].as_array().expect("layers");
+    let distributed_layer = layers
+        .iter()
+        .find(|layer| layer["layer"] == "distributed")
+        .expect("distributed layer");
+    assert_eq!(distributed_layer["status"], "partial");
+}
+
+#[tokio::test]
+async fn a_pinned_digest_that_does_not_match_refuses_the_sbom_on_both_surfaces() {
+    let repo = repository();
+    std::fs::write(repo.path().join(SBOM), sbom_bytes()).expect("sbom");
+
+    let from_cli = cli_answer(repo.path(), &sbom_question(&"f".repeat(64)));
+    let from_mcp = mcp_answer(repo.path(), &sbom_question(&"f".repeat(64))).await;
+
+    assert_eq!(from_cli, from_mcp);
+    assert_eq!(from_cli["distributed"]["status"], "digest_mismatch");
+    assert_eq!(
+        from_cli["distributed"]["units"][0]["evaluation"],
+        "not_evaluated"
+    );
+    let layers = from_cli["units"][0]["layers"].as_array().expect("layers");
+    assert!(
+        layers
+            .iter()
+            .any(|layer| layer["layer"] == "distributed" && layer["status"] == "not_collected")
+    );
+}
+
+#[tokio::test]
+async fn asking_with_an_sbom_leaves_the_workspace_as_it_was() {
+    let repo = repository();
+    std::fs::write(repo.path().join(SBOM), sbom_bytes()).expect("sbom");
+    let tree_before = tree(repo.path());
+
+    cli_answer(repo.path(), &json!({ "sbom": SBOM }));
+    mcp_answer(repo.path(), &json!({ "sbom": SBOM })).await;
+
+    assert_eq!(tree(repo.path()), tree_before);
 }

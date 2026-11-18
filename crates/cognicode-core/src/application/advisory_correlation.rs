@@ -498,6 +498,7 @@ pub fn answer(
         base: None,
         dependents: None,
         path: query.path.clone(),
+        distribution: None,
     };
     let packages = inventory(reader, source, &inventory_query, inventory_limits)?;
     Ok(correlate_inventory(

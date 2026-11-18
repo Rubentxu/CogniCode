@@ -1,6 +1,7 @@
 use super::*;
 use crate::application::advisory_correlation::{FeedFreshness, FeedStatus};
 use crate::domain::advisory_matching::{AdvisoryReason, PackageState};
+use crate::domain::scm::ContentDigest;
 use std::process::Command;
 
 fn git(root: &Path, args: &[&str]) {
