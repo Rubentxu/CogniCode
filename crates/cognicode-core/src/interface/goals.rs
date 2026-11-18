@@ -499,6 +499,25 @@ pub const PREFLIGHT: GoalSpec = GoalSpec {
     render: preflight::render,
 };
 
+/// The `dependencies` goal: the resolved Cargo dependency inventory of a revision.
+pub const DEPENDENCIES: GoalSpec = GoalSpec {
+    name: "dependencies",
+    title: "The resolved Cargo dependency inventory of a revision",
+    description: "Read the tracked Cargo.toml and Cargo.lock files of a Git revision, offline, and report per workspace unit the packages the lockfile pins (version, source, SHA-256 checksum or pinned Git commit, Package URL identity), the member declarations that asked for them (kind, target, requirement, features) and whether the lockfile agrees with the manifests: `consistent`, `stale` (a declaration, member or edge disagrees), `partial` (some requirement or file could not be checked), `no_lockfile` or `no_manifest`. The answer is anchored to the revision and to the digest of the lockfile bytes, and states which of the declared, resolved, observed and distributed layers were collected: observed and distributed never are. `dependents_of` (`name` or `name@version`) lists the transitive dependents and the workspace members they affect; `base_ref` adds the packages added, removed and updated in the lockfile since that revision; `path` restricts the units. Cargo, build scripts and the network are never run, so resolved features and the kind of edges between non-member packages are not reported. Example: `cognicode dependencies --dependents-of serde`.",
+    examples: &[
+        "cognicode dependencies",
+        "cognicode dependencies --dependents-of serde --format json",
+        "cognicode dependencies --base-ref main",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::dependencies",
+    requires_graph: false,
+    replaces: &[],
+    run: dependencies::run,
+    render: dependencies::render,
+};
+
 /// El goal `pack`: los símbolos que responden a una petición, con su evidencia.
 pub const PACK: GoalSpec = GoalSpec {
     name: "pack",
@@ -528,9 +547,23 @@ config\" --max-tokens 800`.",
 };
 
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 15] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE,
-    RECIPE, SECURITY, PREFLIGHT, PACK,
+static REGISTRY: [GoalSpec; 16] = [
+    STATUS,
+    CONTEXT,
+    FIND,
+    INSPECT,
+    TRACE,
+    IMPACT,
+    OVERVIEW,
+    AUDIT,
+    COMPARE,
+    VERIFY,
+    CHANGE,
+    RECIPE,
+    SECURITY,
+    PREFLIGHT,
+    DEPENDENCIES,
+    PACK,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -563,6 +596,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
         "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
+        "dependencies" => crate::interface::schema::schema_of::<dependencies::DependenciesInput>(),
         "pack" => crate::interface::schema::schema_of::<pack::PackInput>(),
         _ => Map::new(),
     }
@@ -732,6 +766,20 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the three detectors that write read-sets, function definitions, type definitions and unprotected S3 buckets, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound."
                 .to_string(),
         ]
+    } else if goal.name == "dependencies" {
+        vec![
+            "Reads tracked Cargo.toml and Cargo.lock bytes offline: resolved features and the kind of edges between non-member packages are not reported."
+                .to_string(),
+            "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
+                .to_string(),
+        ]
+    } else if goal.name == "pack" {
+        vec![
+            "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select."
+                .to_string(),
+            "The budget measures the rendered text, not the structured answer."
+                .to_string(),
+        ]
     } else {
         vec![
             "El goal se monta sobre el dueño que ya calcula esto: su respuesta no \
@@ -799,6 +847,7 @@ pub mod change;
 pub mod common;
 pub mod compare;
 pub mod context;
+pub mod dependencies;
 pub mod find;
 pub mod impact;
 pub mod inspect;

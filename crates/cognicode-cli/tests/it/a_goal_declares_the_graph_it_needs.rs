@@ -72,7 +72,7 @@ fn workspace() -> (tempfile::TempDir, PathBuf, PathBuf) {
 
 /// Un historial de dos commits en el workspace.
 ///
-/// `compare`, `verify` y `preflight` leen revisiones de Git: sobre un
+/// `compare`, `verify`, `preflight` y `dependencies` leen revisiones de Git: sobre un
 /// directorio sin historial no hay nada que comparar, y su fallo no diría
 /// nada de si construye el grafo.
 fn commit_two_revisions(workspace: &Path) {
@@ -274,7 +274,10 @@ fn catalogue_requires_graph(name: &str) -> bool {
 fn every_goal_declares_the_graph_it_builds() {
     for goal in goals::registry() {
         let (root, workspace, _cache) = workspace();
-        if matches!(goal.name, "compare" | "verify" | "preflight") {
+        if matches!(
+            goal.name,
+            "compare" | "verify" | "preflight" | "dependencies"
+        ) {
             commit_two_revisions(&workspace);
         }
         let calls = calls_of(goal, &workspace);

@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["app", "util"]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+
+[workspace.dependencies]
+smallvec = "1"
+util = { path = "util" }

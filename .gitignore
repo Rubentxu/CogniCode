@@ -167,6 +167,8 @@ sandbox/fixtures/**/venv/
 sandbox/fixtures/**/*.lock
 sandbox/fixtures/**/package-lock.json
 sandbox/fixtures/**/Cargo.lock
+# The dependency-inventory fixture is judged by its lockfile: it is the input.
+!sandbox/fixtures/dependency-inventory/**/Cargo.lock
 
 # Tier C fixtures are synthetic test data, not source code
 sandbox/fixtures/tierc
