@@ -2128,8 +2128,7 @@
       "limitations": [
         "Reads a pinned OSV feed from a workspace file, offline and never fetched: a match is an observation, not exploitability, and not artifact signature verification.",
         "Only crates.io packages of Cargo lockfiles are correlated; yanked status is not known; a stale, partial or unparseable feed never yields a clean result."
-      ],
-      "required_args": []
+      ]
     },
     {
       "name": "detect_drift",
