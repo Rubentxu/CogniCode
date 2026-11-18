@@ -163,6 +163,7 @@ mod one_owner_for_the_graph_questions;
 mod one_owner_for_the_impact_question;
 mod one_published_column_base;
 mod only_the_verdict_owner_publishes_complete;
+mod project_insights_requires_a_ranking_signal;
 mod project_overview_publishes_the_level_it_delivers;
 mod provider_conformance;
 mod ranking_order_is_stable_per_snapshot;
