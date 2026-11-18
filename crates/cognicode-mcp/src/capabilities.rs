@@ -267,6 +267,13 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "AST",
         },
 
+        // The dependency inventory reads Cargo.toml and Cargo.lock bytes with
+        // its own parsers, not the language registry grammars.
+        "dependencies" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
+
         "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
             ToolCapabilities {
                 langs: tree_sitter_langs(),
@@ -388,6 +395,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "verify",
         "security",
         "preflight",
+        "dependencies",
     ]
 }
 

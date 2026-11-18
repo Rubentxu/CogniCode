@@ -1,0 +1,183 @@
+//! The `dependencies` goal on the CLI and on the MCP.
+//!
+//! The goal is declared once and both surfaces run the same function, so what
+//! this file measures is what a user gets: the real `cognicode` binary run as
+//! a sub-process, and the MCP dispatch fed the same repository and the same
+//! question.
+//!
+//! * The two surfaces answer with the same document, for the inventory, for
+//!   the transitive dependents and for the lockfile delta.
+//! * Asking leaves the workspace tree and Git exactly as they were.
+
+use crate::common;
+
+use cognicode_core::interface::mcp::handlers::HandlerContext;
+use cognicode_mcp::rmcp_adapter::call_tool_handler_with_window;
+use rmcp::model::CallToolRequestParams;
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::process::Command;
+
+const FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../sandbox/fixtures/dependency-inventory/cargo-workspace"
+);
+
+fn git(root: &Path, args: &[&str]) -> String {
+    let none = root.join("no-git-configuration");
+    let output = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", &none)
+        .env("GIT_CONFIG_SYSTEM", &none)
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .expect("git is installed");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("UTF-8")
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("create directory");
+    for entry in std::fs::read_dir(from).expect("read fixture") {
+        let entry = entry.expect("entry");
+        let target = to.join(entry.file_name());
+        if entry.path().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).expect("copy file");
+        }
+    }
+}
+
+/// The fixture workspace committed twice: the second commit bumps `memchr`.
+fn repository() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("repository");
+    let root = directory.path();
+    git(root, &["init", "--quiet"]);
+    git(root, &["config", "user.name", "CogniCode tests"]);
+    git(root, &["config", "user.email", "tests@example.invalid"]);
+    copy_tree(Path::new(FIXTURE), root);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "--quiet", "-m", "base"]);
+    git(root, &["tag", "base"]);
+    let lock = std::fs::read_to_string(root.join("Cargo.lock")).expect("lock");
+    std::fs::write(root.join("Cargo.lock"), lock.replace("2.8.3", "2.8.4")).expect("lock");
+    git(root, &["commit", "--quiet", "-am", "bump memchr"]);
+    directory
+}
+
+fn tree(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    let mut files = BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("read dir") {
+            let path = entry.expect("entry").path();
+            if path.file_name().is_some_and(|name| name == ".git") {
+                continue;
+            }
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let name = path.strip_prefix(root).expect("under root");
+                files.insert(
+                    name.to_string_lossy().into_owned(),
+                    std::fs::read(&path).expect("read"),
+                );
+            }
+        }
+    }
+    files
+}
+
+fn question() -> Value {
+    json!({ "dependents_of": "memchr", "base_ref": "base" })
+}
+
+fn cli_answer(workspace: &Path, question: &Value) -> Value {
+    let cache = common::isolated_cache();
+    let output = Command::new(common::binary_path("cognicode"))
+        .current_dir(workspace)
+        .args([
+            "dependencies",
+            "--format",
+            "json",
+            "--dependents-of",
+            question["dependents_of"].as_str().expect("dependents_of"),
+            "--base-ref",
+            question["base_ref"].as_str().expect("base_ref"),
+        ])
+        .env("XDG_CACHE_HOME", cache.path())
+        .output()
+        .expect("the CLI starts");
+    assert!(
+        output.status.success(),
+        "the CLI exited with {}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let envelope: Value =
+        serde_json::from_slice(&output.stdout).expect("the CLI answers with JSON");
+    envelope["result"].clone()
+}
+
+async fn mcp_answer(workspace: &Path, question: &Value) -> Value {
+    let ctx = HandlerContext::builder()
+        .with_working_dir(workspace.to_path_buf())
+        .build();
+    let request = CallToolRequestParams::new("dependencies".to_string())
+        .with_arguments(question.as_object().cloned().unwrap_or_default());
+    let text = call_tool_handler_with_window(&ctx, request, None)
+        .await
+        .expect("the MCP answers");
+    serde_json::from_str(&text).expect("the MCP answers with JSON")
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_answer_with_the_same_document() {
+    let repo = repository();
+
+    let from_cli = cli_answer(repo.path(), &question());
+    let from_mcp = mcp_answer(repo.path(), &question()).await;
+
+    assert_eq!(from_cli, from_mcp, "the two surfaces publish one answer");
+    assert_eq!(from_cli["goal"], "dependencies");
+    let unit = &from_cli["units"][0];
+    assert_eq!(unit["freshness"], "consistent");
+    assert_eq!(unit["packages"].as_array().map(Vec::len), Some(10));
+    let affected = &from_cli["dependents"][0]["report"]["affected_members"];
+    // Nearest dependents first: `util` depends on `memchr` directly.
+    assert_eq!(affected, &json!(["util@0.1.0", "app@0.3.0"]));
+    let updated = &from_cli["comparison"]["units"][0]["delta"]["updated"];
+    assert_eq!(updated[0]["name"], "memchr");
+    assert_eq!(updated[0]["to"], json!(["2.8.4"]));
+}
+
+#[tokio::test]
+async fn asking_from_either_surface_leaves_the_workspace_as_it_was() {
+    let repo = repository();
+    let tree_before = tree(repo.path());
+    let git_before = git(
+        repo.path(),
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    cli_answer(repo.path(), &question());
+    mcp_answer(repo.path(), &question()).await;
+
+    assert_eq!(tree(repo.path()), tree_before);
+    assert_eq!(
+        git(
+            repo.path(),
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        ),
+        git_before
+    );
+    assert_eq!(git(repo.path(), &["rev-parse", "HEAD"]), head_before);
+}

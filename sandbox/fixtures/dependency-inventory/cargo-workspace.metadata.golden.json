@@ -1,0 +1,600 @@
+{
+  "command": "cargo metadata --locked --offline --format-version 1",
+  "edges": [
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "build",
+          "target": null
+        }
+      ],
+      "to": "autocfg@1.5.1"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "bitflags@1.3.2"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "bitflags@2.13.2"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "dev",
+          "target": null
+        }
+      ],
+      "to": "itoa@1.0.19"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": "cfg(unix)"
+        }
+      ],
+      "to": "libc@0.2.191"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "smallvec@1.16.5"
+    },
+    {
+      "from": "app@0.3.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "util@0.1.0"
+    },
+    {
+      "from": "util@0.1.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "cfg-if@1.0.5"
+    },
+    {
+      "from": "util@0.1.0",
+      "kinds": [
+        {
+          "kind": "normal",
+          "target": null
+        }
+      ],
+      "to": "memchr@2.8.3"
+    }
+  ],
+  "packages": [
+    {
+      "declared": [
+        {
+          "features": [
+            "union"
+          ],
+          "kind": "normal",
+          "optional": false,
+          "package": "smallvec",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "build",
+          "optional": false,
+          "package": "autocfg",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "itoa",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "bitflags",
+          "rename": "old_bitflags",
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "bitflags",
+          "rename": null,
+          "requirement": "^2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "libc",
+          "rename": null,
+          "requirement": "^0.2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": "cfg(unix)"
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "util",
+          "rename": null,
+          "requirement": "*",
+          "source": "path",
+          "target": null
+        }
+      ],
+      "id": "app@0.3.0",
+      "name": "app",
+      "source": "path",
+      "version": "0.3.0"
+    },
+    {
+      "declared": [],
+      "id": "autocfg@1.5.1",
+      "name": "autocfg",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.5.1"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "rustversion",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde_derive",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde_json",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "trybuild",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "walkdir",
+          "rename": null,
+          "requirement": "^2.3",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "compiler_builtins",
+          "rename": null,
+          "requirement": "^0.1.2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "rustc-std-workspace-core",
+          "rename": "core",
+          "requirement": "^1.0.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "bitflags@1.3.2",
+      "name": "bitflags",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.3.2"
+    },
+    {
+      "declared": [
+        {
+          "features": [
+            "derive"
+          ],
+          "kind": "dev",
+          "optional": false,
+          "package": "arbitrary",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [
+            "derive"
+          ],
+          "kind": "dev",
+          "optional": false,
+          "package": "bytemuck",
+          "rename": null,
+          "requirement": "^1.12.2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [
+            "derive"
+          ],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde",
+          "rename": "serde_lib",
+          "requirement": "^1.0.103",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [
+            "derive"
+          ],
+          "kind": "dev",
+          "optional": false,
+          "package": "zerocopy",
+          "rename": null,
+          "requirement": "^0.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "rustversion",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde_json",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "serde_test",
+          "rename": null,
+          "requirement": "^1.0.19",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "trybuild",
+          "rename": null,
+          "requirement": "^1.0.18",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "arbitrary",
+          "rename": null,
+          "requirement": "^1.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "bytemuck",
+          "rename": null,
+          "requirement": "^1.12",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "serde_core",
+          "rename": null,
+          "requirement": "^1.0.228",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "bitflags@2.13.2",
+      "name": "bitflags",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.13.2"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "rustc-std-workspace-core",
+          "rename": "core",
+          "requirement": "^1.0.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "cfg-if@1.0.5",
+      "name": "cfg-if",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.5"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "criterion",
+          "rename": null,
+          "requirement": "^0.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": "cfg(not(miri))"
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "no-panic",
+          "rename": null,
+          "requirement": "^0.1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "itoa@1.0.19",
+      "name": "itoa",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.0.19"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "rustc-std-workspace-core",
+          "rename": null,
+          "requirement": "^1.0.1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "libc@0.2.191",
+      "name": "libc",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "0.2.191"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "quickcheck",
+          "rename": null,
+          "requirement": "^1.0.3",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "log",
+          "rename": null,
+          "requirement": "^0.4.20",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "rustc-std-workspace-core",
+          "rename": "core",
+          "requirement": "^1.0.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "memchr@2.8.3",
+      "name": "memchr",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "2.8.3"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "dev",
+          "optional": false,
+          "package": "bincode",
+          "rename": "bincode1",
+          "requirement": "^1.0.1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "arbitrary",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "bincode",
+          "rename": null,
+          "requirement": "^2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "malloc_size_of",
+          "rename": null,
+          "requirement": "^0.1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "serde",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": true,
+          "package": "unty",
+          "rename": null,
+          "requirement": "^0.0.4",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "smallvec@1.16.5",
+      "name": "smallvec",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "version": "1.16.5"
+    },
+    {
+      "declared": [
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "cfg-if",
+          "rename": null,
+          "requirement": "^1",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        },
+        {
+          "features": [],
+          "kind": "normal",
+          "optional": false,
+          "package": "memchr",
+          "rename": null,
+          "requirement": "^2",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "target": null
+        }
+      ],
+      "id": "util@0.1.0",
+      "name": "util",
+      "source": "path",
+      "version": "0.1.0"
+    }
+  ],
+  "workspace_members": [
+    "app@0.3.0",
+    "util@0.1.0"
+  ]
+}

@@ -1,0 +1,20 @@
+[package]
+name = "app"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+bitflags = "2"
+old_bitflags = { package = "bitflags", version = "1" }
+smallvec = { workspace = true, features = ["union"] }
+util = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+itoa = "1"
+
+[build-dependencies]
+autocfg = "1"

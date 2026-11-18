@@ -499,10 +499,42 @@ pub const PREFLIGHT: GoalSpec = GoalSpec {
     render: preflight::render,
 };
 
+/// The `dependencies` goal: the resolved Cargo dependency inventory of a revision.
+pub const DEPENDENCIES: GoalSpec = GoalSpec {
+    name: "dependencies",
+    title: "The resolved Cargo dependency inventory of a revision",
+    description: "Read the tracked Cargo.toml and Cargo.lock files of a Git revision, offline, and report per workspace unit the packages the lockfile pins (version, source, SHA-256 checksum or pinned Git commit, Package URL identity), the member declarations that asked for them (kind, target, requirement, features) and whether the lockfile agrees with the manifests: `consistent`, `stale` (a declaration, member or edge disagrees), `partial` (some requirement or file could not be checked), `no_lockfile` or `no_manifest`. The answer is anchored to the revision and to the digest of the lockfile bytes, and states which of the declared, resolved, observed and distributed layers were collected: observed and distributed never are. `dependents_of` (`name` or `name@version`) lists the transitive dependents and the workspace members they affect; `base_ref` adds the packages added, removed and updated in the lockfile since that revision; `path` restricts the units. Cargo, build scripts and the network are never run, so resolved features and the kind of edges between non-member packages are not reported. Example: `cognicode dependencies --dependents-of serde`.",
+    examples: &[
+        "cognicode dependencies",
+        "cognicode dependencies --dependents-of serde --format json",
+        "cognicode dependencies --base-ref main",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::dependencies",
+    requires_graph: false,
+    replaces: &[],
+    run: dependencies::run,
+    render: dependencies::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 14] = [
-    STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE,
-    RECIPE, SECURITY, PREFLIGHT,
+static REGISTRY: [GoalSpec; 15] = [
+    STATUS,
+    CONTEXT,
+    FIND,
+    INSPECT,
+    TRACE,
+    IMPACT,
+    OVERVIEW,
+    AUDIT,
+    COMPARE,
+    VERIFY,
+    CHANGE,
+    RECIPE,
+    SECURITY,
+    PREFLIGHT,
+    DEPENDENCIES,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -535,6 +567,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
         "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
+        "dependencies" => crate::interface::schema::schema_of::<dependencies::DependenciesInput>(),
         _ => Map::new(),
     }
 }
@@ -770,6 +803,7 @@ pub mod change;
 pub mod common;
 pub mod compare;
 pub mod context;
+pub mod dependencies;
 pub mod find;
 pub mod impact;
 pub mod inspect;
