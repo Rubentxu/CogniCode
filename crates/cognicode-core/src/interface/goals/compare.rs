@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+use crate::application::architecture::evolution::{
+    ArchitectureEvolutionQuery, query_architecture_evolution,
+};
 use crate::application::change_tracking::detector_runs::{
     ProductionDetector, Reuse, detect_in_cache, detector_id, ensure_runs_in_cache,
 };
@@ -127,6 +130,8 @@ pub struct RevisionFactsGap {
 pub struct CompareRevisionFacts {
     /// The producer that assembled the facts.
     pub producer: String,
+    /// Exact producer versions that establish the semantic basis of both sides.
+    pub producer_versions: CompareProducerVersions,
     /// Facts of the base revision.
     pub base: RevisionFactsCoverage,
     /// Facts of the candidate revision.
@@ -134,6 +139,33 @@ pub struct CompareRevisionFacts {
     /// Whether both revision snapshots were persisted for reuse across
     /// branches. `false` when the environment names no cache.
     pub persisted: bool,
+}
+
+/// Versions of the producers whose outputs form the revision-facts comparison.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CompareProducerVersions {
+    /// Source extractor implementation and version.
+    pub extractor: String,
+    /// Graph producer version.
+    pub graph: String,
+    /// Fact assembly version.
+    pub facts: String,
+    /// Detector version.
+    pub detector: String,
+    /// Policy version.
+    pub policy: String,
+}
+
+impl From<crate::application::revision_snapshots::ProducerVersions> for CompareProducerVersions {
+    fn from(versions: crate::application::revision_snapshots::ProducerVersions) -> Self {
+        Self {
+            extractor: versions.extractor,
+            graph: versions.graph,
+            facts: versions.facts,
+            detector: versions.detector,
+            policy: versions.policy,
+        }
+    }
 }
 
 /// The change in facts between the two revisions.
@@ -237,6 +269,8 @@ pub struct GoalCompare {
     pub work_reuse_reason: String,
     /// The facts the comparison was computed from, with their gaps.
     pub revision_facts: Option<CompareRevisionFacts>,
+    /// Canonical architecture-constraint evolution over the same SCM revisions.
+    pub architecture_evolution: ArchitectureEvolutionQuery,
     /// The fact delta, when facts exist for both revisions.
     pub impact: Option<CompareImpact>,
     /// The reuse verdicts, from the read-set the production detector run
@@ -460,8 +494,10 @@ fn semantics(
             .iter()
             .all(|produced| store.save(&produced.snapshot).is_ok())
     });
+    let versions = producer_versions();
     let revision_facts = CompareRevisionFacts {
-        producer: producer_versions().facts,
+        producer: versions.facts.clone(),
+        producer_versions: versions.into(),
         base: side_coverage(&base),
         candidate: side_coverage(&candidate),
         persisted,
@@ -625,6 +661,8 @@ pub fn compare_with(
         (&base_revision, &candidate_revision),
         &change_set,
     );
+    let architecture_evolution =
+        query_architecture_evolution(&scm, &base_revision, &candidate_revision);
     let summary = format!(
         "Git compared {} changed path(s) from {} to {}; semantic impact is {} and prior-work reuse is {}.",
         changes.len(),
@@ -636,7 +674,7 @@ pub fn compare_with(
 
     Ok(GoalCompare {
         summary,
-        schema_version: "cognicode.goal.compare/v1".to_string(),
+        schema_version: "cognicode.goal.compare/v2".to_string(),
         goal: "compare".to_string(),
         producer: "git".to_string(),
         coverage: CompareCoverage {
@@ -655,6 +693,7 @@ pub fn compare_with(
         work_reuse_status: semantic.work_reuse_status,
         work_reuse_reason: semantic.work_reuse_reason,
         revision_facts: semantic.revision_facts,
+        architecture_evolution,
         impact: semantic.impact,
         work_reuse: semantic.work_reuse,
         head_findings: semantic.head_findings,
@@ -693,6 +732,19 @@ pub fn render(answer: &Value) -> String {
             head.reason
         ));
     }
+    let evolution = &compared.architecture_evolution;
+    let evolution_status = match evolution.evolution.status {
+        crate::application::architecture::evolution::EvolutionStatus::Evaluated => "evaluated",
+        crate::application::architecture::evolution::EvolutionStatus::Unknown => "unknown",
+    };
+    text.push_str(&format!(
+        "Architecture evolution: {evolution_status} (base {}, candidate {}), {} added and {} removed violation(s). {}\n",
+        evolution.base.coverage,
+        evolution.candidate.coverage,
+        evolution.evolution.added_violations.len(),
+        evolution.evolution.removed_violations.len(),
+        evolution.evolution.note
+    ));
     if !compared.working_copy.staged_changes.is_empty() {
         text.push_str("Staged changes (HEAD → index):\n");
         for change in compared.working_copy.staged_changes {
@@ -772,7 +824,22 @@ mod tests {
         let answer = compare(directory.path(), base.trim(), "HEAD").expect("compare revisions");
 
         assert_eq!(answer.producer, "git");
+        assert_eq!(answer.schema_version, "cognicode.goal.compare/v2");
+        assert_eq!(
+            answer.architecture_evolution.base.revision_ref,
+            answer.base.revision
+        );
+        assert_eq!(
+            answer.architecture_evolution.candidate.revision_ref,
+            answer.candidate.revision
+        );
+        assert_eq!(answer.architecture_evolution.base.coverage, "full");
+        assert_eq!(answer.architecture_evolution.candidate.coverage, "full");
         let wire = serde_json::to_value(&answer).expect("serialize comparison");
+        assert_eq!(
+            wire["architecture_evolution"]["producer"],
+            "cognicode.application.architecture.ControlQueryService"
+        );
         assert_eq!(wire["working_copy"]["staged_changes"][0]["path"], "src.rs");
         let dirty_paths = wire["working_copy"]["dirty_paths"]
             .as_array()
@@ -784,6 +851,23 @@ mod tests {
         assert_eq!(answer.changes[0].path, "src.rs");
         assert_eq!(answer.changes[0].kind, "modified");
         assert_eq!(answer.impact_status, "evaluated");
+        let revision_facts = answer
+            .revision_facts
+            .as_ref()
+            .expect("revision facts and producer provenance are included");
+        assert!(
+            revision_facts
+                .producer_versions
+                .extractor
+                .starts_with("tree-sitter-facts/")
+        );
+        assert!(
+            revision_facts
+                .producer_versions
+                .facts
+                .starts_with("cognicode.revision-facts/")
+        );
+        assert_eq!(revision_facts.producer_versions.graph, "none");
         let impact = answer.impact.as_ref().expect("a real fact delta");
         assert!(impact.facts_added > 0 && impact.facts_removed > 0);
         assert_eq!(answer.work_reuse_status, "not_evaluated");
