@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::application::context_pack::change::input::{
-    ChangeInput, ChangeScope, ChangeSource, Content, FileChange, MAX_CHANGED_FILES, MAX_FILE_BYTES,
+    ChangeBytes, ChangeScope, ChangeSource, Content, FileDelta, MAX_CHANGED_FILES, MAX_FILE_BYTES,
     SourceChange,
 };
 use crate::domain::scm::{
@@ -58,12 +58,12 @@ impl GitChangeSource {
         })
     }
 
-    fn staged(&self) -> Result<ChangeInput, String> {
+    fn staged(&self) -> Result<ChangeBytes, String> {
         let changes = self.scm.staged_changes(&self.source).map_err(unavailable)?;
         Ok(self.of_change_set(&changes, HeadSide::Index))
     }
 
-    fn commit(&self, commit: &str) -> Result<ChangeInput, String> {
+    fn commit(&self, commit: &str) -> Result<ChangeBytes, String> {
         let head = self
             .scm
             .resolve(&self.source, commit)
@@ -79,7 +79,7 @@ impl GitChangeSource {
         Ok(self.of_change_set(&changes, HeadSide::Revision))
     }
 
-    fn range(&self, base: &str, head: &str) -> Result<ChangeInput, String> {
+    fn range(&self, base: &str, head: &str) -> Result<ChangeBytes, String> {
         let changes = self
             .scm
             .changes_since_merge_base(base, head)
@@ -87,7 +87,7 @@ impl GitChangeSource {
         Ok(self.of_change_set(&changes, HeadSide::Revision))
     }
 
-    fn merge_candidate(&self, ours: &str, theirs: &str) -> Result<ChangeInput, String> {
+    fn merge_candidate(&self, ours: &str, theirs: &str) -> Result<ChangeBytes, String> {
         let changes = self
             .scm
             .changes_vs_merge_candidate(ours, theirs)
@@ -96,7 +96,7 @@ impl GitChangeSource {
     }
 
     /// The change set of the kernel, with the bytes of both sides.
-    fn of_change_set(&self, changes: &ChangeSet, head_side: HeadSide) -> ChangeInput {
+    fn of_change_set(&self, changes: &ChangeSet, head_side: HeadSide) -> ChangeBytes {
         let mut listed: Vec<&Change> = changes.changes().iter().collect();
         listed.sort_by(|a, b| a.path().as_str().cmp(b.path().as_str()));
         let files_not_read = listed.len().saturating_sub(MAX_CHANGED_FILES);
@@ -147,7 +147,7 @@ impl GitChangeSource {
                 }
             })
             .collect();
-        ChangeInput {
+        ChangeBytes {
             base: changes.base().as_str().to_string(),
             head: changes.head().as_str().to_string(),
             files,
@@ -157,7 +157,7 @@ impl GitChangeSource {
 
     /// Everything the working tree holds that `HEAD` does not: staged,
     /// unstaged and untracked, with the bytes on disk as the head side.
-    fn working_tree(&self) -> Result<ChangeInput, String> {
+    fn working_tree(&self) -> Result<ChangeBytes, String> {
         let staged = self.scm.staged_changes(&self.source).map_err(unavailable)?;
         let dirty = self.scm.dirty_paths(&self.source).map_err(unavailable)?;
 
@@ -215,7 +215,7 @@ impl GitChangeSource {
                 files.push(file);
             }
         }
-        Ok(ChangeInput {
+        Ok(ChangeBytes {
             base: staged.base().as_str().to_string(),
             head: "working_tree".to_string(),
             files,
@@ -250,7 +250,7 @@ impl GitChangeSource {
 }
 
 impl ChangeSource for GitChangeSource {
-    fn read(&self, scope: &ChangeScope) -> Result<ChangeInput, String> {
+    fn read(&self, scope: &ChangeScope) -> Result<ChangeBytes, String> {
         match scope {
             ChangeScope::Staged => self.staged(),
             ChangeScope::WorkingTree => self.working_tree(),
@@ -273,18 +273,18 @@ fn before_path(change: &Change) -> PathKey {
     }
 }
 
-fn file_change(kind: &ChangeKind) -> FileChange {
+fn file_change(kind: &ChangeKind) -> FileDelta {
     match kind {
-        ChangeKind::Added => FileChange::Added,
-        ChangeKind::Deleted => FileChange::Deleted,
-        ChangeKind::Modified => FileChange::Modified,
-        ChangeKind::Renamed { from } => FileChange::Renamed {
+        ChangeKind::Added => FileDelta::Added,
+        ChangeKind::Deleted => FileDelta::Deleted,
+        ChangeKind::Modified => FileDelta::Modified,
+        ChangeKind::Renamed { from } => FileDelta::Renamed {
             from: from.as_str().to_string(),
         },
-        ChangeKind::Copied { from } => FileChange::Copied {
+        ChangeKind::Copied { from } => FileDelta::Copied {
             from: from.as_str().to_string(),
         },
-        ChangeKind::Unknown => FileChange::Unknown(
+        ChangeKind::Unknown => FileDelta::Unknown(
             "the change could not be classified, a conflict among the possible causes".to_string(),
         ),
     }
@@ -337,31 +337,31 @@ fn working_change(
     after: Content,
 ) -> Option<SourceChange> {
     let path = key.as_str().to_string();
-    let file = |change: FileChange| SourceChange {
+    let file = |change: FileDelta| SourceChange {
         path: path.clone(),
         change,
         before: before.clone(),
         after: after.clone(),
     };
     if matches!(staged.map(Change::kind), Some(ChangeKind::Unknown)) {
-        return Some(file(FileChange::Unknown(
+        return Some(file(FileDelta::Unknown(
             "the index holds a conflict at this path".to_string(),
         )));
     }
     if let (Content::Unreadable(why), _) | (_, Content::Unreadable(why)) = (&before, &after) {
-        return Some(file(FileChange::Unknown(why.clone())));
+        return Some(file(FileDelta::Unknown(why.clone())));
     }
     let origin = || before_key.as_str().to_string();
     let moved = staged.and_then(|change| match change.kind() {
-        ChangeKind::Renamed { .. } => Some(FileChange::Renamed { from: origin() }),
-        ChangeKind::Copied { .. } => Some(FileChange::Copied { from: origin() }),
+        ChangeKind::Renamed { .. } => Some(FileDelta::Renamed { from: origin() }),
+        ChangeKind::Copied { .. } => Some(FileDelta::Copied { from: origin() }),
         _ => None,
     });
     match (&before, &after) {
         (Content::Absent, Content::Absent) => None,
-        (Content::Bytes(_), Content::Absent) => Some(file(FileChange::Deleted)),
-        (Content::Absent, Content::Bytes(_)) => Some(file(moved.unwrap_or(FileChange::Added))),
+        (Content::Bytes(_), Content::Absent) => Some(file(FileDelta::Deleted)),
+        (Content::Absent, Content::Bytes(_)) => Some(file(moved.unwrap_or(FileDelta::Added))),
         (Content::Bytes(was), Content::Bytes(now)) if was == now => moved.map(file),
-        _ => Some(file(moved.unwrap_or(FileChange::Modified))),
+        _ => Some(file(moved.unwrap_or(FileDelta::Modified))),
     }
 }

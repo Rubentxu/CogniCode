@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 use super::GitChangeSource;
 use crate::application::context_pack::change::input::{
-    ChangeInput, ChangeScope, ChangeSource, Content, FileChange,
+    ChangeBytes, ChangeScope, ChangeSource, Content, FileDelta,
 };
 
 fn git(repo: &Path, args: &[&str]) -> String {
@@ -55,11 +55,11 @@ fn repo_with(files: &[(&str, &str)]) -> TempDir {
     directory
 }
 
-fn read(repo: &Path, scope: ChangeScope) -> Result<ChangeInput, String> {
+fn read(repo: &Path, scope: ChangeScope) -> Result<ChangeBytes, String> {
     GitChangeSource::new(repo).expect("source").read(&scope)
 }
 
-fn paths(input: &ChangeInput) -> Vec<&str> {
+fn paths(input: &ChangeBytes) -> Vec<&str> {
     input.files.iter().map(|file| file.path.as_str()).collect()
 }
 
@@ -79,7 +79,7 @@ fn staged_reads_the_index_and_not_the_working_tree() {
     let staged = read(repo, ChangeScope::Staged).expect("staged");
     assert_eq!(paths(&staged), ["a.rs"]);
     assert_eq!(staged.head, "index");
-    assert_eq!(staged.files[0].change, FileChange::Modified);
+    assert_eq!(staged.files[0].change, FileDelta::Modified);
     assert_eq!(staged.files[0].before, bytes("one\n"));
     assert_eq!(staged.files[0].after, bytes("staged\n"));
 }
@@ -100,8 +100,8 @@ fn the_working_tree_reads_staged_unstaged_and_untracked_from_disk() {
     assert_eq!(tree.head, "working_tree");
     assert_eq!(tree.files[0].after, bytes("staged\nunstaged\n"));
     assert_eq!(tree.files[1].before, bytes("one\n"));
-    assert_eq!(tree.files[2].change, FileChange::Deleted);
-    assert_eq!(tree.files[3].change, FileChange::Added);
+    assert_eq!(tree.files[2].change, FileDelta::Deleted);
+    assert_eq!(tree.files[3].change, FileDelta::Added);
     assert_eq!(tree.files[3].before, Content::Absent);
 }
 
@@ -115,7 +115,7 @@ fn a_staged_rename_is_one_change_in_the_working_tree() {
     assert_eq!(paths(&tree), ["new.rs"]);
     assert_eq!(
         tree.files[0].change,
-        FileChange::Renamed {
+        FileDelta::Renamed {
             from: "old.rs".to_string()
         }
     );
@@ -197,9 +197,9 @@ fn a_merge_candidate_names_its_conflicts_as_unknown() {
     )
     .expect("candidate");
     assert_eq!(paths(&candidate), ["a.rs", "c.rs"]);
-    assert!(matches!(candidate.files[0].change, FileChange::Unknown(_)));
+    assert!(matches!(candidate.files[0].change, FileDelta::Unknown(_)));
     assert!(matches!(candidate.files[0].after, Content::Unreadable(_)));
-    assert_eq!(candidate.files[1].change, FileChange::Modified);
+    assert_eq!(candidate.files[1].change, FileDelta::Modified);
     assert_eq!(candidate.files[1].after, bytes("topic only\n"));
 }
 
@@ -213,7 +213,7 @@ fn an_unborn_head_still_has_a_staged_change() {
 
     let staged = read(repo, ChangeScope::Staged).expect("staged");
     assert_eq!(paths(&staged), ["a.rs"]);
-    assert_eq!(staged.files[0].change, FileChange::Added);
+    assert_eq!(staged.files[0].change, FileDelta::Added);
     assert_eq!(staged.files[0].after, bytes("first\n"));
 }
 

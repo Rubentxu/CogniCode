@@ -18,7 +18,7 @@
 //!
 //! ## What is not known is said
 //!
-//! Every relation the graph cannot vouch for becomes a [`Gap`] next to the
+//! Every relation the graph cannot vouch for becomes a [`ChangeGap`] next to the
 //! selection: a reference that could not be tied to a declaration and that
 //! names a changed symbol, a changed symbol no test reaches, a hunk outside
 //! every symbol, a file that could not be mapped. A gap is not an empty
@@ -73,7 +73,7 @@ impl PendingRef {
 
 /// A part of the question the answer could not close.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct Gap {
+pub struct ChangeGap {
     /// `unmapped_file`, `outside_symbols`, `inexact_diff`, `files_not_read`,
     /// `no_test_found`, `unresolved_reference`, `ambiguous_reference`,
     /// `consumers_truncated`, `tests_truncated` or `candidates_truncated`.
@@ -84,7 +84,7 @@ pub struct Gap {
     pub detail: String,
 }
 
-impl Gap {
+impl ChangeGap {
     fn new(kind: &str, subject: impl Into<String>, detail: impl Into<String>) -> Self {
         Self {
             kind: kind.to_string(),
@@ -119,7 +119,7 @@ pub struct ChangeSelection {
     /// The changed symbols and what was found around each.
     pub symbols: Vec<ChangedSymbol>,
     /// What the selection cannot say.
-    pub gaps: Vec<Gap>,
+    pub gaps: Vec<ChangeGap>,
 }
 
 /// Selects what to read around the changed symbols of `seed`.
@@ -174,7 +174,7 @@ pub fn select_change(
         let (found_tests, gap) = tests_of(graph, symbol);
         found.tests = found_tests.len();
         if found_tests.is_empty() && !is_test(graph, &symbol.id) {
-            out.gaps.push(Gap::new(
+            out.gaps.push(ChangeGap::new(
                 "no_test_found",
                 symbol.id.as_str(),
                 "no test the graph knows reaches this symbol: this is missing coverage, \
@@ -204,7 +204,7 @@ pub fn select_change(
         out.selection.candidates.push(candidate);
     }
     if dropped > 0 {
-        out.gaps.push(Gap::new(
+        out.gaps.push(ChangeGap::new(
             "candidates_truncated",
             "selection",
             format!("{dropped} more candidate(s) than the {MAX_CANDIDATES} a selection holds"),
@@ -218,20 +218,20 @@ fn is_test(graph: &CallGraph, id: &SymbolId) -> bool {
 }
 
 /// The gaps a file leaves, whatever its symbols are.
-fn file_gaps(seed: &ChangeSeed) -> Vec<Gap> {
+fn file_gaps(seed: &ChangeSeed) -> Vec<ChangeGap> {
     let mut gaps = Vec::new();
     for file in &seed.files {
         if file.state == "unmapped" {
             let reason = file.reason.as_deref().unwrap_or("unknown");
             let detail = file.detail.as_deref().unwrap_or_default();
-            gaps.push(Gap::new(
+            gaps.push(ChangeGap::new(
                 "unmapped_file",
                 file.path.as_str(),
                 format!("{reason}: {detail}; its consumers and tests are not known"),
             ));
         }
         if file.outside_symbols > 0 {
-            gaps.push(Gap::new(
+            gaps.push(ChangeGap::new(
                 "outside_symbols",
                 file.path.as_str(),
                 format!(
@@ -241,7 +241,7 @@ fn file_gaps(seed: &ChangeSeed) -> Vec<Gap> {
             ));
         }
         if !file.exact {
-            gaps.push(Gap::new(
+            gaps.push(ChangeGap::new(
                 "inexact_diff",
                 file.path.as_str(),
                 "the changed lines are a superset of the minimal diff: the file changed too much to diff exactly",
@@ -249,7 +249,7 @@ fn file_gaps(seed: &ChangeSeed) -> Vec<Gap> {
         }
     }
     if seed.files_not_read > 0 {
-        gaps.push(Gap::new(
+        gaps.push(ChangeGap::new(
             "files_not_read",
             "change",
             format!(
@@ -281,7 +281,7 @@ fn contracts_of(graph: &CallGraph, symbol: &SeedSymbol) -> Vec<Candidate> {
 
 /// The symbols that depend on `symbol` through one edge, and the gap when
 /// there are more than the bound.
-fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<Gap>) {
+fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<ChangeGap>) {
     let mut found: Vec<Candidate> = graph
         .incoming_dependencies_with_metadata(&symbol.id)
         .into_iter()
@@ -304,7 +304,7 @@ fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Opti
     let total = found.len();
     found.truncate(MAX_CONSUMERS_PER_SYMBOL);
     let gap = (total > found.len()).then(|| {
-        Gap::new(
+        ChangeGap::new(
             "consumers_truncated",
             symbol.id.as_str(),
             format!(
@@ -318,7 +318,7 @@ fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Opti
 
 /// The tests that reach `symbol`, nearest first, and the gap when there are
 /// more than the bound.
-fn tests_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<Gap>) {
+fn tests_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<ChangeGap>) {
     let mut found: Vec<Candidate> = reaching_paths(graph, &symbol.id)
         .into_iter()
         .filter(|(id, _)| is_test(graph, id))
@@ -335,7 +335,7 @@ fn tests_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<G
     let total = found.len();
     found.truncate(MAX_TESTS_PER_SYMBOL);
     let gap = (total > found.len()).then(|| {
-        Gap::new(
+        ChangeGap::new(
             "tests_truncated",
             symbol.id.as_str(),
             format!("{total} tests reach it and {} are listed", found.len()),
@@ -380,12 +380,12 @@ fn reaching_paths(graph: &CallGraph, target: &SymbolId) -> Vec<(SymbolId, Vec<Sy
 
 /// The references the graph could not tie to a declaration that may name
 /// `symbol`: they are consumers the graph cannot vouch for.
-fn pending_gaps(graph: &CallGraph, symbol: &SeedSymbol, pending: &[PendingRef]) -> Vec<Gap> {
+fn pending_gaps(graph: &CallGraph, symbol: &SeedSymbol, pending: &[PendingRef]) -> Vec<ChangeGap> {
     let Some(name) = graph.get_symbol(&symbol.id).map(|found| found.name()) else {
         return Vec::new();
     };
     let matching: Vec<&PendingRef> = pending.iter().filter(|r| r.may_name(name)).collect();
-    let mut gaps: Vec<Gap> = matching
+    let mut gaps: Vec<ChangeGap> = matching
         .iter()
         .take(MAX_PENDING_PER_SYMBOL)
         .map(|reference| {
@@ -393,7 +393,7 @@ fn pending_gaps(graph: &CallGraph, symbol: &SeedSymbol, pending: &[PendingRef]) 
                 Some(line) => format!("{}:{line}", reference.file),
                 None => reference.file.clone(),
             };
-            Gap::new(
+            ChangeGap::new(
                 if reference.ambiguous {
                     "ambiguous_reference"
                 } else {
@@ -408,7 +408,7 @@ fn pending_gaps(graph: &CallGraph, symbol: &SeedSymbol, pending: &[PendingRef]) 
         })
         .collect();
     if matching.len() > MAX_PENDING_PER_SYMBOL {
-        gaps.push(Gap::new(
+        gaps.push(ChangeGap::new(
             "unresolved_reference",
             symbol.id.as_str(),
             format!(

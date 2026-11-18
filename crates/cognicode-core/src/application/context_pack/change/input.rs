@@ -112,7 +112,7 @@ pub enum Content {
 
 /// How one file changed, in the words of the SCM kernel.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FileChange {
+pub enum FileDelta {
     /// Present on the head side only.
     Added,
     /// Present on the base side only.
@@ -140,7 +140,7 @@ pub struct SourceChange {
     /// The path of the head side, relative to the repository root.
     pub path: String,
     /// How it changed.
-    pub change: FileChange,
+    pub change: FileDelta,
     /// The bytes before the change.
     pub before: Content,
     /// The bytes after the change.
@@ -149,7 +149,7 @@ pub struct SourceChange {
 
 /// The change a scope names, read once.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChangeInput {
+pub struct ChangeBytes {
     /// Where the change starts, in words: a revision handle or `index`.
     pub base: String,
     /// Where the change ends, in words: a revision handle, `index` or
@@ -173,7 +173,7 @@ impl Content {
     }
 }
 
-impl ChangeInput {
+impl ChangeBytes {
     /// The digest of the change: where it starts and ends, and, for every
     /// file, how it changed and the bytes of both sides.
     ///
@@ -206,7 +206,7 @@ pub const MAX_FILE_BYTES: u64 = 2 << 20;
 pub trait ChangeSource {
     /// The change of `scope`, or why it is not available. An unavailable
     /// change is never an empty one.
-    fn read(&self, scope: &ChangeScope) -> Result<ChangeInput, String>;
+    fn read(&self, scope: &ChangeScope) -> Result<ChangeBytes, String>;
 }
 
 #[cfg(test)]
@@ -238,13 +238,13 @@ mod tests {
         assert!(ChangeScope::parse("everything", None, None).is_err());
     }
 
-    fn input_with(after: &str) -> ChangeInput {
-        ChangeInput {
+    fn input_with(after: &str) -> ChangeBytes {
+        ChangeBytes {
             base: "abc".to_string(),
             head: "working_tree".to_string(),
             files: vec![SourceChange {
                 path: "src/a.rs".to_string(),
-                change: FileChange::Modified,
+                change: FileDelta::Modified,
                 before: Content::Bytes(b"one\n".to_vec()),
                 after: Content::Bytes(after.as_bytes().to_vec()),
             }],

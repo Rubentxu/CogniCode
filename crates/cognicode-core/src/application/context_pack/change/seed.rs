@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::input::{ChangeInput, Content, FileChange, SourceChange};
+use super::input::{ChangeBytes, Content, FileDelta, SourceChange};
 use super::line_diff::{Hunk, line_diff};
 use crate::application::context_pack::ports::{DeclarationReader, DeclarationSpan, SnapshotView};
 use crate::application::context_pack::service::ItemRange;
@@ -119,7 +119,7 @@ pub struct ChangeSeed {
 
 /// The seed of `input` over the frozen `snapshot`.
 pub fn derive(
-    input: &ChangeInput,
+    input: &ChangeBytes,
     snapshot: &SnapshotView,
     declarations: &dyn DeclarationReader,
 ) -> ChangeSeed {
@@ -161,14 +161,14 @@ fn symbols_by_file<'a>(
     by_file
 }
 
-fn change_word(change: &FileChange) -> (&'static str, Option<String>) {
+fn change_word(change: &FileDelta) -> (&'static str, Option<String>) {
     match change {
-        FileChange::Added => ("added", None),
-        FileChange::Deleted => ("deleted", None),
-        FileChange::Modified => ("modified", None),
-        FileChange::Renamed { from } => ("renamed", Some(from.clone())),
-        FileChange::Copied { from } => ("copied", Some(from.clone())),
-        FileChange::Unknown(_) => ("unknown", None),
+        FileDelta::Added => ("added", None),
+        FileDelta::Deleted => ("deleted", None),
+        FileDelta::Modified => ("modified", None),
+        FileDelta::Renamed { from } => ("renamed", Some(from.clone())),
+        FileDelta::Copied { from } => ("copied", Some(from.clone())),
+        FileDelta::Unknown(_) => ("unknown", None),
     }
 }
 
@@ -213,10 +213,10 @@ fn read_change(
     declarations: &dyn DeclarationReader,
     symbols: Option<&Vec<(SymbolId, &crate::domain::aggregates::Symbol)>>,
 ) -> (ChangedFile, Vec<SeedSymbol>) {
-    if let FileChange::Unknown(why) = &change.change {
+    if let FileDelta::Unknown(why) = &change.change {
         return unmapped(change, "unknown_change", Some(why.clone()));
     }
-    if matches!(change.change, FileChange::Deleted) {
+    if matches!(change.change, FileDelta::Deleted) {
         return unmapped(
             change,
             "deleted",
@@ -290,7 +290,7 @@ fn read_change(
         declarations,
         symbols.map(Vec::as_slice).unwrap_or_default(),
     );
-    let added_file = matches!(change.change, FileChange::Added);
+    let added_file = matches!(change.change, FileDelta::Added);
     let (seeds, outside) = seeds_of(&change.path, &declared, &diff.hunks, added_file);
     file.outside_symbols = outside;
     file.symbols = seeds.iter().map(|seed| seed.id.to_string()).collect();
@@ -517,14 +517,14 @@ mod tests {
     fn modified(before: &str, after: &str) -> SourceChange {
         SourceChange {
             path: "src/a.rs".to_string(),
-            change: FileChange::Modified,
+            change: FileDelta::Modified,
             before: Content::Bytes(before.as_bytes().to_vec()),
             after: Content::Bytes(after.as_bytes().to_vec()),
         }
     }
 
-    fn input(files: Vec<SourceChange>) -> ChangeInput {
-        ChangeInput {
+    fn input(files: Vec<SourceChange>) -> ChangeBytes {
+        ChangeBytes {
             base: "base".to_string(),
             head: "head".to_string(),
             files,
@@ -673,7 +673,7 @@ mod tests {
     fn an_added_file_seeds_its_symbols_as_added() {
         let seed = seed_of(SourceChange {
             path: "src/a.rs".to_string(),
-            change: FileChange::Added,
+            change: FileDelta::Added,
             before: Content::Absent,
             after: Content::Bytes(HEAD.as_bytes().to_vec()),
         });
@@ -711,7 +711,7 @@ mod tests {
     #[test]
     fn a_change_the_kernel_could_not_classify_is_unmapped() {
         let mut change = modified("a\n", HEAD);
-        change.change = FileChange::Unknown("conflict".to_string());
+        change.change = FileDelta::Unknown("conflict".to_string());
         let seed = seed_of(change);
 
         assert_eq!(seed.files[0].state, "unmapped");
@@ -723,7 +723,7 @@ mod tests {
     fn a_deleted_file_is_listed_and_not_mapped() {
         let seed = seed_of(SourceChange {
             path: "src/a.rs".to_string(),
-            change: FileChange::Deleted,
+            change: FileDelta::Deleted,
             before: Content::Bytes(HEAD.as_bytes().to_vec()),
             after: Content::Absent,
         });
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn a_rename_reports_where_the_file_came_from() {
         let mut change = modified(HEAD, HEAD);
-        change.change = FileChange::Renamed {
+        change.change = FileDelta::Renamed {
             from: "src/old.rs".to_string(),
         };
         let seed = seed_of(change);

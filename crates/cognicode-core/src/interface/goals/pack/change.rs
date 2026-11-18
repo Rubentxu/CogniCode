@@ -20,11 +20,11 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::application::context_pack::change::input::{
-    ChangeInput, ChangeScope, ChangeSource, MAX_CHANGED_FILES,
+    ChangeBytes, ChangeScope, ChangeSource, MAX_CHANGED_FILES,
 };
 use crate::application::context_pack::change::seed::{ChangedFile, derive};
 use crate::application::context_pack::change::select::{
-    ChangedSymbol, Gap, PendingRef, select_change,
+    ChangeGap, ChangedSymbol, PendingRef, select_change,
 };
 use crate::application::context_pack::{ContextPack, ContextPackError, ContextPackService};
 use crate::infrastructure::git::GitChangeSource;
@@ -65,7 +65,7 @@ pub struct ChangeReport {
     /// selected around each.
     pub symbols: Vec<ChangedSymbol>,
     /// What the selection cannot say, up to a bound.
-    pub gaps: Vec<Gap>,
+    pub gaps: Vec<ChangeGap>,
     /// How many gaps there are, listed or not.
     pub gaps_total: usize,
     /// The lines the text of the pack carries about the change.
@@ -104,7 +104,7 @@ pub(super) fn scope_of(input: &PackInput) -> Result<Option<ChangeScope>, String>
 }
 
 /// Reads the change of `scope` from the repository at `workspace`.
-pub(super) fn read_change(workspace: &Path, scope: &ChangeScope) -> Result<ChangeInput, String> {
+pub(super) fn read_change(workspace: &Path, scope: &ChangeScope) -> Result<ChangeBytes, String> {
     GitChangeSource::new(workspace)?.read(scope)
 }
 
@@ -125,7 +125,7 @@ pub(super) fn pending_of(pending: &[PendingReferenceInfo]) -> Vec<PendingRef> {
 pub(super) fn build(
     service: &ContextPackService<'_>,
     scope: &ChangeScope,
-    change: &ChangeInput,
+    change: &ChangeBytes,
     pending: &[PendingRef],
     continuation: Option<&str>,
     max_tokens: u64,
@@ -181,10 +181,10 @@ fn short(revision: &str) -> String {
 /// The lines the text of the pack carries about the change.
 fn notes_of(
     scope: &ChangeScope,
-    change: &ChangeInput,
+    change: &ChangeBytes,
     files: &[ChangedFile],
     symbols: usize,
-    gaps: &[Gap],
+    gaps: &[ChangeGap],
 ) -> Vec<String> {
     let mut notes = vec![format!(
         "change {} {}..{}: {} file(s), {} changed symbol(s)",

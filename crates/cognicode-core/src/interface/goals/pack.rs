@@ -30,7 +30,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::application::context_pack::change::input::ChangeInput;
+use crate::application::context_pack::change::input::ChangeBytes;
 use crate::application::context_pack::render::{RenderView, render_with_notes};
 use crate::application::context_pack::{
     AmbiguousAnchor, BudgetReport, ContextPackService, MeasureKind, Omission, PackItem,
@@ -346,7 +346,7 @@ pub fn pack(
         .as_ref()
         .map(|scope| read_change(workspace, scope))
         .transpose()?;
-    let token_scope = change.as_ref().map(ChangeInput::digest).unwrap_or_default();
+    let token_scope = change.as_ref().map(ChangeBytes::digest).unwrap_or_default();
 
     let (_service, built) = service_with_graph(workspace, cache_root)?;
     let snapshot = snapshot_of(&built)?;
