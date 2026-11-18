@@ -7,4 +7,5 @@
 //! domain/application → infrastructure dependency rule by location.
 
 pub mod community_detector;
+pub mod ranking_stats;
 pub mod search_ranker;
