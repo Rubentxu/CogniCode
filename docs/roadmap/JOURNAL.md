@@ -40033,3 +40033,68 @@ detallado, con lo ejecutado y lo no ejecutado, lo lleva el PR de la preparación
 **Límite.** Esta entrada prepara el corte; no lo declara hecho. `v0.106.0` tiene tag y nunca se
 publicó; `v0.107.0` tampoco se publica con este corte (sin release de GitHub, sin assets, sin
 crates.io), y la tabla de releases de `CURRENT.md` no cambia hasta que ocurra.
+
+## Recibo de bloque 7 — FAIL, base `2960249e` (2026-11-18)
+
+**Estado: FAIL** sobre `3d195e71`. El bloque cierra en rojo y no se da por cerrado: el gate
+entero encontró cinco rojos en el paso de integración, y los cinco se corrigen hacia delante en
+sus propias tareas antes de volver a correr la misma base. Lo que este recibo deja es la
+medición, el radio que se midió y el motivo de cada rojo.
+
+**Base y árbol medidos.** Base: `2960249e`, la base que el recibo del bloque 6 declara y que
+sigue existiendo en la historia —la punta que aquel recibo anunciaba como base del bloque 7,
+`bc3e2c46`, ya no está en la historia: el gate mide contra una base que existe, y `2960249e`
+es la última que existe—. El gate se midió sobre `3d195e71`.
+
+**Las tareas.** El rango `2960249e..main` lleva **32** identificadores de tarea —21 `TASK-*`
+del histórico del repo y 11 `CGH-*` del tablero del home— y **88** fusiones de PR
+(#913..#1006). El bloque juntó más de diez tareas porque el trabajo que ya estaba hecho no
+esperó al bloque: el rango empieza en el trabajo de seam y de las puertas del core y termina en
+el corte de la v0.107.0 (CGH-161), en el arreglo del worker de layout (CGH-163) y en las dos
+correcciones que nacen de este recibo (CGH-165 y CGH-166).
+
+**El radio que el gate midió.** Base `2960249e91b1`; tocados `cognicode-cli`, `cognicode-core`,
+`cognicode-mcp` y `cognicode-sandbox`; radio de tests `cognicode`, `cognicode-cli`,
+`cognicode-core`, `cognicode-ladybug`, `cognicode-mcp` y `cognicode-sandbox`; radio de mutantes
+`cognicode-graph-algos` y modo `full`; calendario **en turno**: 366 fusiones desde el marcador
+`fb526521db6e` con periodo 50.
+
+**Comandos.**
+
+| Paso | Comando | Árbol | rc | Recuento |
+|---|---|---|---|---|
+| 1 | `GATE_BASE=2960249e bash scripts/test-gate.sh` | `3d195e71` | 1 | unitarios 5.046, 0 fallos (47 s); integración 2.225 corridos, 2.220 verdes, **5 rojos**, 6 omitidos (148 s); mutantes 627 medidos en 24 min, 618 atrapados, 9 inviables, 0 supervivientes; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `7245633f` | 0 | 88 ficheros, 955 tests, 0 fallos |
+| 3 | `bash scripts/ci/run-all-contracts.sh` | `7245633f` | 0 | 45 suites, 520 casos, 0 fallos; testigo del árbol limpio |
+
+**Los rojos y por qué son de este bloque.**
+
+- **Tres tests del fixture del pack** (`a_change_scope_is_one_answer_on_both_surfaces`,
+  `a_pack_of_a_change_is_partial_and_offers_no_mutation_or_verification` y
+  `staged_and_a_commit_each_show_only_their_own_scope`): el commit del fixture no llega a
+  existir porque la política de git de la máquina clasifica un repositorio por sus remotos y
+  deniega el commit en un repositorio sin remoto (`GCTL-REPO-001`). No es un defecto del
+  producto —los tests hermanos del mismo crate no lo sufren porque fijan el `PATH` y ejecutan el
+  git de verdad, y este usa el git del entorno, que es el que la política juzga— y se corrige
+  hacia delante en CGH-166, que da al fixture el remoto local que la propia política declara
+  para los repositorios de prueba.
+- **Dos derivas del catálogo de herramientas** (`the_published_limitations_are_the_derived_ones`
+  y `every_published_contract_is_the_derived_one`): el maestro
+  `crates/cognicode-core/product/tools.json` publica una limitación menos de las que declara el
+  goal `compare`, y publica una copia del contrato de salida de `graph_explain` donde el runtime
+  ya deriva otro (`CoverageInfo` y la descripción de `ExplainNeighbor`). El maestro está viejo y
+  el arreglo es publicarlo al día en CGH-165, con el contrato derivado y no una copia.
+
+**Un rojo que no era del bloque.** El paso de integración no enlazaba:
+`rust-lld: unable to find library -lssl`. La causa era la máquina, no el árbol: el host tiene el
+runtime de OpenSSL y no el paquete de desarrollo, de modo que `-lssl` no tenía contra qué
+resolverse. Se corrigió en la máquina —el paquete `libssl-dev` extraído sin root en
+`~/.cache/cognicode/tools/libssl-dev` y el gate con `LIBRARY_PATH` apuntando allí— y el repo
+no cambió.
+
+**Lo que este recibo no dice.** El gate se midió sobre `3d195e71`, el árbol anterior a las dos
+correcciones de este bloque; los pasos 2 y 3 se midieron sobre `7245633f`, que ya las lleva. El
+bloque **sigue en rojo** hasta que la misma base vuelva a salir verde, y ese cierre es un
+recibo aparte.
+
+Medición del calendario: crate=cognicode-graph-algos sha=3d195e7155d1940f85fdf37efba1ae90c060c662 cargo-mutants=27.1.0 rustc=1.96.0/ac68faa20 resultado=PASS
