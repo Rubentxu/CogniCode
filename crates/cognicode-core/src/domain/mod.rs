@@ -86,6 +86,7 @@ pub mod advisory_matching;
 pub mod dependency_inventory;
 pub mod intent;
 pub mod investigation;
+pub mod investigation_candidates;
 pub mod investigation_store;
 pub mod plan;
 pub mod ports;

@@ -136,6 +136,7 @@ mod inherits_goldens_without_lsp;
 mod inner_layers_do_not_import_interface;
 mod intelligence_event_log_e2e;
 mod inventory_says_which_is_which;
+mod investigation_candidates_service;
 mod k1_kotlin_symbol_contract;
 mod language_registry_matches_its_grammar;
 mod language_symbols_goldens;
