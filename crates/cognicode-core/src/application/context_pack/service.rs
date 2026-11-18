@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 
 use super::measure::{MeasureKind, Measured, TokenMeasure};
 use super::ports::{DeclarationReader, Relevance, SnapshotView, SourceReader};
-use super::render::{RenderView, render};
+use super::render::{RenderView, render_with_notes};
 use super::selection::{Candidate, ContextSelection, SelectionRequest, select};
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::findings::digest::sha256_hex;
@@ -196,6 +196,11 @@ pub struct ContextPackService<'a> {
     pub declarations: &'a dyn DeclarationReader,
     /// The measure of the budget.
     pub measure: &'a dyn TokenMeasure,
+    /// What else a continuation token is bound to besides the snapshot:
+    /// empty for a pack that depends on the snapshot alone, the digest of
+    /// the change for a pack about one. A token issued under one scope is
+    /// refused under any other.
+    pub token_scope: &'a str,
 }
 
 impl ContextPackService<'_> {
@@ -218,6 +223,19 @@ impl ContextPackService<'_> {
         offset: usize,
         max_tokens: u64,
     ) -> ContextPack {
+        self.pack_with_notes(selection, offset, max_tokens, &[])
+    }
+
+    /// Builds the pack of a selection that is already made, with `notes`
+    /// printed between the header and the items. The notes are part of the
+    /// text the budget measures.
+    pub fn pack_with_notes(
+        &self,
+        selection: &ContextSelection,
+        offset: usize,
+        max_tokens: u64,
+        notes: &[String],
+    ) -> ContextPack {
         let total = selection.candidates.len();
         let mut files: HashMap<String, Result<String, String>> = HashMap::new();
         let mut delivered: Vec<(usize, PackItem)> = Vec::new();
@@ -230,7 +248,8 @@ impl ContextPackService<'_> {
                 Err(omission) => refused.push((consumed, omission)),
                 Ok(item) => {
                     delivered.push((consumed, item));
-                    let text = self.text(&delivered, &refused, (offset, consumed + 1), total);
+                    let text =
+                        self.text(&delivered, &refused, (offset, consumed + 1), total, notes);
                     if self.measure.measure(&text).tokens > max_tokens {
                         delivered.pop();
                         break;
@@ -240,7 +259,7 @@ impl ContextPackService<'_> {
             consumed += 1;
         }
 
-        let mut text = self.text(&delivered, &refused, (offset, consumed), total);
+        let mut text = self.text(&delivered, &refused, (offset, consumed), total, notes);
         while self.measure.measure(&text).tokens > max_tokens {
             match delivered.pop() {
                 Some((index, _)) => {
@@ -254,7 +273,7 @@ impl ContextPackService<'_> {
                     break;
                 }
             }
-            text = self.text(&delivered, &refused, (offset, consumed), total);
+            text = self.text(&delivered, &refused, (offset, consumed), total, notes);
         }
 
         self.assemble(
@@ -328,17 +347,21 @@ impl ContextPackService<'_> {
         refused: &[(usize, Omission)],
         (offset, consumed): (usize, usize),
         total: usize,
+        notes: &[String],
     ) -> String {
         let items: Vec<PackItem> = delivered.iter().map(|(_, item)| item.clone()).collect();
         let remaining = total - consumed.min(total);
         let token = self.token_for(consumed, offset, total);
-        render(&RenderView {
-            snapshot_digest: &self.snapshot.digest,
-            items: &items,
-            remaining,
-            refused: refused.len(),
-            continuation: token.as_deref(),
-        })
+        render_with_notes(
+            &RenderView {
+                snapshot_digest: &self.snapshot.digest,
+                items: &items,
+                remaining,
+                refused: refused.len(),
+                continuation: token.as_deref(),
+            },
+            notes,
+        )
     }
 
     /// The token of the page that starts at `next`, when there is one.
@@ -351,20 +374,24 @@ impl ContextPackService<'_> {
     /// budget— has no token: following it would ask for the same page
     /// again, forever. The budget is what has to change.
     fn token_for(&self, next: usize, offset: usize, total: usize) -> Option<String> {
-        (next < total && next > offset).then(|| {
-            format!(
-                "v1.{}.{}",
-                self.snapshot
-                    .digest
-                    .chars()
-                    .take(TOKEN_DIGEST_PREFIX)
-                    .collect::<String>(),
-                next
-            )
-        })
+        (next < total && next > offset).then(|| format!("v1.{}.{}", self.binding(), next))
     }
 
-    fn offset_of(&self, token: Option<&str>) -> Result<usize, ContextPackError> {
+    /// The prefix of the digest a continuation token is bound to: the
+    /// snapshot, and the token scope when the pack has one.
+    fn binding(&self) -> String {
+        let bound = if self.token_scope.is_empty() {
+            self.snapshot.digest.clone()
+        } else {
+            sha256_hex(format!("{}\n{}", self.snapshot.digest, self.token_scope).as_bytes())
+        };
+        bound.chars().take(TOKEN_DIGEST_PREFIX).collect()
+    }
+
+    /// The position a continuation token asks for, or why it is refused.
+    ///
+    /// A token is bound to the digest of the snapshot it was issued over.
+    pub fn offset_of(&self, token: Option<&str>) -> Result<usize, ContextPackError> {
         let Some(token) = token else { return Ok(0) };
         let mut parts = token.splitn(3, '.');
         let (Some("v1"), Some(digest), Some(position)) = (parts.next(), parts.next(), parts.next())
@@ -374,13 +401,7 @@ impl ContextPackService<'_> {
         let position: usize = position
             .parse()
             .map_err(|_| ContextPackError::InvalidContinuation)?;
-        let current: String = self
-            .snapshot
-            .digest
-            .chars()
-            .take(TOKEN_DIGEST_PREFIX)
-            .collect();
-        if digest != current {
+        if digest != self.binding() {
             return Err(ContextPackError::StaleContinuation);
         }
         Ok(position)

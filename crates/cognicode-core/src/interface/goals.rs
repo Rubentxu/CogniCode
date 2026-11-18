@@ -546,12 +546,22 @@ como ambigüedad y no se resuelve; se pasa el id del símbolo. El presupuesto \
 un tokenizador configurado el recuento es exacto para él, y sin él es una cota \
 superior declarada, nunca exacta. El paquete dice qué entregó y qué dejó fuera, y no \
 afirma cobertura semántica: nadie la evalúa. Si no cabe todo, devuelve un \
-`continuation_token` para la página siguiente de la misma instantánea. Ejemplos: \
+`continuation_token` para la página siguiente de la misma instantánea. Con \
+`--change-scope` (`staged`, `working_tree`, `commit`, `range` o `merge_candidate`) \
+la semilla son las líneas exactas de un cambio en lugar de símbolos: el paquete \
+trae los símbolos que esas líneas tocan, y de ellos los consumidores (si cambia \
+la firma), los contratos que implementan y los tests que el grafo alcanza, cada \
+uno con la relación que lo justifica. Lo que el grafo no sabe (relaciones sin \
+resolver, ficheros que no se pudieron leer, un merge con conflictos, símbolos sin \
+test) sale como hueco y el paquete queda `partial`, nunca completo. Es lectura \
+orientativa: no calcula el impacto ni decide una puerta. Ejemplos: \
 `cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse \
-config\" --max-tokens 800`.",
+config\" --max-tokens 800`, `cognicode pack --change-scope staged`.",
     examples: &[
         "cognicode pack --symbols src/lib.rs:helper:10",
         "cognicode pack --intent \"parse config\" --max-tokens 800",
+        "cognicode pack --change-scope staged",
+        "cognicode pack --change-scope commit --head HEAD",
     ],
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
@@ -810,11 +820,20 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
                 .to_string(),
         ]
+    } else if goal.name == "advisories" {
+        vec![
+            "Reads a pinned OSV feed from a workspace file, offline and never fetched: a match is an observation, not exploitability, and not artifact signature verification."
+                .to_string(),
+            "Only crates.io packages of Cargo lockfiles are correlated; yanked status is not known; a stale, partial or unparseable feed never yields a clean result."
+                .to_string(),
+        ]
     } else if goal.name == "pack" {
         vec![
             "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select."
                 .to_string(),
             "The budget measures the rendered text, not the structured answer."
+                .to_string(),
+            "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known."
                 .to_string(),
         ]
     } else {

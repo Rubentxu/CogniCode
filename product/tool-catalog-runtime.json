@@ -1700,13 +1700,37 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Return a context pack of symbols: for each one its unambiguous identity, the source range, the digest of the file, the reason it was chosen and the snapshot it was computed over. A bare name that several symbols declare is reported as an ambiguity and never resolved; pass the symbol id. The budget (`max_tokens`) bounds the rendered text and is measured on that same text: with a configured tokenizer the count is exact for it, without one it is a declared upper bound, never exact. The pack says what it delivered and what it left out and does not claim semantic coverage: nobody assesses it. When not everything fits it returns a `continuation_token` for the next page of the same snapshot. Examples: `cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse config\" --max-tokens 800`.",
+    "description": "Return a context pack of symbols: for each one its unambiguous identity, the source range, the digest of the file, the reason it was chosen and the snapshot it was computed over. A bare name that several symbols declare is reported as an ambiguity and never resolved; pass the symbol id. The budget (`max_tokens`) bounds the rendered text and is measured on that same text: with a configured tokenizer the count is exact for it, without one it is a declared upper bound, never exact. The pack says what it delivered and what it left out and does not claim semantic coverage: nobody assesses it. When not everything fits it returns a `continuation_token` for the next page of the same snapshot. With `change_scope` (`staged`, `working_tree`, `commit`, `range` or `merge_candidate`) the seed is the exact lines of a change instead of symbols: the pack carries the symbols those lines touch and, for each, the consumers (when its signature changes), the contracts it implements and the tests the graph reaches, every item with the relation that justifies it. What the graph does not know (unresolved relations, files that could not be read, a merge with conflicts, symbols no test reaches) is listed as a gap and the pack is `partial`, never complete. It is an advisory reading selection: it computes no impact and decides no gate. Examples: `cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse config\" --max-tokens 800`, `cognicode pack --change-scope staged`.",
     "inputSchema": {
       "description": "Input for the `pack` goal",
       "properties": {
+        "base": {
+          "default": null,
+          "description": "The branch a `range` is proposed against, or the branch that receives\na `merge_candidate`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "change_scope": {
+          "default": null,
+          "description": "Pack the lines of a change instead of named symbols: `staged`,\n`working_tree`, `commit`, `range` or `merge_candidate`. The seed is the\nchanged lines, so `symbols` and `intent` are not passed with it.\n`staged` and `working_tree` take no reference; `commit` takes `head`;\n`range` and `merge_candidate` take `base` and `head`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "continuation_token": {
           "default": null,
           "description": "The `continuation_token` of a previous answer, to get the next page\nof the same snapshot.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "default": null,
+          "description": "The commit of a `commit` scope, the branch that carries a `range`, or\nthe branch merged in a `merge_candidate`.",
           "type": [
             "string",
             "null"

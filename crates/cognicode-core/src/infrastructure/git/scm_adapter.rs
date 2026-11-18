@@ -719,12 +719,10 @@ impl GitScmAdapter {
             )));
         }
         // `-z` rewrites the record layout: the tree OID ends with a
-        // NUL, and each conflicted path is its own NUL field. There is
-        // no newline anywhere in this mode.
-        let mut fields = run
-            .stdout
-            .split(|byte| *byte == b'\0')
-            .filter(|f| !f.is_empty());
+        // NUL, and each conflicted path is its own NUL field. An empty
+        // field closes the list of paths; what follows is the merge's
+        // informational messages (localized prose, not paths).
+        let mut fields = run.stdout.split(|byte| *byte == b'\0');
         let tree_sha = fields
             .next()
             .map(|f| String::from_utf8_lossy(f).trim().to_string())
@@ -732,7 +730,10 @@ impl GitScmAdapter {
         if tree_sha.len() != 40 || !tree_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(failure(format!("malformed merge-tree output {tree_sha:?}")));
         }
-        let conflicts: Vec<PathKey> = fields.map(path_key_from_bytes).collect::<Result<_, _>>()?;
+        let conflicts: Vec<PathKey> = fields
+            .take_while(|field| !field.is_empty())
+            .map(path_key_from_bytes)
+            .collect::<Result<_, _>>()?;
         let source = self.source()?;
         let revision = self.revision_for(&source, &tree_sha)?;
         Ok(MergeCandidate {
@@ -890,24 +891,70 @@ impl RevisionReader for GitScmAdapter {
         paths: &[PathKey],
         max_bytes: u64,
     ) -> Vec<Result<BlobRead, ScmError>> {
+        self.blobs_at(revision.handle(), paths, max_bytes)
+    }
+}
+
+impl GitScmAdapter {
+    /// The bytes of `paths` as the revision named by `handle` holds them,
+    /// through one batched read. The handle may be a commit or a tree, so a
+    /// virtual merge tree is read the same way as a commit. One answer per
+    /// path, in order: a path the revision does not hold, or a gitlink, is
+    /// `ContentUnavailable`.
+    pub fn blobs_at(
+        &self,
+        handle: &RevisionHandle,
+        paths: &[PathKey],
+        max_bytes: u64,
+    ) -> Vec<Result<BlobRead, ScmError>> {
+        match self.tracked_rows(handle.as_str()) {
+            Ok(rows) => self.blobs_of_rows(&rows, paths, max_bytes),
+            Err(error) => paths.iter().map(|_| Err(error.clone())).collect(),
+        }
+    }
+
+    /// The bytes of `paths` as the INDEX holds them (stage 0), through one
+    /// batched read. A path the index does not hold at stage 0 is
+    /// `ContentUnavailable`.
+    pub fn staged_blobs(
+        &self,
+        paths: &[PathKey],
+        max_bytes: u64,
+    ) -> Vec<Result<BlobRead, ScmError>> {
+        let rows = self
+            .run(&["ls-files", "--stage", "-z"], LIST_CAP)
+            .and_then(|run| {
+                if run.code != 0 {
+                    return Err(failure(format!("git ls-files failed (code {})", run.code)));
+                }
+                parse_ls_files_s_z(&run.stdout).map(|(rows, _conflicts)| rows)
+            });
+        match rows {
+            Ok(rows) => self.blobs_of_rows(&rows, paths, max_bytes),
+            Err(error) => paths.iter().map(|_| Err(error.clone())).collect(),
+        }
+    }
+
+    fn blobs_of_rows(
+        &self,
+        rows: &[OwnedRow],
+        paths: &[PathKey],
+        max_bytes: u64,
+    ) -> Vec<Result<BlobRead, ScmError>> {
         let unavailable = |path: &PathKey| ScmError::ContentUnavailable {
             path: path.as_str().to_string(),
         };
-        let rows = match self.tracked_rows(revision.handle().as_str()) {
-            Ok(rows) => rows,
-            Err(error) => return paths.iter().map(|_| Err(error.clone())).collect(),
-        };
-        let mut oid_of: std::collections::HashMap<PathKey, &OwnedRow> =
+        let mut row_of: std::collections::HashMap<PathKey, &OwnedRow> =
             std::collections::HashMap::with_capacity(rows.len());
-        for row in rows.iter() {
+        for row in rows {
             if let Ok(key) = path_key_from_bytes(&row.path) {
-                oid_of.insert(key, row);
+                row_of.insert(key, row);
             }
         }
         let mut wanted: Vec<&str> = Vec::new();
         let mut slot: Vec<Option<usize>> = Vec::with_capacity(paths.len());
         for path in paths {
-            match oid_of.get(path) {
+            match row_of.get(path) {
                 Some(row) if !row.gitlink => {
                     slot.push(Some(wanted.len()));
                     wanted.push(row.oid.as_str());

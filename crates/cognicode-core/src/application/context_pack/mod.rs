@@ -5,6 +5,7 @@
 //! through ports and owns no index, no store and no graph: a pack is an
 //! ephemeral projection over the frozen snapshot it is given.
 
+pub mod change;
 pub mod measure;
 pub mod ports;
 pub mod render;
