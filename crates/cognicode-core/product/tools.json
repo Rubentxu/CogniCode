@@ -1725,7 +1725,8 @@
         "head_ref"
       ],
       "limitations": [
-        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the three detectors that write read-sets, function definitions, type definitions and unprotected S3 buckets, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound."
+        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the three detectors that write read-sets, function definitions, type definitions and unprotected S3 buckets, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound.",
+        "Architecture evolution evaluates admitted canonical constraints over tracked Rust source only, capped at 256 files, 256 KiB per file and 16 MiB per revision. Missing, unreadable or over-budget source is reported as partial and makes that comparison unknown. The native metric is the sum of cyclomatic paths over Rust functions only; its delta is withheld unless both sides have complete metric coverage."
       ]
     },
     {
@@ -5950,23 +5951,89 @@
             ],
             "type": "object"
           },
-          "ExplainNeighbor": {
+          "CoverageInfo": {
+            "description": "What an answer covers, in the shape every consumer reads it.\n\nThe word is the coverage's, not the consumer's: it is the word the\nowner of the coverage publishes, so the CLI, the MCP and the SDK say\nthe same thing about the same tree. The three lists are the three\nholes a build can leave open, and they travel together because a\nconsumer that reads one of them and not the others reads half the\ntruth.",
             "properties": {
+              "pending_references": {
+                "description": "The references the graph could not tie to a declaration.",
+                "items": {
+                  "$ref": "#/$defs/PendingReferenceInfo"
+                },
+                "type": "array"
+              },
+              "rejected_relations": {
+                "description": "The relations the repository refused.",
+                "items": {
+                  "$ref": "#/$defs/RejectedRelationInfo"
+                },
+                "type": "array"
+              },
+              "skipped_files": {
+                "description": "The files the walk could not read.",
+                "items": {
+                  "$ref": "#/$defs/SkippedFileInfo"
+                },
+                "type": "array"
+              },
+              "status": {
+                "description": "The word the coverage is published with: \"complete\", \"partial\",\n\"unknown\" or \"unsupported\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "skipped_files",
+              "pending_references",
+              "rejected_relations"
+            ],
+            "type": "object"
+          },
+          "ExplainNeighbor": {
+            "description": "One direct relation to the explained node, retaining the graph's orientation.",
+            "properties": {
+              "confidence": {
+                "description": "Confidence recorded for the relation.",
+                "format": "double",
+                "type": "number"
+              },
               "depth": {
                 "format": "uint",
                 "minimum": 0,
                 "type": "integer"
               },
+              "provenance": {
+                "description": "How the graph established the relation.",
+                "type": "string"
+              },
               "relation": {
+                "description": "The actual relation kind stored by the graph.",
+                "type": "string"
+              },
+              "side": {
+                "description": "Whether this relation points into or out of the explained node.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The source endpoint as stored by the graph.",
                 "type": "string"
               },
               "symbol": {
+                "description": "The neighbouring symbol's identifier.",
+                "type": "string"
+              },
+              "target": {
+                "description": "The target endpoint as stored by the graph.",
                 "type": "string"
               }
             },
             "required": [
               "symbol",
               "relation",
+              "side",
+              "source",
+              "target",
+              "provenance",
+              "confidence",
               "depth"
             ],
             "type": "object"
@@ -6075,6 +6142,113 @@
               "authority"
             ],
             "type": "object"
+          },
+          "PendingReason": {
+            "description": "Why the far end of a reference could not be identified.",
+            "oneOf": [
+              {
+                "const": "unresolved",
+                "description": "The far end could not be identified: either no declaration\ncarries the name, or the declaration that carries it could not be\ntied to the call.\n\nThe two are the same answer for the consumer — the reference does\nnot name a declaration — and they are the same answer for the\nwire: the class of a reference is what a consumer reads, and the\nshape of this enum does not change to tell them apart.",
+                "type": "string"
+              },
+              {
+                "const": "ambiguous",
+                "description": "More than one does, and the graph cannot prove which one.",
+                "type": "string"
+              }
+            ]
+          },
+          "PendingReferenceInfo": {
+            "description": "A reference the graph could not tie to a declaration.",
+            "properties": {
+              "candidates": {
+                "description": "How many declarations carry the name, when there are several.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "file": {
+                "description": "The file that writes the reference.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "What the reference is.",
+                "type": "string"
+              },
+              "line": {
+                "description": "The line the reference is written on (1-indexed): the line a person reads.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/$defs/PendingReason",
+                "description": "Why the far end could not be identified: `unresolved` when the far\nend could not be identified — no declaration carries the name, or\nthe declaration that carries it could not be tied to the call —\nand `ambiguous` when several declarations carry the name."
+              },
+              "target": {
+                "description": "The name the reference names.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "RejectedRelationInfo": {
+            "description": "A relation the repository refused to take.\n\nThe relation is not an edge of the graph: the number of relationships\nthe consumer reads counts the relations the graph *holds*. Naming the\nrefused ones is what keeps that number and the graph in agreement.",
+            "properties": {
+              "kind": {
+                "description": "What the relation is.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the repository refused it.",
+                "type": "string"
+              },
+              "source": {
+                "description": "The declaration that holds the relation.",
+                "type": "string"
+              },
+              "target": {
+                "description": "The declaration the relation points at.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "SkippedFileInfo": {
+            "description": "A file the walk could not read.",
+            "properties": {
+              "path": {
+                "description": "The path of the file.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the walk could not read it.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "reason"
+            ],
+            "type": "object"
           }
         },
         "description": "La respuesta, con lo que la sostiene y lo que viene después.",
@@ -6102,11 +6276,23 @@
                 },
                 "type": "array"
               },
+              "callees_truncated": {
+                "description": "Whether the callees list was cut at `neighbor_limit`.",
+                "type": "boolean"
+              },
               "callers": {
                 "items": {
                   "$ref": "#/$defs/ExplainNeighbor"
                 },
                 "type": "array"
+              },
+              "callers_truncated": {
+                "description": "Whether the callers list was cut at `neighbor_limit`.",
+                "type": "boolean"
+              },
+              "coverage": {
+                "$ref": "#/$defs/CoverageInfo",
+                "description": "Coverage of the graph read, or `unknown` when it was not measured."
               },
               "fan_in": {
                 "format": "uint",
@@ -6118,11 +6304,17 @@
                 "minimum": 0,
                 "type": "integer"
               },
+              "neighbor_limit": {
+                "description": "Maximum neighbours published in each direction.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
               "node": {
                 "$ref": "#/$defs/ExplainNode"
               },
               "summary": {
-                "description": "One line saying what the answer says.",
+                "description": "One line saying what the answer says, including coverage and truncation.",
                 "type": "string"
               }
             },
@@ -6132,6 +6324,10 @@
               "callees",
               "fan_in",
               "fan_out",
+              "coverage",
+              "neighbor_limit",
+              "callers_truncated",
+              "callees_truncated",
               "summary"
             ],
             "title": "GraphExplainOutput",
