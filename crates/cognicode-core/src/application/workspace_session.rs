@@ -512,10 +512,13 @@ impl WorkspaceSession {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to save manifest: {}", e))
         })?;
 
-        // FTS5 sync: ensure semantic search is initialized and index changed files
-        // This ensures FTS5 tables stay in sync with the rebuilt call graph
+        // Symbol index sync: make sure the in-memory symbol index exists and
+        // reflects the files that changed since the call graph was rebuilt.
         if let Err(e) = self.ensure_semantic_search().await {
-            tracing::warn!("Failed to initialize semantic search for FTS5 sync: {}", e);
+            tracing::warn!(
+                "Failed to initialize semantic search for the symbol index sync: {}",
+                e
+            );
         } else {
             // Forget the files that are gone: an index that hears about new
             // files and never about deleted ones keeps answering for code
@@ -528,7 +531,11 @@ impl WorkspaceSession {
             for rel_path in &new_files {
                 let full_path = self.workspace_root.join(rel_path);
                 if let Err(e) = self.symbol_search.index_file(&full_path) {
-                    tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
+                    tracing::warn!(
+                        "Failed to index new file {:?} into the symbol index: {}",
+                        full_path,
+                        e
+                    );
                 }
             }
             // Index modified files
@@ -536,7 +543,7 @@ impl WorkspaceSession {
                 let full_path = self.workspace_root.join(rel_path);
                 if let Err(e) = self.symbol_search.index_file(&full_path) {
                     tracing::warn!(
-                        "Failed to index modified file {:?} to FTS5: {}",
+                        "Failed to index modified file {:?} into the symbol index: {}",
                         full_path,
                         e
                     );
@@ -3748,7 +3755,7 @@ pub const MY_CONST: i32 = 42;
     #[tokio::test(flavor = "current_thread")]
     #[cfg(feature = "persistence")]
     async fn test_incremental_reindex_modifed_file_syncs_semantic_index() {
-        // Test that incremental_reindex syncs the semantic search index (DashMap + FTS5)
+        // Test that incremental_reindex syncs the in-memory semantic search index
         use crate::infrastructure::persistence::InMemoryGraphStore;
         use std::sync::Arc;
         use std::time::Duration;
