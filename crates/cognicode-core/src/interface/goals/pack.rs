@@ -25,7 +25,7 @@
 //! is not measured; the budget says so in `scope`.
 
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -38,7 +38,7 @@ use crate::application::context_pack::{
 };
 use crate::application::graph_snapshot::source_digest;
 use crate::domain::aggregates::call_graph::CallGraph;
-use crate::infrastructure::graph::analytics::ranking_stats::RankingStats;
+use crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache;
 use crate::infrastructure::semantic::TreeSitterDeclarations;
 use crate::interface::coverage::{
     CoverageInfo, PendingReferenceInfo, RejectedRelationInfo, SkippedFileInfo,
@@ -223,16 +223,20 @@ pub struct GoalPack {
     pub basis: Option<GoalBasis>,
 }
 
-/// The ranker of the product, built on the first intent only.
+/// The ranker of the product.
+///
+/// The statistics belong to the snapshot, not to the call: they are asked
+/// from the cache on the first intent only, and the cache builds them once
+/// per published graph.
 struct IdfRelevance<'a> {
-    graph: &'a CallGraph,
-    stats: OnceLock<RankingStats>,
+    graph: &'a Arc<CallGraph>,
+    stats: &'a RankingStatsCache,
 }
 
 impl Relevance for IdfRelevance<'_> {
     fn rank(&self, intent: &str, max: usize) -> Vec<Ranked> {
         self.stats
-            .get_or_init(|| RankingStats::build(self.graph))
+            .stats_for(self.graph)
             .rank(intent, max)
             .into_iter()
             .map(|scored| Ranked {
@@ -283,11 +287,17 @@ fn snapshot_of(built: &ProjectGraph) -> Result<SnapshotView, String> {
 }
 
 /// The pack of a request over the project's graph.
-pub fn pack(
-    workspace: &Path,
-    cache_root: Option<&Path>,
-    input: &PackInput,
-) -> Result<GoalPack, String> {
+///
+/// Inside a session the graph and the ranking statistics are the ones the
+/// session holds for the snapshot, for as long as the tree has not changed;
+/// without one, both are decided for this call alone. The answer is the same
+/// either way.
+pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack, String> {
+    let GoalEnvironment {
+        workspace,
+        cache_root,
+        session,
+    } = *environment;
     let intent = input
         .intent
         .as_deref()
@@ -317,11 +327,15 @@ pub fn pack(
         })?,
     };
 
-    let (_service, built) = service_with_graph(workspace, cache_root)?;
+    let built = match session {
+        Some(session) => session.project_graph(workspace, cache_root)?,
+        None => service_with_graph(workspace, cache_root)?.1,
+    };
     let snapshot = snapshot_of(&built)?;
+    let one_call = RankingStatsCache::default();
     let relevance = IdfRelevance {
         graph: &snapshot.graph,
-        stats: OnceLock::new(),
+        stats: session.map_or(&one_call, |session| session.ranking_stats()),
     };
     let sources = WorkspaceSources {
         root: &snapshot.root,
@@ -417,7 +431,7 @@ fn measure_label(kind: &MeasureKind) -> String {
 pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let input: PackInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `pack` are not valid: {error}"))?;
-    let answer = pack(ctx.workspace, ctx.cache_root, &input)?;
+    let answer = pack(ctx, &input)?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `pack` is not serialisable: {error}"))
 }

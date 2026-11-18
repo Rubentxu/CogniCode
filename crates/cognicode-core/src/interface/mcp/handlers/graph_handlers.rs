@@ -429,6 +429,14 @@ pub async fn handle_graph_surprising_connections(
 // ============================================================================
 
 impl HandlerContext {
+    /// The ranking-statistics cache of this context, shared by every tool
+    /// that ranks by name weight.
+    pub fn ranking_stats_cache(
+        &self,
+    ) -> Arc<crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache> {
+        Arc::clone(&self.ranking_stats)
+    }
+
     /// What the ranking-statistics cache of this context has built, served
     /// and evicted so far: one build per snapshot, however many
     /// `graph_search_idf` calls it answers.
