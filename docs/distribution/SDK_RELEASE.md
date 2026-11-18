@@ -65,7 +65,7 @@ for those crates is the documentation tests that `cargo test --doc` executes
 (core: 2 run, macros: 6 are marked `ignore`).
 
 - `cognicode-graph-algos`: `examples/page_rank.rs`, run with `cargo run --example page_rank -p cognicode-graph-algos`
-- `cognicode-core`: `examples/measure_incremental_scanner.rs`, a measurement instrument for the incremental scanner (not a product route), run with `cargo run --example measure_incremental_scanner -p cognicode-core`
+- `cognicode-core`: `examples/measure_incremental_scanner.rs`, a measurement instrument for the incremental scanner (not a product route), run with `cargo run --example measure_incremental_scanner -p cognicode-core`; `examples/measure_syntax_gaps.rs`, a measurement instrument that reports which source files the bundled grammars cannot read cleanly (not a product route), run with `cargo run --example measure_syntax_gaps -p cognicode-core`
 - `cognicode-macros`: none yet
 - `cognicode-graph-wasm`: none yet
 
