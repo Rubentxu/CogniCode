@@ -1175,8 +1175,17 @@ mod search_semantics {
         }
     }
 
+    /// A fragment written in a script the search has to index as text. The
+    /// characters are unicode escapes: the source carries no foreign script
+    /// and the data stays the same one the search must handle.
+    const JAPANESE: &str = "\u{65e5}\u{672c}";
+    /// The same script with its third character and a suffix.
+    const JAPANESE_NAME: &str = "\u{65e5}\u{672c}\u{8a9e}_x";
+    /// The last two characters of [`JAPANESE_NAME`].
+    const JAPANESE_TAIL: &str = "\u{672c}\u{8a9e}";
+
     const FRAGMENTS: [&str; 18] = [
-        "get", "set", "new", "handle", "Request", "Parser", "parse", "_", "日本", "ñ", "Ñ", "x",
+        "get", "set", "new", "handle", "Request", "Parser", "parse", "_", JAPANESE, "ñ", "Ñ", "x",
         "a", "b", "index", "Index", "find", "İ",
     ];
     const KINDS: [SymbolKind; 5] = [
@@ -1447,7 +1456,7 @@ mod search_semantics {
                 function("Ñandú", "src/a.rs", 1, 0),
                 function("caf\u{e9}", "src/a.rs", 2, 0),
                 function("cafe\u{301}", "src/a.rs", 3, 0),
-                function("日本語_x", "src/a.rs", 4, 0),
+                function(JAPANESE_NAME, "src/a.rs", 4, 0),
                 function("İstanbul", "src/a.rs", 5, 0),
             ],
         );
@@ -1476,8 +1485,8 @@ mod search_semantics {
             "the precomposed `é` is not the decomposed one"
         );
         assert_eq!(
-            kinds_of("本語"),
-            [("日本語_x".to_string(), MatchType::Contains)]
+            kinds_of(JAPANESE_TAIL),
+            [(JAPANESE_NAME.to_string(), MatchType::Contains)]
         );
         assert_eq!(
             kinds_of("istanbul"),
