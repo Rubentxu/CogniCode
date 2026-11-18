@@ -374,7 +374,7 @@ fn the_resolved_digest_depends_on_the_graph_and_not_on_formatting() {
 }
 
 #[test]
-fn the_observed_and_distributed_layers_are_never_claimed() {
+fn the_observed_and_distributed_layers_are_not_claimed_without_their_evidence() {
     let found = consistent_unit();
 
     for layer in [DependencyLayer::Observed, DependencyLayer::Distributed] {

@@ -81,6 +81,15 @@ impl PackageSource {
         }
     }
 
+    /// Whether `url` names an index of the default registry (crates.io),
+    /// with or without the lockfile protocol prefix.
+    pub fn is_default_index(url: &str) -> bool {
+        let bare = index_without_protocol(url);
+        DEFAULT_REGISTRIES
+            .iter()
+            .any(|default| index_without_protocol(default) == bare)
+    }
+
     /// Whether this is the default registry (crates.io).
     pub fn is_default_registry(&self) -> bool {
         matches!(self, Self::Registry { url } if DEFAULT_REGISTRIES.contains(&url.as_str()))
@@ -118,6 +127,15 @@ impl PackageSource {
             Self::Unknown { .. } => "unknown",
         }
     }
+}
+
+/// An index URL without protocol prefix, trailing slash or letter case.
+fn index_without_protocol(url: &str) -> String {
+    url.strip_prefix("registry+")
+        .or_else(|| url.strip_prefix("sparse+"))
+        .unwrap_or(url)
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
 }
 
 /// `https://host/repo?rev=abc#<commit>` (the part after `git+`).
