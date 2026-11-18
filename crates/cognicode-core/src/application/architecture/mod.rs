@@ -14,6 +14,7 @@ pub mod canonical_constraints;
 pub mod control_query;
 pub mod cr06_allowlist;
 pub mod evaluator;
+pub mod evolution;
 pub mod grounding;
 pub mod registry;
 

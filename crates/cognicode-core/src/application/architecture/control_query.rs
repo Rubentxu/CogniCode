@@ -23,7 +23,9 @@ use sha2::{Digest, Sha256};
 
 /// Overall status of a read projection. The discriminator that keeps
 /// the semantics fail-closed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EvaluationStatus {
     /// The evaluation ran to completion over the supplied source.
@@ -36,7 +38,9 @@ pub enum EvaluationStatus {
 }
 
 /// A projected constraint reference. Identity + summary only.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct ConstraintRef {
     pub id: String,
     pub kind: String,
@@ -45,7 +49,9 @@ pub struct ConstraintRef {
 
 /// A projected violation. References and coordinates only — the
 /// canonical record stays in the domain/evidence kernel.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct ViolationRef {
     /// Deterministic violation id (display form).
     pub id: String,
@@ -64,7 +70,9 @@ pub struct ViolationRef {
 
 /// The Control Plane read projection for one workspace architecture
 /// query. Emitted by [`ControlQueryService::query_architecture`].
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct ArchitectureReadModel {
     /// Workspace reference (identity only; the caller already owns it).
     pub workspace_ref: String,
