@@ -440,6 +440,10 @@ fn build_input_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
         schema_of::<cognicode_core::interface::goals::dependencies::DependenciesInput>(),
     );
     m.insert(
+        "advisories",
+        schema_of::<cognicode_core::interface::goals::advisories::AdvisoriesInput>(),
+    );
+    m.insert(
         "taint_flow",
         schema_of::<
             cognicode_core::interface::mcp::handlers::program_analysis_handlers::ProgramAnalysisToolInput,

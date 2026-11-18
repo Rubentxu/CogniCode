@@ -52,6 +52,7 @@ mod t1_5_3b_index_result_serde;
 mod t1_5_4_graph_result_serde;
 mod t1_5_5_json_dispatch;
 mod test_taxonomy_contract;
+mod the_advisories_goal_is_one_answer_on_both_surfaces;
 mod the_cli_mermaid_format_is_the_graphs_vocabulary;
 mod the_cli_says_what_comes_next;
 mod the_cli_serves_the_snapshot_the_mcp_wrote;

@@ -1,0 +1,70 @@
+[
+  {
+    "schema_version": "1.6.0",
+    "id": "RUSTSEC-2026-0001",
+    "aliases": ["GHSA-aaaa-bbbb-cccc", "CVE-2026-0001"],
+    "modified": "2026-11-01T00:00:00Z",
+    "summary": "bitflags 1.x parsing flaw",
+    "affected": [
+      {
+        "package": {"ecosystem": "crates.io", "name": "bitflags"},
+        "ranges": [
+          {"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "RUSTSEC-2026-0002",
+    "modified": "2026-11-01T00:00:00Z",
+    "summary": "memchr flaw fixed in the locked version",
+    "affected": [
+      {
+        "package": {"ecosystem": "crates.io", "name": "memchr"},
+        "ranges": [
+          {"type": "SEMVER", "events": [{"introduced": "2.8.0"}, {"fixed": "2.8.3"}]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "RUSTSEC-2026-0003",
+    "modified": "2026-11-01T00:00:00Z",
+    "summary": "smallvec flaw, last affected version is inclusive",
+    "affected": [
+      {
+        "package": {"ecosystem": "crates.io", "name": "smallvec"},
+        "ranges": [
+          {"type": "SEMVER", "events": [{"introduced": "1.16.0"}, {"last_affected": "1.16.5"}]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "RUSTSEC-2026-0004",
+    "modified": "2026-11-01T00:00:00Z",
+    "withdrawn": "2026-11-02T00:00:00Z",
+    "summary": "withdrawn advisory about itoa",
+    "affected": [
+      {
+        "package": {"ecosystem": "crates.io", "name": "itoa"},
+        "ranges": [
+          {"type": "SEMVER", "events": [{"introduced": "0"}]}
+        ]
+      }
+    ]
+  },
+  {
+    "id": "PYSEC-2026-0005",
+    "modified": "2026-11-01T00:00:00Z",
+    "summary": "an advisory about another ecosystem with a Cargo crate name",
+    "affected": [
+      {
+        "package": {"ecosystem": "PyPI", "name": "libc"},
+        "ranges": [
+          {"type": "ECOSYSTEM", "events": [{"introduced": "0"}]}
+        ]
+      }
+    ]
+  }
+]

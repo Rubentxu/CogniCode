@@ -102,7 +102,7 @@ fn the_default_profile_fits_in_six_kilobytes() {
 /// Un goal a medias es una promesa a medias: sin dueño no hay a quién
 /// preguntarle, y sin fase no se sabe si el perfil por defecto lo publica.
 #[test]
-fn the_registry_declares_the_fifteen_goals() {
+fn the_registry_declares_the_sixteen_goals() {
     let names: Vec<&str> = goals::registry().iter().map(|goal| goal.name).collect();
 
     assert_eq!(
@@ -122,9 +122,10 @@ fn the_registry_declares_the_fifteen_goals() {
             "recipe",
             "security",
             "preflight",
-            "dependencies"
+            "dependencies",
+            "advisories"
         ],
-        "the registry declares the fifteen goals"
+        "the registry declares the sixteen goals"
     );
 
     for goal in goals::registry() {

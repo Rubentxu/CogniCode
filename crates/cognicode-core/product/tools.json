@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 93,
+  "runtime_tool_count": 94,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1964,6 +1964,87 @@
       "limitations": [
         "Reads tracked Cargo.toml and Cargo.lock bytes offline: resolved features and the kind of edges between non-member packages are not reported.",
         "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
+      ],
+      "required_args": []
+    },
+    {
+      "name": "advisories",
+      "title": "The resolved Cargo packages of a revision correlated with a pinned OSV feed",
+      "description": "Correlate the resolved Cargo packages of a Git revision with an OSV advisory feed the operator supplies as a file in the workspace (`feed`), offline. The feed is never fetched; pin it with `expected_digest` (SHA-256) and bound its age with `max_age_days`. Each package is `affected` (an advisory covers its locked version, with the advisory id, aliases and fixed versions), `not_found_in_scope` (this feed, at this digest, read completely and recent enough, has no advisory covering the version: it is not a statement that the package is safe), `unknown` (a range or version could not be decided, or the feed is partial or stale) or `not_evaluated` (no usable feed, not a crates.io package, or no lockfile). A feed that is absent, unreadable, over the size limit, not matching its pinned digest or not parseable never yields a clean result. The answer carries the feed digest, the revision and the lockfile digest it was computed against, and which ecosystems and how many advisories were considered. A match is an observation, not exploitability, and does not verify the signature or provenance of any artifact; a yanked release is not known. Policy over matches belongs to the consumer. Example: `cognicode advisories --feed osv-snapshot.json --expected-digest sha256:<hex> --max-age-days 30`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Arguments for the `advisories` goal.",
+        "properties": {
+          "expected_digest": {
+            "default": null,
+            "description": "The SHA-256 digest the feed is pinned to, as 64 lowercase hex digits\nor `sha256:<hex>`. A feed whose bytes differ is not used.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "feed": {
+            "default": null,
+            "description": "The OSV feed: a JSON file inside the workspace holding an array of\nOSV records or an object with a `vulns` array. It is read, never\nfetched. Without it the answer is `not_evaluated`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_age_days": {
+            "default": null,
+            "description": "The most days the newest advisory of the feed may be older than now\nbefore the feed counts as stale. Without it freshness is not checked\nand silence only means \"not in this feed\".",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "default": null,
+            "description": "Restricts the answer to the workspace units that contain or lie under\nthis repository-relative path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "default": "HEAD",
+            "description": "The Git revision whose resolved packages are correlated. Defaults to\n`HEAD`.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.106.0"
+      },
+      "precision_floor": "ast-heuristic",
+      "limitations": [
+        "Reads a pinned OSV feed from a workspace file, offline and never fetched: a match is an observation, not exploitability, and not artifact signature verification.",
+        "Only crates.io packages of Cargo lockfiles are correlated; yanked status is not known; a stale, partial or unparseable feed never yields a clean result."
       ],
       "required_args": []
     },
