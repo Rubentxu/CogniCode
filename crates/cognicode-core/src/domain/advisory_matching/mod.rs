@@ -21,7 +21,9 @@ pub mod record;
 
 pub use correlate::correlate;
 pub use feed::{FeedError, FeedLimits, ParsedFeed, RejectReason, RejectedRecord, parse_feed};
-pub use model::{Absence, AdvisoryHit, Certainty, PackageResult, PackageState, Reason, Subject};
+pub use model::{
+    Absence, AdvisoryHit, AdvisoryReason, Certainty, PackageResult, PackageState, Subject,
+};
 pub use ranges::{Containment, contains};
 pub use record::{
     AdvisoryRange, AdvisoryRecord, AffectedEntry, AffectedPackage, CRATES_IO, RangeEvent,

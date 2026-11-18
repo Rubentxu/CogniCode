@@ -139,7 +139,11 @@ fn an_absent_feed_evaluates_nothing_and_never_says_clean() {
     assert_eq!(answer.totals.affected, 0);
     assert_eq!(state_of(&answer, "serde"), PackageState::NotEvaluated);
     assert_eq!(answer.units[0].evaluation, AdvisoryEvaluation::NotEvaluated);
-    assert!(answer.units[0].reasons.contains(&Reason::FeedUnavailable));
+    assert!(
+        answer.units[0]
+            .reasons
+            .contains(&AdvisoryReason::FeedUnavailable)
+    );
 }
 
 #[test]
@@ -206,7 +210,7 @@ fn a_stale_feed_keeps_its_matches_but_never_concludes_from_silence() {
     assert_eq!(answer.feed.freshness, FeedFreshness::Stale);
     assert_eq!(state_of(&answer, "serde"), PackageState::Unknown);
     assert_eq!(answer.totals.not_found_in_scope, 0);
-    assert!(answer.units[0].reasons.contains(&Reason::FeedStale));
+    assert!(answer.units[0].reasons.contains(&AdvisoryReason::FeedStale));
 
     let affected = FEED.replace("2099-01-10", "2098-01-10");
     let mut ask = query(supply(&affected));
@@ -237,7 +241,11 @@ fn rejected_records_make_silence_inconclusive() {
     assert_eq!(answer.feed.records_rejected, 1);
     assert_eq!(answer.feed.rejected[0].id.as_deref(), Some("BROKEN"));
     assert_eq!(state_of(&answer, "serde"), PackageState::Unknown);
-    assert!(answer.units[0].reasons.contains(&Reason::FeedIncomplete));
+    assert!(
+        answer.units[0]
+            .reasons
+            .contains(&AdvisoryReason::FeedIncomplete)
+    );
 }
 
 #[test]
@@ -267,7 +275,11 @@ fn a_unit_without_a_lockfile_is_not_evaluated() {
     let answer = run(&query(supply(FEED)), false);
 
     assert_eq!(answer.units[0].evaluation, AdvisoryEvaluation::NotEvaluated);
-    assert!(answer.units[0].reasons.contains(&Reason::NoLockfile));
+    assert!(
+        answer.units[0]
+            .reasons
+            .contains(&AdvisoryReason::NoLockfile)
+    );
     assert!(answer.units[0].packages.is_empty());
 }
 

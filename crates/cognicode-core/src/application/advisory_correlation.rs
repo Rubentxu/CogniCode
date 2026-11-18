@@ -23,8 +23,8 @@ use crate::application::dependency_inventory::{
     answer as inventory,
 };
 use crate::domain::advisory_matching::{
-    Absence, CRATES_IO, FeedError, FeedLimits, PackageResult, PackageState, ParsedFeed, Reason,
-    RejectedRecord, Subject, correlate, parse_feed,
+    Absence, AdvisoryReason, CRATES_IO, FeedError, FeedLimits, PackageResult, PackageState,
+    ParsedFeed, RejectedRecord, Subject, correlate, parse_feed,
 };
 use crate::domain::dependency_inventory::{FileAnchor, LockFreshness, WorkspaceInventory};
 use crate::domain::scm::{ContentDigest, RevisionReader, ScmError, SourceRef};
@@ -209,7 +209,7 @@ pub struct UnitAdvisories {
     /// Whether the unit was correlated.
     pub evaluation: AdvisoryEvaluation,
     /// Why the unit was not, or why its absences are not conclusive.
-    pub reasons: Vec<Reason>,
+    pub reasons: Vec<AdvisoryReason>,
     /// How many packages are in each state.
     pub counts: StateCounts,
     /// The result for each resolved package, in inventory order.
@@ -283,7 +283,7 @@ fn unusable(report: FeedReport) -> FeedEvaluation {
     FeedEvaluation {
         report,
         parsed: None,
-        absence: Absence::Inconclusive(Reason::FeedUnavailable),
+        absence: Absence::Inconclusive(AdvisoryReason::FeedUnavailable),
     }
 }
 
@@ -311,13 +311,15 @@ fn freshness_of(parsed: &ParsedFeed, max_age_days: Option<u32>, now_unix: i64) -
 
 fn absence_of(parsed: &ParsedFeed, freshness: FeedFreshness) -> Absence {
     if parsed.crates_io_records() == 0 {
-        return Absence::Inconclusive(Reason::EcosystemNotCovered);
+        return Absence::Inconclusive(AdvisoryReason::EcosystemNotCovered);
     }
     if !parsed.rejected.is_empty() {
-        return Absence::Inconclusive(Reason::FeedIncomplete);
+        return Absence::Inconclusive(AdvisoryReason::FeedIncomplete);
     }
     match freshness {
-        FeedFreshness::Stale | FeedFreshness::Undated => Absence::Inconclusive(Reason::FeedStale),
+        FeedFreshness::Stale | FeedFreshness::Undated => {
+            Absence::Inconclusive(AdvisoryReason::FeedStale)
+        }
         FeedFreshness::Fresh | FeedFreshness::Unchecked => Absence::Conclusive,
     }
 }
@@ -415,12 +417,12 @@ fn unit_advisories(unit: &WorkspaceInventory, feed: &FeedEvaluation) -> UnitAdvi
     for package in &packages {
         counts.add(package.state);
     }
-    let mut reasons: Vec<Reason> = packages
+    let mut reasons: Vec<AdvisoryReason> = packages
         .iter()
         .flat_map(|package| package.reasons.iter().copied())
         .collect();
     if unit.lockfile.is_none() {
-        reasons.push(Reason::NoLockfile);
+        reasons.push(AdvisoryReason::NoLockfile);
     }
     reasons.sort_unstable();
     reasons.dedup();

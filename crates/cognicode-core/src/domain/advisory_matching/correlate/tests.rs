@@ -89,7 +89,7 @@ fn an_unrelated_crate_is_not_found_in_scope() {
 
 #[test]
 fn an_inconclusive_feed_never_yields_not_found() {
-    for reason in [Reason::FeedIncomplete, Reason::FeedStale] {
+    for reason in [AdvisoryReason::FeedIncomplete, AdvisoryReason::FeedStale] {
         let out = correlate(
             &records(FEED),
             &[subject("serde", "1.0.200")],
@@ -105,7 +105,7 @@ fn a_feed_without_the_ecosystem_leaves_packages_not_evaluated() {
     let out = correlate(
         &[],
         &[subject("serde", "1.0.200")],
-        Absence::Inconclusive(Reason::EcosystemNotCovered),
+        Absence::Inconclusive(AdvisoryReason::EcosystemNotCovered),
     );
     assert_eq!(out[0].state, PackageState::NotEvaluated);
 }
@@ -115,7 +115,7 @@ fn an_inconclusive_feed_still_reports_what_it_does_match() {
     let out = correlate(
         &records(FEED),
         &[subject("foo-bar", "1.0.0")],
-        Absence::Inconclusive(Reason::FeedStale),
+        Absence::Inconclusive(AdvisoryReason::FeedStale),
     );
     assert_eq!(out[0].state, PackageState::Affected);
 }
@@ -128,7 +128,7 @@ fn an_undecidable_advisory_is_unknown_not_clean() {
         Absence::Conclusive,
     );
     assert_eq!(out[0].state, PackageState::Unknown);
-    assert_eq!(out[0].reasons, vec![Reason::UndecidableRange]);
+    assert_eq!(out[0].reasons, vec![AdvisoryReason::UndecidableRange]);
     assert_eq!(out[0].advisories[0].certainty, Certainty::Undecided);
 }
 
@@ -139,7 +139,7 @@ fn packages_outside_crates_io_are_not_evaluated() {
     path.purl = None;
     let out = correlate(&records(FEED), &[path], Absence::Conclusive);
     assert_eq!(out[0].state, PackageState::NotEvaluated);
-    assert_eq!(out[0].reasons, vec![Reason::SourceNotInEcosystem]);
+    assert_eq!(out[0].reasons, vec![AdvisoryReason::SourceNotInEcosystem]);
 }
 
 #[test]

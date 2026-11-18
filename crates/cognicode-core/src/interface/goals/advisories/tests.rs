@@ -1,6 +1,6 @@
 use super::*;
 use crate::application::advisory_correlation::{FeedFreshness, FeedStatus};
-use crate::domain::advisory_matching::{PackageState, Reason};
+use crate::domain::advisory_matching::{AdvisoryReason, PackageState};
 use std::process::Command;
 
 fn git(root: &Path, args: &[&str]) {
@@ -112,7 +112,7 @@ fn a_missing_feed_file_is_unreadable_not_clean() {
     assert!(
         answer.advisories.units[0].packages[1]
             .reasons
-            .contains(&Reason::FeedUnavailable)
+            .contains(&AdvisoryReason::FeedUnavailable)
     );
 }
 

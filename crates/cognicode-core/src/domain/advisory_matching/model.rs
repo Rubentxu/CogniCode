@@ -42,7 +42,7 @@ pub enum PackageState {
 /// Why a package is not `affected` or `not_found_in_scope`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Reason {
+pub enum AdvisoryReason {
     /// The package is not from crates.io, so crates.io advisories do not
     /// apply to it.
     SourceNotInEcosystem,
@@ -109,7 +109,7 @@ pub struct PackageResult {
     /// What is known.
     pub state: PackageState,
     /// Why the state is not conclusive, sorted.
-    pub reasons: Vec<Reason>,
+    pub reasons: Vec<AdvisoryReason>,
     /// The advisories that cover or may cover this version, by id.
     pub advisories: Vec<AdvisoryHit>,
 }
@@ -120,5 +120,5 @@ pub enum Absence {
     /// The feed was read completely, is fresh enough and covers crates.io.
     Conclusive,
     /// It may not: absence of a match says nothing, for this reason.
-    Inconclusive(Reason),
+    Inconclusive(AdvisoryReason),
 }

@@ -8,7 +8,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::model::{Absence, AdvisoryHit, Certainty, PackageResult, PackageState, Reason, Subject};
+use super::model::{
+    Absence, AdvisoryHit, AdvisoryReason, Certainty, PackageResult, PackageState, Subject,
+};
 use super::ranges::{Containment, contains};
 use super::record::{AdvisoryRecord, AffectedEntry, RangeEvent, canonical_crate_name};
 
@@ -159,18 +161,21 @@ fn merge(members: Vec<&RecordHit<'_>>) -> AdvisoryHit {
     }
 }
 
-fn state_of(hits: &[AdvisoryHit], absence: Absence) -> (PackageState, Vec<Reason>) {
+fn state_of(hits: &[AdvisoryHit], absence: Absence) -> (PackageState, Vec<AdvisoryReason>) {
     if hits.iter().any(|hit| hit.certainty == Certainty::Affected) {
         return (PackageState::Affected, Vec::new());
     }
     if !hits.is_empty() {
-        return (PackageState::Unknown, vec![Reason::UndecidableRange]);
+        return (
+            PackageState::Unknown,
+            vec![AdvisoryReason::UndecidableRange],
+        );
     }
     match absence {
         Absence::Conclusive => (PackageState::NotFoundInScope, Vec::new()),
-        Absence::Inconclusive(reason @ (Reason::EcosystemNotCovered | Reason::FeedUnavailable)) => {
-            (PackageState::NotEvaluated, vec![reason])
-        }
+        Absence::Inconclusive(
+            reason @ (AdvisoryReason::EcosystemNotCovered | AdvisoryReason::FeedUnavailable),
+        ) => (PackageState::NotEvaluated, vec![reason]),
         Absence::Inconclusive(reason) => (PackageState::Unknown, vec![reason]),
     }
 }
@@ -200,7 +205,7 @@ pub fn correlate(
             } else {
                 (
                     PackageState::NotEvaluated,
-                    vec![Reason::SourceNotInEcosystem],
+                    vec![AdvisoryReason::SourceNotInEcosystem],
                     Vec::new(),
                 )
             };
