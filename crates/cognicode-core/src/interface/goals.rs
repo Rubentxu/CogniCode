@@ -499,10 +499,38 @@ pub const PREFLIGHT: GoalSpec = GoalSpec {
     render: preflight::render,
 };
 
+/// El goal `pack`: los símbolos que responden a una petición, con su evidencia.
+pub const PACK: GoalSpec = GoalSpec {
+    name: "pack",
+    title: "Los símbolos que responden a una petición, con evidencia",
+    description: "Devuelve un paquete de contexto de símbolos: para cada uno su identidad \
+única, el rango de fuente, el digest del fichero, el motivo por el que se eligió y la \
+instantánea sobre la que se calculó. Un nombre que varios símbolos declaran se reporta \
+como ambigüedad y no se resuelve; se pasa el id del símbolo. El presupuesto \
+(`--max-tokens`) acota el texto que se renderiza y se mide sobre ese mismo texto: con \
+un tokenizador configurado el recuento es exacto para él, y sin él es una cota \
+superior declarada, nunca exacta. El paquete dice qué entregó y qué dejó fuera, y no \
+afirma cobertura semántica: nadie la evalúa. Si no cabe todo, devuelve un \
+`continuation_token` para la página siguiente de la misma instantánea. Ejemplos: \
+`cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse \
+config\" --max-tokens 800`.",
+    examples: &[
+        "cognicode pack --symbols src/lib.rs:helper:10",
+        "cognicode pack --intent \"parse config\" --max-tokens 800",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::pack",
+    requires_graph: true,
+    replaces: &[],
+    run: pack::run,
+    render: pack::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 14] = [
+static REGISTRY: [GoalSpec; 15] = [
     STATUS, CONTEXT, FIND, INSPECT, TRACE, IMPACT, OVERVIEW, AUDIT, COMPARE, VERIFY, CHANGE,
-    RECIPE, SECURITY, PREFLIGHT,
+    RECIPE, SECURITY, PREFLIGHT, PACK,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -535,6 +563,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "recipe" => crate::interface::schema::schema_of::<recipe::RecipeInput>(),
         "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
         "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
+        "pack" => crate::interface::schema::schema_of::<pack::PackInput>(),
         _ => Map::new(),
     }
 }
@@ -774,6 +803,7 @@ pub mod find;
 pub mod impact;
 pub mod inspect;
 pub mod overview;
+pub mod pack;
 pub mod preflight;
 pub mod recipe;
 mod revision_support;

@@ -63,7 +63,10 @@ impl MeasureKind {
 pub struct Measured {
     /// The count, in the unit of [`Measured::kind`].
     pub tokens: u64,
-    /// How certain the count is.
+    /// How certain the count is. It is flattened into the count, so a
+    /// published count reads `{"tokens": 12, "kind": "upper_bound",
+    /// "method": "utf8-bytes"}`.
+    #[serde(flatten)]
     pub kind: MeasureKind,
 }
 

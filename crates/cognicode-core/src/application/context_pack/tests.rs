@@ -284,6 +284,7 @@ fn a_budget_too_small_for_one_item_gives_an_empty_text_within_the_limit() {
     let id = f.ids["run"].to_string();
     let p = default_pack(&f, &[&id], 3);
     assert!(p.items.is_empty());
+    assert!(p.continuation_token.is_none(), "a page that cannot progress offers no token");
     assert!(p.budget.used.tokens <= 3);
     assert_eq!(p.omitted, p.candidates);
 }

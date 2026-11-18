@@ -135,8 +135,9 @@ pub struct BudgetReport {
     pub limit: u64,
     /// What the text costs, and how certain that count is.
     pub used: Measured,
-    /// What the count covers: the rendered text of the pack, and nothing
-    /// outside it.
+    /// What the count covers: `rendered_text`, the text a person reads, and
+    /// nothing outside it. The structured payload that carries the same items
+    /// with their evidence fields is not measured.
     pub scope: String,
     /// Whether the count proves that the text fits the limit: true for an
     /// exact count and for an upper bound under the limit.
@@ -159,8 +160,14 @@ pub struct ContextPack {
     pub items: Vec<PackItem>,
     /// The candidates not delivered, up to [`OMISSIONS_LISTED`] by name.
     pub omissions: Vec<Omission>,
-    /// How many candidates this page did not deliver, listed or not.
+    /// How many candidates this page did not deliver, listed or not:
+    /// [`ContextPack::remaining`] plus [`ContextPack::refused`].
     pub omitted: usize,
+    /// How many candidates are left for a next page.
+    pub remaining: usize,
+    /// How many candidates were refused: their source differs from the
+    /// snapshot, is unreadable or is not part of it.
+    pub refused: usize,
     /// How many candidates the selection holds, over all pages.
     pub candidates: usize,
     /// The index of the first candidate of this page.
@@ -223,7 +230,7 @@ impl ContextPackService<'_> {
                 Err(omission) => refused.push((consumed, omission)),
                 Ok(item) => {
                     delivered.push((consumed, item));
-                    let text = self.text(&delivered, &refused, consumed + 1, total);
+                    let text = self.text(&delivered, &refused, (offset, consumed + 1), total);
                     if self.measure.measure(&text).tokens > max_tokens {
                         delivered.pop();
                         break;
@@ -233,7 +240,7 @@ impl ContextPackService<'_> {
             consumed += 1;
         }
 
-        let mut text = self.text(&delivered, &refused, consumed, total);
+        let mut text = self.text(&delivered, &refused, (offset, consumed), total);
         while self.measure.measure(&text).tokens > max_tokens {
             match delivered.pop() {
                 Some((index, _)) => {
@@ -247,7 +254,7 @@ impl ContextPackService<'_> {
                     break;
                 }
             }
-            text = self.text(&delivered, &refused, consumed, total);
+            text = self.text(&delivered, &refused, (offset, consumed), total);
         }
 
         self.assemble(
@@ -286,9 +293,11 @@ impl ContextPackService<'_> {
             items: delivered.into_iter().map(|(_, item)| item).collect(),
             omissions,
             omitted,
+            remaining,
+            refused: refused_count,
             candidates: total,
             offset: offset.min(total),
-            continuation_token: self.token_for(consumed, total),
+            continuation_token: self.token_for(consumed, offset, total),
             ambiguities: selection
                 .ambiguities
                 .iter()
@@ -305,7 +314,7 @@ impl ContextPackService<'_> {
             budget: BudgetReport {
                 limit: max_tokens,
                 used,
-                scope: "rendered".to_string(),
+                scope: "rendered_text".to_string(),
                 verified,
             },
             rendered,
@@ -317,12 +326,12 @@ impl ContextPackService<'_> {
         &self,
         delivered: &[(usize, PackItem)],
         refused: &[(usize, Omission)],
-        consumed: usize,
+        (offset, consumed): (usize, usize),
         total: usize,
     ) -> String {
         let items: Vec<PackItem> = delivered.iter().map(|(_, item)| item.clone()).collect();
         let remaining = total - consumed.min(total);
-        let token = self.token_for(consumed, total);
+        let token = self.token_for(consumed, offset, total);
         render(&RenderView {
             snapshot_digest: &self.snapshot.digest,
             items: &items,
@@ -337,8 +346,12 @@ impl ContextPackService<'_> {
     /// The token holds the position and the prefix of the digest of the
     /// snapshot, so a page can only be built over the snapshot it was
     /// issued for.
-    fn token_for(&self, next: usize, total: usize) -> Option<String> {
-        (next < total).then(|| {
+    ///
+    /// A page that made no progress —not even one candidate fits the
+    /// budget— has no token: following it would ask for the same page
+    /// again, forever. The budget is what has to change.
+    fn token_for(&self, next: usize, offset: usize, total: usize) -> Option<String> {
+        (next < total && next > offset).then(|| {
             format!(
                 "v1.{}.{}",
                 self.snapshot
