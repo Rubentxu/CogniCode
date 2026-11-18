@@ -143,7 +143,15 @@ fn impact_publishes_what_it_covered() {
 fn trace_publishes_what_it_covered() {
     let (_tmp, root) = readable_tree();
 
-    let answer = trace::trace(&root, None, "helper", "both", 1).expect("the goal answers");
+    let answer = trace::trace(
+        &root,
+        None,
+        "helper",
+        "both",
+        1,
+        &trace::TraceLimits::default(),
+    )
+    .expect("the goal answers");
     let answer = serde_json::to_value(answer).expect("the answer is JSON");
     let envelope = envelope_of("trace", &answer, &root);
 

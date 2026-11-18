@@ -19,6 +19,7 @@ pub mod file_operations;
 pub mod graph_analytics;
 // Las preguntas del grafo, contestadas una vez (TASK-78).
 pub mod graph_insights;
+pub mod graph_operators;
 pub mod graph_queries;
 pub mod impact_analysis;
 pub mod impact_of;

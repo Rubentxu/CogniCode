@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
-use crate::application::services::analysis_service::AnalysisService;
-use crate::application::services::graph_queries::Direction;
+use crate::application::services::graph_operators::{
+    Completeness, Explain, QueryError, Relation, Target, TypedQuery,
+};
+use crate::application::services::graph_queries::neighbours;
 use crate::interface::coverage::CoverageInfo;
 use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::{GoalBasis, graph_basis};
@@ -25,12 +27,25 @@ use crate::interface::project_graph::service_with_graph;
 pub struct TraceInput {
     /// The name of the symbol to trace
     pub symbol: String,
-    /// Which side to follow: `callers`, `callees` or `both`
+    /// Which side to follow: `callers`, `callees`, `both`, `implementors`,
+    /// `contracts` or `dependents`
     #[serde(default = "default_direction")]
     pub direction: String,
-    /// How many hops to follow
+    /// How many hops to follow (at least 1)
     #[serde(default = "default_depth")]
     pub depth: u32,
+    /// List only the symbols declared in this module (a directory, matched
+    /// by path suffix). It restricts what is listed, not what is followed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
+    /// List only the best `top_k` neighbours: nearest first, then the most
+    /// trusted edge
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<usize>,
+    /// Spend at most this many fact visits (one per edge examined). A trace
+    /// that reaches the ceiling stops and says it is partial.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<u64>,
 }
 
 fn default_direction() -> String {
@@ -54,8 +69,16 @@ pub struct GoalTrace {
     pub symbol: String,
     /// El lado que se ha seguido.
     pub direction: String,
+    /// El veredicto de la respuesta: `partial` si la consulta se paró antes
+    /// de mirar todo lo que su plan pedía, y si no, el de la cobertura del
+    /// grafo que se leyó.
+    pub status: String,
     /// Los vecinos que se han encontrado.
     pub entries: Vec<TraceEntry>,
+    /// What the query did to find the entries: the operators it ran, the
+    /// index it read through, what it estimated against what it spent, and
+    /// whether it looked at everything its plan called for.
+    pub explain: Explain,
     /// What the graph this answer was computed over covers: the files the
     /// walk could not read, the references without a declaration and the
     /// relations the repository refused.
@@ -88,16 +111,27 @@ pub struct TraceEntry {
     pub direction: String,
 }
 
-/// El lado que se sigue, con el nombre que el dueño usa.
-fn direction_of(name: &str) -> Result<Direction, String> {
-    match name {
-        "callers" => Ok(Direction::Callers),
-        "callees" => Ok(Direction::Callees),
-        "both" => Ok(Direction::Both),
-        other => Err(format!(
-            "`{other}` is not a side to follow: the sides are `callers`, `callees` and `both`."
-        )),
+/// Las relaciones que se siguen por un lado, con el nombre que el dueño usa.
+fn relations_of(name: &str) -> Result<Vec<Relation>, String> {
+    if name == "both" {
+        return Ok(vec![Relation::Callers, Relation::Callees]);
     }
+    Relation::parse(name)
+        .map(|relation| vec![relation])
+        .map_err(|_| {
+            format!(
+                "`{name}` is not a side to follow: the sides are `callers`, `callees`, `both`, \
+             `implementors`, `contracts` and `dependents`."
+            )
+        })
+}
+
+/// Los límites de una traza: lo que se lista, cuánto y a qué coste.
+#[derive(Debug, Clone, Default)]
+pub struct TraceLimits {
+    pub module: Option<String>,
+    pub top_k: Option<usize>,
+    pub budget: Option<u64>,
 }
 
 /// La respuesta del goal `trace` para ese símbolo.
@@ -107,19 +141,47 @@ pub fn trace(
     symbol: &str,
     direction: &str,
     depth: u32,
+    limits: &TraceLimits,
 ) -> Result<GoalTrace, String> {
-    let side = direction_of(direction)?;
+    let relations = relations_of(direction)?;
     let (_service, built) = service_with_graph(workspace, cache_root)?;
-    let entries = AnalysisService::call_hierarchy(&built.graph, symbol, depth, side)
-        .map_err(|error| format!("`{symbol}` could not be traced: {error}"))?;
+    let mut query = TypedQuery::new(Target::Name(symbol.to_string()), relations);
+    query = query.with_depth(depth);
+    if let Some(module) = &limits.module {
+        query = query.in_module(module.clone());
+    }
+    if let Some(k) = limits.top_k {
+        query = query.with_top_k(k);
+    }
+    if let Some(visits) = limits.budget {
+        query = query.with_budget(visits);
+    }
+    let (entries, explain) =
+        neighbours(&built.graph, &query, None).map_err(|error| refusal(symbol, &error))?;
 
-    let summary = format!(
+    let mut summary = format!(
         "`{symbol}` has {} neighbour(s) on the `{direction}` side.",
         entries.len()
     );
+    if explain.matched > explain.listed {
+        summary.push_str(&format!(
+            " {} matched and the best {} are listed.",
+            explain.matched, explain.listed
+        ));
+    }
+    if let Completeness::Partial { reasons } = &explain.completeness {
+        summary.push_str(&format!(" The answer is partial: {}.", reasons.join("; ")));
+    }
+
+    let coverage = CoverageInfo::of(&built.coverage);
+    let status = match explain.completeness {
+        Completeness::Partial { .. } => "partial".to_string(),
+        Completeness::Complete => coverage.status.clone(),
+    };
 
     Ok(GoalTrace {
         summary,
+        status,
         schema_version: "cognicode.goal.trace/v1".to_string(),
         goal: "trace".to_string(),
         symbol: symbol.to_string(),
@@ -129,15 +191,23 @@ pub fn trace(
             .map(|entry| TraceEntry {
                 name: entry.name,
                 file: entry.file,
-                line: entry.line + 1,
-                column: entry.column + 1,
+                line: entry.line,
+                column: entry.column,
                 depth: entry.depth,
-                direction: entry.direction.as_str().to_string(),
+                direction: entry.relation.as_str().to_string(),
             })
             .collect(),
-        coverage: CoverageInfo::of(&built.coverage),
+        explain,
+        coverage,
         basis: graph_basis(workspace, &built),
     })
+}
+
+fn refusal(symbol: &str, error: &QueryError) -> String {
+    match error {
+        QueryError::Invalid(invalid) => format!("the trace of `{symbol}` is not valid: {invalid}"),
+        QueryError::Graph(error) => format!("`{symbol}` could not be traced: {error}"),
+    }
 }
 
 /// La implementación del goal: lee sus argumentos y devuelve su respuesta.
@@ -145,12 +215,18 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
     let workspace = ctx.workspace;
     let input: TraceInput = serde_json::from_value(arguments.clone())
         .map_err(|error| format!("the arguments of the goal `trace` are not valid: {error}"))?;
+    let limits = TraceLimits {
+        module: input.module,
+        top_k: input.top_k,
+        budget: input.budget,
+    };
     let answer = trace(
         workspace,
         ctx.cache_root,
         &input.symbol,
         &input.direction,
         input.depth,
+        &limits,
     )?;
     serde_json::to_value(answer)
         .map_err(|error| format!("the answer of the goal `trace` is not serialisable: {error}"))
@@ -169,7 +245,31 @@ pub fn render(answer: &Value) -> String {
             entry.file, entry.line, entry.column, entry.name, entry.direction, entry.depth
         ));
     }
+    text.push_str(&plan_line(&traced.explain));
     text
+}
+
+/// La línea que dice cómo se encontró la respuesta y si es entera.
+fn plan_line(explain: &Explain) -> String {
+    let operators: Vec<String> = explain
+        .steps
+        .iter()
+        .map(|step| format!("{:?}", step.operator).to_lowercase())
+        .collect();
+    let ceiling = explain
+        .budget
+        .map(|budget| format!(" of a budget of {budget}"))
+        .unwrap_or_default();
+    let state = match explain.completeness {
+        Completeness::Complete => "complete",
+        Completeness::Partial { .. } => "partial",
+    };
+    format!(
+        "  plan: {}; {} visit(s) spent{ceiling}, {} estimated; {state}\n",
+        operators.join(" > "),
+        explain.spent_visits,
+        explain.estimated_visits
+    )
 }
 
 #[cfg(test)]
@@ -179,7 +279,14 @@ mod tests {
     #[test]
     fn a_side_that_does_not_exist_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let answer = trace(dir.path(), None, "helper", "sideways", 1);
+        let answer = trace(
+            dir.path(),
+            None,
+            "helper",
+            "sideways",
+            1,
+            &TraceLimits::default(),
+        );
 
         assert!(answer.is_err(), "an unknown side is not a quiet answer");
     }
