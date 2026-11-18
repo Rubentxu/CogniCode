@@ -6,6 +6,7 @@
 //! - Semantic search with filtering
 
 pub mod declaration_span;
+mod name_index;
 pub mod outline;
 pub mod semantic_search;
 pub mod symbol_code;
