@@ -70,17 +70,19 @@ fn evaluate_events(events: &[RangeEvent], version: &Version) -> Containment {
                 open.get_or_insert(edge);
             }
             RangeEvent::Fixed(_) => {
-                if let Some(start) = open.take() {
-                    if *start <= at && at < *edge {
-                        return Containment::Affected;
-                    }
+                if let Some(start) = open.take()
+                    && *start <= at
+                    && at < *edge
+                {
+                    return Containment::Affected;
                 }
             }
             RangeEvent::LastAffected(_) => {
-                if let Some(start) = open.take() {
-                    if *start <= at && at <= *edge {
-                        return Containment::Affected;
-                    }
+                if let Some(start) = open.take()
+                    && *start <= at
+                    && at <= *edge
+                {
+                    return Containment::Affected;
                 }
             }
             RangeEvent::Limit(_) => {}

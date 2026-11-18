@@ -8,7 +8,7 @@
 //!   every record it did not accept.
 //! * [`contains`] decides whether a version is inside what an entry covers,
 //!   with Cargo's version ordering.
-//! * [`correlate`] gives each package a [`PackageState`]: `affected`,
+//! * [`correlate()`] gives each package a [`PackageState`]: `affected`,
 //!   `not_found_in_scope`, `unknown` or `not_evaluated`. A match is an
 //!   observation. It is not exploitability and does not stand in for
 //!   verifying an artifact's signature or provenance.

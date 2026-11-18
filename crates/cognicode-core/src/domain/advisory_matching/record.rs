@@ -102,10 +102,10 @@ impl AffectedEntry {
     /// on crates.io (by ecosystem and name, or by a `pkg:cargo` Package URL).
     pub fn cargo_crate(&self) -> Option<String> {
         let package = &self.package;
-        if package.ecosystem.as_deref() == Some(CRATES_IO) {
-            if let Some(name) = &package.name {
-                return Some(canonical_crate_name(name));
-            }
+        if package.ecosystem.as_deref() == Some(CRATES_IO)
+            && let Some(name) = &package.name
+        {
+            return Some(canonical_crate_name(name));
         }
         let rest = package.purl.as_deref()?.strip_prefix("pkg:cargo/")?;
         let name = rest.split(['@', '?', '#']).next()?;

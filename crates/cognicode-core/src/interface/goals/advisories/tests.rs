@@ -229,3 +229,67 @@ fn the_rendering_names_the_feed_digest_and_the_state_of_each_package() {
     assert!(text.contains("serde 1.0.100 Affected"), "{text}");
     assert!(text.contains("RUSTSEC-2099-0001"), "{text}");
 }
+
+#[test]
+fn a_lockfile_bump_changes_the_verdict_without_touching_the_feed_or_any_code() {
+    let repo = repository();
+    git(repo.path(), &["tag", "before"]);
+    std::fs::write(
+        repo.path().join("Cargo.lock"),
+        LOCK.replace("1.0.100", "1.0.150"),
+    )
+    .expect("lock");
+    git(repo.path(), &["commit", "--quiet", "-am", "bump serde"]);
+
+    let before = AdvisoriesInput {
+        revision: "before".into(),
+        ..input(Some("feed.json"))
+    };
+    let before = advisories_at(repo.path(), &before, PUBLISHED).expect("before");
+    let after = advisories_at(repo.path(), &input(Some("feed.json")), PUBLISHED).expect("after");
+
+    assert_eq!(state(&before, "serde"), PackageState::Affected);
+    assert_eq!(state(&after, "serde"), PackageState::NotFoundInScope);
+    assert_ne!(
+        before.advisories.units[0].lockfile, after.advisories.units[0].lockfile,
+        "each answer names the lockfile it was computed against"
+    );
+    assert_eq!(
+        before.advisories.feed.digest, after.advisories.feed.digest,
+        "the feed did not change"
+    );
+}
+
+#[test]
+fn an_updated_or_withdrawn_advisory_changes_the_verdict_without_touching_the_lockfile() {
+    let repo = repository();
+    let ask = input(Some("feed.json"));
+    let affected = advisories_at(repo.path(), &ask, PUBLISHED).expect("affected");
+
+    let narrower = FEED.replace("1.0.150", "1.0.100");
+    std::fs::write(repo.path().join("feed.json"), narrower).expect("feed");
+    let fixed = advisories_at(repo.path(), &ask, PUBLISHED).expect("fixed");
+
+    let withdrawn = FEED.replace(
+        "\"summary\"",
+        "\"withdrawn\":\"2099-01-11T00:00:00Z\",\"summary\"",
+    );
+    std::fs::write(repo.path().join("feed.json"), withdrawn).expect("feed");
+    let withdrawn = advisories_at(repo.path(), &ask, PUBLISHED).expect("withdrawn");
+
+    assert_eq!(state(&affected, "serde"), PackageState::Affected);
+    assert_eq!(state(&fixed, "serde"), PackageState::NotFoundInScope);
+    assert_eq!(
+        state(&withdrawn, "serde"),
+        PackageState::NotEvaluated,
+        "a feed whose only crates.io record is withdrawn cannot speak about Cargo"
+    );
+    assert_eq!(
+        affected.advisories.units[0].lockfile,
+        withdrawn.advisories.units[0].lockfile
+    );
+    assert_ne!(
+        affected.advisories.feed.digest,
+        fixed.advisories.feed.digest
+    );
+}

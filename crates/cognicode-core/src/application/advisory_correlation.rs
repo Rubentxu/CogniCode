@@ -346,16 +346,16 @@ pub fn evaluate_feed(query: &AdvisoryQuery, limits: &FeedLimits) -> FeedEvaluati
     report.origin = Some(origin.clone());
     report.digest = Some(digest.as_hex().to_string());
     report.bytes = Some(bytes.len());
-    if let Some(expected) = &query.expected_digest {
-        if *expected != digest {
-            report.status = FeedStatus::DigestMismatch;
-            report.problem = Some(format!(
-                "the feed digest {} is not the pinned digest {}",
-                digest.as_hex(),
-                expected.as_hex()
-            ));
-            return unusable(report);
-        }
+    if let Some(expected) = &query.expected_digest
+        && *expected != digest
+    {
+        report.status = FeedStatus::DigestMismatch;
+        report.problem = Some(format!(
+            "the feed digest {} is not the pinned digest {}",
+            digest.as_hex(),
+            expected.as_hex()
+        ));
+        return unusable(report);
     }
     let parsed = match parse_feed(bytes, limits) {
         Ok(parsed) => parsed,
