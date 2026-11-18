@@ -23,10 +23,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::application::analysis_basis::GraphSource;
+use crate::application::graph_snapshot::LoadedGraph;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::analyze::{Coverage, CoverageFacts};
 use crate::domain::aggregates::call_graph::CallGraph;
+use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::file_manifest::FileManifest;
+use crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache;
 
 /// The project's graph, and what the build could not cover.
 pub struct ProjectGraph {
@@ -91,31 +94,124 @@ pub fn service_with_graph(
         ))),
         None => AnalysisService::new(),
     };
-    let loaded = crate::application::graph_snapshot::load_or_build_graph(
-        &service, dir, cache_root, None, false,
+    let loaded = decide_the_graph(&service, dir, cache_root, None)?;
+    Ok((service, ProjectGraph::of(loaded, None)))
+}
+
+/// Decides the graph of `dir` with `service`, and words a failure.
+fn decide_the_graph(
+    service: &AnalysisService,
+    dir: &Path,
+    cache_root: Option<&Path>,
+    session_manifest: Option<&FileManifest>,
+) -> Result<LoadedGraph, String> {
+    crate::application::graph_snapshot::load_or_build_graph(
+        service,
+        dir,
+        cache_root,
+        session_manifest,
+        false,
     )
     .map_err(|e| {
         format!(
             "failed to build the graph of {}: {e}",
             dir.to_string_lossy()
         )
-    })?;
+    })
+}
 
-    // A served graph carries the holes of the tree as it is NOW —the
-    // persisted graph cannot know about them— and its references and
-    // relations are the graph's own, which are empty because a snapshot
-    // only exists for a build that had none of them. The coverage is
-    // measured by the one owner of that decision, when the graph is
-    // loaded; this function only carries what it said.
-    Ok((
-        service,
-        ProjectGraph {
+impl ProjectGraph {
+    /// What a load decided, as a command carries it.
+    ///
+    /// A served answer carries the holes of the tree as it is NOW —the
+    /// persisted graph cannot know about them— and its references and
+    /// relations are the graph's own, which are empty because a snapshot
+    /// only exists for a build that had none of them. The coverage is
+    /// measured by the one owner of that decision, when the graph is
+    /// loaded; this only carries what it said.
+    ///
+    /// `session_manifest` dates a graph that was served without a manifest
+    /// of its own: the one the session kept when it published the graph.
+    fn of(loaded: LoadedGraph, session_manifest: Option<FileManifest>) -> Self {
+        Self {
             graph: loaded.graph,
             coverage: loaded.coverage,
-            manifest: loaded.manifest,
+            manifest: loaded.manifest.or(session_manifest),
             source: loaded.source,
-        },
-    ))
+        }
+    }
+}
+
+/// What a long-lived session keeps between the calls it answers.
+///
+/// A one-shot command has nothing to share: the process ends with the
+/// call. A server answers many calls over one tree, and three things it
+/// already keeps for the rest of its tools are the ones a goal needs to
+/// stop paying for the same work again: the service that holds the
+/// published graph, the store that holds the manifest it was published
+/// with, and the ranking statistics of that snapshot.
+///
+/// A goal that reads the graph through [`GraphSession::project_graph`]
+/// gets the graph the session already holds for as long as the tree has not
+/// changed, with the same freshness decision every other route takes, and
+/// reads or rebuilds it —and publishes the new one— when the tree has
+/// changed.
+#[derive(Clone)]
+pub struct GraphSession {
+    analysis: Arc<AnalysisService>,
+    store: Arc<dyn GraphStore>,
+    ranking_stats: Arc<RankingStatsCache>,
+}
+
+impl GraphSession {
+    /// A session over the state a server shares between its tools.
+    pub fn new(
+        analysis: Arc<AnalysisService>,
+        store: Arc<dyn GraphStore>,
+        ranking_stats: Arc<RankingStatsCache>,
+    ) -> Self {
+        Self {
+            analysis,
+            store,
+            ranking_stats,
+        }
+    }
+
+    /// The ranking statistics of the snapshots the session serves: one
+    /// build per published graph.
+    pub fn ranking_stats(&self) -> &RankingStatsCache {
+        &self.ranking_stats
+    }
+
+    /// The graph of `dir` as the session holds it, or as it must be after
+    /// the tree changed.
+    ///
+    /// The session's graph is served only when the manifest it was
+    /// published with still describes the tree; otherwise the snapshot or
+    /// the tree is read again, the new graph replaces the old one for every
+    /// tool of the session, and its manifest is kept next to it. Between
+    /// two calls over an unchanged tree the graph is the same `Arc`, which
+    /// is what lets per-snapshot state be shared.
+    pub fn project_graph(
+        &self,
+        dir: &Path,
+        cache_root: Option<&Path>,
+    ) -> Result<ProjectGraph, String> {
+        let session_manifest = self.store.load_manifest().ok().flatten();
+        let loaded = decide_the_graph(&self.analysis, dir, cache_root, session_manifest.as_ref())?;
+        if let Some(manifest) = loaded.manifest.as_ref() {
+            // A failed save only means the next call proves freshness
+            // again, which is the safe direction.
+            let _ = self.store.save_manifest(manifest);
+        }
+        Ok(ProjectGraph::of(loaded, session_manifest))
+    }
+}
+
+impl std::fmt::Debug for GraphSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphSession").finish_non_exhaustive()
+    }
 }
 
 /// How many bytes a warning about an incomplete build may occupy.
