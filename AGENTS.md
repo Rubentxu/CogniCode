@@ -287,6 +287,7 @@ varios minutos), usa su propio directorio de destino bajo `/tmp`, y no lee ni mo
 | Lint de formato | `cargo fmt --all --check` |
 | Lint de tipos/lints | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Unitarios + integración del explorer-ui (MSW) | `npm test --prefix apps/explorer-ui` |
+| Coste de un layout del explorer-ui (fuera de la suite, a propósito) | `npm run bench:layout --prefix apps/explorer-ui` |
 | Contratos de producto (manifiestos, catálogos, esquemas) | `bash scripts/ci/run-all-contracts.sh` |
 
 **Cómo se decide qué probar** (regla dura, no recomendación):
