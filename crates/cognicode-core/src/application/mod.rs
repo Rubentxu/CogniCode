@@ -6,6 +6,7 @@
 pub mod architecture;
 pub mod behaviors;
 pub mod cancellation;
+pub mod dependency_inventory;
 // M11 (AI Foundation, cycle e79) — read-only AI support.
 // Provides `FakeLlmPort` (deterministic in-memory adapter),
 // `SemanticMiner`, and `FindingCritic`. No canonical writes;
