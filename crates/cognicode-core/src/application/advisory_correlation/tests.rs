@@ -38,6 +38,7 @@ fn inventory_answer(with_lock: bool) -> DependencyInventoryAnswer {
         units: vec![unit],
         dependents: None,
         comparison: None,
+        distributed: None,
     }
 }
 
