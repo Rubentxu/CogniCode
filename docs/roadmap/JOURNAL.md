@@ -40034,12 +40034,13 @@ detallado, con lo ejecutado y lo no ejecutado, lo lleva el PR de la preparación
 publicó; `v0.107.0` tampoco se publica con este corte (sin release de GitHub, sin assets, sin
 crates.io), y la tabla de releases de `CURRENT.md` no cambia hasta que ocurra.
 
-## Recibo de bloque 7 — FAIL, base `2960249e` (2026-11-18)
+## Recibo de bloque 7 — PASS, base `2960249e` (2026-11-18)
 
-**Estado: FAIL** sobre `3d195e71`. El bloque cierra en rojo y no se da por cerrado: el gate
-entero encontró cinco rojos en el paso de integración, y los cinco se corrigen hacia delante en
-sus propias tareas antes de volver a correr la misma base. Lo que este recibo deja es la
-medición, el radio que se midió y el motivo de cada rojo.
+**Estado: PASS** sobre `a48113cd`, tras dos correcciones hacia delante (CGH-165 y CGH-166). La
+primera corrida, sobre `3d195e71`, salió `rc=1` con cinco rojos en el paso de integración; la
+segunda, sobre `a48113cd`, salió verde en los cinco pasos. Hasta esa segunda corrida este recibo
+era `FAIL`. Lo que sigue deja la medición de la primera corrida, el motivo de cada rojo y, al
+final, la segunda corrida.
 
 **Base y árbol medidos.** Base: `2960249e`, la base que el recibo del bloque 6 declara y que
 sigue existiendo en la historia —la punta que aquel recibo anunciaba como base del bloque 7,
@@ -40094,7 +40095,33 @@ no cambió.
 
 **Lo que este recibo no dice.** El gate se midió sobre `3d195e71`, el árbol anterior a las dos
 correcciones de este bloque; los pasos 2 y 3 se midieron sobre `7245633f`, que ya las lleva. El
-bloque **sigue en rojo** hasta que la misma base vuelva a salir verde, y ese cierre es un
-recibo aparte.
+bloque estuvo en rojo hasta que la misma base volvió a salir verde: ese cierre es la segunda
+corrida de abajo.
+
+
+**Segunda corrida (2026-11-19), PASS.** Misma base, `GATE_BASE=2960249e`, sobre `a48113cd` (#1007:
+`main` con CGH-163, CGH-165 y CGH-166 dentro). El tag `v0.107.0` apunta a ese commit. Con
+`LIBRARY_PATH` hacia el `libssl-dev` extraído sin root y `CARGO_BUILD_JOBS=4`.
+
+| Paso | Comando | Árbol | rc | Recuento |
+|---|---|---|---|---|
+| 1 | `GATE_BASE=2960249e bash scripts/test-gate.sh` | `a48113cd` | 0 | unitarios 5.046, 0 fallos (61 s); integración 2.225 corridos, 2.225 verdes, 6 omitidos (148 s); mutantes omitidos por el calendario; testigo del árbol limpio |
+| 2 | `npm test --prefix apps/explorer-ui` | `a48113cd` | 0 | 88 ficheros, 955 tests, 0 fallos |
+| 3 | `bash scripts/ci/run-all-contracts.sh` | `a48113cd` | 0 | 520 casos, 0 fallos; testigo del árbol limpio |
+| 4 | `cargo fmt --all --check` | `a48113cd` | 0 | sin diferencias |
+| 5 | `cargo clippy --workspace --all-targets -- -D warnings` | `a48113cd` | 0 | sin avisos |
+
+Los cinco tests que cayeron en la primera corrida (los tres del fixture del pack y las dos
+derivas del catálogo) pasan. El radio que el gate resolvió es el mismo de la primera corrida,
+salvo los mutantes.
+
+**NOT_RUN.** El paso de mutantes de esta corrida: el selector omitió el turno del calendario
+(369 fusiones desde el marcador, periodo 50) porque desde la medición de `3d195e71` no cambió
+nada de lo que decide el veredicto de un mutante, y el log lo dijo («turno omitido»). El ancla
+sigue siendo la medición real de la primera corrida, que salió `PASS`: 627 mutantes medidos, 618
+atrapados, 9 inviables, 0 supervivientes. Los logs vivían en `/tmp` y no se archivaron: el `rc` y
+los recuentos son los de la sesión que los lanzó.
+
+**La base del bloque 8 es `a48113cd`.**
 
 Medición del calendario: crate=cognicode-graph-algos sha=3d195e7155d1940f85fdf37efba1ae90c060c662 cargo-mutants=27.1.0 rustc=1.96.0/ac68faa20 resultado=PASS
