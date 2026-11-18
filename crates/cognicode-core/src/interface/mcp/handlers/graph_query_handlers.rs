@@ -7,6 +7,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use crate::application::graph_measure::GraphMeasure;
 use crate::application::services::graph_queries::{
     CommunityDetection, CommunitySection, community_callflow,
 };
@@ -111,7 +112,8 @@ pub struct GraphQueryLimits {
     pub budget_used: usize,
 }
 
-/// Where the graph of a `graph_query` answer came from.
+/// Where the graph an answer was read from came from: the basis `graph_query`
+/// and `codebase_map` publish.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryBasis {
     /// The canonical workspace the graph was read from.
@@ -120,6 +122,19 @@ pub struct GraphQueryBasis {
     pub source_manifest_digest: String,
     /// `built`, `cache` or `daemon`.
     pub graph_source: String,
+}
+
+impl GraphQueryBasis {
+    /// The basis of the graph `measure` was taken for. `None` when the
+    /// measure does not know the digest of the manifest the graph was read
+    /// against: a basis without it would not say which snapshot it is.
+    pub(crate) fn of(measure: &GraphMeasure) -> Option<Self> {
+        Some(Self {
+            workspace: measure.workspace.clone(),
+            source_manifest_digest: measure.source_manifest_digest.clone()?,
+            graph_source: measure.source.published_label().to_string(),
+        })
+    }
 }
 
 #[derive(Debug, serde::Serialize, JsonSchema)]
@@ -300,9 +315,9 @@ fn stopped_by_budget(
 }
 
 /// The graph a `graph_query` reads, with what is known about it.
-struct GraphRead {
-    graph: std::sync::Arc<CallGraph>,
-    measure: Option<crate::application::graph_measure::GraphMeasure>,
+pub(crate) struct GraphRead {
+    pub(crate) graph: std::sync::Arc<CallGraph>,
+    pub(crate) measure: Option<GraphMeasure>,
 }
 
 /// Reads the graph and what was measured about THAT graph, in one step.
@@ -311,7 +326,7 @@ struct GraphRead {
 /// after the graph was taken: if another route replaced the graph in
 /// between, nobody can say which graph was read, and nothing is claimed
 /// about it.
-fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
+pub(crate) fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
     let service = ctx.analysis_service();
     let before = service.current_graph_revision();
     let graph = match ctx.get_graph_store().load_graph_shared() {
@@ -374,13 +389,7 @@ pub async fn handle_graph_query(
         Some(measure) => CoverageInfo::of(&measure.coverage),
         None => CoverageInfo::unmeasured(),
     };
-    let basis = measure.as_ref().and_then(|measure| {
-        Some(GraphQueryBasis {
-            workspace: measure.workspace.clone(),
-            source_manifest_digest: measure.source_manifest_digest.clone()?,
-            graph_source: measure.source.published_label().to_string(),
-        })
-    });
+    let basis = measure.as_ref().and_then(GraphQueryBasis::of);
 
     let keywords = extract_keywords(&input.question);
     let seeds = seeds_of(&graph, &keywords);

@@ -8,6 +8,9 @@
 use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::services::CycleDetector;
 use crate::domain::value_objects::{DependencyType, Provenance};
+use crate::interface::mcp::handlers::graph_query_handlers::{
+    GraphQueryBasis, GraphRead, read_the_graph,
+};
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, OverviewDetail, SmartSearchInput,
@@ -441,6 +444,11 @@ pub struct CodebaseMapOutput {
     /// not the whole tree: a `partial` or `unknown` coverage means the
     /// counts and the hot symbols may leave out part of the project.
     pub coverage: crate::interface::coverage::CoverageInfo,
+    /// Which tree and which snapshot the graph was read from, the same
+    /// basis `graph_query` publishes. Absent when nobody measured the graph
+    /// that was read, or when the measure does not know its snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub basis: Option<GraphQueryBasis>,
 }
 
 /// The most hot symbols the map names.
@@ -525,7 +533,7 @@ fn coverage_line(coverage: &crate::interface::coverage::CoverageInfo) -> String 
 /// callers" (the same one `get_hot_paths` gives), cut to
 /// [`MAP_HOT_SYMBOLS`]. The coverage is the one measured for the graph that
 /// was read, not the last one anybody measured; a graph nobody measured says
-/// `unknown`, never `complete`.
+/// `unknown`, never `complete`, and publishes no basis.
 ///
 /// # Errors
 ///
@@ -534,20 +542,10 @@ pub async fn handle_codebase_map(
     ctx: &HandlerContext,
     input: CodebaseMapInput,
 ) -> HandlerResult<CodebaseMapOutput> {
-    let service = ctx.analysis_service();
-    let revision_before = service.current_graph_revision();
-    let graph = match ctx.get_graph_store().load_graph_shared() {
-        Ok(Some(g)) => g,
-        _ => return Err(HandlerError::Internal("No graph available".into())),
-    };
-    let revision_after = service.current_graph_revision();
-    // A route that replaced the graph in between leaves nobody able to say
-    // which graph was read, so nothing is claimed about its coverage.
-    let measure = if revision_before == revision_after {
-        service.graph_measures().of(revision_after, &graph)
-    } else {
-        None
-    };
+    // The graph and what was measured about THAT graph come from one read:
+    // a route that replaced the graph in between leaves nobody able to say
+    // which graph was read, so nothing is claimed about it.
+    let GraphRead { graph, measure } = read_the_graph(ctx)?;
     let counts = MapCounts {
         symbols: graph.symbol_count(),
         edges: graph.edge_count(),
@@ -573,6 +571,7 @@ pub async fn handle_codebase_map(
         Some(measure) => crate::interface::coverage::CoverageInfo::of(&measure.coverage),
         None => crate::interface::coverage::CoverageInfo::unmeasured(),
     };
+    let basis = measure.as_ref().and_then(GraphQueryBasis::of);
 
     let map = render_map(input.format, &counts, &hot_symbols, &coverage);
     let token_estimate = map.len() / 4;
@@ -592,6 +591,7 @@ pub async fn handle_codebase_map(
         summary,
         hot_symbols,
         coverage,
+        basis,
     })
 }
 

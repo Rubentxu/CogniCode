@@ -1095,7 +1095,7 @@
     {
       "name": "codebase_map",
       "title": "Generate a compact, LLM-optimized codebase map",
-      "description": "Summarize the project graph the server holds: symbol, edge, entry-point and leaf counts, the most-called symbols and the coverage of that graph. Format: compact (one line) or detailed (one line per hot symbol, holes of the coverage counted).",
+      "description": "Summarize the project graph the server holds: symbol, edge, entry-point and leaf counts, the most-called symbols, the coverage of that graph and, when the graph was measured, the basis it was read from (workspace, source and source manifest digest). Format: compact (one line) or detailed (one line per hot symbol, holes of the coverage counted).",
       "category": "composite",
       "authority": "read",
       "stability": "stable",
@@ -1274,6 +1274,29 @@
             "required": [
               "workspace",
               "snapshot"
+            ],
+            "type": "object"
+          },
+          "GraphQueryBasis": {
+            "description": "Where the graph an answer was read from came from: the basis `graph_query`\nand `codebase_map` publish.",
+            "properties": {
+              "graph_source": {
+                "description": "`built`, `cache` or `daemon`.",
+                "type": "string"
+              },
+              "source_manifest_digest": {
+                "description": "The digest of the source manifest the graph was read against.",
+                "type": "string"
+              },
+              "workspace": {
+                "description": "The canonical workspace the graph was read from.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "workspace",
+              "source_manifest_digest",
+              "graph_source"
             ],
             "type": "object"
           },
@@ -1492,6 +1515,17 @@
           "result": {
             "description": "What `codebase_map` publishes.\n\nEvery number and every name in `map` is read from the call graph the\nserver holds; nothing in it is a constant. The structured fields carry\nthe same facts as the text, so a consumer does not have to parse `map`.",
             "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/GraphQueryBasis"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Which tree and which snapshot the graph was read from, the same\nbasis `graph_query` publishes. Absent when nobody measured the graph\nthat was read, or when the measure does not know its snapshot."
+              },
               "coverage": {
                 "$ref": "#/$defs/CoverageInfo",
                 "description": "What the graph covers. The map describes the graph the server holds,\nnot the whole tree: a `partial` or `unknown` coverage means the\ncounts and the hot symbols may leave out part of the project."
@@ -1640,7 +1674,7 @@
     {
       "name": "compare",
       "title": "Qué cambió entre dos revisiones",
-      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot y el read-set del detector sobre la base si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Publica además los hallazgos de cada detector que escribe read-set (definiciones de función y de tipo) sobre la revisión candidata (`head_findings`, una entrada por detector) con su estado `reused` (solo si está probado que ningún cambio toca lo que el detector leyó; la evidencia sigue siendo de la base) o `rerun`, y el motivo; sin caché o sin read-set es siempre `rerun`. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
+      "description": "Compara los ficheros versionados entre dos revisiones Git ascendentes y publica por separado los cambios staged HEAD→index y las rutas dirty/untracked del working tree (sin afirmar contenido no leído). Ensambla los hechos de cada revisión (y guarda su snapshot y el read-set del detector sobre la base si hay caché) y publica el impacto y la reutilización de trabajo previo que esos hechos y los read-sets guardados sostienen: `evaluated`, `partial` (cota inferior) o `not_evaluated` con su motivo. Publica además los hallazgos de cada detector que escribe read-set (definiciones de función, definiciones de tipo y buckets S3 sin bloqueo de acceso público) sobre la revisión candidata (`head_findings`, una entrada por detector) con su estado `reused` (solo si está probado que ningún cambio toca lo que el detector leyó; la evidencia sigue siendo de la base) o `rerun`, y el motivo; sin caché o sin read-set es siempre `rerun`. Ejemplo: `cognicode compare --base-ref main --head-ref HEAD`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",
@@ -1691,7 +1725,7 @@
         "head_ref"
       ],
       "limitations": [
-        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the two detectors that write read-sets, function definitions and type definitions, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound."
+        "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the three detectors that write read-sets, function definitions, type definitions and unprotected S3 buckets, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound."
       ]
     },
     {
@@ -6292,7 +6326,7 @@
             "type": "object"
           },
           "GraphQueryBasis": {
-            "description": "Where the graph of a `graph_query` answer came from.",
+            "description": "Where the graph an answer was read from came from: the basis `graph_query`\nand `codebase_map` publish.",
             "properties": {
               "graph_source": {
                 "description": "`built`, `cache` or `daemon`.",
