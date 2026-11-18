@@ -5,7 +5,7 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-11-18, sobre `7f5ce7d4fb4c858709828e697e03b5e3e5803d7c` (el corte v0.107.0 entrega el context pack —el goal `pack` elige
+> **Snapshot**: 2026-11-18, sobre `dcdf91718138f9b950f43d9f736133114c2be0d6` (el corte v0.107.0 entrega el context pack —el goal `pack` elige
 > los símbolos que una tarea necesita y publica por qué los eligió, con su
 > presupuesto y la cobertura que de verdad midió—, los goals que leen el
 > árbol sin red —el inventario de dependencias del lockfile, la correlación
@@ -514,14 +514,15 @@
 > test —el contrato que fijaba la frescura de los goals que leen el árbol, que
 > la unidad anterior cambió a propósito— y lo corrigió TASK-321 (`a55d0c4e`);
 > el recibo del bloque lo escribe su cierre.
-> Versión del workspace: `0.107.0` (preparada, aún sin publicar). Última release
-> publicada: `v0.105.0` (2026-11-17, 12 assets).
+> Versión del workspace: `0.107.0` (tag `v0.107.0`; la release de GitHub y sus
+> assets no están publicados). Última release publicada: `v0.105.0`
+> (2026-11-17, 12 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Qué cambió desde el snapshot anterior (`3c96a90dca9b93778898f701420f1c7d34cccd54` → `7f5ce7d4fb4c858709828e697e03b5e3e5803d7c`)
+## Qué cambió desde el snapshot anterior (`3c96a90dca9b93778898f701420f1c7d34cccd54` → `dcdf91718138f9b950f43d9f736133114c2be0d6`)
 
-Entre una punta y otra entraron **279 commits** (`git rev-list --count 3c96a90dca9b93778898f701420f1c7d34cccd54..7f5ce7d4fb4c858709828e697e03b5e3e5803d7c`).
+Entre una punta y otra entraron **284 commits** (`git rev-list --count 3c96a90dca9b93778898f701420f1c7d34cccd54..dcdf91718138f9b950f43d9f736133114c2be0d6`).
 
 La base de esta comparación es el corte anterior (`3c96a90d`), que sí existe en
 la historia. Lo que sigue no es una lista de intenciones: cada fila dice qué se
@@ -533,7 +534,7 @@ anterior traía.
 
 | Qué cambió | Commit | Lo que se midió |
 |---|---|---|
-| El corte sube el workspace a la v0.107.0 y no publica nada todavía | `3a9b7b11`, `7f5ce7d4` (corte v0.107.0) | 279 commits entre el corte v0.105.0 (`3c96a90d`) y éste (`git rev-list --count 3c96a90d..7f5ce7d4`); el catálogo publica 95 herramientas MCP, 17 de ellas goals. El corte se prepara sin publicar: `v0.106.0` tiene tag y nunca se publicó, y este tampoco trae release de GitHub, assets ni crates.io. El recibo del corte está en el `JOURNAL`. |
+| El corte sube el workspace a la v0.107.0 y no publica nada todavía | `cfd8788f`, `2e2835be` (corte v0.107.0) | 284 commits entre el corte v0.105.0 (`3c96a90d`) y éste (`git rev-list --count 3c96a90d..dcdf9171`); el catálogo publica 95 herramientas MCP, 17 de ellas goals. El corte se prepara sin publicar: `v0.106.0` tiene tag y nunca se publicó, y este tampoco trae release de GitHub, assets ni crates.io. El recibo del corte está en el `JOURNAL`. |
 | El goal `pack` entrega símbolos con identidad inequívoca, motivo y snapshot | `89af27f3`, `7813ec47`, `7553f266` (CGH-086, #973) | Medido con `scripts/measure/context_pack_ab.py` (9 casos, 15 muestras por caso): la recuperación por nombre de identificador en los 10 primeros es pack 6/6, smart_search en forma de identificador 6/6, smart_search por frase 0/6 y codebase_map 2/9. p50 en caliente: smart_search 41-73 ms, codebase_map 0,39-0,44 s y pack 3,6-4,4 s, porque el pack reconstruye el grafo por llamada. Texto leído: pack 9,6-10,7 KB, smart_search 1,3-2,5 KB, codebase_map 1,05 MB. No se afirma mejora de relevancia ni de latencia: el pack añade evidencia e identidad inequívoca. |
 | La selección del pack se adapta al propósito y al nivel de detalle | `23d1b6b5`, `092e01cf`, `32e3b40a` (CGH-087, #981) | Evaluado sobre un corpus fijo y determinista con presupuesto 1500: el híbrido gana en recall y precisión a IDF solo, a PPR solo y al pack plano, con 0 redundancia. Los pesos se buscaron sólo para `diagnose` (check sobre tenido fuera); `refactor` y `architecture` quedan declarados y la proximidad no muestra efecto medido. La superficie del goal no puede alcanzar `cancelled` (el plazo es sólo `time_ms`): CGH-149. |
 | El pack de un cambio parte de las líneas exactas y trae sus consumidores | `0afef8f5`, `880d71e4` (CGH-088, #976) | Medido con `change_pack_ab.py` sobre una verdad construida a mano: firma de API, pack 1863 B y 1 llamada, recall 0,667 (0,889 con `--max-tokens 6000`) y precisión 1,0, frente a `git diff` 394 B con recall 0,125 y a grep más lectura de ficheros 1978 B en 9 llamadas con recall 0,75 y precisión 0,857; cuerpo privado, pack 1621 B, recall 0,667 (0,833 con presupuesto ancho) y precisión 1,0 frente a 2106 B en 14 llamadas con 2 no deseados. p50 en caliente 55-110 ms y en frío 60-190 ms: más lento que diff o grep (3-25 ms) porque cada ejecución construye el grafo. |

@@ -1,7 +1,7 @@
 # SEAM — WorkspaceSession (medicion, no opinion)
 
 - Herramienta: `python3 scripts/measure_workspace_session.py --write`
-- HEAD medido: `7f5ce7d4` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4584 lineas)
+- HEAD medido: `dcdf9171` — fichero: `crates/cognicode-core/src/application/workspace_session.rs` (4584 lineas)
 - Regions `#[cfg(test)]` inline: 2; ficheros `tests/` leidos: 397
 
 La regla de extraccion (CGH-010 AC#2): un grupo solo se extrae
