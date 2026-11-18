@@ -163,10 +163,21 @@ async fn a_graph_the_session_already_held_keeps_its_snapshot() {
 #[tokio::test]
 async fn a_graph_nobody_measured_publishes_no_basis() {
     let (_tmp, root) = readable_tree();
-    let ctx = HandlerContext::builder().with_working_dir(&root).build();
-    ctx.analysis_service()
+    // The graph is built and measured by the route that built it, and it
+    // reaches the reader through a store: the service that reads it never
+    // measured that graph, so it has nothing to publish about it.
+    let builder = AnalysisService::new();
+    builder
         .build_project_graph(&root)
         .expect("the graph is built");
+    let store = InMemoryGraphStore::new();
+    store
+        .save_graph(&builder.get_project_graph())
+        .expect("the graph is stored");
+    let ctx = HandlerContext::builder()
+        .with_working_dir(&root)
+        .with_graph_store(store)
+        .build();
 
     let answer = map_of(&ctx).await;
 
@@ -177,27 +188,61 @@ async fn a_graph_nobody_measured_publishes_no_basis() {
     );
 }
 
-/// A graph that replaced the measured one without being measured is not
-/// described by the old basis.
+/// A tree with an ambiguous call, so the graph built from it is measured
+/// with holes: the coverage published for a replacement tells which measure
+/// was published.
+fn tree_with_an_ambiguous_call() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+    write(
+        &root.join("src/one.rs"),
+        "pub fn helper() -> u32 {\n    1\n}\n",
+    );
+    write(
+        &root.join("src/two.rs"),
+        "pub fn helper() -> u32 {\n    2\n}\n",
+    );
+    write(
+        &root.join("src/lib.rs"),
+        "pub fn caller() -> u32 {\n    helper()\n}\n",
+    );
+    (dir, root)
+}
+
+/// A graph that replaced the measured one is described by the measure of
+/// the replacement, not by the one taken for the graph it replaced.
 #[tokio::test]
-async fn a_graph_replaced_after_it_was_measured_publishes_no_basis() {
+async fn a_graph_replaced_after_it_was_measured_publishes_the_replacement_measure() {
     let (_tmp, root) = readable_tree();
     let ctx = HandlerContext::builder().with_working_dir(&root).build();
     load_or_build_graph(ctx.analysis_service(), &root, None, None, false).expect("graph");
 
-    // Another route replaces the graph the service holds, and nobody
-    // measures what it covers.
-    let (_other, other_root) = other_tree();
+    // Another route replaces the graph the service holds, and measures the
+    // graph it built. This one has an ambiguous call, so its measure has a
+    // hole the measured graph did not have.
+    let (_other, other_root) = tree_with_an_ambiguous_call();
     ctx.analysis_service()
         .build_project_graph(&other_root)
         .expect("the graph is built");
 
     let answer = map_of(&ctx).await;
 
-    assert_eq!(answer["coverage"]["status"], "unknown");
+    assert_eq!(
+        answer["coverage"]["status"], "partial",
+        "the coverage published is the one measured for the replacement: {answer}"
+    );
+    assert_eq!(
+        answer["coverage"]["pending_references"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1,
+        "the hole of the replacement is the one published: {answer}"
+    );
     assert!(
         answer.get("basis").is_none(),
-        "the basis measured for the previous graph is not this graph's: {answer}"
+        "a measure without the digest of the manifest it was read against \
+         publishes no basis: {answer}"
     );
 }
 
