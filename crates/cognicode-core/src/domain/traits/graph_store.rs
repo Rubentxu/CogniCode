@@ -5,7 +5,8 @@
 //!
 //! ADR-035 adds versioned checkpoint reads via [`GraphStore::current_checkpoint_id`]
 //! and [`GraphStore::checkpoint_at`]. These let callers pin to a specific
-//! snapshot while writers publish new heads.
+//! snapshot while writers publish new heads. [`GraphStore::load_graph_shared`]
+//! hands out the snapshot itself, one pointer per unchanged graph.
 
 use std::sync::Arc;
 
@@ -33,11 +34,11 @@ pub enum StoreError {
 
 /// Trait for persisting and loading the call graph
 ///
-/// The default implementations of the checkpoint methods panic with a
-/// message naming the concrete type — this is "loud failure > silent
-/// ignore" (ADR-035 D7). Stores that do not maintain versioned
-/// snapshots should override the methods with a single-version stub
-/// (id = 1, current graph).
+/// The default of [`GraphStore::checkpoint_at`] panics with a message naming
+/// the concrete type — "loud failure > silent ignore" (ADR-035 D7) — because
+/// a caller can only hold an id the store gave it through
+/// [`GraphStore::current_checkpoint_id`], whose default is `None`: a store
+/// that does not version its snapshots simply never hands one out.
 pub trait GraphStore: Send + Sync {
     /// Save the call graph to the store
     fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError>;
@@ -53,9 +54,17 @@ pub trait GraphStore: Send + Sync {
     /// back a pointer to the graph the store already holds, so reading it
     /// costs nothing.
     ///
-    /// The default implementation copies, because a store that keeps the
-    /// graph serialized has nothing else to hand back. A store that holds
-    /// the graph in memory overrides it, and then nobody pays for a copy.
+    /// **Stable snapshot.** A store that persists a graph should return
+    /// the same `Arc` on every call for as long as the graph is unchanged,
+    /// and a different one after a write. That pointer is the identity of
+    /// the snapshot: derived state that depends only on the graph (ranking
+    /// statistics, projections) can be cached against it, and a reader that
+    /// finds the same pointer knows the graph did not change. Both stores
+    /// shipped with the crate honour this.
+    ///
+    /// The default implementation copies and so returns a new `Arc` per
+    /// call: correct, but nothing keyed by the snapshot ever hits. A store
+    /// that holds the graph in memory overrides it.
     fn load_graph_shared(&self) -> Result<Option<Arc<CallGraph>>, StoreError> {
         Ok(self.load_graph()?.map(Arc::new))
     }
@@ -72,17 +81,23 @@ pub trait GraphStore: Send + Sync {
     /// Check if data exists in the store
     fn exists(&self) -> Result<bool, StoreError>;
 
-    /// Returns the [`CheckpointId`] of the current head, or `None` if no
-    /// checkpoint has ever been published.
+    /// Returns the [`CheckpointId`] of the current head, or `None` if the
+    /// store holds no identified snapshot.
+    ///
+    /// An id names one graph for good: it is never handed out again for
+    /// different content, not after a write and not after `clear`. `None`
+    /// means there is nothing to name: the store is cold, or it does not
+    /// version its snapshots at all, which is what the default says. It
+    /// never panics. A caller that needs the identity of a snapshot from a
+    /// store of any kind should use the pointer of
+    /// [`GraphStore::load_graph_shared`] instead.
     ///
     /// Stores that maintain a versioned ring (e.g. `CachedGraphStore`)
-    /// return the live head id. Single-version stores should return
-    /// `Some(CheckpointId(1))` once the store is non-empty.
+    /// return the live head id; single-version stores (e.g.
+    /// `InMemoryGraphStore`) return the id of the write that put the held
+    /// graph there.
     fn current_checkpoint_id(&self) -> Option<CheckpointId> {
-        panic!(
-            "current_checkpoint_id not implemented for {}",
-            std::any::type_name::<Self>()
-        );
+        None
     }
 
     /// Returns the `CallGraph` snapshot for a given [`CheckpointId`].
@@ -92,8 +107,9 @@ pub trait GraphStore: Send + Sync {
     /// * `Err(StoreError::CheckpointNotFound(id))` — store has at least
     ///   one checkpoint but `id` is not (or no longer) in the window.
     ///
-    /// Default impl panics. Single-version stores should override to
-    /// return the current graph for any valid id.
+    /// Default impl panics: a store that does not return an id from
+    /// [`GraphStore::current_checkpoint_id`] has none to look up. Stores
+    /// that do return one override it.
     fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
         panic!(
             "checkpoint_at not implemented for {} (id={})",

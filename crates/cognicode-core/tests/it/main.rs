@@ -96,6 +96,7 @@ mod goals_and_mcp_do_not_import_cli;
 mod graph_builds_are_single_flight;
 mod graph_index_answers_the_same_way_on_every_disk;
 mod graph_query_says_what_it_traversed;
+mod graph_stores_hand_out_one_snapshot;
 mod graph_walk_stays_inside_the_root;
 mod h01_content_identity_contract;
 mod h01_per_file_cache_invalidate_contract;
