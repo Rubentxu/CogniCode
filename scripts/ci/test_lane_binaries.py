@@ -413,6 +413,30 @@ def make_sysroot(directory: str, *, with_loader: bool = True) -> str:
     return str(prefix)
 
 
+def toolchain_env() -> dict[str, str]:
+    """Las variables que un proxy de toolchain necesita para encontrarla.
+
+    El `rustc` del PATH suele ser un proxy, no el compilador: el shim de
+    rustup o el de asdf. Los dos localizan el toolchain por una variable
+    de entorno y no por el ejecutable, y los dos dejan de resolver cuando
+    el entorno que les llega no la lleva. El contrato lanza el runner con
+    un HOME propio —y el caso nativo sin HOME ninguno—, asi que un proxy
+    que busca en `$HOME/.rustup` o en `$HOME/.asdf` no encuentra nada.
+
+    Entonces `rustc -vV` no dice nada y el runner reporta un target del
+    host que no pudo leer: un fallo que nombra el sintoma y no la causa.
+    Por eso las variables viajan con el test.
+
+    Primero el valor del padre, luego el lugar estandar, para que el
+    proxy resuelva en <100 ms igual que en la maquina de un desarrollador.
+    """
+    return {
+        "RUSTUP_HOME": os.environ.get("RUSTUP_HOME") or os.path.expanduser("~/.rustup"),
+        "CARGO_HOME": os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo"),
+        "ASDF_DATA_DIR": os.environ.get("ASDF_DATA_DIR") or os.path.expanduser("~/.asdf"),
+    }
+
+
 def run_runner(args: list[str], **env_extra: str) -> subprocess.CompletedProcess:
     with tempfile.TemporaryDirectory() as raw:
         env = {
@@ -420,16 +444,7 @@ def run_runner(args: list[str], **env_extra: str) -> subprocess.CompletedProcess
             "HOME": raw,
             "TMPDIR": raw,
         }
-        # The rustup proxy needs RUSTUP_HOME to find the toolchain when HOME
-        # is overridden (the proxy's default of $HOME/.rustup would point
-        # at this tempfile). Without it, `rustc -vV` hangs and the runner
-        # script reports a host it could not read. Prefer the parent env
-        # value, then fall back to the standard location so the proxy
-        # resolves in <100 ms the same way it does on a developer machine.
-        rustup_home = os.environ.get("RUSTUP_HOME") or os.path.expanduser("~/.rustup")
-        env["RUSTUP_HOME"] = rustup_home
-        cargo_home = os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo")
-        env["CARGO_HOME"] = cargo_home
+        env.update(toolchain_env())
         env.update({k: v for k, v in env_extra.items() if v})
         return subprocess.run(
             [str(RUNNER), *args],
@@ -468,7 +483,17 @@ def test_a_native_target_is_run_directly() -> None:
             capture_output=True,
             text=True,
             timeout=120,
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+            # El PATH y un HOME propio: el caso nativo no necesita nada
+            # mas. El toolchain si —el runner lee el target del host con
+            # `rustc -vV`— y su proxy lo busca en el entorno, no en el
+            # PATH: sin estas variables el runner no sabe que target es
+            # el del host y falla antes de decir nada.
+            env={
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "HOME": raw,
+                "TMPDIR": raw,
+                **toolchain_env(),
+            },
         )
     assert done.returncode == 0, done.stderr
     assert "qemu" not in done.stdout + done.stderr, (
