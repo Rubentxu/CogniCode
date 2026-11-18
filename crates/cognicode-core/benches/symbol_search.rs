@@ -30,8 +30,8 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::HashMap;
 use std::hint::black_box;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use cognicode_core::domain::aggregates::Symbol;
@@ -95,7 +95,9 @@ fn vocabulary(rng: &mut Rng) -> Vec<String> {
         "graph", "symbol", "index", "search", "build", "read", "write", "file", "path", "name",
         "value", "result", "error", "context", "service", "query", "filter", "item", "list", "map",
     ];
-    const ON: &[&str] = &["b", "c", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t"];
+    const ON: &[&str] = &[
+        "b", "c", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t",
+    ];
     const VO: &[&str] = &["a", "e", "i", "o", "u", "ai", "ou"];
     let mut words: Vec<String> = COMMON.iter().map(|w| w.to_string()).collect();
     while words.len() < 3000 {
@@ -111,9 +113,15 @@ fn vocabulary(rng: &mut Rng) -> Vec<String> {
 
 fn compose(rng: &mut Rng, words: &[String]) -> String {
     let parts = 1 + rng.below(3);
-    let picked: Vec<&String> = (0..parts).map(|_| &words[rng.skewed(words.len())]).collect();
+    let picked: Vec<&String> = (0..parts)
+        .map(|_| &words[rng.skewed(words.len())])
+        .collect();
     match rng.below(3) {
-        0 => picked.iter().map(|w| w.as_str()).collect::<Vec<_>>().join("_"),
+        0 => picked
+            .iter()
+            .map(|w| w.as_str())
+            .collect::<Vec<_>>()
+            .join("_"),
         1 => picked
             .iter()
             .enumerate()
@@ -149,7 +157,11 @@ fn synthetic(size: usize) -> Vec<Decl> {
         .map(|i| Decl {
             name: compose(&mut rng, &words),
             kind: KINDS[rng.below(KINDS.len())],
-            file: format!("src/m{}/f{}.rs", (i / SYMBOLS_PER_FILE) / 10, i / SYMBOLS_PER_FILE),
+            file: format!(
+                "src/m{}/f{}.rs",
+                (i / SYMBOLS_PER_FILE) / 10,
+                i / SYMBOLS_PER_FILE
+            ),
             line: (i % SYMBOLS_PER_FILE) as u32 * 5 + 1,
         })
         .collect()
@@ -231,7 +243,13 @@ fn by_file(decls: &[Decl]) -> Vec<(String, Vec<Decl>)> {
 fn symbols(decls: &[Decl]) -> Vec<Symbol> {
     decls
         .iter()
-        .map(|d| Symbol::new(d.name.clone(), d.kind, Location::new(d.file.clone(), d.line, 0)))
+        .map(|d| {
+            Symbol::new(
+                d.name.clone(),
+                d.kind,
+                Location::new(d.file.clone(), d.line, 0),
+            )
+        })
         .collect()
 }
 
@@ -248,7 +266,11 @@ fn query_cases(decls: &[Decl], per_class: usize) -> Vec<Case> {
     let pick = |rng: &mut Rng| -> &Decl { &decls[rng.below(decls.len())] };
     for _ in 0..per_class {
         let name = pick(&mut rng).name.to_lowercase();
-        cases.push(Case { class: "exact", query: name, kinds: vec![] });
+        cases.push(Case {
+            class: "exact",
+            query: name,
+            kinds: vec![],
+        });
 
         let name = pick(&mut rng).name.to_lowercase();
         let take = name.chars().count().min(5);
@@ -274,7 +296,11 @@ fn query_cases(decls: &[Decl], per_class: usize) -> Vec<Case> {
         let chars: Vec<char> = name.chars().collect();
         if chars.len() >= 6 {
             let q: String = chars.iter().step_by(2).collect();
-            cases.push(Case { class: "fuzzy", query: q, kinds: vec![] });
+            cases.push(Case {
+                class: "fuzzy",
+                query: q,
+                kinds: vec![],
+            });
         }
 
         let name = pick(&mut rng).name.to_lowercase();
@@ -327,7 +353,11 @@ fn build(files: &[(String, Vec<Decl>)]) -> (SearchIndex, f64, usize) {
     (index, secs, held)
 }
 
-fn query(index: &SearchIndex, case: &Case, limit: usize) -> Vec<(String, String, u32, MatchType, f32)> {
+fn query(
+    index: &SearchIndex,
+    case: &Case,
+    limit: usize,
+) -> Vec<(String, String, u32, MatchType, f32)> {
     index
         .search(&SymbolSearchQuery {
             query: case.query.clone(),
@@ -373,7 +403,10 @@ fn oracle_class(name: &str, query: &str) -> Option<(MatchType, f32)> {
     } else if name.starts_with(query) {
         Some((MatchType::Prefix, 0.9))
     } else if let Some(pos) = name.find(query) {
-        Some((MatchType::Contains, 0.7 + 0.2 * (1.0 - pos as f32 / name.len() as f32)))
+        Some((
+            MatchType::Contains,
+            0.7 + 0.2 * (1.0 - pos as f32 / name.len() as f32),
+        ))
     } else {
         let mut chars = query.chars().peekable();
         for c in name.chars() {
@@ -408,9 +441,9 @@ fn recall(index: &SearchIndex, decls: &[Decl], cases: &[Case], limit: usize) -> 
         let got = query(index, case, limit);
         let mut good = 0usize;
         for (name, file, line, t, s) in &got {
-            let valid = truth
-                .iter()
-                .any(|(tt, ts, d)| d.name == *name && d.file == *file && d.line == *line && tt == t && ts == s);
+            let valid = truth.iter().any(|(tt, ts, d)| {
+                d.name == *name && d.file == *file && d.line == *line && tt == t && ts == s
+            });
             let ranks = (*t, *s) >= threshold;
             if valid && ranks {
                 good += 1;
@@ -421,7 +454,65 @@ fn recall(index: &SearchIndex, decls: &[Decl], cases: &[Case], limit: usize) -> 
         sum += good as f64 / expected as f64;
         counted += 1;
     }
-    (if counted == 0 { 1.0 } else { sum / counted as f64 }, wrong)
+    (
+        if counted == 0 {
+            1.0
+        } else {
+            sum / counted as f64
+        },
+        wrong,
+    )
+}
+
+/// The same pass as [`timed_pass`] through the full-scan reference.
+fn timed_scan_pass(index: &SearchIndex, cases: &[Case]) -> Vec<(&'static str, f64)> {
+    cases
+        .iter()
+        .map(|case| {
+            let q = SymbolSearchQuery {
+                query: case.query.clone(),
+                kinds: case.kinds.clone(),
+                max_results: LIMIT,
+            };
+            let started = Instant::now();
+            black_box(index.search_by_scan(black_box(&q)));
+            (case.class, started.elapsed().as_secs_f64() * 1e6)
+        })
+        .collect()
+}
+
+/// How many cases the candidate search and the scan answer identically,
+/// shape and order included.
+fn agreement(index: &SearchIndex, cases: &[Case]) -> (usize, usize) {
+    let same = cases
+        .iter()
+        .filter(|case| {
+            [LIMIT, usize::MAX].into_iter().all(|limit| {
+                let q = SymbolSearchQuery {
+                    query: case.query.clone(),
+                    kinds: case.kinds.clone(),
+                    max_results: limit,
+                };
+                let shape = |rs: Vec<
+                    cognicode_core::infrastructure::semantic::semantic_search::SearchResult,
+                >| {
+                    rs.into_iter()
+                        .map(|r| {
+                            (
+                                r.symbol.name().to_string(),
+                                r.symbol.location().file().to_string(),
+                                r.symbol.location().line(),
+                                r.match_type,
+                                r.score.to_bits(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                };
+                shape(index.search(&q)) == shape(index.search_by_scan(&q))
+            })
+        })
+        .count();
+    (same, cases.len())
 }
 
 fn row(label: &str, runs: &mut Vec<Vec<f64>>) {
@@ -437,19 +528,36 @@ fn row(label: &str, runs: &mut Vec<Vec<f64>>) {
         let hi = v.iter().cloned().fold(0.0, f64::max);
         format!("{lo:>9.1}-{hi:<9.1}")
     };
-    println!("  {label:<16} p50 us {}  p95 us {}", range(&p50s), range(&p95s));
+    println!(
+        "  {label:<16} p50 us {}  p95 us {}",
+        range(&p50s),
+        range(&p95s)
+    );
 }
 
 fn main() {
-    let runs: usize = std::env::var("SEARCH_RUNS").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
-    let per_class: usize = std::env::var("SEARCH_QUERIES").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+    let runs: usize = std::env::var("SEARCH_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let per_class: usize = std::env::var("SEARCH_QUERIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
     let tokens: Vec<String> = std::env::args()
         .skip(1)
         .filter(|a| !a.starts_with("--"))
         .collect();
-    let tokens = if tokens.is_empty() { vec!["10000".into(), "100000".into()] } else { tokens };
+    let tokens = if tokens.is_empty() {
+        vec!["10000".into(), "100000".into()]
+    } else {
+        tokens
+    };
 
-    println!("symbol_search: runs={runs} queries/class={per_class} limit={LIMIT} load at start: {}", loadavg());
+    println!(
+        "symbol_search: runs={runs} queries/class={per_class} limit={LIMIT} load at start: {}",
+        loadavg()
+    );
     for token in tokens {
         let decls = if token == "real" {
             let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates");
@@ -458,7 +566,11 @@ fn main() {
             synthetic(token.parse().expect("size or `real`"))
         };
         let files = by_file(&decls);
-        println!("\n== corpus {token}: {} declarations in {} files", decls.len(), files.len());
+        println!(
+            "\n== corpus {token}: {} declarations in {} files",
+            decls.len(),
+            files.len()
+        );
 
         let mut build_secs = Vec::new();
         let mut held = 0;
@@ -470,7 +582,10 @@ fn main() {
         }
         println!(
             "  build            {:?} s (runs), heap retained by the index {:.1} MiB = {:.0} B/symbol",
-            build_secs.iter().map(|s| (s * 1000.0).round() / 1000.0).collect::<Vec<_>>(),
+            build_secs
+                .iter()
+                .map(|s| (s * 1000.0).round() / 1000.0)
+                .collect::<Vec<_>>(),
             held as f64 / 1048576.0,
             held as f64 / decls.len() as f64
         );
@@ -490,11 +605,34 @@ fn main() {
                 per_class_runs.entry(class).or_default().push(v);
             }
         }
-        for class in ["exact", "prefix", "contains", "fuzzy", "short2", "miss", "kind"] {
+        for class in [
+            "exact", "prefix", "contains", "fuzzy", "short2", "miss", "kind",
+        ] {
             if let Some(mut r) = per_class_runs.remove(class) {
                 row(class, &mut r);
             }
         }
+
+        // the full-scan reference on the same storage
+        let mut scan_runs: HashMap<&'static str, Vec<Vec<f64>>> = HashMap::new();
+        for _ in 0..runs {
+            let mut this: HashMap<&'static str, Vec<f64>> = HashMap::new();
+            for (class, us) in timed_scan_pass(&index, &cases) {
+                this.entry(class).or_default().push(us);
+            }
+            for (class, v) in this {
+                scan_runs.entry(class).or_default().push(v);
+            }
+        }
+        for class in [
+            "exact", "prefix", "contains", "fuzzy", "short2", "miss", "kind",
+        ] {
+            if let Some(mut r) = scan_runs.remove(class) {
+                row(&format!("scan {class}"), &mut r);
+            }
+        }
+        let (same, total) = agreement(&index, &cases);
+        println!("  candidates == scan on {same}/{total} queries (limit {LIMIT} and unlimited)");
 
         // reindex one file
         let mut rng = Rng(7);
@@ -520,10 +658,14 @@ fn main() {
         // recall against the oracle (skipped at the largest sizes: O(n) per query)
         if decls.len() <= 200_000 {
             for class in ["exact", "prefix", "contains", "fuzzy", "kind"] {
-                let subset: Vec<Case> = cases.iter().filter(|c| c.class == class).cloned().collect();
+                let subset: Vec<Case> =
+                    cases.iter().filter(|c| c.class == class).cloned().collect();
                 let limit = if class == "exact" { 1_000_000 } else { LIMIT };
                 let (r, wrong) = recall(&index, &decls, &subset, limit);
-                println!("  recall {class:<9} {:.4} (hits that were wrong: {wrong}, limit {limit})", r);
+                println!(
+                    "  recall {class:<9} {:.4} (hits that were wrong: {wrong}, limit {limit})",
+                    r
+                );
             }
         }
 
@@ -580,7 +722,10 @@ fn main() {
                     let index = Arc::clone(&index);
                     let cases = Arc::clone(&cases);
                     std::thread::spawn(move || {
-                        timed_pass(&index, &cases).into_iter().map(|(_, us)| us).collect::<Vec<_>>()
+                        timed_pass(&index, &cases)
+                            .into_iter()
+                            .map(|(_, us)| us)
+                            .collect::<Vec<_>>()
                     })
                 })
                 .collect();
