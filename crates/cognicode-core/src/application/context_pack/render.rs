@@ -26,8 +26,19 @@ const DIGEST_PREFIX: usize = 12;
 
 /// The text of a pack.
 pub fn render(view: &RenderView) -> String {
+    render_with_notes(view, &[])
+}
+
+/// The text of a pack with `notes`, one line each, between the header and
+/// the items. The notes are part of the text, so they are part of what the
+/// budget measures.
+pub fn render_with_notes(view: &RenderView, notes: &[String]) -> String {
     let digest: String = view.snapshot_digest.chars().take(DIGEST_PREFIX).collect();
     let mut text = format!("context pack @ {digest}\n");
+    for note in notes {
+        text.push_str(note);
+        text.push('\n');
+    }
     for item in view.items {
         text.push_str(&format!(
             "{}\n  {}:{}-{}  {}  reason={}",
