@@ -57,9 +57,11 @@ pub use package::ManifestHole;
 pub(crate) mod pending;
 pub mod per_file_graph;
 mod pet_graph_store;
+pub mod projection_cache;
 /// What the last build already proved, and what a change invalidates.
 pub mod reuse;
 pub mod semantic_layer;
+pub mod snapshot_cache;
 pub mod snapshot_graph_executor;
 pub mod snapshot_provider;
 /// The files a graph is built from, decided once: the builder and the

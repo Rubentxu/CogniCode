@@ -16,41 +16,22 @@
 //! the same graph. Ties are broken by symbol id, the order the graph
 //! publishes its symbols in.
 //!
-//! # Identity and invalidation
+//! # Identity, memory and concurrency
 //!
-//! [`RankingStatsCache`] is keyed by the identity of the published immutable
-//! `Arc<CallGraph>` (the entry of the checkpoint ring), not by a revision
-//! number: the in-memory single-version store reports the same checkpoint id
-//! after every overwrite, so a number cannot tell two snapshots apart, while
-//! the allocation can. The cache holds a `Weak` pointer to the graph, which
-//! has two consequences the cache relies on:
-//!
-//! - the allocation of a keyed graph cannot be reused for another graph
-//!   while the entry exists, so an address never aliases two snapshots;
-//! - `Arc::get_mut` refuses to hand out `&mut` to a graph that has a `Weak`,
-//!   so a keyed graph cannot be edited in place under the cache.
-//!
-//! When the last strong reference to a snapshot goes away its entry is
-//! dropped on the next lookup: scores of a retired snapshot are never served.
-//!
-//! # Memory
-//!
-//! The cache holds at most [`RankingCacheLimits::max_entries`] snapshots and
-//! at most [`RankingCacheLimits::max_symbols`] symbols summed over them,
-//! evicting the least recently used first. A single snapshot larger than the
-//! symbol budget is ranked from a value that is not retained.
-//!
-//! # Concurrency
-//!
-//! Lookups take a short lock that never covers a build. Concurrent first
-//! queries of the same snapshot build once: the others wait for that build
-//! and share its result.
+//! [`RankingStatsCache`] is a [`SnapshotCache`] of [`RankingStats`]: one value
+//! per published immutable `Arc<CallGraph>`, keyed by the identity of the
+//! allocation, bounded by [`RankingCacheLimits`], built once under concurrent
+//! first queries and dropped with its snapshot. The rules are those of the
+//! [`snapshot_cache`](crate::infrastructure::graph::snapshot_cache) module.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 
 use crate::domain::aggregates::{CallGraph, SymbolId};
+use crate::infrastructure::graph::snapshot_cache::{
+    SnapshotCache, SnapshotCacheCounters, SnapshotCacheLimits,
+};
 
 use super::search_ranker::{ScoredSymbol, SearchRanker};
 
@@ -293,153 +274,36 @@ fn hub_threshold(degrees: &[usize]) -> usize {
 }
 
 /// How much a [`RankingStatsCache`] may keep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RankingCacheLimits {
-    /// Most snapshots kept at once. The snapshot being served is always
-    /// kept while it is in use, so values below one behave as one.
-    pub max_entries: usize,
-    /// Most symbols kept, summed over the snapshots. A snapshot with more
-    /// symbols than this is never retained.
-    pub max_symbols: usize,
-}
-
-impl Default for RankingCacheLimits {
-    /// Two snapshots (the head and the one before it, as the checkpoint ring
-    /// retains) within two million symbols.
-    fn default() -> Self {
-        Self {
-            max_entries: 2,
-            max_symbols: 2_000_000,
-        }
-    }
-}
+pub type RankingCacheLimits = SnapshotCacheLimits;
 
 /// What a [`RankingStatsCache`] has done so far.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct RankingCacheCounters {
-    /// Times a [`RankingStats`] was built.
-    pub builds: u64,
-    /// Lookups served by an entry that already existed.
-    pub hits: u64,
-    /// Entries dropped for the budget or because their snapshot is gone.
-    pub evictions: u64,
-    /// Lookups answered from a value that was not retained because the
-    /// snapshot alone is over the symbol budget.
-    pub bypasses: u64,
-    /// Snapshots held now.
-    pub entries: usize,
-    /// Symbols held now, summed over the snapshots.
-    pub symbols: usize,
-}
-
-struct Slot {
-    graph: Weak<CallGraph>,
-    symbols: usize,
-    stats: Arc<OnceLock<Arc<RankingStats>>>,
-}
+pub type RankingCacheCounters = SnapshotCacheCounters;
 
 /// Shares one [`RankingStats`] per published snapshot between queries. See
 /// the [module documentation](self) for identity, invalidation, memory and
-/// concurrency.
+/// concurrency; the cache itself is a [`SnapshotCache`].
+#[derive(Default)]
 pub struct RankingStatsCache {
-    limits: RankingCacheLimits,
-    /// Least recently used first.
-    slots: Mutex<Vec<Slot>>,
-    builds: AtomicU64,
-    hits: AtomicU64,
-    evictions: AtomicU64,
-    bypasses: AtomicU64,
-}
-
-impl Default for RankingStatsCache {
-    fn default() -> Self {
-        Self::new(RankingCacheLimits::default())
-    }
+    cache: SnapshotCache<Arc<RankingStats>>,
 }
 
 impl RankingStatsCache {
     /// An empty cache that keeps at most what `limits` allow.
     pub fn new(limits: RankingCacheLimits) -> Self {
         Self {
-            limits,
-            slots: Mutex::new(Vec::new()),
-            builds: AtomicU64::new(0),
-            hits: AtomicU64::new(0),
-            evictions: AtomicU64::new(0),
-            bypasses: AtomicU64::new(0),
+            cache: SnapshotCache::new(limits),
         }
     }
 
     /// The statistics of `graph`, built by the first caller and shared by
     /// the rest for as long as the entry lives.
     pub fn stats_for(&self, graph: &Arc<CallGraph>) -> Arc<RankingStats> {
-        let symbols = graph.symbol_count();
-        if symbols > self.limits.max_symbols {
-            self.bypasses.fetch_add(1, Ordering::Relaxed);
-            self.builds.fetch_add(1, Ordering::Relaxed);
-            return Arc::new(RankingStats::build(graph));
-        }
-        let cell = self.slot_for(graph, symbols);
-        Arc::clone(cell.get_or_init(|| {
-            self.builds.fetch_add(1, Ordering::Relaxed);
-            Arc::new(RankingStats::build(graph))
-        }))
-    }
-
-    /// Finds or creates the entry of `graph`, most recently used last, and
-    /// brings the cache back within its limits. Never builds.
-    fn slot_for(&self, graph: &Arc<CallGraph>, symbols: usize) -> Arc<OnceLock<Arc<RankingStats>>> {
-        let key = Arc::downgrade(graph);
-        let mut slots = self.slots.lock().unwrap_or_else(PoisonError::into_inner);
-
-        let before = slots.len();
-        slots.retain(|slot| slot.graph.strong_count() > 0);
-        self.count_evictions(before - slots.len());
-
-        if let Some(position) = slots.iter().position(|slot| slot.graph.ptr_eq(&key)) {
-            self.hits.fetch_add(1, Ordering::Relaxed);
-            let slot = slots.remove(position);
-            let cell = Arc::clone(&slot.stats);
-            slots.push(slot);
-            return cell;
-        }
-
-        let cell = Arc::new(OnceLock::new());
-        slots.push(Slot {
-            graph: key,
-            symbols,
-            stats: Arc::clone(&cell),
-        });
-        // The entry just added is last and is never the one to go: it fits
-        // the symbol budget on its own.
-        let mut evicted = 0;
-        while slots.len() > 1
-            && (slots.len() > self.limits.max_entries
-                || slots.iter().map(|slot| slot.symbols).sum::<usize>() > self.limits.max_symbols)
-        {
-            slots.remove(0);
-            evicted += 1;
-        }
-        self.count_evictions(evicted);
-        cell
-    }
-
-    fn count_evictions(&self, evicted: usize) {
-        if evicted > 0 {
-            self.evictions.fetch_add(evicted as u64, Ordering::Relaxed);
-        }
+        self.cache
+            .get_or_build(graph, || Arc::new(RankingStats::build(graph)))
     }
 
     /// What the cache has done and holds right now.
     pub fn counters(&self) -> RankingCacheCounters {
-        let slots = self.slots.lock().unwrap_or_else(PoisonError::into_inner);
-        RankingCacheCounters {
-            builds: self.builds.load(Ordering::Relaxed),
-            hits: self.hits.load(Ordering::Relaxed),
-            evictions: self.evictions.load(Ordering::Relaxed),
-            bypasses: self.bypasses.load(Ordering::Relaxed),
-            entries: slots.len(),
-            symbols: slots.iter().map(|slot| slot.symbols).sum(),
-        }
+        self.cache.counters()
     }
 }

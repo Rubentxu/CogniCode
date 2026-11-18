@@ -312,8 +312,8 @@ pub struct HandlerContext {
     /// environment says nothing about where a cache is, and the product
     /// then keeps no state at all instead of guessing a place.
     cache_root: Option<PathBuf>,
-    /// Ranking statistics per snapshot, shared by every clone of the context.
-    ranking_stats: Arc<crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache>,
+    /// What is derived once per snapshot, shared by every clone of the context.
+    snapshot_caches: Arc<crate::infrastructure::graph::projection_cache::SnapshotCaches>,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -864,7 +864,7 @@ impl HandlerContextBuilder {
             // keeps no state rather than writing into a directory
             // nobody chose.
             cache_root: self.cache_root,
-            ranking_stats: Arc::default(),
+            snapshot_caches: Arc::default(),
         }
     }
 }
