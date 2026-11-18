@@ -5,7 +5,7 @@
 //! the canonical adapter) implement the trait; domain + service
 //! code depend on the trait, not on the concrete adapters.
 //!
-//! ## Port modules (12 active ports + 1 utility = 13 modules)
+//! ## Port modules (13 active ports + 1 utility = 14 modules)
 //!
 //! | Module | Trait | Status |
 //! |--------|-------|--------|
@@ -21,6 +21,7 @@
 //! | `report_store` | `ReportStore` | existing |
 //! | `revision_store` | `RevisionStore` | new (PR1) |
 //! | `session_store` | `SessionStore` | existing |
+//! | `source_metrics` | `SourceMetrics` | new (CR-06 remediation) |
 //! | `view_spec_store` | `ViewSpecStore` | new (PR2 — relocated from cognicode-explorer) |
 //!
 //! The `multimodal` feature gates the WRITE/exTRACTION path only;
@@ -45,6 +46,7 @@ pub mod quality_store;
 pub mod report_store;
 pub mod revision_store;
 pub mod session_store;
+pub mod source_metrics;
 pub mod view_spec_store;
 
 // E37 design D5 — generic graph projection port, dual-gated: facts come
@@ -81,4 +83,5 @@ pub use quality_store::{
 pub use report_store::{ReportError, ReportStore, ReportSummary};
 pub use revision_store::{RevisionError, RevisionStore};
 pub use session_store::{SessionError, SessionRow, SessionStore};
+pub use source_metrics::SourceMetrics;
 pub use view_spec_store::{ViewSpecPayload, ViewSpecStore, ViewSpecStoreError};

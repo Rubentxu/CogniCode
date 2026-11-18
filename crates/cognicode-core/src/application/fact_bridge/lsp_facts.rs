@@ -40,7 +40,7 @@ use crate::domain::evidence_kernel::fact::ProducerKind;
 use crate::domain::evidence_kernel::symbol_fqn::SymbolFqn;
 use crate::domain::traits::code_intelligence::{
     PrecisionTier, ProviderDiagnostic, Reference, ReferenceKind, TieredCodeIntelligenceProvider,
-    TieredOutcome,
+    TieredOutcome, provider_ids,
 };
 use crate::domain::value_objects::{SymbolKind, published_line};
 
@@ -58,16 +58,15 @@ const QUERY_GET_HIERARCHY: &str = "get_hierarchy";
 /// A [`Tiered`](crate::domain::traits::code_intelligence::Tiered) value
 /// declares its serving TIER, not its serving provider, so the bridge
 /// attributes by tier: S2 → `lsp`, S1 → `local-resolver`, S0 →
-/// `tree-sitter` — the stable identities the concrete providers export
-/// (`LspIntelligenceProvider::PROVIDER_ID`,
-/// `TreesitterFallbackProvider::{PROVIDER_ID, LOCAL_RESOLVER_PROVIDER_ID}`).
+/// `tree-sitter`, S3 → `scip` — the stable identities the port declares
+/// ([`provider_ids`]), which the concrete providers export as their own.
 /// Reserved tiers have no M4 producer; the mapping stays exhaustive.
 fn tier_provider_id(tier: PrecisionTier) -> &'static str {
     match tier {
-        PrecisionTier::S2 => "lsp",
-        PrecisionTier::S1 => "local-resolver",
-        PrecisionTier::S0 => "tree-sitter",
-        PrecisionTier::S3 => "scip",
+        PrecisionTier::S2 => provider_ids::LSP,
+        PrecisionTier::S1 => provider_ids::LOCAL_RESOLVER,
+        PrecisionTier::S0 => provider_ids::TREE_SITTER,
+        PrecisionTier::S3 => provider_ids::SCIP,
         PrecisionTier::S4 => "reserved",
     }
 }
@@ -898,31 +897,24 @@ mod tests {
         );
     }
 
-    /// The bridge's tier→provider identity mapping is pinned to the
-    /// providers' own stable identity constants (design D4): a rename in
-    /// either place must fail this test, never silently drift the detail.
+    /// The bridge's tier→provider identity mapping names the provider that
+    /// serves each tier, with the identities the port declares (design D4).
+    ///
+    /// The identities live in the port, so the adapters export the same
+    /// names and a rename moves both at once; what this test pins is the
+    /// mapping, which is the part that can still go wrong.
     #[test]
-    fn tier_provider_ids_match_the_provider_identity_constants() {
-        use crate::infrastructure::lsp::providers::fallback::TreesitterFallbackProvider;
-        use crate::infrastructure::lsp::providers::lsp::LspIntelligenceProvider;
-        use crate::infrastructure::lsp::providers::scip_provider::ScipIntelligenceProvider;
-
-        assert_eq!(
-            tier_provider_id(PrecisionTier::S2),
-            LspIntelligenceProvider::PROVIDER_ID
-        );
+    fn every_tier_names_the_provider_that_serves_it() {
+        assert_eq!(tier_provider_id(PrecisionTier::S2), provider_ids::LSP);
         assert_eq!(
             tier_provider_id(PrecisionTier::S1),
-            TreesitterFallbackProvider::LOCAL_RESOLVER_PROVIDER_ID
+            provider_ids::LOCAL_RESOLVER
         );
         assert_eq!(
             tier_provider_id(PrecisionTier::S0),
-            TreesitterFallbackProvider::PROVIDER_ID
+            provider_ids::TREE_SITTER
         );
-        assert_eq!(
-            tier_provider_id(PrecisionTier::S3),
-            ScipIntelligenceProvider::PROVIDER_ID
-        );
+        assert_eq!(tier_provider_id(PrecisionTier::S3), provider_ids::SCIP);
     }
 
     // =========================================================================

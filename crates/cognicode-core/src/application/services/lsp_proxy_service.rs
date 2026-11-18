@@ -7,11 +7,8 @@
 use crate::application::services::analysis_service::AnalysisService;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::value_objects::Location;
-use crate::infrastructure::lsp::providers::composite::CompositeProvider;
 use crate::infrastructure::lsp::{LspClient, LspError, LspServerConfig};
-use crate::interface::composition::code_intelligence_provider;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 /// Operations that can be handled by an external LSP
@@ -54,34 +51,20 @@ pub struct LspProxyService {
     servers: Arc<RwLock<HashMap<String, LspServerConfig>>>,
     /// Whether proxy mode is enabled
     proxy_enabled: bool,
-    /// Composite provider for LSP-based code intelligence
-    composite_provider: Option<Arc<CompositeProvider>>,
-    /// Workspace root for LSP operations
-    workspace_root: Option<PathBuf>,
+    /// The provider that answers the code-intelligence questions the
+    /// proxy routes.
+    composite_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
 }
 
 impl LspProxyService {
-    /// Creates a new LspProxyService with a workspace root
-    pub fn new(analysis_service: Arc<AnalysisService>, workspace_root: PathBuf) -> Self {
+    /// Creates a new LspProxyService.
+    pub fn new(analysis_service: Arc<AnalysisService>) -> Self {
         Self {
             lsp_client: Arc::new(LspClient::new()),
             analysis_service,
             servers: Arc::new(RwLock::new(HashMap::new())),
             proxy_enabled: false,
             composite_provider: None,
-            workspace_root: Some(workspace_root),
-        }
-    }
-
-    /// Creates a new LspProxyService without a workspace root
-    pub fn new_without_workspace(analysis_service: Arc<AnalysisService>) -> Self {
-        Self {
-            lsp_client: Arc::new(LspClient::new()),
-            analysis_service,
-            servers: Arc::new(RwLock::new(HashMap::new())),
-            proxy_enabled: false,
-            composite_provider: None,
-            workspace_root: None,
         }
     }
 
@@ -91,14 +74,16 @@ impl LspProxyService {
         self.setup_default_servers();
     }
 
-    /// Enables proxy mode with a CompositeProvider for full LSP support
-    pub fn enable_proxy_mode_with_provider(&mut self) {
+    /// Enables proxy mode with the provider the caller composed.
+    ///
+    /// The provider is injected, not built here: how a provider is
+    /// composed belongs to the layer that knows the workspace, and an
+    /// application service that reached for it would invert the
+    /// dependency between the two.
+    pub fn enable_proxy_mode_with_provider(&mut self, provider: Arc<dyn CodeIntelligenceProvider>) {
         self.proxy_enabled = true;
         self.setup_default_servers();
-
-        if let Some(ref workspace_root) = self.workspace_root {
-            self.composite_provider = Some(Arc::new(code_intelligence_provider(workspace_root)));
-        }
+        self.composite_provider = Some(provider);
     }
 
     /// Sets up default LSP server configurations
@@ -342,13 +327,13 @@ mod tests {
 
     #[test]
     fn test_lsp_proxy_service_creation() {
-        let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let service = LspProxyService::new(Arc::new(AnalysisService::new()));
         assert!(!service.is_proxy_enabled());
     }
 
     #[test]
     fn test_register_and_get_server() {
-        let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let service = LspProxyService::new(Arc::new(AnalysisService::new()));
 
         let config = LspServerConfig {
             command: "custom-lsp".to_string(),
@@ -366,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_enable_proxy_mode_sets_servers() {
-        let mut service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let mut service = LspProxyService::new(Arc::new(AnalysisService::new()));
         assert!(!service.is_proxy_enabled());
 
         service.enable_proxy_mode();
@@ -378,7 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_operation_when_disabled() {
-        let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let service = LspProxyService::new(Arc::new(AnalysisService::new()));
 
         let result = service
             .route_operation("hover", &serde_json::json!({}))
@@ -389,7 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_operation_when_enabled_no_lsp() {
-        let mut service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let mut service = LspProxyService::new(Arc::new(AnalysisService::new()));
         service.enable_proxy_mode();
 
         // Even with proxy enabled, if no LSP is running, it returns None
@@ -403,7 +388,7 @@ mod tests {
     #[test]
     fn test_analysis_service_accessor() {
         let analysis_service = Arc::new(AnalysisService::new());
-        let service = LspProxyService::new_without_workspace(analysis_service.clone());
+        let service = LspProxyService::new(analysis_service.clone());
 
         let retrieved = service.analysis_service();
         assert!(Arc::ptr_eq(&analysis_service, &retrieved));
@@ -411,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_lsp_client_accessor() {
-        let service = LspProxyService::new_without_workspace(Arc::new(AnalysisService::new()));
+        let service = LspProxyService::new(Arc::new(AnalysisService::new()));
         let _client = service.lsp_client();
         // Just verify it returns a valid Arc<LspClient>
         // The client can be used for further operations

@@ -3,6 +3,7 @@ use cognicode_core::application::architecture::evolution::{
 };
 use cognicode_core::domain::scm::fake::FakeSource;
 use cognicode_core::domain::scm::{ProviderCapabilities, RevisionReader, SourceRef};
+use cognicode_core::infrastructure::native_metrics::NativeMetrics;
 
 #[test]
 fn a_real_architecture_violation_survives_line_and_module_moves_without_new_regression() {
@@ -29,7 +30,7 @@ fn a_real_architecture_violation_survives_line_and_module_moves_without_new_regr
         .resolve(&source, "candidate")
         .expect("candidate revision");
 
-    let answer = query_architecture_evolution(&provider, &base, &candidate);
+    let answer = query_architecture_evolution(&provider, &base, &candidate, &NativeMetrics);
 
     assert_eq!(
         answer.producer,
@@ -72,7 +73,7 @@ fn a_new_branch_increases_the_existing_cyclomatic_metric() {
         .resolve(&source, "candidate")
         .expect("candidate revision");
 
-    let answer = query_architecture_evolution(&provider, &base, &candidate);
+    let answer = query_architecture_evolution(&provider, &base, &candidate, &NativeMetrics);
 
     assert_eq!(answer.metric_evolution.status, EvolutionStatus::Evaluated);
     assert_eq!(answer.metric_evolution.base.cyclomatic_paths, Some(1));
@@ -95,7 +96,7 @@ fn unreadable_revision_content_keeps_evolution_unknown() {
         .resolve(&source, "candidate")
         .expect("candidate revision");
 
-    let answer = query_architecture_evolution(&provider, &base, &candidate);
+    let answer = query_architecture_evolution(&provider, &base, &candidate, &NativeMetrics);
 
     assert_eq!(answer.evolution.status, EvolutionStatus::Unknown);
     assert_eq!(answer.candidate.coverage, "partial");
@@ -130,7 +131,7 @@ fn oversized_revision_is_partial_and_does_not_publish_source_bytes() {
         .resolve(&source, "candidate")
         .expect("candidate revision");
 
-    let answer = query_architecture_evolution(&provider, &base, &candidate);
+    let answer = query_architecture_evolution(&provider, &base, &candidate, &NativeMetrics);
 
     assert_eq!(answer.candidate.coverage, "partial");
     assert_eq!(answer.evolution.status, EvolutionStatus::Unknown);

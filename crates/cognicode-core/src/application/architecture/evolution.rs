@@ -11,8 +11,8 @@ use crate::application::architecture::{
     ArchitectureReadModel, ArchitectureSource, EvaluationStatus, SourceFile, ViolationRef,
 };
 use crate::domain::metrics::{METRICS_RULES_VERSION, MetricsCoverage, MetricsOutcome};
+use crate::domain::ports::SourceMetrics;
 use crate::domain::scm::{BlobRead, ContentDigest, PathKey, RevisionReader, SourceRevision};
-use crate::infrastructure::native_metrics::measure_by_extension;
 
 const MAX_REVISION_SOURCE_FILES: usize = 256;
 const MAX_REVISION_FILE_BYTES: u64 = 256 * 1024;
@@ -122,6 +122,7 @@ pub fn query_architecture_evolution(
     reader: &dyn RevisionReader,
     base_revision: &SourceRevision,
     candidate_revision: &SourceRevision,
+    source_metrics: &dyn SourceMetrics,
 ) -> ArchitectureEvolutionQuery {
     let deadline = Instant::now() + MAX_REVISION_QUERY_DURATION;
     let mut now = Instant::now;
@@ -147,6 +148,7 @@ pub fn query_architecture_evolution(
         &base_read,
         &candidate_read,
         base_workspace == candidate_workspace,
+        source_metrics,
     );
     let base_coverage = coverage_with_constraints(base_read.coverage, &base_model);
     let candidate_coverage = coverage_with_constraints(candidate_read.coverage, &candidate_model);
@@ -386,9 +388,10 @@ fn metric_evolution(
     base: &RevisionSourceRead,
     candidate: &RevisionSourceRead,
     same_source: bool,
+    source_metrics: &dyn SourceMetrics,
 ) -> NativeMetricEvolution {
-    let base_metric = measure_revision_cyclomatic(base);
-    let candidate_metric = measure_revision_cyclomatic(candidate);
+    let base_metric = measure_revision_cyclomatic(base, source_metrics);
+    let candidate_metric = measure_revision_cyclomatic(candidate, source_metrics);
     let delta = if same_source {
         base_metric
             .cyclomatic_paths
@@ -429,7 +432,10 @@ fn metric_evolution(
     }
 }
 
-fn measure_revision_cyclomatic(read: &RevisionSourceRead) -> NativeMetricRevision {
+fn measure_revision_cyclomatic(
+    read: &RevisionSourceRead,
+    source_metrics: &dyn SourceMetrics,
+) -> NativeMetricRevision {
     let mut cyclomatic_paths = 0_u64;
     let mut measured_files = 0;
     let mut gaps = read.coverage.gaps.clone();
@@ -437,7 +443,7 @@ fn measure_revision_cyclomatic(read: &RevisionSourceRead) -> NativeMetricRevisio
         gaps.push("no Rust source files were measured".into());
     }
     for file in &read.source.files {
-        match measure_by_extension(&file.file_path, &file.source) {
+        match source_metrics.measure_by_extension(&file.file_path, &file.source) {
             MetricsOutcome::Measured { metrics } => match metrics.coverage {
                 MetricsCoverage::Complete => {
                     let file_paths = metrics

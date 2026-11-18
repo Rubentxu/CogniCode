@@ -29,9 +29,11 @@ impl Default for TreesitterFallbackProvider {
 
 impl TreesitterFallbackProvider {
     /// Stable provider identity for the S0 tree-sitter tier.
-    pub const PROVIDER_ID: &'static str = "tree-sitter";
+    pub const PROVIDER_ID: &'static str =
+        crate::domain::traits::code_intelligence::provider_ids::TREE_SITTER;
     /// Stable provider identity for the S1 index-backed definition resolver.
-    pub const LOCAL_RESOLVER_PROVIDER_ID: &'static str = "local-resolver";
+    pub const LOCAL_RESOLVER_PROVIDER_ID: &'static str =
+        crate::domain::traits::code_intelligence::provider_ids::LOCAL_RESOLVER;
 
     pub fn new() -> Self {
         Self { index: None }

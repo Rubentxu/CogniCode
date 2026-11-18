@@ -10,6 +10,27 @@ use async_trait::async_trait;
 use std::fmt;
 use std::str::FromStr;
 
+/// The stable identity of every provider that serves the port.
+///
+/// The identity is part of the port's vocabulary: the application
+/// attributes an observation to the provider that served it, and the
+/// adapters declare the same name. One source for both, so the two
+/// cannot drift apart — a provider that renamed itself would change
+/// what the application says about it, everywhere, at once.
+pub mod provider_ids {
+    /// The identity of the LSP-backed provider, the tier S2.
+    pub const LSP: &str = "lsp";
+
+    /// The identity of the index-backed local resolver, the tier S1.
+    pub const LOCAL_RESOLVER: &str = "local-resolver";
+
+    /// The identity of the tree-sitter provider, the tier S0.
+    pub const TREE_SITTER: &str = "tree-sitter";
+
+    /// The identity of the SCIP-index provider, the tier S3.
+    pub const SCIP: &str = "scip";
+}
+
 /// Provider for code intelligence operations
 #[async_trait]
 pub trait CodeIntelligenceProvider: Send + Sync {

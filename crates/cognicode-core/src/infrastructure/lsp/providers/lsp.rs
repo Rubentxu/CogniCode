@@ -21,7 +21,8 @@ pub struct LspIntelligenceProvider {
 
 impl LspIntelligenceProvider {
     /// Stable provider identity used in tier diagnostics and provenance detail.
-    pub const PROVIDER_ID: &'static str = "lsp";
+    pub const PROVIDER_ID: &'static str =
+        crate::domain::traits::code_intelligence::provider_ids::LSP;
 
     pub fn new(workspace_root: &Path) -> Self {
         Self {

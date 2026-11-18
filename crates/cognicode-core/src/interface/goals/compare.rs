@@ -661,8 +661,12 @@ pub fn compare_with(
         (&base_revision, &candidate_revision),
         &change_set,
     );
-    let architecture_evolution =
-        query_architecture_evolution(&scm, &base_revision, &candidate_revision);
+    let architecture_evolution = query_architecture_evolution(
+        &scm,
+        &base_revision,
+        &candidate_revision,
+        &crate::infrastructure::native_metrics::NativeMetrics,
+    );
     let summary = format!(
         "Git compared {} changed path(s) from {} to {}; semantic impact is {} and prior-work reuse is {}.",
         changes.len(),
