@@ -428,3 +428,179 @@ mod reuse_within_a_session {
         );
     }
 }
+
+mod adaptive {
+    use super::*;
+
+    fn chain_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            dir.path(),
+            "src/lib.rs",
+            "pub fn load(path: &str) -> u32 {\n    decode(path)\n}\n\n\
+             pub fn decode(text: &str) -> u32 {\n    checksum(text)\n}\n\n\
+             pub fn checksum(text: &str) -> u32 {\n    text.len() as u32\n}\n\n\
+             pub fn report() -> u32 {\n    load(\"a\")\n}\n",
+        );
+        dir
+    }
+
+    #[test]
+    fn a_plain_pack_publishes_no_adaptive_report() {
+        let dir = chain_project();
+
+        let answer = run_pack(dir.path(), json!({"symbols": ["decode"]})).unwrap();
+
+        assert!(answer.get("adaptive").is_none(), "{answer}");
+        assert!(!render(&answer).contains("selection: mode="));
+    }
+
+    #[test]
+    fn a_mode_publishes_its_policy_and_the_text_carries_the_same_note() {
+        let dir = chain_project();
+
+        let answer = run_pack(
+            dir.path(),
+            json!({"symbols": ["decode"], "mode": "diagnose", "max_tokens": 4000}),
+        )
+        .unwrap();
+
+        let report = &answer["adaptive"];
+        assert_eq!(report["policy"]["mode"], "diagnose");
+        assert_eq!(report["expansion"]["status"], "expanded", "{answer}");
+        assert!(
+            report["score_semantics"]
+                .as_str()
+                .unwrap()
+                .contains("not a confidence"),
+            "{report}"
+        );
+        let text = render(&answer);
+        assert!(text.contains("selection: mode=diagnose"), "{text}");
+        let used = answer["budget"]["used"]["tokens"].as_u64().unwrap();
+        assert_eq!(
+            used,
+            Utf8UpperBound.measure(&text).tokens,
+            "the budget measures the text the goal renders, notes included"
+        );
+        assert!(
+            answer["summary"]
+                .as_str()
+                .unwrap()
+                .starts_with("mode diagnose, expansion expanded:")
+        );
+        let ids: Vec<&str> = answer["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.len() >= 2, "the walk adds the neighbours: {ids:?}");
+        assert!(
+            ids[0].contains("decode"),
+            "the named symbol goes first: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn the_same_request_gives_the_same_answer() {
+        let dir = chain_project();
+        let request = json!({"symbols": ["decode"], "mode": "refactor", "max_tokens": 4000});
+
+        assert_eq!(
+            run_pack(dir.path(), request.clone()).unwrap(),
+            run_pack(dir.path(), request).unwrap()
+        );
+    }
+
+    #[test]
+    fn expansion_never_abstains_and_says_so() {
+        let dir = chain_project();
+
+        let answer = run_pack(
+            dir.path(),
+            json!({"symbols": ["decode"], "mode": "diagnose", "expansion": "never"}),
+        )
+        .unwrap();
+
+        assert_eq!(answer["adaptive"]["expansion"]["status"], "abstained");
+        assert_eq!(answer["items"].as_array().unwrap().len(), 1, "{answer}");
+    }
+
+    #[test]
+    fn a_walk_a_bound_stopped_makes_the_pack_partial() {
+        let dir = chain_project();
+
+        let answer = run_pack(
+            dir.path(),
+            json!({
+                "symbols": ["decode"], "mode": "diagnose",
+                "expansion": "always", "max_visits": 1, "max_tokens": 4000
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(
+            answer["adaptive"]["expansion"]["status"], "partial",
+            "{answer}"
+        );
+        assert_eq!(answer["status"], "partial");
+        assert_eq!(answer["selection"]["partial"], true);
+    }
+
+    #[test]
+    fn the_detail_of_an_adaptive_pack_can_be_forced() {
+        let dir = chain_project();
+
+        let answer = run_pack(
+            dir.path(),
+            json!({"symbols": ["decode"], "mode": "diagnose", "detail": "signature"}),
+        )
+        .unwrap();
+
+        assert_eq!(answer["adaptive"]["policy"]["detail_override"], "signature");
+        for item in answer["items"].as_array().unwrap() {
+            assert_eq!(item["representation"]["level"], "signature", "{item}");
+        }
+    }
+
+    #[test]
+    fn a_tuning_without_a_mode_and_a_mode_with_a_change_are_refused() {
+        let dir = chain_project();
+
+        let stray = run_pack(dir.path(), json!({"symbols": ["decode"], "detail": "full"}));
+        let change = run_pack(
+            dir.path(),
+            json!({"mode": "diagnose", "change_scope": "staged"}),
+        );
+
+        assert!(stray.unwrap_err().contains("pass `mode`"));
+        assert!(change.unwrap_err().contains("change_scope"));
+    }
+
+    #[test]
+    fn a_page_token_belongs_to_the_mode_that_made_it() {
+        let dir = chain_project();
+        let token = (60..1200)
+            .step_by(20)
+            .find_map(|limit| {
+                let page = run_pack(
+                    dir.path(),
+                    json!({"symbols": ["decode"], "mode": "diagnose", "max_tokens": limit}),
+                )
+                .ok()?;
+                page["continuation_token"].as_str().map(str::to_string)
+            })
+            .expect("some budget cuts the pack and gives a token");
+
+        let other = run_pack(
+            dir.path(),
+            json!({
+                "symbols": ["decode"], "mode": "refactor",
+                "max_tokens": 60, "continuation_token": token
+            }),
+        );
+
+        assert!(other.is_err(), "a token of another policy is not accepted");
+    }
+}
