@@ -21,7 +21,7 @@ pub enum RequirementMatch {
 /// A semantic version without build metadata, which never takes part in
 /// precedence.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Version {
+pub(crate) struct Version {
     major: u64,
     minor: u64,
     patch: u64,
@@ -158,7 +158,9 @@ fn parse_numbers(text: &str) -> Option<(Vec<Option<u64>>, Vec<PreIdentifier>)> {
     Some((parts, pre))
 }
 
-fn parse_version(text: &str) -> Option<Version> {
+/// Reads a full `major.minor.patch[-pre][+build]` version; build metadata is
+/// dropped because it never takes part in precedence.
+pub(crate) fn parse_version(text: &str) -> Option<Version> {
     let (parts, pre) = parse_numbers(text)?;
     match parts.as_slice() {
         [Some(major), Some(minor), Some(patch)] => Some(Version {

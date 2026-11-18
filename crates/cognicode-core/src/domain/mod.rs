@@ -82,6 +82,7 @@ pub mod forge;
 // Hexagonal "driven" ports for the Generic Graph Layer.
 // `GraphRepository` / `GraphError` / `GraphResult` / `SearchPage`
 // are available in the default build (multimodal gates WRITE only).
+pub mod advisory_matching;
 pub mod dependency_inventory;
 pub mod intent;
 pub mod investigation;
