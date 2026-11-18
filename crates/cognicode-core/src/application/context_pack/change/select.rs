@@ -285,7 +285,9 @@ fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Opti
     let mut found: Vec<Candidate> = graph
         .incoming_dependencies_with_metadata(&symbol.id)
         .into_iter()
-        .filter(|(source, edge, _, _)| **source != symbol.id && **edge != DependencyType::Contains)
+        .filter(|(source, edge, _, _)| {
+            **source != symbol.id && **edge != DependencyType::Contains && !is_test(graph, source)
+        })
         .map(|(source, edge, provenance, confidence)| Candidate {
             id: source.clone(),
             reason: Reason::ConsumerOfChange {
@@ -538,6 +540,26 @@ mod tests {
         );
         assert_eq!(selected.symbols[0].consumers, 2);
         assert_eq!(selected.symbols[0].tests, 1);
+    }
+
+    #[test]
+    fn a_test_that_calls_the_change_directly_is_a_test_and_not_a_consumer() {
+        let mut world = world();
+        let parse = world.id("parse");
+        let direct = world
+            .graph
+            .add_symbol(function("test_direct", "tests/direct.rs", 0).mark_as_test());
+        world
+            .graph
+            .add_dependency(&direct, &parse, DependencyType::Calls)
+            .unwrap();
+        let seed = seed_of(vec![world.seed("parse", SeedKind::Signature)]);
+        let selected = select_change(&world.graph, &seed, &[]);
+
+        let reasons = codes(&selected);
+        assert!(reasons.contains(&("test_direct".to_string(), "test_of_change")));
+        assert_eq!(selected.symbols[0].consumers, 2);
+        assert_eq!(selected.symbols[0].tests, 2);
     }
 
     #[test]
